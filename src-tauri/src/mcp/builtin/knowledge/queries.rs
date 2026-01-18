@@ -13,7 +13,7 @@ use super::{helpers, KnowledgeServer};
 pub async fn read_knowledge(
     server: &KnowledgeServer,
     args: Value,
-    session_id: &str,
+    assistant_id: &str,
 ) -> Result<MCPResult, String> {
     let id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(v) => v,
@@ -23,7 +23,7 @@ pub async fn read_knowledge(
     let db = server.get_db();
     let result = KnowledgeEntity::find()
         .filter(knowledge::Column::Id.eq(id))
-        .filter(knowledge::Column::SessionId.eq(session_id))
+        .filter(knowledge::Column::AssistantId.eq(assistant_id))
         .one(db)
         .await;
 
@@ -40,7 +40,7 @@ pub async fn read_knowledge(
 
             let knowledge = json!({
                 "id": id,
-                "session_id": session_id,
+                "assistant_id": assistant_id,
                 "title": title,
                 "content": content,
                 "source": source,
@@ -84,7 +84,7 @@ pub async fn read_knowledge(
 pub async fn search_knowledge(
     server: &KnowledgeServer,
     args: Value,
-    session_id: &str,
+    assistant_id: &str,
 ) -> Result<MCPResult, String> {
     let query_param = args.get("query").and_then(|v| v.as_str());
     let tags_param = args.get("tags").and_then(|v| v.as_array());
@@ -126,7 +126,7 @@ pub async fn search_knowledge(
         sql.push_str(&format!(" JOIN {} f ON k.id = f.rowid", helpers::TABLE_FTS));
     }
 
-    sql.push_str(" WHERE k.session_id = ?");
+    sql.push_str(" WHERE k.assistant_id = ?");
 
     if query_param.is_some() {
         sql.push_str(&format!(" AND {} MATCH ?", helpers::TABLE_FTS));
@@ -150,7 +150,7 @@ pub async fn search_knowledge(
 
     sql.push_str(" LIMIT ?");
 
-    let mut values = vec![session_id.to_string().into()];
+    let mut values = vec![assistant_id.to_string().into()];
 
     if let Some(q) = query_param {
         values.push(q.into());
@@ -261,7 +261,7 @@ pub async fn search_knowledge(
 pub async fn list_knowledge(
     server: &KnowledgeServer,
     args: Value,
-    session_id: &str,
+    assistant_id: &str,
 ) -> Result<MCPResult, String> {
     let limit = args
         .get("limit")
@@ -273,7 +273,7 @@ pub async fn list_knowledge(
 
     let db = server.get_db();
     let result = KnowledgeEntity::find()
-        .filter(knowledge::Column::SessionId.eq(session_id))
+        .filter(knowledge::Column::AssistantId.eq(assistant_id))
         .order_by_desc(knowledge::Column::UpdatedAt)
         .limit(limit)
         .offset(offset)

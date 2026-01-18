@@ -93,114 +93,8 @@ impl BrowserServer {
     }
 }
 
-#[async_trait]
-impl BuiltinMCPServer for BrowserServer {
-    fn name(&self) -> &str {
-        "browser"
-    }
-
-    fn description(&self) -> &str {
-        "Tools for interacting with a web browser."
-    }
-
-    async fn get_service_context(
-        &self,
-        _options: Option<&Value>,
-    ) -> crate::mcp::types::ServiceContext {
-        // Check if browser session exists
-        let browser_session_id = match self.browser_session_id.read() {
-            Ok(guard) => guard.clone(),
-            Err(_) => None,
-        };
-
-        let session_id = match browser_session_id {
-            Some(id) => id,
-            None => {
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: "## Browser\n\nNo active session".to_string(),
-                    structured_state: Some(json!({
-                        "active": false
-                    })),
-                };
-            }
-        };
-
-        // Check cache first (5 second TTL to avoid expensive JS injection)
-        const CACHE_TTL_SECS: u64 = 5;
-        if let Ok(cache_guard) = self.state_cache.read() {
-            if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
-                let elapsed = last_update.elapsed();
-                if elapsed.as_secs() < CACHE_TTL_SECS {
-                    // Use cached data with full session_id
-                    let context_prompt = format!(
-                        "## Browser\n\nSession {}: {} ({})",
-                        session_id, cached_url, cached_title
-                    );
-
-                    return crate::mcp::types::ServiceContext {
-                        context_prompt,
-                        structured_state: Some(json!({
-                            "active": true,
-                            "session_id": session_id,
-                            "url": cached_url,
-                            "title": cached_title,
-                            "cached": true
-                        })),
-                    };
-                }
-            }
-        }
-
-        // Cache miss or expired - fetch fresh data via JS injection
-        let service = match self.get_browser_service() {
-            Ok(s) => s,
-            Err(_) => {
-                return crate::mcp::types::ServiceContext {
-                    context_prompt: "## Browser\n\nService unavailable".to_string(),
-                    structured_state: Some(json!({
-                        "active": false,
-                        "error": "service_unavailable"
-                    })),
-                };
-            }
-        };
-
-        // Get current URL
-        let url = match service
-            .execute_script(&session_id, "window.location.href")
-            .await
-        {
-            Ok(result) => result.trim_matches('"').to_string(),
-            Err(_) => "unknown".to_string(),
-        };
-
-        // Get page title
-        let title = match service.execute_script(&session_id, "document.title").await {
-            Ok(result) => result.trim_matches('"').to_string(),
-            Err(_) => "unknown".to_string(),
-        };
-
-        // Update cache with fresh data
-        if let Ok(mut cache_guard) = self.state_cache.write() {
-            *cache_guard = Some((url.clone(), title.clone(), std::time::Instant::now()));
-        }
-
-        // Use full session_id so AI can call browser tools with correct ID
-        let context_prompt = format!("## Browser\n\nSession {}: {} ({})", session_id, url, title);
-
-        crate::mcp::types::ServiceContext {
-            context_prompt,
-            structured_state: Some(json!({
-                "active": true,
-                "session_id": session_id,
-                "url": url,
-                "title": title,
-                "cached": false
-            })),
-        }
-    }
-
-    fn tools(&self) -> Vec<MCPTool> {
+impl BrowserServer {
+    pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
                 name: "createSession".to_string(),
@@ -457,6 +351,118 @@ For pages > 3000 tokens, content is split into pages. Use readWebContent(page) t
                 annotations: None,
             },
         ]
+    }
+}
+
+#[async_trait]
+impl BuiltinMCPServer for BrowserServer {
+    fn name(&self) -> &str {
+        "browser"
+    }
+
+    fn description(&self) -> &str {
+        "Tools for interacting with a web browser."
+    }
+
+    async fn get_service_context(
+        &self,
+        _options: Option<&Value>,
+    ) -> crate::mcp::types::ServiceContext {
+        // Check if browser session exists
+        let browser_session_id = match self.browser_session_id.read() {
+            Ok(guard) => guard.clone(),
+            Err(_) => None,
+        };
+
+        let session_id = match browser_session_id {
+            Some(id) => id,
+            None => {
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: "## Browser\n\nNo active session".to_string(),
+                    structured_state: Some(json!({
+                        "active": false
+                    })),
+                };
+            }
+        };
+
+        // Check cache first (5 second TTL to avoid expensive JS injection)
+        const CACHE_TTL_SECS: u64 = 5;
+        if let Ok(cache_guard) = self.state_cache.read() {
+            if let Some((cached_url, cached_title, last_update)) = cache_guard.as_ref() {
+                let elapsed = last_update.elapsed();
+                if elapsed.as_secs() < CACHE_TTL_SECS {
+                    // Use cached data with full session_id
+                    let context_prompt = format!(
+                        "## Browser\n\nSession {}: {} ({})",
+                        session_id, cached_url, cached_title
+                    );
+
+                    return crate::mcp::types::ServiceContext {
+                        context_prompt,
+                        structured_state: Some(json!({
+                            "active": true,
+                            "session_id": session_id,
+                            "url": cached_url,
+                            "title": cached_title,
+                            "cached": true
+                        })),
+                    };
+                }
+            }
+        }
+
+        // Cache miss or expired - fetch fresh data via JS injection
+        let service = match self.get_browser_service() {
+            Ok(s) => s,
+            Err(_) => {
+                return crate::mcp::types::ServiceContext {
+                    context_prompt: "## Browser\n\nService unavailable".to_string(),
+                    structured_state: Some(json!({
+                        "active": false,
+                        "error": "service_unavailable"
+                    })),
+                };
+            }
+        };
+
+        // Get current URL
+        let url = match service
+            .execute_script(&session_id, "window.location.href")
+            .await
+        {
+            Ok(result) => result.trim_matches('"').to_string(),
+            Err(_) => "unknown".to_string(),
+        };
+
+        // Get page title
+        let title = match service.execute_script(&session_id, "document.title").await {
+            Ok(result) => result.trim_matches('"').to_string(),
+            Err(_) => "unknown".to_string(),
+        };
+
+        // Update cache with fresh data
+        if let Ok(mut cache_guard) = self.state_cache.write() {
+            *cache_guard = Some((url.clone(), title.clone(), std::time::Instant::now()));
+        }
+
+        // Use full session_id so AI can call browser tools with correct ID
+        let context_prompt = format!("## Browser\n\nSession {}: {} ({})", session_id, url, title);
+
+        crate::mcp::types::ServiceContext {
+            context_prompt,
+            structured_state: Some(json!({
+                "active": true,
+                "session_id": session_id,
+                "url": url,
+                "title": title,
+                "cached": false
+            })),
+        }
+    }
+
+    fn tools(&self) -> Vec<MCPTool> {
+        Self::tools_static()
     }
 
     async fn call_tool(

@@ -10,7 +10,8 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     #[sea_orm(primary_key, auto_increment = false)]
-    pub session_id: String,
+    pub assistant_id: String,
+    pub session_id: String, // Track which session created this playbook
     pub goal: String,
     pub initial_command: Option<String>,
     pub workflow: String,                 // JSON stored as TEXT

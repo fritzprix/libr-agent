@@ -30,7 +30,8 @@ pub struct SuccessCriteria {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Playbook {
     pub id: String,
-    pub session_id: String,
+    pub assistant_id: String,
+    pub session_id: String, // Track which session created this
     pub goal: String,
     #[serde(rename = "initialCommand")]
     pub initial_command: Option<String>,
@@ -45,6 +46,7 @@ impl Playbook {
     pub fn from_model(model: &playbook::Model) -> Self {
         Self {
             id: model.id.clone(),
+            assistant_id: model.assistant_id.clone(),
             session_id: model.session_id.clone(),
             goal: model.goal.clone(),
             initial_command: model.initial_command.clone(),

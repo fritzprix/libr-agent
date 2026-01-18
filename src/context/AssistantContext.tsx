@@ -17,11 +17,7 @@ import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import type { MCPTool } from '@/lib/mcp-types';
 import { useSettings } from '@/hooks/use-settings';
-import {
-  AssistantService,
-  type RevalidateEvent,
-} from '@/lib/services/assistant-service';
-import { useWebMCP } from '@/context/WebMCPContext';
+import { AssistantService } from '@/lib/services/assistant-service';
 
 const logger = getLogger('AssistantContext');
 
@@ -156,7 +152,6 @@ export const AssistantContextProvider = ({
   const { connectServersFromAssistant, availableTools } = useMCPServer();
   const { activeServers } = useMCPServerRegistry();
   const { value: settings } = useSettings();
-  const { proxy: webMCPProxy } = useWebMCP();
 
   const assistantService = useMemo(() => {
     return new AssistantService(settings.agentHubUrl);
@@ -411,27 +406,6 @@ export const AssistantContextProvider = ({
     };
     // We intentionally depend on activeServers reference to reflect registry changes
   }, [activeServers, connectServersFromAssistant]);
-
-  // Subscribe to Worker revalidation events
-  useEffect(() => {
-    if (!webMCPProxy) return;
-
-    const unsubscribe = webMCPProxy.onNotify(
-      'service-revalidate',
-      (data: unknown) => {
-        const event = data as RevalidateEvent;
-        if (event.entity === 'assistants') {
-          logger.debug(
-            'Received assistant revalidation event from Worker, refreshing...',
-            event,
-          );
-          loadAssistants();
-        }
-      },
-    );
-
-    return unsubscribe;
-  }, [webMCPProxy, loadAssistants]);
 
   // Subscribe to local service events (Main Thread changes)
   useEffect(() => {

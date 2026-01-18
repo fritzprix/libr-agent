@@ -50,22 +50,6 @@ beforeEach(() => {
     mockAssistantStore.length = 0;
 });
 
-// Mock useWebMCP to avoid Web Worker initialization issues
-vi.mock('@/context/WebMCPContext', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@/context/WebMCPContext')>();
-    return {
-        ...actual,
-        useWebMCP: () => ({
-            proxy: null,
-            isLoading: false,
-            initialized: true,
-            getServerProxy: vi.fn(),
-            switchServerContext: vi.fn(),
-        }),
-        WebMCPProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-    };
-});
-
 // Mock wrapper
 const wrapper = ({ children }: { children: ReactNode }) => (
     <SettingsProvider>

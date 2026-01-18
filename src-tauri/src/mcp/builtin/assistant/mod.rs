@@ -4,7 +4,7 @@ use crate::mcp::builtin::error_guidance::{
     ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext, ServiceContextOptions};
+use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 use async_trait::async_trait;
@@ -516,6 +516,17 @@ impl AssistantServer {
             )),
         }
     }
+
+    pub fn tools_static() -> Vec<MCPTool> {
+        vec![
+            create_create_assistant_tool(),
+            create_update_assistant_tool(),
+            create_delete_assistant_tool(),
+            create_list_assistants_tool(),
+            create_get_assistant_tool(),
+            create_search_assistant_tool(),
+        ]
+    }
 }
 
 #[async_trait]
@@ -529,14 +540,7 @@ impl BuiltinMCPServer for AssistantServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            create_create_assistant_tool(),
-            create_update_assistant_tool(),
-            create_delete_assistant_tool(),
-            create_list_assistants_tool(),
-            create_get_assistant_tool(),
-            create_search_assistant_tool(),
-        ]
+        Self::tools_static()
     }
 
     async fn call_tool(
@@ -571,10 +575,6 @@ impl BuiltinMCPServer for AssistantServer {
                 tool_name
             )),
         }
-    }
-
-    async fn switch_context(&self, _options: ServiceContextOptions) -> Result<(), String> {
-        Err("Context switching not supported for global assistant server".to_string())
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {

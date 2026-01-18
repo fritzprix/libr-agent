@@ -15,6 +15,7 @@ use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 use super::super::{
     terminal_manager, PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
+use super::{normalization, validation};
 
 impl WorkspaceServer {
     /// Redact sensitive input from output string
@@ -270,7 +271,7 @@ impl WorkspaceServer {
 
         // Try persistent shell path first (if enabled)
         if use_persistent_shell && pending.run_mode == "sync" {
-            let normalized_command = Self::normalize_shell_command(&final_command);
+            let normalized_command = normalization::normalize_shell_command(&final_command);
 
             // Execute with persistent shell (includes timeout and retry)
             let execution_result = tokio::time::timeout(
@@ -340,7 +341,7 @@ impl WorkspaceServer {
         // FALLBACK: One-shot execution with stdin injection (original implementation)
 
         // Create isolation config
-        let normalized_command = Self::normalize_shell_command(&final_command);
+        let normalized_command = normalization::normalize_shell_command(&final_command);
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
@@ -679,7 +680,7 @@ impl WorkspaceServer {
     /// Returns (prompt, input_type) tuple
     fn get_prompt_config<'a>(&self, command: &str, args: &'a Value) -> (&'a str, &'a str) {
         // Check if privilege escalation detected (Unix only)
-        let is_privilege_cmd = self.detect_privilege_escalation(command);
+        let is_privilege_cmd = validation::detect_privilege_escalation(command);
 
         if is_privilege_cmd {
             ("Enter your sudo password:", "password")

@@ -20,7 +20,6 @@ export interface WebMCPMessage {
     | 'sampleText'
     | 'getServiceContext'
     | 'setContext'
-    | 'switchContext'
     | 'getMetadata'
     | 'listServers';
   /** The name of the server, for loading specific servers. */

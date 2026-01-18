@@ -34,14 +34,50 @@
  * ```
  */
 
-import {
-  debug,
-  info,
-  warn,
-  error as logError,
-  trace,
-} from '@tauri-apps/plugin-log';
 import { invoke } from '@tauri-apps/api/core';
+
+// Log level enum
+enum LogLevel {
+  Trace = 'trace',
+  Debug = 'debug',
+  Info = 'info',
+  Warn = 'warn',
+  Error = 'error',
+}
+
+// Helper function to send logs to Rust backend via Tauri commands
+async function logToBackend(level: LogLevel, message: string): Promise<void> {
+  try {
+    switch (level) {
+      case LogLevel.Trace:
+        await invoke('log_trace', { message });
+        break;
+      case LogLevel.Debug:
+        await invoke('log_debug', { message });
+        break;
+      case LogLevel.Info:
+        await invoke('log_info', { message });
+        break;
+      case LogLevel.Warn:
+        await invoke('log_warn', { message });
+        break;
+      case LogLevel.Error:
+        await invoke('log_error_from_frontend', { message });
+        break;
+    }
+  } catch (e) {
+    // Fallback to console if invoke fails
+    console.error('[Logger] Failed to invoke backend log command:', e);
+    console.log(`[webview:${level.toUpperCase()}] ${message}`);
+  }
+}
+
+// Export logging functions
+export const trace = (message: string) => logToBackend(LogLevel.Trace, message);
+export const debug = (message: string) => logToBackend(LogLevel.Debug, message);
+export const info = (message: string) => logToBackend(LogLevel.Info, message);
+export const warn = (message: string) => logToBackend(LogLevel.Warn, message);
+export const error = (message: string) => logToBackend(LogLevel.Error, message);
 
 /**
  * Defines the configuration options for the global logger.
@@ -359,7 +395,7 @@ export class Logger {
     const errorMsg = errorObj
       ? `${formattedMessage}: ${errorObj.message}`
       : formattedMessage;
-    await logError(`[${context}] ${errorMsg}`);
+    await error(`[${context}] ${errorMsg}`);
   }
 
   /**

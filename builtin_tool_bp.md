@@ -101,7 +101,53 @@ browser/
 └── content.rs       # extractWebContent, readWebContent
 ```
 
-### 2.2 Tool Routing Pattern
+### 2.2 Tool Naming Convention
+
+**CRITICAL:** Each tool must have exactly ONE canonical name.
+
+#### ❌ **NEVER use multiple aliases:**
+
+```rust
+// ❌ WRONG: Multiple names for same tool
+match tool_name {
+    "saveKnowledge" | "addContent" => {
+        operations::save_knowledge(self, args, &target_session_id).await
+    }
+    "searchKnowledge" | "keywordSimilaritySearch" => {
+        queries::search_knowledge(self, args, &target_session_id).await
+    }
+}
+```
+
+#### ✅ **Use single, descriptive names:**
+
+```rust
+// ✅ CORRECT: One name per tool
+match tool_name {
+    "addContent" => {
+        operations::add_content(self, args, &target_session_id).await
+    }
+    "keywordSimilaritySearch" => {
+        queries::keyword_similarity_search(self, args, &target_session_id).await
+    }
+}
+```
+
+**Why this matters:**
+
+- **Consistency:** AI agents and documentation reference one canonical name
+- **Maintainability:** No confusion about which name to use
+- **Backward compatibility:** If renaming is needed, handle it through proper versioning, not aliases
+- **Clarity:** Tool descriptions and examples use consistent naming
+
+**Naming Guidelines:**
+
+- Use camelCase for tool names (e.g., `addContent`, not `add_content`)
+- Use descriptive, action-oriented names (e.g., `keywordSimilaritySearch` over `search`)
+- Align tool name with handler function name (e.g., `addContent` → `add_content()`)
+- Keep names concise but clear about what the tool does
+
+### 2.3 Tool Routing Pattern
 
 Use match statements in `call_tool`:
 

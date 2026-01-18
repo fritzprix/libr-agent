@@ -22,7 +22,7 @@ pub mod utils;
 pub use server::ContentStoreServer;
 
 use super::BuiltinMCPServer;
-use crate::mcp::types::{ServiceContext, ServiceContextOptions};
+use crate::mcp::types::ServiceContext;
 use serde_json::Value;
 
 // BuiltinMCPServer trait implementation
@@ -48,10 +48,6 @@ impl BuiltinMCPServer for ContentStoreServer {
         self.get_service_context(options).await
     }
 
-    async fn switch_context(&self, options: ServiceContextOptions) -> Result<(), String> {
-        self.switch_context(options).await
-    }
-
     async fn call_tool(
         &self,
         tool_name: &str,
@@ -61,13 +57,11 @@ impl BuiltinMCPServer for ContentStoreServer {
         let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
 
         match tool_name {
-            "saveKnowledge" | "addContent" => {
-                operations::save_knowledge(self, args, &target_session_id).await
-            }
+            "addContent" => operations::add_content(self, args, &target_session_id).await,
             "listContent" => queries::list_content(self, args, &target_session_id).await,
             "readContent" => queries::read_content(self, args, &target_session_id).await,
-            "searchKnowledge" | "keywordSimilaritySearch" => {
-                queries::search_knowledge(self, args, &target_session_id).await
+            "keywordSimilaritySearch" => {
+                queries::keyword_similarity_search(self, args, &target_session_id).await
             }
             "deleteContent" => operations::delete_content(self, args, &target_session_id).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
@@ -81,5 +75,6 @@ mod test_functional;
 mod test_migration;
 #[cfg(test)]
 mod test_recent_uploads;
-#[cfg(test)]
-mod test_session_isolation;
+// V1 switch_context test - obsolete in V2 session-per-proxy architecture
+// #[cfg(test)]
+// mod test_session_isolation;

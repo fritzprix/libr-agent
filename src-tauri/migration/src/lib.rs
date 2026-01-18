@@ -6,6 +6,7 @@ mod m20260106_000001_create_sessions_table;
 mod m20260106_000002_create_messages_tables;
 mod m20260109_000001_add_source_to_knowledge;
 mod m20260112_000001_create_settings_table;
+mod m20260116_000001_add_assistant_id_to_playbooks;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260106_000002_create_messages_tables::Migration),
             Box::new(m20260109_000001_add_source_to_knowledge::Migration),
             Box::new(m20260112_000001_create_settings_table::Migration),
+            Box::new(m20260116_000001_add_assistant_id_to_playbooks::Migration),
         ]
     }
 }

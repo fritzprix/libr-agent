@@ -45,9 +45,20 @@ export class RustSettingsService implements ISettingsService {
       const getTypedValue = <T extends SettingValue>(
         key: string,
         defaultValue: T,
+        validator?: (val: unknown) => val is T,
       ): T => {
         const value = settingsMap.get(key);
-        return (value ?? defaultValue) as T;
+        if (value !== undefined) {
+          if (validator && !validator(value)) {
+            logger.warn(
+              `Invalid value for setting key: ${key}, using default`,
+              { value, defaultValue },
+            );
+            return defaultValue;
+          }
+          return value as T;
+        }
+        return defaultValue;
       };
 
       // Construct settings object with defaults

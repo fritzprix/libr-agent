@@ -439,4 +439,32 @@ impl AgentSessionManager {
         crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
             .await
     }
+
+    /// Remove a message from the in-memory cache
+    /// Used when messages are deleted via messages_delete command to keep cache in sync
+    pub async fn remove_message_from_cache(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<(), String> {
+        let sessions = self.active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            let mut messages = session.messages.write().await;
+            messages.retain(|m| m.id != message_id);
+            log::debug!(
+                "Removed message {} from in-memory cache for session {}. Remaining: {}",
+                message_id,
+                session_id,
+                messages.len()
+            );
+            Ok(())
+        } else {
+            // Session not active in memory - no cache to update (this is OK)
+            log::debug!(
+                "Session {} not active, skipping in-memory cache update for message deletion",
+                session_id
+            );
+            Ok(())
+        }
+    }
 }

@@ -12,6 +12,7 @@ use super::types::Playbook;
 
 pub async fn create_playbook(
     db: &DatabaseConnection,
+    assistant_id: &str,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -76,6 +77,7 @@ pub async fn create_playbook(
 
     let model = playbook::ActiveModel {
         id: Set(id.clone()),
+        assistant_id: Set(assistant_id.to_string()),
         session_id: Set(session_id.to_string()),
         goal: Set(goal.to_string()),
         initial_command: Set(initial_command.map(|s| s.to_string())),
@@ -100,7 +102,7 @@ pub async fn create_playbook(
     // Re-fetch to get the full object
     let inserted = match PlaybookEntity::find()
         .filter(playbook::Column::Id.eq(&id))
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .one(db)
         .await
     {
@@ -159,7 +161,7 @@ pub fn format_playbook_summary(p: &Playbook) -> String {
 
 pub async fn list_playbooks(
     db: &DatabaseConnection,
-    session_id: &str,
+    assistant_id: &str,
     args: Value,
     render_ui_flag: bool,
 ) -> Result<MCPResult, String> {
@@ -181,14 +183,14 @@ pub async fn list_playbooks(
 
     // Count total
     let total_items = PlaybookEntity::find()
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .count(db)
         .await
         .unwrap_or(0);
 
     // Fetch items
     let mut query = PlaybookEntity::find()
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .order_by_desc(playbook::Column::UpdatedAt);
 
     if limit >= 0 {
@@ -209,7 +211,7 @@ pub async fn list_playbooks(
     };
 
     let formatted_list = if playbooks.is_empty() {
-        format!("No playbooks found for session {}.", session_id)
+        format!("No playbooks found for assistant {}.", assistant_id)
     } else {
         playbooks
             .iter()
@@ -258,7 +260,7 @@ pub async fn list_playbooks(
                 },
                 MCPContent::Resource {
                     resource: json!({
-                        "uri": format!("ui://playbook/list/{}", session_id),
+                        "uri": format!("ui://playbook/list/{}", assistant_id),
                         "mimeType": "text/html",
                         "text": html
                     }),
@@ -275,13 +277,13 @@ pub async fn list_playbooks(
     } else {
         let text_response = if playbooks.is_empty() {
             format!(
-                "[listPlaybooks] No playbooks found for session {}.",
-                session_id
+                "[listPlaybooks] No playbooks found for assistant {}.",
+                assistant_id
             )
         } else {
             format!(
-                "[listPlaybooks] Found {} playbook(s) for session {}.\nShowing page {} of {} ({} items on this page):\n\n{}\n\nNote: Use 'getPlaybook' to view details or 'selectPlaybook' to execute a playbook.",
-                total_items, session_id, page, total_pages, playbooks.len(), formatted_list
+                "[listPlaybooks] Found {} playbook(s) for assistant {}.\nShowing page {} of {} ({} items on this page):\n\n{}\n\nNote: Use 'getPlaybook' to view details or 'selectPlaybook' to execute a playbook.",
+                total_items, assistant_id, page, total_pages, playbooks.len(), formatted_list
             )
         };
 
@@ -337,7 +339,7 @@ pub fn render_ui(
 
 pub async fn get_playbook(
     db: &DatabaseConnection,
-    session_id: &str,
+    assistant_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
     use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
@@ -355,7 +357,7 @@ pub async fn get_playbook(
 
     let model = match PlaybookEntity::find()
         .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .one(db)
         .await
     {
@@ -394,7 +396,7 @@ pub async fn get_playbook(
 
 pub async fn select_playbook(
     db: &DatabaseConnection,
-    session_id: &str,
+    assistant_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
     use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
@@ -412,7 +414,7 @@ pub async fn select_playbook(
 
     let model = match PlaybookEntity::find()
         .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .one(db)
         .await
     {
@@ -488,7 +490,7 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
 
 pub async fn delete_playbook(
     db: &DatabaseConnection,
-    session_id: &str,
+    assistant_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
     let id = match args.get("id").and_then(|v| v.as_str()) {
@@ -504,7 +506,7 @@ pub async fn delete_playbook(
 
     let delete_result = match PlaybookEntity::delete_many()
         .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .exec(db)
         .await
     {
@@ -534,7 +536,7 @@ pub async fn delete_playbook(
 
 pub async fn update_playbook(
     db: &DatabaseConnection,
-    session_id: &str,
+    assistant_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
     let id = match args.get("id").and_then(|v| v.as_str()) {
@@ -562,7 +564,7 @@ pub async fn update_playbook(
     // Fetch existing to merge
     let existing_model = match PlaybookEntity::find()
         .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::SessionId.eq(session_id))
+        .filter(playbook::Column::AssistantId.eq(assistant_id))
         .one(db)
         .await
     {

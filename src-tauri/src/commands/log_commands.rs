@@ -1,9 +1,10 @@
-/// Log file management commands
+/// Log file management commands and logging from frontend
 ///
 /// This module contains commands for managing application log files,
-/// including backup, clearing, and listing log files.
+/// including backup, clearing, listing, and forwarding logs from TypeScript.
 use crate::commands::workspace_commands::get_app_logs_dir;
 use chrono::Utc;
+use log::{debug, error as log_error, info, trace, warn};
 use std::fs;
 
 /// Creates a timestamped backup of the current main log file.
@@ -75,4 +76,34 @@ pub async fn list_log_files() -> Result<Vec<String>, String> {
 
     log_files.sort();
     Ok(log_files)
+}
+
+/// Forward trace log from TypeScript to Rust logger
+#[tauri::command]
+pub fn log_trace(message: String) {
+    trace!("[webview] {}", message);
+}
+
+/// Forward debug log from TypeScript to Rust logger
+#[tauri::command]
+pub fn log_debug(message: String) {
+    debug!("[webview] {}", message);
+}
+
+/// Forward info log from TypeScript to Rust logger
+#[tauri::command]
+pub fn log_info(message: String) {
+    info!("[webview] {}", message);
+}
+
+/// Forward warn log from TypeScript to Rust logger
+#[tauri::command]
+pub fn log_warn(message: String) {
+    warn!("[webview] {}", message);
+}
+
+/// Forward error log from TypeScript to Rust logger
+#[tauri::command]
+pub fn log_error_from_frontend(message: String) {
+    log_error!("[webview] {}", message);
 }

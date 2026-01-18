@@ -88,7 +88,7 @@ impl WorkspaceServer {
         let export_path = exports_dir.join("files").join(&export_filename);
         if let Err(e) = std::fs::copy(&source_path, &export_path) {
             return Ok(operation_failed_error(
-                "Copy file for export",
+                "Export file",
                 &e.to_string(),
                 vec![
                     "Check source file permissions".to_string(),

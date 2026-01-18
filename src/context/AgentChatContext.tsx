@@ -15,7 +15,6 @@ import { useLLMService } from './LLMServiceContext';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
-import { deleteMessage } from '@/lib/backend/messages';
 import { useSettings } from '@/hooks/use-settings';
 import { supportsThinking } from '@/lib/ai-service/model-capabilities';
 
@@ -401,6 +400,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   /**
    * Retry the last failed message
+   *
+   * Error state uses the same recovery mechanism as Paused:
+   * - No message deletion
+   * - Resume from last saved state with current message stack
+   * - Only difference from Paused is the UI display (error message)
    */
   const retryMessage = useCallback(async () => {
     if (!session?.id) {
@@ -408,38 +412,19 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       return;
     }
 
-    // Find the last user message
-    const lastUserMessage = [...sessionMessages]
-      .reverse()
-      .find((msg) => msg.role === 'user');
-
-    if (!lastUserMessage) {
-      logger.warn('No user message to retry');
-      return;
-    }
-
-    logger.info('Retrying last message', {
+    logger.info('Retrying workflow after error', {
       sessionId: session.id,
-      messageId: lastUserMessage.id,
     });
 
-    // Delete any subsequent messages (including failed assistant responses)
-    const messageIndex = sessionMessages.findIndex(
-      (msg) => msg.id === lastUserMessage.id,
-    );
-    const messagesToDelete = sessionMessages.slice(messageIndex + 1);
-
-    for (const msg of messagesToDelete) {
-      await deleteMessage(msg.id);
+    // Use the same mechanism as resume (Paused state)
+    // This preserves the complete message stack
+    try {
+      await resumeSession();
+    } catch (err) {
+      logger.error('Failed to retry workflow', err);
+      throw err;
     }
-
-    // We rely on backend/session context to refresh messages list via events or reload.
-    // Ideally deleteMessage should probably trigger a reload or be handled by session actions.
-    // For now, re-submitting will trigger new events.
-
-    // Re-submit the user message
-    await submit(lastUserMessage);
-  }, [session?.id, sessionMessages, submit]);
+  }, [session?.id, resumeSession]);
 
   /**
    * Toggle reasoning mode

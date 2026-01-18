@@ -85,8 +85,7 @@ function AgentMessageBubbleImpl({
               <>
                 {/* Thinking bubble (shown during reasoning phase or when streaming starts) */}
                 {(msg.thinking ||
-                  (msg.isStreaming &&
-                    (!msg.content || msg.content.length === 0))) && (
+                  (msg.isStreaming && !msg.content?.length)) && (
                   <div className="flex flex-col gap-2 mb-3 p-3 bg-popover rounded-lg border border-border">
                     <div className="flex items-center gap-2 text-xs font-medium opacity-70">
                       {msg.isStreaming && (

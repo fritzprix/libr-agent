@@ -228,12 +228,33 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
         // Checked Todos (Top 3 recent)
         if !checked_todos.is_empty() {
             parts.push("\n**Checked Items (Recently Completed):**".to_string());
-            parts.push("| ID | Status | Task |".to_string());
-            parts.push("| :--- | :--- | :--- |".to_string());
+            parts.push("| ID | Status | Task | Summary |".to_string());
+            parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
             for t in checked_todos.iter().rev().take(3) {
                 let safe_content = t.content.replace('|', r"\|");
-                parts.push(format!("| {} | ✓ Done | {} |", t.id, safe_content));
+
+                // Extract summary from description field
+                let summary = t
+                    .description
+                    .as_deref()
+                    .filter(|s| !s.is_empty() && s != &"-")
+                    .map(|s| {
+                        let escaped = s.replace('|', r"\|");
+                        // Truncate summary if too long (max 50 chars)
+                        if escaped.chars().count() > 50 {
+                            let truncated: String = escaped.chars().take(47).collect();
+                            format!("{}...", truncated)
+                        } else {
+                            escaped
+                        }
+                    })
+                    .unwrap_or_else(|| "-".to_string());
+
+                parts.push(format!(
+                    "| {} | ✓ Done | {} | {} |",
+                    t.id, safe_content, summary
+                ));
             }
 
             if checked_todos.len() > 3 {

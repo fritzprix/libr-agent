@@ -9,7 +9,8 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub session_id: String,
+    #[sea_orm(indexed)]
+    pub assistant_id: String,
     pub title: String,
     pub content: String,
     pub source: Option<String>,

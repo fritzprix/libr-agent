@@ -35,28 +35,3 @@ export async function clearAllSessions(): Promise<void> {
 export async function factoryReset(): Promise<void> {
   return safeInvoke<void>('agent_factory_reset');
 }
-
-/**
- * Switches to a specific session with optional async behavior.
- * @param sessionId The ID of the session to switch to
- * @param useAsync Whether to use async switching (default: true)
- * @returns A promise that resolves with session information
- */
-export async function switchSession(
-  sessionId: string,
-  useAsync?: boolean,
-): Promise<{
-  success: boolean;
-  message: string;
-  session_id?: string;
-  data?: unknown;
-}> {
-  return safeInvoke<{
-    success: boolean;
-    message: string;
-    session_id?: string;
-    data?: unknown;
-  }>('switch_session', {
-    request: { session_id: sessionId, use_async: useAsync },
-  });
-}
