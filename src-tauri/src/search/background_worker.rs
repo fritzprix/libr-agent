@@ -130,10 +130,7 @@ async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
     // Convert to MessageDocument
-    let documents: Vec<MessageDocument> = messages
-        .into_iter()
-        .map(MessageDocument::from)
-        .collect();
+    let documents: Vec<MessageDocument> = messages.into_iter().map(MessageDocument::from).collect();
 
     // Build index
     let mut engine = MessageSearchEngine::new(session_id.to_string(), max_docs);
