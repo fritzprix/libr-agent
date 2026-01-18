@@ -293,11 +293,11 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
 
     #[cfg(target_os = "linux")]
     {
-        return Err(
+        return Err(format!(
             "Terminal launch not supported on Linux. No standard command available. \
-             Open a terminal manually and navigate to the workspace directory."
-                .to_string(),
-        );
+             Open a terminal manually and navigate to: {}",
+            workspace_path.display()
+        ));
     }
 
     // Fallback for other OS if not caught by cfg
@@ -306,6 +306,7 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
         return Err("Platform not supported".to_string());
     }
 
+    #[cfg(not(target_os = "linux"))]
     Ok(())
 }
 
