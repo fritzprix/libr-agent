@@ -66,24 +66,41 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
             let assistants_text = assistants
                 .iter()
                 .map(|a| {
+                    let description = a["config"]
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("No description");
                     format!(
-                        "• {} [ID: {}]",
+                        "• {} [ID: {}]\n  Description: {}",
                         a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?")
+                        a["id"].as_str().unwrap_or("?"),
+                        description
                     )
                 })
                 .collect::<Vec<_>>()
-                .join("\n");
+                .join("\n\n");
 
             let hint = SuccessHint::new(
-                format!(
-                    "Found {} of {} assistants (showing {} to {}):\n\n{}",
-                    total_count,
-                    total_count,
-                    offset + 1,
-                    (offset + assistants.len() as i64).min(total_count),
-                    assistants_text
-                ),
+                if has_more {
+                    format!(
+                        "Found {} assistants (showing {} to {}):\n\n{}",
+                        total_count,
+                        offset + 1,
+                        offset + assistants.len() as i64,
+                        assistants_text
+                    )
+                } else {
+                    format!(
+                        "Found {} {}:\n\n{}",
+                        total_count,
+                        if total_count == 1 {
+                            "assistant"
+                        } else {
+                            "assistants"
+                        },
+                        assistants_text
+                    )
+                },
                 if has_more {
                     vec![format!(
                         "Use limit={} offset={} to see more assistants",

@@ -75,8 +75,11 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
 
     let suggestions = if result.contains("load wait timed out") {
         vec![
-            "Try creating a new session with 'createSession' to reset the state".to_string(),
-            "The site might be blocking automated access or is too slow".to_string(),
+            "Navigation succeeded, but page loading is slow. The page may still be usable."
+                .to_string(),
+            "Try extractWebContent to see if content is available despite the timeout.".to_string(),
+            "If the page is blank or broken, create a new session and try a different URL."
+                .to_string(),
         ]
     } else if result.contains("(HTTP 403)") || result.contains("(HTTP 401)") {
         vec![

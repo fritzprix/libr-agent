@@ -114,9 +114,11 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             (
                 format!("Browser session created. {}", status_msg),
                 vec![
-                    "Try creating a new session with 'createSession' to reset the state"
+                    "Page loading is slow, but the session is ready and page may be usable."
                         .to_string(),
-                    "The site might be blocking automated access or is too slow".to_string(),
+                    "Try extractWebContent to see if content loaded despite the timeout."
+                        .to_string(),
+                    "If the page is blank, navigate to a different URL.".to_string(),
                 ],
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {
