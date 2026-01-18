@@ -1,7 +1,7 @@
 use crate::entity::{mcp_server, mcp_server::Entity as McpServerEntity};
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
-    ToolGroup,
+    invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
 use crate::state::{get_database_connection, get_mcp_manager};
@@ -13,65 +13,88 @@ use super::queries::get_server_config;
 use super::MCPManagerServer;
 
 async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
-    let config = config.clone();
-    tokio::task::spawn_blocking(move || {
-        let db = get_database_connection();
-        let now = chrono::Utc::now().timestamp_millis();
-        let config_json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    let db = get_database_connection();
+    let now = chrono::Utc::now().timestamp_millis();
+    let config_json = serde_json::to_string(config).map_err(|e| e.to_string())?;
 
-        // Upsert using SeaORM (synchronous block in spawn_blocking)
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            let model = mcp_server::ActiveModel {
+    // Upsert using SeaORM (async without nested runtime)
+    let model = mcp_server::ActiveModel {
+        name: Set(config.name.clone()),
+        config: Set(config_json.clone()),
+        created_at: Set(now),
+        updated_at: Set(now),
+    };
+
+    match McpServerEntity::insert(model.clone()).exec(db).await {
+        Ok(_) => Ok(()),
+        Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
+            let update_model = mcp_server::ActiveModel {
                 name: Set(config.name.clone()),
-                config: Set(config_json.clone()),
-                created_at: Set(now),
+                config: Set(config_json),
+                created_at: NotSet,
                 updated_at: Set(now),
             };
-
-            match McpServerEntity::insert(model.clone()).exec(db).await {
-                Ok(_) => Ok(()),
-                Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
-                    let update_model = mcp_server::ActiveModel {
-                        name: Set(config.name.clone()),
-                        config: Set(config_json),
-                        created_at: NotSet,
-                        updated_at: Set(now),
-                    };
-                    McpServerEntity::update(update_model)
-                        .exec(db)
-                        .await
-                        .map_err(|e| format!("DB Update Error: {}", e))?;
-                    Ok(())
-                }
-                Err(e) => Err(format!("DB Save Error: {}", e)),
-            }
-        })
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            McpServerEntity::update(update_model)
+                .exec(db)
+                .await
+                .map_err(|e| format!("DB Update Error: {}", e))?;
+            Ok(())
+        }
+        Err(e) => Err(format!("DB Save Error: {}", e)),
+    }
 }
 
 async fn delete_server_config_db(name: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let db = get_database_connection();
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            McpServerEntity::delete_by_id(name)
-                .exec(db)
-                .await
-                .map_err(|e| format!("DB Delete Error: {}", e))?;
-            Ok(())
-        })
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    let db = get_database_connection();
+    McpServerEntity::delete_by_id(name)
+        .exec(db)
+        .await
+        .map_err(|e| format!("DB Delete Error: {}", e))?;
+    Ok(())
 }
 
 /// Create and start a new MCP server
 pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
-    // Generate a unique system ID/Name
-    let name = format!("mcp_{}", cuid2::create_id());
+    // Get and validate name (required parameter)
+    let name = match args.get("name").and_then(|v| v.as_str()) {
+        Some(custom_name) if !custom_name.trim().is_empty() => {
+            let sanitized = custom_name.trim().to_string();
+
+            // Validate name format (alphanumeric, hyphens, underscores)
+            if !sanitized
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                return Ok(invalid_input_error(
+                    "Server name must contain only alphanumeric characters, hyphens, and underscores",
+                    ToolGroup::McpManager,
+                ));
+            }
+
+            // Check if name already exists (uniqueness constraint)
+            if get_server_config(&sanitized).await.ok().flatten().is_some() {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::DuplicateResource,
+                    format!("Server name '{}' already exists", sanitized),
+                    vec![
+                        "Choose a different name".to_string(),
+                        "Use listServers to see existing server names".to_string(),
+                    ],
+                    ToolGroup::McpManager,
+                )
+                .to_mcp_result());
+            }
+
+            sanitized
+        }
+        Some(_) => {
+            return Ok(invalid_input_error(
+                "Server name cannot be empty",
+                ToolGroup::McpManager,
+            ))
+        }
+        None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
+    };
 
     let transport_val = match args.get("transport") {
         Some(t) => t,
@@ -111,8 +134,14 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     server.invalidate_cache().await;
 
     let hint = SuccessHint::new(
-        format!("Created and started server (ID: '{}')", name),
-        vec!["Use listServers to extract status or name for management".to_string()],
+        format!(
+            "✓ Server created and started\n\nServer Name: {}\nStatus: Connected\n\nUse this name for subsequent management operations (connect, update, delete).",
+            name
+        ),
+        vec![
+            "Use listServers to view all registered servers".to_string(),
+            format!("Use disconnectServer('{}') to stop this server", name),
+        ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name }))))
 }
@@ -130,9 +159,18 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
-    // Check if server exists (Hallucination Firewall)
+    // Check if server exists (Hallucination Firewall - Section 3.2)
     if let Ok(Option::None) = get_server_config(&name).await {
-        return Ok(not_found_error("server", &name, ToolGroup::McpManager));
+        return Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::ResourceNotFound,
+            format!("Server '{}' not found in configuration", name),
+            vec![
+                "Use listServers to view all registered servers".to_string(),
+                format!("Use searchServer(query='{}') to find similar names", name),
+            ],
+            ToolGroup::McpManager,
+        )
+        .to_mcp_result());
     }
 
     // Stop server first if running
@@ -189,9 +227,18 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         }
     };
 
-    // Check if server exists
+    // Check if server exists (Hallucination Firewall - Section 3.2)
     if let Ok(Option::None) = get_server_config(name).await {
-        return Ok(not_found_error("server", name, ToolGroup::McpManager));
+        return Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::ResourceNotFound,
+            format!("Server '{}' not found in configuration", name),
+            vec![
+                "Use listServers to view all registered servers".to_string(),
+                format!("Use searchServer(query='{}') to find similar names", name),
+            ],
+            ToolGroup::McpManager,
+        )
+        .to_mcp_result());
     }
 
     let config = MCPServerConfig {
@@ -246,7 +293,18 @@ pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MC
 
     let config = match get_server_config(name).await? {
         Some(c) => c,
-        Option::None => return Ok(not_found_error("Server", name, ToolGroup::McpManager)),
+        Option::None => {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::ResourceNotFound,
+                format!("Server '{}' not found in configuration", name),
+                vec![
+                    "Use listServers to view all registered servers".to_string(),
+                    format!("Use searchServer(query='{}') to find similar names", name),
+                ],
+                ToolGroup::McpManager,
+            )
+            .to_mcp_result())
+        }
     };
 
     let manager = get_mcp_manager();

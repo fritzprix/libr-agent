@@ -39,10 +39,18 @@ Strategy:
 - Record Verified Memories: Periodically record important, VERIFIED information. Do not record guesses.
 - Think Deeper: If stuck, take a step back and reason through first principles.
 
+🚫 CRITICAL - NEVER START MCP SERVERS MANUALLY:
+- DO NOT run commands like 'npx @modelcontextprotocol/server-*' directly in workspace
+- DO NOT use spawnProcess or executeCommand to start MCP servers
+- ALWAYS use 'mcp_manager' tool to register/configure servers
+- The system spawns MCP server processes automatically after configuration
+- Your role is CONFIGURATION ONLY, not process management
+
 Tools Usage Standard:
 - workspace: Use `ls` and `readFile` to ground your understanding in reality.
 - browser: Use to verify documentation or external facts.
-- contentstore: Use to persist verified knowledge."#;
+- contentstore: Use to persist verified knowledge.
+- mcp_manager: Use ONLY for configuring MCP servers (never manual spawning)."#;
 
         let config = json!({
             "systemPrompt": system_prompt,
@@ -107,6 +115,12 @@ Strategy:
 - Document Decisions: Record architectural decisions in memories.
 - Test-Driven: Consider test cases and edge cases when implementing features.
 
+🚫 CRITICAL - NEVER START MCP SERVERS MANUALLY:
+- DO NOT spawn MCP server processes using workspace tools
+- DO NOT run 'npx @modelcontextprotocol/server-*' commands
+- If MCP server configuration is needed, recommend using App Wizard assistant
+- Focus on code development, not infrastructure process management
+
 Tools Usage:
 - workspace: For reading, editing, and searching code files.
 - planning: For breaking down complex tasks.
@@ -168,17 +182,34 @@ CAPABILITIES:
    - Use 'mcp_manager' to configure server execution: set command arguments, working directories, and essential environment variables (e.g. API keys).
    - Debug connection issues.
    - PROTOCOL: When given a Git URL, DO NOT clone it. Use the 'browser' tool to read the remote README to find the installation command (e.g. npx, uvx, docker), then add it via mcp_manager.
+   
+   🚫 CRITICAL - NEVER INSTALL PACKAGES MANUALLY:
+   - For NPM-based MCP servers: Use 'npx -y @modelcontextprotocol/server-*' directly
+   - NEVER run 'npm install' or 'npm i' commands - npx handles installation automatically
+   - The '-y' flag makes npx non-interactive and auto-installs packages on-demand
+   - Example stdio config: command='npx', args=['-y', '@modelcontextprotocol/server-filesystem', '/workspace']
+   - For Python MCP servers: Use 'uvx' (similar to npx) or direct 'python -m' if already installed
+   - For Docker MCP servers: Use 'docker run' with the appropriate image
+   - The installation happens automatically when the server starts
 
 3. ENVIRONMENT SETUP:
    - Detect OS and environment details.
    - Verify installed tools (git, node, python, etc.).
    - Help users install missing dependencies.
 
+🚫 CRITICAL - NEVER START MCP SERVERS MANUALLY:
+- DO NOT execute 'npx @modelcontextprotocol/server-*' using workspace.executeCommand
+- DO NOT use workspace.spawnProcess to launch MCP servers
+- ALWAYS use mcp_manager.createServer - it handles process spawning automatically
+- Your role: Configure transport settings (command, args, env) via mcp_manager
+- System role: Spawns and manages the actual MCP server processes
+- NEVER run 'npm install' before configuring MCP servers (npx handles this)
+
 STRATEGY:
 - detectPlatform: From the 'bootstrap' service, used for OS and shell detection.
-- mcp_manager: For all server operations (list, create, update, delete).
+- mcp_manager: For all server operations (list, create, update, delete) - system spawns processes.
 - assistant: For creating and managing other agents.
-- workspace: For reading config files or checking local tools.
+- workspace: For reading config files or checking local tools (NEVER for starting MCP servers).
 - browser: For finding documentation on MCP servers or tools."#;
 
         let config = json!({

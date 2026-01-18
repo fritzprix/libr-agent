@@ -65,7 +65,7 @@ impl BuiltinMCPServer for MCPManagerServer {
                     "type": "object",
                     "properties": {
                         "page": { "type": "integer", "minimum": 1, "description": "Page number for pagination" },
-                        "pageSize": { "type": "integer", "minimum": -1, "description": "Number of items per page" },
+                        "pageSize": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Items per page (max 50)" },
                         "filterByAssistant": { "type": "boolean", "description": "Filter servers by assistant capability" },
                         "includeInactive": { "type": "boolean", "description": "Include inactive/disconnected servers" }
                     }
@@ -102,27 +102,46 @@ impl BuiltinMCPServer for MCPManagerServer {
                 name: "createServer".to_string(),
                 title: Some("Create Server".to_string()),
                 description: "Register and start a new MCP server.
-                
-⚠️ MANDATORY:
-1. Extract the system-generated 'name' (ID) from the response for subsequent management.
-2. For stdio servers, verify the command exists using 'workspace.executeCommand' if possible.
 
-💡 TIP FOR GIT REPOSITORIES:
-If the user provides a Git URL, DO NOT clone it. Instead:
-1. Use 'browser' or 'workspace' to read the README/config from the URL/repo.
-2. Identify the server configuration (command, args, env).
-3. Use this tool to register it directly.
+⚠️ PREREQUISITES:
+1. Verify target command exists before registration (stdio servers)
+2. For NPM packages: Use 'npx -y <package>' (auto-installs on-demand)
+3. For Python: Use 'uvx' or direct 'python -m' if installed
+4. For Docker: Use 'docker run' with appropriate image
+
+NAMING (REQUIRED):
+• Provide human-readable 'name' (e.g., 'filesystem-workspace', 'github-api')
+• Must be unique across all servers
+• Use descriptive names for easy identification
+
+RETURNS:
+• Server name for subsequent management operations
+• Connection status
+
+EXAMPLE:
+  name: 'filesystem-workspace'
+  transport:
+    type: 'stdio'
+    command: 'npx'
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '/workspace']
 ".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Human-readable server name (e.g., 'filesystem-workspace', 'github-api'). Must be unique.",
+                            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$",
+                            "minLength": 1,
+                            "maxLength": 63
+                        },
                         "transport": {
                             "type": "object",
                             "description": "Transport configuration",
                             "properties": {
                                 "type": { "type": "string", "enum": ["stdio", "http"], "description": "Transport type" },
-                                "command": { "type": "string", "description": "Command to execute (stdio only)" },
-                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only)" },
+                                "command": { "type": "string", "description": "Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands." },
+                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]" },
                                 "env": { "type": "object", "description": "Environment variables" },
                                 "url": { "type": "string", "description": "Server URL (http only)" },
                                 "headers": { "type": "object", "description": "HTTP headers" }
@@ -130,7 +149,7 @@ If the user provides a Git URL, DO NOT clone it. Instead:
                             "required": ["type"]
                         }
                     },
-                    "required": ["transport"]
+                    "required": ["name", "transport"]
                 }))
                 .unwrap(),
                 output_schema: None,
@@ -140,10 +159,15 @@ If the user provides a Git URL, DO NOT clone it. Instead:
                 name: "updateServer".to_string(),
                 title: Some("Update Server".to_string()),
                 description: "Update configuration for an existing MCP server.
-                
-⚠️ MANDATORY:
-1. Extract the 'name' from 'listServers' to target the correct resource.
-2. This operation will restart the server if it is currently running.
+
+⚠️ PREREQUISITES:
+1. Use listServers or searchServer to extract the target server 'name' (ID)
+2. Server will restart automatically if currently running
+3. For NPM packages: Use 'npx -y <package>' pattern
+
+Returns:
+• Update status
+• Restart result if applicable
 ".to_string(),
                 input_schema: serde_json::from_value(json!({
                     "type": "object",
@@ -154,8 +178,8 @@ If the user provides a Git URL, DO NOT clone it. Instead:
                             "description": "New transport configuration",
                             "properties": {
                                 "type": { "type": "string", "enum": ["stdio", "http"], "description": "Transport type" },
-                                "command": { "type": "string", "description": "Command to execute (stdio only)" },
-                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only)" },
+                                "command": { "type": "string", "description": "Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands." },
+                                "args": { "type": "array", "items": { "type": "string" }, "description": "Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]" },
                                 "env": { "type": "object", "description": "Environment variables" },
                                 "url": { "type": "string", "description": "Server URL (http only)" },
                                 "headers": { "type": "object", "description": "HTTP headers" }

@@ -43,7 +43,12 @@ pub async fn list_all_configs() -> Result<Vec<MCPServerConfig>, String> {
 /// List servers with pagination
 pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
     let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
-    let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(20);
+    // Cap page_size to prevent context overflow (Section 8.2 - Context Economy)
+    let page_size = args
+        .get("pageSize")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .min(50) as usize;
 
     let configs = list_all_configs().await?;
     let manager = get_mcp_manager();
@@ -70,19 +75,32 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
     let servers_slice = if start >= total {
         Vec::new()
     } else {
-        let end = (start + page_size as usize).min(total);
+        let end = (start + page_size).min(total);
         servers[start..end].to_vec()
     };
 
-    // Generate human-readable list
+    // Generate human-readable list with transport details (Section 4.2 - Narrative Requirement)
     let servers_text = servers_slice
         .iter()
         .map(|s| {
+            let transport_type = s["transport"]["type"].as_str().unwrap_or("?");
+            let detail = match transport_type {
+                "stdio" => {
+                    let cmd = s["transport"]["command"].as_str().unwrap_or("unknown");
+                    format!(" | Command: {}", cmd)
+                }
+                "http" => {
+                    let url = s["transport"]["url"].as_str().unwrap_or("unknown");
+                    format!(" | URL: {}", url)
+                }
+                _ => String::new(),
+            };
             format!(
-                "• {} [Status: {}] ({})",
+                "• {} [Status: {}] (Type: {}{})",
                 s["name"].as_str().unwrap_or("?"),
                 s["status"].as_str().unwrap_or("?"),
-                s["transport"]["type"].as_str().unwrap_or("?")
+                transport_type,
+                detail
             )
         })
         .collect::<Vec<_>>()

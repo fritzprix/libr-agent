@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, SuccessHint, ToolGroup,
+    missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
@@ -130,7 +130,7 @@ impl BootstrapServer {
         if !missing.is_empty() {
             sections.push(format!("\nMissing Tools ({}):", missing.len()));
             for tool in &missing {
-                sections.push(format!("  ✗ {}", tool));
+                sections.push(format!("  ✗ {} (Use: getBootstrapGuide('{}'))", tool, tool));
             }
         }
 
@@ -152,7 +152,16 @@ impl BootstrapServer {
         let tool = match args.get("tool").and_then(|v| v.as_str()) {
             Some(t) => {
                 if t.trim().is_empty() {
-                    return invalid_input_error("Tool name cannot be empty", ToolGroup::Bootstrap);
+                    return ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        "Tool name cannot be empty".to_string(),
+                        vec![
+                            "Use detectPlatform to identify missing tools".to_string(),
+                            "Valid tools: node, python, uv, docker, git".to_string(),
+                        ],
+                        ToolGroup::Bootstrap,
+                    )
+                    .to_mcp_result();
                 }
                 t
             }
@@ -162,14 +171,20 @@ impl BootstrapServer {
         // Validate tool name
         let valid_tools = ["node", "python", "uv", "docker", "git"];
         if !valid_tools.contains(&tool) {
-            return invalid_input_error(
-                &format!(
+            return ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
                     "Invalid tool '{}'. Must be one of: {}",
                     tool,
                     valid_tools.join(", ")
                 ),
+                vec![
+                    "Use detectPlatform first to identify missing tools".to_string(),
+                    "Valid tools: node, python, uv, docker, git".to_string(),
+                ],
                 ToolGroup::Bootstrap,
-            );
+            )
+            .to_mcp_result();
         }
 
         let platform = args.get("platform").and_then(|v| v.as_str());
@@ -178,14 +193,20 @@ impl BootstrapServer {
         if let Some(p) = platform {
             let valid_platforms = ["windows", "linux", "darwin", "auto"];
             if !valid_platforms.contains(&p) {
-                return invalid_input_error(
-                    &format!(
+                return ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!(
                         "Invalid platform '{}'. Must be one of: {}",
                         p,
                         valid_platforms.join(", ")
                     ),
+                    vec![
+                        "Use 'auto' to detect platform automatically".to_string(),
+                        "Use detectPlatform to see your current platform".to_string(),
+                    ],
                     ToolGroup::Bootstrap,
-                );
+                )
+                .to_mcp_result();
             }
         }
 
@@ -533,7 +554,7 @@ mod tests {
 
         assert!(!context.context_prompt.is_empty());
         assert!(context.context_prompt.contains("## Bootstrap"));
-        assert!(context.context_prompt.contains("Current platform:"));
+        assert!(context.context_prompt.contains("Platform:"));
         assert!(context.structured_state.is_some());
     }
 
@@ -550,5 +571,84 @@ mod tests {
         let text2 = context2.context_prompt;
 
         assert_eq!(text1, text2);
+    }
+
+    #[tokio::test]
+    async fn test_detect_platform_dual_channel_compliance() {
+        // Section 4 - The Response Standard: Dual-Channel Rule
+        let server = BootstrapServer::new();
+        let result = server
+            .call_tool("detectPlatform", json!({}), None)
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+
+        // Validate text content is self-sufficient (Section 4.1)
+        let content = result.content.unwrap();
+        let text = match &content[0] {
+            crate::mcp::types::MCPContent::Text { text } => text,
+            _ => panic!("Expected text content"),
+        };
+
+        // Section 4.2 - Narrative Requirement: Text must tell the full story
+        assert!(text.contains("OS:"));
+        assert!(text.contains("Architecture:"));
+        assert!(text.contains("Shell:"));
+
+        // Validate inline guidance for missing tools
+        if text.contains("Missing Tools") {
+            assert!(
+                text.contains("Use: getBootstrapGuide"),
+                "Missing tools should include inline guidance"
+            );
+        }
+
+        // Validate next steps guidance exists
+        assert!(
+            text.contains("💡 Next") || text.contains("Available guides"),
+            "Should provide next steps guidance"
+        );
+
+        // Validate structured_content exists for UI rendering
+        assert!(result.structured_content.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_error_guidance_compliance() {
+        // Section 6 - Error Handling: The "Success Hint" Pattern
+        let server = BootstrapServer::new();
+        let result = server
+            .call_tool("getBootstrapGuide", json!({"tool": "invalid_tool"}), None)
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+
+        let content = result.content.unwrap();
+        let text = match &content[0] {
+            crate::mcp::types::MCPContent::Text { text } => text,
+            _ => panic!("Expected text content"),
+        };
+
+        // Section 6.1 - The Detour Principle: Error with solution
+        assert!(
+            text.contains("Invalid tool"),
+            "Error message should be clear"
+        );
+        assert!(
+            text.contains("Use detectPlatform") || text.contains("Valid tools"),
+            "Error should provide recovery hints"
+        );
+
+        // Section 6.2 - Tool Group Isolation: Suggestions from same domain
+        assert!(
+            text.contains("detectPlatform") || text.contains("getBootstrapGuide"),
+            "Should only suggest Bootstrap tools"
+        );
+        assert!(
+            !text.contains("listServers") && !text.contains("createServer"),
+            "Should not suggest MCP Manager tools"
+        );
     }
 }
