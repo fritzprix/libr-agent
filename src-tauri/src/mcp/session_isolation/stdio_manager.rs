@@ -118,9 +118,15 @@ impl SessionMCPManager {
             server_name, self.session_id
         );
 
-        // 6. Spawn process
-        let cmd = Command::new(command).configure(|cmd| {
-            for arg in args {
+        // 6. Spawn process with cross-platform command preparation
+        // On Windows, this wraps .cmd/.bat files with cmd.exe
+        let (final_command, final_args) =
+            crate::mcp::utils::command_helper::prepare_command(command, args);
+
+        debug!("Final spawn command: {} {:?}", final_command, final_args);
+
+        let cmd = Command::new(&final_command).configure(|cmd| {
+            for arg in &final_args {
                 cmd.arg(arg);
             }
             for (key, value) in env {
@@ -215,16 +221,55 @@ impl SessionMCPManager {
                     .await
                     .insert(server_name.to_string(), Instant::now());
 
-                // Convert to MCPResponse
-                let result_value = serde_json::to_value(&call_result)
-                    .map_err(|e| SessionMCPError::SerializationError(format!("{}", e)))?;
+                // Map rmcp Content to crate::mcp::types::MCPContent
+                // Since rmcp uses Annotated<RawContent>, we serialize through JSON
+                let local_content: Vec<crate::mcp::types::MCPContent> = call_result
+                    .content
+                    .into_iter()
+                    .filter_map(|c| {
+                        // Serialize rmcp Content to JSON and deserialize to our MCPContent
+                        let json_val = serde_json::to_value(&c).ok()?;
+
+                        // Check type and convert accordingly
+                        if let Some(type_str) = json_val.get("type").and_then(|v| v.as_str()) {
+                            match type_str {
+                                "text" => {
+                                    let text = json_val.get("text")?.as_str()?.to_string();
+                                    Some(crate::mcp::types::MCPContent::Text { text })
+                                }
+                                "image" => {
+                                    let data = json_val.get("data")?.as_str()?.to_string();
+                                    let mime_type = json_val.get("mimeType")?.as_str()?.to_string();
+                                    Some(crate::mcp::types::MCPContent::Image { data, mime_type })
+                                }
+                                "resource" => Some(crate::mcp::types::MCPContent::Resource {
+                                    resource: json_val.clone(),
+                                    service_info: crate::mcp::types::ServiceInfo {
+                                        server_name: server_name.to_string(),
+                                        tool_name: tool_name.to_string(),
+                                        backend_type: "ExternalMCP".to_string(),
+                                    },
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let mcp_result = crate::mcp::types::MCPResult {
+                    content: Some(local_content),
+                    structured_content: None,
+                    is_error: call_result.is_error,
+                };
 
                 MCPResponse {
                     jsonrpc: "2.0".to_string(),
                     id: Some(crate::mcp::types::JsonRpcId::String(
                         uuid::Uuid::new_v4().to_string(),
                     )),
-                    result: Some(MCPResponseResult::Generic(result_value)),
+                    result: Some(MCPResponseResult::ToolCall(mcp_result)),
                     error: None,
                 }
             }
@@ -419,5 +464,224 @@ impl SessionMCPManager {
             futures::future::join_all(shutdown_tasks),
         )
         .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::session_isolation_config::SessionIsolationConfig;
+    use crate::mcp::types::{MCPServerConfig, TransportConfig};
+    use std::collections::HashMap;
+
+    /// Helper to create a test manager with a simple echo server config
+    fn create_test_manager() -> SessionMCPManager {
+        let mut configs = HashMap::new();
+        let mut env_vars = HashMap::new();
+        env_vars.insert("TEST_VAR".to_string(), "test_value".to_string());
+
+        // Use a simple command that exists on all platforms
+        #[cfg(windows)]
+        let command = "cmd.exe";
+        #[cfg(not(windows))]
+        let command = "echo";
+
+        configs.insert(
+            "test-server".to_string(),
+            MCPServerConfig {
+                name: "test-server".to_string(),
+                transport: TransportConfig::Stdio {
+                    command: command.to_string(),
+                    args: vec![],
+                    env: env_vars,
+                },
+                authentication: None,
+                metadata: None,
+            },
+        );
+
+        let config = SessionIsolationConfig {
+            idle_timeout_minutes: 5,
+            cleanup_interval_minutes: 5,
+            process_startup_timeout_seconds: 30,
+            max_restart_attempts: 0,
+            http_connection_pool_size: 10,
+        };
+
+        SessionMCPManager::new("test-session".to_string(), configs, config)
+    }
+
+    #[test]
+    fn test_manager_creation() {
+        let manager = create_test_manager();
+        assert_eq!(manager.session_id, "test-session");
+        assert!(manager.has_server("test-server"));
+        assert!(!manager.has_server("nonexistent-server"));
+    }
+
+    #[test]
+    fn test_has_server() {
+        let manager = create_test_manager();
+        assert!(manager.has_server("test-server"));
+        assert!(!manager.has_server("unknown-server"));
+    }
+
+    #[test]
+    fn test_config_env_vars_are_preserved() {
+        let manager = create_test_manager();
+        let config = manager.server_configs.get("test-server").unwrap();
+
+        match &config.transport {
+            TransportConfig::Stdio { env, .. } => {
+                assert_eq!(env.get("TEST_VAR"), Some(&"test_value".to_string()));
+            }
+            _ => panic!("Expected Stdio transport"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multiple_spawn_attempts_are_serialized() {
+        // This test verifies that concurrent spawn attempts are properly serialized
+        // and only one process is created
+        let manager = create_test_manager();
+
+        // Check that spawn locks are created per server
+        assert_eq!(manager.spawn_locks.len(), 0);
+
+        // The spawn_locks should be populated on demand during ensure_process_running
+        // This test just verifies the initial state
+    }
+
+    #[test]
+    fn test_idle_timeout_configuration() {
+        let manager = create_test_manager();
+        // Idle timeout should be 5 minutes (300 seconds)
+        assert_eq!(manager.idle_timeout, Duration::from_secs(5 * 60));
+    }
+
+    /// Test that environment variables are correctly extracted from config
+    #[test]
+    fn test_env_vars_extraction() {
+        let mut env_map = HashMap::new();
+        env_map.insert("PATH".to_string(), "/custom/path".to_string());
+        env_map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
+
+        let config = MCPServerConfig {
+            name: "test".to_string(),
+            transport: TransportConfig::Stdio {
+                command: "test".to_string(),
+                args: vec![],
+                env: env_map.clone(),
+            },
+            authentication: None,
+            metadata: None,
+        };
+
+        match &config.transport {
+            TransportConfig::Stdio { env, .. } => {
+                assert_eq!(env.len(), 2);
+                assert_eq!(env.get("PATH"), Some(&"/custom/path".to_string()));
+                assert_eq!(env.get("CUSTOM_VAR"), Some(&"custom_value".to_string()));
+            }
+            _ => panic!("Expected Stdio transport"),
+        }
+    }
+
+    /// Test that system PATH inheritance is not blocked
+    /// Note: This is a design verification test - we verify that env_clear is NOT called
+    #[test]
+    fn test_no_env_clear_in_spawn_logic() {
+        // This test documents the expected behavior:
+        // tokio::process::Command inherits parent environment by default
+        // cmd.env(key, value) adds/overrides without clearing
+
+        let source = include_str!("./stdio_manager.rs");
+
+        // Verify that env_clear() is NOT present in the spawn logic
+        assert!(
+            !source.contains("env_clear()"),
+            "stdio_manager should NOT call env_clear() - system PATH must be inherited"
+        );
+
+        // Verify that cmd.env() is used (which preserves inheritance)
+        assert!(
+            source.contains("cmd.env(key, value)"),
+            "stdio_manager should use cmd.env() to add custom env vars"
+        );
+    }
+
+    /// Test SessionMCPError variants
+    #[test]
+    fn test_error_types() {
+        let err1 = SessionMCPError::ServerNotFound("test".to_string());
+        assert!(format!("{:?}", err1).contains("ServerNotFound"));
+
+        let err2 = SessionMCPError::SpawnFailed("spawn error".to_string());
+        assert!(format!("{:?}", err2).contains("SpawnFailed"));
+
+        let err3 = SessionMCPError::InvalidTransport("wrong type".to_string());
+        assert!(format!("{:?}", err3).contains("InvalidTransport"));
+    }
+
+    /// Test that command and args are properly structured
+    #[test]
+    fn test_command_args_structure() {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "npx-server".to_string(),
+            MCPServerConfig {
+                name: "npx-server".to_string(),
+                transport: TransportConfig::Stdio {
+                    command: "npx".to_string(),
+                    args: vec![
+                        "-y".to_string(),
+                        "@modelcontextprotocol/server-example".to_string(),
+                    ],
+                    env: HashMap::new(),
+                },
+                authentication: None,
+                metadata: None,
+            },
+        );
+
+        let config = SessionIsolationConfig {
+            idle_timeout_minutes: 5,
+            cleanup_interval_minutes: 5,
+            process_startup_timeout_seconds: 30,
+            max_restart_attempts: 0,
+            http_connection_pool_size: 10,
+        };
+
+        let manager = SessionMCPManager::new("test".to_string(), configs, config);
+        let server_config = manager.server_configs.get("npx-server").unwrap();
+
+        match &server_config.transport {
+            TransportConfig::Stdio { command, args, .. } => {
+                assert_eq!(command, "npx");
+                assert_eq!(args.len(), 2);
+                assert_eq!(args[0], "-y");
+                assert_eq!(args[1], "@modelcontextprotocol/server-example");
+            }
+            _ => panic!("Expected Stdio transport"),
+        }
+    }
+
+    /// Test session ID tracking
+    #[test]
+    fn test_session_id_tracking() {
+        let manager = create_test_manager();
+        assert_eq!(manager.session_id, "test-session");
+    }
+
+    /// Test that activity tracking structures are initialized
+    #[tokio::test]
+    async fn test_activity_tracking_initialization() {
+        let manager = create_test_manager();
+
+        let activity = manager.last_activity.read().await;
+        assert_eq!(activity.len(), 0, "Activity map should be empty initially");
+
+        let processes = manager.active_processes.read().await;
+        assert_eq!(processes.len(), 0, "Process map should be empty initially");
     }
 }

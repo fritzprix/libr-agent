@@ -803,6 +803,42 @@ These steps must be completed successfully before considering any refactoring ta
 - Proper formatting standards are maintained
 - The application remains buildable after changes
 
+### Core Design Principles
+
+When refactoring or implementing new features, adhere to these fundamental software design principles:
+
+1. **DRY (Don't Repeat Yourself)**
+   - Eliminate code duplication through abstraction
+   - Create reusable utilities and shared functions
+   - Example: `command_helper.rs` consolidates Windows command wrapping logic
+
+2. **SRP (Single Responsibility Principle)**
+   - Each module/function should have one clear purpose
+   - Separate concerns: UI logic, business logic, data access
+   - Example: Command preparation logic separated from MCP server lifecycle management
+
+3. **OCP (Open/Closed Principle)**
+   - Code should be open for extension, closed for modification
+   - Use patterns (strategy, factory) to add new features without changing existing code
+   - Example: Pattern-based command detection allows adding new tools without modifying core logic
+
+4. **ISP (Interface Segregation Principle)**
+   - Keep interfaces simple and focused
+   - Clients shouldn't depend on methods they don't use
+   - Example: `prepare_command()` provides single, clean API for command preparation
+
+5. **DIP (Dependency Inversion Principle)**
+   - High-level modules should not depend on low-level modules; both should depend on abstractions
+   - Depend on interfaces/traits, not concrete implementations
+   - Example: MCP server managers depend on abstract command preparation, not platform-specific details
+
+**Application in LibrAgent:**
+
+- Extract common patterns into `src/lib/` or `src-tauri/src/utils/`
+- Use Rust traits and TypeScript interfaces for abstraction
+- Test utilities independently from business logic
+- Document design decisions in `docs/refactoring/`
+
 ### Critical Development Patterns
 
 **MCP Communication:**

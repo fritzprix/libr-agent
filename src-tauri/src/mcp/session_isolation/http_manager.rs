@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::mcp::server::MCPServerManager;
 use crate::mcp::types::{MCPResponse, MCPServerConfig, MCPTool, TransportConfig};
 
 use super::error::SessionMCPError;
@@ -26,10 +25,6 @@ pub struct HttpSessionManager {
     /// Unique session identifier
     session_id: String,
 
-    /// Shared MCP server manager (contains HTTP connections)
-    #[allow(dead_code)]
-    server_manager: Arc<MCPServerManager>,
-
     /// Map of server names to their configurations (HTTP only)
     http_configs: Arc<RwLock<HashMap<String, MCPServerConfig>>>,
 
@@ -39,11 +34,7 @@ pub struct HttpSessionManager {
 
 impl HttpSessionManager {
     /// Creates a new HTTP session manager for the given session.
-    pub fn new(
-        session_id: String,
-        server_manager: Arc<MCPServerManager>,
-        http_configs: HashMap<String, MCPServerConfig>,
-    ) -> Self {
+    pub fn new(session_id: String, http_configs: HashMap<String, MCPServerConfig>) -> Self {
         info!(
             "Created HTTP session manager for session '{}' with {} servers",
             session_id,
@@ -52,7 +43,6 @@ impl HttpSessionManager {
 
         Self {
             session_id,
-            server_manager,
             http_configs: Arc::new(RwLock::new(http_configs)),
             connections: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -190,10 +180,52 @@ impl HttpSessionManager {
                 .await
                 .map_err(|e| SessionMCPError::ExecutionError(format!("Tool call failed: {e}")))?;
 
-            let result_value = serde_json::to_value(&result).unwrap_or_default();
+            // Map rmcp Content to crate::mcp::types::MCPContent
+            // Since rmcp uses Annotated<RawContent>, we serialize through JSON
+            let local_content: Vec<crate::mcp::types::MCPContent> = result
+                .content
+                .into_iter()
+                .filter_map(|c| {
+                    // Serialize rmcp Content to JSON and deserialize to our MCPContent
+                    let json_val = serde_json::to_value(&c).ok()?;
+
+                    // Check type and convert accordingly
+                    if let Some(type_str) = json_val.get("type").and_then(|v| v.as_str()) {
+                        match type_str {
+                            "text" => {
+                                let text = json_val.get("text")?.as_str()?.to_string();
+                                Some(crate::mcp::types::MCPContent::Text { text })
+                            }
+                            "image" => {
+                                let data = json_val.get("data")?.as_str()?.to_string();
+                                let mime_type = json_val.get("mimeType")?.as_str()?.to_string();
+                                Some(crate::mcp::types::MCPContent::Image { data, mime_type })
+                            }
+                            "resource" => Some(crate::mcp::types::MCPContent::Resource {
+                                resource: json_val.clone(),
+                                service_info: crate::mcp::types::ServiceInfo {
+                                    server_name: server_name.to_string(),
+                                    tool_name: tool_name.to_string(),
+                                    backend_type: "ExternalMCP".to_string(),
+                                },
+                            }),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let mcp_result = crate::mcp::types::MCPResult {
+                content: Some(local_content),
+                structured_content: None,
+                is_error: result.is_error,
+            };
+
             let response = MCPResponse {
                 jsonrpc: "2.0".to_string(),
-                result: Some(crate::mcp::types::MCPResponseResult::Generic(result_value)),
+                result: Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)),
                 id: None,
                 error: None,
             };

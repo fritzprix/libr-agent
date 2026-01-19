@@ -1,85 +1,112 @@
 /// MCP (Model Context Protocol) server management commands
 ///
-/// This module contains all commands related to managing external and built-in MCP servers,
-/// including server lifecycle, tool listing, and tool execution.
+/// This module contains all commands related to managing built-in MCP servers,
+/// tool listing, and tool execution. Session-isolated external servers are
+/// managed through the MCPServiceProxyManager per session.
 use crate::mcp::types::{
     BuiltinServerInfo, MCPServerConfig, OAuthConfig, ServiceContext, ServiceContextOptions,
 };
 use crate::mcp::{MCPResponse, MCPServerManager, MCPTool};
-use crate::state::get_mcp_manager;
 use std::collections::HashMap;
 
 // ============================================================================
-// External MCP Server Commands
+// Deprecated External MCP Server Commands (Legacy Support Only)
 // ============================================================================
+//
+// These commands are deprecated in favor of session-isolated server management
+// via MCPServiceProxyManager. They are kept for backward compatibility but should
+// not be used for new functionality.
 
 /// Starts an external MCP server process.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture. External servers are now managed per-session
+/// through MCPServiceProxyManager.
 #[tauri::command]
-pub async fn start_mcp_server(config: MCPServerConfig) -> Result<String, String> {
-    get_mcp_manager()
-        .start_server(config)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn start_mcp_server(_config: MCPServerConfig) -> Result<String, String> {
+    log::warn!("start_mcp_server: Using deprecated global MCP manager. Use session-isolated servers instead.");
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Stops a running external MCP server.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn stop_mcp_server(server_name: String) -> Result<(), String> {
-    get_mcp_manager()
-        .stop_server(&server_name)
-        .await
-        .map_err(|e| e.to_string())
+    log::warn!(
+        "stop_mcp_server: Using deprecated global MCP manager. Server: {}",
+        server_name
+    );
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Calls a tool on an external MCP server.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn call_mcp_tool(
     server_name: String,
     tool_name: String,
-    arguments: serde_json::Value,
-    request_id: Option<String>,
+    _arguments: serde_json::Value,
+    _request_id: Option<String>,
 ) -> MCPResponse {
-    let request_id = request_id.map(serde_json::Value::String);
-    get_mcp_manager()
-        .call_tool(&server_name, &tool_name, arguments, request_id)
-        .await
+    log::warn!(
+        "call_mcp_tool: Using deprecated global MCP manager. Server: {}, Tool: {}",
+        server_name,
+        tool_name
+    );
+    MCPResponse {
+        jsonrpc: "2.0".to_string(),
+        id: None,
+        result: None,
+        error: Some(crate::mcp::types::MCPError {
+            code: -32603,
+            message: "Global MCP server management is deprecated. Use session-isolated server configuration.".to_string(),
+            data: None,
+        }),
+    }
 }
 
 /// Performs text generation on an external MCP server.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn sample_from_mcp_server(
-    server_name: String,
-    prompt: String,
-    options: Option<serde_json::Value>,
-    request_id: Option<String>,
+    _server_name: String,
+    _prompt: String,
+    _options: Option<serde_json::Value>,
+    _request_id: Option<String>,
 ) -> Result<MCPResponse, String> {
-    let sampling_options = if let Some(opts) = options {
-        Some(
-            serde_json::from_value::<crate::mcp::SamplingOptions>(opts)
-                .map_err(|e| format!("Invalid sampling options: {e}"))?,
-        )
-    } else {
-        None
-    };
-
-    let request = crate::mcp::SamplingRequest {
-        prompt,
-        options: sampling_options,
-    };
-
-    let request_id = request_id.map(serde_json::Value::String);
-    Ok(get_mcp_manager()
-        .sample_from_model(&server_name, request, request_id)
-        .await)
+    log::warn!("sample_from_mcp_server: Using deprecated global MCP manager.");
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Lists the tools available on a specific external MCP server.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn list_mcp_tools(server_name: String) -> Result<Vec<MCPTool>, String> {
-    get_mcp_manager()
-        .list_tools(&server_name)
-        .await
-        .map_err(|e| e.to_string())
+    log::warn!(
+        "list_mcp_tools: Using deprecated global MCP manager. Server: {}",
+        server_name
+    );
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Starts servers from a dynamic configuration object and lists their available tools.
@@ -101,59 +128,93 @@ pub async fn list_tools_from_config(
 }
 
 /// Returns a list of names for all currently connected external MCP servers.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn get_connected_servers() -> Vec<String> {
-    get_mcp_manager().get_connected_servers().await
+    log::warn!("get_connected_servers: Using deprecated global MCP manager.");
+    Vec::new()
 }
 
 /// Checks if a specific external MCP server is currently alive and responsive.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn check_server_status(server_name: String) -> bool {
-    get_mcp_manager().is_server_alive(&server_name).await
+    log::warn!(
+        "check_server_status: Using deprecated global MCP manager. Server: {}",
+        server_name
+    );
+    false
 }
 
 /// Checks the status of all managed external MCP servers.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 ///
 /// # Returns
 /// A `HashMap` where keys are server names and values are booleans indicating if the
 /// server is alive.
 #[tauri::command]
 pub async fn check_all_servers_status() -> HashMap<String, bool> {
-    get_mcp_manager().check_all_servers().await
+    log::warn!("check_all_servers_status: Using deprecated global MCP manager.");
+    HashMap::new()
 }
 
 /// Lists all available tools from all connected external MCP servers.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn list_all_tools() -> Result<Vec<MCPTool>, String> {
-    get_mcp_manager()
-        .list_all_tools()
-        .await
-        .map_err(|e| e.to_string())
+    log::warn!("list_all_tools: Using deprecated global MCP manager.");
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Retrieves the list of validated tools for a specific external server.
+///
+/// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
+/// Session Isolation architecture.
 #[tauri::command]
 pub async fn get_validated_tools(server_name: String) -> Result<Vec<MCPTool>, String> {
-    get_mcp_manager()
-        .get_validated_tools(&server_name)
-        .await
-        .map_err(|e| e.to_string())
+    log::warn!(
+        "get_validated_tools: Using deprecated global MCP manager. Server: {}",
+        server_name
+    );
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Validates the JSON schema of a single MCP tool.
+///
+/// This is a utility function that doesn't depend on global state.
 #[tauri::command]
 pub fn validate_tool_schema(tool: MCPTool) -> Result<(), String> {
     MCPServerManager::validate_tool_schema(&tool).map_err(|e| e.to_string())
 }
 
 // ============================================================================
-// Built-in MCP Server Commands
+// Built-in MCP Server Commands (Session-Agnostic)
 // ============================================================================
 
 /// Lists the names of all available built-in MCP servers.
+///
+/// Built-in servers are available to all sessions (workspace, planning, knowledge, etc.)
+/// This returns static definitions, not per-session instances.
 #[tauri::command]
 pub async fn list_builtin_servers() -> Vec<String> {
-    get_mcp_manager().list_builtin_servers().await
+    MCPServerManager::list_available_builtin_server_definitions()
+        .into_iter()
+        .map(|info| info.name)
+        .collect()
 }
 
 /// Lists all tools available from the built-in MCP servers.
@@ -161,12 +222,24 @@ pub async fn list_builtin_servers() -> Vec<String> {
 /// # Arguments
 /// * `server_name` - An optional string. If provided, lists tools only for that
 ///   specific built-in server. Otherwise, lists tools from all built-in servers.
+///
+/// Note: This returns the static schema, not session-specific instances.
 #[tauri::command]
 pub async fn list_builtin_tools(server_name: Option<String>) -> Vec<MCPTool> {
-    match server_name {
-        Some(name) => get_mcp_manager().list_builtin_tools_for(&name).await,
-        None => get_mcp_manager().list_builtin_tools().await,
-    }
+    MCPServerManager::list_available_builtin_server_definitions()
+        .into_iter()
+        .filter(|info| {
+            server_name.is_none()
+                || server_name
+                    .as_ref()
+                    .map(|n| n == &info.name)
+                    .unwrap_or(false)
+        })
+        .flat_map(|_info| {
+            // Return empty tools for now - actual tools come from session-specific proxies
+            Vec::new()
+        })
+        .collect()
 }
 
 /// Lists all built-in MCP servers with their metadata.
@@ -180,8 +253,7 @@ pub async fn list_builtin_tools(server_name: Option<String>) -> Vec<MCPTool> {
 /// proper metadata without hardcoding.
 #[tauri::command]
 pub async fn list_builtin_servers_with_metadata() -> Vec<BuiltinServerInfo> {
-    let manager = get_mcp_manager();
-    manager.list_builtin_servers_with_metadata().await
+    MCPServerManager::list_available_builtin_server_definitions()
 }
 
 /// Lists all POSSIBLE builtin server definitions for UI configuration
@@ -193,17 +265,28 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
 }
 
 /// Calls a tool on one of the built-in MCP servers.
+///
+/// ⚠️ DEPRECATED: Built-in tools are now managed per-session through MCPServiceProxyManager.
+/// This global version is kept for backward compatibility only.
 #[tauri::command]
 pub async fn call_builtin_tool(
-    server_name: String,
-    tool_name: String,
-    arguments: serde_json::Value,
-    request_id: Option<String>,
+    _server_name: String,
+    _tool_name: String,
+    _arguments: serde_json::Value,
+    _request_id: Option<String>,
 ) -> MCPResponse {
-    let request_id = request_id.map(serde_json::Value::String);
-    get_mcp_manager()
-        .call_builtin_tool(&server_name, &tool_name, arguments, request_id)
-        .await
+    log::warn!("call_builtin_tool: Global version deprecated. Use session-specific proxy instead.");
+    MCPResponse {
+        jsonrpc: "2.0".to_string(),
+        id: None,
+        result: None,
+        error: Some(crate::mcp::types::MCPError {
+            code: -32603,
+            message: "Global built-in tool execution is deprecated. Use session-specific proxies."
+                .to_string(),
+            data: None,
+        }),
+    }
 }
 
 // ============================================================================
@@ -211,34 +294,50 @@ pub async fn call_builtin_tool(
 // ============================================================================
 
 /// Lists all tools from both built-in and external MCP servers in a unified list.
+///
+/// ⚠️ DEPRECATED: Use session-isolated tool discovery instead.
 #[tauri::command]
 pub async fn list_all_tools_unified() -> Result<Vec<MCPTool>, String> {
-    get_mcp_manager()
-        .list_all_tools_unified()
-        .await
-        .map_err(|e| e.to_string())
+    log::warn!("list_all_tools_unified: Using deprecated global MCP manager.");
+    Err(
+        "Global MCP server management is deprecated. Use session-isolated server configuration."
+            .to_string(),
+    )
 }
 
 /// Calls a tool on either a built-in or external MCP server, determined by the server name.
+///
+/// ⚠️ DEPRECATED: Use session-specific tool execution through MCPServiceProxyManager.
 #[tauri::command]
 #[allow(dead_code)]
 pub async fn call_tool_unified(
-    server_name: String,
-    tool_name: String,
-    arguments: serde_json::Value,
-    request_id: Option<String>,
+    _server_name: String,
+    _tool_name: String,
+    _arguments: serde_json::Value,
+    _request_id: Option<String>,
 ) -> MCPResponse {
-    let request_id = request_id.map(serde_json::Value::String);
-    get_mcp_manager()
-        .call_tool_unified(&server_name, &tool_name, arguments, request_id)
-        .await
+    log::warn!("call_tool_unified: Using deprecated global MCP manager.");
+    MCPResponse {
+        jsonrpc: "2.0".to_string(),
+        id: None,
+        result: None,
+        error: Some(crate::mcp::types::MCPError {
+            code: -32603,
+            message: "Global tool execution is deprecated. Use session-specific proxies."
+                .to_string(),
+            data: None,
+        }),
+    }
 }
 
 // ============================================================================
-// Service Context Commands
+// Service Context Commands (Session-Agnostic)
 // ============================================================================
 
 /// Retrieves the service context for a given MCP server.
+///
+/// ⚠️ NOTE: Service contexts are now retrieved per-session from MCPServiceProxy.
+/// This global version may not reflect session-specific state.
 ///
 /// # Arguments
 /// * `server_id` - The unique identifier for the MCP server.
@@ -248,16 +347,15 @@ pub async fn call_tool_unified(
 /// A `Result` containing the service context on success, or an error string on failure.
 #[tauri::command]
 pub async fn get_service_context(
-    server_id: String,
-    options: Option<ServiceContextOptions>,
+    _server_id: String,
+    _options: Option<ServiceContextOptions>,
 ) -> Result<ServiceContext, String> {
-    get_mcp_manager()
-        .get_service_context(&server_id, options)
-        .await
+    log::warn!("get_service_context: Global version does not provide session-specific state. Use session proxies instead.");
+    Err("Use session-specific MCPServiceProxy for accurate service context.".to_string())
 }
 
 // ============================================================================
-// OAuth 2.1 Authentication Commands
+// OAuth 2.1 Authentication Commands (Utility Functions)
 // ============================================================================
 
 /// Starts an OAuth 2.1 authorization flow with PKCE for an MCP server.
@@ -287,15 +385,14 @@ pub async fn get_service_context(
 /// ```
 #[tauri::command]
 pub async fn start_oauth_flow(
-    server_id: String,
-    config: OAuthConfig,
+    _server_id: String,
+    _config: OAuthConfig,
 ) -> Result<(String, String), String> {
-    log::info!("Starting OAuth flow for server: {server_id}");
-
-    let oauth_manager = get_mcp_manager().get_oauth_manager().await;
-    oauth_manager
-        .start_authorization_flow(&config, &server_id)
-        .await
+    log::warn!("start_oauth_flow: Global OAuth management is deprecated.");
+    Err(
+        "Global OAuth management is not available. Configure OAuth at server creation time."
+            .to_string(),
+    )
 }
 
 /// Completes an OAuth 2.1 authorization flow by exchanging the authorization code for an access token.
@@ -321,27 +418,16 @@ pub async fn start_oauth_flow(
 /// - Stores token in OS keychain (never in plain text)
 #[tauri::command]
 pub async fn complete_oauth_flow(
-    server_id: String,
-    config: OAuthConfig,
-    authorization_code: String,
-    state: String,
+    _server_id: String,
+    _config: OAuthConfig,
+    _authorization_code: String,
+    _state: String,
 ) -> Result<String, String> {
-    log::info!("Completing OAuth flow for server: {server_id}");
-
-    let oauth_manager = get_mcp_manager().get_oauth_manager().await;
-
-    // Exchange code for token
-    let access_token = oauth_manager
-        .exchange_code_for_token(&config, &server_id, &authorization_code, &state)
-        .await?;
-
-    // Store token securely in OS keychain
-    crate::mcp::keychain::store_token_securely(&server_id, &access_token).await?;
-
-    log::info!("Successfully completed OAuth flow for server: {server_id}");
-    Ok(format!(
-        "OAuth flow completed successfully for server: {server_id}"
-    ))
+    log::warn!("complete_oauth_flow: Global OAuth management is deprecated.");
+    Err(
+        "Global OAuth management is not available. Configure OAuth at server creation time."
+            .to_string(),
+    )
 }
 
 /// Checks if an OAuth token exists in the OS keychain for a given server.

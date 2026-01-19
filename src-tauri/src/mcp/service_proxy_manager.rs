@@ -7,7 +7,6 @@ use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
-use super::server::MCPServerManager;
 use super::service_proxy::MCPServiceProxy;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
@@ -33,9 +32,6 @@ pub struct MCPServiceProxyManager {
     /// Session-specific HTTP MCP server managers (shared connections with session headers)
     session_http_managers: Arc<RwLock<HashMap<String, HttpSessionManager>>>,
 
-    /// Shared external MCP server manager (for HTTP servers and config)
-    external_mcp_manager: Arc<MCPServerManager>,
-
     /// Shared SeaORM database connection for all sessions
     db: Arc<DatabaseConnection>,
 
@@ -58,7 +54,6 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("proxies", &"<RwLock<HashMap>>")
             .field("session_stdio_managers", &"<RwLock<HashMap>>")
             .field("session_http_managers", &"<RwLock<HashMap>>")
-            .field("external_mcp_manager", &self.external_mcp_manager)
             .field("db", &"<DatabaseConnection>")
             .field("session_manager", &self.session_manager)
             .field("cleanup_task", &"<Mutex<Option<JoinHandle>>>")
@@ -89,31 +84,19 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager
     ///
     /// # Arguments
-    /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
-    pub fn new(
-        external_mcp_manager: Arc<MCPServerManager>,
-        db: Arc<DatabaseConnection>,
-        session_manager: Arc<SessionManager>,
-    ) -> Self {
-        Self::new_with_config(
-            external_mcp_manager,
-            db,
-            session_manager,
-            SessionIsolationConfig::default(),
-        )
+    pub fn new(db: Arc<DatabaseConnection>, session_manager: Arc<SessionManager>) -> Self {
+        Self::new_with_config(db, session_manager, SessionIsolationConfig::default())
     }
 
     /// Create a new proxy manager with custom configuration
     ///
     /// # Arguments
-    /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
     /// * `config` - Session isolation configuration
     pub fn new_with_config(
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         config: SessionIsolationConfig,
@@ -122,7 +105,6 @@ impl MCPServiceProxyManager {
             proxies: Arc::new(RwLock::new(HashMap::new())),
             session_stdio_managers: Arc::new(RwLock::new(HashMap::new())),
             session_http_managers: Arc::new(RwLock::new(HashMap::new())),
-            external_mcp_manager,
             db,
             session_manager,
             cleanup_task: Arc::new(Mutex::new(None)),
@@ -144,13 +126,7 @@ impl MCPServiceProxyManager {
     /// and the original is forgotten to prevent double-free. This is safe because
     /// the underlying data has 'static lifetime.
     pub fn new_from_static_refs() -> Self {
-        use crate::state::{get_database_connection, get_mcp_manager};
-
-        // SAFETY: We now clone the manager and db connection which are safe to share
-        // because they internally use Arc/ref-counting or are designed to be cloned.
-        // This avoids the UB of creating an Arc from a pointer to static memory.
-        let mcp_manager = get_mcp_manager();
-        let mcp_manager_arc = Arc::new(mcp_manager.clone());
+        use crate::state::get_database_connection;
 
         let db = get_database_connection();
         let db_arc = Arc::new(db.clone());
@@ -160,7 +136,7 @@ impl MCPServiceProxyManager {
             crate::session::get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = Arc::new(session_manager.clone());
 
-        Self::new(mcp_manager_arc, db_arc, session_manager_arc)
+        Self::new(db_arc, session_manager_arc)
     }
 
     /// Create a new session-specific proxy with dedicated tool instances
@@ -209,8 +185,57 @@ impl MCPServiceProxyManager {
             }
         }
 
+        // Fetch configs directly from DB to support Session Isolation (independent of global connections)
+        use crate::entity::mcp_server;
+        use sea_orm::EntityTrait;
+
+        let mut stdio_configs = HashMap::new();
+        let mut http_configs = HashMap::new();
+
+        match mcp_server::Entity::find().all(self.db.as_ref()).await {
+            Ok(models) => {
+                log::debug!(
+                    "Loaded {} MCP server configs from DB for session {}",
+                    models.len(),
+                    session_id
+                );
+                for model in models {
+                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+                    {
+                        Ok(mut config) => {
+                            // Use DB name if JSON doesn't specify one (type-safe approach)
+                            let server_name = config.name.unwrap_or_else(|| model.name.clone());
+                            config.name = Some(server_name.clone());
+
+                            match config.transport {
+                                crate::mcp::types::TransportConfig::Stdio { .. } => {
+                                    stdio_configs.insert(server_name, config);
+                                }
+                                crate::mcp::types::TransportConfig::Http { .. } => {
+                                    http_configs.insert(server_name, config);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse config for MCP server '{}': {}",
+                                model.name,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to fetch MCP server configs from DB for session {}: {}",
+                    session_id,
+                    e
+                );
+            }
+        }
+
         // Create session stdio manager
-        let stdio_configs = self.external_mcp_manager.get_stdio_configs().await;
         let stdio_manager = SessionMCPManager::new(
             session_id.clone(),
             stdio_configs.clone(),
@@ -218,12 +243,7 @@ impl MCPServiceProxyManager {
         );
 
         // Create session HTTP manager
-        let http_configs = self.external_mcp_manager.get_http_configs().await;
-        let http_manager = HttpSessionManager::new(
-            session_id.clone(),
-            self.external_mcp_manager.clone(),
-            http_configs.clone(),
-        );
+        let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());
 
         // Start HTTP servers eagerly for session isolation
         for (server_name, config) in &http_configs {
@@ -240,7 +260,6 @@ impl MCPServiceProxyManager {
         // Create builtin proxy
         let proxy = MCPServiceProxy::builder(
             session_id.clone(),
-            self.external_mcp_manager.clone(),
             self.db.clone(),
             self.session_manager.clone(),
             Arc::new(http_manager.clone()),
@@ -457,32 +476,36 @@ impl MCPServiceProxyManager {
             .split_once("__")
             .ok_or_else(|| format!("Invalid tool name format: {}", tool_name))?;
 
-        // Check transport type
-        let is_stdio = self.external_mcp_manager.is_stdio_server(server_name).await;
+        // Check if server exists in session-specific stdio manager first (primary check)
+        let stdio_managers = self.session_stdio_managers.read().await;
+        let has_stdio = stdio_managers
+            .get(session_id)
+            .map(|mgr| mgr.has_server(server_name))
+            .unwrap_or(false);
 
-        if is_stdio {
+        if has_stdio {
             // Route to session-specific stdio manager
-            let managers = self.session_stdio_managers.read().await;
-            let manager = managers
+            let manager = stdio_managers
                 .get(session_id)
                 .ok_or_else(|| format!("No stdio manager for session: {}", session_id))?;
 
-            manager
+            return manager
                 .call_tool(server_name, real_tool_name, args)
                 .await
-                .map_err(|e| format!("{}", e))
-        } else {
-            // Route to session-specific HTTP manager (with session context injection)
-            let managers = self.session_http_managers.read().await;
-            let manager = managers
-                .get(session_id)
-                .ok_or_else(|| format!("No HTTP manager for session: {}", session_id))?;
-
-            manager
-                .call_tool(server_name, real_tool_name, args)
-                .await
-                .map_err(|e| format!("{}", e))
+                .map_err(|e| format!("{}", e));
         }
+        drop(stdio_managers);
+
+        // Otherwise, route to session-specific HTTP manager
+        let http_managers = self.session_http_managers.read().await;
+        let manager = http_managers
+            .get(session_id)
+            .ok_or_else(|| format!("No HTTP manager for session: {}", session_id))?;
+
+        manager
+            .call_tool(server_name, real_tool_name, args)
+            .await
+            .map_err(|e| format!("{}", e))
     }
 
     /// Get the number of active proxies
@@ -590,17 +613,10 @@ mod tests {
             .await
             .expect("Failed to create planning_scratchpad table");
 
-        // Create a minimal SessionManager for MCPServerManager
+        // Create a minimal SessionManager
         let session_manager = Arc::new(crate::session::SessionManager::new().unwrap());
-        let external_mcp_manager = Arc::new(MCPServerManager::new_with_session_manager(
-            session_manager.clone(),
-        ));
 
-        Arc::new(MCPServiceProxyManager::new(
-            external_mcp_manager,
-            Arc::new(db),
-            session_manager,
-        ))
+        Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager))
     }
 
     #[tokio::test]

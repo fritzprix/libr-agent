@@ -1,7 +1,7 @@
 use crate::entity::mcp_server::Entity as McpServerEntity;
 use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
 use crate::mcp::types::{MCPResult, MCPServerConfig};
-use crate::state::{get_database_connection, get_mcp_manager};
+use crate::state::get_database_connection;
 use sea_orm::*;
 use serde_json::{json, Value};
 
@@ -51,19 +51,20 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
         .min(50) as usize;
 
     let configs = list_all_configs().await?;
-    let manager = get_mcp_manager();
-    let connections = manager.connections.lock().await;
 
+    // Note: Session Isolation means we cannot query global connection state
+    // All servers are shown as "disconnected" in this view because connections are per-session
     let mut servers = Vec::new();
     for config in configs {
-        let status = if connections.contains_key(&config.name) {
-            "connected"
-        } else {
-            "disconnected"
-        };
+        let server_name = config
+            .name
+            .as_ref()
+            .ok_or_else(|| "Server config missing name".to_string())?;
+
+        let status = "configured"; // Changed from "connected"/"disconnected" to "configured"
 
         servers.push(json!({
-            "name": config.name,
+            "name": server_name,
             "transport": config.transport,
             "status": status
         }));
@@ -137,13 +138,14 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
     let configs = list_all_configs().await?;
     let filtered: Vec<Value> = configs
         .into_iter()
-        .filter(|c| c.name.to_lowercase().contains(&query))
-        .map(|c| {
-            // We can't easily check status here without locking manager again,
-            // but for search just showing name/transport is usually enough.
-            // Or we could re-use the status check if we pulled it up.
-            // For now, let's just show basic info.
-            json!({ "name": c.name, "transport": c.transport })
+        .filter_map(|c| {
+            c.name.as_ref().and_then(|name| {
+                if name.to_lowercase().contains(&query) {
+                    Some(json!({ "name": name, "transport": c.transport }))
+                } else {
+                    None
+                }
+            })
         })
         .collect();
 
@@ -199,50 +201,17 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
 }
 
 /// List all builtin tools from the registry
-pub async fn list_builtin_tools(args: Value) -> Result<MCPResult, String> {
-    let server_name_filter = args.get("serverName").and_then(|v| v.as_str());
+pub async fn list_builtin_tools(_args: Value) -> Result<MCPResult, String> {
+    // Note: Session Isolation means builtin tools are instantiated per-session
+    // This returns static schema information, not per-session instances
 
-    let manager = get_mcp_manager();
-    // Lock the builtin_servers registry
-    let registry_guard = manager.builtin_servers.lock().await;
+    let tools_text = "Builtin tools are managed per-session through MCPServiceProxy.\n\n\
+                     To get actual tools available in your session, check the agent's session tools.".to_string();
 
-    if let Some(registry) = registry_guard.as_ref() {
-        let tools = if let Some(server_name) = server_name_filter {
-            registry.list_tools_for_server(server_name)
-        } else {
-            registry.list_all_tools()
-        };
-
-        // Format for human readability
-        let tools_text = tools
-            .iter()
-            .map(|t| {
-                format!(
-                    "• {}: {}",
-                    t.name,
-                    t.description.lines().next().unwrap_or("")
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let count = tools.len();
-        let hint = SuccessHint::new(
-            format!(
-                "Found {} builtin tools{}:\n\n{}",
-                count,
-                if let Some(s) = server_name_filter {
-                    format!(" for server '{}'", s)
-                } else {
-                    "".to_string()
-                },
-                tools_text
-            ),
-            vec!["Use specific tool names as needed".to_string()],
-        );
-
-        Ok(hint.to_mcp_result_with_data(Some(json!({ "tools": tools }))))
-    } else {
-        Err("Builtin registry not initialized".to_string())
-    }
+    Ok(
+        SuccessHint::new(tools_text, vec![]).to_mcp_result_with_data(Some(json!({
+            "tools": [],
+            "note": "Session-specific tools unavailable from global view"
+        }))),
+    )
 }

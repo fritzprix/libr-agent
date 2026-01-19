@@ -58,9 +58,6 @@ pub struct MCPServiceProxy {
     /// Value: Boxed trait object implementing BuiltinMCPServer
     builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,
 
-    /// Shared managers
-    shared_managers: SharedManagers,
-
     /// Cached tools from session-isolated stdio servers
     /// Key: server_name, Value: list of tools
     /// This cache is populated during session creation (eager tool discovery)
@@ -78,7 +75,7 @@ pub struct MCPServiceProxy {
 pub struct MCPServiceProxyBuilder {
     session_id: String,
     tool_ids: Vec<String>,
-    external_mcp_manager: Arc<MCPServerManager>,
+    // external_mcp_manager: Arc<MCPServerManager>, // Removed as we use session isolation
     db: Arc<DatabaseConnection>,
     session_manager: Arc<SessionManager>,
     app_handle: Option<AppHandle>,
@@ -90,7 +87,6 @@ impl MCPServiceProxyBuilder {
     /// Create a new builder with required fields
     pub fn new(
         session_id: String,
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         http_manager: Arc<HttpSessionManager>,
@@ -99,7 +95,6 @@ impl MCPServiceProxyBuilder {
         Self {
             session_id,
             tool_ids: Vec::new(),
-            external_mcp_manager,
             db,
             session_manager,
             app_handle: None,
@@ -125,7 +120,6 @@ impl MCPServiceProxyBuilder {
         MCPServiceProxy::create(
             self.session_id,
             self.tool_ids,
-            self.external_mcp_manager,
             self.db,
             self.session_manager,
             self.app_handle,
@@ -151,20 +145,12 @@ impl MCPServiceProxy {
     /// * `MCPServiceProxyBuilder` - Builder to configure additional options
     pub fn builder(
         session_id: String,
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         http_manager: Arc<HttpSessionManager>,
         stdio_manager: Arc<SessionMCPManager>,
     ) -> MCPServiceProxyBuilder {
-        MCPServiceProxyBuilder::new(
-            session_id,
-            external_mcp_manager,
-            db,
-            session_manager,
-            http_manager,
-            stdio_manager,
-        )
+        MCPServiceProxyBuilder::new(session_id, db, session_manager, http_manager, stdio_manager)
     }
 
     /// Internal method to create the proxy (used by builder)
@@ -172,7 +158,6 @@ impl MCPServiceProxy {
     async fn create(
         session_id: String,
         tool_ids: Vec<String>,
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         app_handle: Option<AppHandle>,
@@ -209,11 +194,6 @@ impl MCPServiceProxy {
         Ok(Self {
             session_id,
             builtin_servers,
-            shared_managers: SharedManagers {
-                external_mcp: external_mcp_manager,
-                db,
-                session_manager,
-            },
             session_stdio_tool_cache: Arc::new(RwLock::new(HashMap::new())),
             session_http_tool_cache: Arc::new(RwLock::new(HashMap::new())),
             session_managers: SessionManagers {
@@ -304,19 +284,10 @@ impl MCPServiceProxy {
                         .map_err(|e| e.to_string());
                 }
 
-                // Fallback to global manager
-                // Note: This fallback will be removed once migration is complete
-                log::debug!(
-                    "Routing to GLOBAL MCP manager (fallback): '{}' for session '{}'",
-                    tool_name,
-                    self.session_id
-                );
-                let response = self
-                    .shared_managers
-                    .external_mcp
-                    .call_tool(server_name, real_tool_name, args, None)
-                    .await;
-                Ok(response)
+                Err(format!(
+                    "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
+                    tool_name, self.session_id
+                ))
             } else {
                 Err(format!(
                     "Invalid external tool name format: {}. Expected 'server__tool'",
@@ -396,6 +367,16 @@ impl MCPServiceProxy {
     pub async fn set_session_http_tools(&self, server_name: String, tools: Vec<MCPTool>) {
         let mut cache = self.session_http_tool_cache.write().await;
         cache.insert(server_name, tools);
+    }
+
+    /// Get session-specific HTTP manager
+    pub fn get_http_manager(&self) -> &Arc<HttpSessionManager> {
+        &self.session_managers.http
+    }
+
+    /// Get session-specific Stdio manager
+    pub fn get_stdio_manager(&self) -> &Arc<SessionMCPManager> {
+        &self.session_managers.stdio
     }
 
     /// Collect service contexts from all builtin servers

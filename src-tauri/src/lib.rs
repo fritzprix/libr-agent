@@ -71,11 +71,10 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_database_connection, get_mcp_manager,
-    get_mcp_service_proxy_manager, get_message_repository, get_session_repository,
-    get_sqlite_db_url, set_content_store_repository, set_database_connection, set_mcp_manager,
-    set_mcp_service_proxy_manager, set_message_repository, set_session_repository,
-    set_sqlite_db_url,
+    get_content_store_repository, get_database_connection, get_mcp_service_proxy_manager,
+    get_message_repository, get_session_repository, get_sqlite_db_url,
+    set_content_store_repository, set_database_connection, set_mcp_service_proxy_manager,
+    set_message_repository, set_session_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -173,16 +172,17 @@ pub fn run_with_sqlite_sync(db_url: String) {
         info!("✅ Repository instances initialized");
 
         // Initialize the MCP manager with database connection
-        let mcp_manager = MCPServerManager::new_with_session_manager_and_db(
+        // NOTE: Global MCPServerManager is deprecated in favor of session-isolated management
+        let _mcp_manager = MCPServerManager::new_with_session_manager_and_db(
             session_manager_arc.clone(),
             db.clone(),
         )
         .await;
 
-        // Set the global MCP manager
-        set_mcp_manager(mcp_manager);
+        // Global MCP manager is no longer set due to Session Isolation architecture
+        // All external server management is now per-session through MCPServiceProxyManager
 
-        info!("✅ SeaORM-backed MCP Manager initialized");
+        info!("✅ Session-Isolated MCP architecture initialized");
 
         // Initialize the MCP Service Proxy Manager for session-aware builtin tools
         use mcp::MCPServiceProxyManager;
