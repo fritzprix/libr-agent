@@ -88,7 +88,7 @@ impl PersistentShell {
     pub async fn new(
         session_id: String,
         workspace_path: PathBuf,
-        _shell_type: ShellType,
+        #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
     ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = Command::new("bash");
