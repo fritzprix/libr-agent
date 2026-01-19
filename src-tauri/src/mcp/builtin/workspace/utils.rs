@@ -58,12 +58,8 @@ pub fn sanitize_command_for_logging(command: &str) -> String {
     let sanitized = re_spaces.replace_all(&sanitized, " ").to_string();
     let sanitized = sanitized.trim().to_string();
 
-    // Truncate if too long
-    if sanitized.len() > 100 {
-        format!("{}...", &sanitized[..100])
-    } else {
-        sanitized
-    }
+    // Truncate if too long (safe string slicing)
+    crate::utils::truncate_chars(&sanitized, 100)
 }
 
 #[cfg(test)]

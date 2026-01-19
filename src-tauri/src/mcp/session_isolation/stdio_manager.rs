@@ -489,7 +489,7 @@ mod tests {
         configs.insert(
             "test-server".to_string(),
             MCPServerConfig {
-                name: "test-server".to_string(),
+                name: Some("test-server".to_string()),
                 transport: TransportConfig::Stdio {
                     command: command.to_string(),
                     args: vec![],
@@ -567,7 +567,7 @@ mod tests {
         env_map.insert("CUSTOM_VAR".to_string(), "custom_value".to_string());
 
         let config = MCPServerConfig {
-            name: "test".to_string(),
+            name: Some("test".to_string()),
             transport: TransportConfig::Stdio {
                 command: "test".to_string(),
                 args: vec![],
@@ -630,7 +630,7 @@ mod tests {
         configs.insert(
             "npx-server".to_string(),
             MCPServerConfig {
-                name: "npx-server".to_string(),
+                name: Some("npx-server".to_string()),
                 transport: TransportConfig::Stdio {
                     command: "npx".to_string(),
                     args: vec![

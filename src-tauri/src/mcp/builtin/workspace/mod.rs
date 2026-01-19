@@ -445,12 +445,8 @@ impl BuiltinMCPServer for WorkspaceServer {
                         let process_list = processes
                             .iter()
                             .map(|(id, cmd)| {
-                                // Truncate command if too long
-                                let display_cmd = if cmd.len() > 80 {
-                                    format!("{}...", &cmd[..77])
-                                } else {
-                                    cmd.clone()
-                                };
+                                // Truncate command if too long (safe string slicing)
+                                let display_cmd = crate::utils::truncate_chars(cmd, 77);
                                 format!("  • {} - {}", id, display_cmd)
                             })
                             .collect::<Vec<_>>()

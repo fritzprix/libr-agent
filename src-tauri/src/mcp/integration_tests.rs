@@ -7,7 +7,6 @@
 #[cfg(test)]
 mod tests {
     use crate::entity::{playbook, session};
-    use crate::mcp::server::MCPServerManager;
     use crate::mcp::service_proxy_manager::MCPServiceProxyManager;
     use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set};
     use serde_json::json;
@@ -43,9 +42,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Test 1: Create proxy with bootstrap tool
         let session_id = "test-session-1".to_string();
@@ -135,9 +133,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create two sessions
         let session1 = "session-1".to_string();
@@ -191,13 +188,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = Arc::new(MCPServiceProxyManager::new(
-            Arc::new(mcp_manager),
-            db,
-            session_manager,
-        ));
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
 
         // Create session
         proxy_manager
@@ -261,9 +253,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Test 1: Call tool on non-existent session
         let result = proxy_manager
@@ -320,9 +311,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create proxy with playbook tool
         let session_id = "playbook-ui-test".to_string();
@@ -453,9 +443,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create two proxies
         proxy_manager
@@ -572,9 +561,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         let session_id = "path_resolution_test_session".to_string();
 

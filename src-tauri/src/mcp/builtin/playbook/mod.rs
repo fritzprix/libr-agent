@@ -263,18 +263,10 @@ impl BuiltinMCPServer for PlaybookServer {
             parts.push("Recent:".to_string());
             for playbook in &playbooks {
                 // Truncate goal to 50 chars for token efficiency
-                let goal_display = if playbook.goal.len() > 50 {
-                    format!("{}...", &playbook.goal[..50])
-                } else {
-                    playbook.goal.clone()
-                };
+                let goal_display = crate::utils::truncate_chars(&playbook.goal, 50);
 
                 // Get short ID (first 8 chars)
-                let short_id = if playbook.id.len() > 8 {
-                    &playbook.id[..8]
-                } else {
-                    &playbook.id
-                };
+                let short_id = crate::utils::safe_truncate(&playbook.id, 8);
 
                 parts.push(format!(
                     "- {} steps: {} ({})",
