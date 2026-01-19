@@ -39,4 +39,16 @@ pub enum SessionMCPError {
     /// The session has been closed.
     #[error("Session closed")]
     SessionClosed,
+
+    /// Tool call failed.
+    #[error("Tool call failed: {0}")]
+    ToolCallFailed(String),
+
+    /// Execution error during tool call
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
+
+    /// Connection error
+    #[error("Connection error: {0}")]
+    ConnectionError(String),
 }

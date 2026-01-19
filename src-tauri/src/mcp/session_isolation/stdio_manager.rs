@@ -18,6 +18,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 /// Manages session-specific MCP server processes with lazy spawning and idle cleanup.
+#[derive(Debug, Clone)]
 pub struct SessionMCPManager {
     /// Unique session identifier.
     session_id: String,
@@ -45,6 +46,11 @@ pub struct SessionMCPManager {
 }
 
 impl SessionMCPManager {
+    /// Checks if a server is managed by this session manager
+    pub fn has_server(&self, server_name: &str) -> bool {
+        self.server_configs.contains_key(server_name)
+    }
+
     /// Creates a new SessionMCPManager for the given session.
     pub fn new(
         session_id: String,
@@ -261,6 +267,77 @@ impl SessionMCPManager {
         self.active_call_tokens.write().await.remove(server_name);
 
         Ok(mcp_response)
+    }
+
+    /// List all available tools from a specific MCP server.
+    ///
+    /// This will spawn the process if it's not running, fetch the tools,
+    /// and keep the process alive for subsequent tool calls.
+    pub async fn list_tools(
+        &self,
+        server_name: &str,
+    ) -> Result<Vec<crate::mcp::types::MCPTool>, SessionMCPError> {
+        use log::warn;
+
+        // Ensure process is running
+        self.ensure_process_running(server_name).await?;
+
+        // Fetch tools from the running process
+        let processes = self.active_processes.read().await;
+        let process = processes
+            .get(server_name)
+            .ok_or_else(|| SessionMCPError::ServerNotFound(server_name.to_string()))?;
+
+        match process.client.list_all_tools().await {
+            Ok(tools_response) => {
+                debug!(
+                    "Fetched {} tools from server '{}' for session '{}'",
+                    tools_response.len(),
+                    server_name,
+                    self.session_id
+                );
+
+                let mut tools = Vec::new();
+
+                for tool in tools_response {
+                    // Convert the input schema to our structured format
+                    let input_schema_value = serde_json::to_value(tool.input_schema)
+                        .unwrap_or_else(|e| {
+                            warn!(
+                                "Failed to serialize input_schema for tool {}: {}",
+                                tool.name, e
+                            );
+                            serde_json::Value::Object(serde_json::Map::new())
+                        });
+
+                    let structured_schema =
+                        crate::mcp::server_utils::convert_input_schema(input_schema_value);
+
+                    let mcp_tool = crate::mcp::types::MCPTool {
+                        name: tool.name.to_string(),
+                        title: None,
+                        description: tool.description.unwrap_or_default().to_string(),
+                        input_schema: structured_schema,
+                        output_schema: None,
+                        annotations: None,
+                    };
+
+                    tools.push(mcp_tool);
+                }
+
+                Ok(tools)
+            }
+            Err(e) => {
+                error!(
+                    "Failed to list tools from server '{}' for session '{}': {}",
+                    server_name, self.session_id, e
+                );
+                Err(SessionMCPError::ToolCallFailed(format!(
+                    "Failed to list tools: {}",
+                    e
+                )))
+            }
+        }
     }
 
     /// Remove idle processes (called by background task).

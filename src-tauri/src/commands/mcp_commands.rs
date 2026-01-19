@@ -87,107 +87,17 @@ pub async fn list_mcp_tools(server_name: String) -> Result<Vec<MCPTool>, String>
 /// This command now supports both V1 (legacy) and V2 (MCP 2025-06-18 spec) configurations.
 /// It automatically detects the format and converts legacy configs to V2.
 ///
-/// # Arguments
-/// * `config` - A `serde_json::Value` containing the server configurations in either format.
+/// list_tools_from_config REMOVED (Deprecated)
 ///
-/// # Returns
-/// A `Result` containing a `HashMap` where keys are server names and values are vectors
-/// of `MCPTool` objects. Returns an error string if the configuration is invalid.
+/// This command was used to eager-load all servers and list tools globally.
+/// It has been removed in favor of session-isolated tool discovery.
 #[tauri::command]
 pub async fn list_tools_from_config(
-    config: serde_json::Value,
+    _config: serde_json::Value,
 ) -> Result<HashMap<String, Vec<MCPTool>>, String> {
-    println!("🚀 [TAURI] list_tools_from_config called!");
-    println!(
-        "🚀 [TAURI] Config received: {}",
-        serde_json::to_string_pretty(&config).unwrap_or_default()
-    );
-
-    // Parse server configurations with automatic V1/V2 detection
-    let servers_config =
-        if let Some(mcp_servers) = config.get("mcpServers").and_then(|v| v.as_object()) {
-            // MCPConfig format: Convert mcpServers object to V2 configs
-            println!("🚀 [TAURI] Processing mcpServers format");
-            let mut server_list = Vec::new();
-
-            for (name, server_config) in mcp_servers.iter() {
-                let mut server_value = server_config.clone();
-                // Add the name field
-                if let serde_json::Value::Object(ref mut obj) = server_value {
-                    obj.insert("name".to_string(), serde_json::Value::String(name.clone()));
-                }
-
-                // Parse as MCPServerConfig directly
-                let config: MCPServerConfig = serde_json::from_value(server_value)
-                    .map_err(|e| format!("Invalid server config for '{name}': {e}"))?;
-                server_list.push(config);
-            }
-            server_list
-        } else if let Some(servers_array) = config.get("servers").and_then(|v| v.as_array()) {
-            // Alternative format: servers array
-            println!("🚀 [TAURI] Processing servers array format");
-            let mut server_list = Vec::new();
-            for server_value in servers_array {
-                let config: MCPServerConfig = serde_json::from_value(server_value.clone())
-                    .map_err(|e| format!("Invalid server config: {e}"))?;
-                server_list.push(config);
-            }
-            server_list
-        } else {
-            return Err("Invalid config: missing mcpServers object or servers array".to_string());
-        };
-
-    println!(
-        "🚀 [TAURI] Found {} servers in config",
-        servers_config.len()
-    );
-
-    let manager = get_mcp_manager();
-
-    let mut tools_by_server: HashMap<String, Vec<MCPTool>> = HashMap::new();
-
-    // Start servers from config and collect their tools
-    for server_cfg in servers_config {
-        let server_name = server_cfg.name.clone();
-        if !manager.is_server_alive(&server_name).await {
-            println!("🚀 [TAURI] Starting server: {server_name}");
-            // Use native config support to preserve OAuth, HTTP headers, and security settings
-            if let Err(e) = manager.start_server(server_cfg).await {
-                eprintln!("❌ [TAURI] Failed to start server {server_name}: {e}");
-                // Insert empty tools array for failed server
-                tools_by_server.insert(server_name, Vec::new());
-                continue; // Skip to the next server if this one fails to start
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
-        } else {
-            println!("🚀 [TAURI] Server {server_name} already running");
-        }
-
-        // Fetch tools for the server we just ensured is running
-        match manager.list_tools(&server_name).await {
-            Ok(tools) => {
-                println!(
-                    "✅ [TAURI] Found {} tools for server '{}'",
-                    tools.len(),
-                    server_name
-                );
-                tools_by_server.insert(server_name, tools);
-            }
-            Err(e) => {
-                eprintln!("❌ [TAURI] Error listing tools for '{server_name}': {e}");
-                // Insert empty tools array for failed server
-                tools_by_server.insert(server_name, Vec::new());
-            }
-        }
-    }
-
-    let total_tools: usize = tools_by_server.values().map(|tools| tools.len()).sum();
-    println!(
-        "✅ [TAURI] Total tools collected: {} across {} servers",
-        total_tools,
-        tools_by_server.len()
-    );
-    Ok(tools_by_server)
+    println!("⚠️ [TAURI] list_tools_from_config called (DEPRECATED) - returning empty list");
+    // Return empty map to satisfy frontend contract until fully migrated
+    Ok(HashMap::new())
 }
 
 /// Returns a list of names for all currently connected external MCP servers.

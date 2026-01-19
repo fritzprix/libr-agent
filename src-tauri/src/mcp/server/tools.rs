@@ -2,7 +2,7 @@ use super::MCPServerManager;
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
     BuiltinServerInfo, JsonRpcId, MCPError, MCPResponse, MCPTool, SamplingRequest, ServiceContext,
-    ServiceContextOptions,
+    ServiceContextOptions, TransportConfig,
 };
 use anyhow::Result;
 use log::{debug, error, info, warn};
@@ -253,7 +253,11 @@ pub async fn list_all_tools(manager: &MCPServerManager) -> Result<Vec<MCPTool>> 
     let mut all_tools = Vec::new();
     let server_names: Vec<String> = {
         let connections = manager.connections.lock().await;
-        connections.keys().cloned().collect()
+        connections
+            .iter()
+            .filter(|(_, conn)| matches!(conn.config.transport, TransportConfig::Http { .. }))
+            .map(|(name, _)| name.clone())
+            .collect()
     };
 
     for server_name in server_names {

@@ -209,6 +209,34 @@ impl MCPServiceProxyManager {
             }
         }
 
+        // Create session stdio manager
+        let stdio_configs = self.external_mcp_manager.get_stdio_configs().await;
+        let stdio_manager = SessionMCPManager::new(
+            session_id.clone(),
+            stdio_configs.clone(),
+            self.config.clone(),
+        );
+
+        // Create session HTTP manager
+        let http_configs = self.external_mcp_manager.get_http_configs().await;
+        let http_manager = HttpSessionManager::new(
+            session_id.clone(),
+            self.external_mcp_manager.clone(),
+            http_configs.clone(),
+        );
+
+        // Start HTTP servers eagerly for session isolation
+        for (server_name, config) in &http_configs {
+            if let Err(e) = http_manager.start_server(server_name, config.clone()).await {
+                log::error!(
+                    "Failed to start HTTP server {} for session {}: {}",
+                    server_name,
+                    session_id,
+                    e
+                );
+            }
+        }
+
         // Create builtin proxy
         let proxy = MCPServiceProxy::new(
             session_id.clone(),
@@ -217,37 +245,111 @@ impl MCPServiceProxyManager {
             self.db.clone(),
             self.session_manager.clone(),
             app_handle,
+            Arc::new(http_manager.clone()),
+            Arc::new(stdio_manager.clone()),
         )
         .await?;
 
-        // Create session stdio manager
-        let stdio_configs = self.external_mcp_manager.get_stdio_configs().await;
-        let stdio_manager =
-            SessionMCPManager::new(session_id.clone(), stdio_configs, self.config.clone());
-
-        self.session_stdio_managers
-            .write()
-            .await
-            .insert(session_id.clone(), stdio_manager);
-
-        // Create session HTTP manager
-        let http_configs = self.external_mcp_manager.get_http_configs().await;
-        let http_manager = HttpSessionManager::new(
-            session_id.clone(),
-            self.external_mcp_manager.clone(),
-            http_configs,
-        );
-
-        self.session_http_managers
-            .write()
-            .await
-            .insert(session_id.clone(), http_manager);
-
+        // Store proxy
         let proxy_arc = Arc::new(proxy);
         self.proxies
             .write()
             .await
             .insert(session_id.clone(), proxy_arc.clone());
+
+        self.session_stdio_managers
+            .write()
+            .await
+            .insert(session_id.clone(), stdio_manager.clone());
+
+        self.session_http_managers
+            .write()
+            .await
+            .insert(session_id.clone(), http_manager.clone());
+
+        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated stdio servers
+        log::info!(
+            "Starting eager tool discovery for {} session-isolated stdio servers",
+            stdio_configs.len()
+        );
+
+        for server_name in stdio_configs.keys() {
+            log::debug!(
+                "Fetching tools from session stdio server '{}' for session '{}'",
+                server_name,
+                session_id
+            );
+
+            match stdio_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from stdio server '{}' for session '{}'",
+                        tools.len(),
+                        server_name,
+                        session_id
+                    );
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_stdio_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
+        log::info!(
+            "Starting eager tool discovery for {} session-isolated HTTP servers",
+            http_configs.len()
+        );
+
+        for server_name in http_configs.keys() {
+            match http_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from HTTP server '{}' for session '{}'",
+                        tools.len(),
+                        server_name,
+                        session_id
+                    );
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_http_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
+                }
+            }
+        }
 
         log::info!("Created MCP service proxy for session: {}", session_id);
 
@@ -396,12 +498,9 @@ impl MCPServiceProxyManager {
         self.proxies.read().await.keys().cloned().collect()
     }
 
-    /// List tools from all external MCP servers
-    ///
-    /// This is a convenience method to access external_mcp_manager functionality
-    pub async fn list_all_external_tools(&self) -> anyhow::Result<Vec<super::types::MCPTool>> {
-        self.external_mcp_manager.list_all_tools().await
-    }
+    // list_all_external_tools removed - session isolation migration
+    // See `agent/tools.rs` using `get_session_stdio_tools` and `get_session_http_tools` instead
+
 
     /// Start the background cleanup task for idle process management
     ///

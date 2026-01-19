@@ -3,10 +3,12 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
+use tokio::sync::RwLock;
 
 use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
-use super::types::{MCPResponse, ServiceContext};
+use super::session_isolation::{HttpSessionManager, SessionMCPManager};
+use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 use sea_orm::EntityTrait; // Needed for find_by_id in helper
 
@@ -30,6 +32,21 @@ pub struct MCPServiceProxy {
 
     /// Shared SessionManager for workspace/content_store servers
     _session_manager: Arc<SessionManager>,
+
+    /// Cached tools from session-isolated stdio servers
+    /// Key: server_name, Value: list of tools
+    /// This cache is populated during session creation (eager tool discovery)
+    session_stdio_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
+
+    /// Cached tools from session-isolated HTTP servers
+    /// Key: server_name, Value: list of tools
+    session_http_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
+
+    /// Session-specific HTTP manager
+    http_manager: Arc<HttpSessionManager>,
+
+    /// Session-specific Stdio manager
+    stdio_manager: Arc<SessionMCPManager>,
 }
 
 impl MCPServiceProxy {
@@ -52,6 +69,8 @@ impl MCPServiceProxy {
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         app_handle: Option<AppHandle>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
@@ -85,6 +104,10 @@ impl MCPServiceProxy {
             builtin_servers,
             external_mcp_manager,
             _session_manager: session_manager,
+            session_stdio_tool_cache: Arc::new(RwLock::new(HashMap::new())),
+            session_http_tool_cache: Arc::new(RwLock::new(HashMap::new())),
+            http_manager,
+            stdio_manager,
         })
     }
 
@@ -138,7 +161,7 @@ impl MCPServiceProxy {
                 error: None,
             })
         } else {
-            // Route to external MCP manager
+            // Route to external MCP manager or session-isolated manager
             // Format is typically "server_name__tool_name"
             log::debug!(
                 "Routing to external MCP: '{}' for session '{}'",
@@ -147,6 +170,33 @@ impl MCPServiceProxy {
             );
 
             if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
+                // 1. Check if it's a session-isolated HTTP server
+                if self.http_manager.has_server(server_name).await {
+                    log::debug!("Routing to session-isolated HTTP server: {}", server_name);
+                    return self
+                        .http_manager
+                        .call_tool(server_name, real_tool_name, args)
+                        .await
+                        .map_err(|e| e.to_string());
+                }
+
+                // 2. Check if it's a session-isolated Stdio server
+                if self.stdio_manager.has_server(server_name) {
+                    log::debug!("Routing to session-isolated Stdio server: {}", server_name);
+                    return self
+                        .stdio_manager
+                        .call_tool(server_name, real_tool_name, args)
+                        .await
+                        .map_err(|e| e.to_string());
+                }
+
+                // Fallback to global manager
+                // Note: This fallback will be removed once migration is complete
+                log::debug!(
+                    "Routing to GLOBAL MCP manager (fallback): '{}' for session '{}'",
+                    tool_name,
+                    self.session_id
+                );
                 let response = self
                     .external_mcp_manager
                     .call_tool(server_name, real_tool_name, args, None)
@@ -194,6 +244,43 @@ impl MCPServiceProxy {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Get cached tools from session-isolated stdio servers
+    ///
+    /// Returns tools that were fetched during session creation (eager tool discovery).
+    /// These tools are from stdio servers that are spawned per-session for isolation.
+    ///
+    /// # Returns
+    /// * `Vec<MCPTool>` - All cached tools from all session stdio servers
+    pub async fn get_session_stdio_tools(&self) -> Vec<MCPTool> {
+        let cache = self.session_stdio_tool_cache.read().await;
+        cache.values().flatten().cloned().collect()
+    }
+
+    /// Set cached tools for a specific session-isolated stdio server
+    ///
+    /// This is called during session creation to store tools fetched from
+    /// eagerly-spawned stdio servers.
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the stdio server
+    /// * `tools` - List of tools from that server
+    pub async fn set_session_stdio_tools(&self, server_name: String, tools: Vec<MCPTool>) {
+        let mut cache = self.session_stdio_tool_cache.write().await;
+        cache.insert(server_name, tools);
+    }
+
+    /// Get cached tools from session-isolated HTTP servers
+    pub async fn get_session_http_tools(&self) -> Vec<MCPTool> {
+        let cache = self.session_http_tool_cache.read().await;
+        cache.values().flatten().cloned().collect()
+    }
+
+    /// Set cached tools for a specific session-isolated HTTP server
+    pub async fn set_session_http_tools(&self, server_name: String, tools: Vec<MCPTool>) {
+        let mut cache = self.session_http_tool_cache.write().await;
+        cache.insert(server_name, tools);
     }
 
     /// Collect service contexts from all builtin servers
