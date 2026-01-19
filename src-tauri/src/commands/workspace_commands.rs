@@ -272,7 +272,7 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
     #[cfg(target_os = "windows")]
     {
         Command::new("cmd")
-            .args(&[
+            .args([
                 "/c",
                 "start",
                 "cmd",
