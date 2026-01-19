@@ -91,7 +91,9 @@ pub struct ServerMetadata {
 /// MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
-    pub name: String,
+    /// Server name - optional in JSON, will be populated from DB name column if missing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub transport: TransportConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authentication: Option<OAuthConfig>,

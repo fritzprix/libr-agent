@@ -42,49 +42,41 @@ pub async fn collect_available_tools(
             all_tools.len(),
             session_id
         );
+
+        // 2. Collect external MCP tools
+        if !agent_config.mcp_server_ids.is_empty() {
+            log::debug!(
+                "Agent config allows {} external MCP servers",
+                agent_config.mcp_server_ids.len()
+            );
+
+            // 2a. Get SESSION-ISOLATED stdio server tools (spawned per-session)
+            let session_stdio_tools = proxy.get_session_stdio_tools().await;
+
+            log::info!(
+                "Collected {} SESSION-ISOLATED stdio tools for session {}",
+                session_stdio_tools.len(),
+                session_id
+            );
+
+            all_tools.extend(session_stdio_tools);
+
+            // 2b. Get SESSION-ISOLATED HTTP server tools (connected per-session)
+            let session_http_tools = proxy.get_session_http_tools().await;
+
+            log::info!(
+                "Collected {} SESSION-ISOLATED HTTP tools for session {}",
+                session_http_tools.len(),
+                session_id
+            );
+
+            all_tools.extend(session_http_tools);
+        }
     } else {
         log::warn!(
-            "No proxy found for session {}, cannot collect builtin tools",
+            "No proxy found for session {}, cannot collect tools",
             session_id
         );
-    }
-
-    // 2. Collect external MCP tools (filtered by agent config)
-    if !agent_config.mcp_server_ids.is_empty() {
-        log::debug!(
-            "Agent config allows {} external MCP servers",
-            agent_config.mcp_server_ids.len()
-        );
-
-        // Get all external tools through public API
-        let external_tools = proxy_manager
-            .list_all_external_tools()
-            .await
-            .unwrap_or_default();
-
-        // Filter by allowed server IDs
-        // Tool names from external servers are formatted as: server_name__tool_name
-        let filtered_external_tools: Vec<_> = external_tools
-            .into_iter()
-            .filter(|tool| {
-                // Extract server name from tool name
-                if let Some(server_name) = tool.name.split("__").next() {
-                    agent_config
-                        .mcp_server_ids
-                        .contains(&server_name.to_string())
-                } else {
-                    false
-                }
-            })
-            .collect();
-
-        log::info!(
-            "Collected {} external MCP tools (filtered by allowed servers) for session {}",
-            filtered_external_tools.len(),
-            session_id
-        );
-
-        all_tools.extend(filtered_external_tools);
     }
 
     log::info!(
@@ -279,8 +271,15 @@ pub async fn handle_tool_result(
                         result.error.as_deref().unwrap_or("Unknown error"),
                     )
                 } else if let Some(mcp_content) = result.mcp_content {
+                    // ✅ ALWAYS use structured content for successful tool calls
                     create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
                 } else {
+                    // ⚠️ This branch should never happen for successful tool calls
+                    log::warn!(
+                        "Tool result has no mcp_content for session {}, tool_call_id {}. Using stringified fallback.",
+                        session_id,
+                        tool_call_id
+                    );
                     create_tool_result_message(&session_id, &tool_call_id, result.content.clone())
                 };
 
@@ -327,4 +326,110 @@ pub async fn handle_tool_result(
 
     // If we're here, it means we haven't finished collecting all results yet
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_result_with_structured_content() {
+        let session_id = "test-session";
+        let tool_call_id = "call-123";
+        let content = vec![MCPContent::Text {
+            text: "Test result".to_string(),
+        }];
+
+        let message =
+            create_tool_result_message_with_content(session_id, tool_call_id, content.clone());
+
+        // Assert: No double wrapping
+        assert_eq!(message.content.len(), 1);
+        assert_eq!(message.role, "tool");
+        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
+
+        match &message.content[0] {
+            MCPContent::Text { text } => {
+                assert_eq!(text, "Test result");
+                // Should NOT contain JSON string with "content" field
+                assert!(!text.contains("\"content\""));
+                assert!(!text.starts_with("{"));
+            }
+            _ => panic!("Expected text content"),
+        }
+    }
+
+    #[test]
+    fn test_tool_result_fallback_to_string() {
+        let session_id = "test-session";
+        let tool_call_id = "call-123";
+        let content_str = "Plain text result";
+
+        let message = create_tool_result_message(session_id, tool_call_id, content_str.to_string());
+
+        // Assert: Single text wrapper
+        assert_eq!(message.content.len(), 1);
+        assert_eq!(message.role, "tool");
+        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
+
+        match &message.content[0] {
+            MCPContent::Text { text } => {
+                assert_eq!(text, content_str);
+            }
+            _ => panic!("Expected text content"),
+        }
+    }
+
+    #[test]
+    fn test_error_tool_result() {
+        let session_id = "test-session";
+        let tool_call_id = "call-123";
+        let error_msg = "Tool execution failed";
+
+        let message = create_error_tool_result(session_id, tool_call_id, error_msg);
+
+        assert_eq!(message.role, "tool");
+        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
+        assert_eq!(message.content.len(), 1);
+
+        match &message.content[0] {
+            MCPContent::Text { text } => {
+                assert!(text.contains(error_msg));
+            }
+            _ => panic!("Expected text content"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_content_items() {
+        let session_id = "test-session";
+        let tool_call_id = "call-123";
+        let content = vec![
+            MCPContent::Text {
+                text: "First item".to_string(),
+            },
+            MCPContent::Text {
+                text: "Second item".to_string(),
+            },
+        ];
+
+        let message =
+            create_tool_result_message_with_content(session_id, tool_call_id, content.clone());
+
+        assert_eq!(message.content.len(), 2);
+
+        match &message.content[0] {
+            MCPContent::Text { text } => {
+                assert_eq!(text, "First item");
+            }
+            _ => panic!("Expected text content"),
+        }
+
+        match &message.content[1] {
+            MCPContent::Text { text } => {
+                assert_eq!(text, "Second item");
+            }
+            _ => panic!("Expected text content"),
+        }
+    }
 }

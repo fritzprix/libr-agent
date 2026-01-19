@@ -5,7 +5,6 @@ use super::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
 
 use crate::mcp::MCPTool;
-use crate::state::get_mcp_manager;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -82,6 +81,8 @@ impl BuiltinMCPServer for MCPManagerServer {
                     "type": "object",
                     "properties": {
                         "query": { "type": "string", "description": "Search target query" },
+                        "page": { "type": "integer", "minimum": 1, "description": "Page number for pagination" },
+                        "pageSize": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Items per page (max 50)" },
                         "searchMode": { "type": "string", "enum": ["simple", "bm25"], "description": "Search mode (simple or bm25)" },
                         "weights": { 
                             "type": "object", 
@@ -302,21 +303,14 @@ Returns:
             }
         }
 
-        let manager = get_mcp_manager();
-        let connections = manager.connections.lock().await;
-        let count = connections.len();
-
-        // Detailed list for context
-        let active_servers: Vec<String> = connections.keys().cloned().collect();
-
-        let context_prompt = format!(
-            "## MCP Manager\n\nActive servers ({}): {}\nStatus: Ready",
-            count,
-            active_servers.join(", ")
-        );
+        // Note: Service Isolation prevents access to global external server state
+        // The mcp_manager tool now operates per-session through MCPServiceProxy
+        let context_prompt =
+            "## MCP Manager\n\nServer management tool for current session\nStatus: Ready"
+                .to_string();
         let structured_state = json!({
-            "active_servers_count": count,
-            "active_servers": active_servers
+            "mode": "session-isolated",
+            "note": "External servers are managed per-session through MCPServiceProxy"
         });
 
         // Update cache

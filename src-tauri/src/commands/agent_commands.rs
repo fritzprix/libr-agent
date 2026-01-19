@@ -99,15 +99,15 @@ pub async fn agent_send_message(
 ) -> Result<AgentResponse, String> {
     // Message is already the correct type, no conversion needed
     let message = request.message;
-    manager
-        .start_workflow(request.session_id.clone(), message)
-        .await?;
 
-    Ok(AgentResponse {
-        success: true,
-        message: format!("Workflow started for session: {}", request.session_id),
-        data: None,
-    })
+    manager
+        .start_workflow(request.session_id, message)
+        .await
+        .map(|_| AgentResponse {
+            success: true,
+            message: "Message sent".to_string(),
+            data: None,
+        })
 }
 
 /// Update agent configuration for a session
@@ -375,6 +375,15 @@ pub async fn agent_get_available_tools(
     session_id: String,
 ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
     manager.get_available_tools(&session_id).await
+}
+
+/// Get available tools for a session
+#[command]
+pub async fn agent_get_tools(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+    manager.get_tools_for_session(&session_id).await
 }
 
 /// Clear all agent sessions (used for "Clear All Sessions" feature)

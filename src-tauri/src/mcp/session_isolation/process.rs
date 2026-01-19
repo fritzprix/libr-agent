@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 /// Note: The actual child process is managed internally by rmcp's TokioChildProcess.
 /// We only store the client handle and metadata here.
 #[allow(dead_code)]
+#[derive(Debug)]
 pub struct MCPProcess {
     /// The rmcp client instance for communicating with the server.
     pub client: rmcp::service::RunningService<rmcp::service::RoleClient, ()>,

@@ -440,6 +440,40 @@ impl AgentSessionManager {
             .await
     }
 
+    /// Get available tools for a session based on its config
+    pub async fn get_tools_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+        // 1. Get session config
+        // Try active first
+        let config = {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                if let Some(config_str) = &session.metadata.agent_config {
+                    crate::agent::AgentConfig::from_json(config_str)?
+                } else {
+                    return Err("Session has no config".to_string());
+                }
+            } else {
+                // Try DB
+                let session_opt = crate::agent::lifecycle::get_session(session_id).await?;
+                if let Some(session) = session_opt {
+                    if let Some(config_str) = &session.agent_config {
+                        crate::agent::AgentConfig::from_json(config_str)?
+                    } else {
+                        return Err("Session has no config".to_string());
+                    }
+                } else {
+                    return Err("Session not found".to_string());
+                }
+            }
+        };
+
+        // 2. Call collect_available_tools
+        crate::agent::tools::collect_available_tools(session_id, &config, &self.proxy_manager).await
+    }
+
     /// Remove a message from the in-memory cache
     /// Used when messages are deleted via messages_delete command to keep cache in sync
     pub async fn remove_message_from_cache(

@@ -1,17 +1,14 @@
 /// Global state management module
 ///
 /// This module provides centralized access to application-wide state including
-/// the MCP server manager, MCP service proxy manager, SQLite database URL,
+/// the MCP service proxy manager, SQLite database URL,
 /// database connection, and repositories.
-use crate::mcp::{MCPServerManager, MCPServiceProxyManager};
+use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::sync::OnceLock;
-
-/// A global, thread-safe, once-initialized instance of the `MCPServerManager`.
-static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<MCPServiceProxyManager> = OnceLock::new();
@@ -45,32 +42,6 @@ pub fn set_sqlite_db_url(url: String) {
 /// An `Option` containing a reference to the URL string, or `None` if not yet set.
 pub fn get_sqlite_db_url() -> Option<&'static String> {
     SQLITE_DB_URL.get()
-}
-
-/// Sets the global MCP server manager instance.
-///
-/// # Panics
-/// This function will panic if the manager is already set.
-pub fn set_mcp_manager(manager: MCPServerManager) {
-    MCP_MANAGER
-        .set(manager)
-        .expect("MCP Manager already initialized");
-}
-
-/// Gets a static reference to the global `MCPServerManager`.
-///
-/// If the manager has not been initialized, it initializes it with the default
-/// `SessionManager`. This function will panic if the `SessionManager` itself is not initialized.
-///
-/// # Panics
-/// Panics if `SessionManager` is not initialized when lazy initialization is attempted.
-pub fn get_mcp_manager() -> &'static MCPServerManager {
-    MCP_MANAGER.get_or_init(|| {
-        let session_manager =
-            crate::session::get_session_manager().expect("SessionManager not initialized");
-        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
-        MCPServerManager::new_with_session_manager(session_manager_arc)
-    })
 }
 
 /// Sets the global database connection.

@@ -7,7 +7,6 @@ use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 
-use super::server::MCPServerManager;
 use super::service_proxy::MCPServiceProxy;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
@@ -33,9 +32,6 @@ pub struct MCPServiceProxyManager {
     /// Session-specific HTTP MCP server managers (shared connections with session headers)
     session_http_managers: Arc<RwLock<HashMap<String, HttpSessionManager>>>,
 
-    /// Shared external MCP server manager (for HTTP servers and config)
-    external_mcp_manager: Arc<MCPServerManager>,
-
     /// Shared SeaORM database connection for all sessions
     db: Arc<DatabaseConnection>,
 
@@ -58,7 +54,6 @@ impl std::fmt::Debug for MCPServiceProxyManager {
             .field("proxies", &"<RwLock<HashMap>>")
             .field("session_stdio_managers", &"<RwLock<HashMap>>")
             .field("session_http_managers", &"<RwLock<HashMap>>")
-            .field("external_mcp_manager", &self.external_mcp_manager)
             .field("db", &"<DatabaseConnection>")
             .field("session_manager", &self.session_manager)
             .field("cleanup_task", &"<Mutex<Option<JoinHandle>>>")
@@ -89,31 +84,19 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager
     ///
     /// # Arguments
-    /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
-    pub fn new(
-        external_mcp_manager: Arc<MCPServerManager>,
-        db: Arc<DatabaseConnection>,
-        session_manager: Arc<SessionManager>,
-    ) -> Self {
-        Self::new_with_config(
-            external_mcp_manager,
-            db,
-            session_manager,
-            SessionIsolationConfig::default(),
-        )
+    pub fn new(db: Arc<DatabaseConnection>, session_manager: Arc<SessionManager>) -> Self {
+        Self::new_with_config(db, session_manager, SessionIsolationConfig::default())
     }
 
     /// Create a new proxy manager with custom configuration
     ///
     /// # Arguments
-    /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
     /// * `config` - Session isolation configuration
     pub fn new_with_config(
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         config: SessionIsolationConfig,
@@ -122,7 +105,6 @@ impl MCPServiceProxyManager {
             proxies: Arc::new(RwLock::new(HashMap::new())),
             session_stdio_managers: Arc::new(RwLock::new(HashMap::new())),
             session_http_managers: Arc::new(RwLock::new(HashMap::new())),
-            external_mcp_manager,
             db,
             session_manager,
             cleanup_task: Arc::new(Mutex::new(None)),
@@ -144,13 +126,7 @@ impl MCPServiceProxyManager {
     /// and the original is forgotten to prevent double-free. This is safe because
     /// the underlying data has 'static lifetime.
     pub fn new_from_static_refs() -> Self {
-        use crate::state::{get_database_connection, get_mcp_manager};
-
-        // SAFETY: We now clone the manager and db connection which are safe to share
-        // because they internally use Arc/ref-counting or are designed to be cloned.
-        // This avoids the UB of creating an Arc from a pointer to static memory.
-        let mcp_manager = get_mcp_manager();
-        let mcp_manager_arc = Arc::new(mcp_manager.clone());
+        use crate::state::get_database_connection;
 
         let db = get_database_connection();
         let db_arc = Arc::new(db.clone());
@@ -160,7 +136,7 @@ impl MCPServiceProxyManager {
             crate::session::get_session_manager().expect("SessionManager not initialized");
         let session_manager_arc = Arc::new(session_manager.clone());
 
-        Self::new(mcp_manager_arc, db_arc, session_manager_arc)
+        Self::new(db_arc, session_manager_arc)
     }
 
     /// Create a new session-specific proxy with dedicated tool instances
@@ -209,45 +185,191 @@ impl MCPServiceProxyManager {
             }
         }
 
-        // Create builtin proxy
-        let proxy = MCPServiceProxy::new(
-            session_id.clone(),
-            tool_ids,
-            self.external_mcp_manager.clone(),
-            self.db.clone(),
-            self.session_manager.clone(),
-            app_handle,
-        )
-        .await?;
+        // Fetch configs directly from DB to support Session Isolation (independent of global connections)
+        use crate::entity::mcp_server;
+        use sea_orm::EntityTrait;
+
+        let mut stdio_configs = HashMap::new();
+        let mut http_configs = HashMap::new();
+
+        match mcp_server::Entity::find().all(self.db.as_ref()).await {
+            Ok(models) => {
+                log::debug!(
+                    "Loaded {} MCP server configs from DB for session {}",
+                    models.len(),
+                    session_id
+                );
+                for model in models {
+                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+                    {
+                        Ok(mut config) => {
+                            // Use DB name if JSON doesn't specify one (type-safe approach)
+                            let server_name = config.name.unwrap_or_else(|| model.name.clone());
+                            config.name = Some(server_name.clone());
+
+                            match config.transport {
+                                crate::mcp::types::TransportConfig::Stdio { .. } => {
+                                    stdio_configs.insert(server_name, config);
+                                }
+                                crate::mcp::types::TransportConfig::Http { .. } => {
+                                    http_configs.insert(server_name, config);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to parse config for MCP server '{}': {}",
+                                model.name,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to fetch MCP server configs from DB for session {}: {}",
+                    session_id,
+                    e
+                );
+            }
+        }
 
         // Create session stdio manager
-        let stdio_configs = self.external_mcp_manager.get_stdio_configs().await;
-        let stdio_manager =
-            SessionMCPManager::new(session_id.clone(), stdio_configs, self.config.clone());
-
-        self.session_stdio_managers
-            .write()
-            .await
-            .insert(session_id.clone(), stdio_manager);
-
-        // Create session HTTP manager
-        let http_configs = self.external_mcp_manager.get_http_configs().await;
-        let http_manager = HttpSessionManager::new(
+        let stdio_manager = SessionMCPManager::new(
             session_id.clone(),
-            self.external_mcp_manager.clone(),
-            http_configs,
+            stdio_configs.clone(),
+            self.config.clone(),
         );
 
-        self.session_http_managers
-            .write()
-            .await
-            .insert(session_id.clone(), http_manager);
+        // Create session HTTP manager
+        let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());
 
+        // Start HTTP servers eagerly for session isolation
+        for (server_name, config) in &http_configs {
+            if let Err(e) = http_manager.start_server(server_name, config.clone()).await {
+                log::error!(
+                    "Failed to start HTTP server {} for session {}: {}",
+                    server_name,
+                    session_id,
+                    e
+                );
+            }
+        }
+
+        // Create builtin proxy
+        let proxy = MCPServiceProxy::builder(
+            session_id.clone(),
+            self.db.clone(),
+            self.session_manager.clone(),
+            Arc::new(http_manager.clone()),
+            Arc::new(stdio_manager.clone()),
+        )
+        .with_tool_ids(tool_ids)
+        .with_app_handle(app_handle)
+        .build()
+        .await?;
+
+        // Store proxy
         let proxy_arc = Arc::new(proxy);
         self.proxies
             .write()
             .await
             .insert(session_id.clone(), proxy_arc.clone());
+
+        self.session_stdio_managers
+            .write()
+            .await
+            .insert(session_id.clone(), stdio_manager.clone());
+
+        self.session_http_managers
+            .write()
+            .await
+            .insert(session_id.clone(), http_manager.clone());
+
+        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated stdio servers
+        log::info!(
+            "Starting eager tool discovery for {} session-isolated stdio servers",
+            stdio_configs.len()
+        );
+
+        for server_name in stdio_configs.keys() {
+            log::debug!(
+                "Fetching tools from session stdio server '{}' for session '{}'",
+                server_name,
+                session_id
+            );
+
+            match stdio_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from stdio server '{}' for session '{}'",
+                        tools.len(),
+                        server_name,
+                        session_id
+                    );
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_stdio_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
+                }
+            }
+        }
+
+        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
+        log::info!(
+            "Starting eager tool discovery for {} session-isolated HTTP servers",
+            http_configs.len()
+        );
+
+        for server_name in http_configs.keys() {
+            match http_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from HTTP server '{}' for session '{}'",
+                        tools.len(),
+                        server_name,
+                        session_id
+                    );
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_http_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
+                }
+            }
+        }
 
         log::info!("Created MCP service proxy for session: {}", session_id);
 
@@ -354,32 +476,36 @@ impl MCPServiceProxyManager {
             .split_once("__")
             .ok_or_else(|| format!("Invalid tool name format: {}", tool_name))?;
 
-        // Check transport type
-        let is_stdio = self.external_mcp_manager.is_stdio_server(server_name).await;
+        // Check if server exists in session-specific stdio manager first (primary check)
+        let stdio_managers = self.session_stdio_managers.read().await;
+        let has_stdio = stdio_managers
+            .get(session_id)
+            .map(|mgr| mgr.has_server(server_name))
+            .unwrap_or(false);
 
-        if is_stdio {
+        if has_stdio {
             // Route to session-specific stdio manager
-            let managers = self.session_stdio_managers.read().await;
-            let manager = managers
+            let manager = stdio_managers
                 .get(session_id)
                 .ok_or_else(|| format!("No stdio manager for session: {}", session_id))?;
 
-            manager
+            return manager
                 .call_tool(server_name, real_tool_name, args)
                 .await
-                .map_err(|e| format!("{}", e))
-        } else {
-            // Route to session-specific HTTP manager (with session context injection)
-            let managers = self.session_http_managers.read().await;
-            let manager = managers
-                .get(session_id)
-                .ok_or_else(|| format!("No HTTP manager for session: {}", session_id))?;
-
-            manager
-                .call_tool(server_name, real_tool_name, args)
-                .await
-                .map_err(|e| format!("{}", e))
+                .map_err(|e| format!("{}", e));
         }
+        drop(stdio_managers);
+
+        // Otherwise, route to session-specific HTTP manager
+        let http_managers = self.session_http_managers.read().await;
+        let manager = http_managers
+            .get(session_id)
+            .ok_or_else(|| format!("No HTTP manager for session: {}", session_id))?;
+
+        manager
+            .call_tool(server_name, real_tool_name, args)
+            .await
+            .map_err(|e| format!("{}", e))
     }
 
     /// Get the number of active proxies
@@ -396,12 +522,8 @@ impl MCPServiceProxyManager {
         self.proxies.read().await.keys().cloned().collect()
     }
 
-    /// List tools from all external MCP servers
-    ///
-    /// This is a convenience method to access external_mcp_manager functionality
-    pub async fn list_all_external_tools(&self) -> anyhow::Result<Vec<super::types::MCPTool>> {
-        self.external_mcp_manager.list_all_tools().await
-    }
+    // list_all_external_tools removed - session isolation migration
+    // See `agent/tools.rs` using `get_session_stdio_tools` and `get_session_http_tools` instead
 
     /// Start the background cleanup task for idle process management
     ///
@@ -491,17 +613,10 @@ mod tests {
             .await
             .expect("Failed to create planning_scratchpad table");
 
-        // Create a minimal SessionManager for MCPServerManager
+        // Create a minimal SessionManager
         let session_manager = Arc::new(crate::session::SessionManager::new().unwrap());
-        let external_mcp_manager = Arc::new(MCPServerManager::new_with_session_manager(
-            session_manager.clone(),
-        ));
 
-        Arc::new(MCPServiceProxyManager::new(
-            external_mcp_manager,
-            Arc::new(db),
-            session_manager,
-        ))
+        Arc::new(MCPServiceProxyManager::new(Arc::new(db), session_manager))
     }
 
     #[tokio::test]
