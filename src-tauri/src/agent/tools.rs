@@ -279,8 +279,15 @@ pub async fn handle_tool_result(
                         result.error.as_deref().unwrap_or("Unknown error"),
                     )
                 } else if let Some(mcp_content) = result.mcp_content {
+                    // ✅ ALWAYS use structured content for successful tool calls
                     create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
                 } else {
+                    // ⚠️ This branch should never happen for successful tool calls
+                    log::warn!(
+                        "Tool result has no mcp_content for session {}, tool_call_id {}. Using stringified fallback.",
+                        session_id,
+                        tool_call_id
+                    );
                     create_tool_result_message(&session_id, &tool_call_id, result.content.clone())
                 };
 

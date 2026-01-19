@@ -393,7 +393,12 @@ pub async fn handle_llm_response(
                     .await
                 {
                     Ok(response) => {
-                        let content = response
+                        let mcp_content = crate::agent::tools::convert_mcp_response_content(
+                            response.result.clone(),
+                        );
+
+                        // For logging/debugging only (not used in tool messages)
+                        let debug_content = response
                             .result
                             .as_ref()
                             .and_then(|r| serde_json::to_string_pretty(r).ok())
@@ -404,12 +409,10 @@ pub async fn handle_llm_response(
 
                         crate::commands::agent_commands::ToolExecutionResult {
                             success: !is_error,
-                            content,
+                            content: debug_content,
                             error: error_msg,
                             is_error,
-                            mcp_content: crate::agent::tools::convert_mcp_response_content(
-                                response.result,
-                            ),
+                            mcp_content,
                         }
                     }
                     Err(e) => crate::commands::agent_commands::ToolExecutionResult {
