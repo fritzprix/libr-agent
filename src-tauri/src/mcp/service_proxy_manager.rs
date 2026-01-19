@@ -238,16 +238,17 @@ impl MCPServiceProxyManager {
         }
 
         // Create builtin proxy
-        let proxy = MCPServiceProxy::new(
+        let proxy = MCPServiceProxy::builder(
             session_id.clone(),
-            tool_ids,
             self.external_mcp_manager.clone(),
             self.db.clone(),
             self.session_manager.clone(),
-            app_handle,
             Arc::new(http_manager.clone()),
             Arc::new(stdio_manager.clone()),
         )
+        .with_tool_ids(tool_ids)
+        .with_app_handle(app_handle)
+        .build()
         .await?;
 
         // Store proxy
@@ -500,7 +501,6 @@ impl MCPServiceProxyManager {
 
     // list_all_external_tools removed - session isolation migration
     // See `agent/tools.rs` using `get_session_stdio_tools` and `get_session_http_tools` instead
-
 
     /// Start the background cleanup task for idle process management
     ///

@@ -122,11 +122,37 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     // Auto-start
     let manager = get_mcp_manager();
-    if let Err(e) = manager.start_server(config).await {
+    // Use a clone to keep `config` available for error handling if start fails
+    if let Err(e) = manager.start_server(config.clone()).await {
+        let error_msg = e.to_string();
+        let mut hints = vec!["Check server command or URL".to_string()];
+
+        // Check for common "not found" errors to provide better guidance
+        if error_msg.to_lowercase().contains("program not found")
+            || error_msg.contains("No such file or directory")
+            || error_msg.contains("The system cannot find the file specified")
+        {
+            if let TransportConfig::Stdio { command, .. } = &config.transport {
+                match command.as_str() {
+                    "npx" => hints.push(
+                        "Try installing Node.js/npm and ensure 'npx' is in your PATH".to_string(),
+                    ),
+                    "uv" => hints.push(
+                        "Try installing 'uv' (pip install uv) and ensure it is in your PATH"
+                            .to_string(),
+                    ),
+                    "python" | "python3" => {
+                        hints.push("Check your Python installation and PATH".to_string())
+                    }
+                    cmd => hints.push(format!("Ensure '{}' is installed and valid", cmd)),
+                }
+            }
+        }
+
         return Ok(operation_failed_error(
             "start_server",
             &format!("Server created but failed to start: {}", e),
-            vec!["Check server command or URL".to_string()],
+            hints,
             ToolGroup::McpManager,
         ));
     }
@@ -308,11 +334,37 @@ pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MC
     };
 
     let manager = get_mcp_manager();
-    if let Err(e) = manager.start_server(config).await {
+    // Use a clone to keep `config` available for error handling if start fails
+    if let Err(e) = manager.start_server(config.clone()).await {
+        let error_msg = e.to_string();
+        let mut hints = vec!["Check target server logs".to_string()];
+
+        // Check for common "not found" errors to provide better guidance
+        if error_msg.to_lowercase().contains("program not found")
+            || error_msg.contains("No such file or directory")
+            || error_msg.contains("The system cannot find the file specified")
+        {
+            if let TransportConfig::Stdio { command, .. } = &config.transport {
+                match command.as_str() {
+                    "npx" => hints.push(
+                        "Try installing Node.js/npm and ensure 'npx' is in your PATH".to_string(),
+                    ),
+                    "uv" => hints.push(
+                        "Try installing 'uv' (pip install uv) and ensure it is in your PATH"
+                            .to_string(),
+                    ),
+                    "python" | "python3" => {
+                        hints.push("Check your Python installation and PATH".to_string())
+                    }
+                    cmd => hints.push(format!("Ensure '{}' is installed and valid", cmd)),
+                }
+            }
+        }
+
         return Ok(operation_failed_error(
             "connectServer",
-            &e.to_string(),
-            vec!["Check target server logs".to_string()],
+            &error_msg,
+            hints,
             ToolGroup::McpManager,
         ));
     }
@@ -333,6 +385,18 @@ pub async fn disconnect_server(
     };
 
     let manager = get_mcp_manager();
+
+    // Check if server is actually connected (Feedback Logic)
+    if !manager.is_server_alive(name).await {
+        return Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::ResourceNotFound,
+            format!("Server '{}' is not currently connected", name),
+            vec!["Use listServers to view active connections".to_string()],
+            ToolGroup::McpManager,
+        )
+        .to_mcp_result());
+    }
+
     if let Err(e) = manager.stop_server(name).await {
         return Ok(operation_failed_error(
             "disconnectServer",

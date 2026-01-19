@@ -82,6 +82,8 @@ impl BuiltinMCPServer for MCPManagerServer {
                     "type": "object",
                     "properties": {
                         "query": { "type": "string", "description": "Search target query" },
+                        "page": { "type": "integer", "minimum": 1, "description": "Page number for pagination" },
+                        "pageSize": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Items per page (max 50)" },
                         "searchMode": { "type": "string", "enum": ["simple", "bm25"], "description": "Search mode (simple or bm25)" },
                         "weights": { 
                             "type": "object", 

@@ -12,6 +12,37 @@ use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 use sea_orm::EntityTrait; // Needed for find_by_id in helper
 
+/// Configuration for creating an MCPServiceProxy
+#[derive(Debug)]
+pub struct ProxyConfig {
+    /// Unique identifier for the agent session
+    pub session_id: String,
+    /// List of builtin tool IDs to initialize
+    pub tool_ids: Vec<String>,
+    /// Optional Tauri app handle for builtin servers
+    pub app_handle: Option<AppHandle>,
+}
+
+/// Shared manager dependencies for MCPServiceProxy
+#[derive(Debug, Clone)]
+pub struct SharedManagers {
+    /// Shared manager for external MCP servers
+    pub external_mcp: Arc<MCPServerManager>,
+    /// Shared SeaORM database connection
+    pub db: Arc<DatabaseConnection>,
+    /// Shared SessionManager for workspace/content_store
+    pub session_manager: Arc<SessionManager>,
+}
+
+/// Session-specific manager dependencies
+#[derive(Debug, Clone)]
+pub struct SessionManagers {
+    /// Session-specific HTTP manager
+    pub http: Arc<HttpSessionManager>,
+    /// Session-specific Stdio manager
+    pub stdio: Arc<SessionMCPManager>,
+}
+
 /// Session-specific MCP service proxy
 ///
 /// Each proxy instance is bound to a single agent session and holds dedicated
@@ -27,11 +58,8 @@ pub struct MCPServiceProxy {
     /// Value: Boxed trait object implementing BuiltinMCPServer
     builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,
 
-    /// Shared external MCP manager for stdio-based servers
-    external_mcp_manager: Arc<MCPServerManager>,
-
-    /// Shared SessionManager for workspace/content_store servers
-    _session_manager: Arc<SessionManager>,
+    /// Shared managers
+    shared_managers: SharedManagers,
 
     /// Cached tools from session-isolated stdio servers
     /// Key: server_name, Value: list of tools
@@ -42,27 +70,106 @@ pub struct MCPServiceProxy {
     /// Key: server_name, Value: list of tools
     session_http_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
 
-    /// Session-specific HTTP manager
-    http_manager: Arc<HttpSessionManager>,
+    /// Session-specific managers
+    session_managers: SessionManagers,
+}
 
-    /// Session-specific Stdio manager
+/// Builder for MCPServiceProxy
+pub struct MCPServiceProxyBuilder {
+    session_id: String,
+    tool_ids: Vec<String>,
+    external_mcp_manager: Arc<MCPServerManager>,
+    db: Arc<DatabaseConnection>,
+    session_manager: Arc<SessionManager>,
+    app_handle: Option<AppHandle>,
+    http_manager: Arc<HttpSessionManager>,
     stdio_manager: Arc<SessionMCPManager>,
 }
 
+impl MCPServiceProxyBuilder {
+    /// Create a new builder with required fields
+    pub fn new(
+        session_id: String,
+        external_mcp_manager: Arc<MCPServerManager>,
+        db: Arc<DatabaseConnection>,
+        session_manager: Arc<SessionManager>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
+    ) -> Self {
+        Self {
+            session_id,
+            tool_ids: Vec::new(),
+            external_mcp_manager,
+            db,
+            session_manager,
+            app_handle: None,
+            http_manager,
+            stdio_manager,
+        }
+    }
+
+    /// Set the tool IDs to initialize
+    pub fn with_tool_ids(mut self, tool_ids: Vec<String>) -> Self {
+        self.tool_ids = tool_ids;
+        self
+    }
+
+    /// Set the app handle
+    pub fn with_app_handle(mut self, app_handle: Option<AppHandle>) -> Self {
+        self.app_handle = app_handle;
+        self
+    }
+
+    /// Build the MCPServiceProxy
+    pub async fn build(self) -> Result<MCPServiceProxy, String> {
+        MCPServiceProxy::create(
+            self.session_id,
+            self.tool_ids,
+            self.external_mcp_manager,
+            self.db,
+            self.session_manager,
+            self.app_handle,
+            self.http_manager,
+            self.stdio_manager,
+        )
+        .await
+    }
+}
+
 impl MCPServiceProxy {
-    /// Create a new session-bound proxy
+    /// Create a new session-bound proxy using builder
     ///
     /// # Arguments
     /// * `session_id` - Unique identifier for the agent session
-    /// * `tool_ids` - List of builtin tool IDs to initialize
     /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `http_manager` - Session-specific HTTP manager
+    /// * `stdio_manager` - Session-specific Stdio manager
     ///
     /// # Returns
-    /// * `Ok(Self)` - Initialized proxy with builtin servers
-    /// * `Err(String)` - Error if server initialization fails
-    pub async fn new(
+    /// * `MCPServiceProxyBuilder` - Builder to configure additional options
+    pub fn builder(
+        session_id: String,
+        external_mcp_manager: Arc<MCPServerManager>,
+        db: Arc<DatabaseConnection>,
+        session_manager: Arc<SessionManager>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
+    ) -> MCPServiceProxyBuilder {
+        MCPServiceProxyBuilder::new(
+            session_id,
+            external_mcp_manager,
+            db,
+            session_manager,
+            http_manager,
+            stdio_manager,
+        )
+    }
+
+    /// Internal method to create the proxy (used by builder)
+    #[allow(clippy::too_many_arguments)]
+    async fn create(
         session_id: String,
         tool_ids: Vec<String>,
         external_mcp_manager: Arc<MCPServerManager>,
@@ -74,9 +181,9 @@ impl MCPServiceProxy {
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
-        for tool_id in tool_ids {
+        for tool_id in &tool_ids {
             if let Some(server) = create_builtin_server(
-                &tool_id,
+                tool_id,
                 session_id.clone(),
                 db.clone(),
                 session_manager.clone(),
@@ -84,7 +191,7 @@ impl MCPServiceProxy {
             )
             .await?
             {
-                builtin_servers.insert(tool_id.clone(), server);
+                builtin_servers.insert(tool_id.to_string(), server);
                 log::debug!(
                     "Initialized builtin server '{}' for session '{}'",
                     tool_id,
@@ -102,12 +209,17 @@ impl MCPServiceProxy {
         Ok(Self {
             session_id,
             builtin_servers,
-            external_mcp_manager,
-            _session_manager: session_manager,
+            shared_managers: SharedManagers {
+                external_mcp: external_mcp_manager,
+                db,
+                session_manager,
+            },
             session_stdio_tool_cache: Arc::new(RwLock::new(HashMap::new())),
             session_http_tool_cache: Arc::new(RwLock::new(HashMap::new())),
-            http_manager,
-            stdio_manager,
+            session_managers: SessionManagers {
+                http: http_manager,
+                stdio: stdio_manager,
+            },
         })
     }
 
@@ -171,20 +283,22 @@ impl MCPServiceProxy {
 
             if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
                 // 1. Check if it's a session-isolated HTTP server
-                if self.http_manager.has_server(server_name).await {
+                if self.session_managers.http.has_server(server_name).await {
                     log::debug!("Routing to session-isolated HTTP server: {}", server_name);
                     return self
-                        .http_manager
+                        .session_managers
+                        .http
                         .call_tool(server_name, real_tool_name, args)
                         .await
                         .map_err(|e| e.to_string());
                 }
 
                 // 2. Check if it's a session-isolated Stdio server
-                if self.stdio_manager.has_server(server_name) {
+                if self.session_managers.stdio.has_server(server_name) {
                     log::debug!("Routing to session-isolated Stdio server: {}", server_name);
                     return self
-                        .stdio_manager
+                        .session_managers
+                        .stdio
                         .call_tool(server_name, real_tool_name, args)
                         .await
                         .map_err(|e| e.to_string());
@@ -198,7 +312,8 @@ impl MCPServiceProxy {
                     self.session_id
                 );
                 let response = self
-                    .external_mcp_manager
+                    .shared_managers
+                    .external_mcp
                     .call_tool(server_name, real_tool_name, args, None)
                     .await;
                 Ok(response)

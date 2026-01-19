@@ -147,7 +147,24 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
         })
         .collect();
 
-    let servers_text = filtered
+    // Pagination logic (Context Economy)
+    let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
+    let page_size = args
+        .get("pageSize")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(20)
+        .min(50) as usize;
+
+    let total = filtered.len();
+    let start = ((page - 1) * page_size as u64) as usize;
+    let sliced_results = if start >= total {
+        Vec::new()
+    } else {
+        let end = (start + page_size).min(total);
+        filtered[start..end].to_vec()
+    };
+
+    let servers_text = sliced_results
         .iter()
         .map(|s| {
             format!(
@@ -159,12 +176,12 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
         .collect::<Vec<_>>()
         .join("\n");
 
+    let total_pages = (total as f64 / page_size as f64).ceil() as u64;
+
     let hint = SuccessHint::new(
         format!(
-            "Search complete. Found {} servers matching '{}':\n\n{}",
-            filtered.len(),
-            query,
-            servers_text
+            "Search complete. Found {} servers matching '{}' (Page {}/{}):\n\n{}",
+            total, query, page, total_pages, servers_text
         ),
         if filtered.is_empty() {
             vec!["Use listServers to extract all servers".to_string()]
@@ -173,7 +190,12 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
         },
     );
 
-    Ok(hint.to_mcp_result_with_data(Some(json!({ "servers": filtered }))))
+    Ok(hint.to_mcp_result_with_data(Some(json!({
+        "servers": sliced_results,
+        "total": total,
+        "page": page,
+        "pageSize": page_size
+    }))))
 }
 
 /// List all builtin tools from the registry
