@@ -17,3 +17,8 @@
 
 **Pattern:** Identical JSX structure (container, label, error message) duplicated in `InputWithLabel.tsx` and `TextareaWithLabel.tsx`.
 **Action:** Extracted `FieldWrapper` component to centralize the layout and styling logic for labeled form fields.
+
+## 2026-05-24 - [Duplicate Session Filtering Logic]
+
+**Pattern:** Redundant session filtering logic (matching against name, ID, assistant name/description) in `SessionList.tsx` and `AgentChatStartView.tsx`.
+**Action:** Extracted `filterSessions` utility in `src/lib/session-utils.ts` to centralize filtering logic and ensure consistent search behavior across views.

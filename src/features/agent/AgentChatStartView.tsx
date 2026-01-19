@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { RefreshCw, Search } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { filterSessions } from '@/lib/session-utils';
 
 const logger = getLogger('AgentChatStartView');
 
@@ -67,14 +68,7 @@ export default function AgentChatStartView() {
     }
 
     // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (session) =>
-          session.name?.toLowerCase().includes(query) ||
-          session.id.toLowerCase().includes(query),
-      );
-    }
+    filtered = filterSessions(filtered, searchQuery);
 
     // Sort by status first, then by creation date
     return [...filtered].sort((a, b) => {

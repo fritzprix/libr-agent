@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
+import { filterSessions } from '@/lib/session-utils';
 import type { SessionWithHits } from '@/models/search';
 
 interface SessionListProps {
@@ -27,23 +28,7 @@ function SessionList({
 
   // Filter sessions based on debounced search query
   const filteredSessions = useMemo(() => {
-    if (!debouncedQuery.trim()) {
-      return sessions;
-    }
-
-    const query = debouncedQuery.toLowerCase();
-    return sessions.filter((session) => {
-      const name = session.name?.toLowerCase() || '';
-      // AgentSession doesn't have description directly, check assistant
-      const description = session.assistant?.description?.toLowerCase() || '';
-      const assistantName = session.assistant?.name?.toLowerCase() || '';
-
-      return (
-        name.includes(query) ||
-        description.includes(query) ||
-        assistantName.includes(query)
-      );
-    });
+    return filterSessions(sessions, debouncedQuery);
   }, [sessions, debouncedQuery]);
 
   return (
