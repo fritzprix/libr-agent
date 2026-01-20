@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
@@ -21,18 +21,8 @@ export function AgentChatMessages() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   // Group messages for display
-  const groupedMessages = useMessageGrouping(messages);
-
-  // Pre-compute tool results lookup map to avoid O(N*M) lookups
-  const toolResultsMap = useMemo(() => {
-    const map = new Map<string, Message>();
-    for (const msg of messages) {
-      if (msg.role === 'tool' && msg.tool_call_id) {
-        map.set(msg.tool_call_id, msg);
-      }
-    }
-    return map;
-  }, [messages]);
+  // toolResultsMap is computed in the same pass as grouping to avoid redundant O(N) iteration
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
 
   // Only auto-scroll if enabled
   useEffect(() => {
