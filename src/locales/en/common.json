@@ -21,11 +21,16 @@
       "cancel": "Cancel",
       "save": "Save"
     },
+    "list": {
+      "create": "Create New Assistant"
+    },
     "card": {
       "protected": "PROTECTED",
       "active": "ACTIVE",
       "mcpCount": "MCP Servers: {{count}}",
-      "localServiceCount": "Local Services: {{count}}",
+      "builtinCount": "Built-in: {{count}}",
+      "builtinCountAll": "Built-in: All",
+      "allBuiltin": "All Built-in Tools",
       "edit": "Edit",
       "checkStatus": "Check Status",
       "checking": "Checking...",
@@ -34,7 +39,10 @@
       "deleteBlocked": "Protected assistant cannot be deleted.",
       "deleteConfirmTitle": "Delete Assistant",
       "confirmDelete": "Confirm Delete",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "created": "Created",
+      "updated": "Updated",
+      "description": "Description"
     }
   },
   "status": {

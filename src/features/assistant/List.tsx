@@ -9,9 +9,12 @@ import { Button } from '../../components/ui';
 import { Input } from '../../components/ui/input';
 import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
+import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AssistantList');
+
+import { listAvailableBuiltinServerDefinitions } from '@/features/mcp/api/mcp-server-registry';
 
 export default function AssistantList() {
   const {
@@ -24,11 +27,36 @@ export default function AssistantList() {
     pageSize,
     totalAssistants,
   } = useAssistantContext();
+  const { t } = useTranslation('common');
 
   const [createNew, setCreateNew] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Assistant[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [builtinToolsMap, setBuiltinToolsMap] = useState<
+    Record<string, string>
+  >({});
+
+  useEffect(() => {
+    async function loadDefinitions() {
+      try {
+        const defs = await listAvailableBuiltinServerDefinitions();
+        const map: Record<string, string> = {};
+        defs.forEach((d) => {
+          map[d.name] = d.metadata.displayName;
+        });
+        setBuiltinToolsMap(map);
+      } catch (err) {
+        console.error('Failed to load builtin definitions', err);
+      }
+    }
+    loadDefinitions();
+  }, []);
+
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
 
   // Enable paginated mode on mount
   useEffect(() => {
@@ -87,7 +115,7 @@ export default function AssistantList() {
           className="w-full"
           onClick={() => setCreateNew(true)}
         >
-          + 새 어시스턴트 만들기
+          {t('assistant.list.create')}
         </Button>
       </div>
 
@@ -133,7 +161,13 @@ export default function AssistantList() {
         ) : (
           <div className="space-y-2">
             {displayedAssistants.map((assistant) => (
-              <AssistantCard key={assistant.id} assistant={assistant} />
+              <AssistantCard
+                key={assistant.id}
+                assistant={assistant}
+                isExpanded={expandedId === assistant.id}
+                onToggle={() => handleToggleExpand(assistant.id!)}
+                builtinToolsMap={builtinToolsMap}
+              />
             ))}
           </div>
         )}

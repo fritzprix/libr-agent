@@ -21,11 +21,16 @@
       "cancel": "취소",
       "save": "저장"
     },
+    "list": {
+      "create": "새 어시스턴트 만들기"
+    },
     "card": {
       "protected": "보호됨",
       "active": "활성",
       "mcpCount": "MCP 서버: {{count}}개",
-      "localServiceCount": "로컬 서비스: {{count}}개",
+      "builtinCount": "내장 도구: {{count}}개",
+      "builtinCountAll": "내장 도구: 전체",
+      "allBuiltin": "모든 내장 도구",
       "edit": "편집",
       "checkStatus": "상태확인",
       "checking": "확인중...",
@@ -34,7 +39,10 @@
       "deleteBlocked": "보호된 어시스턴트는 삭제할 수 없습니다.",
       "deleteConfirmTitle": "어시스턴트 삭제",
       "confirmDelete": "삭제 확인",
-      "cancel": "취소"
+      "cancel": "취소",
+      "created": "생성일",
+      "updated": "수정일",
+      "description": "설명"
     }
   },
   "status": {
