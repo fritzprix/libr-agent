@@ -97,12 +97,14 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             messages[j].tool_call_id &&
             toolCallIds.has(messages[j].tool_call_id!)
           ) {
-            // Capture skipped tool result in map
-            // Note: We might have already captured it if we didn't use continue in main loop,
-            // but the main loop skips if we increment i.
-            // Here j is incremented.
-            // We need to capture it here because these indices (j) will be skipped by i = j assignment later.
-            toolResultsMap.set(messages[j].tool_call_id!, messages[j]);
+            // Capture skipped tool result in map.
+            // These tool results were already encountered when they were at position i
+            // in the outer loop; we add them here as well because i will later jump to j,
+            // effectively skipping these indices. The has-check avoids redundant overwrites.
+            const toolCallId = messages[j].tool_call_id!;
+            if (!toolResultsMap.has(toolCallId)) {
+              toolResultsMap.set(toolCallId, messages[j]);
+            }
             j++;
           }
         }
