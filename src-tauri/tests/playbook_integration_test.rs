@@ -41,7 +41,6 @@ async fn test_playbook_ui_rendering_integration() {
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),
-        ..Default::default()
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())
@@ -158,8 +157,8 @@ async fn test_playbook_ui_rendering_integration() {
 
         // Verify JavaScript event handlers
         assert!(html.contains("window.parent.postMessage"));
-        assert!(html.contains("builtin_playbook__getPlaybook"));
-        assert!(html.contains("builtin_playbook__deletePlaybook"));
+        assert!(html.contains("selectPlaybook"));
+        assert!(html.contains("deletePlaybook"));
     } else {
         panic!("Expected Resource content");
     }
@@ -183,7 +182,6 @@ async fn test_playbook_ui_interaction_flow() {
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),
-        ..Default::default()
     };
     session::Entity::insert(new_session)
         .exec(db.as_ref())

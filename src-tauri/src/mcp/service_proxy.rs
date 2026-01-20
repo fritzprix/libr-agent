@@ -475,26 +475,6 @@ async fn create_builtin_server(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    // use super::*;
-
-    #[tokio::test]
-    async fn test_builtin_tool_routing() {
-        // TODO: Test that builtin_ prefix routes correctly
-    }
-
-    #[tokio::test]
-    async fn test_external_tool_routing() {
-        // TODO: Test that non-builtin tools route to external manager
-    }
-
-    #[tokio::test]
-    async fn test_invalid_tool_name() {
-        // TODO: Test error handling for invalid tool names
-    }
-}
-
 async fn get_assistant_id_from_session(
     db: &DatabaseConnection,
     session_id: &str,
@@ -522,4 +502,24 @@ async fn get_assistant_id_from_session(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| "No assistant ID in session config".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    // use super::*;
+
+    #[tokio::test]
+    async fn test_builtin_tool_routing() {
+        // TODO: Test that builtin_ prefix routes correctly
+    }
+
+    #[tokio::test]
+    async fn test_external_tool_routing() {
+        // TODO: Test that non-builtin tools route to external manager
+    }
+
+    #[tokio::test]
+    async fn test_invalid_tool_name() {
+        // TODO: Test error handling for invalid tool names
+    }
 }

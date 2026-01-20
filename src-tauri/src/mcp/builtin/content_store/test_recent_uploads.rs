@@ -7,6 +7,7 @@ mod tests {
     use tempfile::TempDir;
     use tokio::sync::Mutex;
 
+    #[allow(dead_code)]
     async fn setup_server() -> (ContentStoreServer, TempDir, String) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test_recent_uploads.db");

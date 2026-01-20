@@ -127,17 +127,17 @@ mod tests {
     #[cfg(windows)]
     fn test_prepare_command_windows() {
         // Test npx wrapping
-        let (cmd, args) = prepare_command("npx", &vec!["-y".to_string(), "package".to_string()]);
+        let (cmd, args) = prepare_command("npx", &["-y".to_string(), "package".to_string()]);
         assert_eq!(cmd, "cmd.exe");
         assert_eq!(args, vec!["/C", "npx", "-y", "package"]);
 
         // Test .exe passthrough
-        let (cmd, args) = prepare_command("program.exe", &vec!["arg1".to_string()]);
+        let (cmd, args) = prepare_command("program.exe", &["arg1".to_string()]);
         assert_eq!(cmd, "program.exe");
         assert_eq!(args, vec!["arg1"]);
 
         // Test .ps1 wrapping
-        let (cmd, args) = prepare_command("script.ps1", &vec!["arg1".to_string()]);
+        let (cmd, args) = prepare_command("script.ps1", &["arg1".to_string()]);
         assert_eq!(cmd, "powershell.exe");
         assert!(args[0] == "-ExecutionPolicy");
         assert!(args[2] == "-File");

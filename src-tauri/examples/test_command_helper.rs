@@ -42,7 +42,7 @@ fn main() {
 
     // Test actual spawn with npx
     println!("Testing: npx --version");
-    let (cmd, args) = command_helper::prepare_command("npx", &vec!["--version".to_string()]);
+    let (cmd, args) = command_helper::prepare_command("npx", &["--version".to_string()]);
 
     match std::process::Command::new(&cmd).args(&args).output() {
         Ok(output) => {
