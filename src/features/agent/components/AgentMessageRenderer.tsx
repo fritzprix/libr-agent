@@ -5,7 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
-import type { MCPContent } from '@/lib/mcp-types';
+import type { MCPContent, ServiceInfo } from '@/lib/mcp-types';
 import type { Message } from '@/models/chat';
 import { extractServiceInfoFromContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
@@ -645,7 +645,27 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               </div>
             );
           }
-          case 'resource':
+          case 'resource': {
+            // Type narrow to extract the resource property
+            const resourceItem = item as {
+              type: 'resource';
+              resource: {
+                uri: string;
+                mimeType: string;
+                text?: string;
+                blob?: string;
+                _meta?: Record<string, unknown>;
+              };
+              serviceInfo?: ServiceInfo;
+            };
+
+            if (!resourceItem.resource) {
+              logger.warn('Resource content is missing resource property', {
+                item,
+              });
+              return null;
+            }
+
             // Prefer a stable, unique key to ensure proper mount/unmount semantics
             // Use message.id + resource.uri to avoid index-based reordering issues
             // Also, pass stable props to avoid unnecessary teardown in the renderer
@@ -669,10 +689,11 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                       className: 'h-auto min-h-[50vh] max-h-none',
                     },
                   }}
-                  resource={item.resource}
+                  resource={resourceItem.resource}
                 />
               </div>
             );
+          }
           case 'image': {
             const imageItem = item as {
               data?: string;
