@@ -118,9 +118,9 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
                 btn.addEventListener('click', function() {
                     const id = this.getAttribute('data-id');
                     window.parent.postMessage({
-                        type: 'ui-action',
-                        action: {
-                            tool: 'builtin_playbook__selectPlaybook',
+                        type: 'tool',
+                        payload: {
+                            toolName: 'selectPlaybook',
                             params: { id: id }
                         }
                     }, '*');
@@ -132,9 +132,9 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
                     const id = this.getAttribute('data-id');
                     if (confirm('Delete playbook "' + id + '"?')) {
                         window.parent.postMessage({
-                            type: 'ui-action',
-                            action: {
-                                tool: 'builtin_playbook__deletePlaybook',
+                            type: 'tool',
+                            payload: {
+                                toolName: 'deletePlaybook',
                                 params: { id: id }
                             }
                         }, '*');
@@ -145,18 +145,18 @@ pub const PLAYBOOK_LIST_TEMPLATE: &str = r#"<!DOCTYPE html>
             const page = {{page}};
             document.getElementById('prev-btn')?.addEventListener('click', function() {
                 window.parent.postMessage({
-                    type: 'ui-action',
-                    action: {
-                        tool: 'builtin_playbook__getPlaybookPage',
+                    type: 'tool',
+                    payload: {
+                        toolName: 'getPlaybookPage',
                         params: { page: page - 1, pageSize: {{pageSize}} }
                     }
                 }, '*');
             });
             document.getElementById('next-btn')?.addEventListener('click', function() {
                 window.parent.postMessage({
-                    type: 'ui-action',
-                    action: {
-                        tool: 'builtin_playbook__getPlaybookPage',
+                    type: 'tool',
+                    payload: {
+                        toolName: 'getPlaybookPage',
                         params: { page: page + 1, pageSize: {{pageSize}} }
                     }
                 }, '*');
