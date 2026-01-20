@@ -9,10 +9,20 @@ pub fn to_json_option<T: Serialize>(value: &Option<T>) -> Result<Option<String>,
 }
 
 /// Helper to deserialize optional JSON string fields to Option<T>.
-/// Returns None if the input is None or if deserialization fails (silently ignoring errors).
-/// Use this when you want to handle potential schema evolution gracefully.
+/// Returns None if the input is None or if deserialization fails (logs the error and returns None).
+/// Use this when you want to handle potential schema evolution gracefully without failing hard.
 pub fn from_json_option<T: for<'a> Deserialize<'a>>(value: &Option<String>) -> Option<T> {
-    value.as_ref().and_then(|s| serde_json::from_str(s).ok())
+    match value.as_ref() {
+        None => None,
+        Some(s) => match serde_json::from_str(s) {
+            Ok(v) => Some(v),
+            Err(err) => {
+                // Log and return None to avoid silently ignoring deserialization errors.
+                log::warn!("from_json_option: failed to deserialize JSON: {}", err);
+                None
+            }
+        },
+    }
 }
 
 /// Helper to deserialize a JSON string to T, or return T::default() if deserialization fails.
