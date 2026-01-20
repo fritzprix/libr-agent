@@ -57,7 +57,7 @@ async fn test_basic_spawn() {
     });
 
     #[cfg(not(windows))]
-    let cmd = Command::new("sh").configure(|cmd| {
+    let mut cmd = Command::new("sh").configure(|cmd| {
         cmd.arg("-c").arg("echo Environment test successful");
         for (key, value) in &env {
             cmd.env(key, value);

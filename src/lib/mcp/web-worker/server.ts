@@ -6,7 +6,10 @@
 import type { MCPTool } from '../protocol';
 import type { MCPResult, SamplingResponse } from '../protocol';
 import type { SamplingOptions } from '../protocol';
-import type { ServiceContext, ServiceContextOptions } from '@/features/tools';
+import type {
+  ServiceContext,
+  ServiceContextOptions,
+} from '@/features/mcp/types';
 
 /**
  * Defines the interface for an MCP server running in a Web Worker.

@@ -1,74 +1,52 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
-import { useBuiltInTool } from '@/features/tools';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { extractBuiltInServiceAlias } from '@/lib/utils';
 import { getLogger } from '@/lib/logger';
+import {
+  listAvailableBuiltinServerDefinitions,
+  BuiltinServerInfo,
+} from '@/features/mcp/api/mcp-server-registry';
 
 const logger = getLogger('BuiltIn');
 
-interface BuiltInServiceInfo {
-  alias: string;
-  displayName: string;
-  description: string;
-  toolCount: number;
-}
-
 export default function BuiltInToolsEditor() {
   const { draft, update } = useEditor<Assistant>();
-  const { availableTools, status, getServiceMetadata } = useBuiltInTool();
+  const [services, setServices] = useState<BuiltinServerInfo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Group tools by service alias
-  const services = useMemo((): BuiltInServiceInfo[] => {
-    logger.info('BuiltInToolsEditor: Computing services from available tools', {
-      totalTools: availableTools.length,
-    });
-    const serviceMap = new Map<string, BuiltInServiceInfo>();
+  useEffect(() => {
+    let isMounted = true;
 
-    availableTools.forEach((tool) => {
-      const alias = extractBuiltInServiceAlias(tool.name);
-
-      if (tool.name.includes('planning') || tool.name.includes('createGoal')) {
-        logger.info('BuiltInToolsEditor: Processing planning tool', {
-          toolName: tool.name,
-          extractedAlias: alias,
-        });
-      }
-
-      if (!alias) {
-        logger.warn("alias doesn't exist for ", { name: tool.name });
-        return;
-      }
-
-      if (!serviceMap.has(alias)) {
-        // Get metadata from context (runtime metadata from Web/Rust MCP providers)
-        const metadata = getServiceMetadata(alias);
-        if (!metadata) {
-          logger.warn("metadata doesn't exist for service", { alias });
+    async function fetchDefinitions() {
+      try {
+        const defs = await listAvailableBuiltinServerDefinitions();
+        if (isMounted) {
+          setServices(
+            defs.sort((a, b) =>
+              a.metadata.displayName.localeCompare(b.metadata.displayName),
+            ),
+          );
+          setIsLoading(false);
         }
-
-        serviceMap.set(alias, {
-          alias,
-          displayName: metadata?.displayName || alias,
-          description: metadata?.description || 'No description available',
-          toolCount: 0,
-        });
+      } catch (err) {
+        logger.error('Failed to fetch builtin server definitions', err);
+        if (isMounted) setIsLoading(false);
       }
-      const info = serviceMap.get(alias)!;
-      info.toolCount++;
-    });
+    }
 
-    return Array.from(serviceMap.values()).sort((a, b) =>
-      a.displayName.localeCompare(b.displayName),
-    );
-  }, [availableTools, getServiceMetadata]);
+    fetchDefinitions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const allowedAliases = draft.allowedBuiltInServiceAliases;
 
   const allServiceAliases = useMemo(
-    () => services.map((service) => service.alias),
+    () => services.map((service) => service.name),
     [services],
   );
 
@@ -113,7 +91,7 @@ export default function BuiltInToolsEditor() {
         const next = sortAliases([...current, alias]);
 
         if (next.length === allServiceAliases.length) {
-          draft.allowedBuiltInServiceAliases = undefined;
+          draft.allowedBuiltInServiceAliases = undefined; // All enabled
           return;
         }
 
@@ -122,9 +100,6 @@ export default function BuiltInToolsEditor() {
     },
     [allServiceAliases, sortAliases, update],
   );
-
-  // Check if any service is still loading
-  const isLoading = Object.values(status).some((s) => s === 'loading');
 
   if (isLoading) {
     return (
@@ -158,19 +133,22 @@ export default function BuiltInToolsEditor() {
       <div className="space-y-3 border rounded-lg p-4">
         {services.map((service) => {
           // Empty array = all enabled, otherwise check if in list
+          // "name" from backend corresponds to "alias" in helper logic
           const isEnabled =
             allowedAliases === undefined ||
-            allowedAliases.includes(service.alias);
+            allowedAliases.includes(service.name);
 
           return (
             <div
-              key={service.alias}
+              key={service.name}
               className="flex items-start justify-between py-2"
             >
               <div className="flex-1">
-                <div className="font-medium">{service.displayName}</div>
+                <div className="font-medium">
+                  {service.metadata.displayName}
+                </div>
                 <div className="text-sm text-muted-foreground">
-                  {service.description}
+                  {service.metadata.description}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   {service.toolCount} tool{service.toolCount !== 1 ? 's' : ''}{' '}
@@ -180,7 +158,7 @@ export default function BuiltInToolsEditor() {
               <Switch
                 checked={isEnabled}
                 onCheckedChange={(checked) =>
-                  handleToggle(service.alias, checked)
+                  handleToggle(service.name, checked)
                 }
               />
             </div>

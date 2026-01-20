@@ -2,7 +2,7 @@
  * Type definitions for Rust backend client
  */
 
-import type { ServiceMetadata } from '@/features/tools';
+import type { ServiceMetadata } from '@/features/mcp/types';
 
 /**
  * Represents an item in the workspace file system.

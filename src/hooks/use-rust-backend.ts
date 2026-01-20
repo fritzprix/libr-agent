@@ -11,7 +11,7 @@ import type { MCPResult } from '@/lib/mcp/protocol/response';
 import type {
   ServiceContext,
   ServiceContextOptions,
-} from '@/features/tools/types';
+} from '@/features/mcp/types';
 
 // Workspace types
 export type { WorkspaceFileItem } from '@/lib/rust-backend-client';
