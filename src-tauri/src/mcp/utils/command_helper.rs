@@ -2,12 +2,14 @@
 ///
 /// Windows requires special handling for .cmd, .bat, and .ps1 files,
 /// which need to be executed through cmd.exe or powershell.exe
+#[cfg(windows)]
 use std::path::Path;
 
 /// Determines if a command needs shell wrapping on Windows
 ///
 /// On Windows, script files (.cmd, .bat, .ps1) cannot be executed directly
 /// and must be invoked through cmd.exe or powershell.exe
+#[cfg_attr(not(windows), allow(dead_code))]
 fn needs_shell_wrapper(command: &str) -> bool {
     #[cfg(windows)]
     {

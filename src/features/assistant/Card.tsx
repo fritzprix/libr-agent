@@ -2,26 +2,30 @@ import { useAssistantContext } from '@/context/AssistantContext';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useCallback, useState } from 'react';
 import { Assistant } from '../../models/chat';
-import { Badge, Button, StatusIndicator } from '@/components/ui';
+import { Badge, Button } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
 import AssistantEditor from './AssistantEditor';
 import { useTranslation } from 'react-i18next';
-import { Loader2 } from 'lucide-react';
+
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 
 interface AssistantCardProps {
   assistant: Assistant;
+  isExpanded: boolean;
+  onToggle: () => void;
+  builtinToolsMap?: Record<string, string>;
 }
 
-export default function AssistantCard({ assistant }: AssistantCardProps) {
+export default function AssistantCard({
+  assistant,
+  isExpanded,
+  onToggle,
+  builtinToolsMap,
+}: AssistantCardProps) {
   const { deleteAssistant, saveAssistant: upsertAssistant } =
     useAssistantContext();
-  const {
-    status,
-    isLoading: isCheckingStatus,
-    serversById,
-    connectServersFromAssistant,
-  } = useMCPServer();
+  const { serversById } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [edit, setEdit] = useState<boolean>(false);
@@ -34,15 +38,6 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     },
     [upsertAssistant],
   );
-
-  const handleCheckStatus = useCallback(async () => {
-    try {
-      logger.debug(`Checking MCP status for assistant: ${assistant.name}`);
-      await connectServersFromAssistant(assistant);
-    } catch (error) {
-      logger.error('Error checking server status:', error);
-    }
-  }, [assistant, connectServersFromAssistant, logger]);
 
   const handleDeleteClick = useCallback(() => {
     if (assistant.deletionProtected === true) {
@@ -74,66 +69,107 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
     <EditorProvider initialValue={assistant} onFinalize={handleEditComplete}>
       <div className="border rounded p-3 transition-colors border-muted hover:border-accent">
         <div className="flex justify-between items-start mb-2">
-          <h3 className="text-primary font-medium">{assistant.name}</h3>
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex items-center gap-2 flex-1">
+            <h3 className="text-primary font-medium">{assistant.name}</h3>
             {assistant.deletionProtected === true && (
               <Badge variant="destructive">
                 {t('assistant.card.protected')}
               </Badge>
             )}
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={onToggle}
+          >
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
         </div>
 
-        <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
-          {assistant.systemPrompt}
-        </p>
+        {isExpanded ? (
+          <div className="space-y-4 mb-3">
+            <div>
+              <p className="text-sm font-medium mb-1">
+                {t('assistant.systemPromptLabel')}
+              </p>
+              <p className="text-muted-foreground text-sm whitespace-pre-wrap">
+                {assistant.systemPrompt}
+              </p>
+            </div>
 
-        <div className="text-xs text-muted-foreground mb-2">
-          {t('assistant.card.mcpCount', {
-            count: assistant.mcpServerIds?.length || 0,
-          })}
-          {', '}
-          {t('assistant.card.localServiceCount', {
-            count: assistant.localServices?.length || 0,
-          })}
-        </div>
+            {assistant.description && (
+              <div>
+                <p className="text-sm font-medium mb-1">
+                  {t('assistant.card.description')}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  {assistant.description}
+                </p>
+              </div>
+            )}
 
-        {assistant.mcpServerIds && assistant.mcpServerIds.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2">
-            {assistant.mcpServerIds.map((serverId) => {
-              const serverMeta = serversById?.[serverId];
-              const serverName = serverMeta?.name ?? serverId;
-              // status 맵은 server name을 키로 사용 (serverId가 아님)
-              const isConnected = serverMeta?.name
-                ? status[serverMeta.name]
-                : undefined;
-              const version = serverMeta?.metadata?.version;
-              const description = serverMeta?.metadata?.description;
-
-              return (
-                <div
-                  key={serverId}
-                  className="flex items-center gap-1 text-xs px-1 py-0.5 rounded bg-muted"
-                  title={`Name: ${serverName}\nID: ${serverId}${version ? `\nVersion: ${version}` : ''}${description ? `\nDescription: ${description}` : ''}`}
-                >
-                  <StatusIndicator
-                    status={
-                      isConnected === true
-                        ? 'connected'
-                        : isConnected === false
-                          ? 'disconnected'
-                          : 'unknown'
-                    }
-                    size="sm"
-                  />
-                  <span className="text-foreground truncate max-w-[120px]">
-                    {serverName}
-                  </span>
-                </div>
-              );
-            })}
+            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+              <div>
+                <span className="font-medium">
+                  {t('assistant.card.created')}:
+                </span>{' '}
+                {new Date(assistant.createdAt).toLocaleDateString()}
+              </div>
+              <div>
+                <span className="font-medium">
+                  {t('assistant.card.updated')}:
+                </span>{' '}
+                {new Date(assistant.updatedAt).toLocaleDateString()}
+              </div>
+            </div>
           </div>
+        ) : (
+          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
+            {assistant.systemPrompt}
+          </p>
         )}
+
+        <div className="flex flex-wrap gap-1 mb-2">
+          {/* External MCP Servers - Blue Badges */}
+          {assistant.mcpServerIds?.map((serverId) => {
+            const serverMeta = serversById?.[serverId];
+            const serverName = serverMeta?.name ?? serverId;
+            return (
+              <Badge
+                key={serverId}
+                variant="outline"
+                className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 border-blue-200 dark:border-blue-800"
+              >
+                {serverName}
+              </Badge>
+            );
+          })}
+
+          {/* Built-in Tools - Green Badges */}
+          {assistant.allowedBuiltInServiceAliases === undefined ? (
+            <Badge
+              variant="secondary"
+              className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+            >
+              {t('assistant.card.allBuiltin')}
+            </Badge>
+          ) : (
+            assistant.allowedBuiltInServiceAliases.map((alias) => (
+              <Badge
+                key={alias}
+                variant="secondary"
+                className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+              >
+                {builtinToolsMap?.[alias] || alias}
+              </Badge>
+            ))
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2">
           {!showDeleteConfirm ? (
@@ -145,25 +181,7 @@ export default function AssistantCard({ assistant }: AssistantCardProps) {
               >
                 {t('assistant.card.edit')}
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handleCheckStatus}
-                disabled={isCheckingStatus}
-                title={
-                  isCheckingStatus
-                    ? t('assistant.card.checking')
-                    : t('assistant.card.checkStatus')
-                }
-                className="gap-1"
-              >
-                {isCheckingStatus && (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                )}
-                {isCheckingStatus
-                  ? t('assistant.card.checking')
-                  : t('assistant.card.checkStatus')}
-              </Button>
+
               <Button
                 size="sm"
                 variant="ghost"

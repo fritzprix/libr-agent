@@ -13,6 +13,16 @@ import {
   CardTitle,
   CardContent,
 } from '@/components/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { MCPServerDialog } from './MCPServerDialog';
 import { toast } from 'sonner';
@@ -57,6 +67,9 @@ export function MCPServerManagement() {
   const [editingServer, setEditingServer] = useState<MCPServerEntity | null>(
     null,
   );
+  const [serverToDelete, setServerToDelete] = useState<MCPServerEntity | null>(
+    null,
+  );
 
   const handleCreateNew = () => {
     const newServer: MCPServerEntity = {
@@ -91,19 +104,23 @@ export function MCPServerManagement() {
     }
   };
 
-  const handleDelete = async (server: MCPServerEntity) => {
-    if (!confirm(`Delete MCP server "${server.name}"?`)) {
-      return;
-    }
+  const handleDelete = (server: MCPServerEntity) => {
+    setServerToDelete(server);
+  };
+
+  const confirmDelete = async () => {
+    if (!serverToDelete) return;
 
     try {
-      await deleteServer(server.id);
+      await deleteServer(serverToDelete.id);
       await mutateServers();
       toast.success('MCP server deleted successfully');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error(`Failed to delete server: ${message}`);
       logger.error('Failed to delete MCP server', error);
+    } finally {
+      setServerToDelete(null);
     }
   };
 
@@ -220,6 +237,27 @@ export function MCPServerManagement() {
           onCancel={() => setEditingServer(null)}
         />
       )}
+
+      <AlertDialog
+        open={!!serverToDelete}
+        onOpenChange={(open) => !open && setServerToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete MCP Server</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{serverToDelete?.name}
+              &quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

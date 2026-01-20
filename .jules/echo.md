@@ -22,3 +22,8 @@
 
 **Pattern:** Redundant session filtering logic (matching against name, ID, assistant name/description) in `SessionList.tsx` and `AgentChatStartView.tsx`.
 **Action:** Extracted `filterSessions` utility in `src/lib/session-utils.ts` to centralize filtering logic and ensure consistent search behavior across views.
+
+## 2026-01-20 - [JSON Repository Serialization]
+
+**Pattern:** Repeated `serde_json::from_str` and `unwrap_or_default` calls in `MessageRepository::model_to_message` and private helper method duplication for serialization.
+**Action:** Extracted `to_json_option`, `from_json_option`, and `from_json_or_default` into `src-tauri/src/utils/json.rs` to centralize serialization logic and reduce boilerplate.
