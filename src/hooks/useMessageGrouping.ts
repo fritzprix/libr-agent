@@ -50,7 +50,19 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
       // Capture tool result in map
       if (msg.role === 'tool' && msg.tool_call_id) {
-        toolResultsMap.set(msg.tool_call_id, msg);
+        const previous = i > 0 ? messages[i - 1] : undefined;
+        const isImmediatelyAfterAssistantToolCall =
+          previous?.role === 'assistant' &&
+          Array.isArray(previous.tool_calls) &&
+          previous.tool_calls.some((call) => call.id === msg.tool_call_id);
+
+        // Avoid double insertion for tool results that immediately follow
+        // assistant messages with matching tool_calls. Those associations
+        // are handled when processing the assistant message. We still capture
+        // orphan tool results here so they are available in toolResultsMap.
+        if (!isImmediatelyAfterAssistantToolCall) {
+          toolResultsMap.set(msg.tool_call_id, msg);
+        }
       }
 
       // Skip standalone tool results (they're shown within tool groups)
