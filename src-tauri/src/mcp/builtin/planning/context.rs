@@ -143,12 +143,13 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
 
                 let description = if let Some(desc) = &t.description {
                     if !desc.is_empty() {
-                        let char_count = desc.chars().count();
+                        let sanitized = desc.replace(['\n', '\r'], " ");
+                        let char_count = sanitized.chars().count();
                         if char_count > 50 {
-                            let s: String = desc.chars().take(50).collect();
+                            let s: String = sanitized.chars().take(47).collect();
                             format!("{}...", s)
                         } else {
-                            desc.clone()
+                            sanitized
                         }
                     } else {
                         "-".to_string()
@@ -157,7 +158,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                     "-".to_string()
                 };
 
-                let safe_content = t.title.replace('|', r"\|");
+                let safe_content = t.title.replace(['\n', '\r'], " ").replace('|', r"\|");
                 let safe_desc = description.replace('|', r"\|");
 
                 // Optimization: If description is identical to content (e.g. derived title),
@@ -186,12 +187,13 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
 
                     let st_desc = if let Some(desc) = &st.description {
                         if !desc.is_empty() {
-                            let char_count = desc.chars().count();
+                            let sanitized = desc.replace(['\n', '\r'], " ");
+                            let char_count = sanitized.chars().count();
                             if char_count > 50 {
-                                let s: String = desc.chars().take(50).collect();
+                                let s: String = sanitized.chars().take(47).collect();
                                 format!("{}...", s)
                             } else {
-                                desc.clone()
+                                sanitized
                             }
                         } else {
                             "-".to_string()
@@ -200,7 +202,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                         "-".to_string()
                     };
 
-                    let safe_st_content = st.title.replace('|', r"\|");
+                    let safe_st_content = st.title.replace(['\n', '\r'], " ").replace('|', r"\|");
                     let safe_st_desc = st_desc.replace('|', r"\|");
 
                     let final_st_desc = if safe_st_content == safe_st_desc || safe_st_desc == "-" {
@@ -232,7 +234,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
             parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
             for t in checked_todos.iter().rev().take(3) {
-                let safe_content = t.content.replace('|', r"\|");
+                let safe_content = t.content.replace(['\n', '\r'], " ").replace('|', r"\|");
 
                 // Extract summary from description field
                 let summary = t
@@ -240,7 +242,8 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                     .as_deref()
                     .filter(|s| !s.is_empty() && s != &"-")
                     .map(|s| {
-                        let escaped = s.replace('|', r"\|");
+                        let sanitized = s.replace(['\n', '\r'], " ");
+                        let escaped = sanitized.replace('|', r"\|");
                         // Truncate summary if too long (max 50 chars)
                         if escaped.chars().count() > 50 {
                             let truncated: String = escaped.chars().take(47).collect();
@@ -295,14 +298,23 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                 String::new()
             };
 
-            let content_part = if item.title.is_some() {
-                format!(" - {}", item.content)
+            // Sanitize and truncate content for summary to maintain list structure
+            let sanitized_content = item.content.replace(['\n', '\r'], " ");
+            let truncated_content = if sanitized_content.chars().count() > 100 {
+                let s: String = sanitized_content.chars().take(97).collect();
+                format!("{}...", s)
             } else {
-                item.content.clone()
+                sanitized_content
+            };
+
+            let content_part = if item.title.is_some() {
+                format!(" - {}", truncated_content)
+            } else {
+                truncated_content
             };
 
             parts.push(format!(
-                "  {}. **ID:{}** {}{}{}",
+                "{}. **ID:{}** {}{}{}",
                 idx + 1,
                 item.id,
                 title_part,
