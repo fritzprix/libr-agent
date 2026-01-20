@@ -14,6 +14,7 @@ const logger = getLogger('PlaybooksBackend');
  */
 interface PlaybookDto {
   id: string;
+  assistantId: string;
   sessionId: string;
   goal: string;
   initialCommand?: string;
@@ -21,6 +22,7 @@ interface PlaybookDto {
   successCriteria?: unknown; // JSON
   createdAt: number;
   updatedAt: number;
+  isBookmarked: boolean;
 }
 
 // Frontend Playbook type lacks ID/createdAt sometimes depending on where it's used?
@@ -28,9 +30,12 @@ interface PlaybookDto {
 // export interface Playbook { id?: string; agentId: string; ... }
 // We need to map agentId <=> sessionId
 
-function deserializePlaybook(
-  dto: PlaybookDto,
-): Playbook & { id: string; createdAt: Date; updatedAt: Date } {
+function deserializePlaybook(dto: PlaybookDto): Playbook & {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  sessionId: string;
+} {
   // Parse workflow JSON string to PlaybookStep[] with validation
   let workflow: Playbook['workflow'] = [];
   if (typeof dto.workflow === 'string') {
@@ -65,13 +70,15 @@ function deserializePlaybook(
 
   return {
     id: dto.id,
-    agentId: dto.sessionId, // Mapping sessionId to agentId
+    agentId: dto.assistantId,
+    sessionId: dto.sessionId,
     goal: dto.goal,
     initialCommand: dto.initialCommand || '',
     workflow,
     successCriteria,
     createdAt: new Date(dto.createdAt),
     updatedAt: new Date(dto.updatedAt),
+    isBookmarked: dto.isBookmarked,
   };
 }
 
@@ -130,11 +137,40 @@ export async function deletePlaybook(id: string): Promise<void> {
   await safeInvoke<void>('delete_playbook', { id });
 }
 
-export async function listPlaybooks(): Promise<
-  (Playbook & { id: string; createdAt: Date; updatedAt: Date })[]
+export interface ListPlaybooksOptions {
+  sessionId?: string;
+  sortBy?: 'created_at' | 'assistant';
+  sortOrder?: 'asc' | 'desc';
+  bookmarkFirst?: boolean;
+}
+
+export async function listPlaybooks(
+  options: ListPlaybooksOptions = {},
+): Promise<
+  (Playbook & {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    sessionId: string;
+  })[]
 > {
-  const dtos = await safeInvoke<PlaybookDto[]>('list_playbooks');
+  const dtos = await safeInvoke<PlaybookDto[]>(
+    'list_playbooks',
+    options as Record<string, unknown>,
+  );
   return dtos.map(deserializePlaybook);
+}
+
+export async function togglePlaybookBookmark(
+  id: string,
+  bookmarked: boolean,
+  sessionId: string,
+): Promise<void> {
+  await safeInvoke<void>('toggle_playbook_bookmark', {
+    id,
+    sessionId,
+    bookmarked,
+  });
 }
 
 export async function getPlaybook(

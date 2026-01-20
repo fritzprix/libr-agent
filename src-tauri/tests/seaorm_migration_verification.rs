@@ -223,6 +223,7 @@ async fn test_playbook_crud_operations() {
         success_criteria: Set(Some("{}".to_string())),
         created_at: Set(1000),
         updated_at: Set(1000),
+        is_bookmarked: Set(false),
     };
 
     let inserted = playbook.insert(&db).await;

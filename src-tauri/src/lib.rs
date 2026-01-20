@@ -55,7 +55,7 @@ use commands::messages_commands::{
     messages_upsert, messages_upsert_many,
 };
 use commands::playbook_commands::{
-    create_playbook, delete_playbook, list_playbooks, update_playbook,
+    create_playbook, delete_playbook, list_playbooks, toggle_playbook_bookmark, update_playbook,
 };
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
@@ -344,6 +344,7 @@ pub fn run() {
                 update_playbook,
                 delete_playbook,
                 list_playbooks,
+                toggle_playbook_bookmark,
                 set_setting,
                 get_setting,
                 delete_setting,

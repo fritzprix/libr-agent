@@ -18,6 +18,7 @@ pub struct Model {
     pub success_criteria: Option<String>, // JSON stored as TEXT
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

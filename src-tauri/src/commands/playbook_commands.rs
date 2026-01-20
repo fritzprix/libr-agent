@@ -18,6 +18,7 @@ pub struct PlaybookDto {
     pub success_criteria: Option<Value>, // JSON stored as TEXT
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
 impl From<playbook::Model> for PlaybookDto {
@@ -34,6 +35,7 @@ impl From<playbook::Model> for PlaybookDto {
                 .and_then(|s| serde_json::from_str(&s).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            is_bookmarked: model.is_bookmarked,
         }
     }
 }
@@ -95,6 +97,7 @@ pub async fn create_playbook(
         success_criteria: Set(success_criteria.map(|s| s.to_string())),
         created_at: Set(now),
         updated_at: Set(now),
+        is_bookmarked: Set(false),
     };
 
     let result = playbook
@@ -161,7 +164,41 @@ pub async fn delete_playbook(id: String, session_id: String) -> Result<(), Strin
 }
 
 #[command]
-pub async fn list_playbooks(session_id: Option<String>) -> Result<Vec<PlaybookDto>, String> {
+pub async fn toggle_playbook_bookmark(
+    id: String,
+    session_id: String,
+    bookmarked: bool,
+) -> Result<(), String> {
+    let db = get_database_connection();
+
+    // Get assistant_id from session
+    let assistant_id = get_assistant_id_from_session(&session_id).await?;
+
+    // Composite key (id, assistant_id)
+    let mut playbook: playbook::ActiveModel = playbook::Entity::find_by_id((id, assistant_id))
+        .one(db)
+        .await
+        .map_err(|e| format!("Failed to find playbook: {}", e))?
+        .ok_or_else(|| "Playbook not found".to_string())?
+        .into();
+
+    playbook.is_bookmarked = Set(bookmarked);
+    playbook.updated_at = Set(chrono::Utc::now().timestamp_millis());
+
+    playbook
+        .update(db)
+        .await
+        .map_err(|e| format!("Failed to toggle bookmark: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
+pub async fn list_playbooks(
+    session_id: Option<String>,
+    sort_by: Option<String>,
+    bookmark_first: Option<bool>,
+) -> Result<Vec<PlaybookDto>, String> {
     let db = get_database_connection();
 
     let query = playbook::Entity::find();
@@ -174,8 +211,18 @@ pub async fn list_playbooks(session_id: Option<String>) -> Result<Vec<PlaybookDt
         query
     };
 
+    let query = if bookmark_first.unwrap_or(false) {
+        query.order_by_desc(playbook::Column::IsBookmarked)
+    } else {
+        query
+    };
+
+    let query = match sort_by.as_deref() {
+        Some("assistant") => query.order_by_asc(playbook::Column::AssistantId),
+        _ => query.order_by_desc(playbook::Column::CreatedAt),
+    };
+
     let playbooks = query
-        .order_by_desc(playbook::Column::CreatedAt)
         .all(db)
         .await
         .map_err(|e| format!("Failed to list playbooks: {}", e))?;
