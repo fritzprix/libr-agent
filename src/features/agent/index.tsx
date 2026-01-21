@@ -1,1 +1,2 @@
-export { default } from './AgentContainer';
+import AgentContainer from './AgentContainer';
+export default AgentContainer;

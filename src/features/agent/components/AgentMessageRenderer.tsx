@@ -40,7 +40,9 @@ const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex];
 
 // Define markdown components outside to prevent re-creation on every render
-const MARKDOWN_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
+const MARKDOWN_COMPONENTS: React.ComponentProps<
+  typeof ReactMarkdown
+>['components'] = {
   p: ({ children, ...props }) => (
     <p className="mb-2 last:mb-0" {...props}>
       {children}

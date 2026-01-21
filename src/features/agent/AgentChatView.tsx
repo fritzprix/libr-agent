@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { invoke } from '@tauri-apps/api/core';
+import { agentCallBuiltinTool } from '@/lib/rust-backend-client';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { MCPContent } from '@/lib/mcp-types';
@@ -57,7 +57,7 @@ function AgentChatInner() {
   const { session } = useAgentSessionState();
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
-  const [isExecutingPlaybook, setIsExecutingPlaybook] = useState(false);
+  const hasExecutedPlaybookRef = useRef(false);
 
   useEffect(() => {
     const playbookId = searchParams.get('playbookId');
@@ -65,8 +65,9 @@ function AgentChatInner() {
       playbookId &&
       session &&
       workflowStatus === 'idle' &&
-      !isExecutingPlaybook
+      !hasExecutedPlaybookRef.current
     ) {
+      hasExecutedPlaybookRef.current = true;
       executePlaybookSelection(playbookId);
       // Remove query param to prevent re-execution on refresh or render
       setSearchParams(
@@ -82,21 +83,21 @@ function AgentChatInner() {
 
   const executePlaybookSelection = async (playbookId: string) => {
     if (!session?.id) return;
-    setIsExecutingPlaybook(true);
+    if (!session?.id) return;
     logger.info('Auto-executing playbook', { playbookId });
 
     try {
-      const result = (await invoke('mcp_call_tool', {
-        sessionId: session.id,
-        toolName: 'builtin_playbook__selectPlaybook',
-        args: { id: playbookId },
-      })) as { content: MCPContent[] };
+      const result = await agentCallBuiltinTool<{ content: MCPContent[] }>(
+        session.id,
+        'builtin_playbook__selectPlaybook',
+        { id: playbookId },
+      );
 
       const toolCallId = createId();
       const [toolCallMsg, toolResultMsg] = createToolMessagePair(
         'builtin_playbook__selectPlaybook',
         { id: playbookId },
-        result.content,
+        result.content ?? [],
         toolCallId,
         session.id,
         undefined,
@@ -110,7 +111,7 @@ function AgentChatInner() {
       logger.error('Failed to auto-select playbook', error);
       toast.error('Failed to start playbook workflow');
     } finally {
-      setIsExecutingPlaybook(false);
+      // No-op
     }
   };
 

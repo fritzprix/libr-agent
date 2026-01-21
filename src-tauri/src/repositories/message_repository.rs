@@ -116,8 +116,9 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
         })?;
 
-        let error_json = to_json_option(&message.error)
-            .map_err(|e| DbError::SerializationError(format!("Failed to serialize error: {}", e)))?;
+        let error_json = to_json_option(&message.error).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize error: {}", e))
+        })?;
 
         Ok(message::ActiveModel {
             id: Set(message.id.clone()),

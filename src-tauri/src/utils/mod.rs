@@ -1,5 +1,5 @@
-pub mod platform;
 pub mod json;
+pub mod platform;
 
 /// Safely truncates a string to a maximum number of characters.
 /// If truncated, adds an ellipsis (...) to the end.
