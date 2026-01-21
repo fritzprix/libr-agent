@@ -8,6 +8,7 @@ use sea_orm::{
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
 use crate::entity::{message, message_index_meta};
+use crate::utils::json::{from_json_option, from_json_or_default, to_json_option};
 
 /// Message repository trait for abstraction and testability
 #[async_trait]
@@ -65,21 +66,16 @@ impl SqliteMessageRepository {
 
     /// Convert SeaORM message model to Message type
     fn model_to_message(model: message::Model) -> Message {
-        let content: Vec<crate::mcp::types::MCPContent> =
-            serde_json::from_str(&model.content).unwrap_or_default();
+        let content: Vec<crate::mcp::types::MCPContent> = from_json_or_default(&model.content);
 
         let tool_calls: Option<Vec<crate::agent::types::ToolCall>> =
-            model.tool_calls.and_then(|s| serde_json::from_str(&s).ok());
+            from_json_option(&model.tool_calls);
 
-        let attachments: Option<serde_json::Value> = model
-            .attachments
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let attachments: Option<serde_json::Value> = from_json_option(&model.attachments);
 
-        let tool_use: Option<serde_json::Value> =
-            model.tool_use.and_then(|s| serde_json::from_str(&s).ok());
+        let tool_use: Option<serde_json::Value> = from_json_option(&model.tool_use);
 
-        let error: Option<serde_json::Value> =
-            model.error.and_then(|s| serde_json::from_str(&s).ok());
+        let error: Option<serde_json::Value> = from_json_option(&model.error);
 
         Message {
             id: model.id,
@@ -101,20 +97,6 @@ impl SqliteMessageRepository {
         }
     }
 
-    /// Helper to serialize optional JSON fields
-    fn serialize_optional_json<T: serde::Serialize>(
-        value: &Option<T>,
-        field_name: &str,
-    ) -> Result<Option<String>, DbError> {
-        value
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize {}: {}", field_name, e))
-            })
-    }
-
     /// Convert Message type to SeaORM ActiveModel
     fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
         // Serialize structured types to JSON strings for DB storage
@@ -122,10 +104,20 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize content: {}", e))
         })?;
 
-        let tool_calls_json = Self::serialize_optional_json(&message.tool_calls, "tool_calls")?;
-        let attachments_json = Self::serialize_optional_json(&message.attachments, "attachments")?;
-        let tool_use_json = Self::serialize_optional_json(&message.tool_use, "tool_use")?;
-        let error_json = Self::serialize_optional_json(&message.error, "error")?;
+        let tool_calls_json = to_json_option(&message.tool_calls).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
+        })?;
+
+        let attachments_json = to_json_option(&message.attachments).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
+        })?;
+
+        let tool_use_json = to_json_option(&message.tool_use).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
+        })?;
+
+        let error_json = to_json_option(&message.error)
+            .map_err(|e| DbError::SerializationError(format!("Failed to serialize error: {}", e)))?;
 
         Ok(message::ActiveModel {
             id: Set(message.id.clone()),
