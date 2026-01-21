@@ -319,6 +319,15 @@ pub async fn handle_llm_response(
             session_id
         );
 
+        // Update status to Busy
+        crate::agent::lifecycle::update_session_status(
+            active_sessions,
+            app_handle,
+            &session_id,
+            SessionStatus::Busy,
+        )
+        .await?;
+
         // Initialize pending execution state
         {
             let mut active = active_sessions.write().await;
