@@ -13,9 +13,6 @@ use crate::utils::json::{from_json_option, from_json_or_default, to_json_option}
 /// Message repository trait for abstraction and testability
 #[async_trait]
 pub trait MessageRepository: Send + Sync {
-    /// Initialize the messages table and indexes
-    async fn create_table(&self) -> Result<(), DbError>;
-
     /// Retrieve a paginated list of messages for a specific session
     async fn get_page(
         &self,
@@ -143,12 +140,6 @@ impl SqliteMessageRepository {
 
 #[async_trait]
 impl MessageRepository for SqliteMessageRepository {
-    async fn create_table(&self) -> Result<(), DbError> {
-        // No-op: Schema is now managed by SeaORM migrations
-        log::debug!("create_table() called but schema is now managed by migrations");
-        Ok(())
-    }
-
     async fn get_page(
         &self,
         session_id: &str,
