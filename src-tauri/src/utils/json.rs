@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 /// Returns None if the input is None.
 /// Returns Ok(Some(json_string)) if serialization succeeds.
 /// Returns Err if serialization fails.
-pub fn to_json_option<T: Serialize>(value: &Option<T>) -> Result<Option<String>, serde_json::Error> {
+pub fn to_json_option<T: Serialize>(
+    value: &Option<T>,
+) -> Result<Option<String>, serde_json::Error> {
     value.as_ref().map(serde_json::to_string).transpose()
 }
 

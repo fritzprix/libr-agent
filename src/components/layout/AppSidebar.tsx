@@ -1,4 +1,11 @@
-import { Bot, BrainCircuit, History, Settings, Users } from 'lucide-react';
+import {
+  Bot,
+  BrainCircuit,
+  History,
+  Settings,
+  Users,
+  BookOpen,
+} from 'lucide-react';
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -104,6 +111,17 @@ export default function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <Link to="/playbooks">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/playbooks'}
+                    tooltip="Playbooks"
+                  >
+                    <BookOpen size={16} />
+                    <span>Playbooks</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <Link to="/history">
                   <SidebarMenuButton

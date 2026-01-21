@@ -40,6 +40,8 @@ pub struct Playbook {
     pub success_criteria: Option<SuccessCriteria>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(rename = "isBookmarked")]
+    pub is_bookmarked: bool,
 }
 
 impl Playbook {
@@ -57,6 +59,7 @@ impl Playbook {
                 .and_then(|s| serde_json::from_str(s).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            is_bookmarked: model.is_bookmarked,
         }
     }
 }

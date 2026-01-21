@@ -88,6 +88,22 @@ impl PlaybookServer {
                             "pageSize".to_string(),
                             integer_prop(Some(10), None, Some("Items per page")),
                         ),
+                        (
+                            "sortBy".to_string(),
+                            enum_prop(
+                                vec!["created_at", "assistant"],
+                                "created_at",
+                                Some("Sort field"),
+                            ),
+                        ),
+                        (
+                            "sortOrder".to_string(),
+                            enum_prop(vec!["asc", "desc"], "desc", Some("Sort order")),
+                        ),
+                        (
+                            "bookmarkFirst".to_string(),
+                            boolean_prop(Some("Prioritize bookmarked items")),
+                        ),
                     ],
                     vec![],
                     None,

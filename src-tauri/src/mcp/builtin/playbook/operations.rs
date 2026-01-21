@@ -85,6 +85,7 @@ pub async fn create_playbook(
         success_criteria: Set(success_criteria_json.clone()),
         created_at: Set(now),
         updated_at: Set(now),
+        is_bookmarked: Set(false),
     };
 
     if let Err(e) = PlaybookEntity::insert(model).exec(db).await {
@@ -173,6 +174,12 @@ pub async fn list_playbooks(
         .unwrap_or(1)
         .max(1);
     let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10); // Default 10
+    let sort_by = args.get("sortBy").and_then(|v| v.as_str());
+    let sort_order = args.get("sortOrder").and_then(|v| v.as_str());
+    let bookmark_first = args
+        .get("bookmarkFirst")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let limit = if page_size < 0 { -1 } else { page_size };
     let offset = if page_size < 0 {
@@ -189,9 +196,29 @@ pub async fn list_playbooks(
         .unwrap_or(0);
 
     // Fetch items
-    let mut query = PlaybookEntity::find()
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .order_by_desc(playbook::Column::UpdatedAt);
+    let mut query = PlaybookEntity::find().filter(playbook::Column::AssistantId.eq(assistant_id));
+
+    if bookmark_first {
+        query = query.order_by_desc(playbook::Column::IsBookmarked);
+    }
+
+    match sort_by {
+        Some("assistant") => {
+            query = if sort_order == Some("desc") {
+                query.order_by_desc(playbook::Column::AssistantId)
+            } else {
+                query.order_by_asc(playbook::Column::AssistantId)
+            };
+        }
+        _ => {
+            // Default to created_at
+            query = if sort_order == Some("asc") {
+                query.order_by_asc(playbook::Column::CreatedAt)
+            } else {
+                query.order_by_desc(playbook::Column::CreatedAt)
+            };
+        }
+    }
 
     if limit >= 0 {
         query = query.limit(limit as u64).offset(offset as u64);
@@ -316,7 +343,8 @@ pub fn render_ui(
                 "step_count": p.workflow.len(),
                 "created_at_fmt": chrono::DateTime::from_timestamp_millis(p.created_at)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                "is_bookmarked": p.is_bookmarked,
             })
         })
         .collect();

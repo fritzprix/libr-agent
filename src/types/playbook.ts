@@ -60,4 +60,7 @@ export interface Playbook {
     // (추가) Task 성공 시 반드시 생성되어야 하는 파일 목록
     requiredArtifacts?: string[]; // 예: ["report.pdf", "summary.txt"]
   };
+
+  /** Whether the playbook is bookmarked by the user */
+  isBookmarked?: boolean;
 }

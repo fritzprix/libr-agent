@@ -1,0 +1,108 @@
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+} from '@/components/ui/dropdown-menu';
+import { Calendar, User, Bookmark, SlidersHorizontal } from 'lucide-react';
+
+export type SortMode = 'created_at' | 'assistant';
+export type SortOrder = 'asc' | 'desc';
+export type GroupMode = 'none' | 'time' | 'assistant';
+
+interface SortControlsProps {
+  sortMode: SortMode;
+  setSortMode: (mode: SortMode) => void;
+  sortOrder: SortOrder;
+  setSortOrder: (order: SortOrder) => void;
+  groupMode: GroupMode;
+  setGroupMode: (mode: GroupMode) => void;
+  bookmarkFirst: boolean;
+  onBookmarkFirstToggle: () => void;
+}
+
+export function SortControls({
+  sortMode,
+  setSortMode,
+  sortOrder,
+  setSortOrder,
+  groupMode,
+  setGroupMode,
+  bookmarkFirst,
+  onBookmarkFirstToggle,
+}: SortControlsProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 gap-2">
+            <SlidersHorizontal className="h-4 w-4" />
+            <span>Display</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[200px]">
+          <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={sortMode === 'created_at'}
+            onCheckedChange={() => setSortMode('created_at')}
+          >
+            <Calendar className="mr-2 h-4 w-4" /> Date Created
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={sortMode === 'assistant'}
+            onCheckedChange={() => setSortMode('assistant')}
+          >
+            <User className="mr-2 h-4 w-4" /> Assistant
+          </DropdownMenuCheckboxItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Order</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={sortOrder === 'desc'}
+            onCheckedChange={() => setSortOrder('desc')}
+          >
+            Newest First (Desc)
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={sortOrder === 'asc'}
+            onCheckedChange={() => setSortOrder('asc')}
+          >
+            Oldest First (Asc)
+          </DropdownMenuCheckboxItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Grouping</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={groupMode === 'none'}
+            onCheckedChange={() => setGroupMode('none')}
+          >
+            None
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={groupMode === 'time'}
+            onCheckedChange={() => setGroupMode('time')}
+          >
+            By Time
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={groupMode === 'assistant'}
+            onCheckedChange={() => setGroupMode('assistant')}
+          >
+            By Assistant
+          </DropdownMenuCheckboxItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={bookmarkFirst}
+            onCheckedChange={onBookmarkFirstToggle}
+          >
+            <Bookmark className="mr-2 h-4 w-4" /> Bookmarks First
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}

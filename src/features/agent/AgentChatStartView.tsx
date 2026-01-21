@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -15,6 +15,7 @@ import { RefreshCw, Search } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { filterSessions } from '@/lib/session-utils';
+import { getPlaybook } from '@/lib/backend/playbooks';
 
 const logger = getLogger('AgentChatStartView');
 
@@ -43,8 +44,48 @@ export default function AgentChatStartView() {
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
   );
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const processingPlaybookRef = useRef(false);
+
+  // Handle Playbook Auto-Start
+  useEffect(() => {
+    const playbookId = searchParams.get('playbookId');
+    if (playbookId && !processingPlaybookRef.current && assistants.length > 0) {
+      const initPlaybookSession = async () => {
+        try {
+          processingPlaybookRef.current = true;
+          logger.info('Auto-starting playbook session', { playbookId });
+
+          const playbook = await getPlaybook(playbookId);
+          if (!playbook) {
+            toast.error('Playbook not found');
+            return;
+          }
+
+          const assistant = assistants.find((a) => a.id === playbook.agentId);
+          if (!assistant) {
+            toast.error('Assistant for this playbook not found');
+            return;
+          }
+
+          toast.info(`Starting playbook: ${playbook.goal}`);
+          const session = await createSession({ assistant });
+
+          // Navigate to the new session with the playbookId param so AgentChatView can pick it up
+          navigate(`/agent/${session.id}?playbookId=${playbookId}`);
+        } catch (error) {
+          logger.error('Failed to start playbook session', error);
+          toast.error('Failed to start playbook session');
+        } finally {
+          processingPlaybookRef.current = false;
+        }
+      };
+
+      initPlaybookSession();
+    }
+  }, [searchParams, assistants, createSession, navigate]);
 
   // Load sessions on mount
   useEffect(() => {
