@@ -12,7 +12,7 @@ import {
 import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import SessionList from '../session/SessionList';
 import { getLogger } from '@/lib/logger';
-import { searchMessages } from '@/lib/rust-backend-client';
+import { searchMessages } from '@/lib/backend/messages';
 import { useDebounced } from '@/hooks/useDebounced';
 import type { SortMode } from '@/models/search';
 import { Search, ArrowUp, ArrowDown } from 'lucide-react';

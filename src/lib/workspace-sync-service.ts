@@ -1,4 +1,4 @@
-import { workspaceWriteFile } from '@/lib/rust-backend-client';
+import { workspaceWriteFile } from '@/lib/backend/workspace';
 import { settingsService } from '@/lib/services/settings-service';
 
 /**

@@ -1,4 +1,4 @@
-import * as client from '@/lib/rust-backend-client';
+import * as client from '@/lib/backend';
 import type {
   MCPTool,
   MCPServerConfig,
@@ -14,7 +14,7 @@ import type {
 } from '@/features/mcp/types';
 
 // Workspace types
-export type { WorkspaceFileItem } from '@/lib/rust-backend-client';
+export type { WorkspaceFileItem } from '@/lib/backend';
 
 // File system related types
 export interface FileReadParams {
