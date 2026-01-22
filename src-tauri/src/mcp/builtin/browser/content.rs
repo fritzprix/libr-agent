@@ -86,8 +86,8 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
 
     // Token-based pagination (3000 tokens per page for optimal LLM processing)
     let target_tokens_per_page = 3000;
-    let (total_pages, first_page, merged_content, auto_merged) = BROWSER_CONTENT_STORE
-        .save_content(
+    let (total_pages, first_page, merged_content, auto_merged, is_unchanged) =
+        BROWSER_CONTENT_STORE.save_content(
             &browser_session_id,
             markdown_content.clone(),
             target_tokens_per_page,
@@ -104,7 +104,22 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     );
 
     // Build response text
-    let mut response_text = if auto_merged {
+    let mut response_text = if is_unchanged {
+        // Return minimal response for unchanged content
+        format!(
+            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using readWebContent(sessionId, page: 1).\n\nIf you need to interact with the page, use listInteractable.",
+            if page_title.is_empty() {
+                "N/A"
+            } else {
+                &page_title
+            },
+            if current_url.is_empty() {
+                "N/A"
+            } else {
+                &current_url
+            }
+        )
+    } else if auto_merged {
         if let Some(content) = &merged_content {
             if total_pages == 1 {
                 format!(
@@ -186,6 +201,9 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
             total_pages,
             total_pages
         ));
+    } else if !is_unchanged {
+        // If not unchanged and (total_pages == 1 or auto_merged), tell user there are no more pages
+        response_text.push_str("\n\n(No more pages) All available content has been successfully extracted. There are no additional pages to read.");
     }
 
     // Save raw HTML if requested
@@ -252,10 +270,14 @@ pub async fn read_web_content(server: &BrowserServer, args: Value) -> Result<MCP
     // Get the requested page
     match BROWSER_CONTENT_STORE.get_page(&browser_session_id, page) {
         Some(page_data) => {
-            let response_text = format!(
+            let mut response_text = format!(
                 "[Page {}/{}]\n\n{}",
                 page_data.page_number, page_data.total_pages, page_data.content
             );
+
+            if page_data.page_number == page_data.total_pages {
+                response_text.push_str("\n\n(No more pages) All available content has been successfully extracted. There are no additional pages to read.");
+            }
 
             let hint = SuccessHint::new(
                 response_text,
