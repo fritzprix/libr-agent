@@ -139,6 +139,8 @@ pub struct InteractiveBrowserServer {
     result_waiters: Arc<DashMap<String, oneshot::Sender<String>>>,
     /// Map of session IDs to Notify objects for page load events
     page_load_waiters: Arc<DashMap<String, Arc<Notify>>>,
+    /// Global timeout for web actions (navigation, script execution)
+    action_timeout: Duration,
 }
 
 impl InteractiveBrowserServer {
@@ -146,14 +148,19 @@ impl InteractiveBrowserServer {
     ///
     /// # Arguments
     /// * `app_handle` - A handle to the Tauri application instance.
-    pub fn new(app_handle: AppHandle) -> Self {
-        info!("Initializing Interactive Browser Server");
+    /// * `action_timeout` - The timeout duration for web actions.
+    pub fn new(app_handle: AppHandle, action_timeout: Duration) -> Self {
+        info!(
+            "Initializing Interactive Browser Server with timeout: {:?}",
+            action_timeout
+        );
 
         Self {
             app_handle,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             result_waiters: Arc::new(DashMap::new()),
             page_load_waiters: Arc::new(DashMap::new()),
+            action_timeout,
         }
     }
 
@@ -344,7 +351,7 @@ impl InteractiveBrowserServer {
                 format!("Session created for {url} (Network Error: {e})")
             }
             Some(Ok(_)) => {
-                match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+                match tokio::time::timeout(self.action_timeout, notify.notified()).await {
                     Ok(_) => {
                         info!("Initial page load completed for session {session_id}");
                         format!("Session created for {url} - ready to extract content")
@@ -457,7 +464,7 @@ impl InteractiveBrowserServer {
             debug!("Script execution initiated, waiting for result: {request_id}");
 
             // Wait for result with timeout using oneshot channel
-            match tokio::time::timeout(Duration::from_secs(30), rx).await {
+            match tokio::time::timeout(self.action_timeout, rx).await {
                 Ok(Ok(result)) => {
                     debug!("Script execution completed successfully: {request_id}");
                     Ok(result)
@@ -471,10 +478,13 @@ impl InteractiveBrowserServer {
                 Err(_) => {
                     // Timeout occurred
                     self.result_waiters.remove(&request_id);
-                    warn!("Script execution timeout after 30s: {request_id}");
+                    warn!(
+                        "Script execution timeout after {:?}: {request_id}",
+                        self.action_timeout
+                    );
                     Err(String::from(BrowserError::Timeout {
                         operation: "execute_script".to_string(),
-                        duration_ms: 30000,
+                        duration_ms: self.action_timeout.as_millis() as u64,
                         session_id: session_id.to_string(),
                     }))
                 }
@@ -667,7 +677,7 @@ impl InteractiveBrowserServer {
 
             // Wait for page load with timeout (HTTP/HTTPS only)
             info!("Waiting for page load in session {session_id}...");
-            match tokio::time::timeout(Duration::from_secs(30), notify.notified()).await {
+            match tokio::time::timeout(self.action_timeout, notify.notified()).await {
                 Ok(_) => {
                     info!("Page load completed for session {session_id}");
                     Ok(format!(

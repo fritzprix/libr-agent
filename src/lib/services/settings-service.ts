@@ -31,6 +31,14 @@ export interface DisplaySettings {
   compactMetrics: boolean;
 }
 
+export interface SystemSettings {
+  maxFileUploadSizeMB: number;
+  workspaceCapacityMB: number;
+  webActionTimeoutSeconds: number;
+  searchIndexFrequencyMinutes: number;
+  activeSessionRetentionHours: number;
+}
+
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
@@ -40,6 +48,7 @@ export interface Settings {
   agentHubUrl?: string;
   advanced: AdvancedSettings;
   display: DisplaySettings;
+  system: SystemSettings;
 }
 
 const DEFAULT_MODEL = llmConfigManager.recommendModel({});
@@ -71,6 +80,13 @@ export const DEFAULT_SETTING: Settings = {
     prefillDisplayFormat: 'time',
     showTokenSpeed: true,
     compactMetrics: false,
+  },
+  system: {
+    maxFileUploadSizeMB: 50,
+    workspaceCapacityMB: 10,
+    webActionTimeoutSeconds: 30,
+    searchIndexFrequencyMinutes: 5,
+    activeSessionRetentionHours: 24,
   },
 };
 

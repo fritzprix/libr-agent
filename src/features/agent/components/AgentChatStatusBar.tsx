@@ -228,10 +228,40 @@ export function AgentChatStatusBar() {
         <div>
           {session && (
             <AgentModelPicker
-              sessionId={session.id}
               currentModel={session.assistant?.model}
               currentProvider={session.assistant?.provider}
-              currentAssistantConfig={session.assistant}
+              onConfigUpdate={async (model, provider) => {
+                if (!session.id || !session.assistant) return;
+
+                // Optimistic update logging
+                logger.info(`Updating session config to ${provider}/${model}`);
+
+                try {
+                  const updatedConfig = {
+                    ...session.assistant,
+                    provider,
+                    model,
+                    // Ensure required fields
+                    temperature: session.assistant.temperature ?? 0.7,
+                    name: session.assistant.name || 'Assistant',
+                    systemPrompt:
+                      session.assistant.systemPrompt ||
+                      'You are a helpful assistant.',
+                  };
+
+                  // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
+                  const { invoke } = await import('@tauri-apps/api/core');
+
+                  await invoke('agent_update_session_config', {
+                    request: {
+                      sessionId: session.id,
+                      agentConfig: updatedConfig,
+                    },
+                  });
+                } catch (e) {
+                  logger.error('Failed to update session config', e);
+                }
+              }}
             />
           )}
         </div>

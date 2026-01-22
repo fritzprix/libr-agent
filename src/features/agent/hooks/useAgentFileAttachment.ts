@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { useSettings } from '@/hooks/use-settings';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useRustBackend } from '@/hooks/use-rust-backend';
@@ -28,6 +29,18 @@ export function useAgentFileAttachment() {
     isLoading: isAttachmentLoading,
     refetchSessionFiles,
   } = useAgentResourceAttachment();
+
+  const {
+    value: { system },
+  } = useSettings();
+
+  const maxBytes =
+    Math.min(
+      system?.maxFileUploadSizeMB ?? 50,
+      system?.workspaceCapacityMB ?? 10,
+    ) *
+    1024 *
+    1024;
 
   const rustBackend = useRustBackend();
 
@@ -117,12 +130,13 @@ export function useAgentFileAttachment() {
           const mimeType = getMimeType(filename);
           const fileObj = new File([uint8Array], filename, { type: mimeType });
 
-          if (!validateFileSize(fileObj)) {
+          if (!validateFileSize(fileObj, maxBytes)) {
             logger.warn('Dropped file exceeds size limit', {
               filename,
               fileSize: fileObj.size,
+              maxBytes,
             });
-            alert(createFileSizeErrorMessage(filename, fileObj.size));
+            alert(createFileSizeErrorMessage(filename, fileObj.size, maxBytes));
             continue;
           }
 
@@ -215,8 +229,8 @@ export function useAgentFileAttachment() {
         //   continue;
         // }
 
-        if (!validateFileSize(file)) {
-          alert(createFileSizeErrorMessage(file.name, file.size));
+        if (!validateFileSize(file, maxBytes)) {
+          alert(createFileSizeErrorMessage(file.name, file.size, maxBytes));
           continue;
         }
 

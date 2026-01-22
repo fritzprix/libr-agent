@@ -11,9 +11,9 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { getLogger } from '@/lib/logger';
 import {
   syncFileToWorkspace,
-  EFFECTIVE_MAX_SIZE,
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
+import { useSettings } from '@/hooks/use-settings';
 import type { ContentStoreItem } from '@/models/content-store';
 import { AttachmentReference } from '@/models/chat';
 import {
@@ -65,6 +65,17 @@ export function AgentResourceAttachmentProvider({
 }) {
   // Use Agent V2 Session State
   const { session: currentSession } = useAgentSessionState();
+  const {
+    value: { system },
+  } = useSettings();
+
+  const maxBytes =
+    Math.min(
+      system?.maxFileUploadSizeMB ?? 50,
+      system?.workspaceCapacityMB ?? 10,
+    ) *
+    1024 *
+    1024;
 
   const [pendingFiles, setPendingFiles] = useState<AttachmentReference[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -530,17 +541,24 @@ export function AgentResourceAttachmentProvider({
     setPendingFiles([]);
   }, [pendingFiles]);
 
-  const validateFiles = useCallback((files: File[]): File[] => {
-    return files.filter((file) => {
-      if (file.size > EFFECTIVE_MAX_SIZE) {
-        // In a real app we might toast here, but for now we just filter
-        const msg = createFileSizeErrorMessage(file.name, file.size);
-        logger.warn(msg);
-        return false;
-      }
-      return true;
-    });
-  }, []);
+  const validateFiles = useCallback(
+    (files: File[]): File[] => {
+      return files.filter((file) => {
+        if (file.size > maxBytes) {
+          // In a real app we might toast here, but for now we just filter
+          const msg = createFileSizeErrorMessage(
+            file.name,
+            file.size,
+            maxBytes,
+          );
+          logger.warn(msg);
+          return false;
+        }
+        return true;
+      });
+    },
+    [maxBytes],
+  );
 
   const refetchSessionFiles = useCallback(async () => {
     logger.info('Manually refetching session files');

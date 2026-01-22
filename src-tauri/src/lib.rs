@@ -157,8 +157,55 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_repo = SqliteSessionRepository::new(db.clone());
         info!("✅ Session repository initialized");
 
-        // Start background indexing worker (checks every 5 minutes)
-        let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
+        // Fetch System Settings from DB
+        #[derive(serde::Deserialize, Default)]
+        #[serde(rename_all = "camelCase")]
+        struct SystemSettings {
+            search_index_frequency_minutes: Option<u64>,
+            web_action_timeout_seconds: Option<u64>,
+            active_session_retention_hours: Option<u64>,
+        }
+
+        let system_settings: SystemSettings = {
+            use entity::settings;
+            use sea_orm::EntityTrait;
+            match settings::Entity::find_by_id("systemSettings")
+                .one(&db)
+                .await
+            {
+                Ok(Some(model)) => serde_json::from_str(&model.value).unwrap_or_default(),
+                Ok(None) => SystemSettings::default(),
+                Err(e) => {
+                    log::warn!("Failed to fetch system settings: {}, using defaults", e);
+                    SystemSettings::default()
+                }
+            }
+        };
+
+        let index_freq_mins = system_settings.search_index_frequency_minutes.unwrap_or(5);
+        let web_timeout_secs = system_settings.web_action_timeout_seconds.unwrap_or(30);
+        let retention_hours = system_settings.active_session_retention_hours.unwrap_or(24);
+
+        info!(
+            "⚙️ System Configuration: Index Frequency = {}m, Web Timeout = {}s, Retention = {}h",
+            index_freq_mins, web_timeout_secs, retention_hours
+        );
+
+        // Perform session cleanup
+        match session_manager
+            .cleanup_old_sessions(retention_hours, 5)
+            .await
+        {
+            Ok(count) => info!(
+                "🧹 Session cleanup completed: removed {} old sessions",
+                count
+            ),
+            Err(e) => log::error!("❌ Session cleanup failed: {}", e),
+        }
+
+        // Start background indexing worker
+        let _indexing_worker =
+            search::IndexingWorker::new(std::time::Duration::from_secs(index_freq_mins * 60));
         info!("✅ Background message indexing worker started");
 
         // Set the global database connection
@@ -367,9 +414,61 @@ pub fn run() {
                 info!("✅ SecureFileManager initialized");
 
                 // Initialize Interactive Browser Server and add to managed state
-                let browser_server = InteractiveBrowserServer::new(app.handle().clone());
+                // We need to re-fetch settings or pass them down.
+                // Since setup closure doesn't have access to the vars from run_with_sqlite_sync directly easily without passing via state or app handle,
+                // BUT run_with_sqlite_sync calls run(), which sets up the builder.
+                // The `SystemSettings` fetch happened in the async block BEFORE run().
+                // To fetch it here synchronously or async is tricky in setup which is sync-ish or returns Result.
+                // Actually setup is Sync.
+                // We should re-fetch from DB inside setup? Or pass via App Handle state?
+                // `run_with_sqlite_sync` spawns a runtime, waits for it, then calls `run`.
+                // The variables `index_freq_mins` etc are lost.
+
+                // Better approach: Store SystemSettings in a State<SystemSettings> during init?
+                // Or just fetch from DB again in setup. Since we have connection.
+                // But `get_database_connection` relies on global state which IS set.
+
+                let web_action_timeout = {
+                    // We can try to fetch from DB using the global connection which should be set by now
+                    // But strictly speaking, `setup` runs on main thread.
+                    // DB connection is async. We can't easily block on async DB call in sync setup unless we use a runtime.
+                    // The runtime used in `run_with_sqlite_sync` is dropped!
+                    // But we can create a temporary runtime to fetch config.
+
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async {
+                        use crate::entity::settings;
+                        use crate::state::get_database_connection;
+                        use sea_orm::EntityTrait;
+
+                        let db = get_database_connection(); // Should work as it was set in run_with_sqlite_sync
+
+                        #[derive(serde::Deserialize, Default)]
+                        #[serde(rename_all = "camelCase")]
+                        struct SystemSettings {
+                            web_action_timeout_seconds: Option<u64>,
+                        }
+
+                        match settings::Entity::find_by_id("systemSettings").one(db).await {
+                            Ok(Some(model)) => {
+                                let s: SystemSettings =
+                                    serde_json::from_str(&model.value).unwrap_or_default();
+                                std::time::Duration::from_secs(
+                                    s.web_action_timeout_seconds.unwrap_or(30),
+                                )
+                            }
+                            _ => std::time::Duration::from_secs(30),
+                        }
+                    })
+                };
+
+                let browser_server =
+                    InteractiveBrowserServer::new(app.handle().clone(), web_action_timeout);
                 app.manage(browser_server);
-                info!("✅ Interactive Browser Server initialized");
+                info!(
+                    "✅ Interactive Browser Server initialized with timeout: {:?}",
+                    web_action_timeout
+                );
 
                 // Initialize Agent Runtime State
                 // Removed duplicate logging
