@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PlaybookCard } from './Card';
 import { PlaybookGroup } from './PlaybookGroup';
 import { SortControls, SortMode, SortOrder, GroupMode } from './SortControls';
@@ -16,7 +17,7 @@ import {
   getGroupOrder,
 } from './grouping-utils';
 import { toast } from 'sonner';
-import { Search, RefreshCw, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { Playbook } from '@/types/playbook';
 
@@ -189,8 +190,46 @@ export default function PlaybookList() {
             <p>Loading playbooks...</p>
           </div>
         ) : processedPlaybooks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
-            <p>No playbooks found matching your criteria.</p>
+          <div className="flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto">
+            <Card className="w-full bg-card/50 backdrop-blur-sm border-dashed">
+              <CardHeader>
+                <div className="mx-auto bg-primary/10 p-4 rounded-full mb-4 w-16 h-16 flex items-center justify-center">
+                  <PlaybookIcon className="w-8 h-8 text-primary" />
+                </div>
+                <CardTitle className="text-2xl font-bold">
+                  플레이북(Playbook) 시작하기
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6 text-muted-foreground">
+                <p>
+                  플레이북은 Agent가 성공적으로 실행한 복잡한 요청을 다시할 수
+                  있도록 기록한 것입니다.
+                </p>
+                <div className="grid gap-4 text-left p-4 bg-muted/50 rounded-lg">
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                      1
+                    </span>
+                    <p className="text-sm">
+                      Agent에게{' '}
+                      <span className="font-semibold text-foreground">
+                        &quot;플레이북을 만들어줘&quot;
+                      </span>
+                      라고 이야기하여 생성할 수 있습니다.
+                    </p>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                      2
+                    </span>
+                    <p className="text-sm">
+                      생성된 Playbook을 활용하면 복잡한 프롬프트를 다시 입력하지
+                      않아도, 복잡한 작업을 반복적으로 실행할 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         ) : (
           <div className="space-y-8 pb-8">

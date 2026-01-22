@@ -196,10 +196,8 @@ impl SessionRepository for SqliteSessionRepository {
             .all(&self.db)
             .await?;
 
-        let sessions: Result<Vec<SessionMetadata>, DbError> = models
-            .into_iter()
-            .map(SessionMetadata::try_from)
-            .collect();
+        let sessions: Result<Vec<SessionMetadata>, DbError> =
+            models.into_iter().map(SessionMetadata::try_from).collect();
 
         sessions
     }
