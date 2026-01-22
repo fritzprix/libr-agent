@@ -4,10 +4,11 @@ import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
 import { filterSessions } from '@/lib/session-utils';
-import type { SessionWithHits } from '@/models/search';
+import type { AgentSession } from '@/models/agent';
 
 interface SessionListProps {
-  sessions: SessionWithHits[];
+  sessions: AgentSession[];
+  searchHits?: Map<string, number>;
   showSearch?: boolean;
   className?: string;
   emptyMessage?: string;
@@ -16,6 +17,7 @@ interface SessionListProps {
 
 function SessionList({
   sessions,
+  searchHits,
   showSearch = false,
   className = '',
   emptyMessage = 'No sessions found',
@@ -51,24 +53,26 @@ function SessionList({
                 {searchQuery ? 'No matching sessions' : emptyMessage}
               </div>
             )
-          : filteredSessions.map((session) => (
-              <div key={session.id} className="relative">
-                <SessionItem
-                  session={session}
-                  isCollapsed={isCollapsed}
-                  isActive={session.id === sessionId}
-                />
-                {/* Display search hit count badge if available */}
-                {session.searchHits !== undefined && session.searchHits > 0 && (
-                  <div className="absolute top-2 right-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {session.searchHits}{' '}
-                      {session.searchHits === 1 ? 'hit' : 'hits'}
-                    </Badge>
-                  </div>
-                )}
-              </div>
-            ))}
+          : filteredSessions.map((session) => {
+              const hits = searchHits?.get(session.id);
+              return (
+                <div key={session.id} className="relative">
+                  <SessionItem
+                    session={session}
+                    isCollapsed={isCollapsed}
+                    isActive={session.id === sessionId}
+                  />
+                  {/* Display search hit count badge if available */}
+                  {hits !== undefined && hits > 0 && (
+                    <div className="absolute top-2 right-2">
+                      <Badge variant="secondary" className="text-xs">
+                        {hits} {hits === 1 ? 'hit' : 'hits'}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
       </div>
     </div>
   );
