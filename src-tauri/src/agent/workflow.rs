@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Start an agent workflow for a session
 pub async fn start_workflow(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -29,6 +30,7 @@ pub async fn start_workflow(
 
     // Update status to Busy
     crate::agent::lifecycle::update_session_status(
+        session_repo,
         active_sessions,
         app_handle,
         &session_id,
@@ -156,6 +158,7 @@ pub async fn start_workflow(
 
     // 5. Request LLM completion with cached messages (no DB query)
     crate::agent::llm::request_llm_completion(
+        session_repo,
         active_sessions,
         proxy_manager,
         app_handle,
@@ -168,11 +171,13 @@ pub async fn start_workflow(
 
 /// Pause a running workflow
 pub async fn pause_workflow(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
     crate::agent::lifecycle::update_session_status(
+        session_repo,
         active_sessions,
         app_handle,
         &session_id,
@@ -191,6 +196,7 @@ pub async fn pause_workflow(
 
 /// Resume a paused workflow
 pub async fn resume_workflow(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -200,6 +206,7 @@ pub async fn resume_workflow(
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
     crate::agent::lifecycle::update_session_status(
+        session_repo,
         active_sessions,
         app_handle,
         &session_id,
@@ -217,6 +224,7 @@ pub async fn resume_workflow(
 
     // Trigger LLM to pick up where it left off
     crate::agent::llm::request_llm_completion(
+        session_repo,
         active_sessions,
         proxy_manager,
         app_handle,
@@ -230,6 +238,7 @@ pub async fn resume_workflow(
 /// Terminate a running workflow
 /// This triggers the cancellation token to abort any running operations
 pub async fn terminate_session(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -249,6 +258,7 @@ pub async fn terminate_session(
 
     // Update status to idle (workflow stopped)
     crate::agent::lifecycle::update_session_status(
+        session_repo,
         active_sessions,
         app_handle,
         &session_id,

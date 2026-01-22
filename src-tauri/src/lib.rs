@@ -1,4 +1,5 @@
 use log::{error, info, warn};
+use std::sync::Arc;
 use tauri::{Emitter, Listener, Manager};
 
 mod agent;
@@ -484,19 +485,16 @@ pub fn run() {
                     cloned
                 };
 
-                let agent_session_manager =
-                    agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc);
+                // Get session repository as Arc<dyn SessionRepository> for dependency injection
+                let session_repo_arc: Arc<dyn repositories::SessionRepository> =
+                    Arc::new(state::get_session_repository().clone());
 
-                // Recover sessions on app startup
-                let manager_for_recovery = agent_session_manager.clone_for_task();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = manager_for_recovery.recover_sessions().await {
-                        log::error!("Failed to recover sessions on startup: {}", e);
-                    }
-                });
-
+                let agent_session_manager = agent::AgentSessionManager::new(
+                    app.handle().clone(),
+                    proxy_manager_arc,
+                    session_repo_arc,
+                );
                 app.manage(agent_session_manager);
-                info!("✅ Agent Session Manager initialized with proxy manager");
                 info!("🔄 Session recovery initiated in background");
 
                 // Built-in servers are now automatically initialized with SessionManager support

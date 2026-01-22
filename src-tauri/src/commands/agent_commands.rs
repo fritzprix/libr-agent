@@ -18,6 +18,8 @@ pub struct CreateAgentSessionRequest {
     pub session_id: String,
     pub name: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
+    #[serde(default)]
+    pub is_ephemeral: bool,
 }
 
 /// Request to send a user message to trigger workflow
@@ -60,8 +62,32 @@ pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionRequest,
 ) -> Result<SessionMetadata, String> {
+    use crate::repositories::in_memory_session_repository::InMemorySessionRepository;
+    use crate::repositories::SessionRepository;
+    use std::sync::Arc;
+
+    // Select repository based on is_ephemeral flag
+    let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
+        log::info!(
+            "Creating ephemeral session (in-memory only): {}",
+            request.session_id
+        );
+        Arc::new(InMemorySessionRepository::new())
+    } else {
+        log::info!(
+            "Creating persistent session (DB-backed): {}",
+            request.session_id
+        );
+        Arc::new(crate::state::get_session_repository().clone())
+    };
+
     manager
-        .create_session(request.session_id, request.name, request.agent_config)
+        .create_session_with_repo(
+            session_repo,
+            request.session_id,
+            request.name,
+            request.agent_config,
+        )
         .await
 }
 

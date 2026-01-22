@@ -101,7 +101,7 @@ pub trait SessionRepository: Send + Sync {
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SqliteSessionRepository {
     db: DatabaseConnection,
 }
