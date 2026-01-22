@@ -6,7 +6,10 @@ export type GroupedMessage =
   | {
       type: 'tool_group';
       message: Message;
-      toolGroup: { calls: ToolCall[] };
+      toolGroup: {
+        calls: ToolCall[];
+        results: (Message | undefined)[];
+      };
     };
 
 export interface MessageGroupingResult {
@@ -27,6 +30,7 @@ export interface MessageGroupingResult {
  *
  * Performance Optimization:
  * - Computes toolResultsMap in the same pass to avoid a second O(N) iteration in the consumer.
+ * - Pre-calculates tool results array for each group to avoid O(K) allocation in render loops.
  */
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
   return useMemo(() => {
@@ -78,6 +82,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         msg.tool_calls.length > 0
       ) {
         const allToolCalls: ToolCall[] = [];
+        const groupToolCallIds = new Set<string>();
         let j = i;
 
         // Collect consecutive assistant messages with tool calls
@@ -99,15 +104,15 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           }
 
           allToolCalls.push(...currentMsg.tool_calls);
+          currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
 
           // Skip past associated tool results
-          const toolCallIds = new Set(currentMsg.tool_calls.map((tc) => tc.id));
           j++;
           while (
             j < messages.length &&
             messages[j].role === 'tool' &&
             messages[j].tool_call_id &&
-            toolCallIds.has(messages[j].tool_call_id!)
+            groupToolCallIds.has(messages[j].tool_call_id!)
           ) {
             // Capture skipped tool result in map.
             // These tool results were already encountered when they were at position i
@@ -123,10 +128,15 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
         // Group if there are any tool calls
         if (allToolCalls.length > 0) {
+          // Pre-calculate results array to avoid O(K) mapping in render loop
+          const results = allToolCalls.map((call) =>
+            toolResultsMap.get(call.id),
+          );
+
           groupedMessages.push({
             type: 'tool_group',
             message: msg,
-            toolGroup: { calls: allToolCalls },
+            toolGroup: { calls: allToolCalls, results },
           });
         } else {
           // Fallback (shouldn't really happen due to outer if, but safe)
