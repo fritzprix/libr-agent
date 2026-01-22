@@ -56,12 +56,24 @@ pub struct SessionMetadata {
     pub updated_at: i64,
 }
 
+impl TryFrom<session::Model> for SessionMetadata {
+    type Error = DbError;
+
+    fn try_from(model: session::Model) -> Result<Self, Self::Error> {
+        Ok(SessionMetadata {
+            id: model.id,
+            name: model.name,
+            status: SessionStatus::from_str(&model.status)?,
+            agent_config: model.agent_config,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        })
+    }
+}
+
 /// Session repository trait for abstraction and testability
 #[async_trait]
 pub trait SessionRepository: Send + Sync {
-    /// Initialize the sessions table
-    async fn create_table(&self) -> Result<(), DbError>;
-
     /// Insert or update session metadata
     async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError>;
 
@@ -103,12 +115,6 @@ impl SqliteSessionRepository {
 
 #[async_trait]
 impl SessionRepository for SqliteSessionRepository {
-    async fn create_table(&self) -> Result<(), DbError> {
-        // No-op: Schema is now managed by SeaORM migrations
-        log::debug!("create_table() called but schema is now managed by migrations");
-        Ok(())
-    }
-
     async fn upsert_session(&self, session: &SessionMetadata) -> Result<(), DbError> {
         use sea_orm::sea_query::OnConflict;
 
@@ -142,15 +148,7 @@ impl SessionRepository for SqliteSessionRepository {
         let result = Session::find_by_id(session_id).one(&self.db).await?;
 
         if let Some(model) = result {
-            let status_str = model.status;
-            Ok(Some(SessionMetadata {
-                id: model.id,
-                name: model.name,
-                status: SessionStatus::from_str(&status_str)?,
-                agent_config: model.agent_config,
-                created_at: model.created_at,
-                updated_at: model.updated_at,
-            }))
+            Ok(Some(SessionMetadata::try_from(model)?))
         } else {
             Ok(None)
         }
@@ -200,17 +198,7 @@ impl SessionRepository for SqliteSessionRepository {
 
         let sessions: Result<Vec<SessionMetadata>, DbError> = models
             .into_iter()
-            .map(|model| {
-                let status_str = model.status;
-                Ok(SessionMetadata {
-                    id: model.id,
-                    name: model.name,
-                    status: SessionStatus::from_str(&status_str)?,
-                    agent_config: model.agent_config,
-                    created_at: model.created_at,
-                    updated_at: model.updated_at,
-                })
-            })
+            .map(SessionMetadata::try_from)
             .collect();
 
         sessions
