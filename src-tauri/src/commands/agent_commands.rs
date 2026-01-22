@@ -419,7 +419,9 @@ pub async fn agent_clear_all_sessions(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    use crate::entity::{assistant, mcp_server, playbook};
+    use crate::entity::{assistant, playbook};
+    use crate::repositories::mcp_server_repository::MCPServerRepository;
+    use crate::state::get_mcp_server_repository;
     use sea_orm::EntityTrait;
 
     // 1. Clear all sessions first
@@ -440,10 +442,14 @@ pub async fn agent_factory_reset(
         .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
 
     // 4. Delete all MCP Servers
-    mcp_server::Entity::delete_many()
-        .exec(db)
-        .await
-        .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
+    let mcp_repo = get_mcp_server_repository();
+    let servers = mcp_repo.list().await.map_err(|e| e.to_string())?;
+    for server in servers {
+        mcp_repo
+            .delete(&server.name)
+            .await
+            .map_err(|e| format!("Failed to delete MCP server {}: {}", server.name, e))?;
+    }
 
     // 5. Restore default assistants so the app is not empty
     if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {

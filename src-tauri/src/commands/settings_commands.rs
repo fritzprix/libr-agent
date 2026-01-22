@@ -1,6 +1,5 @@
-use crate::entity::settings;
-use crate::state::get_database_connection;
-use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set};
+use crate::repositories::SettingsRepository;
+use crate::state::get_settings_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -14,11 +13,11 @@ pub struct SettingDto {
     pub updated_at: i64,
 }
 
-impl From<settings::Model> for SettingDto {
-    fn from(model: settings::Model) -> Self {
+impl From<crate::repositories::Setting> for SettingDto {
+    fn from(model: crate::repositories::Setting) -> Self {
         Self {
             key: model.key,
-            value: serde_json::from_str(&model.value).unwrap_or(Value::Null),
+            value: model.value,
             created_at: model.created_at,
             updated_at: model.updated_at,
         }
@@ -27,63 +26,33 @@ impl From<settings::Model> for SettingDto {
 
 #[command]
 pub async fn set_setting(key: String, value: Value) -> Result<SettingDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
-
-    // Check if exists
-    let existing = settings::Entity::find_by_id(&key)
-        .one(db)
+    let repo = get_settings_repository();
+    repo.set(&key, value)
         .await
-        .map_err(|e| format!("Failed to check setting existence: {}", e))?;
-
-    let result = if let Some(existing_model) = existing {
-        let mut active: settings::ActiveModel = existing_model.into();
-        active.value = Set(value.to_string());
-        active.updated_at = Set(now);
-        active.update(db).await
-    } else {
-        let active = settings::ActiveModel {
-            key: Set(key),
-            value: Set(value.to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-        active.insert(db).await
-    };
-
-    let model = result.map_err(|e| format!("Failed to set setting: {}", e))?;
-    Ok(model.into())
+        .map(|s| s.into())
+        .map_err(|e| e.to_string())
 }
 
 #[command]
 pub async fn get_setting(key: String) -> Result<Option<SettingDto>, String> {
-    let db = get_database_connection();
-    let setting = settings::Entity::find_by_id(key)
-        .one(db)
+    let repo = get_settings_repository();
+    repo.get(&key)
         .await
-        .map_err(|e| format!("Failed to get setting: {}", e))?;
-
-    Ok(setting.map(|s| s.into()))
+        .map(|s| s.map(|v| v.into()))
+        .map_err(|e| e.to_string())
 }
 
 #[command]
 pub async fn delete_setting(key: String) -> Result<(), String> {
-    let db = get_database_connection();
-    settings::Entity::delete_by_id(key)
-        .exec(db)
-        .await
-        .map_err(|e| format!("Failed to delete setting: {}", e))?;
-    Ok(())
+    let repo = get_settings_repository();
+    repo.delete(&key).await.map_err(|e| e.to_string())
 }
 
 #[command]
 pub async fn list_settings() -> Result<Vec<SettingDto>, String> {
-    let db = get_database_connection();
-    let settings = settings::Entity::find()
-        .order_by_asc(settings::Column::Key)
-        .all(db)
+    let repo = get_settings_repository();
+    repo.list()
         .await
-        .map_err(|e| format!("Failed to list settings: {}", e))?;
-
-    Ok(settings.into_iter().map(|s| s.into()).collect())
+        .map(|list| list.into_iter().map(|s| s.into()).collect())
+        .map_err(|e| e.to_string())
 }

@@ -401,7 +401,7 @@ impl AgentSessionManager {
         }
 
         // 6. Delete index metadata
-        if let Err(e) = session_repo.delete_index_metadata(&session_id).await {
+        if let Err(e) = msg_repo.delete_index_metadata(&session_id).await {
             log::warn!(
                 "Failed to delete index metadata for session {}: {}",
                 session_id,

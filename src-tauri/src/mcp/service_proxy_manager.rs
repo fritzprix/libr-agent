@@ -185,26 +185,28 @@ impl MCPServiceProxyManager {
             }
         }
 
-        // Fetch configs directly from DB to support Session Isolation (independent of global connections)
-        use crate::entity::mcp_server;
-        use sea_orm::EntityTrait;
+        // Fetch configs using repository to support Session Isolation (independent of global connections)
+        use crate::repositories::mcp_server_repository::MCPServerRepository;
+        use crate::state::get_mcp_server_repository;
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
 
-        match mcp_server::Entity::find().all(self.db.as_ref()).await {
-            Ok(models) => {
+        let repo = get_mcp_server_repository();
+        match repo.list().await {
+            Ok(servers) => {
                 log::debug!(
                     "Loaded {} MCP server configs from DB for session {}",
-                    models.len(),
+                    servers.len(),
                     session_id
                 );
-                for model in models {
-                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-                    {
+                for server in servers {
+                    match serde_json::from_value::<crate::mcp::types::MCPServerConfig>(
+                        server.config,
+                    ) {
                         Ok(mut config) => {
                             // Use DB name if JSON doesn't specify one (type-safe approach)
-                            let server_name = config.name.unwrap_or_else(|| model.name.clone());
+                            let server_name = config.name.unwrap_or_else(|| server.name.clone());
                             config.name = Some(server_name.clone());
 
                             match config.transport {
@@ -219,7 +221,7 @@ impl MCPServiceProxyManager {
                         Err(e) => {
                             log::warn!(
                                 "Failed to parse config for MCP server '{}': {}",
-                                model.name,
+                                server.name,
                                 e
                             );
                         }

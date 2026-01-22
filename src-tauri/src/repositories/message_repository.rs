@@ -42,6 +42,9 @@ pub trait MessageRepository: Send + Sync {
         rebuild_duration_ms: i64,
     ) -> Result<(), DbError>;
 
+    /// Delete index metadata for a specific session
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
+
     /// Get the last indexed timestamp for a session
     async fn get_last_indexed_at(&self, session_id: &str) -> Result<i64, DbError>;
 
@@ -266,6 +269,13 @@ impl MessageRepository for SqliteMessageRepository {
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError> {
         MessageEntity::delete_many()
             .filter(message::Column::SessionId.eq(session_id))
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
+        MessageIndexMeta::delete_by_id(session_id)
             .exec(&self.db)
             .await?;
         Ok(())

@@ -95,9 +95,6 @@ pub trait SessionRepository: Send + Sync {
 
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
-
-    /// Delete index metadata for a specific session
-    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -204,15 +201,6 @@ impl SessionRepository for SqliteSessionRepository {
 
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
         Session::delete_by_id(session_id).exec(&self.db).await?;
-        Ok(())
-    }
-
-    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
-        use crate::entity::prelude::MessageIndexMeta;
-
-        MessageIndexMeta::delete_by_id(session_id)
-            .exec(&self.db)
-            .await?;
         Ok(())
     }
 }

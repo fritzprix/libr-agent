@@ -74,7 +74,8 @@ pub use state::{
     get_content_store_repository, get_database_connection, get_mcp_service_proxy_manager,
     get_message_repository, get_session_repository, get_sqlite_db_url,
     set_content_store_repository, set_database_connection, set_mcp_service_proxy_manager,
-    set_message_repository, set_session_repository, set_sqlite_db_url,
+    set_message_repository, set_mcp_server_repository, set_session_repository,
+    set_settings_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -145,7 +146,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
         // Initialize repository instances
         use repositories::{
-            SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+            SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+            SqliteSessionRepository, SqliteSettingsRepository,
         };
 
         let message_repo = SqliteMessageRepository::new(db.clone());
@@ -157,6 +159,12 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_repo = SqliteSessionRepository::new(db.clone());
         info!("✅ Session repository initialized");
 
+        let settings_repo = SqliteSettingsRepository::new(db.clone());
+        info!("✅ Settings repository initialized");
+
+        let mcp_server_repo = SqliteMCPServerRepository::new(db.clone());
+        info!("✅ MCP server repository initialized");
+
         // Fetch System Settings from DB
         #[derive(serde::Deserialize, Default)]
         #[serde(rename_all = "camelCase")]
@@ -167,13 +175,9 @@ pub fn run_with_sqlite_sync(db_url: String) {
         }
 
         let system_settings: SystemSettings = {
-            use entity::settings;
-            use sea_orm::EntityTrait;
-            match settings::Entity::find_by_id("systemSettings")
-                .one(&db)
-                .await
-            {
-                Ok(Some(model)) => serde_json::from_str(&model.value).unwrap_or_default(),
+            use repositories::SettingsRepository;
+            match settings_repo.get("systemSettings").await {
+                Ok(Some(setting)) => serde_json::from_value(setting.value).unwrap_or_default(),
                 Ok(None) => SystemSettings::default(),
                 Err(e) => {
                     log::warn!("Failed to fetch system settings: {}, using defaults", e);
@@ -216,6 +220,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
         set_message_repository(message_repo);
         set_content_store_repository(content_store_repo);
         set_session_repository(session_repo);
+        set_settings_repository(settings_repo);
+        set_mcp_server_repository(mcp_server_repo);
         info!("✅ Repository instances initialized");
 
         // Initialize the MCP manager with database connection

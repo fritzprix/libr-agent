@@ -60,8 +60,9 @@ pub async fn remove_session(session_id: String) -> Result<SessionResponse, Strin
     }
 
     // Step 2: Delete index metadata from database
-    let repo = get_session_repository();
-    if let Err(e) = repo.delete_index_metadata(&session_id).await {
+    let message_repo = crate::state::get_message_repository();
+    use crate::repositories::MessageRepository;
+    if let Err(e) = message_repo.delete_index_metadata(&session_id).await {
         error!("Failed to delete index metadata for session {session_id}: {e}");
         // Continue with removal even if metadata deletion fails (best-effort)
     } else {
