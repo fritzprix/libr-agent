@@ -1,4 +1,4 @@
-import { useMemo, useState, memo } from 'react';
+import { useMemo, useState, memo, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
@@ -33,6 +33,40 @@ function SessionList({
     return filterSessions(sessions, debouncedQuery);
   }, [sessions, debouncedQuery]);
 
+  // --- Virtualization / Infinite Scroll Optimization ---
+  // Only render a subset of sessions initially to improve performance
+  const [visibleCount, setVisibleCount] = useState(20);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  // Reset visible count when search query changes
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [debouncedQuery]);
+
+  const visibleSessions = useMemo(() => {
+    return filteredSessions.slice(0, visibleCount);
+  }, [filteredSessions, visibleCount]);
+
+  // Intersection Observer to load more items when scrolling to bottom
+  useEffect(() => {
+    const element = observerTarget.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => prev + 20);
+        }
+      },
+      { rootMargin: '200px' } // Pre-load content before user hits the exact bottom
+    );
+
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [visibleCount, filteredSessions.length]);
+  // ---------------------------------------------------
+
   return (
     <div className={`flex flex-col ${className}`}>
       {showSearch && !isCollapsed && (
@@ -47,13 +81,15 @@ function SessionList({
       )}
 
       <div className="space-y-1 flex-1">
-        {filteredSessions.length === 0
-          ? !isCollapsed && (
-              <div className="text-center text-muted-foreground py-4 text-sm">
-                {searchQuery ? 'No matching sessions' : emptyMessage}
-              </div>
-            )
-          : filteredSessions.map((session) => {
+        {filteredSessions.length === 0 ? (
+          !isCollapsed && (
+            <div className="text-center text-muted-foreground py-4 text-sm">
+              {searchQuery ? 'No matching sessions' : emptyMessage}
+            </div>
+          )
+        ) : (
+          <>
+            {visibleSessions.map((session) => {
               const hits = searchHits?.get(session.id);
               return (
                 <div key={session.id} className="relative">
@@ -73,6 +109,17 @@ function SessionList({
                 </div>
               );
             })}
+
+            {/* Infinite Scroll Sentinel */}
+            {visibleCount < filteredSessions.length && (
+              <div
+                ref={observerTarget}
+                className="h-4 w-full opacity-0 pointer-events-none"
+                aria-hidden="true"
+              />
+            )}
+          </>
+        )}
       </div>
     </div>
   );
