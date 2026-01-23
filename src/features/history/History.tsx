@@ -210,7 +210,6 @@ export default function History() {
               <SessionList
                 sessions={orderedSessions}
                 searchHits={searchHitsMap}
-                showSearch={false}
                 className="flex-1"
                 emptyMessage="No sessions yet. Start a conversation to create your first session."
                 isCollapsed={false}

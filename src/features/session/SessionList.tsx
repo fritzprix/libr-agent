@@ -1,15 +1,12 @@
-import { useMemo, useState, memo } from 'react';
+import { memo } from 'react';
 import { useParams } from 'react-router-dom';
 import SessionItem from './SessionItem';
-import { Input, Badge } from '@/components/ui';
-import { useDebounced } from '@/hooks/useDebounced';
-import { filterSessions } from '@/lib/session-utils';
+import { Badge } from '@/components/ui';
 import type { AgentSession } from '@/models/agent';
 
 interface SessionListProps {
   sessions: AgentSession[];
   searchHits?: Map<string, number>;
-  showSearch?: boolean;
   className?: string;
   emptyMessage?: string;
   isCollapsed?: boolean;
@@ -18,42 +15,22 @@ interface SessionListProps {
 function SessionList({
   sessions,
   searchHits,
-  showSearch = false,
   className = '',
   emptyMessage = 'No sessions found',
   isCollapsed = false,
 }: SessionListProps) {
   const { sessionId } = useParams();
-  const [searchQuery, setSearchQuery] = useState('');
-  // Debounce search query to reduce filtering operations during typing
-  const debouncedQuery = useDebounced(searchQuery, 300);
-
-  // Filter sessions based on debounced search query
-  const filteredSessions = useMemo(() => {
-    return filterSessions(sessions, debouncedQuery);
-  }, [sessions, debouncedQuery]);
 
   return (
     <div className={`flex flex-col ${className}`}>
-      {showSearch && !isCollapsed && (
-        <div className="mb-4">
-          <Input
-            placeholder="Search sessions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-muted-foreground placeholder:text-muted-foreground"
-          />
-        </div>
-      )}
-
       <div className="space-y-1 flex-1">
-        {filteredSessions.length === 0
+        {sessions.length === 0
           ? !isCollapsed && (
               <div className="text-center text-muted-foreground py-4 text-sm">
-                {searchQuery ? 'No matching sessions' : emptyMessage}
+                {emptyMessage}
               </div>
             )
-          : filteredSessions.map((session) => {
+          : sessions.map((session) => {
               const hits = searchHits?.get(session.id);
               return (
                 <div key={session.id} className="relative">

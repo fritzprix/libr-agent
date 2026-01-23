@@ -32,11 +32,7 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { useAgentChatActions } from '@/context/AgentChatContext';
-import { createId } from '@paralleldrive/cuid2';
-
-import { createToolMessagePair } from '@/lib/chat-utils';
-import { stringToMCPContentArray } from '@/lib/utils';
+import { useAgentToolExecution } from '../hooks/useAgentToolExecution';
 
 const logger = getLogger('AgentWorkspacePanel');
 
@@ -55,10 +51,9 @@ export function AgentWorkspacePanel() {
   const {
     listWorkspaceFiles,
     openWorkspaceFileWithDefaultApp,
-    agentCallBuiltinTool,
   } = useRustBackend();
   const { session } = useAgentSessionState();
-  const { submit, injectMessages } = useAgentChatActions();
+  const { executeTool } = useAgentToolExecution();
   const [rootPath] = useState<string>('./');
   const [workspaceOverride, setWorkspaceOverridePath] = useState<string>('');
   const [isOverrideActive, setIsOverrideActive] = useState(false);
@@ -268,89 +263,13 @@ export function AgentWorkspacePanel() {
             ? destPath.slice(2)
             : destPath;
 
-          // Call builtin workspace tool (returns MCPResult directly after fix)
-          const response = (await agentCallBuiltinTool(
-            session.id,
+          await executeTool(
             'builtin_workspace__importFile',
             {
               src_abs_path: srcPath,
               dest_rel_path: destRelPath,
-            },
-          )) as {
-            content?: Array<{ type: string; text?: string }>;
-            structuredContent?: unknown;
-            isError?: boolean;
-          };
-
-          // Create tool messages for chat history
-          const toolCallId = createId();
-
-          // Build a safe textual result for UI.
-          let resultText = '';
-
-          try {
-            // Check if this is an error result
-            if (response.isError === true) {
-              // Extract error message from content
-              const errorContent = response.content?.[0];
-              if (
-                errorContent &&
-                typeof errorContent === 'object' &&
-                'text' in errorContent
-              ) {
-                resultText = `${errorContent.text}`;
-              } else {
-                resultText = 'Tool execution failed';
-              }
-            } else if (response.content && Array.isArray(response.content)) {
-              // Extract text from content array
-              const texts: string[] = [];
-              for (const item of response.content) {
-                if (item && typeof item === 'object') {
-                  if (
-                    'text' in (item as Record<string, unknown>) &&
-                    typeof (item as Record<string, unknown>)['text'] ===
-                      'string'
-                  ) {
-                    texts.push(
-                      (item as Record<string, unknown>)['text'] as string,
-                    );
-                  } else if (
-                    (item as Record<string, unknown>)['type'] === 'text' &&
-                    !('text' in (item as Record<string, unknown>))
-                  ) {
-                    // explicit text type but missing text field - skip
-                  } else {
-                    try {
-                      texts.push(JSON.stringify(item));
-                    } catch {
-                      // ignore
-                    }
-                  }
-                }
-              }
-
-              if (texts.length > 0) resultText = texts.join('\n');
-              else resultText = JSON.stringify(response.content);
-            } else {
-              resultText = 'No result returned from importFile';
             }
-          } catch (e) {
-            resultText = `Failed to parse tool response: ${
-              e instanceof Error ? e.message : String(e)
-            }`;
-          }
-
-          const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-            'importFile',
-            { src_abs_path: srcPath, dest_rel_path: destRelPath },
-            stringToMCPContentArray(resultText),
-            toolCallId,
-            session.id,
           );
-
-          // Submit messages atomically using injectMessages
-          await injectMessages([toolCallMessage, toolResultMessage], true);
         }
 
         // Refresh directory after import
@@ -364,7 +283,7 @@ export function AgentWorkspacePanel() {
         });
       }
     },
-    [agentCallBuiltinTool, submit, session, rootPath, loadDirectory],
+    [executeTool, session, rootPath, loadDirectory],
   );
 
   // Subscribe to DnD events

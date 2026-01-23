@@ -32,3 +32,8 @@
 
 **Pattern:** Vestigial `create_table` no-op method duplicated in repository traits, and repeated manual `SessionMetadata` mapping in `SessionRepository`.
 **Action:** Removed `create_table` from `MessageRepository` and `SessionRepository` traits, and implemented `TryFrom<session::Model>` for `SessionMetadata` to centralize conversion logic.
+
+## 2026-05-25 - [Agent Tool Execution & Injection Duplication]
+
+**Pattern:** Repeated orchestration of calling a backend tool, creating `ToolCall/ToolResult` message pairs manually with `createId` and `createToolMessagePair`, and injecting them into the session via `injectMessages`.
+**Action:** Extracted `useAgentToolExecution` hook to encapsulate this workflow, normalizing response parsing and error handling in a single place.
