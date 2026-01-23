@@ -429,7 +429,7 @@ pub fn run() {
             ])
             .setup(|app| {
                 // Setup custom file logger FIRST (before any log calls)
-                let log_dir = app.path().app_log_dir().unwrap();
+                let log_dir = app.path().app_log_dir()?;
                 logger::setup_file_logger(log_dir)?;
 
                 // Test if Rust logger is properly initialized
@@ -438,7 +438,7 @@ pub fn run() {
 
                 // Initialize SecureFileManager and add to managed state
                 // Use a dedicated global directory for the global instance to avoid legacy session dependency
-                let global_file_dir = app.path().app_data_dir().unwrap().join("global_shared");
+                let global_file_dir = app.path().app_data_dir()?.join("global_shared");
                 let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
                 app.manage(file_manager);
                 info!("✅ SecureFileManager initialized");
@@ -465,7 +465,7 @@ pub fn run() {
                     // The runtime used in `run_with_sqlite_sync` is dropped!
                     // But we can create a temporary runtime to fetch config.
 
-                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let rt = tokio::runtime::Runtime::new()?;
                     rt.block_on(async {
                         #[derive(serde::Deserialize, Default)]
                         #[serde(rename_all = "camelCase")]
