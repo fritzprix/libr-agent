@@ -1,18 +1,17 @@
-use sea_orm::*;
 use serde_json::{json, Value};
 
-use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
     ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::KnowledgeRepository;
 
 use super::{helpers, KnowledgeServer};
 
 /// Save knowledge to the database
 pub async fn save_knowledge(
-    server: &KnowledgeServer,
+    _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -73,25 +72,20 @@ pub async fn save_knowledge(
         None
     };
 
-    let now = chrono::Utc::now().timestamp_millis();
-    let db = server.get_db();
+    let repo = crate::get_knowledge_repository();
+    let created = repo
+        .create_knowledge(
+            assistant_id.to_string(),
+            title.to_string(),
+            content.to_string(),
+            source.clone(),
+            tags_str.clone(),
+        )
+        .await;
 
-    let model = knowledge::ActiveModel {
-        id: NotSet,
-        assistant_id: Set(assistant_id.to_string()),
-        title: Set(title.to_string()),
-        content: Set(content.to_string()),
-        source: Set(source.clone()),
-        tags: Set(tags_str.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let result = KnowledgeEntity::insert(model).exec(db).await;
-
-    match result {
-        Ok(insert_result) => {
-            let id = insert_result.last_insert_id;
+    match created {
+        Ok(model) => {
+            let id = model.id;
 
             // Parse tags back for response
             let tags_vec = helpers::parse_db_tags(tags_str.as_ref());
@@ -103,8 +97,8 @@ pub async fn save_knowledge(
                 "content": content,
                 "source": source,
                 "tags": tags_vec,
-                "created_at": now,
-                "updated_at": now
+                "created_at": model.created_at,
+                "updated_at": model.updated_at
             });
 
             let hint = SuccessHint::new(
@@ -135,7 +129,7 @@ pub async fn save_knowledge(
 
 /// Delete a knowledge entry by ID
 pub async fn delete_knowledge(
-    server: &KnowledgeServer,
+    _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -144,41 +138,24 @@ pub async fn delete_knowledge(
         Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
     };
 
-    let db = server.get_db();
-    let result = KnowledgeEntity::delete_many()
-        .filter(knowledge::Column::Id.eq(id))
-        .filter(knowledge::Column::AssistantId.eq(assistant_id))
-        .exec(db)
-        .await;
+    let repo = crate::get_knowledge_repository();
+    let result = repo.delete_knowledge(id, assistant_id).await;
 
     match result {
-        Ok(delete_result) => {
-            if delete_result.rows_affected > 0 {
-                let hint = SuccessHint::new(
-                    format!("Knowledge entry {} deleted successfully", id),
-                    vec!["Use listKnowledge to see remaining entries".to_string()],
-                );
+        Ok(_) => {
+            let hint = SuccessHint::new(
+                format!("Knowledge entry {} deleted successfully", id),
+                vec!["Use listKnowledge to see remaining entries".to_string()],
+            );
 
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "success": true,
-                    "id": id
-                }))))
-            } else {
-                Ok(not_found_error(
-                    "Knowledge entry",
-                    &id.to_string(),
-                    ToolGroup::Knowledge,
-                ))
-            }
+            Ok(hint.to_mcp_result_with_data(Some(json!({
+                "success": true,
+                "id": id
+            }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Delete knowledge",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify the ID is correct".to_string(),
-                "Use listKnowledge to see available entries".to_string(),
-            ],
+        Err(_) => Ok(not_found_error(
+            "Knowledge entry",
+            &id.to_string(),
             ToolGroup::Knowledge,
         )),
     }

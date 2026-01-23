@@ -6,8 +6,9 @@ mod todos;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
+use crate::repositories::PlanningRepository;
 use async_trait::async_trait;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -317,37 +318,11 @@ impl BuiltinMCPServer for PlanningServer {
                 todos::cancel_todo(self.db.as_ref(), &target_session_id, args).await
             }
             "clearSession" | "builtin_planning__clearSession" => {
-                let txn = self
-                    .db
-                    .begin()
+                let repo = crate::state::get_planning_repository();
+                repo.clear_session(&target_session_id)
                     .await
-                    .map_err(|e: sea_orm::DbErr| e.to_string())?;
-
-                crate::entity::planning_goal::Entity::delete_many()
-                    .filter(crate::entity::planning_goal::Column::SessionId.eq(&target_session_id))
-                    .exec(&txn)
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                crate::entity::planning_todo::Entity::delete_many()
-                    .filter(crate::entity::planning_todo::Column::SessionId.eq(&target_session_id))
-                    .exec(&txn)
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                crate::entity::planning_scratchpad::Entity::delete_many()
-                    .filter(
-                        crate::entity::planning_scratchpad::Column::SessionId
-                            .eq(&target_session_id),
-                    )
-                    .exec(&txn)
-                    .await
-                    .map_err(|e| e.to_string())?;
-
-                txn.commit()
-                    .await
-                    .map_err(|e: sea_orm::DbErr| e.to_string())?;
-                Ok(MCPResult::success("✓ Session planning state cleared"))
+                    .map(|_| MCPResult::success("✓ Session planning state cleared"))
+                    .map_err(|e| format!("Failed to clear session: {}", e))
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
                 scratchpad::add_scratchpad(self.db.as_ref(), &target_session_id, args).await

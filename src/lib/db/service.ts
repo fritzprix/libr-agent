@@ -214,9 +214,16 @@ export const dbUtils = {
 
   // --- Playbooks ---
   clearAllPlaybooks: async (): Promise<void> => {
-    const all = await playbooksBackend.listPlaybooks();
-    for (const p of all) {
-      if (p.id) await playbooksBackend.deletePlaybook(p.id);
+    const assistants = await assistantsBackend.listAssistants();
+
+    for (const assistant of assistants) {
+      if (!assistant.id) continue;
+      const all = await playbooksBackend.listPlaybooks({
+        agentId: assistant.id,
+      });
+      for (const p of all) {
+        if (p.id) await playbooksBackend.deletePlaybook(p.id, assistant.id);
+      }
     }
   },
 };

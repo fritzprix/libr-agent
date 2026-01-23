@@ -8,6 +8,7 @@ mod m20260109_000001_add_source_to_knowledge;
 mod m20260112_000001_create_settings_table;
 mod m20260116_000001_add_assistant_id_to_playbooks;
 mod m20260121_000001_add_bookmark_to_playbooks;
+mod m20260123_000001_remove_session_id_from_playbooks;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260112_000001_create_settings_table::Migration),
             Box::new(m20260116_000001_add_assistant_id_to_playbooks::Migration),
             Box::new(m20260121_000001_add_bookmark_to_playbooks::Migration),
+            Box::new(m20260123_000001_remove_session_id_from_playbooks::Migration),
         ]
     }
 }

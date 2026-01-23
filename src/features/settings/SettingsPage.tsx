@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BrainCircuit } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
@@ -19,28 +13,11 @@ import type {
 } from '@/context/SettingsContext';
 import {
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Input,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from '@/components/ui';
-import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
-import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogFooter,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogAction,
-  AlertDialogCancel,
-} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
@@ -49,97 +26,12 @@ import {
   factoryReset as backendFactoryReset,
   clearAllSessions as backendClearAllSessions,
 } from '@/lib/backend/sessions';
-import { useDebounce } from '@/hooks/useDebounce';
+import { GeneralTab } from './tabs/GeneralTab';
+import { AIModelsTab } from './tabs/AIModelsTab';
+import { ChatInterfaceTab } from './tabs/ChatInterfaceTab';
+import { AdvancedTab } from './tabs/AdvancedTab';
 
 const logger = getLogger('SettingsPage');
-
-interface ProviderCardProps {
-  provider: AIServiceProvider;
-  providerName: string;
-  apiKey: string;
-  baseUrl?: string;
-  onPendingChange: (
-    provider: AIServiceProvider,
-    patch: Partial<ServiceConfig>,
-  ) => void;
-}
-
-function ProviderCardBase({
-  provider,
-  providerName,
-  apiKey,
-  baseUrl,
-  onPendingChange,
-}: ProviderCardProps) {
-  const [localApiKey, setLocalApiKey] = useState(apiKey || '');
-  const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
-
-  // Use debounce hook for pending changes
-  const { debounced: schedulePending } = useDebounce(
-    (patch: Partial<ServiceConfig>) => {
-      onPendingChange(provider, patch);
-    },
-    350,
-  );
-
-  return (
-    <Card className="bg-background border shadow-sm min-w-0 w-full">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-foreground text-base font-medium break-words">
-          {providerName}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 min-w-0">
-        <div className="min-w-0">
-          <label className="block text-muted-foreground mb-2 text-sm font-medium">
-            API Key
-          </label>
-          <Input
-            type="password"
-            placeholder={`Enter your ${providerName} API key`}
-            value={localApiKey}
-            onChange={(e) => {
-              const v = e.target.value;
-              setLocalApiKey(v);
-              schedulePending({ apiKey: v });
-            }}
-            onBlur={() => onPendingChange(provider, { apiKey: localApiKey })}
-            className="bg-background border text-foreground w-full"
-          />
-        </div>
-
-        {(provider === AIServiceProvider.Ollama ||
-          provider === AIServiceProvider.OpenAI) && (
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 text-sm font-medium">
-              Base URL
-            </label>
-            <Input
-              type="url"
-              placeholder="http://localhost:11434"
-              value={localBaseUrl}
-              onChange={(e) => {
-                const v = e.target.value;
-                setLocalBaseUrl(v);
-                schedulePending({ baseUrl: v });
-              }}
-              onBlur={() =>
-                onPendingChange(provider, { baseUrl: localBaseUrl })
-              }
-              className="bg-background border text-foreground w-full"
-            />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
-  return (
-    prev.apiKey === next.apiKey && (prev.baseUrl || '') === (next.baseUrl || '')
-  );
-});
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -165,13 +57,9 @@ export default function SettingsPage() {
   );
   const [pendingCount, setPendingCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
   const [isResetting, setIsResetting] = useState(false);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const handleFactoryReset = async () => {
-    setResetConfirmOpen(false);
     setIsResetting(true);
     try {
       // 1. Clear ALL frontend data
@@ -188,9 +76,6 @@ export default function SettingsPage() {
 
       // 2. Perform factory reset on backend
       await backendFactoryReset();
-
-      // 3. Restore defaults
-      // await LocalDatabase.getInstance().ensureDefaultAssistants();
 
       toast.success(
         t(
@@ -212,6 +97,25 @@ export default function SettingsPage() {
         ),
       );
       setIsResetting(false);
+    }
+  };
+
+  const handleClearAllSessions = async () => {
+    setIsDeleting(true);
+    try {
+      await dbUtils.clearAllSessions();
+      await backendClearAllSessions();
+      toast.success(
+        t('settings.dataReset.success', 'All sessions have been deleted.'),
+      );
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (e) {
+      logger.error('Failed to clear sessions', e);
+      toast.error(t('settings.dataReset.error', 'Failed to clear sessions.'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -545,314 +449,37 @@ export default function SettingsPage() {
           </TabsList>
 
           <TabsContent value="general">
-            <div className="space-y-6">
-              <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">
-                  {t('settings.language.label', 'Language')}
-                </label>
-                <select
-                  className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-                  value={localLanguage}
-                  onChange={(e) => handleLanguageChange(e.target.value)}
-                >
-                  <option value="en">
-                    {t('settings.language.english', 'English')}
-                  </option>
-                  <option value="ko">
-                    {t('settings.language.korean', 'Korean')}
-                  </option>
-                </select>
-              </div>
-            </div>
+            <GeneralTab
+              localLanguage={localLanguage}
+              onChange={handleLanguageChange}
+            />
           </TabsContent>
 
           <TabsContent value="ai-models">
-            <div className="space-y-8">
-              {/* API Keys Section */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-foreground">
-                  {t('settings.aiModels.apiKeys', 'Provider API Keys')}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {providerEntries.map((provider) => {
-                    const cfg = serviceConfigs[provider] || {};
-                    const providerName =
-                      provider.charAt(0).toUpperCase() + provider.slice(1);
-                    return (
-                      <ProviderCard
-                        key={provider}
-                        provider={provider}
-                        providerName={providerName}
-                        apiKey={cfg.apiKey || ''}
-                        baseUrl={cfg.baseUrl}
-                        onPendingChange={handlePendingChange}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Model Preference Section */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-foreground">
-                  {t('settings.aiModels.preferences', 'Model Preferences')}
-                </h3>
-                <div className="min-w-0">
-                  <label className="block text-muted-foreground mb-2 font-medium">
-                    {t('settings.llmPreference', 'Default LLM')}
-                  </label>
-                  <AgentModelPicker
-                    currentModel={localPreferredModel.model}
-                    currentProvider={localPreferredModel.provider}
-                    onConfigUpdate={handlePreferredModelChange}
-                    className="w-full max-w-sm"
-                  />
-                  {/* Note: TerminalModelPicker had different UX. AgentModelPicker is more compact. */}
-                </div>
-              </div>
-
-              {/* Agent Hub Section */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-foreground">
-                  {t('settings.aiModels.agentHub', 'Agent Hub')}
-                </h3>
-                <div className="min-w-0">
-                  <label className="block text-muted-foreground mb-2 font-medium">
-                    Agent Hub URL
-                  </label>
-                  <Input
-                    type="url"
-                    placeholder="https://api.agenthub.com"
-                    value={localAgentHubUrl}
-                    onChange={(e) => handleAgentHubUrlChange(e.target.value)}
-                    className="bg-background border text-foreground w-full"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    URL of the remote Agent Hub server. If set, assistants will
-                    be synced with this server.
-                  </p>
-                </div>
-              </div>
-            </div>
+            <AIModelsTab
+              serviceConfigs={serviceConfigs}
+              providerEntries={providerEntries}
+              localPreferredModel={localPreferredModel}
+              localAgentHubUrl={localAgentHubUrl}
+              onPendingChange={handlePendingChange}
+              onPreferredModelChange={handlePreferredModelChange}
+              onAgentHubUrlChange={handleAgentHubUrlChange}
+            />
           </TabsContent>
 
           <TabsContent value="chat-interface">
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="min-w-0">
-                  <label className="block text-muted-foreground mb-2 font-medium">
-                    {t('settings.messageWindowSize', 'Message Window Size')}
-                  </label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 50"
-                    value={localWindowSize}
-                    onChange={(e) =>
-                      handleWindowSizeChange(parseInt(e.target.value, 10) || 0)
-                    }
-                    className="bg-background border text-foreground w-full max-w-xs"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t(
-                      'settings.messageWindowSizeDescription',
-                      'Number of messages to keep in conversation history',
-                    )}
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  <label className="block text-muted-foreground mb-2 font-medium">
-                    {t(
-                      'settings.toolCallGroupVisibleCount',
-                      'Tool Calls Visible Count',
-                    )}
-                  </label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 4"
-                    min={1}
-                    max={20}
-                    value={localToolCallGroupVisibleCount}
-                    onChange={(e) =>
-                      handleToolCallGroupVisibleCountChange(
-                        parseInt(e.target.value, 10) || 4,
-                      )
-                    }
-                    className="bg-background border text-foreground w-full max-w-xs"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t(
-                      'settings.toolCallGroupVisibleCountDescription',
-                      'Number of tool calls to show in collapsed group view',
-                    )}
-                  </p>
-                </div>
-
-                <div className="min-w-0">
-                  <label className="block text-muted-foreground mb-2 font-medium">
-                    Diff Context Lines
-                  </label>
-                  <Input
-                    type="number"
-                    placeholder="e.g., 3"
-                    min={1}
-                    max={10}
-                    value={localAdvancedSettings.diffContextLines ?? 3}
-                    onChange={(e) =>
-                      handleAdvancedSettingsChange(
-                        'diffContextLines',
-                        parseInt(e.target.value, 10) || 3,
-                      )
-                    }
-                    className="bg-background border text-foreground w-full max-w-xs"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Number of context lines to show in file edit diffs (1-10).
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t pt-6 mt-6">
-                <h3 className="text-lg font-medium text-foreground mb-4">
-                  {t('settings.display.metricsTitle', 'Performance Metrics')}
-                </h3>
-                <div className="space-y-6">
-                  <div className="min-w-0">
-                    <label className="block text-muted-foreground mb-2 font-medium">
-                      {t(
-                        'settings.display.metricDisplayMode',
-                        'Metric Display Mode',
-                      )}
-                    </label>
-                    <select
-                      className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-                      value={localDisplay.metricDisplayMode}
-                      onChange={(e) =>
-                        handleDisplaySettingsChange(
-                          'metricDisplayMode',
-                          e.target.value as 'tooltip' | 'inline',
-                        )
-                      }
-                    >
-                      <option value="inline">
-                        {t(
-                          'settings.display.inline',
-                          'Inline (show in message)',
-                        )}
-                      </option>
-                      <option value="tooltip">
-                        {t(
-                          'settings.display.tooltip',
-                          'Tooltip (hover to see)',
-                        )}
-                      </option>
-                    </select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t(
-                        'settings.display.metricDisplayModeDescription',
-                        'Choose how token metrics are displayed in chat messages',
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="min-w-0">
-                    <label className="block text-muted-foreground mb-2 font-medium">
-                      {t(
-                        'settings.display.prefillDisplayFormat',
-                        'Prefill Performance Format',
-                      )}
-                    </label>
-                    <select
-                      className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
-                      value={localDisplay.prefillDisplayFormat}
-                      onChange={(e) =>
-                        handleDisplaySettingsChange(
-                          'prefillDisplayFormat',
-                          e.target.value as 'time' | 'tokensPerSecond',
-                        )
-                      }
-                    >
-                      <option value="time">
-                        {t(
-                          'settings.display.time',
-                          'Time to First Token (e.g., 245ms)',
-                        )}
-                      </option>
-                      <option value="tokensPerSecond">
-                        {t(
-                          'settings.display.tokensPerSecond',
-                          'Tokens Per Second (e.g., 520 tok/s)',
-                        )}
-                      </option>
-                    </select>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t(
-                        'settings.display.prefillDisplayFormatDescription',
-                        'Choose how prefill performance is displayed',
-                      )}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col gap-4">
-                    <div className="min-w-0">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={localDisplay.showTokenSpeed}
-                          onChange={(e) =>
-                            handleDisplaySettingsChange(
-                              'showTokenSpeed',
-                              e.target.checked,
-                            )
-                          }
-                          className="w-4 h-4"
-                        />
-                        <span className="text-muted-foreground font-medium">
-                          {t(
-                            'settings.display.showTokenSpeed',
-                            'Show Token Speed',
-                          )}
-                        </span>
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-1 ml-6">
-                        {t(
-                          'settings.display.showTokenSpeedDescription',
-                          'Display generation speed (tokens per second) in metrics',
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="min-w-0">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={localDisplay.compactMetrics}
-                          onChange={(e) =>
-                            handleDisplaySettingsChange(
-                              'compactMetrics',
-                              e.target.checked,
-                            )
-                          }
-                          className="w-4 h-4"
-                        />
-                        <span className="text-muted-foreground font-medium">
-                          {t(
-                            'settings.display.compactMetrics',
-                            'Compact Metrics',
-                          )}
-                        </span>
-                      </label>
-                      <p className="text-xs text-muted-foreground mt-1 ml-6">
-                        {t(
-                          'settings.display.compactMetricsDescription',
-                          'Use compact display format for token metrics',
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ChatInterfaceTab
+              localWindowSize={localWindowSize}
+              localToolCallGroupVisibleCount={localToolCallGroupVisibleCount}
+              localAdvancedSettings={localAdvancedSettings}
+              localDisplay={localDisplay}
+              onWindowSizeChange={handleWindowSizeChange}
+              onToolCallGroupVisibleCountChange={
+                handleToolCallGroupVisibleCountChange
+              }
+              onAdvancedSettingsChange={handleAdvancedSettingsChange}
+              onDisplaySettingsChange={handleDisplaySettingsChange}
+            />
           </TabsContent>
 
           <TabsContent value="mcp-servers">
@@ -860,431 +487,20 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="advanced">
-            <div className="space-y-6">
-              <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">
-                  {t('settings.advanced.maxRetries', 'Max Retry Attempts')}
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g., 1"
-                  min={0}
-                  max={5}
-                  value={localAdvancedSettings.maxRetries}
-                  onChange={(e) =>
-                    handleAdvancedSettingsChange(
-                      'maxRetries',
-                      parseInt(e.target.value, 10) || 0,
-                    )
-                  }
-                  className="bg-background border text-foreground w-full max-w-xs"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t(
-                    'settings.advanced.maxRetriesDescription',
-                    'Maximum number of retries for failed AI requests.',
-                  )}
-                </p>
-              </div>
-
-              <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">
-                  {t('settings.advanced.retryDelay', 'Retry Delay (ms)')}
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g., 5000"
-                  min={1000}
-                  step={1000}
-                  value={localAdvancedSettings.retryDelay}
-                  onChange={(e) =>
-                    handleAdvancedSettingsChange(
-                      'retryDelay',
-                      parseInt(e.target.value, 10) || 5000,
-                    )
-                  }
-                  className="bg-background border text-foreground w-full max-w-xs"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t(
-                    'settings.advanced.retryDelayDescription',
-                    'Delay in milliseconds between retry attempts.',
-                  )}
-                </p>
-              </div>
-
-              <div className="min-w-0">
-                <label className="block text-muted-foreground mb-2 font-medium">
-                  {t('settings.advanced.circuitBreaker', 'Tool Loop Threshold')}
-                </label>
-                <Input
-                  type="number"
-                  placeholder="e.g., 3"
-                  min={1}
-                  max={10}
-                  value={localAdvancedSettings.circuitBreakerThreshold}
-                  onChange={(e) =>
-                    handleAdvancedSettingsChange(
-                      'circuitBreakerThreshold',
-                      parseInt(e.target.value, 10) || 3,
-                    )
-                  }
-                  className="bg-background border text-foreground w-full max-w-xs"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t(
-                    'settings.advanced.circuitBreakerDescription',
-                    'Number of repeated errors or tool calls before triggering the circuit breaker.',
-                  )}
-                </p>
-              </div>
-
-              {/* System & Performance */}
-              <div className="border-t pt-8 mt-4">
-                <h3 className="text-lg font-medium text-foreground mb-4">
-                  {t('settings.system.title', 'System & Performance')}
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  {/* File & Workspace */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-medium text-foreground">
-                      {t('settings.system.fileWorkspace', 'File & Workspace')}
-                    </h4>
-                    {/* Max File Upload Size */}
-                    <div className="min-w-0">
-                      <label className="block text-muted-foreground mb-2 font-medium">
-                        {t(
-                          'settings.system.maxFileUploadSize',
-                          'Max File Upload Size (MB)',
-                        )}
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 50"
-                        min={1}
-                        value={localSystemSettings.maxFileUploadSizeMB}
-                        onChange={(e) =>
-                          handleSystemSettingsChange(
-                            'maxFileUploadSizeMB',
-                            parseInt(e.target.value, 10) || 50,
-                          )
-                        }
-                        className="bg-background border text-foreground w-full max-w-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t(
-                          'settings.system.maxFileUploadSizeDescription',
-                          'Maximum size for a single file upload. Increase if you often work with large documents.',
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Workspace Capacity */}
-                    <div className="min-w-0">
-                      <label className="block text-muted-foreground mb-2 font-medium">
-                        {t(
-                          'settings.system.workspaceCapacity',
-                          'Workspace Capacity (MB)',
-                        )}
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 10"
-                        min={1}
-                        value={localSystemSettings.workspaceCapacityMB}
-                        onChange={(e) =>
-                          handleSystemSettingsChange(
-                            'workspaceCapacityMB',
-                            parseInt(e.target.value, 10) || 10,
-                          )
-                        }
-                        className="bg-background border text-foreground w-full max-w-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t(
-                          'settings.system.workspaceCapacityDescription',
-                          "Total limit for your current workspace's text content.",
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Background Tasks */}
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-medium text-foreground">
-                      {t('settings.system.backgroundTasks', 'Background Tasks')}
-                    </h4>
-                    {/* Search Index Frequency */}
-                    <div className="min-w-0">
-                      <label className="block text-muted-foreground mb-2 font-medium">
-                        {t(
-                          'settings.system.searchIndexFrequency',
-                          'Search Index Frequency (Min)',
-                        )}
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 5"
-                        min={1}
-                        value={localSystemSettings.searchIndexFrequencyMinutes}
-                        onChange={(e) =>
-                          handleSystemSettingsChange(
-                            'searchIndexFrequencyMinutes',
-                            parseInt(e.target.value, 10) || 5,
-                          )
-                        }
-                        className="bg-background border text-foreground w-full max-w-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t(
-                          'settings.system.searchIndexFrequencyDescription',
-                          'How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.',
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Web Action Timeout */}
-                    <div className="min-w-0">
-                      <label className="block text-muted-foreground mb-2 font-medium">
-                        {t(
-                          'settings.system.webActionTimeout',
-                          'Web Action Timeout (Sec)',
-                        )}
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 30"
-                        min={5}
-                        value={localSystemSettings.webActionTimeoutSeconds}
-                        onChange={(e) =>
-                          handleSystemSettingsChange(
-                            'webActionTimeoutSeconds',
-                            parseInt(e.target.value, 10) || 30,
-                          )
-                        }
-                        className="bg-background border text-foreground w-full max-w-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t(
-                          'settings.system.webActionTimeoutDescription',
-                          'How long the AI waits for a webpage to load or a click to finish.',
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Session Retention */}
-                    <div className="min-w-0">
-                      <label className="block text-muted-foreground mb-2 font-medium">
-                        {t(
-                          'settings.system.activeSessionRetention',
-                          'Keep Active Sessions For (Hours)',
-                        )}
-                      </label>
-                      <Input
-                        type="number"
-                        placeholder="e.g., 24"
-                        min={1}
-                        value={localSystemSettings.activeSessionRetentionHours}
-                        onChange={(e) =>
-                          handleSystemSettingsChange(
-                            'activeSessionRetentionHours',
-                            parseInt(e.target.value, 10) || 24,
-                          )
-                        }
-                        className="bg-background border text-foreground w-full max-w-xs"
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {t(
-                          'settings.system.activeSessionRetentionDescription',
-                          'How long to keep session data in fast memory.',
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Danger Zone */}
-              <div className="border-t pt-8 mt-4">
-                <h3 className="text-lg font-medium text-destructive mb-4 flex items-center gap-2">
-                  ⚠️ Danger Zone
-                </h3>
-                <div className="space-y-6">
-                  <Card className="bg-background border border-destructive/20 shadow-sm">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-foreground text-base font-medium">
-                        {t('settings.dataReset.title', 'Data & Reset')}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        {t(
-                          'settings.dataReset.description',
-                          'This will permanently delete all local sessions, their messages, and workspace file stores.',
-                        )}
-                      </p>
-                      <div className="flex items-center justify-start pt-4 gap-x-2">
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          disabled={isDeleting}
-                          onClick={async (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setConfirmOpen(true);
-                          }}
-                        >
-                          {isDeleting && (
-                            <LoadingSpinner size="sm" className="mr-2" />
-                          )}
-                          <span>
-                            {isDeleting
-                              ? t('settings.dataReset.deleting', 'Deleting...')
-                              : t(
-                                  'settings.dataReset.clearAll',
-                                  'Clear All Sessions & Workspace',
-                                )}
-                          </span>
-                        </Button>
-                        <AlertDialog
-                          open={confirmOpen}
-                          onOpenChange={setConfirmOpen}
-                        >
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t(
-                                  'settings.dataReset.confirmTitle',
-                                  'Delete All Sessions, Messages & Workspace',
-                                )}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t(
-                                  'settings.dataReset.confirmDescription',
-                                  'This will permanently delete all local sessions, their messages, and workspace file stores. This action cannot be undone. Are you sure you want to continue?',
-                                )}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>
-                                {t('common.cancel', 'Cancel')}
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={async () => {
-                                  setConfirmOpen(false);
-                                  setIsDeleting(true);
-                                  try {
-                                    await dbUtils.clearAllSessions();
-                                    await backendClearAllSessions();
-                                    toast.success(
-                                      t(
-                                        'settings.dataReset.success',
-                                        'All sessions have been deleted.',
-                                      ),
-                                    );
-                                    setTimeout(() => {
-                                      window.location.reload();
-                                    }, 1000);
-                                  } catch (e) {
-                                    logger.error('Failed to clear sessions', e);
-                                    toast.error(
-                                      t(
-                                        'settings.dataReset.error',
-                                        'Failed to clear sessions.',
-                                      ),
-                                    );
-                                  } finally {
-                                    setIsDeleting(false);
-                                  }
-                                }}
-                              >
-                                {t('common.delete', 'Delete')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="bg-background border border-destructive/20 shadow-sm">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-foreground text-base font-medium">
-                        {t('settings.factoryReset.title', 'Factory Reset')}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        {t(
-                          'settings.factoryReset.description',
-                          'This will perform a complete factory reset. It deletes ALL data.',
-                        )}
-                      </p>
-                      <div className="flex items-center justify-start pt-4 gap-x-2">
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          disabled={isResetting || isDeleting}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setResetConfirmOpen(true);
-                          }}
-                        >
-                          {isResetting && (
-                            <LoadingSpinner size="sm" className="mr-2" />
-                          )}
-                          <span>
-                            {isResetting
-                              ? t(
-                                  'settings.factoryReset.resetting',
-                                  'Resetting...',
-                                )
-                              : t(
-                                  'settings.factoryReset.button',
-                                  'Reset All Data & Settings',
-                                )}
-                          </span>
-                        </Button>
-                        <AlertDialog
-                          open={resetConfirmOpen}
-                          onOpenChange={setResetConfirmOpen}
-                        >
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t(
-                                  'settings.factoryReset.confirmTitle',
-                                  'Factory Reset Confirmation',
-                                )}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t(
-                                  'settings.factoryReset.confirmDescription',
-                                  'This will permanently delete ALL data including sessions, assistants, MCP servers, and playbooks. Are you sure?',
-                                )}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>
-                                {t('common.cancel', 'Cancel')}
-                              </AlertDialogCancel>
-                              <AlertDialogAction onClick={handleFactoryReset}>
-                                {t(
-                                  'settings.factoryReset.confirmButton',
-                                  'Reset Everything',
-                                )}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </div>
+            <AdvancedTab
+              localAdvancedSettings={localAdvancedSettings}
+              onChange={handleAdvancedSettingsChange}
+              systemSettingsProps={{
+                localSystemSettings: localSystemSettings,
+                onChange: handleSystemSettingsChange,
+              }}
+              dangerZoneProps={{
+                isDeleting,
+                isResetting,
+                onDelete: handleClearAllSessions,
+                onReset: handleFactoryReset,
+              }}
+            />
           </TabsContent>
         </Tabs>
       </div>

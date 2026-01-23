@@ -1,19 +1,16 @@
-use crate::entity::assistant;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use crate::repositories::AssistantRepository;
 use serde_json::json;
 
-pub async fn ensure_default_assistants(db: &DatabaseConnection) -> Result<(), String> {
-    let now = chrono::Utc::now().timestamp_millis();
-
+pub async fn ensure_default_assistants() -> Result<(), String> {
     // 1. Libr Assistant
+    let repo = crate::get_assistant_repository();
     let libr_name = "Libr Assistant";
-    let libr_exists = assistant::Entity::find()
-        .filter(assistant::Column::Name.eq(libr_name))
-        .one(db)
+    let libr_exists = repo
+        .check_assistant_exists(libr_name)
         .await
         .map_err(|e| format!("Failed to check for Libr Assistant: {}", e))?;
 
-    if libr_exists.is_none() {
+    if !libr_exists {
         println!("✨ Creating default 'Libr Assistant'...");
         let system_prompt = r#"You are the Libr Assistant: a general-purpose knowledge and automation agent.
 Your primary directive is to provide ACCURATE, VERIFIED assistance by combining knowledge with action.
@@ -69,29 +66,20 @@ Tools Usage Standard:
             ]
         });
 
-        let assistant = assistant::ActiveModel {
-            id: Set(uuid::Uuid::new_v4().to_string()),
-            name: Set(libr_name.to_string()),
-            config: Set(config.to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        assistant
-            .insert(db)
+        let id = uuid::Uuid::new_v4().to_string();
+        repo.create_assistant(id, libr_name.to_string(), config.to_string())
             .await
             .map_err(|e| format!("Failed to create Libr Assistant: {}", e))?;
     }
 
     // 2. Coding Expert Assistant
     let coding_name = "Coding Expert";
-    let coding_exists = assistant::Entity::find()
-        .filter(assistant::Column::Name.eq(coding_name))
-        .one(db)
+    let coding_exists = repo
+        .check_assistant_exists(coding_name)
         .await
         .map_err(|e| format!("Failed to check for Coding Expert: {}", e))?;
 
-    if coding_exists.is_none() {
+    if !coding_exists {
         println!("✨ Creating default 'Coding Expert'...");
         let system_prompt = r#"You are the Coding Expert: a specialized software development assistant with deep expertise in code analysis, architecture, and implementation.
 
@@ -143,29 +131,20 @@ Tools Usage:
             ]
         });
 
-        let assistant = assistant::ActiveModel {
-            id: Set(uuid::Uuid::new_v4().to_string()),
-            name: Set(coding_name.to_string()),
-            config: Set(config.to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        assistant
-            .insert(db)
+        let id = uuid::Uuid::new_v4().to_string();
+        repo.create_assistant(id, coding_name.to_string(), config.to_string())
             .await
             .map_err(|e| format!("Failed to create Coding Expert: {}", e))?;
     }
 
     // 3. App Wizard (Setup Assistant)
     let wizard_name = "App Wizard";
-    let wizard_exists = assistant::Entity::find()
-        .filter(assistant::Column::Name.eq(wizard_name))
-        .one(db)
+    let wizard_exists = repo
+        .check_assistant_exists(wizard_name)
         .await
         .map_err(|e| format!("Failed to check for App Wizard: {}", e))?;
 
-    if wizard_exists.is_none() {
+    if !wizard_exists {
         println!("✨ Creating default 'App Wizard'...");
         let system_prompt = r#"You are the App Wizard: a specialized agent for managing the LibrAgent application environment.
 Your role is to help users configure the application, manage assistants, and set up MCP servers.
@@ -229,16 +208,8 @@ STRATEGY:
             ]
         });
 
-        let assistant = assistant::ActiveModel {
-            id: Set(uuid::Uuid::new_v4().to_string()),
-            name: Set(wizard_name.to_string()),
-            config: Set(config.to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        };
-
-        assistant
-            .insert(db)
+        let id = uuid::Uuid::new_v4().to_string();
+        repo.create_assistant(id, wizard_name.to_string(), config.to_string())
             .await
             .map_err(|e| format!("Failed to create App Wizard: {}", e))?;
     }

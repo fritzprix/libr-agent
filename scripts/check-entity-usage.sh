@@ -27,8 +27,9 @@ TABLE_PHASE["session"]="1 (DONE)"
 TABLE_PHASE["assistant"]="2"
 TABLE_PHASE["playbook"]="2"
 TABLE_PHASE["knowledge"]="2"
-TABLE_PHASE["planning_task"]="2"
-TABLE_PHASE["planning_reflection"]="2"
+TABLE_PHASE["planning_goal"]="3 (DONE)"
+TABLE_PHASE["planning_todo"]="3 (DONE)"
+TABLE_PHASE["planning_scratchpad"]="3 (DONE)"
 
 TABLE_STATUS["settings"]="✓"
 TABLE_STATUS["mcp_server"]="✓"
@@ -38,10 +39,11 @@ TABLE_STATUS["session"]="✓"
 TABLE_STATUS["assistant"]="○"
 TABLE_STATUS["playbook"]="○"
 TABLE_STATUS["knowledge"]="○"
-TABLE_STATUS["planning_task"]="○"
-TABLE_STATUS["planning_reflection"]="○"
+TABLE_STATUS["planning_goal"]="✓"
+TABLE_STATUS["planning_todo"]="✓"
+TABLE_STATUS["planning_scratchpad"]="✓"
 
-TABLES=("settings" "mcp_server" "message_index_meta" "message" "session" "assistant" "playbook" "knowledge" "planning_task" "planning_reflection")
+TABLES=("settings" "mcp_server" "message_index_meta" "message" "session" "assistant" "playbook" "knowledge" "planning_goal" "planning_todo" "planning_scratchpad")
 
 # Directories to search
 SEARCH_DIRS=("src-tauri/src")
@@ -76,53 +78,96 @@ for table in "${TABLES[@]}"; do
     
     ISSUE_COUNT=0
     
-    # Pattern 1: Direct Entity usage
-    ENTITY_PATTERN="${table}::Entity"
-    
     # Search for Entity usage in Rust files
     for search_dir in "${SEARCH_DIRS[@]}"; do
         if [ -d "$search_dir" ]; then
             # Find Rust files excluding certain patterns
             while IFS= read -r file; do
-                # Skip entity definition files
-                if [[ "$file" == *"/entity.rs" ]] || [[ "$file" == *"/entities.rs" ]] || [[ "$file" == *"/entities/"*".rs" ]]; then
+                # Skip entity definition files, repositories, and migration files (allowed usage)
+                if [[ "$file" == *"/entity.rs" ]] || \
+                   [[ "$file" == *"/entities.rs" ]] || \
+                   [[ "$file" == *"/entities/"*".rs" ]] || \
+                   [[ "$file" == *"/entity/"*".rs" ]] || \
+                   [[ "$file" == *"/entity/mod.rs" ]] || \
+                   [[ "$file" == *"/repositories/"*".rs" ]] || \
+                   [[ "$file" == *"/migration/"*".rs" ]] || \
+                   [[ "$file" == *"/migrator/"*".rs" ]]; then
                     continue
                 fi
                 
-                # Check for Entity usage
+                # Pattern 1: Direct Entity usage (e.g., assistant::Entity)
+                ENTITY_PATTERN="${table}::Entity"
                 if grep -q "$ENTITY_PATTERN" "$file"; then
                     while IFS= read -r line_info; do
                         line_num=$(echo "$line_info" | cut -d':' -f1)
                         line_content=$(echo "$line_info" | cut -d':' -f2-)
                         echo -e "  ${RED}●${RESET} ${BOLD}$file:$line_num${RESET}"
                         echo -e "    ${RED}[Entity]${RESET} $(echo "$line_content" | xargs)"
-                        ((ISSUE_COUNT++))
+                        ISSUE_COUNT=$((ISSUE_COUNT + 1))
                     done < <(grep -n "$ENTITY_PATTERN" "$file" || true)
                 fi
                 
-                # Check for Entity::find operations
-                for op in "find" "find_by_id" "insert" "update" "delete"; do
-                    FIND_PATTERN="${table}::Entity::$op"
-                    if grep -q "$FIND_PATTERN" "$file"; then
-                        while IFS= read -r line_info; do
-                            line_num=$(echo "$line_info" | cut -d':' -f1)
-                            line_content=$(echo "$line_info" | cut -d':' -f2-)
-                            echo -e "  ${YELLOW}●${RESET} ${BOLD}$file:$line_num${RESET}"
-                            echo -e "    ${YELLOW}[Entity::$op]${RESET} $(echo "$line_content" | xargs)"
-                            ((ISSUE_COUNT++))
-                        done < <(grep -n "$FIND_PATTERN" "$file" || true)
-                    fi
-                done
+                # Pattern 2: ActiveModel usage (e.g., assistant::ActiveModel)
+                ACTIVEMODEL_PATTERN="${table}::ActiveModel"
+                if grep -q "$ACTIVEMODEL_PATTERN" "$file"; then
+                    while IFS= read -r line_info; do
+                        line_num=$(echo "$line_info" | cut -d':' -f1)
+                        line_content=$(echo "$line_info" | cut -d':' -f2-)
+                        echo -e "  ${RED}●${RESET} ${BOLD}$file:$line_num${RESET}"
+                        echo -e "    ${RED}[ActiveModel]${RESET} $(echo "$line_content" | xargs)"
+                        ISSUE_COUNT=$((ISSUE_COUNT + 1))
+                    done < <(grep -n "$ACTIVEMODEL_PATTERN" "$file" || true)
+                fi
                 
-                # Check for SQL queries
+                # Pattern 3: Column references (e.g., assistant::Column::)
+                COLUMN_PATTERN="${table}::Column::"
+                if grep -q "$COLUMN_PATTERN" "$file"; then
+                    while IFS= read -r line_info; do
+                        line_num=$(echo "$line_info" | cut -d':' -f1)
+                        line_content=$(echo "$line_info" | cut -d':' -f2-)
+                        echo -e "  ${YELLOW}●${RESET} ${BOLD}$file:$line_num${RESET}"
+                        echo -e "    ${YELLOW}[Column]${RESET} $(echo "$line_content" | xargs)"
+                        ISSUE_COUNT=$((ISSUE_COUNT + 1))
+                    done < <(grep -n "$COLUMN_PATTERN" "$file" || true)
+                fi
+                
+                # Pattern 4: Model type usage (e.g., assistant::Model)
+                MODEL_PATTERN="${table}::Model"
+                if grep -q "$MODEL_PATTERN" "$file"; then
+                    # Skip trait implementations and From conversions (acceptable usage)
+                    while IFS= read -r line_info; do
+                        line_num=$(echo "$line_info" | cut -d':' -f1)
+                        line_content=$(echo "$line_info" | cut -d':' -f2-)
+                        # Skip if it's in a From impl or trait bound
+                        if [[ ! "$line_content" =~ "impl From<" ]] && [[ ! "$line_content" =~ "fn from(" ]]; then
+                            echo -e "  ${CYAN}●${RESET} ${BOLD}$file:$line_num${RESET}"
+                            echo -e "    ${CYAN}[Model]${RESET} $(echo "$line_content" | xargs)"
+                            ISSUE_COUNT=$((ISSUE_COUNT + 1))
+                        fi
+                    done < <(grep -n "$MODEL_PATTERN" "$file" || true)
+                fi
+                
+                # Pattern 5: Entity imports (e.g., use crate::entity::assistant)
+                IMPORT_PATTERN="use.*entity::${table}"
+                if grep -q "$IMPORT_PATTERN" "$file"; then
+                    while IFS= read -r line_info; do
+                        line_num=$(echo "$line_info" | cut -d':' -f1)
+                        line_content=$(echo "$line_info" | cut -d':' -f2-)
+                        echo -e "  ${MAGENTA}●${RESET} ${BOLD}$file:$line_num${RESET}"
+                        echo -e "    ${MAGENTA}[Entity Import]${RESET} $(echo "$line_content" | xargs)"
+                        ISSUE_COUNT=$((ISSUE_COUNT + 1))
+                    done < <(grep -n "$IMPORT_PATTERN" "$file" || true)
+                fi
+                
+                # Pattern 6: Raw SQL queries
                 for sql_op in "SELECT.*FROM[[:space:]]\+$table" "INSERT[[:space:]]\+INTO[[:space:]]\+$table" "UPDATE[[:space:]]\+$table" "DELETE[[:space:]]\+FROM[[:space:]]\+$table"; do
                     if grep -qi "$sql_op" "$file"; then
                         while IFS= read -r line_info; do
                             line_num=$(echo "$line_info" | cut -d':' -f1)
                             line_content=$(echo "$line_info" | cut -d':' -f2-)
-                            echo -e "  ${MAGENTA}●${RESET} ${BOLD}$file:$line_num${RESET}"
-                            echo -e "    ${MAGENTA}[SQL Query]${RESET} $(echo "$line_content" | xargs)"
-                            ((ISSUE_COUNT++))
+                            echo -e "  ${RED}●${RESET} ${BOLD}$file:$line_num${RESET}"
+                            echo -e "    ${RED}[Raw SQL]${RESET} $(echo "$line_content" | xargs)"
+                            ISSUE_COUNT=$((ISSUE_COUNT + 1))
                         done < <(grep -ni "$sql_op" "$file" || true)
                     fi
                 done
@@ -136,7 +181,7 @@ for table in "${TABLES[@]}"; do
     fi
     
     ISSUES_BY_TABLE[$table]=$ISSUE_COUNT
-    ((TOTAL_ISSUES += ISSUE_COUNT))
+    TOTAL_ISSUES=$((TOTAL_ISSUES + ISSUE_COUNT))
     
     echo ""
 done

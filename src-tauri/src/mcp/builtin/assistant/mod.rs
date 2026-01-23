@@ -2,6 +2,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
+use crate::repositories::AssistantRepository;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
@@ -116,13 +117,8 @@ impl BuiltinMCPServer for AssistantServer {
             }
         }
 
-        use crate::entity::assistant::Entity as AssistantEntity;
-        use sea_orm::{EntityTrait, PaginatorTrait};
-
-        let total_count = AssistantEntity::find()
-            .count(self.get_db())
-            .await
-            .unwrap_or(0);
+        let repo = crate::get_assistant_repository();
+        let total_count = repo.count_assistants().await.unwrap_or(0);
 
         let context_prompt = format!(
             "# Assistant Server Status\n\

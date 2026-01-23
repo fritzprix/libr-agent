@@ -3,7 +3,6 @@ import type { Playbook } from '@/types/playbook';
 export type PlaybookWithMeta = Playbook & {
   id: string;
   createdAt: Date;
-  sessionId: string;
 };
 
 export function groupPlaybooksByTime(

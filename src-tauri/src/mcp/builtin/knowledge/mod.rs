@@ -4,10 +4,10 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 use crate::mcp::utils::schema_builder::*;
+use crate::repositories::KnowledgeRepository;
 
 mod helpers;
 mod operations;
@@ -78,11 +78,10 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Query knowledge count with error handling using SeaORM
-        let db = self.get_db();
-        let count: u64 = KnowledgeEntity::find()
-            .filter(knowledge::Column::AssistantId.eq(&self.assistant_id))
-            .count(db)
+        // Query knowledge count with error handling using repository
+        let repo = crate::get_knowledge_repository();
+        let count: u64 = repo
+            .count_knowledge(&self.assistant_id)
             .await
             .unwrap_or_else(|e| {
                 log::warn!(

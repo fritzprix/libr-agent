@@ -2,7 +2,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::schema::JSONSchema;
 use crate::mcp::types::{MCPResult, MCPTool};
 use crate::mcp::utils::schema_builder::*;
-use crate::repositories::SessionRepository;
+use crate::repositories::{PlaybookRepository, SessionRepository};
 use async_trait::async_trait;
 use sea_orm::*;
 use serde_json::Value; // JSON interaction still needed for tool args
@@ -19,7 +19,6 @@ mod types;
 #[derive(Debug)]
 pub struct PlaybookServer {
     assistant_id: String,
-    session_id: String, // For tracking creation context
     db_conn: DatabaseConnection,
 }
 
@@ -32,7 +31,6 @@ impl PlaybookServer {
 
         let server = Self {
             assistant_id,
-            session_id,
             db_conn,
         };
         Ok(server)
@@ -214,14 +212,10 @@ impl BuiltinMCPServer for PlaybookServer {
         &self,
         _options: Option<&Value>,
     ) -> crate::mcp::types::ServiceContext {
-        use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
+        let repo = crate::get_playbook_repository();
 
         // Query playbook count for this assistant
-        let total_count = match PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
-            .count(&self.db_conn)
-            .await
-        {
+        let total_count = match repo.count_playbooks(&self.assistant_id).await {
             Ok(count) => count as i64,
             Err(e) => {
                 log::warn!("Failed to count playbooks: {}", e);
@@ -244,14 +238,9 @@ impl BuiltinMCPServer for PlaybookServer {
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)
-        let models = match PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
-            .order_by_desc(playbook::Column::UpdatedAt)
-            .limit(3)
-            .all(&self.db_conn)
-            .await
-        {
-            Ok(models) => models,
+        let pagination = crate::repositories::PaginationParams { page: 1, limit: 3 };
+        let models = match repo.list_playbooks(&self.assistant_id, pagination).await {
+            Ok(page) => page.items,
             Err(e) => {
                 log::warn!("Failed to fetch recent playbooks: {}", e);
                 return crate::mcp::types::ServiceContext {
@@ -319,34 +308,28 @@ impl BuiltinMCPServer for PlaybookServer {
     ) -> Result<MCPResult, String> {
         match tool_name {
             "createPlaybook" | "builtin_playbook__createPlaybook" => {
-                operations::create_playbook(
-                    &self.db_conn,
-                    &self.assistant_id,
-                    &self.session_id,
-                    args,
-                )
-                .await
+                operations::create_playbook(&self.assistant_id, args).await
             }
             "selectPlaybook" | "builtin_playbook__selectPlaybook" => {
-                operations::select_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::select_playbook(&self.assistant_id, args).await
             }
             "listPlaybooks" | "builtin_playbook__listPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, false).await
+                operations::list_playbooks(&self.assistant_id, args, false).await
             }
             "showPlaybooks" | "builtin_playbook__showPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
+                operations::list_playbooks(&self.assistant_id, args, true).await
             }
             "getPlaybookPage" | "builtin_playbook__getPlaybookPage" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
+                operations::list_playbooks(&self.assistant_id, args, true).await
             }
             "deletePlaybook" | "builtin_playbook__deletePlaybook" => {
-                operations::delete_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::delete_playbook(&self.assistant_id, args).await
             }
             "getPlaybook" | "builtin_playbook__getPlaybook" => {
-                operations::get_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::get_playbook(&self.assistant_id, args).await
             }
             "updatePlaybook" | "builtin_playbook__updatePlaybook" => {
-                operations::update_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::update_playbook(&self.assistant_id, args).await
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
@@ -426,9 +409,7 @@ fn success_criteria_schema() -> JSONSchema {
     )
 }
 
-async fn get_assistant_id_from_session(
-    session_id: &str,
-) -> Result<String, String> {
+async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
     let session = crate::get_session_repository()
         .get_session(session_id)
         .await

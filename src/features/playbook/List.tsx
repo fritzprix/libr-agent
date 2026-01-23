@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { Playbook } from '@/types/playbook';
+import { useAgentSessionState } from '@/context/AgentSessionContext';
 
 const logger = getLogger('PlaybookList');
 
@@ -27,11 +28,11 @@ const logger = getLogger('PlaybookList');
 type PlaybookWithMeta = Playbook & {
   id: string;
   createdAt: Date;
-  sessionId: string;
   updatedAt: Date;
 };
 
 export default function PlaybookList() {
+  const { session } = useAgentSessionState();
   const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
   const [assistants, setAssistants] = useState<
     Record<string, { name: string }>
@@ -45,10 +46,26 @@ export default function PlaybookList() {
   const [bookmarkFirst, setBookmarkFirst] = useState(false);
 
   const fetchData = useCallback(async () => {
+    if (!session?.id) {
+      logger.debug('No active session, skipping playbook fetch');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
+      // Get assistant ID from session
+      const assistantId = session.assistant?.id;
+      if (!assistantId) {
+        logger.error('Session has no assistant');
+        toast.error('Unable to load playbooks: No assistant configured');
+        setLoading(false);
+        return;
+      }
+
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
+          agentId: assistantId,
           sortBy: sortMode,
           sortOrder: sortOrder,
           bookmarkFirst: bookmarkFirst,
@@ -73,7 +90,7 @@ export default function PlaybookList() {
     } finally {
       setLoading(false);
     }
-  }, [sortMode, sortOrder, bookmarkFirst]);
+  }, [session?.id, sortMode, sortOrder, bookmarkFirst]);
 
   useEffect(() => {
     fetchData();
@@ -82,7 +99,7 @@ export default function PlaybookList() {
   const handleBookmarkToggle = async (
     id: string,
     isBookmarked: boolean,
-    sessionId: string,
+    agentId: string,
   ) => {
     try {
       // Optimistic update
@@ -90,7 +107,7 @@ export default function PlaybookList() {
         prev.map((p) => (p.id === id ? { ...p, isBookmarked } : p)),
       );
 
-      await togglePlaybookBookmark(id, isBookmarked, sessionId);
+      await togglePlaybookBookmark(id, isBookmarked, agentId);
     } catch (error) {
       logger.error('Failed to toggle bookmark', error);
       toast.error('Failed to update bookmark');
@@ -99,9 +116,17 @@ export default function PlaybookList() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!session?.id) return;
     if (!confirm('Are you sure you want to delete this playbook?')) return;
+
+    const assistantId = session.assistant?.id;
+    if (!assistantId) {
+      toast.error('Unable to delete playbook: No assistant configured');
+      return;
+    }
+
     try {
-      await deletePlaybook(id);
+      await deletePlaybook(id, assistantId);
       setPlaybooks((prev) => prev.filter((p) => p.id !== id));
       toast.success('Playbook deleted');
     } catch (error) {
@@ -140,6 +165,21 @@ export default function PlaybookList() {
     if (groupMode === 'assistant') return Object.keys(groups || {}).sort();
     return [];
   }, [groupMode, groups]);
+
+  // Show message when no session is active
+  if (!session) {
+    return (
+      <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
+        <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
+          <PlaybookIcon className="w-16 h-16 mb-4 opacity-30" />
+          <h2 className="text-xl font-semibold mb-2">No Active Session</h2>
+          <p className="text-center text-sm">
+            Start a conversation to view and manage playbooks
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
@@ -243,7 +283,7 @@ export default function PlaybookList() {
                       assistants[playbook.agentId]?.name || 'Unknown'
                     }
                     onBookmarkToggle={(id, val) =>
-                      handleBookmarkToggle(id, val, playbook.sessionId)
+                      handleBookmarkToggle(id, val, playbook.agentId)
                     }
                     onDelete={handleDelete}
                   />
@@ -263,7 +303,7 @@ export default function PlaybookList() {
                         handleBookmarkToggle(
                           id,
                           val,
-                          groups[key].find((p) => p.id === id)?.sessionId || '',
+                          groups[key].find((p) => p.id === id)?.agentId || '',
                         )
                       }
                       onDelete={handleDelete}

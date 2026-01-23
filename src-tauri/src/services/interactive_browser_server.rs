@@ -281,7 +281,7 @@ impl InteractiveBrowserServer {
             if let PageLoadEvent::Finished = payload.event() {
                 info!("Page loaded for session {}", session_id_clone);
                 if let Some(notify) = page_load_waiters_clone.get(&session_id_clone) {
-                    notify.notify_waiters();
+                    notify.notify_one();
                 }
             }
         })
@@ -630,13 +630,11 @@ impl InteractiveBrowserServer {
         info!("Navigating session {session_id} to {target_url}");
 
         if let Some(window) = self.app_handle.get_webview_window(&window_label) {
-            // Prepare waiter
-            let notify = self
-                .page_load_waiters
-                .entry(session_id.to_string())
-                .or_insert_with(|| Arc::new(Notify::new()))
-                .value()
-                .clone();
+            // Prepare waiter - explicitly create a NEW notification for this navigation
+            // to ensure we don't accidentally use a stale permit or state from previous actions.
+            let notify = Arc::new(Notify::new());
+            self.page_load_waiters
+                .insert(session_id.to_string(), notify.clone());
 
             // Use eval to set window.location.href with proper JSON encoding to prevent injection
             let url_json = serde_json::to_string(&target_url)

@@ -5,39 +5,61 @@ use tauri_mcp_agent_lib::entity::{playbook, session};
 use tauri_mcp_agent_lib::mcp::builtin::playbook::PlaybookServer;
 use tauri_mcp_agent_lib::mcp::builtin::BuiltinMCPServer;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
+use tauri_mcp_agent_lib::repositories::{SqlitePlaybookRepository, SqliteSessionRepository};
+use tokio::sync::OnceCell;
 
-async fn create_test_db() -> Arc<DatabaseConnection> {
-    let db = Database::connect("sqlite::memory:")
+// Global test database - initialized once across all tests
+static TEST_DB: OnceCell<Arc<DatabaseConnection>> = OnceCell::const_new();
+
+async fn get_or_create_test_db() -> Arc<DatabaseConnection> {
+    TEST_DB
+        .get_or_init(|| async {
+            let db = Database::connect("sqlite::memory:")
+                .await
+                .expect("Failed to connect to in-memory database");
+
+            let schema = Schema::new(db.get_database_backend());
+
+            // Create sessions table
+            let stmt = schema.create_table_from_entity(session::Entity);
+            db.execute(db.get_database_backend().build(&stmt))
+                .await
+                .expect("Failed to create sessions table");
+
+            // Create playbooks table
+            let stmt = schema.create_table_from_entity(playbook::Entity);
+            db.execute(db.get_database_backend().build(&stmt))
+                .await
+                .expect("Failed to create playbooks table");
+
+            let db_arc = Arc::new(db);
+
+            // Initialize repositories
+            use tauri_mcp_agent_lib::{set_playbook_repository, set_session_repository};
+            let session_repo = SqliteSessionRepository::new((*db_arc).clone());
+            set_session_repository(session_repo);
+
+            let playbook_repo = SqlitePlaybookRepository::new((*db_arc).clone());
+            set_playbook_repository(playbook_repo);
+
+            db_arc
+        })
         .await
-        .expect("Failed to connect to in-memory database");
-
-    let schema = Schema::new(db.get_database_backend());
-
-    // Create sessions table
-    let stmt = schema.create_table_from_entity(session::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create sessions table");
-
-    // Create playbooks table
-    let stmt = schema.create_table_from_entity(playbook::Entity);
-    db.execute(db.get_database_backend().build(&stmt))
-        .await
-        .expect("Failed to create playbooks table");
-
-    Arc::new(db)
+        .clone()
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_playbook_ui_rendering_integration() {
-    // Setup in-memory database
-    let db = create_test_db().await;
+    // Setup shared in-memory database
+    let db = get_or_create_test_db().await;
 
     // Insert test session
     let new_session = session::ActiveModel {
         id: Set("integration-test".to_string()),
         name: Set(Some("Integration Test".to_string())),
-        agent_config: Set(Some(r#"{"assistantId":"assistant-1"}"#.to_string())),
+        agent_config: Set(Some(
+            r#"{"assistant_id":"assistant-rendering-test"}"#.to_string(),
+        )),
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),
@@ -130,7 +152,7 @@ async fn test_playbook_ui_rendering_integration() {
     {
         let uri = resource["uri"].as_str().unwrap();
         // Playbook UI is assistant-scoped; URI should reference the assistant ID
-        assert!(uri.contains("ui://playbook/list/assistant-1"));
+        assert!(uri.contains("ui://playbook/list/assistant-rendering-test"));
 
         let mime_type = resource["mimeType"].as_str().unwrap();
         assert_eq!(mime_type, "text/html");
@@ -169,16 +191,18 @@ async fn test_playbook_ui_rendering_integration() {
     assert_eq!(structured["page"]["items"].as_array().unwrap().len(), 2);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_playbook_ui_interaction_flow() {
     // Setup
-    let db = create_test_db().await;
+    let db = get_or_create_test_db().await;
 
     // Insert test session
     let new_session = session::ActiveModel {
         id: Set("flow-test".to_string()),
         name: Set(Some("Flow Test".to_string())),
-        agent_config: Set(Some(r#"{"assistantId":"assistant-1"}"#.to_string())),
+        agent_config: Set(Some(
+            r#"{"assistant_id":"assistant-flow-test"}"#.to_string(),
+        )),
         status: Set("idle".to_string()),
         created_at: Set(0),
         updated_at: Set(0),

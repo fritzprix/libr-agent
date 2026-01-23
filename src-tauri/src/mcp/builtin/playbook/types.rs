@@ -31,7 +31,6 @@ pub struct SuccessCriteria {
 pub struct Playbook {
     pub id: String,
     pub assistant_id: String,
-    pub session_id: String, // Track which session created this
     pub goal: String,
     #[serde(rename = "initialCommand")]
     pub initial_command: Option<String>,
@@ -49,7 +48,6 @@ impl Playbook {
         Self {
             id: model.id.clone(),
             assistant_id: model.assistant_id.clone(),
-            session_id: model.session_id.clone(),
             goal: model.goal.clone(),
             initial_command: model.initial_command.clone(),
             workflow: serde_json::from_str(&model.workflow).unwrap_or_default(),

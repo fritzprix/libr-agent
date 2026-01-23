@@ -1,7 +1,6 @@
 use crate::agent::AgentSessionManager;
-
 use crate::mcp::types::ServiceContext;
-use crate::repositories::SessionMetadata;
+use crate::repositories::{AssistantRepository, PlaybookRepository, SessionMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
@@ -444,27 +443,45 @@ pub async fn agent_clear_all_sessions(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    use crate::entity::{assistant, playbook};
     use crate::repositories::mcp_server_repository::MCPServerRepository;
     use crate::state::get_mcp_server_repository;
-    use sea_orm::EntityTrait;
 
     // 1. Clear all sessions first
     agent_clear_all_sessions(manager).await?;
 
-    let db = crate::state::get_database_connection();
-
-    // 2. Delete all Assistants
-    assistant::Entity::delete_many()
-        .exec(db)
+    // 2. Delete all Playbooks (must happen before assistants due to foreign key)
+    let playbook_repo = crate::get_playbook_repository();
+    let all_playbooks = playbook_repo
+        .list_playbooks(
+            "",
+            crate::repositories::PaginationParams {
+                page: 1,
+                limit: 100000,
+            },
+        )
         .await
-        .map_err(|e| format!("Failed to clear assistants: {}", e))?;
+        .map_err(|e| format!("Failed to list playbooks: {}", e))?;
 
-    // 3. Delete all Playbooks
-    playbook::Entity::delete_many()
-        .exec(db)
+    for playbook in all_playbooks.items {
+        playbook_repo
+            .delete_playbook(&playbook.id, &playbook.assistant_id)
+            .await
+            .map_err(|e| format!("Failed to delete playbook {}: {}", playbook.id, e))?;
+    }
+
+    // 3. Delete all Assistants
+    let assistant_repo = crate::get_assistant_repository();
+    let all_assistants = assistant_repo
+        .list_assistants()
         .await
-        .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
+        .map_err(|e| format!("Failed to list assistants: {}", e))?;
+
+    for assistant in all_assistants {
+        assistant_repo
+            .delete_assistant(&assistant.id)
+            .await
+            .map_err(|e| format!("Failed to delete assistant {}: {}", assistant.id, e))?;
+    }
 
     // 4. Delete all MCP Servers
     let mcp_repo = get_mcp_server_repository();
@@ -480,7 +497,7 @@ pub async fn agent_factory_reset(
     }
 
     // 5. Restore default assistants so the app is not empty
-    if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {
+    if let Err(e) = crate::services::assistant_init::ensure_default_assistants().await {
         return Err(format!(
             "Factory reset failed to restore default assistants: {}",
             e

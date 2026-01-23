@@ -1,9 +1,9 @@
-use crate::entity::{planning_goal, planning_scratchpad, planning_todo};
+use crate::entity::planning_todo;
 use crate::mcp::types::ServiceContext;
+use crate::repositories::PlanningRepository;
+use crate::state::get_planning_repository;
 use log::info;
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -18,30 +18,22 @@ pub struct TodoDTO {
     pub subtasks: Vec<TodoDTO>,
 }
 
-pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> ServiceContext {
+pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> ServiceContext {
+    let repo = get_planning_repository();
+
     // 1. Fetch Active Goal
-    let goal_model = planning_goal::Entity::find()
-        .filter(planning_goal::Column::SessionId.eq(session_id))
-        .filter(planning_goal::Column::Status.eq("active"))
-        .one(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch goal: {}", e);
-            None
-        });
+    let goal_model = repo.get_active_goal(session_id).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch goal: {}", e);
+        None
+    });
 
     let goal = goal_model.map(|g| g.goal_text);
 
     // 2. Fetch Todos (All)
-    let todos = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .order_by_asc(planning_todo::Column::CreatedAt)
-        .all(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch todos: {}", e);
-            Vec::new()
-        });
+    let todos = repo.list_todos(session_id, true).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch todos: {}", e);
+        Vec::new()
+    });
 
     // Build Todo Tree for structured state
     let mut todo_map: HashMap<i64, Vec<planning_todo::Model>> = HashMap::new();
@@ -87,15 +79,10 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
         .collect();
 
     // 3. Fetch Scratchpad
-    let scratchpad = planning_scratchpad::Entity::find()
-        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .order_by_desc(planning_scratchpad::Column::CreatedAt)
-        .all(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch scratchpad: {}", e);
-            Vec::new()
-        });
+    let scratchpad = repo.list_scratchpad(session_id).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch scratchpad: {}", e);
+        Vec::new()
+    });
 
     // --- Format Output ---
 
@@ -341,42 +328,4 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
         context_prompt: parts.join("\n"),
         structured_state: Some(structured_state),
     }
-}
-
-pub async fn get_planning_summary(db: &DatabaseConnection, session_id: &str) -> String {
-    let goal_model = planning_goal::Entity::find()
-        .filter(planning_goal::Column::SessionId.eq(session_id))
-        .filter(planning_goal::Column::Status.eq("active"))
-        .one(db)
-        .await
-        .unwrap_or(None);
-
-    let goal_text = goal_model
-        .map(|g| g.goal_text)
-        .unwrap_or_else(|| "No active goal".to_string());
-
-    let total = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    let unchecked = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::IsChecked.eq(false))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    let checked = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::IsChecked.eq(true))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    format!(
-        "\n\nGoal: \"{}\"\n\nCurrent progress:\n  - Total: {} todos\n  - Unchecked: {}\n  - Checked: {}",
-        goal_text, total, unchecked, checked
-    )
 }

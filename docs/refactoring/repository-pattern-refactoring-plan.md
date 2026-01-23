@@ -28,9 +28,9 @@ This refactoring plan addresses architectural inconsistency in database access p
 ### ❌ Tables WITHOUT Repository Pattern (12/15)
 
 | Table                 | Current Access Pattern               | Used In                                                                    |
-| --------------------- | ------------------------------------ | -------------------------------------------------------------------------- |
-| `assistant`           | Direct `assistant::Entity`           | `commands/assistant_crud_commands.rs`, `mcp/builtin/assistant/`            |
-| `playbook`            | Direct `playbook::Entity`            | `commands/playbook_commands.rs`, `mcp/builtin/playbook/`                   |
+| --------------------- | ------------------------------------ | -------------------------------------------------------------------------- | ----------- |
+| `assistant`           | `AssistantRepository`                | `repositories/assistant_repository.rs`                                     | ✅ Complete |
+| `playbook`            | `PlaybookRepository`                 | `repositories/playbook_repository.rs`                                      | ✅ Complete |
 | `knowledge`           | Direct `knowledge::Entity`           | `mcp/builtin/knowledge/`                                                   |
 | `planning_goal`       | Direct `planning_goal::Entity`       | `mcp/builtin/planning/goals.rs`                                            |
 | `planning_todo`       | Direct `planning_todo::Entity`       | `mcp/builtin/planning/todos.rs`                                            |
@@ -94,7 +94,7 @@ This refactoring plan addresses architectural inconsistency in database access p
 
 ---
 
-### Phase 2: Assistant & Playbook (Priority: High)
+### Phase 2: Assistant & Playbook (Priority: High) - ✅ Complete
 
 **Estimated Effort:** 5-6 days
 
@@ -465,10 +465,10 @@ For each repository:
 
 ### New Files to Create (7)
 
-- [ ] `src-tauri/src/repositories/settings_repository.rs`
-- [ ] `src-tauri/src/repositories/mcp_server_repository.rs`
-- [ ] `src-tauri/src/repositories/assistant_repository.rs`
-- [ ] `src-tauri/src/repositories/playbook_repository.rs`
+- [x] `src-tauri/src/repositories/settings_repository.rs`
+- [x] `src-tauri/src/repositories/mcp_server_repository.rs`
+- [x] `src-tauri/src/repositories/assistant_repository.rs`
+- [x] `src-tauri/src/repositories/playbook_repository.rs`
 - [ ] `src-tauri/src/repositories/knowledge_repository.rs`
 - [ ] `src-tauri/src/repositories/planning_repository.rs`
 - [ ] `docs/refactoring/repository-pattern-completion.md` (this file on completion)
@@ -477,29 +477,29 @@ For each repository:
 
 **Repositories:**
 
-- [ ] `src-tauri/src/repositories/mod.rs` (add exports)
-- [ ] `src-tauri/src/repositories/message_repository.rs` (consolidate index meta)
-- [ ] `src-tauri/src/repositories/session_repository.rs` (remove index meta)
+- [x] `src-tauri/src/repositories/mod.rs` (add exports)
+- [x] `src-tauri/src/repositories/message_repository.rs` (consolidate index meta)
+- [x] `src-tauri/src/repositories/session_repository.rs` (remove index meta)
 
 **State Management:**
 
-- [ ] `src-tauri/src/state.rs` (add repository getters)
+- [x] `src-tauri/src/state.rs` (add repository getters)
 
 **Commands:**
 
-- [ ] `src-tauri/src/commands/settings_commands.rs`
-- [ ] `src-tauri/src/commands/mcp_server_config_commands.rs`
-- [ ] `src-tauri/src/commands/assistant_crud_commands.rs`
-- [ ] `src-tauri/src/commands/playbook_commands.rs`
-- [ ] `src-tauri/src/commands/agent_commands.rs`
+- [x] `src-tauri/src/commands/settings_commands.rs`
+- [x] `src-tauri/src/commands/mcp_server_config_commands.rs`
+- [x] `src-tauri/src/commands/assistant_crud_commands.rs`
+- [x] `src-tauri/src/commands/playbook_commands.rs`
+- [x] `src-tauri/src/commands/agent_commands.rs`
 
 **Builtin MCP Servers:**
 
-- [ ] `src-tauri/src/mcp/builtin/assistant/operations.rs`
-- [ ] `src-tauri/src/mcp/builtin/assistant/queries.rs`
-- [ ] `src-tauri/src/mcp/builtin/assistant/mod.rs`
-- [ ] `src-tauri/src/mcp/builtin/playbook/operations.rs`
-- [ ] `src-tauri/src/mcp/builtin/playbook/mod.rs`
+- [x] `src-tauri/src/mcp/builtin/assistant/operations.rs`
+- [x] `src-tauri/src/mcp/builtin/assistant/queries.rs`
+- [x] `src-tauri/src/mcp/builtin/assistant/mod.rs`
+- [x] `src-tauri/src/mcp/builtin/playbook/operations.rs`
+- [x] `src-tauri/src/mcp/builtin/playbook/mod.rs`
 - [ ] `src-tauri/src/mcp/builtin/knowledge/operations.rs`
 - [ ] `src-tauri/src/mcp/builtin/knowledge/queries.rs`
 - [ ] `src-tauri/src/mcp/builtin/knowledge/mod.rs`
@@ -511,9 +511,9 @@ For each repository:
 **Other:**
 
 - [ ] `src-tauri/src/lib.rs` (settings access)
-- [ ] `src-tauri/src/services/assistant_init.rs`
+- [x] `src-tauri/src/services/assistant_init.rs`
 - [ ] `src-tauri/src/mcp/service_proxy_manager.rs`
-- [ ] `src-tauri/src/mcp/integration_tests.rs`
+- [x] `src-tauri/src/mcp/integration_tests.rs`
 
 ---
 

@@ -58,20 +58,36 @@ export default function AgentChatStartView() {
           processingPlaybookRef.current = true;
           logger.info('Auto-starting playbook session', { playbookId });
 
-          const playbook = await getPlaybook(playbookId);
-          if (!playbook) {
+          // Find assistant from playbookId by fetching all playbooks
+          // We need to determine which assistant this playbook belongs to
+          const allAssistants = assistants;
+          let playbook = null;
+          let targetAssistant = null;
+
+          for (const assistant of allAssistants) {
+            if (!assistant.id) {
+              continue;
+            }
+
+            try {
+              playbook = await getPlaybook(playbookId, assistant.id);
+              if (playbook) {
+                targetAssistant = assistant;
+                break;
+              }
+            } catch {
+              // Continue searching even if a lookup fails
+              continue;
+            }
+          }
+
+          if (!playbook || !targetAssistant) {
             toast.error('Playbook not found');
             return;
           }
 
-          const assistant = assistants.find((a) => a.id === playbook.agentId);
-          if (!assistant) {
-            toast.error('Assistant for this playbook not found');
-            return;
-          }
-
           toast.info(`Starting playbook: ${playbook.goal}`);
-          const session = await createSession({ assistant });
+          const session = await createSession({ assistant: targetAssistant });
 
           // Navigate to the new session with the playbookId param so AgentChatView can pick it up
           navigate(`/agent/${session.id}?playbookId=${playbookId}`);

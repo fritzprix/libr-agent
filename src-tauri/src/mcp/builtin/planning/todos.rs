@@ -1,20 +1,16 @@
-use crate::entity::planning_todo;
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
     ErrorGuidance, SuccessHint, ToolGroup,
 };
-use crate::mcp::builtin::planning::context::get_planning_summary;
 use crate::mcp::types::MCPResult;
-use sea_orm::{
-    sea_query::{Expr, Func},
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set,
-};
+use crate::repositories::PlanningRepository;
+use crate::state::get_planning_repository;
+use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
 /// Add a new todo (Legacy: addTodo)
 pub async fn add_todo(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -84,31 +80,41 @@ pub async fn add_todo(
         .to_mcp_result());
     }
 
-    // 3. Check for duplicate title (case-insensitive)
-    let duplicate_count = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(
-            Expr::expr(Func::lower(Expr::col(planning_todo::Column::Content)))
-                .eq(title.to_lowercase()),
-        )
-        .count(db)
-        .await
-        .map_err(|e| format!("Failed to check duplicates: {}", e))?;
+    let repo = get_planning_repository();
 
-    if duplicate_count > 0 {
-        return Ok(duplicate_error("Todo", &title, ToolGroup::Planning));
+    // 3. Check for duplicate title (case-insensitive)
+    match repo.check_todo_duplicate(session_id, &title).await {
+        Ok(is_dup) => {
+            if is_dup {
+                return Ok(duplicate_error("Todo", &title, ToolGroup::Planning));
+            }
+        }
+        Err(e) => {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to check duplicates: {}", e),
+                vec!["Try again".to_string()],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result())
+        }
     }
 
     // 4. If parent_id is provided, validate parent exists and is top-level
     if let Some(pid) = parent_id {
-        let parent = planning_todo::Entity::find_by_id(pid)
-            .filter(planning_todo::Column::SessionId.eq(session_id))
-            .one(db)
-            .await
-            .map_err(|e| format!("Failed to fetch parent: {}", e))?;
+        match repo.get_todo(pid).await {
+            Ok(Some(p)) => {
+                // Ensure it belongs to this session (though get_todo generally fetches by ID, we should check session?)
+                // The repository method get_todo relies on ID. IDs are unique globally or per session?
+                // PlanningRepository `get_todo` returns `planning_todo::Model`.
+                if p.session_id != session_id {
+                    return Ok(not_found_error(
+                        "Parent todo",
+                        &pid.to_string(),
+                        ToolGroup::Planning,
+                    ));
+                }
 
-        match parent {
-            Some(p) => {
                 if p.parent_id.is_some() {
                     return Ok(ErrorGuidance::with_guidance(
                         ErrorCategory::NestingTooDeep,
@@ -123,12 +129,21 @@ pub async fn add_todo(
                     .to_mcp_result());
                 }
             }
-            Option::None => {
+            Ok(None) => {
                 return Ok(not_found_error(
                     "Parent todo",
                     &pid.to_string(),
                     ToolGroup::Planning,
                 ));
+            }
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::DatabaseError,
+                    format!("Failed to fetch parent: {}", e),
+                    vec!["Try again".to_string()],
+                    ToolGroup::Planning,
+                )
+                .to_mcp_result())
             }
         }
     }
@@ -138,8 +153,6 @@ pub async fn add_todo(
         for (idx, subtask) in subtasks.iter().enumerate() {
             // Relaxed subtask title validation
             let sub_desc = subtask.get("description").and_then(|v| v.as_str());
-            // Subtask title is no longer part of the API schema.
-            // We strictly derive it from the description.
             let _sub_title = if let Some(desc) = sub_desc {
                 let trimmed = desc.trim();
                 if !trimmed.is_empty() {
@@ -198,34 +211,23 @@ pub async fn add_todo(
         }
     }
 
-    let now = chrono::Utc::now().timestamp_millis();
-
-    let new_todo = planning_todo::ActiveModel {
-        session_id: Set(session_id.to_string()),
-        content: Set(title.to_string()),
-        description: Set(description.map(|s| s.to_string())),
-        priority: Set(priority.to_string()),
-        parent_id: Set(parent_id),
-        status: Set("pending".to_string()),
-        is_checked: Set(false),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-
-    let result = new_todo.insert(db).await;
-
-    match result {
-        Ok(saved_todo) => {
-            let id = saved_todo.id;
-
+    match repo
+        .add_todo(
+            session_id,
+            &title,
+            description.map(|s| s.to_string()),
+            priority,
+            parent_id,
+        )
+        .await
+    {
+        Ok(id) => {
             // Handle subtasks if present
             if let Some(subtasks) = args.get("subtasks").and_then(|v| v.as_array()) {
                 for subtask in subtasks {
                     let sub_desc = subtask.get("description").and_then(|v| v.as_str());
 
-                    // Re-derive title using same logic (or we could have stored it, but this is cleaner for now)
-                    // Re-derive title from description
+                    // Re-derive title
                     let sub_title = if let Some(desc) = sub_desc {
                         let trimmed = desc.trim();
                         if !trimmed.is_empty() {
@@ -246,24 +248,23 @@ pub async fn add_todo(
                         .and_then(|v| v.as_str())
                         .unwrap_or("medium");
 
-                    let sub_todo = planning_todo::ActiveModel {
-                        session_id: Set(session_id.to_string()),
-                        content: Set(sub_title.to_string()),
-                        description: Set(sub_desc.map(|s| s.to_string())),
-                        priority: Set(sub_prio.to_string()),
-                        parent_id: Set(Some(id)),
-                        status: Set("pending".to_string()),
-                        is_checked: Set(false),
-                        created_at: Set(now),
-                        updated_at: Set(now),
-                        ..Default::default()
-                    };
-                    let _ = sub_todo.insert(db).await;
+                    let _ = repo
+                        .add_todo(
+                            session_id,
+                            &sub_title,
+                            sub_desc.map(|s| s.to_string()),
+                            sub_prio,
+                            Some(id),
+                        )
+                        .await;
                 }
             }
 
             let response_id = cuid2::create_id();
-            let summary_text = get_planning_summary(db, session_id).await;
+            let summary_text = repo
+                .get_planning_summary(session_id)
+                .await
+                .unwrap_or_default();
             let hint = SuccessHint::new(
                 format!("Todo added with ID {}: {}{}", id, title, summary_text),
                 vec!["Use checkTodo when this task is done".to_string()],
@@ -291,8 +292,9 @@ pub async fn add_todo(
 }
 
 /// Check/Uncheck todo (Legacy: checkTodo)
+/// Check/Uncheck todo (Legacy: checkTodo)
 pub async fn check_todo(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -303,6 +305,8 @@ pub async fn check_todo(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let summary = args.get("summary").and_then(|v| v.as_str());
+
+    let repo = get_planning_repository();
 
     let target_id = if let Some(tid) = id {
         if tid < 1 {
@@ -320,271 +324,254 @@ pub async fn check_todo(
             ));
         }
         // Find ID by index (ordered by created_at)
-        let todo = planning_todo::Entity::find()
-            .filter(planning_todo::Column::SessionId.eq(session_id))
-            .order_by_asc(planning_todo::Column::CreatedAt)
-            .offset(idx as u64)
-            .limit(1)
-            .one(db)
-            .await
-            .map_err(|e| format!("Failed to find todo by index: {}", e))?;
-
-        match todo {
-            Some(t) => t.id,
-            Option::None => {
+        // We list all to find by index. This is less efficient than SQL LIMIT/OFFSET but we promised to move logic to repo/app.
+        // Or we use existing repo.list_todos and pick.
+        let all_todos = match repo.list_todos(session_id, true).await {
+            Ok(todos) => todos,
+            Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::ResourceNotFound,
-                    format!("Todo not found at index {}", idx),
-                    vec![
-                        "Use getCurrentState to see available todos".to_string(),
-                        format!("Index {} may be out of range", idx),
-                        "Indices are 0-based and ordered by creation time".to_string(),
-                    ],
+                    ErrorCategory::DatabaseError,
+                    format!("Failed to fetch todos: {}", e),
+                    vec!["Try again".to_string()],
                     ToolGroup::Planning,
                 )
-                .to_mcp_result());
+                .to_mcp_result())
             }
+        };
+
+        if let Some(todo) = all_todos.get(idx as usize) {
+            todo.id
+        } else {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::ResourceNotFound,
+                format!("Todo not found at index {}", idx),
+                vec![
+                    "Use getCurrentState to see available todos".to_string(),
+                    format!("Index {} may be out of range", idx),
+                    "Indices are 0-based and ordered by creation time".to_string(),
+                ],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result());
         }
     } else {
         return Ok(missing_param_error("'id' or 'index'", ToolGroup::Planning));
     };
 
-    let now = chrono::Utc::now().timestamp_millis();
-    let status = if checked { "completed" } else { "pending" };
-
-    // Fetch the todo first to update it
-    let todo_model = planning_todo::Entity::find_by_id(target_id)
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to fetch todo: {}", e))?;
-
-    if let Some(todo) = todo_model {
-        let parent_id = todo.parent_id;
-        let mut active_todo: planning_todo::ActiveModel = todo.into();
-        active_todo.is_checked = Set(checked);
-        active_todo.status = Set(status.to_string());
-        active_todo.updated_at = Set(now);
-
-        if let Some(s) = summary {
-            // Append summary to description
-            let current_desc = match &active_todo.description {
-                Set(Some(d)) => d.as_str(),
-                _ => "",
-            };
-            let new_desc = if current_desc.is_empty() {
-                s.to_string()
-            } else {
-                format!("{} - {}", current_desc, s)
-            };
-            active_todo.description = Set(Some(new_desc));
-        }
-
-        let result = active_todo.update(db).await;
-
-        match result {
-            Ok(_) => {
-                let response_id = cuid2::create_id();
-                let action = if checked { "checked" } else { "unchecked" };
-                let summary_text = if let Some(s) = summary {
-                    format!(" - {}", s)
-                } else {
-                    String::new()
-                };
-
-                let mut parent_update_msg = String::new();
-                if let Some(pid) = parent_id {
-                    let should_check_parent = if !checked {
-                        false
-                    } else {
-                        planning_todo::Entity::find()
-                            .filter(planning_todo::Column::ParentId.eq(pid))
-                            .filter(planning_todo::Column::IsChecked.eq(false))
-                            .count(db)
-                            .await
-                            .map(|c| c == 0)
-                            .unwrap_or(false)
-                    };
-
-                    if let Ok(Some(p)) = planning_todo::Entity::find_by_id(pid).one(db).await {
-                        if p.is_checked != should_check_parent {
-                            let mut active_parent: planning_todo::ActiveModel = p.into();
-                            active_parent.is_checked = Set(should_check_parent);
-                            active_parent.status = Set(if should_check_parent {
-                                "completed".to_string()
-                            } else {
-                                "pending".to_string()
-                            });
-                            active_parent.updated_at = Set(now);
-
-                            if active_parent.update(db).await.is_ok() {
-                                parent_update_msg = if should_check_parent {
-                                    " (Parent auto-completed)".to_string()
-                                } else {
-                                    " (Parent auto-reopened)".to_string()
-                                };
-                            }
-                        }
-                    }
-                }
-
-                let state_summary = get_planning_summary(db, session_id).await;
-
-                let next_todos = planning_todo::Entity::find()
-                    .filter(planning_todo::Column::SessionId.eq(session_id))
-                    .filter(planning_todo::Column::IsChecked.eq(0))
-                    .order_by_asc(planning_todo::Column::Id)
-                    .limit(3)
-                    .all(db)
-                    .await
-                    .unwrap_or_default();
-
-                let next_actions = if next_todos.is_empty() {
-                    vec!["All todos checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
-                } else {
-                    let mut actions = Vec::new();
-                    for todo in next_todos {
-                        // Truncate content if too long (safe unicode handling)
-                        let content = todo.content;
-                        let safe_content = if content.chars().count() > 40 {
-                            let truncated: String = content.chars().take(40).collect();
-                            format!("{}...", truncated)
-                        } else {
-                            content
-                        };
-                        actions.push(format!(
-                            "Process next: \"{}\" (ID: {})",
-                            safe_content, todo.id
-                        ));
-                    }
-                    actions
-                };
-
-                let hint = SuccessHint::new(
-                    format!(
-                        "Todo {} (ID: {}){}{}{}",
-                        action, target_id, summary_text, parent_update_msg, state_summary
-                    ),
-                    next_actions,
-                );
-                Ok(hint.to_mcp_result_with_data(Some(json!({
-                    "id": response_id,
-                    "success": true,
-                    "todoId": target_id,
-                    "checked": checked,
-                    "summary": summary
-                }))))
+    // Check availability first
+    let todo_item = match repo.get_todo(target_id).await {
+        Ok(Some(t)) => {
+            if t.session_id != session_id {
+                return Ok(not_found_error(
+                    "Todo",
+                    &target_id.to_string(),
+                    ToolGroup::Planning,
+                ));
             }
-            Err(e) => Ok(ErrorGuidance::with_guidance(
+            t
+        }
+        Ok(None) => {
+            return Ok(not_found_error(
+                "Todo",
+                &target_id.to_string(),
+                ToolGroup::Planning,
+            ));
+        }
+        Err(e) => {
+            return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::DatabaseError,
-                format!("Failed to update todo: {}", e),
-                vec![
-                    "Try again - this may be a transient error".to_string(),
-                    "Use getCurrentState to verify the todo exists".to_string(),
-                    "Verify the session is active".to_string(),
-                ],
+                format!("Failed to fetch todo: {}", e),
+                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
-            .to_mcp_result()),
+            .to_mcp_result())
         }
-    } else {
-        // Todo not found or doesn't belong to session
-        Ok(ErrorGuidance::with_guidance(
-            ErrorCategory::ResourceNotFound,
-            format!("Todo with ID {} not found in this session", target_id),
+    };
+
+    // Perform Check
+    match repo
+        .check_todo(target_id, checked, summary.map(|s| s.to_string()))
+        .await
+    {
+        Ok(updated) => {
+            if !updated {
+                return Ok(not_found_error(
+                    "Todo",
+                    &target_id.to_string(),
+                    ToolGroup::Planning,
+                ));
+            }
+
+            // Auto-complete/reopen parent logic
+            let mut parent_update_msg = String::new();
+            if let Some(pid) = todo_item.parent_id {
+                let should_check_parent = if !checked {
+                    false
+                } else {
+                    // Check if all siblings are done
+                    match repo.get_child_todos(pid).await {
+                        Ok(children) => children.iter().all(|c| c.is_checked),
+                        Err(_) => false,
+                    }
+                };
+
+                // Check parent state
+                if let Ok(Some(parent)) = repo.get_todo(pid).await {
+                    if parent.is_checked != should_check_parent
+                        && repo
+                            .check_todo(pid, should_check_parent, None)
+                            .await
+                            .unwrap_or(false)
+                    {
+                        parent_update_msg = if should_check_parent {
+                            " (Parent auto-completed)".to_string()
+                        } else {
+                            " (Parent auto-reopened)".to_string()
+                        };
+                    }
+                }
+            }
+
+            let response_id = cuid2::create_id();
+            let action = if checked { "checked" } else { "unchecked" };
+            let summary_text = if let Some(s) = summary {
+                format!(" - {}", s)
+            } else {
+                String::new()
+            };
+
+            let state_summary = repo
+                .get_planning_summary(session_id)
+                .await
+                .unwrap_or_default();
+
+            // Next actions
+            // Use repo.list_todos(session_id, include_checked=false)
+            let next_actions = match repo.list_todos(session_id, false).await {
+                Ok(todos) => {
+                    if todos.is_empty() {
+                        vec!["All todos checked! Use 'critiqueAndReflection' to review work, or 'createGoal' to start a new objective.".to_string()]
+                    } else {
+                        let mut actions = Vec::new();
+                        for todo in todos.iter().take(3) {
+                            let content = &todo.content;
+                            let safe_content = if content.chars().count() > 40 {
+                                let truncated: String = content.chars().take(40).collect();
+                                format!("{}...", truncated)
+                            } else {
+                                content.clone()
+                            };
+                            actions.push(format!(
+                                "Process next: \"{}\" (ID: {})",
+                                safe_content, todo.id
+                            ));
+                        }
+                        actions
+                    }
+                }
+                Err(_) => vec!["Could not fetch next actions".to_string()],
+            };
+
+            let hint = SuccessHint::new(
+                format!(
+                    "Todo {} (ID: {}){}{}{}",
+                    action, target_id, summary_text, parent_update_msg, state_summary
+                ),
+                next_actions,
+            );
+            Ok(hint.to_mcp_result_with_data(Some(json!({
+                "id": response_id,
+                "success": true,
+                "todoId": target_id,
+                "checked": checked,
+                "summary": summary
+            }))))
+        }
+        Err(e) => Ok(ErrorGuidance::with_guidance(
+            ErrorCategory::DatabaseError,
+            format!("Failed to update todo: {}", e),
             vec![
-                "Use getCurrentState to see available todos".to_string(),
-                "Verify the ID is correct".to_string(),
+                "Try again".to_string(),
+                "Use getCurrentState to verify".to_string(),
             ],
             ToolGroup::Planning,
         )
-        .to_mcp_result())
+        .to_mcp_result()),
     }
 }
 
 /// Cancel (permanently delete) todos (Legacy: clearTodos)
 pub async fn cancel_todo(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
     let ids = args.get("ids").and_then(|v| v.as_array());
     let indices = args.get("indices").and_then(|v| v.as_array());
 
-    if ids.is_none() && indices.is_none() {
-        // Cancel all
-        let result = planning_todo::Entity::delete_many()
-            .filter(planning_todo::Column::SessionId.eq(session_id))
-            .exec(db)
-            .await;
-
-        return match result {
-            Ok(r) => {
-                let summary_text = get_planning_summary(db, session_id).await;
-                let hint = SuccessHint::new(
-                    format!("✓ Cancelled {} todos{}", r.rows_affected, summary_text),
-                    vec![
-                        "All todos cancelled. Use 'getCurrentState' to verify empty state."
-                            .to_string(),
-                        "Use 'createGoal' to start a new objective.".to_string(),
-                    ],
-                );
-                Ok(hint.to_mcp_result())
-            }
-            Err(e) => Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::DatabaseError,
-                format!("Failed to cancel todos: {}", e),
-                vec![
-                    "Try again - this may be a transient database error".to_string(),
-                    "Use getCurrentState to verify current todo state".to_string(),
-                ],
-                ToolGroup::Planning,
-            )
-            .to_mcp_result()),
-        };
-    }
+    let repo = get_planning_repository();
 
     let mut target_ids: Vec<i64> = Vec::new();
 
-    // Collect explicit IDs
-    if let Some(id_list) = ids {
-        for id_val in id_list {
-            if let Some(id) = id_val.as_i64() {
-                if id < 1 {
-                    return Ok(invalid_input_error(
-                        "Invalid 'id'. Must be >= 1",
-                        ToolGroup::Planning,
-                    ));
-                }
-                target_ids.push(id);
+    if ids.is_none() && indices.is_none() {
+        // Cancel all: retrieve all IDs and delete
+        match repo.list_todos(session_id, true).await {
+            Ok(todos) => {
+                target_ids = todos.into_iter().map(|t| t.id).collect();
+            }
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::DatabaseError,
+                    format!("Failed to list todos for cancellation: {}", e),
+                    vec!["Try again".to_string()],
+                    ToolGroup::Planning,
+                )
+                .to_mcp_result());
             }
         }
-    }
-
-    // Collect IDs from indices
-    if let Some(idx_list) = indices {
-        // Fetch all IDs ordered by created_at to map indices
-        let all_todos = planning_todo::Entity::find()
-            .select_only()
-            .column(planning_todo::Column::Id)
-            .filter(planning_todo::Column::SessionId.eq(session_id))
-            .order_by_asc(planning_todo::Column::CreatedAt)
-            .into_tuple::<i64>()
-            .all(db)
-            .await
-            .map_err(|e| format!("Failed to fetch todos for index mapping: {}", e))?;
-
-        for idx_val in idx_list {
-            if let Some(idx) = idx_val.as_i64() {
-                if idx < 0 {
-                    return Ok(invalid_input_error(
-                        "Invalid 'index'. Must be >= 0",
-                        ToolGroup::Planning,
-                    ));
+    } else {
+        // Collect explicit IDs
+        if let Some(id_list) = ids {
+            for id_val in id_list {
+                if let Some(id) = id_val.as_i64() {
+                    if id < 1 {
+                        return Ok(invalid_input_error(
+                            "Invalid 'id'. Must be >= 1",
+                            ToolGroup::Planning,
+                        ));
+                    }
+                    target_ids.push(id);
                 }
-                let idx = idx as usize;
-                if idx < all_todos.len() {
-                    target_ids.push(all_todos[idx]);
+            }
+        }
+
+        // Collect IDs from indices
+        if let Some(idx_list) = indices {
+            let all_todos = match repo.list_todos(session_id, true).await {
+                Ok(todos) => todos,
+                Err(e) => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::DatabaseError,
+                        format!("Failed to list todos for index mapping: {}", e),
+                        vec!["Try again".to_string()],
+                        ToolGroup::Planning,
+                    )
+                    .to_mcp_result());
+                }
+            };
+
+            for idx_val in idx_list {
+                if let Some(idx) = idx_val.as_i64() {
+                    if idx < 0 {
+                        return Ok(invalid_input_error(
+                            "Invalid 'index'. Must be >= 0",
+                            ToolGroup::Planning,
+                        ));
+                    }
+                    let idx = idx as usize;
+                    if idx < all_todos.len() {
+                        target_ids.push(all_todos[idx].id);
+                    }
                 }
             }
         }
@@ -602,54 +589,49 @@ pub async fn cancel_todo(
     target_ids.sort();
     target_ids.dedup();
 
-    // Delete by IDs
-    let result = planning_todo::Entity::delete_many()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::Id.is_in(target_ids))
-        .exec(db)
-        .await;
-
-    match result {
-        Ok(r) => {
-            let summary_text = get_planning_summary(db, session_id).await;
-
-            let next_todos = planning_todo::Entity::find()
-                .filter(planning_todo::Column::SessionId.eq(session_id))
-                .filter(planning_todo::Column::IsChecked.eq(0))
-                .order_by_asc(planning_todo::Column::Id)
-                .limit(3)
-                .all(db)
+    match repo.delete_todos(session_id, target_ids).await {
+        Ok(count) => {
+            let summary_text = repo
+                .get_planning_summary(session_id)
                 .await
                 .unwrap_or_default();
 
-            let next_actions = if next_todos.is_empty() {
-                vec![
-                    "All todos cancelled! Use 'critiqueAndReflection' to review work.".to_string(),
-                    "Use 'createGoal' to start a new objective.".to_string(),
-                ]
-            } else {
-                let mut actions = Vec::new();
-                for todo in next_todos.iter().take(2) {
-                    let content = &todo.content;
-                    let safe_content = if content.chars().count() > 40 {
-                        let truncated: String = content.chars().take(40).collect();
-                        format!("{}...", truncated)
+            // Generate next actions for hint
+            let next_actions = match repo.list_todos(session_id, false).await {
+                Ok(todos) => {
+                    if todos.is_empty() {
+                        vec![
+                            "All todos cancelled! Use 'critiqueAndReflection' to review work."
+                                .to_string(),
+                            "Use 'createGoal' to start a new objective.".to_string(),
+                        ]
                     } else {
-                        content.clone()
-                    };
-                    actions.push(format!(
-                        "Process next: \"{}\" (ID: {})",
-                        safe_content, todo.id
-                    ));
+                        let mut actions = Vec::new();
+                        for todo in todos.iter().take(2) {
+                            let content = &todo.content;
+                            let safe_content = if content.chars().count() > 40 {
+                                let truncated: String = content.chars().take(40).collect();
+                                format!("{}...", truncated)
+                            } else {
+                                content.clone()
+                            };
+                            actions.push(format!(
+                                "Process next: \"{}\" (ID: {})",
+                                safe_content, todo.id
+                            ));
+                        }
+                        actions.push(
+                            "Use 'checkTodo' to mark done, or 'cancelTodo' to remove more."
+                                .to_string(),
+                        );
+                        actions
+                    }
                 }
-                actions.push(
-                    "Use 'checkTodo' to mark done, or 'cancelTodo' to remove more.".to_string(),
-                );
-                actions
+                Err(_) => vec![],
             };
 
             let hint = SuccessHint::new(
-                format!("✓ Cancelled {} todos{}", r.rows_affected, summary_text),
+                format!("✓ Cancelled {} todos{}", count, summary_text),
                 next_actions,
             );
             Ok(hint.to_mcp_result())
@@ -658,8 +640,8 @@ pub async fn cancel_todo(
             ErrorCategory::DatabaseError,
             format!("Failed to cancel todos: {}", e),
             vec![
-                "Try again - this may be a transient database error".to_string(),
-                "Use getCurrentState to verify current todo state".to_string(),
+                "Try again".to_string(),
+                "Use getCurrentState to verify".to_string(),
             ],
             ToolGroup::Planning,
         )

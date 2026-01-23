@@ -5,8 +5,9 @@
 /// database connection, and repositories.
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
-    SqliteSessionRepository, SqliteSettingsRepository,
+    SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
+    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
+    SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::sync::OnceLock;
@@ -34,6 +35,18 @@ static SETTINGS_REPOSITORY: OnceLock<SqliteSettingsRepository> = OnceLock::new()
 
 /// A global, thread-safe, once-initialized MCP server repository.
 static MCP_SERVER_REPOSITORY: OnceLock<SqliteMCPServerRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized assistant repository.
+static ASSISTANT_REPOSITORY: OnceLock<SqliteAssistantRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized playbook repository.
+static PLAYBOOK_REPOSITORY: OnceLock<SqlitePlaybookRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized knowledge repository.
+static KNOWLEDGE_REPOSITORY: OnceLock<SqliteKnowledgeRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized planning repository.
+static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new();
 
 /// Sets the global SQLite database URL.
 ///
@@ -192,4 +205,96 @@ pub fn get_mcp_service_proxy_manager() -> &'static MCPServiceProxyManager {
     MCP_SERVICE_PROXY_MANAGER.get().expect(
         "MCP Service Proxy Manager not initialized. Call set_mcp_service_proxy_manager() first.",
     )
+}
+
+/// Sets the global assistant repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_assistant_repository(repo: SqliteAssistantRepository) {
+    ASSISTANT_REPOSITORY
+        .set(repo)
+        .expect("Assistant repository already initialized");
+}
+
+/// Gets a reference to the global assistant repository.
+///
+/// # Returns
+/// A reference to the assistant repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_assistant_repository() -> &'static SqliteAssistantRepository {
+    ASSISTANT_REPOSITORY
+        .get()
+        .expect("Assistant repository not initialized. Call set_assistant_repository() first.")
+}
+
+/// Sets the global playbook repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_playbook_repository(repo: SqlitePlaybookRepository) {
+    PLAYBOOK_REPOSITORY
+        .set(repo)
+        .expect("Playbook repository already initialized");
+}
+
+/// Gets a reference to the global playbook repository.
+///
+/// # Returns
+/// A reference to the playbook repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_playbook_repository() -> &'static SqlitePlaybookRepository {
+    PLAYBOOK_REPOSITORY
+        .get()
+        .expect("Playbook repository not initialized. Call set_playbook_repository() first.")
+}
+
+/// Sets the global knowledge repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_knowledge_repository(repo: SqliteKnowledgeRepository) {
+    KNOWLEDGE_REPOSITORY
+        .set(repo)
+        .expect("Knowledge repository already initialized");
+}
+
+/// Gets a reference to the global knowledge repository.
+///
+/// # Returns
+/// A reference to the knowledge repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_knowledge_repository() -> &'static SqliteKnowledgeRepository {
+    KNOWLEDGE_REPOSITORY
+        .get()
+        .expect("Knowledge repository not initialized. Call set_knowledge_repository() first.")
+}
+
+/// Sets the global planning repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_planning_repository(repo: SqlitePlanningRepository) {
+    PLANNING_REPOSITORY
+        .set(repo)
+        .expect("Planning repository already initialized");
+}
+
+/// Gets a reference to the global planning repository.
+///
+/// # Returns
+/// A reference to the planning repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
+    PLANNING_REPOSITORY
+        .get()
+        .expect("Planning repository not initialized. Call set_planning_repository() first.")
 }

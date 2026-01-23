@@ -1,17 +1,17 @@
 use sea_orm::*;
 use serde_json::{json, Value};
 
-use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::KnowledgeRepository;
 
 use super::{helpers, KnowledgeServer};
 
 /// Read a knowledge entry by ID
 pub async fn read_knowledge(
-    server: &KnowledgeServer,
+    _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -20,12 +20,8 @@ pub async fn read_knowledge(
         Option::None => return Ok(missing_param_error("id", ToolGroup::Knowledge)),
     };
 
-    let db = server.get_db();
-    let result = KnowledgeEntity::find()
-        .filter(knowledge::Column::Id.eq(id))
-        .filter(knowledge::Column::AssistantId.eq(assistant_id))
-        .one(db)
-        .await;
+    let repo = crate::get_knowledge_repository();
+    let result = repo.get_knowledge(id, assistant_id).await;
 
     match result {
         Ok(Some(model)) => {
@@ -259,7 +255,7 @@ pub async fn search_knowledge(
 
 /// List all knowledge entries for this session
 pub async fn list_knowledge(
-    server: &KnowledgeServer,
+    _server: &KnowledgeServer,
     args: Value,
     assistant_id: &str,
 ) -> Result<MCPResult, String> {
@@ -271,19 +267,16 @@ pub async fn list_knowledge(
 
     let offset = args.get("offset").and_then(|v| v.as_i64()).unwrap_or(0) as u64;
 
-    let db = server.get_db();
-    let result = KnowledgeEntity::find()
-        .filter(knowledge::Column::AssistantId.eq(assistant_id))
-        .order_by_desc(knowledge::Column::UpdatedAt)
-        .limit(limit)
-        .offset(offset)
-        .all(db)
-        .await;
+    let repo = crate::get_knowledge_repository();
+    let all_models = repo.list_knowledge(assistant_id).await;
 
-    match result {
+    match all_models {
         Ok(models) => {
+            // Manual pagination
             let items: Vec<Value> = models
                 .into_iter()
+                .skip(offset as usize)
+                .take(limit as usize)
                 .map(|model| {
                     let tags_vec = helpers::parse_db_tags(model.tags.as_ref());
 

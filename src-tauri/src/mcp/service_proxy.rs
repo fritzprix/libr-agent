@@ -1,5 +1,5 @@
-use sea_orm::DatabaseConnection;
 use crate::repositories::SessionRepository;
+use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -474,9 +474,7 @@ async fn create_builtin_server(
     }
 }
 
-async fn get_assistant_id_from_session(
-    session_id: &str,
-) -> Result<String, String> {
+async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
     let session = crate::get_session_repository()
         .get_session(session_id)
         .await

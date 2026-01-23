@@ -6,11 +6,11 @@ use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use serde::{Deserialize, Serialize};
-use tauri::State;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
+use tauri::State;
 
 /// Default timestamp generator for serde deserialization fallback
 fn default_timestamp() -> i64 {

@@ -56,7 +56,8 @@ use commands::messages_commands::{
     messages_upsert, messages_upsert_many,
 };
 use commands::playbook_commands::{
-    create_playbook, delete_playbook, list_playbooks, toggle_playbook_bookmark, update_playbook,
+    create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
+    update_playbook,
 };
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
@@ -72,11 +73,12 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_database_connection, get_mcp_server_repository,
-    get_mcp_service_proxy_manager, get_message_repository, get_session_repository,
-    get_sqlite_db_url, set_content_store_repository, set_database_connection,
-    set_mcp_server_repository, set_mcp_service_proxy_manager, set_message_repository,
-    set_session_repository, set_sqlite_db_url,
+    get_assistant_repository, get_content_store_repository, get_database_connection,
+    get_knowledge_repository, get_mcp_server_repository, get_mcp_service_proxy_manager,
+    get_message_repository, get_playbook_repository, get_session_repository, get_sqlite_db_url,
+    set_assistant_repository, set_content_store_repository, set_database_connection,
+    set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
+    set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -137,13 +139,6 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .await
             .expect("Failed to run database migrations");
         info!("✅ Database migrations applied");
-
-        // Ensure default assistants exist
-        if let Err(e) = services::assistant_init::ensure_default_assistants(&db).await {
-            error!("❌ Failed to ensure default assistants: {}", e);
-        } else {
-            info!("✅ Default assistants verified");
-        }
 
         // Initialize repository instances
         use repositories::{
@@ -228,7 +223,29 @@ pub fn run_with_sqlite_sync(db_url: String) {
         set_session_repository(session_repo);
         use crate::state::set_mcp_server_repository;
         set_mcp_server_repository(mcp_server_repo);
+
+        // Initialize Assistant, Playbook, and Knowledge repositories
+        use crate::repositories::{
+            SqliteAssistantRepository, SqliteKnowledgeRepository, SqlitePlanningRepository,
+            SqlitePlaybookRepository,
+        };
+        use crate::state::{
+            set_assistant_repository, set_knowledge_repository, set_planning_repository,
+            set_playbook_repository,
+        };
+        set_assistant_repository(SqliteAssistantRepository::new(db.clone()));
+        set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
+        set_knowledge_repository(SqliteKnowledgeRepository::new(db.clone()));
+        set_planning_repository(SqlitePlanningRepository::new(db.clone()));
+
         info!("✅ Repository instances initialized");
+
+        // Ensure default assistants exist (after repositories are initialized)
+        if let Err(e) = services::assistant_init::ensure_default_assistants().await {
+            error!("❌ Failed to ensure default assistants: {}", e);
+        } else {
+            info!("✅ Default assistants verified");
+        }
 
         // Initialize the MCP manager with database connection
         // NOTE: Global MCPServerManager is deprecated in favor of session-isolated management
@@ -402,6 +419,7 @@ pub fn run() {
                 create_playbook,
                 update_playbook,
                 delete_playbook,
+                get_playbook,
                 list_playbooks,
                 toggle_playbook_bookmark,
                 set_setting,
