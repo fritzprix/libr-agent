@@ -21,8 +21,7 @@ export function AgentChatMessages() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   // Group messages for display
-  // toolResultsMap is computed in the same pass as grouping to avoid redundant O(N) iteration
-  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
+  const { groupedMessages } = useMessageGrouping(messages);
 
   // Only auto-scroll if enabled
   useEffect(() => {
@@ -87,18 +86,12 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage, index) => {
           if (groupedMessage.type === 'tool_group') {
-            // Prepare tool results array for this group
-            // This is O(K) where K is number of calls in this group (small)
-            const toolResults = groupedMessage.toolGroup.calls.map((call) =>
-              toolResultsMap.get(call.id),
-            );
-
             return (
               <AgentToolCallGroup
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 toolGroup={groupedMessage.toolGroup}
-                toolResults={toolResults}
+                toolResults={groupedMessage.toolGroup.results}
                 isLast={index === groupedMessages.length - 1}
               />
             );

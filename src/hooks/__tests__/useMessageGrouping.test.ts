@@ -43,6 +43,10 @@ describe('useMessageGrouping', () => {
     if (group.type === 'tool_group') {
       expect(group.toolGroup.calls).toHaveLength(1);
       expect(group.toolGroup.calls[0].id).toBe('call_1');
+      // Verify pre-calculated results
+      expect(group.toolGroup.results).toHaveLength(1);
+      expect(group.toolGroup.results[0]).toBeDefined();
+      expect(group.toolGroup.results[0]?.id).toBe('3');
     }
 
     // Verify toolMap
@@ -108,6 +112,10 @@ describe('useMessageGrouping', () => {
       expect(group.toolGroup.calls).toHaveLength(2);
       expect(group.toolGroup.calls[0].id).toBe('call_1');
       expect(group.toolGroup.calls[1].id).toBe('call_2');
+      // Verify pre-calculated results
+      expect(group.toolGroup.results).toHaveLength(2);
+      expect(group.toolGroup.results[0]?.id).toBe('4');
+      expect(group.toolGroup.results[1]?.id).toBe('5');
     }
 
     expect(result.current.toolResultsMap.size).toBe(2);
