@@ -186,13 +186,16 @@ impl MCPServiceProxyManager {
         }
 
         // Fetch configs using repository to support Session Isolation (independent of global connections)
-        use crate::repositories::mcp_server_repository::MCPServerRepository;
-        use crate::state::get_mcp_server_repository;
+        use crate::repositories::mcp_server_repository::{
+            MCPServerRepository, SqliteMCPServerRepository,
+        };
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
 
-        let repo = get_mcp_server_repository();
+        // Create a local repository instance using the manager's db connection
+        // This avoids dependency on global state initialization order
+        let repo = SqliteMCPServerRepository::new((*self.db).clone());
         match repo.list().await {
             Ok(servers) => {
                 log::debug!(
@@ -567,7 +570,8 @@ impl MCPServiceProxyManager {
 mod tests {
     use super::*;
     use crate::entity::{
-        assistant, knowledge, planning_goal, planning_scratchpad, planning_todo, playbook, session,
+        assistant, knowledge, mcp_server, planning_goal, planning_scratchpad, planning_todo,
+        playbook, session,
     };
     use sea_orm::{ConnectionTrait, Database, EntityTrait, Schema, Set};
     use serde_json::json;
@@ -584,6 +588,11 @@ mod tests {
         db.execute(db.get_database_backend().build(&stmt))
             .await
             .expect("Failed to create session table");
+
+        let stmt = schema.create_table_from_entity(mcp_server::Entity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create mcp_server table");
 
         let stmt = schema.create_table_from_entity(playbook::Entity);
         db.execute(db.get_database_backend().build(&stmt))
@@ -635,6 +644,7 @@ mod tests {
             created_at: Set(chrono::Utc::now().timestamp()),
             updated_at: Set(0),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(r#"{"assistantId": "assistant1"}"#.to_string())),
             ..Default::default()
         };
         session::Entity::insert(new_session)
@@ -702,11 +712,13 @@ mod tests {
         let tool_ids2 = vec!["playbook".to_string(), "assistant".to_string()];
 
         // Insert session 2 into sessions table
+        // Use a different assistant ID to verify isolation
         let new_session = session::ActiveModel {
             id: Set(session2.clone()),
             created_at: Set(chrono::Utc::now().timestamp()),
             updated_at: Set(0),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(r#"{"assistantId": "assistant2"}"#.to_string())),
             ..Default::default()
         };
         session::Entity::insert(new_session)
@@ -749,37 +761,64 @@ mod tests {
             text_content
         );
 
-        // Test 4: Verify assistant is global (session 2 can see the assistant)
-        let get_assistant_result = manager
+        // Test 4: Verify Session 2 can manage its own assistant
+        // (Since sessions are now isolated by assistant ID, we create assistant2)
+        let create_assistant2_result = manager
             .call_tool(
                 &session2,
-                "builtin_assistant__getAssistant",
+                "builtin_assistant__createAssistant",
                 json!({
-                    "id": "assistant1"
+                    "id": "assistant2",
+                    "name": "Test Assistant 2",
+                    "config": json!({
+                        "model": "gpt-4",
+                    })
                 }),
             )
             .await
             .unwrap();
+        assert!(
+            create_assistant2_result.error.is_none(),
+            "Session 2 should be able to create assistant2"
+        );
 
-        assert!(get_assistant_result.error.is_none());
-        let assistant = get_assistant_result.result.unwrap();
-        let assistant_text = match assistant {
+        // Verify assistants visibility via listAssistants
+        let list_result = manager
+            .call_tool(
+                &session2,
+                "builtin_assistant__listAssistants",
+                json!({}),
+            )
+            .await
+            .unwrap();
+        let list_data = list_result.result.unwrap();
+        let list_text = match list_data {
             crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
                 if let Some(content) = &result.content {
                     if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
-                        text
+                        text.clone()
                     } else {
-                        panic!("Expected Text content")
+                        "Not text".to_string()
                     }
                 } else {
-                    panic!("Expected content")
+                    "No content".to_string()
                 }
             }
-            _ => panic!("Expected ToolCall result"),
+            _ => "Not tool call".to_string(),
         };
+
+        // Check if Session 2 sees its own assistant
         assert!(
-            assistant_text.contains("Test Assistant"),
-            "Session 2 should see the global assistant"
+            list_text.contains("Test Assistant 2"),
+            "Session 2 should see its own assistant (Test Assistant 2). Got: {}",
+            list_text
+        );
+
+        // Check if Session 2 sees Session 1's assistant (Global visibility)
+        assert!(
+            list_text.contains("Test Assistant"),
+            "Session 2 should see global assistant (Test Assistant). Got: {}",
+            list_text
         );
 
         // Test 5: Save same playbook ID in session 2 (allowed due to composite PK)
@@ -878,12 +917,16 @@ mod tests {
         ];
 
         // Insert sessions into database and create proxies
-        for session_id in &sessions {
+        for (idx, session_id) in sessions.iter().enumerate() {
             let new_session = session::ActiveModel {
                 id: Set(session_id.clone()),
                 created_at: Set(chrono::Utc::now().timestamp()),
                 updated_at: Set(0),
                 status: Set("idle".to_string()),
+                agent_config: Set(Some(format!(
+                    r#"{{"assistantId": "assistant-{}"}}"#,
+                    idx
+                ))),
                 ..Default::default()
             };
             session::Entity::insert(new_session)
@@ -991,6 +1034,7 @@ mod tests {
             created_at: Set(chrono::Utc::now().timestamp()),
             updated_at: Set(0),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(r#"{"assistantId": "integration-assistant"}"#.to_string())),
             ..Default::default()
         };
         session::Entity::insert(new_session)
@@ -1023,7 +1067,7 @@ mod tests {
         let knowledge_result = manager
             .call_tool(
                 &session_id,
-                "builtin_content_store__addContent",
+                "builtin_knowledge__saveKnowledge",
                 json!({
                     "title": "Test Knowledge",
                     "content": "Integration test content",

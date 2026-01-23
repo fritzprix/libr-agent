@@ -47,9 +47,7 @@ pub async fn switch_session(request: SessionSwitchRequest) -> Result<SessionResp
 /// Deletes search index, metadata, workspace directory, and all associated resources
 #[command]
 pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
-    use crate::repositories::SessionRepository;
     use crate::search::index_storage::delete_index;
-    use crate::state::get_session_repository;
 
     info!("🗑️  Removing session: {session_id}");
 

@@ -1,7 +1,6 @@
 use crate::repositories::SettingsRepository;
 use crate::state::get_settings_repository;
 use regex::Regex;
-use serde_json::Value;
 
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
