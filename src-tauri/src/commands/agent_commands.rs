@@ -8,7 +8,6 @@ use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
 use crate::commands::workspace_commands::get_app_logs_dir;
-use crate::state::get_database_connection;
 use std::fs;
 
 /// Request to create a new agent session
@@ -72,7 +71,7 @@ pub async fn agent_create_session(
             "Creating ephemeral session (in-memory only): {}",
             request.session_id
         );
-        Arc::new(InMemorySessionRepository::new())
+        Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>
     } else {
         log::info!(
             "Creating persistent session (DB-backed): {}",
@@ -445,13 +444,15 @@ pub async fn agent_clear_all_sessions(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    use crate::entity::{assistant, mcp_server, playbook};
+    use crate::entity::{assistant, playbook};
+    use crate::repositories::mcp_server_repository::MCPServerRepository;
+    use crate::state::get_mcp_server_repository;
     use sea_orm::EntityTrait;
 
     // 1. Clear all sessions first
     agent_clear_all_sessions(manager).await?;
 
-    let db = get_database_connection();
+    let db = crate::state::get_database_connection();
 
     // 2. Delete all Assistants
     assistant::Entity::delete_many()
@@ -466,10 +467,17 @@ pub async fn agent_factory_reset(
         .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
 
     // 4. Delete all MCP Servers
-    mcp_server::Entity::delete_many()
-        .exec(db)
+    let mcp_repo = get_mcp_server_repository();
+    let servers = mcp_repo
+        .list()
         .await
-        .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
+        .map_err(|e| format!("Failed to list MCP servers: {}", e))?;
+    for server in servers {
+        mcp_repo
+            .delete(&server.name)
+            .await
+            .map_err(|e| format!("Failed to delete MCP server {}: {}", server.name, e))?;
+    }
 
     // 5. Restore default assistants so the app is not empty
     if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {

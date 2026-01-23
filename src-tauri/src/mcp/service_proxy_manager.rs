@@ -186,13 +186,14 @@ impl MCPServiceProxyManager {
         }
 
         // Fetch configs directly from DB to support Session Isolation (independent of global connections)
-        use crate::entity::mcp_server;
-        use sea_orm::EntityTrait;
+        use crate::repositories::mcp_server_repository::MCPServerRepository;
+        use crate::state::get_mcp_server_repository;
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
+        let repo = get_mcp_server_repository();
 
-        match mcp_server::Entity::find().all(self.db.as_ref()).await {
+        match repo.list().await {
             Ok(models) => {
                 log::debug!(
                     "Loaded {} MCP server configs from DB for session {}",

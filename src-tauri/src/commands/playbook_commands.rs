@@ -1,5 +1,5 @@
 use crate::entity::playbook;
-use crate::entity::session;
+use crate::repositories::SessionRepository;
 use crate::state::get_database_connection;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
@@ -42,10 +42,8 @@ impl From<playbook::Model> for PlaybookDto {
 
 /// Helper to get assistant_id from session
 async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-    let db = get_database_connection();
-
-    let session_model = session::Entity::find_by_id(session_id)
-        .one(db)
+    let session_model = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to query session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;

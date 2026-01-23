@@ -1,6 +1,7 @@
 use crate::entity::{
-    assistant, assistant::Entity as AssistantEntity, mcp_server::Entity as McpServerEntity,
+    assistant, assistant::Entity as AssistantEntity,
 };
+use crate::repositories::MCPServerRepository;
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, invalid_input_error, missing_param_error, not_found_error,
     operation_failed_error, SuccessHint, ToolGroup,
@@ -13,7 +14,6 @@ use super::AssistantServer;
 
 /// Validate that all mcpServerIds exist in the mcp_servers table
 async fn validate_mcp_server_ids(
-    db: &DatabaseConnection,
     server_ids: &[String],
 ) -> Result<(), String> {
     if server_ids.is_empty() {
@@ -21,14 +21,15 @@ async fn validate_mcp_server_ids(
     }
 
     // Query database to check which IDs exist
-    let existing_servers = McpServerEntity::find()
-        .filter(
-            sea_orm::sea_query::Expr::col(crate::entity::mcp_server::Column::Name)
-                .is_in(server_ids.to_vec()),
-        )
-        .all(db)
+    let all_servers = crate::get_mcp_server_repository()
+        .list()
         .await
         .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
+    
+    let existing_servers: Vec<_> = all_servers
+        .into_iter()
+        .filter(|s| server_ids.contains(&s.name))
+        .collect();
 
     let existing_ids: std::collections::HashSet<_> =
         existing_servers.iter().map(|s| s.name.as_str()).collect();
@@ -122,7 +123,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }
@@ -247,7 +248,7 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }

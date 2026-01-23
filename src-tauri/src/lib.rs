@@ -72,10 +72,11 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_database_connection, get_mcp_service_proxy_manager,
-    get_message_repository, get_session_repository, get_sqlite_db_url,
-    set_content_store_repository, set_database_connection, set_mcp_service_proxy_manager,
-    set_message_repository, set_session_repository, set_sqlite_db_url,
+    get_content_store_repository, get_database_connection, get_mcp_server_repository,
+    get_mcp_service_proxy_manager, get_message_repository, get_session_repository,
+    get_sqlite_db_url, set_content_store_repository, set_database_connection,
+    set_mcp_server_repository, set_mcp_service_proxy_manager, set_message_repository,
+    set_session_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -146,7 +147,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
 
         // Initialize repository instances
         use repositories::{
-            SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+            SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+            SqliteSessionRepository,
         };
 
         let message_repo = SqliteMessageRepository::new(db.clone());
@@ -158,6 +160,9 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_repo = SqliteSessionRepository::new(db.clone());
         info!("✅ Session repository initialized");
 
+        let mcp_server_repo = SqliteMCPServerRepository::new(db.clone());
+        info!("✅ MCP server repository initialized");
+
         // Fetch System Settings from DB
         #[derive(serde::Deserialize, Default)]
         #[serde(rename_all = "camelCase")]
@@ -168,12 +173,16 @@ pub fn run_with_sqlite_sync(db_url: String) {
         }
 
         let system_settings: SystemSettings = {
-            use entity::settings;
-            use sea_orm::EntityTrait;
-            match settings::Entity::find_by_id("systemSettings")
-                .one(&db)
-                .await
-            {
+            use crate::repositories::settings_repository::SettingsRepository;
+            use crate::repositories::SqliteSettingsRepository;
+            use crate::state::set_settings_repository;
+
+            // Initialize settings repository first
+            let settings_repo = SqliteSettingsRepository::new(db.clone());
+            set_settings_repository(settings_repo.clone());
+            info!("✅ Settings repository initialized");
+
+            match settings_repo.get("systemSettings").await {
                 Ok(Some(model)) => serde_json::from_str(&model.value).unwrap_or_default(),
                 Ok(None) => SystemSettings::default(),
                 Err(e) => {
@@ -217,6 +226,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
         set_message_repository(message_repo);
         set_content_store_repository(content_store_repo);
         set_session_repository(session_repo);
+        use crate::state::set_mcp_server_repository;
+        set_mcp_server_repository(mcp_server_repo);
         info!("✅ Repository instances initialized");
 
         // Initialize the MCP manager with database connection
@@ -438,19 +449,17 @@ pub fn run() {
 
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async {
-                        use crate::entity::settings;
-                        use crate::state::get_database_connection;
-                        use sea_orm::EntityTrait;
-
-                        let db = get_database_connection(); // Should work as it was set in run_with_sqlite_sync
-
                         #[derive(serde::Deserialize, Default)]
                         #[serde(rename_all = "camelCase")]
                         struct SystemSettings {
                             web_action_timeout_seconds: Option<u64>,
                         }
 
-                        match settings::Entity::find_by_id("systemSettings").one(db).await {
+                        use crate::repositories::settings_repository::SettingsRepository;
+                        use crate::state::get_settings_repository;
+
+                        let settings_repo = get_settings_repository();
+                        match settings_repo.get("systemSettings").await {
                             Ok(Some(model)) => {
                                 let s: SystemSettings =
                                     serde_json::from_str(&model.value).unwrap_or_default();
@@ -495,6 +504,18 @@ pub fn run() {
                     session_repo_arc,
                 );
                 app.manage(agent_session_manager);
+
+                // Spawn session recovery in background
+                let recovery_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = recovery_manager.recover_sessions().await {
+                        log::error!("❌ Session recovery failed: {}", e);
+                    }
+                });
+
                 info!("🔄 Session recovery initiated in background");
 
                 // Built-in servers are now automatically initialized with SessionManager support

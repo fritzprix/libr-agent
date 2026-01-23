@@ -47,6 +47,32 @@ pub trait MessageRepository: Send + Sync {
 
     /// Check if a session has messages newer than the last index build
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError>;
+
+    /// Delete index metadata for a specific session
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
+
+    /// Get recent messages for a specific session with limit
+    async fn get_messages_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, DbError>;
+
+    /// Get recent messages across all sessions with limit
+    async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError>;
+
+    /// Get all distinct session IDs that have messages
+    async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError>;
+
+    /// Get message models (raw SeaORM models) for search indexing
+    async fn get_message_models_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<message::Model>, DbError>;
+
+    /// Get recent message models across all sessions for search indexing
+    async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError>;
 }
 
 /// SQLite implementation of MessageRepository using SeaORM
@@ -329,5 +355,74 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         Ok(max_created.map(|t| t > last_indexed_at).unwrap_or(false))
+    }
+
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
+        MessageIndexMeta::delete_by_id(session_id)
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_messages_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, DbError> {
+        let models = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models.into_iter().map(Self::model_to_message).collect())
+    }
+
+    async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError> {
+        let models = MessageEntity::find()
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models.into_iter().map(Self::model_to_message).collect())
+    }
+
+    async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError> {
+        let sessions: Vec<String> = MessageEntity::find()
+            .select_only()
+            .column(message::Column::SessionId)
+            .distinct()
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+
+        Ok(sessions)
+    }
+
+    async fn get_message_models_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<message::Model>, DbError> {
+        let models = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models)
+    }
+
+    async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError> {
+        let models = MessageEntity::find()
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models)
     }
 }

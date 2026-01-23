@@ -1,4 +1,5 @@
 use sea_orm::DatabaseConnection;
+use crate::repositories::SessionRepository;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,7 +11,6 @@ use super::server::MCPServerManager;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
-use sea_orm::EntityTrait; // Needed for find_by_id in helper
 
 /// Configuration for creating an MCPServiceProxy
 #[derive(Debug)]
@@ -433,8 +433,7 @@ async fn create_builtin_server(
             crate::mcp::builtin::bootstrap::BootstrapServer::new(),
         ))),
         "knowledge" => {
-            let db_conn = (*_db).clone();
-            let assistant_id = get_assistant_id_from_session(&db_conn, &_session_id).await?;
+            let assistant_id = get_assistant_id_from_session(&_session_id).await?;
             Ok(Some(Box::new(
                 crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
             )))
@@ -476,13 +475,10 @@ async fn create_builtin_server(
 }
 
 async fn get_assistant_id_from_session(
-    db: &DatabaseConnection,
     session_id: &str,
 ) -> Result<String, String> {
-    use crate::entity::session::Entity as SessionEntity;
-
-    let session = SessionEntity::find_by_id(session_id)
-        .one(db)
+    let session = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Database error fetching session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;

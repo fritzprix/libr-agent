@@ -175,7 +175,6 @@ impl AgentSessionManager {
     }
 
     /// Recover sessions stuck in BUSY state after app crash/restart
-    #[allow(dead_code)]
     pub async fn recover_sessions(&self) -> Result<(), String> {
         crate::agent::lifecycle::recover_sessions(
             &self.session_repo,
@@ -463,7 +462,8 @@ impl AgentSessionManager {
         }
 
         // 6. Delete index metadata
-        if let Err(e) = session_repo.delete_index_metadata(&session_id).await {
+        let msg_repo = crate::state::get_message_repository();
+        if let Err(e) = msg_repo.delete_index_metadata(&session_id).await {
             log::warn!(
                 "Failed to delete index metadata for session {}: {}",
                 session_id,

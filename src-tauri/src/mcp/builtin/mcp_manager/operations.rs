@@ -1,11 +1,10 @@
-use crate::entity::{mcp_server, mcp_server::Entity as McpServerEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance,
     SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
-use crate::state::get_database_connection;
-use sea_orm::*;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
 use super::queries::get_server_config;
@@ -13,47 +12,34 @@ use super::queries::get_server_config;
 use super::MCPManagerServer;
 
 async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
-    let config_json = serde_json::to_string(config).map_err(|e| e.to_string())?;
-
+    let repo = get_mcp_server_repository();
     let server_name = config
         .name
         .as_ref()
-        .ok_or_else(|| "Server name is required".to_string())?
-        .clone();
+        .ok_or_else(|| "Server name is required".to_string())?;
 
-    // Upsert using SeaORM (async without nested runtime)
-    let model = mcp_server::ActiveModel {
-        name: Set(server_name.clone()),
-        config: Set(config_json.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
+    let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
-    match McpServerEntity::insert(model.clone()).exec(db).await {
-        Ok(_) => Ok(()),
-        Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
-            let update_model = mcp_server::ActiveModel {
-                name: Set(server_name),
-                config: Set(config_json),
-                created_at: NotSet,
-                updated_at: Set(now),
-            };
-            McpServerEntity::update(update_model)
-                .exec(db)
+    // Try to update first, create if doesn't exist
+    match repo.get(server_name).await {
+        Ok(Some(_)) => {
+            repo.update(server_name, config_value)
                 .await
-                .map_err(|e| format!("DB Update Error: {}", e))?;
-            Ok(())
+                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
         }
-        Err(e) => Err(format!("DB Save Error: {}", e)),
+        Ok(None) => {
+            repo.create(server_name, config_value)
+                .await
+                .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+        }
+        Err(e) => return Err(format!("DB query error: {}", e)),
     }
+    Ok(())
 }
 
 async fn delete_server_config_db(name: String) -> Result<(), String> {
-    let db = get_database_connection();
-    McpServerEntity::delete_by_id(name)
-        .exec(db)
+    let repo = get_mcp_server_repository();
+    repo.delete(&name)
         .await
         .map_err(|e| format!("DB Delete Error: {}", e))?;
     Ok(())

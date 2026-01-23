@@ -164,22 +164,13 @@ impl SessionRepository for InMemorySessionRepository {
         );
         Ok(())
     }
-
-    /// Delete index metadata for a session
-    ///
-    /// In-memory sessions don't have index metadata, so this is a no-op.
-    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
-        log::debug!(
-            "InMemory: Delete index metadata for {} (no-op for in-memory sessions)",
-            session_id
-        );
-        Ok(())
-    }
 }
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::InMemorySessionRepository;
+    use crate::repositories::session_repository::{
+        SessionMetadata, SessionRepository, SessionStatus,
+    };
 
     #[tokio::test]
     async fn test_new_repository_is_empty() {

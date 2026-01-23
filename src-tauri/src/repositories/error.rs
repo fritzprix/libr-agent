@@ -22,6 +22,14 @@ pub enum DbError {
     /// JSON serialization/deserialization failed
     #[error("Serialization error: {0}")]
     SerializationError(String),
+
+    /// Resource already exists
+    #[error("Resource already exists: {0}")]
+    DuplicateResource(String),
+
+    /// Resource not found
+    #[error("Resource not found: {0}")]
+    ResourceNotFound(String),
 }
 
 /// Convert DbError to String for Tauri command compatibility

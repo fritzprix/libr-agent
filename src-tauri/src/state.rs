@@ -5,7 +5,8 @@
 /// database connection, and repositories.
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+    SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+    SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::sync::OnceLock;
@@ -27,6 +28,12 @@ static CONTENT_STORE_REPOSITORY: OnceLock<SqliteContentStoreRepository> = OnceLo
 
 /// A global, thread-safe, once-initialized session repository.
 static SESSION_REPOSITORY: OnceLock<SqliteSessionRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized settings repository.
+static SETTINGS_REPOSITORY: OnceLock<SqliteSettingsRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized MCP server repository.
+static MCP_SERVER_REPOSITORY: OnceLock<SqliteMCPServerRepository> = OnceLock::new();
 
 /// Sets the global SQLite database URL.
 ///
@@ -134,6 +141,34 @@ pub fn get_session_repository() -> &'static SqliteSessionRepository {
     SESSION_REPOSITORY
         .get()
         .expect("Session repository not initialized. Call set_session_repository() first.")
+}
+
+/// Sets the global settings repository instance.
+pub fn set_settings_repository(repo: SqliteSettingsRepository) {
+    SETTINGS_REPOSITORY
+        .set(repo)
+        .expect("Settings repository already initialized");
+}
+
+/// Gets a reference to the global settings repository.
+pub fn get_settings_repository() -> &'static SqliteSettingsRepository {
+    SETTINGS_REPOSITORY
+        .get()
+        .expect("Settings repository not initialized. Call set_settings_repository() first.")
+}
+
+/// Sets the global MCP server repository instance.
+pub fn set_mcp_server_repository(repo: SqliteMCPServerRepository) {
+    MCP_SERVER_REPOSITORY
+        .set(repo)
+        .expect("MCP server repository already initialized");
+}
+
+/// Gets a reference to the global MCP server repository.
+pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
+    MCP_SERVER_REPOSITORY
+        .get()
+        .expect("MCP server repository not initialized. Call set_mcp_server_repository() first.")
 }
 
 /// Sets the global MCP service proxy manager instance.

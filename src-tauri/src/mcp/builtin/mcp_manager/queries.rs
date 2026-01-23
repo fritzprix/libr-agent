@@ -1,16 +1,15 @@
-use crate::entity::mcp_server::Entity as McpServerEntity;
 use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
 use crate::mcp::types::{MCPResult, MCPServerConfig};
-use crate::state::get_database_connection;
-use sea_orm::*;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
 /// Get a server configuration by name
 pub async fn get_server_config(name: &str) -> Result<Option<MCPServerConfig>, String> {
-    let db = get_database_connection();
+    let repo = get_mcp_server_repository();
 
-    let model = McpServerEntity::find_by_id(name.to_string())
-        .one(db)
+    let model = repo
+        .get(name)
         .await
         .map_err(|e| format!("DB Fetch Error: {}", e))?;
 
@@ -24,10 +23,10 @@ pub async fn get_server_config(name: &str) -> Result<Option<MCPServerConfig>, St
 
 /// List all server configurations
 pub async fn list_all_configs() -> Result<Vec<MCPServerConfig>, String> {
-    let db = get_database_connection();
+    let repo = get_mcp_server_repository();
 
-    let models = McpServerEntity::find()
-        .all(db)
+    let models = repo
+        .list()
         .await
         .map_err(|e| format!("DB List Error: {}", e))?;
 

@@ -1,8 +1,8 @@
-use crate::entity::session::Entity as SessionEntity;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::schema::JSONSchema;
 use crate::mcp::types::{MCPResult, MCPTool};
 use crate::mcp::utils::schema_builder::*;
+use crate::repositories::SessionRepository;
 use async_trait::async_trait;
 use sea_orm::*;
 use serde_json::Value; // JSON interaction still needed for tool args
@@ -28,7 +28,7 @@ impl PlaybookServer {
         let db_conn = (*db).clone();
 
         // Get assistant_id from session
-        let assistant_id = get_assistant_id_from_session(&db_conn, &session_id).await?;
+        let assistant_id = get_assistant_id_from_session(&session_id).await?;
 
         let server = Self {
             assistant_id,
@@ -427,11 +427,10 @@ fn success_criteria_schema() -> JSONSchema {
 }
 
 async fn get_assistant_id_from_session(
-    db: &DatabaseConnection,
     session_id: &str,
 ) -> Result<String, String> {
-    let session = SessionEntity::find_by_id(session_id)
-        .one(db)
+    let session = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Database error fetching session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
