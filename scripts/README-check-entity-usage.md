@@ -31,6 +31,7 @@ chmod +x scripts/check-entity-usage.sh
 The scripts search for three types of violations:
 
 ### 1. Direct Entity Usage
+
 ```rust
 // ❌ BAD: Direct Entity access
 settings::Entity::find_by_id(key)
@@ -38,6 +39,7 @@ mcp_server::Entity::find()
 ```
 
 ### 2. Entity Operations
+
 ```rust
 // ❌ BAD: Direct Entity operations
 assistant::Entity::find_by_id(id)
@@ -45,6 +47,7 @@ playbook::Entity::delete_by_id(id)
 ```
 
 ### 3. SQL Query References
+
 ```rust
 // ❌ BAD: Direct SQL in code/comments
 SELECT * FROM assistant WHERE id = ?
@@ -78,6 +81,7 @@ The script provides:
 ## Migration Phases
 
 ### Phase 1 (DONE)
+
 - ✅ `settings` - Settings repository pattern
 - ✅ `mcp_server` - MCP server configuration repository
 - ✅ `message_index_meta` - Message index metadata repository
@@ -87,6 +91,7 @@ The script provides:
 **Note**: Phase 1 shows violations because repository implementations themselves use Entity internally (this is allowed and expected). External code should use the repository interfaces, not Entity directly.
 
 ### Phase 2 (TODO)
+
 - ⏳ `assistant` - Assistant repository (23 violations)
 - ⏳ `playbook` - Playbook repository (19 violations)
 - ⏳ `knowledge` - Knowledge repository (3 violations)
@@ -212,7 +217,7 @@ When modifying these scripts:
 --- assistant (Phase 2) [TODO] ---
   [!] src-tauri/src/commands/assistant_crud_commands.rs:64
       [Entity] let assistant = assistant::Entity::find_by_id(&id)
-  
+
   [!] src-tauri/src/commands/assistant_crud_commands.rs:100
       [Entity::find] let assistants = assistant::Entity::find()
 ```

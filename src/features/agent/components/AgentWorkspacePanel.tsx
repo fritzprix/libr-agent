@@ -48,10 +48,8 @@ interface FileNode {
 }
 
 export function AgentWorkspacePanel() {
-  const {
-    listWorkspaceFiles,
-    openWorkspaceFileWithDefaultApp,
-  } = useRustBackend();
+  const { listWorkspaceFiles, openWorkspaceFileWithDefaultApp } =
+    useRustBackend();
   const { session } = useAgentSessionState();
   const { executeTool } = useAgentToolExecution();
   const [rootPath] = useState<string>('./');
@@ -263,13 +261,10 @@ export function AgentWorkspacePanel() {
             ? destPath.slice(2)
             : destPath;
 
-          await executeTool(
-            'builtin_workspace__importFile',
-            {
-              src_abs_path: srcPath,
-              dest_rel_path: destRelPath,
-            }
-          );
+          await executeTool('builtin_workspace__importFile', {
+            src_abs_path: srcPath,
+            dest_rel_path: destRelPath,
+          });
         }
 
         // Refresh directory after import

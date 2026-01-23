@@ -22,79 +22,81 @@ export function useAgentToolExecution() {
   const { injectMessages } = useAgentChatActions();
   const { agentCallBuiltinTool } = useRustBackend();
 
-  const executeTool = useCallback(async (
-    toolName: string,
-    args: Record<string, unknown>,
-    options?: {
-      resultType?: 'text' | 'ui';
-      triggerWorkflow?: boolean;
-    }
-  ) => {
-    if (!session?.id) {
-      const msg = 'Cannot execute tool: no active session';
-      logger.error(msg);
-      throw new Error(msg);
-    }
+  const executeTool = useCallback(
+    async (
+      toolName: string,
+      args: Record<string, unknown>,
+      options?: {
+      resultType?: 'assistant' | 'ui';
+        triggerWorkflow?: boolean;
+      },
+    ) => {
+      if (!session?.id) {
+        const msg = 'Cannot execute tool: no active session';
+        logger.error(msg);
+        throw new Error(msg);
+      }
 
-    try {
-      logger.info('Executing tool', { toolName, args });
+      try {
+        logger.info('Executing tool', { toolName, args });
 
-      const response = await agentCallBuiltinTool(
-        session.id,
-        toolName,
-        args
-      );
+        const response = await agentCallBuiltinTool(session.id, toolName, args);
 
-      let content: MCPContent[] = [];
+        let content: MCPContent[] = [];
 
-      // Handle error responses
-      if (response.isError === true) {
-        let errorText = 'Tool execution failed';
-        const firstItem = response.content?.[0];
+        // Handle error responses
+        if (response.isError === true) {
+          let errorText = 'Tool execution failed';
+          const firstItem = response.content?.[0];
 
-        // Try to extract text from error content
-        if (firstItem) {
-          if ('text' in firstItem && typeof firstItem.text === 'string') {
-            errorText = firstItem.text;
-          } else {
-             errorText = JSON.stringify(firstItem);
+          // Try to extract text from error content
+          if (firstItem) {
+            if ('text' in firstItem && typeof firstItem.text === 'string') {
+              errorText = firstItem.text;
+            } else {
+              errorText = JSON.stringify(firstItem);
+            }
+          }
+
+          content = stringToMCPContentArray(errorText);
+        } else {
+          // Use content directly if available, otherwise default empty
+          content = (response.content as MCPContent[]) || [];
+
+          // Fallback for missing content
+          if (content.length === 0) {
+            content = stringToMCPContentArray('No result returned');
           }
         }
 
-        content = stringToMCPContentArray(errorText);
-      } else {
-        // Use content directly if available, otherwise default empty
-        content = response.content ?? [];
+        const toolCallId = createId();
 
-        // Fallback for missing content
-        if (content.length === 0) {
-          content = stringToMCPContentArray('No result returned');
-        }
+        const [toolCallMessage, toolResultMessage] = createToolMessagePair(
+          toolName,
+          args,
+          content,
+          toolCallId,
+          session.id,
+          undefined,
+          session.assistant?.id,
+          options?.resultType,
+        );
+
+        // Default to true for triggerWorkflow if not specified
+        const shouldTrigger = options?.triggerWorkflow ?? true;
+        await injectMessages(
+          [toolCallMessage, toolResultMessage],
+          shouldTrigger,
+        );
+
+        return response;
+      } catch (error) {
+        logger.error('Failed to execute tool', { toolName, error });
+        throw error;
       }
-
-      const toolCallId = createId();
-
-      const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-        toolName,
-        args,
-        content,
-        toolCallId,
-        session.id,
-        undefined,
-        session.assistant?.id,
-        options?.resultType
-      );
-
-      // Default to true for triggerWorkflow if not specified
-      const shouldTrigger = options?.triggerWorkflow ?? true;
-      await injectMessages([toolCallMessage, toolResultMessage], shouldTrigger);
-
-      return response;
-    } catch (error) {
-      logger.error('Failed to execute tool', { toolName, error });
-      throw error;
-    }
-  }, [session, injectMessages, agentCallBuiltinTool]);
+    },
+    [session, injectMessages, agentCallBuiltinTool],
+  );
 
   return { executeTool };
 }

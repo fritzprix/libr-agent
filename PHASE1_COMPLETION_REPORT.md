@@ -23,9 +23,11 @@ Phase 1 of the repository pattern migration is **complete**. All production code
 ## Migration Statistics
 
 ### Before Phase 1
+
 - **Total Violations:** 22+ direct Entity usages across 5 tables
 
 ### After Phase 1
+
 - **Production Code Violations:** 0
 - **Test Code Violations:** 7 (acceptable - in-memory test fixtures)
 - **New Repository Methods:** 3 (get_messages_by_session, get_recent_messages, get_distinct_sessions)
@@ -39,15 +41,18 @@ Phase 1 of the repository pattern migration is **complete**. All production code
 ### Production Code Fixes (15 total)
 
 #### Commands Layer (5 fixes)
+
 1. `commands/messages_commands.rs:195` - get_messages_by_session
 2. `commands/messages_commands.rs:287` - get_recent_messages
 3. `commands/playbook_commands.rs:47` - get_session
 
 #### Search Layer (2 fixes)
+
 4. `search/background_worker.rs:82` - get_distinct_sessions
 5. `search/background_worker.rs:124` - get_messages_by_session
 
 #### Builtin MCP Servers (3 fixes)
+
 6. `mcp/builtin/playbook/mod.rs:433` - get_session
 7. `mcp/builtin/assistant/operations.rs:24` - list mcp_servers
 8. `mcp/service_proxy.rs:482` - get_session
@@ -57,6 +62,7 @@ Phase 1 of the repository pattern migration is **complete**. All production code
 ## Remaining Test Code (7 violations - acceptable)
 
 ### In-Memory Test Fixtures
+
 These are legitimate test setup code that creates in-memory databases:
 
 1. `mcp/builtin/knowledge/mod.rs:314` - create_table_from_entity (test setup)
@@ -81,7 +87,7 @@ async fn get_message_models_by_session(
 ) -> Result<Vec<message::Model>, DbError>;
 
 async fn get_recent_message_models(
-    &self, 
+    &self,
     limit: u64
 ) -> Result<Vec<message::Model>, DbError>;
 ```
@@ -93,11 +99,13 @@ These methods return raw SeaORM models for MessageDocument conversion in search 
 ## Validation Tools
 
 ### Detection Scripts
+
 - `scripts/check-entity-usage.ps1` - Windows PowerShell script
 - `scripts/check-entity-usage.sh` - Linux Bash script
 - `scripts/check-phase1-completion.ps1` - Filtered validation (excludes test code)
 
 ### Usage
+
 ```powershell
 # Run Phase 1 validation
 powershell -ExecutionPolicy Bypass -File .\scripts\check-phase1-completion.ps1
@@ -110,15 +118,19 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-phase1-completion.ps1
 ## Technical Details
 
 ### Import Path Changes
+
 - **Old:** `crate::repositories::get_*_repository()`
 - **New:** `crate::get_*_repository()` (exported from lib.rs)
 
 ### Method Signature Changes
+
 - Repositories no longer require `db` parameter in calls (stored in `self.db`)
 - Example: `repo.get_session(session_id)` instead of `Entity::find_by_id(session_id).one(db)`
 
 ### Trait Imports Required
+
 Files calling repository methods must import traits:
+
 ```rust
 use crate::repositories::SessionRepository;
 use crate::repositories::MCPServerRepository;
@@ -130,6 +142,7 @@ use crate::repositories::MessageRepository;
 ## Compilation Status
 
 ### Rust Backend
+
 ```
 ✅ cargo clippy: 0 warnings
 ✅ All tests passing
@@ -141,7 +154,9 @@ use crate::repositories::MessageRepository;
 ## Next Steps
 
 ### Phase 2 Tables (Not Started)
+
 Remaining tables for future migration:
+
 - agent
 - assistant
 - content_summary
@@ -151,6 +166,7 @@ Remaining tables for future migration:
 - task
 
 ### Recommended Approach
+
 1. Create repositories for Phase 2 tables
 2. Use same detection script pattern
 3. Follow established migration process
@@ -161,17 +177,20 @@ Remaining tables for future migration:
 ## Lessons Learned
 
 ### What Worked Well
+
 - Detection scripts caught all violations
 - Repository pattern cleanly separates concerns
 - Type safety improved with trait-based abstractions
 - Test code properly isolated
 
 ### Challenges Overcome
+
 - Repository methods needed to return both DTOs and raw models
 - Import paths required careful management
 - Async trait bounds needed for testing
 
 ### Best Practices Established
+
 1. Always run detection scripts after changes
 2. Use PowerShell for Windows-friendly output
 3. Separate test code violations from production code
@@ -180,6 +199,7 @@ Remaining tables for future migration:
 ---
 
 ## Contributors
+
 - GitHub Copilot (Agent)
 - LibrAgent Development Team
 
@@ -188,21 +208,25 @@ Remaining tables for future migration:
 ## Appendix: Command Reference
 
 ### Run Phase 1 Validation
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\check-phase1-completion.ps1
 ```
 
 ### Run Full Entity Detection
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\check-entity-usage.ps1
 ```
 
 ### Verify Compilation
+
 ```bash
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 ```
 
 ### Run Tests
+
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```

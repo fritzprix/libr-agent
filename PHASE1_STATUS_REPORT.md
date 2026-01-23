@@ -10,12 +10,14 @@ Phase 1 repository pattern migration has **15 remaining external violations** ac
 ## Tables Status
 
 ### ✅ Fully Migrated (2/5)
+
 - **settings** - Zero violations ✓
 - **message_index_meta** - Zero violations ✓
 
 ### ⚠️ Partially Complete (3/5)
+
 - **mcp_server** - 1 violation
-- **message** - 4 violations  
+- **message** - 4 violations
 - **session** - 10 violations
 
 ## Detailed Violations
@@ -23,9 +25,10 @@ Phase 1 repository pattern migration has **15 remaining external violations** ac
 ### 1. mcp_server (1 violation)
 
 **File:** `src-tauri/src/mcp/builtin/assistant/operations.rs:2`
+
 ```rust
 use crate::entity::{
-    assistant, assistant::Entity as AssistantEntity, 
+    assistant, assistant::Entity as AssistantEntity,
     mcp_server::Entity as McpServerEntity,  // ❌ Direct Entity import
 };
 ```
@@ -37,6 +40,7 @@ use crate::entity::{
 ### 2. message (4 violations)
 
 #### 2a. `src-tauri/src/commands/messages_commands.rs:195`
+
 ```rust
 // ❌ Direct Entity query
 let messages = crate::entity::message::Entity::find()
@@ -50,6 +54,7 @@ let messages = crate::entity::message::Entity::find()
 **Fix:** Add `get_messages_by_session()` method to MessageRepository
 
 #### 2b. `src-tauri/src/commands/messages_commands.rs:287`
+
 ```rust
 // ❌ Direct Entity query for global search
 let messages = crate::entity::message::Entity::find()
@@ -62,6 +67,7 @@ let messages = crate::entity::message::Entity::find()
 **Fix:** Add `get_recent_messages()` method to MessageRepository
 
 #### 2c. `src-tauri/src/search/background_worker.rs:82`
+
 ```rust
 // ❌ Direct Entity query for distinct sessions
 let sessions: Vec<String> = crate::entity::message::Entity::find()
@@ -76,6 +82,7 @@ let sessions: Vec<String> = crate::entity::message::Entity::find()
 **Fix:** Add `get_distinct_sessions()` method to MessageRepository
 
 #### 2d. `src-tauri/src/search/background_worker.rs:124`
+
 ```rust
 // ❌ Duplicate of 2a - same pattern
 let messages = crate::entity::message::Entity::find()
@@ -93,6 +100,7 @@ let messages = crate::entity::message::Entity::find()
 ### 3. session (10 violations)
 
 #### 3a. `src-tauri/src/commands/playbook_commands.rs:47`
+
 ```rust
 // ❌ Direct Entity query for session lookup
 let session_model = session::Entity::find_by_id(session_id)
@@ -103,12 +111,14 @@ let session_model = session::Entity::find_by_id(session_id)
 **Fix:** Use SessionRepository `get()` method
 
 #### 3b-3c. Test Setup Code (2 violations)
+
 - `src-tauri/src/mcp/builtin/knowledge/mod.rs:314` - Schema creation
 - `src-tauri/src/mcp/service_proxy_manager.rs:582` - Schema creation
 
 **Fix:** These are test/setup utilities. May be acceptable or need repository test helpers.
 
 #### 3d-3h. Session Insert Operations (5 violations)
+
 - `src-tauri/src/mcp/builtin/knowledge/mod.rs:351`
 - `src-tauri/src/mcp/service_proxy_manager.rs:639`
 - `src-tauri/src/mcp/service_proxy_manager.rs:711`
@@ -125,6 +135,7 @@ session::Entity::insert(new_session)
 **Fix:** Use SessionRepository `create()` or `upsert()` method
 
 #### 3i-3j. Entity Import References (2 violations)
+
 - `src-tauri/src/mcp/builtin/playbook/mod.rs:1`
 - `src-tauri/src/mcp/service_proxy.rs:482`
 
@@ -148,17 +159,22 @@ To complete Phase 1, all external code must:
 ## Recommended Actions
 
 ### Priority 1: Message Repository Extensions
+
 Add these methods to `MessageRepository`:
+
 - `get_messages_by_session(session_id, limit) -> Vec<Message>`
 - `get_recent_messages(limit) -> Vec<Message>`
 - `get_distinct_sessions() -> Vec<String>`
 
 ### Priority 2: Session Repository Usage
+
 Update service code to use existing `SessionRepository` methods:
+
 - Replace `Entity::find_by_id()` with `repository.get()`
 - Replace `Entity::insert()` with `repository.create()` or `repository.upsert()`
 
 ### Priority 3: Cleanup
+
 - Remove unnecessary Entity imports
 - Verify test/setup code patterns
 
@@ -173,6 +189,7 @@ Update service code to use existing `SessionRepository` methods:
 ## Testing Strategy
 
 After fixes:
+
 1. Run `.\scripts\check-phase1-completion.ps1` - Should show 0 violations
 2. Run `pnpm refactor:validate` - Should pass all checks
 3. Run Rust unit tests - Should pass with new repository methods
