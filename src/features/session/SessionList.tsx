@@ -4,6 +4,7 @@ import SessionItem from './SessionItem';
 import { Input, Badge } from '@/components/ui';
 import { useDebounced } from '@/hooks/useDebounced';
 import { filterSessions } from '@/lib/session-utils';
+import { cn } from '@/lib/utils';
 import type { AgentSession } from '@/models/agent';
 
 interface SessionListProps {
@@ -34,7 +35,7 @@ function SessionList({
   }, [sessions, debouncedQuery]);
 
   return (
-    <div className={`flex flex-col ${className}`}>
+    <div className={cn('flex flex-col', className)}>
       {showSearch && !isCollapsed && (
         <div className="mb-4">
           <Input
@@ -64,7 +65,12 @@ function SessionList({
                   />
                   {/* Display search hit count badge if available */}
                   {hits !== undefined && hits > 0 && (
-                    <div className="absolute top-2 right-2">
+                    <div
+                      className={cn(
+                        'absolute top-2',
+                        isCollapsed ? 'right-2' : 'right-12',
+                      )}
+                    >
                       <Badge variant="secondary" className="text-xs">
                         {hits} {hits === 1 ? 'hit' : 'hits'}
                       </Badge>
