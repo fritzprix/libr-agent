@@ -64,7 +64,7 @@ export function useAgentToolExecution() {
         content = stringToMCPContentArray(errorText);
       } else {
         // Use content directly if available, otherwise default empty
-        content = (response.content as MCPContent[]) || [];
+        content = response.content ?? [];
 
         // Fallback for missing content
         if (content.length === 0) {
