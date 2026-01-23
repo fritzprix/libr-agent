@@ -186,13 +186,13 @@ impl MCPServiceProxyManager {
         }
 
         // Fetch configs using repository to support Session Isolation (independent of global connections)
-        use crate::repositories::mcp_server_repository::MCPServerRepository;
-        use crate::state::get_mcp_server_repository;
+        use crate::repositories::mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
 
-        let repo = get_mcp_server_repository();
+        // Construct repository from local db connection (avoids global state dependency)
+        let repo = SqliteMCPServerRepository::new((*self.db).clone());
         match repo.list().await {
             Ok(servers) => {
                 log::debug!(
