@@ -443,13 +443,10 @@ pub async fn agent_factory_reset(
 
     // 4. Delete all MCP Servers
     let mcp_repo = get_mcp_server_repository();
-    let servers = mcp_repo.list().await.map_err(|e| e.to_string())?;
-    for server in servers {
-        mcp_repo
-            .delete(&server.name)
-            .await
-            .map_err(|e| format!("Failed to delete MCP server {}: {}", server.name, e))?;
-    }
+    mcp_repo
+        .delete_all()
+        .await
+        .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
 
     // 5. Restore default assistants so the app is not empty
     if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {
