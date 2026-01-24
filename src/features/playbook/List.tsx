@@ -30,7 +30,6 @@ import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { Playbook } from '@/types/playbook';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
 
 const logger = getLogger('PlaybookList');
 
@@ -42,7 +41,6 @@ type PlaybookWithMeta = Playbook & {
 };
 
 export default function PlaybookList() {
-  const { session } = useAgentSessionState();
   const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
   const [assistants, setAssistants] = useState<
     Record<string, { name: string }>
@@ -60,20 +58,6 @@ export default function PlaybookList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // If no session/assistant, we fetch ALL playbooks (global list)
-      // If session exists, we prefer to filter by current assistant?
-      // User asked to "show all the playbooks nevertheless the assistant is not active".
-      // This implies we should ALWAYS fetch all playbooks unless user explicitly filters?
-      // Or maybe the user meant "even if NO assistant is active".
-      // "make sure they are independent to session state they just show the playbooks globally"
-      // So we should NOT pass agentId by default, unless maybe we want to highlight current?
-      // But listPlaybooks(options) with undefined agentId fetches all.
-
-      // We will fetch ALL playbooks by default.
-      // If we want to filter by current assistant, we'd need a UI toggle?
-      // Ideally, the "search/filter" UI should handle it.
-      // For now, let's fetch ALL.
-
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
           // agentId: assistantId, // REMOVED: Fetch all globally
@@ -101,7 +85,7 @@ export default function PlaybookList() {
     } finally {
       setLoading(false);
     }
-  }, [session?.id, sortMode, sortOrder, bookmarkFirst]);
+  }, [sortMode, sortOrder, bookmarkFirst]);
 
   useEffect(() => {
     fetchData();

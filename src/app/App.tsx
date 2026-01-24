@@ -1,4 +1,4 @@
-import { Route, Routes, Navigate, useSearchParams } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
@@ -28,34 +28,6 @@ import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
-import { AgentSessionProvider } from '@/context/AgentSessionContext';
-import { useAgentSessionListState } from '@/context/AgentSessionListContext';
-
-function PlaybookRoute() {
-  const { sessions } = useAgentSessionListState();
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('sessionId') ?? sessions[0]?.id;
-
-  if (!sessionId) {
-    return (
-      <div className="p-6 h-full bg-background">
-        <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
-          <h2 className="text-xl font-semibold mb-2">No Active Session</h2>
-          <p className="text-center text-sm">
-            Start an agent session from the Agent page to view and manage
-            playbooks.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <AgentSessionProvider sessionId={sessionId} key={sessionId}>
-      <PlaybookList />
-    </AgentSessionProvider>
-  );
-}
 
 function App() {
   return (
@@ -107,7 +79,7 @@ function App() {
                                   />
                                   <Route
                                     path="/playbooks"
-                                    element={<PlaybookRoute />}
+                                    element={<PlaybookList />}
                                   />
                                   <Route
                                     path="/history"
