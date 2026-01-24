@@ -43,6 +43,14 @@ function SessionList({
     setVisibleCount(20);
   }, [debouncedQuery]);
 
+  // Ensure visibleCount does not exceed the number of filtered sessions
+  // This handles cases where items are deleted or filtered out in background updates
+  useEffect(() => {
+    if (visibleCount > filteredSessions.length && filteredSessions.length > 0) {
+      setVisibleCount(Math.max(20, filteredSessions.length));
+    }
+  }, [filteredSessions.length, visibleCount]);
+
   const visibleSessions = useMemo(() => {
     return filteredSessions.slice(0, visibleCount);
   }, [filteredSessions, visibleCount]);
@@ -54,6 +62,7 @@ function SessionList({
 
     const observer = new IntersectionObserver(
       (entries) => {
+        if (entries.length === 0) return;
         if (entries[0].isIntersecting) {
           setVisibleCount((prev) => prev + 20);
         }
@@ -64,7 +73,9 @@ function SessionList({
     observer.observe(element);
 
     return () => observer.disconnect();
-  }, [visibleCount, filteredSessions.length]);
+    // dependency on visibleCount removed to avoid unnecessary re-creation of observer
+    // the sentinel element existence is controlled by render logic
+  }, [filteredSessions.length]);
   // ---------------------------------------------------
 
   return (
