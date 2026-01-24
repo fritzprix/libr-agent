@@ -11,6 +11,56 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+/// Initialize the MCP proxy for a session
+pub(crate) async fn initialize_session_proxy(
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    agent_config: &crate::agent::AgentConfig,
+) -> Result<(), String> {
+    // Extract builtin tool IDs from agent config
+    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(agent_config);
+
+    // Extract external MCP server IDs from agent config
+    let mcp_server_ids = agent_config.mcp_server_ids.clone();
+
+    // Create proxy for this session
+    proxy_manager
+        .create_proxy(
+            session_id.to_string(),
+            tool_ids,
+            mcp_server_ids,
+            Some(app_handle.clone()),
+        )
+        .await?;
+
+    log::info!(
+        "Created MCP proxy for session: {} with builtin tools",
+        session_id
+    );
+    Ok(())
+}
+
+/// Initialize the active session state in memory
+async fn initialize_active_session_state(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session: SessionMetadata,
+) {
+    let mut active = active_sessions.write().await;
+    active.insert(
+        session.id.clone(),
+        AgentSession {
+            metadata: session,
+            is_running: false,
+            cancellation_token: CancellationToken::new(),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+        },
+    );
+}
+
 /// Create or update a session in the database
 pub async fn create_session(
     session_repo: &Arc<dyn SessionRepository>,
@@ -44,42 +94,11 @@ pub async fn create_session(
         .await
         .map_err(|e| format!("Failed to create session: {}", e))?;
 
-    // Extract builtin tool IDs from agent config
-    // Note: tools.rs already exists in src-tauri/src/agent/tools.rs
-    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-
-    // Extract external MCP server IDs from agent config
-    let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
     // Create proxy for this session
-    proxy_manager
-        .create_proxy(
-            session_id.clone(),
-            tool_ids,
-            mcp_server_ids,
-            Some(app_handle.clone()),
-        )
-        .await?;
+    initialize_session_proxy(proxy_manager, app_handle, &session_id, &agent_config).await?;
 
-    log::info!(
-        "Created MCP proxy for session: {} with builtin tools",
-        session_id
-    );
-
-    // Add to active sessions with cancellation token and empty cache
-    let mut active = active_sessions.write().await;
-    active.insert(
-        session_id.clone(),
-        AgentSession {
-            metadata: session.clone(),
-            is_running: false,
-            cancellation_token: CancellationToken::new(),
-            pending_execution: None,
-            messages: Arc::new(RwLock::new(Vec::new())),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
-            last_synced_at: Arc::new(RwLock::new(None)),
-        },
-    );
+    // Add to active sessions
+    initialize_active_session_state(active_sessions, session.clone()).await;
 
     log::info!("Created agent session: {}", session_id);
     Ok(session)
@@ -108,39 +127,16 @@ pub async fn resume_session(
         return Err(format!("Session {} has no agent config", session_id));
     };
 
-    // Extract builtin tool IDs from agent config
-    let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-    let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
     // Create proxy for this session
-    proxy_manager
-        .create_proxy(
-            session_id.to_string(),
-            tool_ids,
-            mcp_server_ids,
-            Some(app_handle.clone()),
-        )
-        .await?;
+    initialize_session_proxy(proxy_manager, app_handle, session_id, &agent_config).await?;
 
     log::info!(
         "Created MCP proxy for resumed session: {} with builtin tools",
         session_id
     );
 
-    // Add to active sessions with cancellation token and empty cache
-    let mut active = active_sessions.write().await;
-    active.insert(
-        session_id.to_string(),
-        AgentSession {
-            metadata: session.clone(),
-            is_running: false,
-            cancellation_token: CancellationToken::new(),
-            pending_execution: None,
-            messages: Arc::new(RwLock::new(Vec::new())),
-            cache_initialized: Arc::new(AtomicBool::new(false)),
-            last_synced_at: Arc::new(RwLock::new(None)),
-        },
-    );
+    // Add to active sessions
+    initialize_active_session_state(active_sessions, session.clone()).await;
 
     log::info!("Resumed agent session: {}", session_id);
     Ok(session)
@@ -258,20 +254,7 @@ pub async fn recover_sessions(
             .await?;
 
             // Initialize session in active_sessions map with fresh state
-            let mut active = active_sessions.write().await;
-            active.insert(
-                session.id.clone(),
-                AgentSession {
-                    metadata: session.clone(),
-                    is_running: false,
-                    cancellation_token: CancellationToken::new(),
-                    pending_execution: None,
-                    messages: Arc::new(RwLock::new(Vec::new())),
-                    cache_initialized: Arc::new(AtomicBool::new(false)),
-                    last_synced_at: Arc::new(RwLock::new(None)),
-                },
-            );
-            drop(active); // Release lock early
+            initialize_active_session_state(active_sessions, session).await;
 
             recovered_count += 1;
         }

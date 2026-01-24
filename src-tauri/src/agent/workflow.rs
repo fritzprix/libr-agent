@@ -130,19 +130,14 @@ pub async fn start_workflow(
                 let agent_config = crate::agent::AgentConfig::from_json(&config_json)
                     .map_err(|e| format!("Failed to parse agent config: {}", e))?;
 
-                // 4.3 Extract tool IDs
-                let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-                let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-                // 4.4 Recreate proxy
-                proxy_manager
-                    .create_proxy(
-                        session_id.clone(),
-                        tool_ids,
-                        mcp_server_ids,
-                        Some(app_handle.clone()),
-                    )
-                    .await?;
+                // 4.3 Recreate proxy using shared helper
+                crate::agent::lifecycle::initialize_session_proxy(
+                    proxy_manager,
+                    app_handle,
+                    &session_id,
+                    &agent_config,
+                )
+                .await?;
 
                 log::info!(
                     "✅ Successfully recreated MCP proxy for session: {}",

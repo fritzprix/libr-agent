@@ -32,3 +32,8 @@
 
 **Pattern:** Vestigial `create_table` no-op method duplicated in repository traits, and repeated manual `SessionMetadata` mapping in `SessionRepository`.
 **Action:** Removed `create_table` from `MessageRepository` and `SessionRepository` traits, and implemented `TryFrom<session::Model>` for `SessionMetadata` to centralize conversion logic.
+
+## 2026-05-24 - [Duplicate Session Initialization]
+
+**Pattern:** Identical `AgentSession` struct construction and MCP proxy initialization logic repeated across `create_session`, `resume_session`, `recover_sessions` and `start_workflow`.
+**Action:** Extracted `initialize_active_session_state` and `initialize_session_proxy` (shared with `workflow.rs`) to centralize the critical session startup sequence.
