@@ -44,9 +44,11 @@ function SessionList({
   }, [debouncedQuery]);
 
   // Ensure visibleCount does not exceed the number of filtered sessions
+
   useEffect(() => {
     if (visibleCount > filteredSessions.length) {
       setVisibleCount(filteredSessions.length);
+
     }
   }, [filteredSessions.length, visibleCount]);
 
@@ -64,11 +66,13 @@ function SessionList({
 
     const observer = new IntersectionObserver(
       (entries) => {
+
         if (entries.length === 0) {
           return;
         }
         const firstEntry = entries[0];
         if (firstEntry.isIntersecting) {
+
           setVisibleCount((prev) => prev + 20);
         }
       },
@@ -78,6 +82,8 @@ function SessionList({
     observer.observe(element);
 
     return () => observer.disconnect();
+
+
   }, [filteredSessions.length]);
   // ---------------------------------------------------
 
