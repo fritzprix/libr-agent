@@ -46,26 +46,25 @@ export default function PlaybookList() {
   const [bookmarkFirst, setBookmarkFirst] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!session?.id) {
-      logger.debug('No active session, skipping playbook fetch');
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     try {
-      // Get assistant ID from session
-      const assistantId = session.assistant?.id;
-      if (!assistantId) {
-        logger.error('Session has no assistant');
-        toast.error('Unable to load playbooks: No assistant configured');
-        setLoading(false);
-        return;
-      }
+      // If no session/assistant, we fetch ALL playbooks (global list)
+      // If session exists, we prefer to filter by current assistant?
+      // User asked to "show all the playbooks nevertheless the assistant is not active".
+      // This implies we should ALWAYS fetch all playbooks unless user explicitly filters?
+      // Or maybe the user meant "even if NO assistant is active".
+      // "make sure they are independent to session state they just show the playbooks globally"
+      // So we should NOT pass agentId by default, unless maybe we want to highlight current?
+      // But listPlaybooks(options) with undefined agentId fetches all.
+
+      // We will fetch ALL playbooks by default.
+      // If we want to filter by current assistant, we'd need a UI toggle?
+      // Ideally, the "search/filter" UI should handle it.
+      // For now, let's fetch ALL.
 
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
-          agentId: assistantId,
+          // agentId: assistantId, // REMOVED: Fetch all globally
           sortBy: sortMode,
           sortOrder: sortOrder,
           bookmarkFirst: bookmarkFirst,
@@ -166,20 +165,7 @@ export default function PlaybookList() {
     return [];
   }, [groupMode, groups]);
 
-  // Show message when no session is active
-  if (!session) {
-    return (
-      <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
-        <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
-          <PlaybookIcon className="w-16 h-16 mb-4 opacity-30" />
-          <h2 className="text-xl font-semibold mb-2">No Active Session</h2>
-          <p className="text-center text-sm">
-            Start a conversation to view and manage playbooks
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Render list regardless of session state
 
   return (
     <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">

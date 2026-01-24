@@ -161,7 +161,11 @@ pub async fn list_playbooks(
 ) -> Result<Vec<PlaybookDto>, String> {
     let repo = get_playbook_repository();
 
-    let assistant_id = agent_id;
+    let assistant_id = if agent_id.is_empty() {
+        None
+    } else {
+        Some(agent_id.as_str())
+    };
 
     // For now, use list_playbooks without pagination
     // Full pagination support can be added if needed
@@ -171,7 +175,7 @@ pub async fn list_playbooks(
     };
 
     let page = repo
-        .list_playbooks(&assistant_id, pagination)
+        .list_playbooks(assistant_id, pagination)
         .await
         .map_err(|e| format!("Failed to list playbooks: {}", e))?;
 

@@ -162,14 +162,32 @@ impl MCPServiceProxyManager {
         tool_ids: Vec<String>,
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
+        // Helper to emit status updates
+        let emit_status = |step: &str, status: &str| {
+            if let Some(app) = &app_handle {
+                let event = crate::agent::events::AgentEvent::InitializationStep {
+                    session_id: session_id.clone(),
+                    step: step.to_string(),
+                    status: status.to_string(),
+                };
+                if let Err(e) = crate::agent::events::emit_agent_event(app, event) {
+                    log::warn!("Failed to emit initialization status: {}", e);
+                }
+            }
+        };
+
         // CRITICAL: Check if already exists (prevent race conditions)
         {
             let proxies = self.proxies.read().await;
             if let Some(existing) = proxies.get(&session_id) {
                 log::debug!("Proxy already exists for session: {}", session_id);
+                // Even if exists, we can emit complete (idempotent for UI)
+                emit_status("Session services ready", "complete");
                 return Ok(existing.clone());
             }
         }
+
+        emit_status("Initializing session environment", "running");
 
         // Clean up any stale stdio manager (rapid create/destroy cycles)
         {
@@ -179,6 +197,7 @@ impl MCPServiceProxyManager {
                     "Cleaning up stale stdio manager for session: {}",
                     session_id
                 );
+                // Emit cleanup status if needed, but it might be too fast
                 tokio::spawn(async move {
                     old_mgr.shutdown_all().await;
                 });
@@ -188,6 +207,8 @@ impl MCPServiceProxyManager {
         // Fetch configs directly from DB to support Session Isolation (independent of global connections)
         use crate::repositories::mcp_server_repository::MCPServerRepository;
         use crate::state::get_mcp_server_repository;
+
+        emit_status("Loading tool configurations", "running");
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
@@ -247,6 +268,10 @@ impl MCPServiceProxyManager {
         let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());
 
         // Start HTTP servers eagerly for session isolation
+        if !http_configs.is_empty() {
+            emit_status("Connecting to HTTP tool servers", "running");
+        }
+
         for (server_name, config) in &http_configs {
             if let Err(e) = http_manager.start_server(server_name, config.clone()).await {
                 log::error!(
@@ -267,7 +292,7 @@ impl MCPServiceProxyManager {
             Arc::new(stdio_manager.clone()),
         )
         .with_tool_ids(tool_ids)
-        .with_app_handle(app_handle)
+        .with_app_handle(app_handle.clone()) // Pass clone for internal use
         .build()
         .await?;
 
@@ -289,12 +314,22 @@ impl MCPServiceProxyManager {
             .insert(session_id.clone(), http_manager.clone());
 
         // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated stdio servers
-        log::info!(
-            "Starting eager tool discovery for {} session-isolated stdio servers",
-            stdio_configs.len()
-        );
+        if !stdio_configs.is_empty() {
+            log::info!(
+                "Starting eager tool discovery for {} session-isolated stdio servers",
+                stdio_configs.len()
+            );
+        }
 
-        for server_name in stdio_configs.keys() {
+        for (i, server_name) in stdio_configs.keys().enumerate() {
+            let step_msg = format!(
+                "Discovering tools from {} ({}/{})",
+                server_name,
+                i + 1,
+                stdio_configs.len()
+            );
+            emit_status(&step_msg, "running");
+
             log::debug!(
                 "Fetching tools from session stdio server '{}' for session '{}'",
                 server_name,
@@ -334,6 +369,10 @@ impl MCPServiceProxyManager {
         }
 
         // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
+        if !http_configs.is_empty() {
+            emit_status("Discovering tools from HTTP servers", "running");
+        }
+
         log::info!(
             "Starting eager tool discovery for {} session-isolated HTTP servers",
             http_configs.len()
@@ -373,6 +412,8 @@ impl MCPServiceProxyManager {
         }
 
         log::info!("Created MCP service proxy for session: {}", session_id);
+
+        emit_status("Session initialization complete", "complete");
 
         Ok(proxy_arc)
     }

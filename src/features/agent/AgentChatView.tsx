@@ -32,6 +32,17 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentChatView');
 
+const InitializationStatusDisplay = () => {
+  const { initializationStep } = useAgentSessionState();
+  if (!initializationStep) return null;
+
+  return (
+    <span className="animate-in fade-in slide-in-from-bottom-1 duration-300">
+      {initializationStep.step}
+    </span>
+  );
+};
+
 /**
  * Agent Chat View - Compound Component Pattern
  *
@@ -149,9 +160,30 @@ export default function AgentChatView() {
   if (isSessionLoading) {
     return (
       <div className="flex h-full items-center justify-center p-4">
-        {/* Placeholder for loading state, could be a spinner */}
-        <div className="text-muted-foreground animate-pulse">
-          Loading session...
+        <div className="flex flex-col items-center gap-3">
+          {/* Spinner */}
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+
+          <div className="flex flex-col items-center gap-1">
+            <div className="text-muted-foreground font-medium animate-pulse">
+              {session?.status === 'idle'
+                ? 'Starting session...'
+                : 'Loading session...'}
+            </div>
+
+            {/* Granular Progress Step */}
+            <div className="text-xs text-muted-foreground/70 h-4">
+              {/* Access initializationStep via hook if available, or fallback */}
+              {/* We need to access initializationStep from state. 
+                        But we are inside AgentSessionStateContext scope? 
+                        No, AgentChatView uses useAgentSessionState. 
+                        Let's check if useAgentSessionState returns initializationStep. 
+                        It communicates via Context. We updated Context interface?
+                        Yes in Step 89.
+                     */}
+              <InitializationStatusDisplay />
+            </div>
+          </div>
         </div>
       </div>
     );

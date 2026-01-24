@@ -553,7 +553,7 @@ pub async fn agent_factory_reset(
     let playbook_repo = crate::get_playbook_repository();
     let all_playbooks = playbook_repo
         .list_playbooks(
-            "",
+            None,
             crate::repositories::PaginationParams {
                 page: 1,
                 limit: 100000,
