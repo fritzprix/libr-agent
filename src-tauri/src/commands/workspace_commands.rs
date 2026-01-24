@@ -298,7 +298,7 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
         );
 
         Command::new("osascript")
-            .args(&["-e", &script])
+            .args(["-e", &script])
             .spawn()
             .map_err(|e| format!("Failed to open Terminal: {}", e))?;
     }
