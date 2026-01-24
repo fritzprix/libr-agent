@@ -450,7 +450,12 @@ impl SessionIsolationManager {
             .map_err(|e| format!("Failed to write sandbox profile: {e}"))?;
 
         let mut cmd = AsyncCommand::new("sandbox-exec");
-        cmd.args(["-f", profile_path.to_str().unwrap()]);
+        cmd.args([
+            "-f",
+            profile_path
+                .to_str()
+                .ok_or_else(|| "Failed to convert profile path to string".to_string())?,
+        ]);
         cmd.arg(&config.command);
         cmd.args(&config.args);
 
