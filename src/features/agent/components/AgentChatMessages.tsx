@@ -7,6 +7,7 @@ import { useThrottle } from '@/hooks/useThrottle';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
+import { LoadingIndicator } from './shared';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 
@@ -168,26 +169,7 @@ export function AgentChatMessages() {
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className="flex gap-1">
-                  <span
-                    className="animate-bounce"
-                    style={{ animationDelay: '0ms' }}
-                  >
-                    ●
-                  </span>
-                  <span
-                    className="animate-bounce"
-                    style={{ animationDelay: '150ms' }}
-                  >
-                    ●
-                  </span>
-                  <span
-                    className="animate-bounce"
-                    style={{ animationDelay: '300ms' }}
-                  >
-                    ●
-                  </span>
-                </div>
+                <LoadingIndicator size="md" />
                 <span className="animate-pulse">
                   {workflowPhase === 'thinking' && 'Thinking...'}
                   {workflowPhase === 'answering' && 'Answering...'}

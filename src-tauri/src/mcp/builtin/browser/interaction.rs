@@ -34,7 +34,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
     }
 
     let script = get_click_script(selector);
-    let result = match service.execute_script(&browser_session_id, &script).await {
+    match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => {
             if res.contains("Element not found") {
                 return Ok(operation_failed_error(
@@ -60,10 +60,20 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                     ToolGroup::Browser,
                 ));
             }
-            res
+            
+            // ✅ Success: Return hints for next actions
+            let hint = SuccessHint::new(
+                res,
+                vec![
+                    "Use extractWebContent to see page changes after click".to_string(),
+                    "Use getCurrentUrl to check if navigation occurred".to_string(),
+                ],
+            );
+            Ok(hint.to_mcp_result())
         }
         Err(e) => {
-            return Ok(operation_failed_error(
+            // ❌ Error: Only provide recovery guidance, no success hints
+            Ok(operation_failed_error(
                 "Click element",
                 &e,
                 vec![
@@ -74,16 +84,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                 ToolGroup::Browser,
             ))
         }
-    };
-
-    let hint = SuccessHint::new(
-        result,
-        vec![
-            "Use extractWebContent to see page changes after click".to_string(),
-            "Use getCurrentUrl to check if navigation occurred".to_string(),
-        ],
-    );
-    Ok(hint.to_mcp_result())
+    }
 }
 
 pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {
@@ -137,7 +138,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
         serde_json::to_string(text).unwrap()
     );
 
-    let result = match service.execute_script(&browser_session_id, &script).await {
+    match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => {
             if res.contains("Element not found") {
                 return Ok(operation_failed_error(
@@ -163,10 +164,20 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                     ToolGroup::Browser,
                 ));
             }
-            res
+            
+            // ✅ Success: Return hints for next actions
+            let hint = SuccessHint::new(
+                res,
+                vec![
+                    "Use clickElement to submit the form or click buttons".to_string(),
+                    "Use extractWebContent to verify input changes".to_string(),
+                ],
+            );
+            Ok(hint.to_mcp_result())
         }
         Err(e) => {
-            return Ok(operation_failed_error(
+            // ❌ Error: Only provide recovery guidance, no success hints
+            Ok(operation_failed_error(
                 "Input text",
                 &e,
                 vec![
@@ -177,16 +188,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                 ToolGroup::Browser,
             ))
         }
-    };
-
-    let hint = SuccessHint::new(
-        result,
-        vec![
-            "Use clickElement to submit the form or click buttons".to_string(),
-            "Use extractWebContent to verify input changes".to_string(),
-        ],
-    );
-    Ok(hint.to_mcp_result())
+    }
 }
 
 pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResult, String> {

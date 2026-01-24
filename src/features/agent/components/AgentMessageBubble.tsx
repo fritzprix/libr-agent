@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
+import { ThinkingBubble } from './shared';
 
 interface AgentMessageBubbleProps {
   message: Message;
@@ -87,36 +88,11 @@ function AgentMessageBubbleImpl({
                 {/* Thinking bubble (shown during reasoning phase or when streaming starts) */}
                 {(msg.thinking ||
                   (msg.isStreaming && !msg.content?.length)) && (
-                  <div className="flex flex-col gap-2 mb-3 p-3 bg-popover rounded-lg border border-border">
-                    <div className="flex items-center gap-2 text-xs font-medium opacity-70">
-                      {msg.isStreaming && (
-                        <span className="flex gap-1">
-                          <span
-                            className="animate-bounce"
-                            style={{ animationDelay: '0ms' }}
-                          >
-                            ●
-                          </span>
-                          <span
-                            className="animate-bounce"
-                            style={{ animationDelay: '150ms' }}
-                          >
-                            ●
-                          </span>
-                          <span
-                            className="animate-bounce"
-                            style={{ animationDelay: '300ms' }}
-                          >
-                            ●
-                          </span>
-                        </span>
-                      )}
-                      <span>Thinking Process</span>
-                    </div>
-                    <div className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto">
-                      {msg.thinking || 'Thinking...'}
-                    </div>
-                  </div>
+                  <ThinkingBubble
+                    thinking={msg.thinking || ''}
+                    isStreaming={msg.isStreaming}
+                    className="mb-3"
+                  />
                 )}
 
                 {/* Actual content (shown after thinking completes) */}
