@@ -3,6 +3,7 @@ use super::utils::{calculate_similarity, format_string_diff, read_file_as_string
 use crate::mcp::builtin::error_guidance::*;
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
+use tracing::{error, info};
 
 impl WorkspaceServer {
     pub async fn handle_preview_replacement(
@@ -430,4 +431,327 @@ fn generate_replacement_context(content: &str, old_string: &str, new_string: &st
     }
 
     "ERROR: Match location not found (should not happen)".to_string()
+}
+
+impl WorkspaceServer {
+    pub async fn handle_edit_file_multi(
+        &self,
+        args: Value,
+        session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
+        // Layer 1: Parameter Validation
+        let path_str = match args.get("path").and_then(|v| v.as_str()) {
+            Some(path) if !path.trim().is_empty() => path.trim(),
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'path' cannot be empty",
+                    vec![
+                        "Provide a valid file path: editFileMulti({path, replacements})"
+                            .to_string(),
+                        "Use listDirectory('.') to find files".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+            None => {
+                return Ok(missing_param_error("path", ToolGroup::Workspace));
+            }
+        };
+
+        // Parse replacements array
+        let replacements = match args.get("replacements").and_then(|v| v.as_array()) {
+            Some(arr) if !arr.is_empty() => arr,
+            Some(_) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    "Parameter 'replacements' cannot be empty",
+                    vec![
+                        "Provide at least one replacement: [{oldString, newString}]".to_string(),
+                        "Use editFile for single replacements".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+            None => return Ok(missing_param_error("replacements", ToolGroup::Workspace)),
+        };
+
+        // Validate replacements structure and extract pairs
+        let mut replacement_pairs: Vec<(&str, &str)> = Vec::new();
+        for (idx, replacement) in replacements.iter().enumerate() {
+            let obj = match replacement.as_object() {
+                Some(o) => o,
+                None => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!("Replacement at index {} is not an object", idx),
+                        vec![
+                            "Each replacement must be an object: {oldString, newString}"
+                                .to_string(),
+                            format!("Found invalid type at index {}", idx),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+            };
+
+            let old_string = match obj.get("oldString").and_then(|v| v.as_str()) {
+                Some(s) if !s.is_empty() => s,
+                Some(_) => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!("oldString at index {} cannot be empty", idx),
+                        vec![
+                            "⚠️ CRITICAL: Call readFile FIRST to get exact content".to_string(),
+                            "Extract text exactly as shown in readFile response".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+                None => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!("Missing 'oldString' at index {}", idx),
+                        vec![
+                            "Each replacement must have 'oldString' and 'newString' fields"
+                                .to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+            };
+
+            let new_string = match obj.get("newString").and_then(|v| v.as_str()) {
+                Some(s) => s,
+                None => {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::InvalidInput,
+                        format!("Missing 'newString' at index {}", idx),
+                        vec![
+                            "Each replacement must have 'oldString' and 'newString' fields"
+                                .to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+            };
+
+            // Check for identical strings
+            if old_string == new_string {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Replacement at index {}: oldString and newString are identical",
+                        idx
+                    ),
+                    vec![
+                        "No changes would be made with this replacement".to_string(),
+                        "Remove this replacement from the array or modify newString".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+
+            replacement_pairs.push((old_string, new_string));
+        }
+
+        // Limit number of replacements
+        if replacement_pairs.len() > 50 {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Too many replacements: {} (maximum 50)",
+                    replacement_pairs.len()
+                ),
+                vec![
+                    "Split into multiple editFileMulti calls if needed".to_string(),
+                    "Or use multiple editFile calls for independent changes".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Layer 2: Path validation and file reading
+        let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
+        let original_content = match read_file_as_string(&safe_path).await {
+            Ok(content) => content,
+            Err(e) => {
+                return Ok(operation_failed_error(
+                    "Read file for multi-replacement",
+                    &e,
+                    vec![
+                        "Verify the file exists with listDirectory".to_string(),
+                        format!("Use readFile('{}') to check content", path_str),
+                    ],
+                    ToolGroup::Workspace,
+                ));
+            }
+        };
+
+        // Layer 3: Validate all patterns before applying any changes
+        let mut validation_errors = Vec::new();
+        let mut current_content = original_content.clone();
+
+        for (idx, (old_string, _)) in replacement_pairs.iter().enumerate() {
+            let occurrences = current_content.matches(old_string).count();
+
+            if occurrences == 0 {
+                // Find similar content for suggestions
+                let lines: Vec<&str> = current_content.lines().collect();
+                let old_lines: Vec<&str> = old_string.lines().collect();
+                let search_size = old_lines.len();
+
+                let mut best_match: Option<(usize, f32)> = None;
+                for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
+                    let window_text = window.join("\n");
+                    let similarity = calculate_similarity(&window_text, old_string);
+                    if similarity > 0.3
+                        && (best_match.is_none() || similarity > best_match.unwrap().1)
+                    {
+                        best_match = Some((line_idx + 1, similarity));
+                    }
+                }
+
+                let suggestion = if let Some((line_num, similarity)) = best_match {
+                    format!(
+                        "Replacement {}: Pattern NOT FOUND ({}% similar at line {})",
+                        idx,
+                        (similarity * 100.0) as u32,
+                        line_num
+                    )
+                } else {
+                    format!("Replacement {}: Pattern NOT FOUND in file", idx)
+                };
+                validation_errors.push(suggestion);
+            } else if occurrences > 1 {
+                validation_errors.push(format!(
+                    "Replacement {}: Pattern found {} times (not unique)",
+                    idx, occurrences
+                ));
+            } else {
+                // Exactly 1 match - simulate the replacement for next validation
+                current_content = current_content.replacen(old_string, replacement_pairs[idx].1, 1);
+            }
+        }
+
+        // If any validation errors, return them all
+        if !validation_errors.is_empty() {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::InvalidInput,
+                "Some patterns failed validation - NO changes applied",
+                vec![
+                    "❌ VALIDATION ERRORS:".to_string(),
+                    validation_errors.join("\n"),
+                    "".to_string(),
+                    "⚠️ ALL patterns must be valid for atomic operation".to_string(),
+                    format!("💡 Use readFile('{}') to see current content", path_str),
+                    "💡 Fix all patterns and try again".to_string(),
+                ],
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
+        }
+
+        // Layer 4: Apply all replacements sequentially
+        let mut modified_content = original_content.clone();
+        for (old_string, new_string) in &replacement_pairs {
+            modified_content = modified_content.replacen(old_string, new_string, 1);
+        }
+
+        // Layer 5: Write the modified content
+        let file_manager = self.get_file_manager(session_id.clone());
+        match file_manager
+            .write_file_string(path_str, &modified_content)
+            .await
+        {
+            Ok(()) => {
+                info!(
+                    "Successfully applied {} replacements to {}",
+                    replacement_pairs.len(),
+                    path_str
+                );
+
+                // Invalidate service context cache
+                self.invalidate_context_cache().await;
+
+                // Generate diff preview
+                let original_lines = original_content.lines().count();
+                let modified_lines = modified_content.lines().count();
+                let size_change = (modified_content.len() as i64) - (original_content.len() as i64);
+
+                let output = format!(
+                    "**✅ Applied {} Replacements Successfully**\n\n\
+                    **File:** `{}`\n\
+                    **Original:** {} lines, {} bytes\n\
+                    **Modified:** {} lines, {} bytes ({}{})\n\n\
+                    **Changes Summary:**\n\
+                    {}\n\n\
+                    **Next Steps:**\n\
+                    - 📖 Use `readFile(\"{}\")` to verify changes\n\
+                    - 🔄 Use `editFile` to make further adjustments if needed",
+                    replacement_pairs.len(),
+                    path_str,
+                    original_lines,
+                    original_content.len(),
+                    modified_lines,
+                    modified_content.len(),
+                    if size_change >= 0 { "+" } else { "" },
+                    size_change,
+                    replacement_pairs
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, (old, new))| {
+                            let old_preview = if old.len() > 50 {
+                                format!("{}...", &old[..47])
+                            } else {
+                                old.to_string()
+                            };
+                            let new_preview = if new.len() > 50 {
+                                format!("{}...", &new[..47])
+                            } else {
+                                new.to_string()
+                            };
+                            format!("{}. \"{}\" → \"{}\"", idx + 1, old_preview, new_preview)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    path_str
+                );
+
+                Ok(MCPResult::success_with_data(
+                    &output,
+                    json!({
+                        "path": path_str,
+                        "replacements_applied": replacement_pairs.len(),
+                        "original_size": original_content.len(),
+                        "modified_size": modified_content.len(),
+                        "size_change": size_change,
+                        "original_lines": original_lines,
+                        "modified_lines": modified_lines
+                    }),
+                ))
+            }
+            Err(e) => {
+                error!("Failed to write file {}: {}", path_str, e);
+                Ok(operation_failed_error(
+                    "Write multi-replacement changes",
+                    &e,
+                    vec![
+                        "Check file permissions".to_string(),
+                        "Ensure file is not locked by another process".to_string(),
+                        "Original file was NOT modified".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ))
+            }
+        }
+    }
 }

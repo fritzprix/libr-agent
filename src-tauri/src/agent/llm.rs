@@ -619,21 +619,25 @@ async fn build_session_system_prompt(
         .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
 
     let config_clone = agent_config.clone();
+    let session_name = session.metadata.name.clone(); // Clone name early
     drop(active);
 
     let proxy = proxy_manager.get_proxy(session_id).await;
 
-    build_system_prompt(&config_clone, proxy).await
+    // Pass session name to build_system_prompt
+    build_system_prompt(&config_clone, session_name, proxy).await
 }
 
 /// Build complete system prompt (Pure logic)
 ///
 /// Structure (Legacy-inspired, tool-first approach):
 /// 1. Agent Identity & Strategy (who am I, how do I work)
-/// 2. Service Contexts (tools & current state - immediately actionable)
-/// 3. Time & Location (contextual reference information)
+/// 2. Session Context (Session Name)
+/// 3. Service Contexts (tools & current state - immediately actionable)
+/// 4. Time & Location (contextual reference information)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
+    session_name: Option<String>,
     proxy: Option<Arc<MCPServiceProxy>>,
 ) -> Result<String, String> {
     let mut parts = Vec::new();
@@ -643,7 +647,17 @@ pub async fn build_system_prompt(
         parts.push(agent_config.system_prompt.clone());
     }
 
-    // 2. Service Contexts - immediately actionable information (second priority)
+    // 2. Session Context (Session Name)
+    if let Some(name) = session_name {
+        if !name.trim().is_empty() {
+            parts.push(format!(
+                "\n\n## Session Context\n- **Session Name**: {}",
+                name.trim()
+            ));
+        }
+    }
+
+    // 3. Service Contexts - immediately actionable information
     if let Some(p) = proxy {
         let contexts = p.get_service_contexts().await;
 

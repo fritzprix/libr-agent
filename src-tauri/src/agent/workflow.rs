@@ -132,10 +132,16 @@ pub async fn start_workflow(
 
                 // 4.3 Extract tool IDs
                 let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+                let mcp_server_ids = agent_config.mcp_server_ids.clone();
 
                 // 4.4 Recreate proxy
                 proxy_manager
-                    .create_proxy(session_id.clone(), tool_ids, Some(app_handle.clone()))
+                    .create_proxy(
+                        session_id.clone(),
+                        tool_ids,
+                        mcp_server_ids,
+                        Some(app_handle.clone()),
+                    )
                     .await?;
 
                 log::info!(

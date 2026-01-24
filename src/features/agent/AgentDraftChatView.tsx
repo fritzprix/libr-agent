@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { Button, Badge } from '@/components/ui';
+import type { AgentEventPayload } from '@/context/AgentSessionContext';
+import { AgentModelPicker } from './components/AgentModelPicker';
 import {
   Send,
   Square,
@@ -14,7 +16,6 @@ import {
   Globe,
   Database,
   FolderOpen,
-  Sparkles,
   MapPin,
   Puzzle,
 } from 'lucide-react';
@@ -74,6 +75,12 @@ function DraftChatInner() {
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingAssistant, setIsLoadingAssistant] = useState(true);
+
+  // Override state for model/provider selection
+  const [overrideModel, setOverrideModel] = useState<string | undefined>();
+  const [overrideProvider, setOverrideProvider] = useState<
+    string | undefined
+  >();
 
   // Metadata state
   const [builtinServices, setBuiltinServices] = useState<BuiltinServerInfo[]>(
@@ -150,6 +157,9 @@ function DraftChatInner() {
       setIsSubmitting(true);
       const newSessionId = createId();
       const now = new Date();
+      // Temporary state for submission progress
+      let unlisten: (() => void) | undefined;
+      let toastId: string | number | undefined;
 
       const shortName =
         input.trim().length > 50
@@ -157,6 +167,23 @@ function DraftChatInner() {
           : input.trim();
 
       try {
+        // Setup temporary listener for initialization steps
+        import('@tauri-apps/api/event').then(async ({ listen }) => {
+          unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
+            if (
+              event.payload.sessionId === newSessionId &&
+              event.payload.type === 'initializationStep'
+            ) {
+              const step = event.payload.step;
+              if (toastId) {
+                toast.loading(step, { id: toastId });
+              } else {
+                toastId = toast.loading(step);
+              }
+            }
+          });
+        });
+
         // Prepare message
         const initialMessage: Message = {
           id: createId(),
@@ -192,14 +219,21 @@ function DraftChatInner() {
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          model: assistant.model || settings?.preferredModel?.model || 'gpt-4',
+          model:
+            overrideModel ||
+            assistant.model ||
+            settings?.preferredModel?.model ||
+            'gpt-4',
           provider:
+            overrideProvider ||
             assistant.provider ||
             settings?.preferredModel?.provider ||
             'openai',
           temperature: assistant.temperature ?? 0.7,
           maxTokens: assistant.maxTokens,
         };
+
+        if (!toastId) toastId = toast.loading('Creating session...');
 
         // Atomic Create + Send
         await invoke('agent_create_session_with_initial_message', {
@@ -211,13 +245,18 @@ function DraftChatInner() {
           },
         });
 
+        if (toastId) toast.dismiss(toastId);
+
         // Navigate to persistent view
         // The session now exists and is "Busy" processing the message
         navigate(`/agent/${newSessionId}`);
       } catch (err) {
+        if (toastId) toast.dismiss(toastId);
         logger.error('Failed to create draft session', err);
         toast.error('Failed to start session');
         setIsSubmitting(false);
+      } finally {
+        if (unlisten) unlisten();
       }
     },
     [input, assistant, isSubmitting, navigate, settings, getSystemPrompt], // Add missing deps
@@ -247,9 +286,7 @@ function DraftChatInner() {
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="font-semibold text-lg">{assistant.name}</span>
-              <span className="text-xs text-muted-foreground">
-                Draft Session
-              </span>
+              <span className="text-xs text-muted-foreground">New Session</span>
             </div>
           </div>
         </div>
@@ -330,21 +367,25 @@ function DraftChatInner() {
           </div>
 
           {/* Configuration Footer */}
-          <div className="flex items-center justify-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-xs">
-            <div
-              className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold"
-              title="Active Model"
-            >
-              <Sparkles size={10} />
-              {assistant.model ||
-                settings?.preferredModel?.model ||
-                'GPT-4'}{' '}
-              via{' '}
-              {assistant.provider ||
+          <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
+            {/* Model Picker */}
+            <AgentModelPicker
+              currentModel={
+                assistant.model || settings?.preferredModel?.model || 'gpt-4'
+              }
+              currentProvider={
+                assistant.provider ||
                 settings?.preferredModel?.provider ||
-                'OpenAI'}
-            </div>
-            <div className="w-1 h-1 rounded-full bg-border" />
+                'openai'
+              }
+              onConfigUpdate={(model, provider) => {
+                setOverrideModel(model);
+                setOverrideProvider(provider);
+              }}
+              className="w-full max-w-xs"
+            />
+
+            {/* Local Context Indicator */}
             <div
               className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold"
               title="Local Context Injection Active"

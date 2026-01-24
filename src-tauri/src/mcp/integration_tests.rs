@@ -129,7 +129,7 @@ mod tests {
         let tool_ids = vec!["bootstrap".to_string()];
 
         let proxy = proxy_manager
-            .create_proxy(session_id.clone(), tool_ids, None)
+            .create_proxy(session_id.clone(), tool_ids, vec![], None)
             .await
             .expect("Failed to create proxy");
 
@@ -220,12 +220,22 @@ mod tests {
         let session2 = "session-2".to_string();
 
         proxy_manager
-            .create_proxy(session1.clone(), vec!["bootstrap".to_string()], None)
+            .create_proxy(
+                session1.clone(),
+                vec!["bootstrap".to_string()],
+                vec![],
+                None,
+            )
             .await
             .expect("Failed to create proxy 1");
 
         proxy_manager
-            .create_proxy(session2.clone(), vec!["bootstrap".to_string()], None)
+            .create_proxy(
+                session2.clone(),
+                vec!["bootstrap".to_string()],
+                vec![],
+                None,
+            )
             .await
             .expect("Failed to create proxy 2");
 
@@ -275,6 +285,7 @@ mod tests {
             .create_proxy(
                 "concurrent-test".to_string(),
                 vec!["bootstrap".to_string()],
+                vec![],
                 None,
             )
             .await
@@ -352,6 +363,7 @@ mod tests {
             .create_proxy(
                 "test-errors".to_string(),
                 vec!["bootstrap".to_string()],
+                vec![],
                 None,
             )
             .await
@@ -401,7 +413,12 @@ mod tests {
         // Create proxy with playbook tool
         let session_id = "playbook-ui-test".to_string();
         proxy_manager
-            .create_proxy(session_id.clone(), vec!["playbook".to_string()], None)
+            .create_proxy(
+                session_id.clone(),
+                vec!["playbook".to_string()],
+                vec![],
+                None,
+            )
             .await
             .expect("Failed to create proxy");
 
@@ -545,6 +562,7 @@ mod tests {
             .create_proxy(
                 "session-ui-1".to_string(),
                 vec!["playbook".to_string()],
+                vec![],
                 None,
             )
             .await
@@ -554,6 +572,7 @@ mod tests {
             .create_proxy(
                 "session-ui-2".to_string(),
                 vec!["playbook".to_string()],
+                vec![],
                 None,
             )
             .await
@@ -662,7 +681,12 @@ mod tests {
 
         // Create proxy with workspace tools
         proxy_manager
-            .create_proxy(session_id.clone(), vec!["workspace".to_string()], None)
+            .create_proxy(
+                session_id.clone(),
+                vec!["workspace".to_string()],
+                vec![],
+                None,
+            )
             .await
             .expect("Failed to create proxy");
 

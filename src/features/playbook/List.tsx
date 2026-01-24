@@ -2,6 +2,16 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { PlaybookCard } from './Card';
 import { PlaybookGroup } from './PlaybookGroup';
 import { SortControls, SortMode, SortOrder, GroupMode } from './SortControls';
@@ -20,7 +30,6 @@ import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { Playbook } from '@/types/playbook';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
 
 const logger = getLogger('PlaybookList');
 
@@ -32,7 +41,6 @@ type PlaybookWithMeta = Playbook & {
 };
 
 export default function PlaybookList() {
-  const { session } = useAgentSessionState();
   const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
   const [assistants, setAssistants] = useState<
     Record<string, { name: string }>
@@ -44,28 +52,15 @@ export default function PlaybookList() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [groupMode, setGroupMode] = useState<GroupMode>('none');
   const [bookmarkFirst, setBookmarkFirst] = useState(false);
+  const [playbookToDelete, setPlaybookToDelete] =
+    useState<PlaybookWithMeta | null>(null);
 
   const fetchData = useCallback(async () => {
-    if (!session?.id) {
-      logger.debug('No active session, skipping playbook fetch');
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     try {
-      // Get assistant ID from session
-      const assistantId = session.assistant?.id;
-      if (!assistantId) {
-        logger.error('Session has no assistant');
-        toast.error('Unable to load playbooks: No assistant configured');
-        setLoading(false);
-        return;
-      }
-
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
-          agentId: assistantId,
+          // agentId: assistantId, // REMOVED: Fetch all globally
           sortBy: sortMode,
           sortOrder: sortOrder,
           bookmarkFirst: bookmarkFirst,
@@ -90,7 +85,7 @@ export default function PlaybookList() {
     } finally {
       setLoading(false);
     }
-  }, [session?.id, sortMode, sortOrder, bookmarkFirst]);
+  }, [sortMode, sortOrder, bookmarkFirst]);
 
   useEffect(() => {
     fetchData();
@@ -115,23 +110,25 @@ export default function PlaybookList() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!session?.id) return;
-    if (!confirm('Are you sure you want to delete this playbook?')) return;
-
-    const assistantId = session.assistant?.id;
-    if (!assistantId) {
-      toast.error('Unable to delete playbook: No assistant configured');
-      return;
+  const handleDelete = (id: string) => {
+    const playbook = playbooks.find((p) => p.id === id);
+    if (playbook) {
+      setPlaybookToDelete(playbook);
     }
+  };
+
+  const confirmDelete = async () => {
+    if (!playbookToDelete) return;
 
     try {
-      await deletePlaybook(id, assistantId);
-      setPlaybooks((prev) => prev.filter((p) => p.id !== id));
+      await deletePlaybook(playbookToDelete.id, playbookToDelete.agentId);
+      setPlaybooks((prev) => prev.filter((p) => p.id !== playbookToDelete.id));
       toast.success('Playbook deleted');
     } catch (error) {
       logger.error('Failed to delete playbook', error);
       toast.error('Failed to delete playbook');
+    } finally {
+      setPlaybookToDelete(null);
     }
   };
 
@@ -166,20 +163,7 @@ export default function PlaybookList() {
     return [];
   }, [groupMode, groups]);
 
-  // Show message when no session is active
-  if (!session) {
-    return (
-      <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
-        <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
-          <PlaybookIcon className="w-16 h-16 mb-4 opacity-30" />
-          <h2 className="text-xl font-semibold mb-2">No Active Session</h2>
-          <p className="text-center text-sm">
-            Start a conversation to view and manage playbooks
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Render list regardless of session state
 
   return (
     <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
@@ -314,6 +298,27 @@ export default function PlaybookList() {
           </div>
         )}
       </div>
+
+      <AlertDialog
+        open={!!playbookToDelete}
+        onOpenChange={(open) => !open && setPlaybookToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Playbook</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{playbookToDelete?.goal}
+              &quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

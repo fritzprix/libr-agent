@@ -471,6 +471,22 @@ impl AgentSessionManager {
             );
         }
 
+        // 7. Delete workspace directory
+        match crate::session::get_session_manager() {
+            Ok(manager) => {
+                if let Err(e) = manager.remove_session(&session_id).await {
+                    log::warn!(
+                        "Failed to remove workspace for session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to get session manager for workspace cleanup: {}", e);
+            }
+        }
+
         log::info!("✅ Deleted agent session: {}", session_id);
         Ok(())
     }

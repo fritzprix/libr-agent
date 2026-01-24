@@ -150,6 +150,7 @@ mod tests {
     use super::*;
     use crate::entity::assistant::Entity as AssistantEntity;
     use sea_orm::{ConnectionTrait, Database, Schema};
+    use serde_json::json;
 
     async fn create_test_db() -> Arc<DatabaseConnection> {
         let db = Database::connect("sqlite::memory:")

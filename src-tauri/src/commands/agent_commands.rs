@@ -471,6 +471,65 @@ pub async fn agent_clear_all_sessions(
         }
     }
 
+    // 3. Cleanup dangled workspaces (FS only)
+    // This catches any directories that didn't have a DB record
+    if let Ok(session_manager) = crate::session::get_session_manager() {
+        if let Ok(fs_sessions) = session_manager.list_sessions() {
+            let mut dangled_count = 0;
+            for session_id in fs_sessions {
+                // Skip 'default' workspace to preserve the fallback environment
+                if session_id != "default" {
+                    // Try to remove it (idempotent-ish since list_sessions scans dir)
+                    // If it was already deleted by the loop above, remove_session will just return Ok or error if missing (handled)
+                    // But since list_sessions reads directory, and the loop above deleted some directories,
+                    // valid sessions might be gone already.
+                    // However, list_sessions() is synchronous and called NOW? No, we should call it NOW.
+                    // Wait, list_sessions reads the FS.
+                    // Ideally we only want to delete ones that are NOT in the 'sessions' list we just processed?
+                    // Actually, remove_session handles "not found" gracefully?
+                    // SessionManager::remove_session checks if exists before removing.
+                    // So calling it again for a deleted session is fine?
+                    // Let's check session.rs:
+                    //   if let Some(session_info) = pool.remove(session_id) ... else Err("not found")
+                    // Ah, it errors if not found in pool.
+                    // But wait, list_sessions reads FS. Dangled sessions might NOT be in the pool yet if not loaded.
+                    // If they are not in the pool, remove_session fails?
+                    // session.rs remove_session:
+                    //   checks pool.remove(session_id).
+                    // This implies we can only remove sessions that are in the pool?
+                    // Check get_session_workspace_dir_by_id logic -> it lazy loads into pool.
+                    // We might need to force load or use a direct FS removal?
+                    // SessionManager::remove_session requires it to be in the pool.
+                    // So we might need to ensure they are in the pool or direct delete.
+                    // Direct delete is dangerous if we don't lock.
+                    // Better approach:
+                    // For each FS session, call remove_session.
+                    // If remove_session errors because "not found in pool", we forcingly delete the dir?
+                    // OR, we just call session_manager.get_session_workspace_dir_by_id(session_id) first to ensure it's in pool?
+                    // Yes, lazy load it, then remove it.
+
+                    let _ = session_manager.get_session_workspace_dir_by_id(&session_id);
+                    if let Err(e) = session_manager.remove_session(&session_id).await {
+                        // Ignore "BF" errors, but log warning
+                        log::debug!(
+                            "Attempted to remove potential dangled session {}: {}",
+                            session_id,
+                            e
+                        );
+                    } else {
+                        dangled_count += 1;
+                    }
+                }
+            }
+            if dangled_count > 0 {
+                log::info!(
+                    "Cleaned up {} dangled/residual workspace directories",
+                    dangled_count
+                );
+            }
+        }
+    }
+
     Ok(AgentResponse {
         success: true,
         message: format!("Cleared {} sessions", count),
@@ -494,7 +553,7 @@ pub async fn agent_factory_reset(
     let playbook_repo = crate::get_playbook_repository();
     let all_playbooks = playbook_repo
         .list_playbooks(
-            "",
+            None,
             crate::repositories::PaginationParams {
                 page: 1,
                 limit: 100000,
