@@ -27,12 +27,12 @@ export default function BadgeLegacy({
       case 'warning':
         return {
           shadcnVariant: 'outline' as const,
-          customClass: 'border-yellow-400 text-yellow-400 bg-yellow-900/20',
+          customClass: 'border-warning text-warning bg-warning/20',
         };
       case 'active':
         return {
           shadcnVariant: 'default' as const,
-          customClass: 'bg-green-900/20 text-green-400 border-green-400',
+          customClass: 'bg-success/20 text-success border-success',
         };
       case 'error':
         return {
@@ -42,7 +42,7 @@ export default function BadgeLegacy({
       case 'success':
         return {
           shadcnVariant: 'outline' as const,
-          customClass: 'border-green-400 text-green-400 bg-green-900/20',
+          customClass: 'border-success text-success bg-success/20',
         };
       case 'default':
       case 'secondary':
