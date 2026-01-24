@@ -90,6 +90,18 @@ impl BrowserServer {
         if let Ok(mut cache_guard) = self.state_cache.write() {
             *cache_guard = None;
         }
+        if let Ok(mut cache_guard) = self.state_cache.write() {
+            *cache_guard = None;
+        }
+    }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Browser".to_string(),
+            description: "Control and automate web browser interactions".to_string(),
+            icon: None,
+        }
     }
 }
 

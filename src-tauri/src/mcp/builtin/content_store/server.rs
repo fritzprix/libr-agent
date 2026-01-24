@@ -168,6 +168,14 @@ impl ContentStoreServer {
         ]
     }
 
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Content Store".to_string(),
+            description: "File attachment and semantic search system with native performance and BM25 indexing".to_string(),
+            icon: Some("database".to_string()),
+        }
+    }
+
     pub fn tools(&self) -> Vec<MCPTool> {
         Self::tools_static()
     }

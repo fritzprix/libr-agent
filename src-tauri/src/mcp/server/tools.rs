@@ -387,8 +387,10 @@ pub async fn list_builtin_tools_for(manager: &MCPServerManager, server_name: &st
             "planning" => crate::mcp::builtin::planning::PlanningServer::tools_static(),
             "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
             "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
-            "assistant" => crate::mcp::builtin::assistant::AssistantServer::tools_static(),
-            "content_store" => {
+            "assistant" | "assistant_manager" => {
+                crate::mcp::builtin::assistant::AssistantServer::tools_static()
+            }
+            "content_store" | "contentstore" => {
                 crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
             }
             "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
@@ -438,58 +440,32 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
         },
         BuiltinServerInfo {
             name: "knowledge".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Knowledge".to_string(),
-                description: "Manage and query session-specific knowledge base".to_string(),
-                icon: None,
-            },
+            metadata: knowledge::KnowledgeServer::metadata_static(),
             tool_count: 7, // Approximate count
         },
         BuiltinServerInfo {
             name: "planning".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Planning".to_string(),
-                description: "Task planning and todo list management".to_string(),
-                icon: None,
-            },
+            metadata: planning::PlanningServer::metadata_static(),
             tool_count: 8, // Approximate count
         },
         BuiltinServerInfo {
             name: "playbook".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Playbook".to_string(),
-                description: "Execute and manage reusable playbooks".to_string(),
-                icon: None,
-            },
+            metadata: playbook::PlaybookServer::metadata_static(),
             tool_count: 4, // Approximate count
         },
         BuiltinServerInfo {
-            name: "assistant".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Assistant".to_string(),
-                description: "Manage assistant configurations and presets".to_string(),
-                icon: None,
-            },
+            name: "assistant_manager".to_string(),
+            metadata: assistant::AssistantServer::metadata_static(),
             tool_count: 4, // Approximate count
         },
         BuiltinServerInfo {
             name: "workspace".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Workspace".to_string(),
-                description: "Execute shell commands and manage background processes".to_string(),
-                icon: None,
-            },
+            metadata: workspace::WorkspaceServer::metadata_static(),
             tool_count: 7, // runInPersistentShell, runInIsolatedShell, getShellState, pollProcess, listProcesses, killProcess, readProcessOutput
         },
         BuiltinServerInfo {
-            name: "content_store".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Content Store".to_string(),
-                description:
-                    "Store and retrieve extracted web content for agent memory and context"
-                        .to_string(),
-                icon: None,
-            },
+            name: "contentstore".to_string(),
+            metadata: content_store::ContentStoreServer::metadata_static(),
             tool_count: 5, // storeContent, getContent, listContents, searchContents, deleteContent
         },
         BuiltinServerInfo {
@@ -499,11 +475,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
         },
         BuiltinServerInfo {
             name: "browser".to_string(),
-            metadata: crate::mcp::types::BuiltinServerMetadata {
-                display_name: "Browser".to_string(),
-                description: "Control and automate web browser interactions".to_string(),
-                icon: None,
-            },
+            metadata: browser::BrowserServer::metadata_static(),
             tool_count: 10, // Approximate count
         },
         BuiltinServerInfo {

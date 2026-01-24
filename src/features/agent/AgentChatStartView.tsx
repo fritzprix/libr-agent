@@ -154,35 +154,13 @@ export default function AgentChatStartView() {
 
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
-      if (isCreating) return; // Prevent duplicate clicks
+      // Show loading state
+      setStartingAssistantId(assistant.id || null);
 
-      try {
-        setStartingAssistantId(assistant.id || null);
-        logger.info('Creating agent session with assistant', {
-          assistantId: assistant.id,
-          assistantName: assistant.name,
-        });
-
-        const session = await createSession({ assistant });
-        logger.info('Agent session created successfully', {
-          sessionId: session.id,
-        });
-        toast.success('Agent session started');
-
-        // Reload sessions list
-        await loadSessions();
-
-        // Navigate to session-specific route
-        navigate(`/agent/${session.id}`);
-      } catch (err) {
-        logger.error('Failed to create agent session', err);
-        toast.error('Failed to start agent session');
-      } finally {
-        setStartingAssistantId(null);
-        setIsCreating(false);
-      }
+      // Navigate to simplified draft view
+      navigate(`/agent/draft?assistantId=${assistant.id}`);
     },
-    [createSession, navigate, isCreating, loadSessions],
+    [navigate],
   );
 
   const handleResumeSession = useCallback(

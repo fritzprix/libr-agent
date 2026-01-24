@@ -4,6 +4,9 @@ import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
 const AgentContainer = lazy(() => import('@/features/agent'));
+const AgentDraftChatView = lazy(
+  () => import('@/features/agent/AgentDraftChatView'),
+);
 const AssistantList = lazy(() => import('@/features/assistant/List'));
 const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
@@ -89,6 +92,10 @@ function App() {
                                   <Route
                                     path="/agent"
                                     element={<AgentContainer />}
+                                  />
+                                  <Route
+                                    path="/agent/draft"
+                                    element={<AgentDraftChatView />}
                                   />
                                   <Route
                                     path="/agent/:sessionId"

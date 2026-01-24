@@ -20,6 +20,16 @@ pub struct CreateAgentSessionRequest {
     pub is_ephemeral: bool,
 }
 
+/// Request to create a new session and send the first message in one go
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAgentSessionWithMessageRequest {
+    pub session_id: String,
+    pub name: Option<String>,
+    pub agent_config: crate::agent::AgentConfig,
+    pub message: AgentMessageDto,
+}
+
 /// Request to send a user message to trigger workflow
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,6 +123,37 @@ pub async fn agent_init_session_with_messages(
         message: format!("Session initialized with messages: {}", session_id),
         data: None,
     })
+}
+
+/// Create a new session and IMMEDIATELY start the workflow with an initial message
+/// This is used for "Draft Mode" where the session is created only when the first message is sent.
+#[command]
+pub async fn agent_create_session_with_initial_message(
+    manager: State<'_, AgentSessionManager>,
+    request: CreateAgentSessionWithMessageRequest,
+) -> Result<AgentResponse, String> {
+    // 1. Create the session first (persistent by default)
+    // We use the default persistent repository here
+    let session_repo = std::sync::Arc::new(crate::state::get_session_repository().clone());
+
+    manager
+        .create_session_with_repo(
+            session_repo,
+            request.session_id.clone(),
+            request.name,
+            request.agent_config,
+        )
+        .await?;
+
+    // 2. Start the workflow with the initial message
+    manager
+        .start_workflow(request.session_id.clone(), request.message)
+        .await
+        .map(|_| AgentResponse {
+            success: true,
+            message: "Session created and workflow started".to_string(),
+            data: None,
+        })
 }
 
 /// Send a user message to start an agent workflow

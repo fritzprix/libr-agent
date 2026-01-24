@@ -65,6 +65,16 @@ impl AssistantServer {
             create_search_assistant_tool(),
         ]
     }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Assistant Manager".to_string(),
+            description: "Global assistant configuration management (shared across all sessions)"
+                .to_string(),
+            icon: None,
+        }
+    }
 }
 
 #[async_trait]

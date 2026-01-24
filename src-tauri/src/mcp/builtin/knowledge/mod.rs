@@ -45,6 +45,15 @@ impl KnowledgeServer {
             create_list_knowledge_tool(),
         ]
     }
+
+    /// Get metadata statically (without an instance)
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Knowledge Server".to_string(),
+            description: "Assistant-scoped knowledge base with full-text search".to_string(),
+            icon: Some("📚".to_string()),
+        }
+    }
 }
 
 #[async_trait]

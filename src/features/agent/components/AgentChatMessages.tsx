@@ -66,12 +66,15 @@ export function AgentChatMessages() {
   }, [handleScroll]);
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
-  const getAssistantNameForMessage = useCallback((msg: Message) => {
-    if (msg.role === 'assistant') {
-      return 'Agent';
-    }
-    return '';
-  }, []);
+  const getAssistantNameForMessage = useCallback(
+    (msg: Message) => {
+      if (msg.role === 'assistant') {
+        return session?.assistant?.name || 'Agent';
+      }
+      return '';
+    },
+    [session?.assistant?.name],
+  );
 
   // Adapter to satisfy ErrorBubble's onRetry signature
   const handleRetry = async () => {
@@ -161,7 +164,7 @@ export function AgentChatMessages() {
                   <Bot size={16} className="text-primary-foreground" />
                 </div>
                 <span className="text-xs font-medium">
-                  Agent {session?.name && `(${session.name})`}
+                  {session?.assistant?.name || 'Agent'}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

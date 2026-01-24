@@ -1,6 +1,6 @@
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::schema::JSONSchema;
-use crate::mcp::types::{MCPResult, MCPTool};
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool};
 use crate::mcp::utils::schema_builder::*;
 use crate::repositories::{PlaybookRepository, SessionRepository};
 use async_trait::async_trait;
@@ -42,7 +42,13 @@ impl PlaybookServer {
         &self.db_conn
     }
 
+    /// Get tools statically (without an instance)
     pub fn tools_static() -> Vec<MCPTool> {
+        Self::tools_static_internal()
+    }
+
+    /// Internal static tools definition to avoid duplication
+    fn tools_static_internal() -> Vec<MCPTool> {
         vec![
             create_tool_def(
                 "createPlaybook",
@@ -195,6 +201,15 @@ impl PlaybookServer {
                 ),
             ),
         ]
+    }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Playbook".to_string(),
+            description: "Execute and manage reusable playbooks".to_string(),
+            icon: None,
+        }
     }
 }
 

@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 2026-01-24
+
+#### 🚀 Features
+
+- **Draft Mode for Agent Sessions**: Introduced a streamlined session creation workflow
+  - **New Draft Chat View** (`AgentDraftChatView`): Pre-session interface showing assistant profile with capabilities, tools, and configuration
+  - **Atomic Session Creation**: New `agent_create_session_with_initial_message` Tauri command creates session and sends first message in single operation
+  - **Instant Navigation**: Assistant selection from start view navigates to draft view (`/agent/draft?assistantId={id}`)
+  - **Rich Assistant Profile**: Draft view displays assistant identity (name, description), capability badges (built-in tools, MCP servers), and active model/provider configuration
+  - **Seamless Transition**: On first message submission, session is atomically created and user is redirected to full persistent view (`/agent/{sessionId}`)
+  - **User Experience**: Eliminates empty session creation, allows users to review assistant setup before committing
+
+- **Built-in Server Metadata System**: Standardized metadata retrieval across all built-in MCP servers
+  - **Static Metadata Functions**: All built-in servers (`AssistantServer`, `KnowledgeServer`, `PlanningServer`, `PlaybookServer`, `BrowserServer`, `WorkspaceServer`, `ContentStoreServer`) now implement `metadata_static()` method
+  - **Centralized Registry**: `list_available_builtin_server_definitions()` returns static metadata for all possible builtin servers (used in UI for assistant configuration)
+  - **UI Integration**: Draft view fetches server metadata to display service names, descriptions, and icons dynamically
+  - **Consistent Interface**: All metadata includes `displayName`, `description`, and optional `icon` field
+
+#### 🔧 Refactoring & Improvements
+
+- **Assistant Name in Message Bubbles**: Agent chat messages now display actual assistant name instead of generic "Agent" label
+  - **Context Propagation**: `getAssistantNameForMessage` callback uses `session?.assistant?.name` from session context
+  - **Streaming Messages**: Assistant name displayed during agent workflow execution
+  - **Personalization**: Improves user experience by showing configured assistant identity
+
+- **Unified Server Name Aliases**: Improved server name resolution in `list_builtin_tools_for()`
+  - **Multiple Aliases**: Added support for alternative server names (`assistant` OR `assistant_manager`, `content_store` OR `contentstore`)
+  - **Backwards Compatibility**: Ensures tools are correctly resolved regardless of server name variant used
+
+- **Tool Metadata Consolidation**: Refactored server metadata to use static methods instead of hardcoded values
+  - **DRY Principle**: Eliminated duplicate metadata definitions across `list_available_builtin_server_definitions()`
+  - **Single Source of Truth**: Metadata now sourced from server implementations (e.g., `knowledge::KnowledgeServer::metadata_static()`)
+  - **Maintainability**: Server changes automatically reflected in metadata API without manual updates
+
+#### 🐛 Bug Fixes
+
+- **Duplicate Command Registration**: Removed duplicate `get_setting` and `delete_setting` entries in `lib.rs` invoke handler list
+  - **Issue**: Commands were registered twice causing potential handler conflicts
+  - **Fix**: Cleaned up duplicate registrations in main invoke handler array
+
+#### 📝 Documentation
+
+- **Version Bump**: Updated Cargo.lock to reflect version 0.4.4
+
 ### 2026-01-18
 
 #### 🔧 Refactoring & Improvements

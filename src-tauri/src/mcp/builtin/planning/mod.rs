@@ -4,7 +4,7 @@ mod scratchpad;
 mod todos;
 
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext};
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::PlanningRepository;
 use async_trait::async_trait;
@@ -268,6 +268,15 @@ impl PlanningServer {
                 annotations: None,
             },
         ]
+    }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Planning".to_string(),
+            description: "Task planning and todo list management".to_string(),
+            icon: None,
+        }
     }
 }
 

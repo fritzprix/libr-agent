@@ -352,6 +352,15 @@ impl WorkspaceServer {
         tools.extend(tools::terminal_tools());
         tools
     }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Workspace".to_string(),
+            description: "Execute shell commands and manage background processes".to_string(),
+            icon: None,
+        }
+    }
 }
 
 #[async_trait]

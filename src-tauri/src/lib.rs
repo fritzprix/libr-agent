@@ -20,12 +20,13 @@ pub mod utils;
 pub use migration;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session, agent_delete_session,
-    agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
-    agent_get_service_contexts, agent_get_session, agent_get_tools, agent_handle_llm_error,
-    agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow, agent_update_session_config,
+    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,
+    agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,
+    agent_get_all_sessions, agent_get_available_tools, agent_get_service_contexts,
+    agent_get_session, agent_get_tools, agent_handle_llm_error, agent_handle_llm_response,
+    agent_handle_tool_result, agent_init_session_with_messages, agent_inject_messages,
+    agent_pause_workflow, agent_resume_session, agent_resume_workflow, agent_send_message,
+    agent_terminate_workflow, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant,
@@ -406,6 +407,7 @@ pub fn run() {
                 agent_clear_all_sessions,
                 agent_factory_reset,
                 agent_update_session_config,
+                agent_create_session_with_initial_message,
                 // CRUD Commands
                 create_assistant,
                 update_assistant,
@@ -423,6 +425,8 @@ pub fn run() {
                 list_playbooks,
                 toggle_playbook_bookmark,
                 set_setting,
+                get_setting,
+                delete_setting,
                 get_setting,
                 delete_setting,
                 list_settings,
