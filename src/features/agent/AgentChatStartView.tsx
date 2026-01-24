@@ -132,14 +132,9 @@ export default function AgentChatStartView() {
           // Refactored decision: Stick to simple toast for now to avoid complexity,
           // as user just wants to know what's going on. "Starting playbook..." is visible.
 
-          const sessionName =
-            playbook.goal.length > 50
-              ? `${playbook.goal.substring(0, 50)}...`
-              : playbook.goal;
-
           const session = await createSession({
             assistant: targetAssistant,
-            name: sessionName,
+            name: playbook.goal,
           });
           if (toastId) toast.dismiss(toastId);
 
