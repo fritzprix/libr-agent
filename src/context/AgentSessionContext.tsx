@@ -221,12 +221,8 @@ export function AgentSessionProvider({
                 step: payload.step,
                 status: safeStatus,
               });
-              if (safeStatus === 'complete') {
-                // Small delay to let user see "Complete" before switching to chat
-                setTimeout(() => {
-                  if (isMounted) setIsSessionLoading(false);
-                }, 500);
-              }
+              // Don't set isSessionLoading here - let the main init flow control it
+              // after all operations (agent_init_session_with_messages, loadMessages) complete
               break;
             }
 
