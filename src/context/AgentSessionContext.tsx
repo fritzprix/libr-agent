@@ -16,7 +16,7 @@ import { AgentSession } from '@/models/agent';
 
 const logger = getLogger('AgentSessionContext');
 
-type AgentEventPayload =
+export type AgentEventPayload =
   | {
       type: 'workflowStarted';
       sessionId: string;
@@ -50,6 +50,12 @@ type AgentEventPayload =
       sessionId: string;
       toolName: string;
       success: boolean;
+    }
+  | {
+      type: 'initializationStep';
+      sessionId: string;
+      step: string;
+      status: string;
     };
 
 // Workflow phase within 'busy' status for fine-grained UI feedback
@@ -69,6 +75,10 @@ interface AgentSessionStateContextValue {
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
   workflowPhase: WorkflowPhase;
+  initializationStep: {
+    step: string;
+    status: 'running' | 'complete' | 'error';
+  } | null;
 }
 
 const AgentSessionStateContext = createContext<
@@ -124,6 +134,10 @@ export function AgentSessionProvider({
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
   const [workflowPhase, setWorkflowPhase] = useState<WorkflowPhase>('idle');
+  const [initializationStep, setInitializationStep] = useState<{
+    step: string;
+    status: 'running' | 'complete' | 'error';
+  } | null>(null);
 
   /**
    * Load messages for the current session
@@ -163,59 +177,10 @@ export function AgentSessionProvider({
       logger.info('Initializing agent session', { sessionId });
       setIsSessionLoading(true);
       setError(null);
+      setInitializationStep({ step: 'Starting session...', status: 'running' });
 
       try {
-        // 1. Get session metadata
-        const response = await invoke<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          agentConfig?: string;
-          createdAt: number;
-          updatedAt?: number;
-        } | null>('agent_get_session', {
-          sessionId,
-        });
-
-        if (!response) {
-          throw new Error(`Session not found: ${sessionId}`);
-        }
-
-        if (!isMounted) return;
-
-        let assistant: Assistant | undefined;
-        if (response.agentConfig) {
-          try {
-            assistant = JSON.parse(response.agentConfig);
-          } catch (e) {
-            logger.error('Failed to parse agent config', e);
-          }
-        }
-
-        const sessionData: AgentSession = {
-          id: response.id,
-          name: response.name,
-          status: response.status,
-          assistant,
-          createdAt: new Date(response.createdAt),
-          updatedAt: response.updatedAt
-            ? new Date(response.updatedAt)
-            : undefined,
-        };
-
-        setSession(sessionData);
-        setWorkflowStatus(sessionData.status);
-
-        // 2. Resume session in Rust backend (ensure active in memory)
-        await invoke('agent_resume_session', { sessionId });
-
-        // 3. Initialize session cache with messages in Rust
-        await invoke('agent_init_session_with_messages', { sessionId });
-
-        // 4. Load messages
-        await loadMessages(sessionId);
-
-        // 5. Setup Event Listener
+        // 0. Setup Event Listener FIRST to catch initialization events
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
           if (!isMounted) return;
 
@@ -232,6 +197,20 @@ export function AgentSessionProvider({
           });
 
           switch (payload.type) {
+            case 'initializationStep': {
+              setInitializationStep({
+                step: payload.step,
+                status: payload.status as 'running' | 'complete' | 'error',
+              });
+              if (payload.status === 'complete') {
+                // Small delay to let user see "Complete" before switching to chat
+                setTimeout(() => {
+                  if (isMounted) setIsSessionLoading(false);
+                }, 500);
+              }
+              break;
+            }
+
             case 'workflowStarted': {
               setWorkflowStatus('busy');
               setWorkflowPhase('thinking');
@@ -317,6 +296,12 @@ export function AgentSessionProvider({
               break;
             }
 
+            case 'toolExecutionCompleted': {
+              // Stay in using_tools or switch back to thinking/answering depending on flow
+              // Usually handled by subsequent messages or status changes
+              break;
+            }
+
             case 'workflowCompleted': {
               setWorkflowStatus('idle');
               setWorkflowPhase('idle');
@@ -327,7 +312,62 @@ export function AgentSessionProvider({
           }
         });
 
-        setIsSessionLoading(false);
+        // 1. Get session metadata
+        const response = await invoke<{
+          id: string;
+          name?: string;
+          status: 'idle' | 'busy' | 'paused' | 'error';
+          agentConfig?: string;
+          createdAt: number;
+          updatedAt?: number;
+        } | null>('agent_get_session', {
+          sessionId,
+        });
+
+        if (!response) {
+          throw new Error(`Session not found: ${sessionId}`);
+        }
+
+        if (!isMounted) return;
+
+        let assistant: Assistant | undefined;
+        if (response.agentConfig) {
+          try {
+            assistant = JSON.parse(response.agentConfig);
+          } catch (e) {
+            logger.error('Failed to parse agent config', e);
+          }
+        }
+
+        const sessionData: AgentSession = {
+          id: response.id,
+          name: response.name,
+          status: response.status,
+          assistant,
+          createdAt: new Date(response.createdAt),
+          updatedAt: response.updatedAt
+            ? new Date(response.updatedAt)
+            : undefined,
+        };
+
+        setSession(sessionData);
+        setWorkflowStatus(sessionData.status);
+
+        // 2. Resume session in Rust backend (ensure active in memory)
+        // This triggers proxy creation which emits InitializationStep events
+        await invoke('agent_resume_session', { sessionId });
+
+        // 3. Initialize session cache with messages in Rust
+        await invoke('agent_init_session_with_messages', { sessionId });
+
+        // 4. Load messages
+        await loadMessages(sessionId);
+
+        // If we get here without error, we are mostly done.
+        // The event listener handles the "complete" step or we can just set loading false
+        // But let's rely on the event or a final check.
+        // If session was already active, we might not get events.
+        if (isMounted) setIsSessionLoading(false);
       } catch (err) {
         if (!isMounted) return;
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -433,6 +473,7 @@ export function AgentSessionProvider({
       llmError,
       workflowStatus,
       workflowPhase,
+      initializationStep,
     }),
     [
       session,
@@ -442,6 +483,7 @@ export function AgentSessionProvider({
       llmError,
       workflowStatus,
       workflowPhase,
+      initializationStep,
     ],
   );
 

@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { Button, Badge } from '@/components/ui';
+import type { AgentEventPayload } from '@/context/AgentSessionContext';
 import {
   Send,
   Square,
@@ -150,6 +151,9 @@ function DraftChatInner() {
       setIsSubmitting(true);
       const newSessionId = createId();
       const now = new Date();
+      // Temporary state for submission progress
+      let unlisten: (() => void) | undefined;
+      let toastId: string | number | undefined;
 
       const shortName =
         input.trim().length > 50
@@ -157,6 +161,23 @@ function DraftChatInner() {
           : input.trim();
 
       try {
+        // Setup temporary listener for initialization steps
+        import('@tauri-apps/api/event').then(async ({ listen }) => {
+          unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
+            if (
+              event.payload.sessionId === newSessionId &&
+              event.payload.type === 'initializationStep'
+            ) {
+              const step = event.payload.step;
+              if (toastId) {
+                toast.loading(step, { id: toastId });
+              } else {
+                toastId = toast.loading(step);
+              }
+            }
+          });
+        });
+
         // Prepare message
         const initialMessage: Message = {
           id: createId(),
@@ -201,6 +222,8 @@ function DraftChatInner() {
           maxTokens: assistant.maxTokens,
         };
 
+        if (!toastId) toastId = toast.loading('Creating session...');
+
         // Atomic Create + Send
         await invoke('agent_create_session_with_initial_message', {
           request: {
@@ -211,13 +234,18 @@ function DraftChatInner() {
           },
         });
 
+        if (toastId) toast.dismiss(toastId);
+
         // Navigate to persistent view
         // The session now exists and is "Busy" processing the message
         navigate(`/agent/${newSessionId}`);
       } catch (err) {
+        if (toastId) toast.dismiss(toastId);
         logger.error('Failed to create draft session', err);
         toast.error('Failed to start session');
         setIsSubmitting(false);
+      } finally {
+        if (unlisten) unlisten();
       }
     },
     [input, assistant, isSubmitting, navigate, settings, getSystemPrompt], // Add missing deps

@@ -144,7 +144,7 @@ pub async fn list_playbooks(
             page: 1,
             limit: 10000,
         };
-        repo.list_playbooks(assistant_id, pagination)
+        repo.list_playbooks(Some(assistant_id), pagination)
             .await
             .map_err(|e| format!("Failed to list playbooks: {}", e))?
             .items

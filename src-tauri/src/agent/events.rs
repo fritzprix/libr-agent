@@ -48,6 +48,14 @@ pub enum AgentEvent {
         tool_name: String,
         success: bool,
     },
+
+    /// Session initialization step update
+    #[serde(rename_all = "camelCase")]
+    InitializationStep {
+        session_id: String,
+        step: String,
+        status: String,
+    },
 }
 
 /// Emit an agent event to the frontend

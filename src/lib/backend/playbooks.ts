@@ -111,7 +111,7 @@ export async function deletePlaybook(
 }
 
 export interface ListPlaybooksOptions extends Record<string, unknown> {
-  agentId: string;
+  agentId?: string; // Optional for global listing
   sortBy?: 'created_at' | 'assistant';
   sortOrder?: 'asc' | 'desc';
   bookmarkFirst?: boolean;
@@ -124,7 +124,9 @@ export async function listPlaybooks(options: ListPlaybooksOptions): Promise<
     updatedAt: Date;
   })[]
 > {
-  const dtos = await safeInvoke<PlaybookDto[]>('list_playbooks', options);
+  // If agentId is undefined, pass empty string for global listing
+  const payload = { ...options, agentId: options.agentId || '' };
+  const dtos = await safeInvoke<PlaybookDto[]>('list_playbooks', payload);
   return dtos.map(deserializePlaybook);
 }
 

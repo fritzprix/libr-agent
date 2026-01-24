@@ -52,10 +52,10 @@ pub trait PlaybookRepository: Send + Sync {
         assistant_id: &str,
     ) -> Result<Option<playbook::Model>, DbError>;
 
-    /// List all playbooks for an assistant with pagination
+    /// List all playbooks (optionally filtered by assistant) with pagination
     async fn list_playbooks(
         &self,
-        assistant_id: &str,
+        assistant_id: Option<&str>,
         pagination: PaginationParams,
     ) -> Result<Page<playbook::Model>, DbError>;
 
@@ -149,22 +149,28 @@ impl PlaybookRepository for SqlitePlaybookRepository {
 
     async fn list_playbooks(
         &self,
-        assistant_id: &str,
+        assistant_id: Option<&str>,
         pagination: PaginationParams,
     ) -> Result<Page<playbook::Model>, DbError> {
         let limit = pagination.limit;
         let offset = (pagination.page - 1) * limit;
 
+        // Apply filters
+        let mut query = PlaybookEntity::find();
+
+        if let Some(aid) = assistant_id {
+            query = query.filter(playbook::Column::AssistantId.eq(aid));
+        }
+
         // Get total count
-        let total = PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(assistant_id))
+        let total = query
+            .clone()
             .count(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;
 
         // Get paginated items
-        let items = PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(assistant_id))
+        let items = query
             .order_by(playbook::Column::UpdatedAt, Order::Desc)
             .limit(limit)
             .offset(offset)

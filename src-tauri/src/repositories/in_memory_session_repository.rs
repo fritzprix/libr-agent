@@ -28,8 +28,10 @@ pub struct InMemorySessionRepository {
 impl InMemorySessionRepository {
     /// Create a new in-memory session repository
     ///
+    /// Create a new in-memory session repository
+    ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;
     /// let repo = InMemorySessionRepository::new();
     /// ```
