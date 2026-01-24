@@ -12,7 +12,7 @@ import {
   useAgentSessionActions,
 } from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
-import { AIServiceProvider } from '@/lib/ai-service';
+import { isAIServiceProvider } from '@/lib/ai-service/utils';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
 import { useSettings } from '@/hooks/use-settings';
@@ -195,10 +195,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       }
 
       try {
-        const supports = await supportsThinking(
-          modelName,
-          provider as AIServiceProvider,
-        );
+        if (!isAIServiceProvider(provider)) {
+          logger.warn(`Invalid provider: ${provider}`);
+          setCanUseReasoning(false);
+          return;
+        }
+
+        const supports = await supportsThinking(modelName, provider);
         setCanUseReasoning(supports);
 
         // Auto-disable if model doesn't support reasoning
