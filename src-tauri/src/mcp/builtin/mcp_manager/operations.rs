@@ -1,11 +1,10 @@
-use crate::entity::{mcp_server, mcp_server::Entity as McpServerEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance,
     SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
-use crate::state::{get_database_connection, get_mcp_manager};
-use sea_orm::*;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
 use super::queries::get_server_config;
@@ -13,41 +12,34 @@ use super::queries::get_server_config;
 use super::MCPManagerServer;
 
 async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
-    let config_json = serde_json::to_string(config).map_err(|e| e.to_string())?;
+    let repo = get_mcp_server_repository();
+    let server_name = config
+        .name
+        .as_ref()
+        .ok_or_else(|| "Server name is required".to_string())?;
 
-    // Upsert using SeaORM (async without nested runtime)
-    let model = mcp_server::ActiveModel {
-        name: Set(config.name.clone()),
-        config: Set(config_json.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
+    let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
-    match McpServerEntity::insert(model.clone()).exec(db).await {
-        Ok(_) => Ok(()),
-        Err(DbErr::RecordNotInserted) | Err(DbErr::Exec(_)) => {
-            let update_model = mcp_server::ActiveModel {
-                name: Set(config.name.clone()),
-                config: Set(config_json),
-                created_at: NotSet,
-                updated_at: Set(now),
-            };
-            McpServerEntity::update(update_model)
-                .exec(db)
+    // Try to update first, create if doesn't exist
+    match repo.get(server_name).await {
+        Ok(Some(_)) => {
+            repo.update(server_name, config_value)
                 .await
-                .map_err(|e| format!("DB Update Error: {}", e))?;
-            Ok(())
+                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
         }
-        Err(e) => Err(format!("DB Save Error: {}", e)),
+        Ok(None) => {
+            repo.create(server_name, config_value)
+                .await
+                .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+        }
+        Err(e) => return Err(format!("DB query error: {}", e)),
     }
+    Ok(())
 }
 
 async fn delete_server_config_db(name: String) -> Result<(), String> {
-    let db = get_database_connection();
-    McpServerEntity::delete_by_id(name)
-        .exec(db)
+    let repo = get_mcp_server_repository();
+    repo.delete(&name)
         .await
         .map_err(|e| format!("DB Delete Error: {}", e))?;
     Ok(())
@@ -105,7 +97,7 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         .map_err(|e| format!("Invalid transport config: {}", e))?;
 
     let config = MCPServerConfig {
-        name: name.clone(),
+        name: Some(name.clone()),
         transport,
         authentication: None,
         metadata: None,
@@ -120,27 +112,18 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         ));
     }
 
-    // Auto-start
-    let manager = get_mcp_manager();
-    if let Err(e) = manager.start_server(config).await {
-        return Ok(operation_failed_error(
-            "start_server",
-            &format!("Server created but failed to start: {}", e),
-            vec!["Check server command or URL".to_string()],
-            ToolGroup::McpManager,
-        ));
-    }
-
+    // Note: Session Isolation means we cannot auto-start via global manager
+    // External servers are now created per-session through MCPServiceProxyManager
     server.invalidate_cache().await;
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server created and started\n\nServer Name: {}\nStatus: Connected\n\nUse this name for subsequent management operations (connect, update, delete).",
+            "✓ Server configuration saved\n\nServer Name: {}\nStatus: Configured (not auto-started)\n\nExternal servers are managed per-session through MCPServiceProxyManager.",
             name
         ),
         vec![
             "Use listServers to view all registered servers".to_string(),
-            format!("Use disconnectServer('{}') to stop this server", name),
+            format!("Use connectServer('{}') to start this server in a session", name),
         ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name }))))
@@ -173,9 +156,8 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         .to_mcp_result());
     }
 
-    // Stop server first if running
-    let manager = get_mcp_manager();
-    let _ = manager.stop_server(&name).await;
+    // Note: Session Isolation means we cannot stop via global manager
+    // Servers are managed per-session, not globally
 
     // Delete config
     if let Err(e) = delete_server_config_db(name.clone()).await {
@@ -242,7 +224,7 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     }
 
     let config = MCPServerConfig {
-        name: name.to_string(),
+        name: Some(name.to_string()),
         transport: transport_config,
         authentication: None,
         metadata: None,
@@ -258,27 +240,13 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         ));
     }
 
-    // Restart if running
-    let manager = get_mcp_manager();
-    let was_running = {
-        let connections = manager.connections.lock().await;
-        connections.contains_key(name)
-    };
-
-    let mut status_msg = "Server configuration updated".to_string();
-    if was_running {
-        let _ = manager.stop_server(name).await;
-        if let Err(e) = manager.start_server(config).await {
-            status_msg.push_str(&format!(", but failed to restart: {}", e));
-        } else {
-            status_msg.push_str(" and restarted successfully");
-        }
-    }
+    // Note: Session Isolation means we cannot restart via global manager
+    // Configuration updates take effect when servers are next started in a session
 
     server.invalidate_cache().await;
 
     let hint = SuccessHint::new(
-        status_msg,
+        "Server configuration updated".to_string(),
         vec!["Use listServers to extract status".to_string()],
     );
     Ok(hint.to_mcp_result())
@@ -291,7 +259,7 @@ pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MC
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
-    let config = match get_server_config(name).await? {
+    let _config = match get_server_config(name).await? {
         Some(c) => c,
         Option::None => {
             return Ok(ErrorGuidance::with_guidance(
@@ -307,19 +275,17 @@ pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MC
         }
     };
 
-    let manager = get_mcp_manager();
-    if let Err(e) = manager.start_server(config).await {
-        return Ok(operation_failed_error(
-            "connectServer",
-            &e.to_string(),
-            vec!["Check target server logs".to_string()],
-            ToolGroup::McpManager,
-        ));
-    }
+    // Note: Session Isolation means connection is per-session, not global
+    // This tool validates the config exists but doesn't actually connect
+    // Actual connection happens in MCPServiceProxyManager when session is created
 
     server.invalidate_cache().await;
 
-    Ok(SuccessHint::new(format!("Target server '{}' connected", name), vec![]).to_mcp_result())
+    Ok(SuccessHint::new(
+        format!("Target server '{}' configuration validated", name),
+        vec![],
+    )
+    .to_mcp_result())
 }
 
 /// Disconnect a server
@@ -332,17 +298,17 @@ pub async fn disconnect_server(
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
-    let manager = get_mcp_manager();
-    if let Err(e) = manager.stop_server(name).await {
-        return Ok(operation_failed_error(
-            "disconnectServer",
-            &e.to_string(),
-            vec![],
-            ToolGroup::McpManager,
-        ));
-    }
+    // Note: Session Isolation means disconnection is per-session, not global
+    // This tool only validates the server exists; actual disconnection happens in session cleanup
 
     server.invalidate_cache().await;
 
-    Ok(SuccessHint::new(format!("Target server '{}' disconnected", name), vec![]).to_mcp_result())
+    Ok(SuccessHint::new(
+        format!(
+            "Target server '{}' marked for disconnection in current session",
+            name
+        ),
+        vec![],
+    )
+    .to_mcp_result())
 }

@@ -1,9 +1,9 @@
-use crate::entity::{planning_goal, planning_scratchpad, planning_todo};
+use crate::entity::planning_todo;
 use crate::mcp::types::ServiceContext;
+use crate::repositories::PlanningRepository;
+use crate::state::get_planning_repository;
 use log::info;
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-};
+use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -18,30 +18,22 @@ pub struct TodoDTO {
     pub subtasks: Vec<TodoDTO>,
 }
 
-pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> ServiceContext {
+pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> ServiceContext {
+    let repo = get_planning_repository();
+
     // 1. Fetch Active Goal
-    let goal_model = planning_goal::Entity::find()
-        .filter(planning_goal::Column::SessionId.eq(session_id))
-        .filter(planning_goal::Column::Status.eq("active"))
-        .one(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch goal: {}", e);
-            None
-        });
+    let goal_model = repo.get_active_goal(session_id).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch goal: {}", e);
+        None
+    });
 
     let goal = goal_model.map(|g| g.goal_text);
 
     // 2. Fetch Todos (All)
-    let todos = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .order_by_asc(planning_todo::Column::CreatedAt)
-        .all(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch todos: {}", e);
-            Vec::new()
-        });
+    let todos = repo.list_todos(session_id, true).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch todos: {}", e);
+        Vec::new()
+    });
 
     // Build Todo Tree for structured state
     let mut todo_map: HashMap<i64, Vec<planning_todo::Model>> = HashMap::new();
@@ -87,15 +79,10 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
         .collect();
 
     // 3. Fetch Scratchpad
-    let scratchpad = planning_scratchpad::Entity::find()
-        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .order_by_desc(planning_scratchpad::Column::CreatedAt)
-        .all(db)
-        .await
-        .unwrap_or_else(|e| {
-            log::error!("Failed to fetch scratchpad: {}", e);
-            Vec::new()
-        });
+    let scratchpad = repo.list_scratchpad(session_id).await.unwrap_or_else(|e| {
+        log::error!("Failed to fetch scratchpad: {}", e);
+        Vec::new()
+    });
 
     // --- Format Output ---
 
@@ -143,12 +130,13 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
 
                 let description = if let Some(desc) = &t.description {
                     if !desc.is_empty() {
-                        let char_count = desc.chars().count();
+                        let sanitized = desc.replace(['\n', '\r'], " ");
+                        let char_count = sanitized.chars().count();
                         if char_count > 50 {
-                            let s: String = desc.chars().take(50).collect();
+                            let s: String = sanitized.chars().take(47).collect();
                             format!("{}...", s)
                         } else {
-                            desc.clone()
+                            sanitized
                         }
                     } else {
                         "-".to_string()
@@ -157,7 +145,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                     "-".to_string()
                 };
 
-                let safe_content = t.title.replace('|', r"\|");
+                let safe_content = t.title.replace(['\n', '\r'], " ").replace('|', r"\|");
                 let safe_desc = description.replace('|', r"\|");
 
                 // Optimization: If description is identical to content (e.g. derived title),
@@ -186,12 +174,13 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
 
                     let st_desc = if let Some(desc) = &st.description {
                         if !desc.is_empty() {
-                            let char_count = desc.chars().count();
+                            let sanitized = desc.replace(['\n', '\r'], " ");
+                            let char_count = sanitized.chars().count();
                             if char_count > 50 {
-                                let s: String = desc.chars().take(50).collect();
+                                let s: String = sanitized.chars().take(47).collect();
                                 format!("{}...", s)
                             } else {
-                                desc.clone()
+                                sanitized
                             }
                         } else {
                             "-".to_string()
@@ -200,7 +189,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                         "-".to_string()
                     };
 
-                    let safe_st_content = st.title.replace('|', r"\|");
+                    let safe_st_content = st.title.replace(['\n', '\r'], " ").replace('|', r"\|");
                     let safe_st_desc = st_desc.replace('|', r"\|");
 
                     let final_st_desc = if safe_st_content == safe_st_desc || safe_st_desc == "-" {
@@ -232,7 +221,7 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
             parts.push("| :--- | :--- | :--- | :--- |".to_string());
 
             for t in checked_todos.iter().rev().take(3) {
-                let safe_content = t.content.replace('|', r"\|");
+                let safe_content = t.content.replace(['\n', '\r'], " ").replace('|', r"\|");
 
                 // Extract summary from description field
                 let summary = t
@@ -240,7 +229,8 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                     .as_deref()
                     .filter(|s| !s.is_empty() && s != &"-")
                     .map(|s| {
-                        let escaped = s.replace('|', r"\|");
+                        let sanitized = s.replace(['\n', '\r'], " ");
+                        let escaped = sanitized.replace('|', r"\|");
                         // Truncate summary if too long (max 50 chars)
                         if escaped.chars().count() > 50 {
                             let truncated: String = escaped.chars().take(47).collect();
@@ -295,14 +285,23 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
                 String::new()
             };
 
-            let content_part = if item.title.is_some() {
-                format!(" - {}", item.content)
+            // Sanitize and truncate content for summary to maintain list structure
+            let sanitized_content = item.content.replace(['\n', '\r'], " ");
+            let truncated_content = if sanitized_content.chars().count() > 100 {
+                let s: String = sanitized_content.chars().take(97).collect();
+                format!("{}...", s)
             } else {
-                item.content.clone()
+                sanitized_content
+            };
+
+            let content_part = if item.title.is_some() {
+                format!(" - {}", truncated_content)
+            } else {
+                truncated_content
             };
 
             parts.push(format!(
-                "  {}. **ID:{}** {}{}{}",
+                "{}. **ID:{}** {}{}{}",
                 idx + 1,
                 item.id,
                 title_part,
@@ -329,42 +328,4 @@ pub async fn get_service_context(db: &DatabaseConnection, session_id: &str) -> S
         context_prompt: parts.join("\n"),
         structured_state: Some(structured_state),
     }
-}
-
-pub async fn get_planning_summary(db: &DatabaseConnection, session_id: &str) -> String {
-    let goal_model = planning_goal::Entity::find()
-        .filter(planning_goal::Column::SessionId.eq(session_id))
-        .filter(planning_goal::Column::Status.eq("active"))
-        .one(db)
-        .await
-        .unwrap_or(None);
-
-    let goal_text = goal_model
-        .map(|g| g.goal_text)
-        .unwrap_or_else(|| "No active goal".to_string());
-
-    let total = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    let unchecked = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::IsChecked.eq(false))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    let checked = planning_todo::Entity::find()
-        .filter(planning_todo::Column::SessionId.eq(session_id))
-        .filter(planning_todo::Column::IsChecked.eq(true))
-        .count(db)
-        .await
-        .unwrap_or(0);
-
-    format!(
-        "\n\nGoal: \"{}\"\n\nCurrent progress:\n  - Total: {} todos\n  - Unchecked: {}\n  - Checked: {}",
-        goal_text, total, unchecked, checked
-    )
 }

@@ -2,7 +2,7 @@ use crate::agent::state::AgentSession;
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
-use crate::repositories::SessionMetadata;
+use crate::repositories::{SessionMetadata, SessionRepository};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -15,34 +15,54 @@ use tokio::sync::RwLock;
 /// - `workflow`: Task execution flow (start, stop, pause, resume)
 /// - `llm`: LLM interaction and response handling
 /// - `tools`: Tool execution and result handling
-#[derive(Debug)]
 pub struct AgentSessionManager {
     active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: AppHandle,
     proxy_manager: Arc<MCPServiceProxyManager>,
+    session_repo: Arc<dyn SessionRepository>,
+}
+
+// Manual Debug implementation since dyn Trait doesn't auto-implement Debug
+impl std::fmt::Debug for AgentSessionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentSessionManager")
+            .field("active_sessions", &"<Arc<RwLock<HashMap>>>")
+            .field("app_handle", &"<AppHandle>")
+            .field("proxy_manager", &"<Arc<MCPServiceProxyManager>>")
+            .field("session_repo", &"<Arc<dyn SessionRepository>>")
+            .finish()
+    }
 }
 
 impl AgentSessionManager {
-    /// Create a new AgentSessionManager
-    pub fn new(app_handle: AppHandle, proxy_manager: Arc<MCPServiceProxyManager>) -> Self {
+    /// Create a new AgentSessionManager with dependency injection
+    pub fn new(
+        app_handle: AppHandle,
+        proxy_manager: Arc<MCPServiceProxyManager>,
+        session_repo: Arc<dyn SessionRepository>,
+    ) -> Self {
         Self {
             active_sessions: Arc::new(RwLock::new(HashMap::new())),
             app_handle,
             proxy_manager,
+            session_repo,
         }
     }
 
     /// Clone self for use in async tasks
     /// This creates a new instance with shared Arc references
+    #[allow(dead_code)]
     pub fn clone_for_task(&self) -> Self {
         Self {
             active_sessions: self.active_sessions.clone(),
             app_handle: self.app_handle.clone(),
             proxy_manager: self.proxy_manager.clone(),
+            session_repo: self.session_repo.clone(),
         }
     }
 
     /// Create or update a session in the database
+    #[allow(dead_code)]
     pub async fn create_session(
         &self,
         session_id: String,
@@ -50,6 +70,27 @@ impl AgentSessionManager {
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+            name,
+            agent_config,
+        )
+        .await
+    }
+
+    /// Create or update a session with a specific repository (for ephemeral vs persistent)
+    pub async fn create_session_with_repo(
+        &self,
+        session_repo: Arc<dyn crate::repositories::SessionRepository>,
+        session_id: String,
+        name: Option<String>,
+        agent_config: crate::agent::AgentConfig,
+    ) -> Result<SessionMetadata, String> {
+        crate::agent::lifecycle::create_session(
+            &session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -67,6 +108,7 @@ impl AgentSessionManager {
         agent_config: crate::agent::AgentConfig,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
+            &self.session_repo,
             &self.active_sessions,
             &self.app_handle,
             &session_id,
@@ -79,6 +121,7 @@ impl AgentSessionManager {
     #[allow(dead_code)]
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::resume_session(
+            &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -94,6 +137,7 @@ impl AgentSessionManager {
         user_message: Message,
     ) -> Result<(), String> {
         crate::agent::workflow::start_workflow(
+            &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -110,6 +154,7 @@ impl AgentSessionManager {
         assistant_message: Message,
     ) -> Result<(), String> {
         crate::agent::llm::handle_llm_response(
+            &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -121,28 +166,39 @@ impl AgentSessionManager {
 
     /// Get session metadata
     pub async fn get_session(&self, session_id: &str) -> Result<Option<SessionMetadata>, String> {
-        crate::agent::lifecycle::get_session(session_id).await
+        crate::agent::lifecycle::get_session(&self.session_repo, session_id).await
     }
 
     /// Get all sessions
     pub async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, String> {
-        crate::agent::lifecycle::get_all_sessions().await
+        crate::agent::lifecycle::get_all_sessions(&self.session_repo).await
     }
 
     /// Recover sessions stuck in BUSY state after app crash/restart
     pub async fn recover_sessions(&self) -> Result<(), String> {
-        crate::agent::lifecycle::recover_sessions(&self.active_sessions, &self.app_handle).await
+        crate::agent::lifecycle::recover_sessions(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.app_handle,
+        )
+        .await
     }
 
     /// Pause a running workflow
     pub async fn pause_workflow(&self, session_id: String) -> Result<(), String> {
-        crate::agent::workflow::pause_workflow(&self.active_sessions, &self.app_handle, session_id)
-            .await
+        crate::agent::workflow::pause_workflow(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.app_handle,
+            session_id,
+        )
+        .await
     }
 
     /// Resume a paused workflow
     pub async fn resume_workflow(&self, session_id: String) -> Result<(), String> {
         crate::agent::workflow::resume_workflow(
+            &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -159,6 +215,7 @@ impl AgentSessionManager {
     /// Terminate a running workflow
     pub async fn terminate_session(&self, session_id: String) -> Result<(), String> {
         crate::agent::workflow::terminate_session(
+            &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
@@ -225,6 +282,7 @@ impl AgentSessionManager {
             // [Fix Option 1] Inline status update to ensure UI reflects 'Busy' state
             // 1. Update status to Busy
             crate::agent::lifecycle::update_session_status(
+                &self.session_repo,
                 &self.active_sessions,
                 &self.app_handle,
                 &session_id,
@@ -246,6 +304,7 @@ impl AgentSessionManager {
             // We use request_llm_completion directly here as we don't need the full start_workflow logic
             // (which assumes a User message as input)
             crate::agent::llm::request_llm_completion(
+                &self.session_repo,
                 &self.active_sessions,
                 &self.proxy_manager,
                 &self.app_handle,
@@ -341,6 +400,7 @@ impl AgentSessionManager {
                 // 4. Request LLM
                 // (Skip UI detection for now or duplicate it)
                 crate::agent::llm::request_llm_completion(
+                    &self.session_repo,
                     &self.active_sessions,
                     &self.proxy_manager,
                     &self.app_handle,
@@ -358,6 +418,7 @@ impl AgentSessionManager {
     /// Handle LLM error from frontend
     pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(
+            &self.session_repo,
             &self.active_sessions,
             &self.app_handle,
             session_id,
@@ -401,7 +462,8 @@ impl AgentSessionManager {
         }
 
         // 6. Delete index metadata
-        if let Err(e) = session_repo.delete_index_metadata(&session_id).await {
+        let msg_repo = crate::state::get_message_repository();
+        if let Err(e) = msg_repo.delete_index_metadata(&session_id).await {
             log::warn!(
                 "Failed to delete index metadata for session {}: {}",
                 session_id,
@@ -438,6 +500,41 @@ impl AgentSessionManager {
         // Use existing collect_available_tools function (same as LLM request)
         crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
             .await
+    }
+
+    /// Get available tools for a session based on its config
+    pub async fn get_tools_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+        // 1. Get session config
+        // Try active first
+        let config = {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                if let Some(config_str) = &session.metadata.agent_config {
+                    crate::agent::AgentConfig::from_json(config_str)?
+                } else {
+                    return Err("Session has no config".to_string());
+                }
+            } else {
+                // Try DB
+                let session_opt =
+                    crate::agent::lifecycle::get_session(&self.session_repo, session_id).await?;
+                if let Some(session) = session_opt {
+                    if let Some(config_str) = &session.agent_config {
+                        crate::agent::AgentConfig::from_json(config_str)?
+                    } else {
+                        return Err("Session has no config".to_string());
+                    }
+                } else {
+                    return Err("Session not found".to_string());
+                }
+            }
+        };
+
+        // 2. Call collect_available_tools
+        crate::agent::tools::collect_available_tools(session_id, &config, &self.proxy_manager).await
     }
 
     /// Remove a message from the in-memory cache

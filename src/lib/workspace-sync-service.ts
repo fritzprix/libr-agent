@@ -1,17 +1,5 @@
-import { workspaceWriteFile } from '@/lib/rust-backend-client';
-
-/** The maximum file size for the content store (50MB). */
-export const MAX_CONTENT_STORE_SIZE = 50 * 1024 * 1024;
-/** The maximum file size for the workspace (10MB). */
-export const MAX_WORKSPACE_SIZE = 10 * 1024 * 1024;
-/**
- * The effective maximum file size, which is the more restrictive of the
- * content store and workspace limits.
- */
-export const EFFECTIVE_MAX_SIZE = Math.min(
-  MAX_CONTENT_STORE_SIZE,
-  MAX_WORKSPACE_SIZE,
-);
+import { workspaceWriteFile } from '@/lib/backend/workspace';
+import { settingsService } from '@/lib/services/settings-service';
 
 /**
  * Synchronizes a file to the workspace storage system.
@@ -26,10 +14,16 @@ export async function syncFileToWorkspace(
   file: File,
   sessionId?: string,
 ): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const maxFileUploadBytes = settings.system.maxFileUploadSizeMB * 1024 * 1024;
+  const workspaceCapBytes = settings.system.workspaceCapacityMB * 1024 * 1024;
+  // Effective max size for a single file is the smaller of the two (safe default logic)
+  const effectiveLimit = Math.min(maxFileUploadBytes, workspaceCapBytes);
+
   // Validate file size before processing
-  if (file.size > EFFECTIVE_MAX_SIZE) {
+  if (file.size > effectiveLimit) {
     throw new Error(
-      `File size ${file.size} bytes exceeds maximum allowed size ${EFFECTIVE_MAX_SIZE} bytes`,
+      `File size ${file.size} bytes exceeds maximum allowed size ${effectiveLimit} bytes`,
     );
   }
 
@@ -147,19 +141,11 @@ export function sanitizeFilename(filename: string): string {
  * Validates if a file's size is within the effective maximum limit.
  *
  * @param file The `File` object to validate.
+ * @param maxSizeBytes The maximum allowed size in bytes.
  * @returns True if the file size is acceptable, false otherwise.
  */
-export function validateFileSize(file: File): boolean {
-  return file.size <= EFFECTIVE_MAX_SIZE;
-}
-
-/**
- * Gets the effective maximum file size in megabytes (MB) for display purposes.
- *
- * @returns The maximum file size in MB.
- */
-export function getMaxFileSizeMB(): number {
-  return EFFECTIVE_MAX_SIZE / (1024 * 1024);
+export function validateFileSize(file: File, maxSizeBytes: number): boolean {
+  return file.size <= maxSizeBytes;
 }
 
 /**
@@ -167,13 +153,15 @@ export function getMaxFileSizeMB(): number {
  *
  * @param filename The name of the file that is too large.
  * @param actualSize The actual size of the file in bytes.
+ * @param maxSizeBytes The maximum allowed size in bytes.
  * @returns A formatted error message string.
  */
 export function createFileSizeErrorMessage(
   filename: string,
   actualSize: number,
+  maxSizeBytes: number,
 ): string {
-  const maxSizeMB = getMaxFileSizeMB();
+  const maxSizeMB = maxSizeBytes / (1024 * 1024);
   const actualSizeMB = (actualSize / (1024 * 1024)).toFixed(1);
-  return `File "${filename}" is too large (${actualSizeMB}MB). Maximum size is ${maxSizeMB}MB.`;
+  return `File "${filename}" is too large (${actualSizeMB}MB). Maximum size is ${maxSizeMB.toFixed(1)}MB.`;
 }

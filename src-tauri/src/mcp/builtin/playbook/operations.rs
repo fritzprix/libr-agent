@@ -1,21 +1,15 @@
-use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
+use crate::repositories::{PaginationParams, PlaybookRepository};
 use handlebars::Handlebars;
-use sea_orm::*;
 use serde_json::{json, Value};
 
 use super::templates::PLAYBOOK_LIST_TEMPLATE;
 use super::types::Playbook;
 
-pub async fn create_playbook(
-    db: &DatabaseConnection,
-    assistant_id: &str,
-    session_id: &str,
-    args: Value,
-) -> Result<MCPResult, String> {
+pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
     let goal = match args.get("goal").and_then(|v| v.as_str()) {
         Some(g) if !g.trim().is_empty() => g,
         Some(_) => {
@@ -27,7 +21,7 @@ pub async fn create_playbook(
         None => return Ok(missing_param_error("goal", ToolGroup::Playbook)),
     };
 
-    let initial_command = args.get("initialCommand").and_then(|v| v.as_str());
+    let _initial_command = args.get("initialCommand").and_then(|v| v.as_str());
 
     let workflow = match args.get("workflow") {
         Some(w) if w.is_array() && !w.as_array().unwrap().is_empty() => w,
@@ -46,10 +40,10 @@ pub async fn create_playbook(
         None => return Ok(missing_param_error("workflow", ToolGroup::Playbook)),
     };
 
-    let success_criteria = args.get("successCriteria");
+    let _success_criteria = args.get("successCriteria");
 
+    let repo = crate::get_playbook_repository();
     let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp_millis();
 
     let workflow_json = match serde_json::to_string(workflow) {
         Ok(json) => json,
@@ -61,65 +55,24 @@ pub async fn create_playbook(
         }
     };
 
-    let success_criteria_json = if let Some(sc) = success_criteria {
-        match serde_json::to_string(sc) {
-            Ok(json) => Some(json),
-            Err(e) => {
-                return Ok(invalid_input_error(
-                    &format!("Invalid success criteria format: {}", e),
-                    ToolGroup::Playbook,
-                ))
-            }
-        }
-    } else {
-        None
-    };
-
-    let model = playbook::ActiveModel {
-        id: Set(id.clone()),
-        assistant_id: Set(assistant_id.to_string()),
-        session_id: Set(session_id.to_string()),
-        goal: Set(goal.to_string()),
-        initial_command: Set(initial_command.map(|s| s.to_string())),
-        workflow: Set(workflow_json.clone()),
-        success_criteria: Set(success_criteria_json.clone()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    if let Err(e) = PlaybookEntity::insert(model).exec(db).await {
-        return Ok(operation_failed_error(
-            "createPlaybook",
-            &format!("Failed to save playbook to database: {}", e),
-            vec![
-                "Verify database is accessible".to_string(),
-                "Check that workflow and success criteria are valid JSON".to_string(),
-            ],
-            ToolGroup::Playbook,
-        ));
-    }
-
-    // Re-fetch to get the full object
-    let inserted = match PlaybookEntity::find()
-        .filter(playbook::Column::Id.eq(&id))
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .one(db)
+    let inserted = match repo
+        .create_playbook(
+            id.clone(),
+            assistant_id.to_string(),
+            goal.to_string(),
+            workflow_json,
+        )
         .await
     {
-        Ok(Some(model)) => model,
-        Ok(None) => {
-            return Ok(operation_failed_error(
-                "createPlaybook",
-                "Playbook created but not found",
-                vec!["Database operation failed after creation".to_string()],
-                ToolGroup::Playbook,
-            ))
-        }
+        Ok(model) => model,
         Err(e) => {
             return Ok(operation_failed_error(
                 "createPlaybook",
-                &format!("Failed to retrieve created playbook: {}", e),
-                vec!["Database operation failed after creation".to_string()],
+                &format!("Failed to save playbook to database: {}", e),
+                vec![
+                    "Verify database is accessible".to_string(),
+                    "Check that workflow and success criteria are valid JSON".to_string(),
+                ],
                 ToolGroup::Playbook,
             ))
         }
@@ -160,47 +113,52 @@ pub fn format_playbook_summary(p: &Playbook) -> String {
 }
 
 pub async fn list_playbooks(
-    db: &DatabaseConnection,
     assistant_id: &str,
     args: Value,
     render_ui_flag: bool,
 ) -> Result<MCPResult, String> {
-    use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
+    let repo = crate::get_playbook_repository();
 
     let page = args
         .get("page")
         .and_then(|v| v.as_i64())
         .unwrap_or(1)
-        .max(1);
-    let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10); // Default 10
+        .max(1) as u64;
+    let page_size = args
+        .get("pageSize")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(10)
+        .max(1) as u64;
+    let bookmark_first = args
+        .get("bookmarkFirst")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    let limit = if page_size < 0 { -1 } else { page_size };
-    let offset = if page_size < 0 {
-        0
+    // Get all playbooks for assistant
+    let all_playbooks = if bookmark_first {
+        repo.get_bookmarked_playbooks(assistant_id)
+            .await
+            .map_err(|e| format!("Failed to list playbooks: {}", e))?
     } else {
-        (page - 1) * page_size
+        let pagination = PaginationParams {
+            page: 1,
+            limit: 10000,
+        };
+        repo.list_playbooks(assistant_id, pagination)
+            .await
+            .map_err(|e| format!("Failed to list playbooks: {}", e))?
+            .items
     };
 
-    // Count total
-    let total_items = PlaybookEntity::find()
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .count(db)
-        .await
-        .unwrap_or(0);
+    let total_items = all_playbooks.len() as u64;
+    let offset = (page - 1) * page_size;
 
-    // Fetch items
-    let mut query = PlaybookEntity::find()
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .order_by_desc(playbook::Column::UpdatedAt);
-
-    if limit >= 0 {
-        query = query.limit(limit as u64).offset(offset as u64);
-    }
-
-    let models = query
-        .all(db)
-        .await
-        .map_err(|e| format!("Failed to list playbooks: {}", e))?;
+    // Manual pagination
+    let models: Vec<_> = all_playbooks
+        .into_iter()
+        .skip(offset as usize)
+        .take(page_size as usize)
+        .collect();
 
     let playbooks: Vec<Playbook> = models.iter().map(Playbook::from_model).collect();
     let total_items = total_items as i64;
@@ -216,7 +174,13 @@ pub async fn list_playbooks(
         playbooks
             .iter()
             .enumerate()
-            .map(|(i, p)| format!("{}. {}", offset + i as i64 + 1, format_playbook_summary(p)))
+            .map(|(i, p)| {
+                format!(
+                    "{}. {}",
+                    (offset as i64) + (i as i64) + 1,
+                    format_playbook_summary(p)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -235,7 +199,13 @@ pub async fn list_playbooks(
     });
 
     if render_ui_flag {
-        let html = render_ui(&playbooks, page, total_pages, total_items, page_size)?;
+        let html = render_ui(
+            &playbooks,
+            page as i64,
+            total_pages,
+            total_items,
+            page_size as i64,
+        )?;
         let tool_name = if args.get("tool").and_then(|v| v.as_str()) == Some("getPlaybookPage") {
             "getPlaybookPage"
         } else {
@@ -316,7 +286,8 @@ pub fn render_ui(
                 "step_count": p.workflow.len(),
                 "created_at_fmt": chrono::DateTime::from_timestamp_millis(p.created_at)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                "is_bookmarked": p.is_bookmarked,
             })
         })
         .collect();
@@ -337,12 +308,8 @@ pub fn render_ui(
         .map_err(|e| format!("Failed to render UI: {}", e))
 }
 
-pub async fn get_playbook(
-    db: &DatabaseConnection,
-    assistant_id: &str,
-    args: Value,
-) -> Result<MCPResult, String> {
-    use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
+pub async fn get_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+    let repo = crate::get_playbook_repository();
 
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(id) if !id.trim().is_empty() => id,
@@ -355,12 +322,7 @@ pub async fn get_playbook(
         None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
     };
 
-    let model = match PlaybookEntity::find()
-        .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .one(db)
-        .await
-    {
+    let model = match repo.get_playbook(id, assistant_id).await {
         Ok(model) => model,
         Err(e) => {
             return Ok(operation_failed_error(
@@ -394,12 +356,8 @@ pub async fn get_playbook(
     }
 }
 
-pub async fn select_playbook(
-    db: &DatabaseConnection,
-    assistant_id: &str,
-    args: Value,
-) -> Result<MCPResult, String> {
-    use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
+pub async fn select_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+    let repo = crate::get_playbook_repository();
 
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(id) if !id.trim().is_empty() => id,
@@ -412,12 +370,7 @@ pub async fn select_playbook(
         None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
     };
 
-    let model = match PlaybookEntity::find()
-        .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .one(db)
-        .await
-    {
+    let model = match repo.get_playbook(id, assistant_id).await {
         Ok(model) => model,
         Err(e) => {
             return Ok(operation_failed_error(
@@ -488,11 +441,9 @@ pub fn format_playbook_detailed(p: &Playbook) -> String {
     lines.join("\n")
 }
 
-pub async fn delete_playbook(
-    db: &DatabaseConnection,
-    assistant_id: &str,
-    args: Value,
-) -> Result<MCPResult, String> {
+pub async fn delete_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+    let repo = crate::get_playbook_repository();
+
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(id) if !id.trim().is_empty() => id,
         Some(_) => {
@@ -504,41 +455,23 @@ pub async fn delete_playbook(
         None => return Ok(missing_param_error("id", ToolGroup::Playbook)),
     };
 
-    let delete_result = match PlaybookEntity::delete_many()
-        .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .exec(db)
-        .await
-    {
-        Ok(result) => result,
-        Err(e) => {
-            return Ok(operation_failed_error(
-                "deletePlaybook",
-                &format!("Database delete operation failed: {}", e),
-                vec!["Verify database is accessible".to_string()],
-                ToolGroup::Playbook,
-            ))
-        }
-    };
+    let delete_result = repo.delete_playbook(id, assistant_id).await;
 
-    if delete_result.rows_affected > 0 {
-        Ok(MCPResult {
+    match delete_result {
+        Ok(_) => Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("Playbook '{}' deleted", id),
             }]),
             structured_content: Some(json!({ "success": true, "id": id })),
             is_error: Some(false),
-        })
-    } else {
-        Ok(not_found_error("playbook", id, ToolGroup::Playbook))
+        }),
+        Err(_) => Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
     }
 }
 
-pub async fn update_playbook(
-    db: &DatabaseConnection,
-    assistant_id: &str,
-    args: Value,
-) -> Result<MCPResult, String> {
+pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, String> {
+    let repo = crate::get_playbook_repository();
+
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(id) if !id.trim().is_empty() => id,
         Some(_) => {
@@ -562,12 +495,7 @@ pub async fn update_playbook(
     };
 
     // Fetch existing to merge
-    let existing_model = match PlaybookEntity::find()
-        .filter(playbook::Column::Id.eq(id))
-        .filter(playbook::Column::AssistantId.eq(assistant_id))
-        .one(db)
-        .await
-    {
+    let existing_model = match repo.get_playbook(id, assistant_id).await {
         Ok(Some(model)) => model,
         Ok(None) => return Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
         Err(e) => {
@@ -618,15 +546,7 @@ pub async fn update_playbook(
         };
     }
 
-    let now = chrono::Utc::now().timestamp_millis();
-
-    // Convert to ActiveModel for update
-    let mut active_model: playbook::ActiveModel = existing_model.into();
-
-    // Apply updates from `existing` Playbook struct
-    active_model.goal = Set(existing.goal.clone());
-    active_model.initial_command = Set(existing.initial_command.clone());
-
+    // Serialize workflow for update
     let workflow_json = match serde_json::to_string(&existing.workflow) {
         Ok(json) => json,
         Err(e) => {
@@ -638,27 +558,18 @@ pub async fn update_playbook(
             ))
         }
     };
-    active_model.workflow = Set(workflow_json);
 
-    let success_criteria_json = match existing.success_criteria.as_ref() {
-        Some(sc) => match serde_json::to_string(sc) {
-            Ok(json) => Some(json),
-            Err(e) => {
-                return Ok(operation_failed_error(
-                    "updatePlaybook",
-                    &format!("Failed to serialize success criteria: {}", e),
-                    vec!["Verify success criteria structure is valid".to_string()],
-                    ToolGroup::Playbook,
-                ))
-            }
-        },
-        None => None,
-    };
-    active_model.success_criteria = Set(success_criteria_json);
-    active_model.updated_at = Set(now);
-
-    // Execute update
-    let updated_model = match active_model.update(db).await {
+    // Execute update via repository
+    let updated_model = match repo
+        .update_playbook(
+            id,
+            assistant_id,
+            Some(existing.goal.clone()),
+            Some(workflow_json),
+            None,
+        )
+        .await
+    {
         Ok(model) => model,
         Err(e) => {
             return Ok(operation_failed_error(

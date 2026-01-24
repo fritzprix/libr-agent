@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAssistantContext } from '@/context/AssistantContext';
@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import { RefreshCw, Search } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { filterSessions } from '@/lib/session-utils';
+import { getPlaybook } from '@/lib/backend/playbooks';
 
 const logger = getLogger('AgentChatStartView');
 
@@ -42,8 +44,64 @@ export default function AgentChatStartView() {
   const [startingAssistantId, setStartingAssistantId] = useState<string | null>(
     null,
   );
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const processingPlaybookRef = useRef(false);
+
+  // Handle Playbook Auto-Start
+  useEffect(() => {
+    const playbookId = searchParams.get('playbookId');
+    if (playbookId && !processingPlaybookRef.current && assistants.length > 0) {
+      const initPlaybookSession = async () => {
+        try {
+          processingPlaybookRef.current = true;
+          logger.info('Auto-starting playbook session', { playbookId });
+
+          // Find assistant from playbookId by fetching all playbooks
+          // We need to determine which assistant this playbook belongs to
+          const allAssistants = assistants;
+          let playbook = null;
+          let targetAssistant = null;
+
+          for (const assistant of allAssistants) {
+            if (!assistant.id) {
+              continue;
+            }
+
+            try {
+              playbook = await getPlaybook(playbookId, assistant.id);
+              if (playbook) {
+                targetAssistant = assistant;
+                break;
+              }
+            } catch {
+              // Continue searching even if a lookup fails
+              continue;
+            }
+          }
+
+          if (!playbook || !targetAssistant) {
+            toast.error('Playbook not found');
+            return;
+          }
+
+          toast.info(`Starting playbook: ${playbook.goal}`);
+          const session = await createSession({ assistant: targetAssistant });
+
+          // Navigate to the new session with the playbookId param so AgentChatView can pick it up
+          navigate(`/agent/${session.id}?playbookId=${playbookId}`);
+        } catch (error) {
+          logger.error('Failed to start playbook session', error);
+          toast.error('Failed to start playbook session');
+        } finally {
+          processingPlaybookRef.current = false;
+        }
+      };
+
+      initPlaybookSession();
+    }
+  }, [searchParams, assistants, createSession, navigate]);
 
   // Load sessions on mount
   useEffect(() => {
@@ -67,14 +125,7 @@ export default function AgentChatStartView() {
     }
 
     // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (session) =>
-          session.name?.toLowerCase().includes(query) ||
-          session.id.toLowerCase().includes(query),
-      );
-    }
+    filtered = filterSessions(filtered, searchQuery);
 
     // Sort by status first, then by creation date
     return [...filtered].sort((a, b) => {
@@ -103,35 +154,13 @@ export default function AgentChatStartView() {
 
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
-      if (isCreating) return; // Prevent duplicate clicks
+      // Show loading state
+      setStartingAssistantId(assistant.id || null);
 
-      try {
-        setStartingAssistantId(assistant.id || null);
-        logger.info('Creating agent session with assistant', {
-          assistantId: assistant.id,
-          assistantName: assistant.name,
-        });
-
-        const session = await createSession({ assistant });
-        logger.info('Agent session created successfully', {
-          sessionId: session.id,
-        });
-        toast.success('Agent session started');
-
-        // Reload sessions list
-        await loadSessions();
-
-        // Navigate to session-specific route
-        navigate(`/agent/${session.id}`);
-      } catch (err) {
-        logger.error('Failed to create agent session', err);
-        toast.error('Failed to start agent session');
-      } finally {
-        setStartingAssistantId(null);
-        setIsCreating(false);
-      }
+      // Navigate to simplified draft view
+      navigate(`/agent/draft?assistantId=${assistant.id}`);
     },
-    [createSession, navigate, isCreating, loadSessions],
+    [navigate],
   );
 
   const handleResumeSession = useCallback(

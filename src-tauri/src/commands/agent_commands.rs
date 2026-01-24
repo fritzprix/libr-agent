@@ -1,14 +1,12 @@
 use crate::agent::AgentSessionManager;
-
 use crate::mcp::types::ServiceContext;
-use crate::repositories::SessionMetadata;
+use crate::repositories::{AssistantRepository, PlaybookRepository, SessionMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
 
 use crate::agent::types::AgentMessageDto;
 use crate::commands::workspace_commands::get_app_logs_dir;
-use crate::state::get_database_connection;
 use std::fs;
 
 /// Request to create a new agent session
@@ -18,6 +16,18 @@ pub struct CreateAgentSessionRequest {
     pub session_id: String,
     pub name: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
+    #[serde(default)]
+    pub is_ephemeral: bool,
+}
+
+/// Request to create a new session and send the first message in one go
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAgentSessionWithMessageRequest {
+    pub session_id: String,
+    pub name: Option<String>,
+    pub agent_config: crate::agent::AgentConfig,
+    pub message: AgentMessageDto,
 }
 
 /// Request to send a user message to trigger workflow
@@ -60,8 +70,32 @@ pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
     request: CreateAgentSessionRequest,
 ) -> Result<SessionMetadata, String> {
+    use crate::repositories::in_memory_session_repository::InMemorySessionRepository;
+    use crate::repositories::SessionRepository;
+    use std::sync::Arc;
+
+    // Select repository based on is_ephemeral flag
+    let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
+        log::info!(
+            "Creating ephemeral session (in-memory only): {}",
+            request.session_id
+        );
+        Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>
+    } else {
+        log::info!(
+            "Creating persistent session (DB-backed): {}",
+            request.session_id
+        );
+        Arc::new(crate::state::get_session_repository().clone())
+    };
+
     manager
-        .create_session(request.session_id, request.name, request.agent_config)
+        .create_session_with_repo(
+            session_repo,
+            request.session_id,
+            request.name,
+            request.agent_config,
+        )
         .await
 }
 
@@ -91,6 +125,37 @@ pub async fn agent_init_session_with_messages(
     })
 }
 
+/// Create a new session and IMMEDIATELY start the workflow with an initial message
+/// This is used for "Draft Mode" where the session is created only when the first message is sent.
+#[command]
+pub async fn agent_create_session_with_initial_message(
+    manager: State<'_, AgentSessionManager>,
+    request: CreateAgentSessionWithMessageRequest,
+) -> Result<AgentResponse, String> {
+    // 1. Create the session first (persistent by default)
+    // We use the default persistent repository here
+    let session_repo = std::sync::Arc::new(crate::state::get_session_repository().clone());
+
+    manager
+        .create_session_with_repo(
+            session_repo,
+            request.session_id.clone(),
+            request.name,
+            request.agent_config,
+        )
+        .await?;
+
+    // 2. Start the workflow with the initial message
+    manager
+        .start_workflow(request.session_id.clone(), request.message)
+        .await
+        .map(|_| AgentResponse {
+            success: true,
+            message: "Session created and workflow started".to_string(),
+            data: None,
+        })
+}
+
 /// Send a user message to start an agent workflow
 #[command]
 pub async fn agent_send_message(
@@ -99,15 +164,15 @@ pub async fn agent_send_message(
 ) -> Result<AgentResponse, String> {
     // Message is already the correct type, no conversion needed
     let message = request.message;
-    manager
-        .start_workflow(request.session_id.clone(), message)
-        .await?;
 
-    Ok(AgentResponse {
-        success: true,
-        message: format!("Workflow started for session: {}", request.session_id),
-        data: None,
-    })
+    manager
+        .start_workflow(request.session_id, message)
+        .await
+        .map(|_| AgentResponse {
+            success: true,
+            message: "Message sent".to_string(),
+            data: None,
+        })
 }
 
 /// Update agent configuration for a session
@@ -377,6 +442,15 @@ pub async fn agent_get_available_tools(
     manager.get_available_tools(&session_id).await
 }
 
+/// Get available tools for a session
+#[command]
+pub async fn agent_get_tools(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Vec<crate::mcp::types::MCPTool>, String> {
+    manager.get_tools_for_session(&session_id).await
+}
+
 /// Clear all agent sessions (used for "Clear All Sessions" feature)
 #[command]
 pub async fn agent_clear_all_sessions(
@@ -410,34 +484,61 @@ pub async fn agent_clear_all_sessions(
 pub async fn agent_factory_reset(
     manager: State<'_, AgentSessionManager>,
 ) -> Result<AgentResponse, String> {
-    use crate::entity::{assistant, mcp_server, playbook};
-    use sea_orm::EntityTrait;
+    use crate::repositories::mcp_server_repository::MCPServerRepository;
+    use crate::state::get_mcp_server_repository;
 
     // 1. Clear all sessions first
     agent_clear_all_sessions(manager).await?;
 
-    let db = get_database_connection();
-
-    // 2. Delete all Assistants
-    assistant::Entity::delete_many()
-        .exec(db)
+    // 2. Delete all Playbooks (must happen before assistants due to foreign key)
+    let playbook_repo = crate::get_playbook_repository();
+    let all_playbooks = playbook_repo
+        .list_playbooks(
+            "",
+            crate::repositories::PaginationParams {
+                page: 1,
+                limit: 100000,
+            },
+        )
         .await
-        .map_err(|e| format!("Failed to clear assistants: {}", e))?;
+        .map_err(|e| format!("Failed to list playbooks: {}", e))?;
 
-    // 3. Delete all Playbooks
-    playbook::Entity::delete_many()
-        .exec(db)
+    for playbook in all_playbooks.items {
+        playbook_repo
+            .delete_playbook(&playbook.id, &playbook.assistant_id)
+            .await
+            .map_err(|e| format!("Failed to delete playbook {}: {}", playbook.id, e))?;
+    }
+
+    // 3. Delete all Assistants
+    let assistant_repo = crate::get_assistant_repository();
+    let all_assistants = assistant_repo
+        .list_assistants()
         .await
-        .map_err(|e| format!("Failed to clear playbooks: {}", e))?;
+        .map_err(|e| format!("Failed to list assistants: {}", e))?;
+
+    for assistant in all_assistants {
+        assistant_repo
+            .delete_assistant(&assistant.id)
+            .await
+            .map_err(|e| format!("Failed to delete assistant {}: {}", assistant.id, e))?;
+    }
 
     // 4. Delete all MCP Servers
-    mcp_server::Entity::delete_many()
-        .exec(db)
+    let mcp_repo = get_mcp_server_repository();
+    let servers = mcp_repo
+        .list()
         .await
-        .map_err(|e| format!("Failed to clear MCP servers: {}", e))?;
+        .map_err(|e| format!("Failed to list MCP servers: {}", e))?;
+    for server in servers {
+        mcp_repo
+            .delete(&server.name)
+            .await
+            .map_err(|e| format!("Failed to delete MCP server {}: {}", server.name, e))?;
+    }
 
     // 5. Restore default assistants so the app is not empty
-    if let Err(e) = crate::services::assistant_init::ensure_default_assistants(db).await {
+    if let Err(e) = crate::services::assistant_init::ensure_default_assistants().await {
         return Err(format!(
             "Factory reset failed to restore default assistants: {}",
             e

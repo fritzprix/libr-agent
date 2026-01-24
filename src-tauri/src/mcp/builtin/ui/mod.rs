@@ -9,6 +9,8 @@ use handlebars::Handlebars;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
+mod tools;
+
 // Embed templates
 const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
@@ -587,157 +589,7 @@ impl BuiltinMCPServer for UiServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            MCPTool {
-                name: "promptUser".to_string(),
-                description: "Display an interactive prompt to the user (text input, select, or multiselect). Use this to gather user input interactively.".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "prompt": {
-                            "type": "string",
-                            "description": "The question or instruction to show the user"
-                        },
-                        "type": {
-                            "type": "string",
-                            "enum": ["text", "select", "multiselect"],
-                            "description": "Type of prompt UI to display"
-                        },
-                        "options": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Options for select/multiselect (required for those types)"
-                        }
-                    },
-                    "required": ["prompt", "type"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Prompt User".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "replyPrompt".to_string(),
-                description: "Receive user response from prompt UI (automatically called by UI action)".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "messageId": {
-                            "type": "string",
-                            "description": "ID of the prompt being replied to"
-                        },
-                        "answer": {
-                            "type": "string", // Or array, but schema says string/null/array. We use string for simplicity in schema or "any"
-                            "description": "User answer"
-                        },
-                        "cancelled": {
-                            "type": "boolean",
-                            "description": "Whether the user cancelled the prompt"
-                        }
-                    },
-                    "required": ["messageId"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Reply Prompt".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "visualizeData".to_string(),
-                description: "Create a simple data visualization (bar or line chart).".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "type": "string",
-                            "enum": ["bar", "line"],
-                            "description": "Type of chart to create"
-                        },
-                        "data": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "label": { "type": "string" },
-                                    "value": { "type": "number" }
-                                },
-                                "required": ["label", "value"]
-                            },
-                            "description": "Data points"
-                        }
-                    },
-                    "required": ["type", "data"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Visualize Data".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "waitForUserResume".to_string(),
-                description: "Display wait UI with continue button".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "message": {
-                            "type": "string",
-                            "description": "Message to display"
-                        },
-                        "resumeInstruction": {
-                            "type": "string",
-                            "description": "Instruction for resuming"
-                        }
-                    },
-                    "required": ["message", "resumeInstruction"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Wait For User Resume".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "resumeFromWait".to_string(),
-                description: "Resume from wait state".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "resumeInstruction": { "type": "string" },
-                        "startedAt": { "type": "number" }
-                    },
-                    "required": ["resumeInstruction"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Resume From Wait".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "circuitBreak".to_string(),
-                description: "Display circuit breaker UI when agent is looping".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "toolName": { "type": "string" },
-                        "repetitionCount": { "type": "number" },
-                        "args": { "type": "string" }
-                    },
-                    "required": ["toolName", "repetitionCount"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Circuit Break".to_string()),
-                annotations: None,
-            },
-            MCPTool {
-                name: "resumeCircuitBreak".to_string(),
-                description: "Resume from circuit breaker".to_string(),
-                input_schema: serde_json::from_value(json!({
-                    "type": "object",
-                    "properties": {
-                        "toolName": { "type": "string" },
-                        "repetitionCount": { "type": "number" }
-                    },
-                    "required": ["toolName"]
-                })).unwrap(),
-                output_schema: None,
-                title: Some("Resume Circuit Break".to_string()),
-                annotations: None,
-            },
-        ]
+        tools::all_tools()
     }
 
     async fn call_tool(

@@ -1,49 +1,50 @@
-use crate::entity::{assistant, assistant::Entity as AssistantEntity};
 use crate::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use sea_orm::*;
+use crate::repositories::{AssistantRepository, PaginationParams};
 use serde_json::{json, Value};
 
 /// List all assistants with pagination support
-pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
+pub async fn list_assistants(
+    _db: &sea_orm::DatabaseConnection,
+    args: Value,
+) -> Result<MCPResult, String> {
+    let repo = crate::get_assistant_repository();
+
     // Legacy support: page/pageSize -> limit/offset
     let page = args
         .get("page")
         .and_then(|v| v.as_i64())
         .unwrap_or(1)
-        .max(1);
+        .max(1) as u64;
     let page_size = args
         .get("pageSize")
         .and_then(|v| v.as_i64())
         .unwrap_or(20)
-        .clamp(1, 100);
+        .clamp(1, 100) as u64;
 
-    // Also support direct limit/offset if provided (v2 native)
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(page_size)
-        .clamp(1, 100);
-    let offset = args
-        .get("offset")
-        .and_then(|v| v.as_i64())
-        .unwrap_or((page - 1) * page_size);
+    let _pagination = PaginationParams {
+        page,
+        limit: page_size,
+    };
 
     // Get total count for pagination metadata
-    let total_count = AssistantEntity::find().count(db).await.unwrap_or(0) as i64;
+    let total_count = repo.count_assistants().await.unwrap_or(0);
 
     // Fetch paginated results
-    let result = AssistantEntity::find()
-        .order_by_desc(assistant::Column::UpdatedAt)
-        .limit(limit as u64)
-        .offset(offset as u64)
-        .all(db)
-        .await;
+    let result = repo.list_assistants().await;
 
     match result {
-        Ok(models) => {
+        Ok(all_models) => {
+            // Manual pagination on client side since repository returns all
+            let offset = (page - 1) * page_size;
+            let models: Vec<_> = all_models
+                .into_iter()
+                .skip(offset as usize)
+                .take(page_size as usize)
+                .collect();
+
             let assistants: Vec<Value> = models
                 .into_iter()
                 .map(|model| {
@@ -60,7 +61,7 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
                 })
                 .collect();
 
-            let has_more = (offset + limit) < total_count;
+            let has_more = (offset + page_size) < total_count;
 
             // Format list for AI readability
             let assistants_text = assistants
@@ -86,7 +87,7 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
                         "Found {} assistants (showing {} to {}):\n\n{}",
                         total_count,
                         offset + 1,
-                        offset + assistants.len() as i64,
+                        offset + assistants.len() as u64,
                         assistants_text
                     )
                 } else {
@@ -104,8 +105,8 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
                 if has_more {
                     vec![format!(
                         "Use limit={} offset={} to see more assistants",
-                        limit,
-                        offset + limit
+                        page_size,
+                        offset + page_size
                     )]
                 } else if total_count > 0 {
                     vec!["Use builtin_assistant__getAssistant to view details".to_string()]
@@ -119,7 +120,7 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "assistants": assistants,
                 "total": total_count,
-                "limit": limit,
+                "limit": page_size,
                 "offset": offset,
                 "returned": assistants.len(),
                 "has_more": has_more
@@ -138,7 +139,12 @@ pub async fn list_assistants(db: &DatabaseConnection, args: Value) -> Result<MCP
 }
 
 /// Search assistants
-pub async fn search_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
+pub async fn search_assistant(
+    _db: &sea_orm::DatabaseConnection,
+    args: Value,
+) -> Result<MCPResult, String> {
+    let repo = crate::get_assistant_repository();
+
     let query = match args.get("query").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("query", ToolGroup::Assistant)),
@@ -150,23 +156,13 @@ pub async fn search_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
         .unwrap_or(10)
         .min(100);
 
-    let search_pattern = format!("%{}%", query);
-
-    let result = AssistantEntity::find()
-        .filter(
-            Condition::any()
-                .add(assistant::Column::Name.like(&search_pattern))
-                .add(assistant::Column::Config.like(&search_pattern)),
-        )
-        .order_by_desc(assistant::Column::UpdatedAt)
-        .limit(limit as u64)
-        .all(db)
-        .await;
+    let result = repo.search_assistants(query).await;
 
     match result {
         Ok(models) => {
             let assistants: Vec<Value> = models
                 .into_iter()
+                .take(limit as usize)
                 .map(|model| {
                     let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
                     json!({
@@ -224,13 +220,18 @@ pub async fn search_assistant(db: &DatabaseConnection, args: Value) -> Result<MC
 }
 
 /// Get an assistant by ID
-pub async fn get_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPResult, String> {
+pub async fn get_assistant(
+    _db: &sea_orm::DatabaseConnection,
+    args: Value,
+) -> Result<MCPResult, String> {
+    let repo = crate::get_assistant_repository();
+
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
     };
 
-    let result = AssistantEntity::find_by_id(id).one(db).await;
+    let result = repo.get_assistant(id).await;
 
     match result {
         Ok(Some(model)) => {
@@ -259,7 +260,7 @@ pub async fn get_assistant(db: &DatabaseConnection, args: Value) -> Result<MCPRe
                 "updated_at": model.updated_at
             }))))
         }
-        Ok(Option::None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
+        Ok(None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
         Err(e) => Ok(operation_failed_error(
             "Get assistant",
             &e.to_string(),

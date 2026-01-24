@@ -1,17 +1,16 @@
 use async_trait::async_trait;
 use sea_orm::*;
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::entity::{knowledge, knowledge::Entity as KnowledgeEntity};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
-use crate::mcp::utils::schema_builder::*;
+use crate::repositories::KnowledgeRepository;
 
 mod helpers;
 mod operations;
 mod queries;
+mod tools;
 
 /// Knowledge Server - Session-scoped knowledge base with full-text search
 ///
@@ -37,13 +36,16 @@ impl KnowledgeServer {
 
     /// Get tools statically (without an instance)
     pub fn tools_static() -> Vec<MCPTool> {
-        vec![
-            create_save_knowledge_tool(),
-            create_read_knowledge_tool(),
-            create_delete_knowledge_tool(),
-            create_search_knowledge_tool(),
-            create_list_knowledge_tool(),
-        ]
+        tools::all_tools()
+    }
+
+    /// Get metadata statically (without an instance)
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Knowledge Server".to_string(),
+            description: "Assistant-scoped knowledge base with full-text search".to_string(),
+            icon: Some("📚".to_string()),
+        }
     }
 }
 
@@ -78,11 +80,10 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Query knowledge count with error handling using SeaORM
-        let db = self.get_db();
-        let count: u64 = KnowledgeEntity::find()
-            .filter(knowledge::Column::AssistantId.eq(&self.assistant_id))
-            .count(db)
+        // Query knowledge count with error handling using repository
+        let repo = crate::get_knowledge_repository();
+        let count: u64 = repo
+            .count_knowledge(&self.assistant_id)
             .await
             .unwrap_or_else(|e| {
                 log::warn!(
@@ -158,138 +159,6 @@ impl BuiltinMCPServer for KnowledgeServer {
                 tool_name
             )),
         }
-    }
-}
-
-/// Create the saveKnowledge tool definition
-fn create_save_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "saveKnowledge".to_string(),
-        title: Some("Save Knowledge".to_string()),
-        description: "Save a knowledge entry to the assistant-scoped knowledge base".to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Title of the knowledge entry"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "Content/body of the knowledge entry"
-                },
-                "source": {
-                    "type": "string",
-                    "description": "Source origin of the knowledge (e.g. URL, filename, 'user')"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Optional tags for categorization"
-                }
-            },
-            "required": ["title", "content"]
-        }))
-        .unwrap(),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Create the readKnowledge tool definition
-fn create_read_knowledge_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        integer_prop(None, None, Some("ID of the knowledge entry to read")),
-    );
-
-    MCPTool {
-        name: "readKnowledge".to_string(),
-        title: Some("Read Knowledge".to_string()),
-        description: "Read a specific knowledge entry by ID".to_string(),
-        input_schema: object_schema(props, vec!["id".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Create the deleteKnowledge tool definition
-fn create_delete_knowledge_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        integer_prop(None, None, Some("ID of the knowledge entry to delete")),
-    );
-
-    MCPTool {
-        name: "deleteKnowledge".to_string(),
-        title: Some("Delete Knowledge".to_string()),
-        description: "Delete a specific knowledge entry by ID".to_string(),
-        input_schema: object_schema(props, vec!["id".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Create the searchKnowledge tool definition
-fn create_search_knowledge_tool() -> MCPTool {
-    MCPTool {
-        name: "searchKnowledge".to_string(),
-        title: Some("Search Knowledge".to_string()),
-        description: "Search the knowledge base using full-text search (FTS5) and/or tags"
-            .to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search query (FTS5 full-text search)"
-                },
-                "source": {
-                    "type": "string",
-                    "description": "Filter by source"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Filter by tags"
-                },
-                "limit": {
-                    "type": "integer",
-                    "default": 10,
-                    "maximum": 100,
-                    "description": "Maximum number of results"
-                }
-            }
-        }))
-        .unwrap(),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Create the listKnowledge tool definition
-fn create_list_knowledge_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "limit".to_string(),
-        integer_prop_with_default(Some(1), Some(100), 20, Some("Maximum number of entries")),
-    );
-    props.insert(
-        "offset".to_string(),
-        integer_prop_with_default(Some(0), None, 0, Some("Offset for pagination")),
-    );
-
-    MCPTool {
-        name: "listKnowledge".to_string(),
-        title: Some("List Knowledge".to_string()),
-        description: "List all knowledge entries for this assistant (paginated)".to_string(),
-        input_schema: object_schema(props, vec![]),
-        output_schema: None,
-        annotations: None,
     }
 }
 

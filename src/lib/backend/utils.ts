@@ -2,7 +2,7 @@ import { safeInvoke } from './core';
 import type {
   ServiceContext,
   ServiceContextOptions,
-} from '@/features/tools/types';
+} from '@/features/mcp/types';
 
 // ========================================
 // Log Management

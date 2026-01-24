@@ -6,34 +6,112 @@
 /// 3. Session isolation and cleanup
 #[cfg(test)]
 mod tests {
-    use crate::entity::{playbook, session};
-    use crate::mcp::server::MCPServerManager;
+    use crate::entity::{assistant, mcp_server, playbook, session};
     use crate::mcp::service_proxy_manager::MCPServiceProxyManager;
     use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema, Set};
     use serde_json::json;
     use std::sync::Arc;
 
-    /// Helper to create a test database connection
+    use crate::repositories::{
+        SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
+        SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
+        SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    };
+    use crate::state;
+    use std::sync::OnceLock;
+
+    static TEST_DB: OnceLock<Arc<DatabaseConnection>> = OnceLock::new();
+
+    /// Helper to create or get the singleton test database connection
     async fn create_test_db() -> Arc<DatabaseConnection> {
-        let db = Database::connect("sqlite::memory:")
+        if let Some(db) = TEST_DB.get() {
+            return db.clone();
+        }
+
+        // Initialize DB with a file to debug persistence issues
+        // We use /tmp/libragent_test.db
+        let mut opt =
+            sea_orm::ConnectOptions::new("sqlite:///tmp/libragent_test.db?mode=rwc".to_owned());
+        opt.max_connections(1);
+        let db = Database::connect(opt)
             .await
-            .expect("Failed to connect to in-memory database");
+            .expect("Failed to connect to file database");
 
         let schema = Schema::new(db.get_database_backend());
 
         // Create sessions table
         let stmt = schema.create_table_from_entity(session::Entity);
-        db.execute(db.get_database_backend().build(&stmt))
-            .await
-            .expect("Failed to create sessions table");
+        if let Err(e) = db.execute(db.get_database_backend().build(&stmt)).await {
+            // Ignore error if table exists (race condition)
+            if !e.to_string().contains("already exists") {
+                panic!("Failed to create sessions table: {}", e);
+            }
+        }
 
-        // Create playbooks table (needed for playbook tests)
+        // Create playbooks table
         let stmt = schema.create_table_from_entity(playbook::Entity);
-        db.execute(db.get_database_backend().build(&stmt))
-            .await
-            .expect("Failed to create playbooks table");
+        if let Err(e) = db.execute(db.get_database_backend().build(&stmt)).await {
+            if !e.to_string().contains("already exists") {
+                panic!("Failed to create playbooks table: {}", e);
+            }
+        }
 
-        Arc::new(db)
+        // Create assistants table
+        let stmt = schema.create_table_from_entity(assistant::Entity);
+        if let Err(e) = db.execute(db.get_database_backend().build(&stmt)).await {
+            if !e.to_string().contains("already exists") {
+                panic!("Failed to create assistants table: {}", e);
+            }
+        }
+
+        // Create mcp_servers table
+        let stmt = schema.create_table_from_entity(mcp_server::Entity);
+        if let Err(e) = db.execute(db.get_database_backend().build(&stmt)).await {
+            if !e.to_string().contains("already exists") {
+                panic!("Failed to create mcp_servers table: {}", e);
+            }
+        }
+
+        // Initialize global repositories
+        // We capture panics because they panic if already set (race condition handled via OnceLock check usually,
+        // but parallel tests might race between the check and the set in state.rs?
+        // No, state.rs uses OnceLock too. If we are the first to run create_test_db, we win.
+        // But create_test_db can be called concurrently.
+        // OnceLock::get_or_init is what we want, but it's blocking and we have async code.
+        // We will do a best effort initialization.
+
+        // We can't use OnceLock::get_or_init with async.
+        // We will just initialize and try to set.
+        // If state is already set, it's fine.
+
+        let db_clone = db.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            // We ignore failures here, assuming they failed because they are already set.
+            // Using a separate thread to catch panic might be safer if panic=abort is not set.
+            // But sea_orm::DatabaseConnection is Send+Sync.
+
+            // However, state.rs setters PANIC explicitely.
+            // We should use a helper that checks if set?
+            // state.rs only exposes set_... and get_...  (get panics if not set).
+            // It doesn't expose "is_set".
+            // We will trust the catch_unwind.
+            state::set_mcp_server_repository(SqliteMCPServerRepository::new(db_clone.clone()));
+            state::set_assistant_repository(SqliteAssistantRepository::new(db_clone.clone()));
+            state::set_playbook_repository(SqlitePlaybookRepository::new(db_clone.clone()));
+            state::set_session_repository(SqliteSessionRepository::new(db_clone.clone()));
+            state::set_message_repository(SqliteMessageRepository::new(db_clone.clone()));
+            state::set_content_store_repository(SqliteContentStoreRepository::new(
+                db_clone.clone(),
+            ));
+            state::set_settings_repository(SqliteSettingsRepository::new(db_clone.clone()));
+            state::set_knowledge_repository(SqliteKnowledgeRepository::new(db_clone.clone()));
+            state::set_planning_repository(SqlitePlanningRepository::new(db_clone.clone()));
+        }));
+
+        // Store in local static (best effort race)
+        let _ = TEST_DB.set(Arc::new(db));
+
+        TEST_DB.get().expect("DB should be set").clone()
     }
 
     #[tokio::test]
@@ -43,9 +121,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Test 1: Create proxy with bootstrap tool
         let session_id = "test-session-1".to_string();
@@ -135,9 +212,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create two sessions
         let session1 = "session-1".to_string();
@@ -191,13 +267,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = Arc::new(MCPServiceProxyManager::new(
-            Arc::new(mcp_manager),
-            db,
-            session_manager,
-        ));
+        let proxy_manager = Arc::new(MCPServiceProxyManager::new(db, session_manager));
 
         // Create session
         proxy_manager
@@ -261,9 +332,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Test 1: Call tool on non-existent session
         let result = proxy_manager
@@ -308,10 +378,15 @@ mod tests {
             id: Set("playbook-ui-test".to_string()),
             name: Set(Some("Test".to_string())),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(json!({ "assistantId": "asst-s1" }).to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
         };
+        // Defensive cleanup
+        let _ = session::Entity::delete_by_id("playbook-ui-test".to_string())
+            .exec(db.as_ref())
+            .await;
         session::Entity::insert(new_session)
             .exec(db.as_ref())
             .await
@@ -320,9 +395,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create proxy with playbook tool
         let session_id = "playbook-ui-test".to_string();
@@ -428,10 +502,15 @@ mod tests {
             id: Set("session-ui-1".to_string()),
             name: Set(Some("S1".to_string())),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(json!({ "assistantId": "asst-ui-test" }).to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
         };
+        // Defensive cleanup
+        let _ = session::Entity::delete_by_id("session-ui-1".to_string())
+            .exec(db.as_ref())
+            .await;
         session::Entity::insert(s1)
             .exec(db.as_ref())
             .await
@@ -441,10 +520,15 @@ mod tests {
             id: Set("session-ui-2".to_string()),
             name: Set(Some("S2".to_string())),
             status: Set("idle".to_string()),
+            agent_config: Set(Some(json!({ "assistantId": "asst-s1" }).to_string())),
             created_at: Set(0),
             updated_at: Set(0),
             ..Default::default()
         };
+        // Defensive cleanup
+        let _ = session::Entity::delete_by_id("session-ui-2".to_string())
+            .exec(db.as_ref())
+            .await;
         session::Entity::insert(s2)
             .exec(db.as_ref())
             .await
@@ -453,9 +537,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         // Create two proxies
         proxy_manager
@@ -572,9 +655,8 @@ mod tests {
         let session_manager = Arc::new(
             crate::session::SessionManager::new().expect("Failed to create SessionManager"),
         );
-        let mcp_manager = MCPServerManager::new_with_session_manager(session_manager.clone());
 
-        let proxy_manager = MCPServiceProxyManager::new(Arc::new(mcp_manager), db, session_manager);
+        let proxy_manager = MCPServiceProxyManager::new(db, session_manager);
 
         let session_id = "path_resolution_test_session".to_string();
 

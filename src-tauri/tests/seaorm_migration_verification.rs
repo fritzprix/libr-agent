@@ -216,13 +216,13 @@ async fn test_playbook_crud_operations() {
     let playbook = playbook::ActiveModel {
         id: Set("playbook-1".to_string()),
         assistant_id: Set("assistant-1".to_string()),
-        session_id: Set("test-session".to_string()),
         goal: Set("Test Goal".to_string()),
         initial_command: Set(Some("test command".to_string())),
         workflow: Set("[]".to_string()),
         success_criteria: Set(Some("{}".to_string())),
         created_at: Set(1000),
         updated_at: Set(1000),
+        is_bookmarked: Set(false),
     };
 
     let inserted = playbook.insert(&db).await;
@@ -239,7 +239,6 @@ async fn test_playbook_crud_operations() {
     let found = playbook::Entity::find()
         .filter(playbook::Column::Id.eq("playbook-1"))
         .filter(playbook::Column::AssistantId.eq("assistant-1"))
-        .filter(playbook::Column::SessionId.eq("test-session"))
         .one(&db)
         .await;
 

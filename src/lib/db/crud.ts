@@ -271,27 +271,28 @@ export const playbooksCRUD: CRUD<PlaybookRecord> & {
       await playbooksBackend.upsertPlaybook(p);
     }
   },
-  read: async (id: string) => {
-    return playbooksBackend.getPlaybook(id);
+  read: async (id: string, agentId?: string) => {
+    if (!agentId) throw new Error('agentId required to read playbook');
+    return playbooksBackend.getPlaybook(id, agentId);
   },
-  delete: async (id: string) => {
-    await playbooksBackend.deletePlaybook(id);
+  delete: async (id: string, agentId?: string) => {
+    if (!agentId) throw new Error('agentId required to delete playbook');
+    await playbooksBackend.deletePlaybook(id, agentId);
   },
-  getPage: async (page: number, pageSize: number) => {
+  getPage: async (page: number, pageSize: number, agentId?: string) => {
     const { page: p, pageSize: ps } = validatePagination(page, pageSize);
-    return playbooksBackend.getPlaybooksPage(p, ps);
+    if (!agentId) throw new Error('agentId required to page playbooks');
+    return playbooksBackend.getPlaybooksPage(agentId, p, ps);
   },
-  count: async () => {
-    const all = await playbooksBackend.listPlaybooks();
+  count: async (agentId?: string) => {
+    if (!agentId) return 0;
+    const all = await playbooksBackend.listPlaybooks({ agentId });
     return all.length;
   },
 
   // New method: agentId-filtered pagination
   getPageForAgent: async (agentId: string, page: number, pageSize: number) => {
-    // Fetch all and filter (simulated pagination)
-    const all = await playbooksBackend.listPlaybooks();
-    const filtered = all.filter((p) => p.agentId === agentId);
-
-    return createPage(filtered, page, pageSize, filtered.length);
+    const { page: p, pageSize: ps } = validatePagination(page, pageSize);
+    return playbooksBackend.getPlaybooksPage(agentId, p, ps);
   },
 };

@@ -81,6 +81,8 @@ export async function createSession(session: Session): Promise<Session> {
         pub session_id: String,
         pub name: Option<String>,
         pub agent_config: AgentConfig,
+        #[serde(default)]
+        pub is_ephemeral: bool,
     }
     */
 
@@ -94,6 +96,7 @@ export async function createSession(session: Session): Promise<Session> {
         env: {},
         assistants: assistantIds,
       },
+      isEphemeral: false, // Default to persistent (DB-backed)
     },
   });
 

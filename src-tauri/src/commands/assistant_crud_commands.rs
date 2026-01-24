@@ -1,6 +1,6 @@
-use crate::entity::assistant;
-use crate::state::get_database_connection;
-use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set};
+use crate::entity::assistant::Model as AssistantModel;
+use crate::repositories::AssistantRepository;
+use crate::state::get_assistant_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -15,8 +15,8 @@ pub struct AssistantDto {
     pub updated_at: i64,
 }
 
-impl From<assistant::Model> for AssistantDto {
-    fn from(model: assistant::Model) -> Self {
+impl From<AssistantModel> for AssistantDto {
+    fn from(model: AssistantModel) -> Self {
         Self {
             id: model.id,
             name: model.name,
@@ -33,19 +33,11 @@ pub async fn create_assistant(
     name: String,
     config: Value,
 ) -> Result<AssistantDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
+    let repo = get_assistant_repository();
+    let config_str = config.to_string();
 
-    let assistant = assistant::ActiveModel {
-        id: Set(id),
-        name: Set(name),
-        config: Set(config.to_string()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let result = assistant
-        .insert(db)
+    let result = repo
+        .create_assistant(id, name, config_str)
         .await
         .map_err(|e| format!("Failed to create assistant: {}", e))?;
 
@@ -58,26 +50,11 @@ pub async fn update_assistant(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<AssistantDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
+    let repo = get_assistant_repository();
+    let config_str = config.map(|c| c.to_string());
 
-    let mut assistant: assistant::ActiveModel = assistant::Entity::find_by_id(&id)
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to find assistant: {}", e))?
-        .ok_or_else(|| "Assistant not found".to_string())?
-        .into();
-
-    if let Some(name) = name {
-        assistant.name = Set(name);
-    }
-    if let Some(config) = config {
-        assistant.config = Set(config.to_string());
-    }
-    assistant.updated_at = Set(now);
-
-    let result = assistant
-        .update(db)
+    let result = repo
+        .update_assistant(&id, name, config_str)
         .await
         .map_err(|e| format!("Failed to update assistant: {}", e))?;
 
@@ -86,9 +63,8 @@ pub async fn update_assistant(
 
 #[command]
 pub async fn delete_assistant(id: String) -> Result<(), String> {
-    let db = get_database_connection();
-    assistant::Entity::delete_by_id(id)
-        .exec(db)
+    let repo = get_assistant_repository();
+    repo.delete_assistant(&id)
         .await
         .map_err(|e| format!("Failed to delete assistant: {}", e))?;
     Ok(())
@@ -96,10 +72,9 @@ pub async fn delete_assistant(id: String) -> Result<(), String> {
 
 #[command]
 pub async fn list_assistants() -> Result<Vec<AssistantDto>, String> {
-    let db = get_database_connection();
-    let assistants = assistant::Entity::find()
-        .order_by_asc(assistant::Column::CreatedAt)
-        .all(db)
+    let repo = get_assistant_repository();
+    let assistants = repo
+        .list_assistants()
         .await
         .map_err(|e| format!("Failed to list assistants: {}", e))?;
 
@@ -108,9 +83,9 @@ pub async fn list_assistants() -> Result<Vec<AssistantDto>, String> {
 
 #[command]
 pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
-    let db = get_database_connection();
-    let assistant = assistant::Entity::find_by_id(id)
-        .one(db)
+    let repo = get_assistant_repository();
+    let assistant = repo
+        .get_assistant(&id)
         .await
         .map_err(|e| format!("Failed to get assistant: {}", e))?;
 

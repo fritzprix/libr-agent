@@ -1,4 +1,11 @@
-import { Bot, BrainCircuit, History, Settings, Users } from 'lucide-react';
+import {
+  Bot,
+  BrainCircuit,
+  History,
+  Settings,
+  Users,
+  BookOpen,
+} from 'lucide-react';
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -53,21 +60,18 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className={`flex-1 overflow-y-auto  terminal-scrollbar`}>
-        {/* Agent Section */}
+        {/* Main Section */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Agent
-          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <Link to="/agent">
                   <SidebarMenuButton
                     isActive={location.pathname.startsWith('/agent')}
-                    tooltip="Start Agent"
+                    tooltip="Chat"
                   >
                     <Bot size={16} />
-                    <span>Start Agent</span>
+                    <span>Chat</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -75,10 +79,10 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Group Section */}
+        {/* Library Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Assistant Management
+            Library
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -86,10 +90,21 @@ export default function AppSidebar() {
                 <Link to="/assistants">
                   <SidebarMenuButton
                     isActive={location.pathname === '/assistants'}
-                    tooltip="Manage Assistants"
+                    tooltip="Assistants"
                   >
                     <Users size={16} />
                     <span>Assistants</span>
+                  </SidebarMenuButton>
+                </Link>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <Link to="/playbooks">
+                  <SidebarMenuButton
+                    isActive={location.pathname === '/playbooks'}
+                    tooltip="Playbooks"
+                  >
+                    <BookOpen size={16} />
+                    <span>Playbooks</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>
@@ -97,10 +112,10 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* History Section */}
+        {/* Activity Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            History
+            Activity
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -108,10 +123,10 @@ export default function AppSidebar() {
                 <Link to="/history">
                   <SidebarMenuButton
                     isActive={location.pathname === '/history'}
-                    tooltip="Search History"
+                    tooltip="History"
                   >
                     <History size={16} />
-                    <span>Search History</span>
+                    <span>History</span>
                   </SidebarMenuButton>
                 </Link>
               </SidebarMenuItem>

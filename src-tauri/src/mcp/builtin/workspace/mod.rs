@@ -352,6 +352,15 @@ impl WorkspaceServer {
         tools.extend(tools::terminal_tools());
         tools
     }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Workspace".to_string(),
+            description: "Execute shell commands and manage background processes".to_string(),
+            icon: None,
+        }
+    }
 }
 
 #[async_trait]
@@ -445,12 +454,8 @@ impl BuiltinMCPServer for WorkspaceServer {
                         let process_list = processes
                             .iter()
                             .map(|(id, cmd)| {
-                                // Truncate command if too long
-                                let display_cmd = if cmd.len() > 80 {
-                                    format!("{}...", &cmd[..77])
-                                } else {
-                                    cmd.clone()
-                                };
+                                // Truncate command if too long (safe string slicing)
+                                let display_cmd = crate::utils::truncate_chars(cmd, 77);
                                 format!("  • {} - {}", id, display_cmd)
                             })
                             .collect::<Vec<_>>()

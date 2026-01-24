@@ -4,15 +4,13 @@ use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
-use crate::state::{get_database_connection, get_message_repository};
+use crate::state::get_message_repository;
 use serde::{Deserialize, Serialize};
-use tauri::State;
-
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::command;
+use tauri::State;
 
 /// Default timestamp generator for serde deserialization fallback
 fn default_timestamp() -> i64 {
@@ -163,8 +161,6 @@ static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEng
 
 /// Load or rebuild the search index for a session.
 async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, String> {
-    let db = get_database_connection();
-
     let repo = get_message_repository();
     let index_path = get_index_path(session_id)?;
     let max_docs = MessageSearchEngine::max_docs_from_env();
@@ -191,12 +187,8 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
     let start_time = std::time::Instant::now();
 
     // Fetch messages from database (most recent max_docs)
-    // SELECT id, session_id, content, created_at FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?
-    let messages = crate::entity::message::Entity::find()
-        .filter(crate::entity::message::Column::SessionId.eq(session_id))
-        .order_by_desc(crate::entity::message::Column::CreatedAt)
-        .limit(max_docs as u64)
-        .all(db)
+    let messages = crate::get_message_repository()
+        .get_message_models_by_session(session_id, max_docs as u64)
         .await
         .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
@@ -279,15 +271,11 @@ pub async fn messages_search(
         engine.search(&query, page * page_size * 2)?
     } else {
         // Global search: build a temporary index from messages across all sessions.
-        let db = get_database_connection();
         let max_docs = MessageSearchEngine::max_docs_from_env();
 
         // Fetch recent messages across all sessions up to max_docs
-        // SELECT id, session_id, content, created_at FROM messages ORDER BY created_at DESC LIMIT ?
-        let messages = crate::entity::message::Entity::find()
-            .order_by_desc(crate::entity::message::Column::CreatedAt)
-            .limit(max_docs as u64)
-            .all(db)
+        let messages = crate::get_message_repository()
+            .get_recent_message_models(max_docs as u64)
             .await
             .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
 

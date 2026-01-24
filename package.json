@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.4.4",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -35,8 +35,8 @@
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",
-    "rust:fmt": "cd src-tauri && cargo fmt --check",
-    "rust:fmt:fix": "cd src-tauri && cargo fmt",
+    "rust:fmt": "cd src-tauri && cargo fmt",
+    "rust:fmt:check": "cd src-tauri && cargo fmt --check",
     "rust:clippy": "cd src-tauri && cargo clippy -- -D warnings",
     "rust:check": "cd src-tauri && cargo check",
     "rust:check:all": "cd src-tauri && cargo check --all-features",
@@ -98,7 +98,6 @@
     "swr": "^2.3.4",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11",
-    "turndown": "^7.1.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -112,7 +111,6 @@
     "@types/node": "^24.0.13",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
-    "@types/turndown": "^5.0.4",
     "@typescript-eslint/eslint-plugin": "^8.44.1",
     "@typescript-eslint/parser": "^8.44.1",
     "@vitejs/plugin-react": "^4.3.4",

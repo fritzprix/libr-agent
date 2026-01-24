@@ -5,14 +5,17 @@ use crate::mcp::service_proxy::MCPServiceProxy;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
-use crate::repositories::SessionStatus;
+use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 /// Request LLM completion from frontend
+///
+/// Note: session_repo is passed through to handle_llm_response which uses it for status updates
 pub async fn request_llm_completion(
+    _session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -107,6 +110,7 @@ pub async fn request_llm_completion(
 
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -279,6 +283,7 @@ pub async fn handle_llm_response(
             );
             // Set status to error
             crate::agent::lifecycle::update_session_status(
+                session_repo,
                 active_sessions,
                 app_handle,
                 &session_id,
@@ -297,6 +302,7 @@ pub async fn handle_llm_response(
 
         // Workflow completed normally (has content, no tool calls)
         crate::agent::lifecycle::update_session_status(
+            session_repo,
             active_sessions,
             app_handle,
             &session_id,
@@ -318,6 +324,16 @@ pub async fn handle_llm_response(
             tool_calls.len(),
             session_id
         );
+
+        // Update status to Busy
+        crate::agent::lifecycle::update_session_status(
+            session_repo,
+            active_sessions,
+            app_handle,
+            &session_id,
+            SessionStatus::Busy,
+        )
+        .await?;
 
         // Initialize pending execution state
         {
@@ -350,6 +366,7 @@ pub async fn handle_llm_response(
                 .map_err(|e| format!("Failed to emit tool execution started event: {}", e))?;
 
             // Spawn async task for execution
+            let session_repo_clone = session_repo.clone();
             let active_sessions_clone = active_sessions.clone();
             let app_handle_clone = app_handle.clone();
             let proxy_manager_clone = proxy_manager.clone();
@@ -375,6 +392,7 @@ pub async fn handle_llm_response(
                         };
                         // Handle result (error case)
                         handle_tool_result_and_continue(
+                            &session_repo_clone,
                             &active_sessions_clone,
                             &proxy_manager_clone,
                             &app_handle_clone,
@@ -393,7 +411,12 @@ pub async fn handle_llm_response(
                     .await
                 {
                     Ok(response) => {
-                        let content = response
+                        let mcp_content = crate::agent::tools::convert_mcp_response_content(
+                            response.result.clone(),
+                        );
+
+                        // For logging/debugging only (not used in tool messages)
+                        let debug_content = response
                             .result
                             .as_ref()
                             .and_then(|r| serde_json::to_string_pretty(r).ok())
@@ -404,12 +427,10 @@ pub async fn handle_llm_response(
 
                         crate::commands::agent_commands::ToolExecutionResult {
                             success: !is_error,
-                            content,
+                            content: debug_content,
                             error: error_msg,
                             is_error,
-                            mcp_content: crate::agent::tools::convert_mcp_response_content(
-                                response.result,
-                            ),
+                            mcp_content,
                         }
                     }
                     Err(e) => crate::commands::agent_commands::ToolExecutionResult {
@@ -423,6 +444,7 @@ pub async fn handle_llm_response(
 
                 // Handle result and potentially continue workflow
                 handle_tool_result_and_continue(
+                    &session_repo_clone,
                     &active_sessions_clone,
                     &proxy_manager_clone,
                     &app_handle_clone,
@@ -440,6 +462,7 @@ pub async fn handle_llm_response(
 
 /// Helper to handle tool result and trigger next steps if valid
 async fn handle_tool_result_and_continue(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -508,6 +531,7 @@ async fn handle_tool_result_and_continue(
                     session_id
                 );
                 let _ = crate::agent::lifecycle::update_session_status(
+                    session_repo,
                     active_sessions,
                     app_handle,
                     &session_id,
@@ -520,9 +544,14 @@ async fn handle_tool_result_and_continue(
                 let _ = crate::agent::events::emit_agent_event(app_handle, event);
             } else {
                 // Request next LLM completion
-                if let Err(e) =
-                    request_llm_completion(active_sessions, proxy_manager, app_handle, session_id)
-                        .await
+                if let Err(e) = request_llm_completion(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id,
+                )
+                .await
                 {
                     log::error!("Failed to request LLM completion: {}", e);
                 }
@@ -533,7 +562,9 @@ async fn handle_tool_result_and_continue(
         }
         Err(e) => {
             log::error!("Error handling tool result: {}", e);
-            if let Err(err) = handle_llm_error(active_sessions, app_handle, session_id, e).await {
+            if let Err(err) =
+                handle_llm_error(session_repo, active_sessions, app_handle, session_id, e).await
+            {
                 log::error!("Failed to handle LLM error: {}", err);
             }
         }
@@ -542,6 +573,7 @@ async fn handle_tool_result_and_continue(
 
 /// Handle LLM error from frontend
 pub async fn handle_llm_error(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
@@ -550,6 +582,7 @@ pub async fn handle_llm_error(
     log::error!("LLM error for session {}: {}", session_id, error);
 
     crate::agent::lifecycle::update_session_status(
+        session_repo,
         active_sessions,
         app_handle,
         &session_id,

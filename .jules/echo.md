@@ -17,3 +17,18 @@
 
 **Pattern:** Identical JSX structure (container, label, error message) duplicated in `InputWithLabel.tsx` and `TextareaWithLabel.tsx`.
 **Action:** Extracted `FieldWrapper` component to centralize the layout and styling logic for labeled form fields.
+
+## 2026-05-24 - [Duplicate Session Filtering Logic]
+
+**Pattern:** Redundant session filtering logic (matching against name, ID, assistant name/description) in `SessionList.tsx` and `AgentChatStartView.tsx`.
+**Action:** Extracted `filterSessions` utility in `src/lib/session-utils.ts` to centralize filtering logic and ensure consistent search behavior across views.
+
+## 2026-01-20 - [JSON Repository Serialization]
+
+**Pattern:** Repeated `serde_json::from_str` and `unwrap_or_default` calls in `MessageRepository::model_to_message` and private helper method duplication for serialization.
+**Action:** Extracted `to_json_option`, `from_json_option`, and `from_json_or_default` into `src-tauri/src/utils/json.rs` to centralize serialization logic and reduce boilerplate.
+
+## 2026-05-24 - [Repository Trait Cleanup and Conversion Duplication]
+
+**Pattern:** Vestigial `create_table` no-op method duplicated in repository traits, and repeated manual `SessionMetadata` mapping in `SessionRepository`.
+**Action:** Removed `create_table` from `MessageRepository` and `SessionRepository` traits, and implemented `TryFrom<session::Model>` for `SessionMetadata` to centralize conversion logic.

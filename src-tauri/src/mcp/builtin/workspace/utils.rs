@@ -1,17 +1,14 @@
-use crate::entity::settings;
-use crate::state::get_database_connection;
 use regex::Regex;
-use sea_orm::EntityTrait;
 use serde_json::Value;
 
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
-    let db = get_database_connection();
+    use crate::repositories::settings_repository::SettingsRepository;
+    use crate::state::get_settings_repository;
+
+    let repo = get_settings_repository();
     // Setting key is 'advancedSettings' based on RustSettingsService
-    match settings::Entity::find_by_id("advancedSettings")
-        .one(db)
-        .await
-    {
+    match repo.get("advancedSettings").await {
         Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
             Ok(json) => json
                 .get("diffContextLines")
@@ -58,12 +55,8 @@ pub fn sanitize_command_for_logging(command: &str) -> String {
     let sanitized = re_spaces.replace_all(&sanitized, " ").to_string();
     let sanitized = sanitized.trim().to_string();
 
-    // Truncate if too long
-    if sanitized.len() > 100 {
-        format!("{}...", &sanitized[..100])
-    } else {
-        sanitized
-    }
+    // Truncate if too long (safe string slicing)
+    crate::utils::truncate_chars(&sanitized, 100)
 }
 
 #[cfg(test)]

@@ -1,15 +1,15 @@
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
-use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
+use crate::repositories::AssistantRepository;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::Value;
 use std::sync::Arc;
 
 mod operations;
 mod queries;
+mod tools;
 
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -55,14 +55,17 @@ impl AssistantServer {
     }
 
     pub fn tools_static() -> Vec<MCPTool> {
-        vec![
-            create_create_assistant_tool(),
-            create_update_assistant_tool(),
-            create_delete_assistant_tool(),
-            create_list_assistants_tool(),
-            create_get_assistant_tool(),
-            create_search_assistant_tool(),
-        ]
+        tools::all_tools()
+    }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
+        crate::mcp::types::BuiltinServerMetadata {
+            display_name: "Assistant Manager".to_string(),
+            description: "Global assistant configuration management (shared across all sessions)"
+                .to_string(),
+            icon: None,
+        }
     }
 }
 
@@ -116,13 +119,8 @@ impl BuiltinMCPServer for AssistantServer {
             }
         }
 
-        use crate::entity::assistant::Entity as AssistantEntity;
-        use sea_orm::{EntityTrait, PaginatorTrait};
-
-        let total_count = AssistantEntity::find()
-            .count(self.get_db())
-            .await
-            .unwrap_or(0);
+        let repo = crate::get_assistant_repository();
+        let total_count = repo.count_assistants().await.unwrap_or(0);
 
         let context_prompt = format!(
             "# Assistant Server Status\n\
@@ -144,171 +142,6 @@ impl BuiltinMCPServer for AssistantServer {
             context_prompt,
             structured_state: None,
         }
-    }
-}
-
-/// Create the createAssistant tool definition
-fn create_create_assistant_tool() -> MCPTool {
-    MCPTool {
-        name: "createAssistant".to_string(),
-        title: Some("Create Assistant".to_string()),
-        description: "Create a new global assistant configuration.
-
-⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
-1. ALWAYS call listAssistants FIRST to check for duplicates
-2. Verify 'name' is unique
-3. Then call this tool to create
-
-❌ NEVER create without checking for duplicates first".to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "description": "Assistant name (Must be unique)" },
-                "systemPrompt": { "type": "string", "description": "System prompt for the assistant" },
-                "modelProvider": { "type": "string", "description": "AI model provider (e.g., openai, anthropic, ollama)" },
-                "modelName": { "type": "string", "description": "Specific model name (e.g., gpt-4, claude-3-5-sonnet)" },
-                "temperature": { "type": "number", "description": "Model temperature (0.0 to 1.0)" },
-                "maxTokens": { "type": "integer", "description": "Maximum tokens for response" },
-                "allowedBuiltInServiceAliases": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "List of allowed built-in service aliases (e.g., 'mcp_manager', 'workspace', 'browser')"
-                },
-                "mcpServerIds": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "List of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ CRITICAL: IDs must be valid.\n1. Call builtin_mcp_manager__listMcpServers FIRST to get valid IDs\n2. Extract exact ID values from listMcpServers response\n3. Invalid IDs will cause validation error"
-                }
-            },
-            "required": ["name"]
-        })).unwrap(),
-        annotations: None,
-        output_schema: None,
-    }
-}
-
-/// Create the updateAssistant tool definition
-fn create_update_assistant_tool() -> MCPTool {
-    MCPTool {
-        name: "updateAssistant".to_string(),
-        title: Some("Update Assistant".to_string()),
-        description: "Update an existing assistant configuration.
-
-⚠️ CRITICAL WORKFLOW:
-1. Call getAssistant(id) FIRST to get current config
-2. Extract exact 'id' from response
-3. Include ONLY fields you want to change
-4. Update 'allowedBuiltInServiceAliases' to enable/disable builtin tools".to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "id": { "type": "string", "description": "⚠️ Exact Assistant ID from getAssistant response" },
-                "name": { "type": "string", "description": "New name" },
-                "systemPrompt": { "type": "string", "description": "New system prompt" },
-                "modelProvider": { "type": "string", "description": "New AI model provider" },
-                "modelName": { "type": "string", "description": "New model name" },
-                "temperature": { "type": "number", "description": "New temperature" },
-                "maxTokens": { "type": "integer", "description": "New max tokens" },
-                "allowedBuiltInServiceAliases": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Update list of allowed built-in service aliases"
-                },
-                "mcpServerIds": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Update list of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ Use builtin_mcp_manager__listMcpServers to get valid IDs before updating"
-                }
-            },
-            "required": ["id"]
-        })).unwrap(),
-        annotations: None,
-        output_schema: None,
-    }
-}
-
-/// Create the deleteAssistant tool definition
-fn create_delete_assistant_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        string_prop_required("⚠️ Exact Assistant ID from listAssistants/getAssistant response"),
-    );
-
-    MCPTool {
-        name: "deleteAssistant".to_string(),
-        title: Some("Delete Assistant".to_string()),
-        description: "Delete an assistant configuration.
-
-⚠️ WARNING: This action is permanent.
-✅ ALWAYS verify the ID with getAssistant before deleting"
-            .to_string(),
-        input_schema: object_schema(props, vec!["id".to_string()]),
-        annotations: None,
-        output_schema: None,
-    }
-}
-
-/// Create the listAssistants tool definition
-fn create_list_assistants_tool() -> MCPTool {
-    MCPTool {
-        name: "listAssistants".to_string(),
-        title: Some("List Assistants".to_string()),
-        description: "List available assistants with pagination.
-
-Returns 'id', 'name', and 'config' for each assistant.
-Use 'limit' and 'offset' to navigate through results.".to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "limit": { "type": "integer", "description": "Items to return (max 100)", "default": 20 },
-                "offset": { "type": "integer", "description": "Items to skip", "default": 0 },
-                "search": { "type": "string", "description": "Search term for filtering" }
-            }
-        })).unwrap(),
-        annotations: None,
-        output_schema: None,
-    }
-}
-
-/// Create the getAssistant tool definition
-fn create_get_assistant_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "id".to_string(),
-        string_prop_required("⚠️ Exact Assistant ID from listAssistants response"),
-    );
-
-    MCPTool {
-        name: "getAssistant".to_string(),
-        title: Some("Get Assistant".to_string()),
-        description: "Get full details of a specific assistant.
-
-✅ Use this to retrieve the current configuration before updating."
-            .to_string(),
-        input_schema: object_schema(props, vec!["id".to_string()]),
-        annotations: None,
-        output_schema: None,
-    }
-}
-
-/// Create the searchAssistant tool definition
-fn create_search_assistant_tool() -> MCPTool {
-    MCPTool {
-        name: "searchAssistant".to_string(),
-        title: Some("Search Assistant".to_string()),
-        description: "Search assistants by name or configuration content.".to_string(),
-        input_schema: serde_json::from_value(json!({
-            "type": "object",
-            "properties": {
-                "query": { "type": "string", "description": "Search query text" },
-                "limit": { "type": "integer", "description": "Maximum number of results" }
-            },
-            "required": ["query"]
-        }))
-        .unwrap(),
-        annotations: None,
-        output_schema: None,
     }
 }
 

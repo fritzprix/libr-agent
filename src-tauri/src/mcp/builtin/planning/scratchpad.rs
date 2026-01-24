@@ -3,15 +3,14 @@ use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set, TransactionTrait,
-};
+use crate::repositories::PlanningRepository;
+use crate::state::get_planning_repository;
+use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
 /// Add scratchpad item (Legacy: addScratchpad)
 pub async fn add_scratchpad(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -39,86 +38,13 @@ pub async fn add_scratchpad(
     let title_owned = title.map(|s| s.to_string());
     let source_owned = source.map(|s| s.to_string());
 
-    // Transaction for atomic check-and-insert
-    let result: Result<(i64, i64), sea_orm::TransactionError<String>> = db
-        .transaction::<_, (i64, i64), String>(move |txn| {
-            Box::pin(async move {
-                // 1. Check duplicate title
-                if let Some(ref t) = title_owned {
-                    let existing = planning_scratchpad::Entity::find()
-                        .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
-                        .filter(planning_scratchpad::Column::Title.eq(t))
-                        .one(txn)
-                        .await
-                        .map_err(|e| format!("Database error: {}", e))?;
+    let repo = get_planning_repository();
 
-                    if existing.is_some() {
-                        return Err(format!("DUPLICATE:{}", t));
-                    }
-                }
-
-                // 2. Check limit
-                let count = planning_scratchpad::Entity::find()
-                    .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
-                    .count(txn)
-                    .await
-                    .map_err(|e| format!("Database error: {}", e))?;
-
-                if count >= 10 {
-                    return Err("LIMIT_REACHED".to_string());
-                }
-
-                // 3. Insert
-                let now = chrono::Utc::now().timestamp_millis();
-                let new_item = planning_scratchpad::ActiveModel {
-                    session_id: Set(session_id_owned.clone()),
-                    content: Set(note_owned.clone()),
-                    title: Set(title_owned.clone()),
-                    source: Set(source_owned.clone()),
-                    tags: Set(tags.clone()),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                };
-
-                let inserted = new_item
-                    .insert(txn)
-                    .await
-                    .map_err(|e| format!("Failed to insert: {}", e))?;
-
-                // Get new count
-                let new_count = planning_scratchpad::Entity::find()
-                    .filter(planning_scratchpad::Column::SessionId.eq(&session_id_owned))
-                    .count(txn)
-                    .await
-                    .map_err(|e| format!("Database error: {}", e))?;
-
-                Ok((inserted.id, new_count as i64))
-            })
-        })
-        .await;
-
-    match result {
-        Ok((last_id, current_count)) => {
-            let response_id = cuid2::create_id();
-            let hint = SuccessHint::new(
-                format!(
-                    "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
-                    last_id, current_count
-                ),
-                vec![
-                    "Use listScratchpad to see all items".to_string(),
-                    "Use readScratchpad to view full content".to_string(),
-                ],
-            );
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "id": response_id,
-                "scratchpadId": last_id
-            }))))
-        }
-        Err(sea_orm::TransactionError::Transaction(err)) => {
-            if err == "LIMIT_REACHED" {
-                Ok(ErrorGuidance::with_guidance(
+    // 1. Check limit
+    match repo.check_scratchpad_limit(&session_id_owned).await {
+        Ok(count) => {
+            if count >= 10 {
+                return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::InvalidState,
                     "Scratchpad limit reached (10 items)",
                     vec![
@@ -127,27 +53,80 @@ pub async fn add_scratchpad(
                     ],
                     ToolGroup::Planning,
                 )
-                .to_mcp_result())
-            } else if let Some(stripped) = err.strip_prefix("DUPLICATE:") {
-                Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::DuplicateResource,
-                    format!("Scratchpad item with title '{}' already exists", stripped),
-                    vec![
-                        "Use updateScratchpad to modify the existing note".to_string(),
-                        "Choose a different title for the new note".to_string(),
-                    ],
-                    ToolGroup::Planning,
-                )
-                .to_mcp_result())
-            } else {
-                Ok(ErrorGuidance::with_guidance(
+                .to_mcp_result());
+            }
+        }
+        Err(e) => {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Database error: {}", e),
+                vec!["Try again".to_string()],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result())
+        }
+    }
+
+    // 2. Check duplicate title
+    if let Some(ref t) = title_owned {
+        match repo.check_scratchpad_duplicate(&session_id_owned, t).await {
+            Ok(is_dup) => {
+                if is_dup {
+                    return Ok(ErrorGuidance::with_guidance(
+                        ErrorCategory::DuplicateResource,
+                        format!("Scratchpad item with title '{}' already exists", t),
+                        vec![
+                            "Use updateScratchpad to modify the existing note".to_string(),
+                            "Choose a different title for the new note".to_string(),
+                        ],
+                        ToolGroup::Planning,
+                    )
+                    .to_mcp_result());
+                }
+            }
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::DatabaseError,
-                    format!("Transaction failed: {}", err),
+                    format!("Database error: {}", e),
                     vec!["Try again".to_string()],
                     ToolGroup::Planning,
                 )
                 .to_mcp_result())
             }
+        }
+    }
+
+    // 3. Insert
+    match repo
+        .add_scratchpad(
+            &session_id_owned,
+            title_owned,
+            &note_owned,
+            source_owned,
+            tags,
+        )
+        .await
+    {
+        Ok(id) => {
+            let count = repo
+                .check_scratchpad_limit(&session_id_owned)
+                .await
+                .unwrap_or(0); // Best effort count
+            let response_id = cuid2::create_id();
+            let hint = SuccessHint::new(
+                format!(
+                    "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
+                    id, count
+                ),
+                vec![
+                    "Use listScratchpad to see all items".to_string(),
+                    "Use readScratchpad to view full content".to_string(),
+                ],
+            );
+            Ok(hint.to_mcp_result_with_data(Some(json!({
+                "id": response_id,
+                "scratchpadId": id
+            }))))
         }
         Err(e) => Ok(ErrorGuidance::with_guidance(
             ErrorCategory::DatabaseError,
@@ -159,9 +138,12 @@ pub async fn add_scratchpad(
     }
 }
 
+// Update scratchpad (Already refactored in previous step, but we are replacing lines 1-400 so we need to include everything up to list_scratchpad being refactored? No, replace_file_content target is lines 1-137 for add_scratchpad/imports.
+// I will just perform a small replacement for imports first, then list_scratchpad separately to avoid huge context replacement issues.)
+
 /// Update scratchpad item
 pub async fn update_scratchpad(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -191,49 +173,41 @@ pub async fn update_scratchpad(
         .and_then(|v| v.as_str())
         .map(|s| s.trim());
 
-    // Find item
-    let existing = planning_scratchpad::Entity::find()
-        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .filter(planning_scratchpad::Column::Title.eq(title_val))
-        .one(db)
+    let repo = get_planning_repository();
+
+    match repo
+        .update_scratchpad(
+            session_id,
+            title_val,
+            new_title.map(|s| s.to_string()),
+            note_val,
+        )
         .await
-        .map_err(|e| format!("Database error: {}", e))?;
-
-    let item = match existing {
-        Some(i) => i,
-        None => {
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::ResourceNotFound,
-                format!("No scratchpad item found with title '{}'", title_val),
-                vec![
-                    "Use listScratchpad to see available items".to_string(),
-                    "Use addScratchpad to create a new note".to_string(),
-                    "Check for typos in the title".to_string(),
-                ],
-                ToolGroup::Planning,
-            )
-            .to_mcp_result());
-        }
-    };
-
-    let now = chrono::Utc::now().timestamp_millis();
-    let final_title = new_title.unwrap_or(title_val);
-
-    let mut active_item: planning_scratchpad::ActiveModel = item.into();
-    active_item.content = Set(note_val.to_string());
-    active_item.title = Set(Some(final_title.to_string()));
-    active_item.updated_at = Set(now);
-
-    match active_item.update(db).await {
-        Ok(_) => {
-            let hint = SuccessHint::new(
-                format!("✓ Scratchpad note '{}' updated", final_title),
-                vec![
-                    "Use readScratchpad to verify content".to_string(),
-                    "Use listScratchpad to see all items".to_string(),
-                ],
-            );
-            Ok(hint.to_mcp_result())
+    {
+        Ok(found) => {
+            if found {
+                let final_title = new_title.unwrap_or(title_val);
+                let hint = SuccessHint::new(
+                    format!("✓ Scratchpad note '{}' updated", final_title),
+                    vec![
+                        "Use readScratchpad to verify content".to_string(),
+                        "Use listScratchpad to see all items".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
+            } else {
+                Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::ResourceNotFound,
+                    format!("No scratchpad item found with title '{}'", title_val),
+                    vec![
+                        "Use listScratchpad to see available items".to_string(),
+                        "Use addScratchpad to create a new note".to_string(),
+                        "Check for typos in the title".to_string(),
+                    ],
+                    ToolGroup::Planning,
+                )
+                .to_mcp_result())
+            }
         }
         Err(e) => Ok(ErrorGuidance::with_guidance(
             ErrorCategory::DatabaseError,
@@ -250,7 +224,7 @@ pub async fn update_scratchpad(
 
 /// List scratchpad items (Legacy: listScratchpad)
 pub async fn list_scratchpad(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -276,13 +250,19 @@ pub async fn list_scratchpad(
             .collect::<Vec<String>>()
     });
 
-    // Fetch all items
-    let all_items = planning_scratchpad::Entity::find()
-        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .order_by_desc(planning_scratchpad::Column::CreatedAt)
-        .all(db)
-        .await
-        .map_err(|e| format!("Failed to list scratchpad: {}", e))?;
+    let repo = get_planning_repository();
+    let all_items = match repo.list_scratchpad(session_id).await {
+        Ok(items) => items,
+        Err(e) => {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to list scratchpad: {}", e),
+                vec!["Try again".to_string()],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result())
+        }
+    };
 
     // Filter in memory
     let filtered_items: Vec<&planning_scratchpad::Model> = if let Some(tags) = &filter_tags {
@@ -303,7 +283,6 @@ pub async fn list_scratchpad(
                     }
                 })
                 .collect()
-            // .filter(|item| ...) logic
         }
     } else {
         all_items.iter().collect()
@@ -366,20 +345,23 @@ pub async fn list_scratchpad(
         }
     }
 
-    let json_items: Vec<Value> = paged_items.into_iter().map(|item| {
-        json!({
-            "id": item.id,
-            "title": item.title,
-            "preview": if item.content.chars().count() > 200 {
-                let truncated: String = item.content.chars().take(200).collect();
-                format!("{}...", truncated)
-            } else {
-                item.content.clone()
-            },
-            "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
-            "created_at": item.created_at
+    let json_items: Vec<Value> = paged_items
+        .into_iter()
+        .map(|item| {
+            json!({
+                "id": item.id,
+                "title": item.title,
+                "preview": if item.content.chars().count() > 200 {
+                    let truncated: String = item.content.chars().take(200).collect();
+                    format!("{}...", truncated)
+                } else {
+                    item.content.clone()
+                },
+                "tags": item.tags.clone().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()),
+                "created_at": item.created_at
+            })
         })
-    }).collect();
+        .collect();
 
     let hint = SuccessHint::new(
         text_output,
@@ -401,7 +383,7 @@ pub async fn list_scratchpad(
 
 /// Read scratchpad item (Legacy: readScratchpad)
 pub async fn read_scratchpad(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -415,7 +397,7 @@ pub async fn read_scratchpad(
         Err(_) => return Ok(missing_param_error("ids", ToolGroup::Planning)),
     };
 
-    let mut items = Vec::new();
+    let mut target_ids = Vec::new();
     for id_val in ids_array {
         if let Some(id) = id_val.as_i64() {
             if id < 0 {
@@ -424,24 +406,37 @@ pub async fn read_scratchpad(
                     ToolGroup::Planning,
                 ));
             }
-
-            let item = planning_scratchpad::Entity::find_by_id(id)
-                .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-                .one(db)
-                .await
-                .map_err(|e| format!("Failed to read item {}: {}", id, e))?;
-
-            if let Some(i) = item {
-                items.push(json!({
-                    "id": i.id,
-                    "title": i.title,
-                    "content": i.content,
-                    "source": i.source,
-                    "tags": i.tags.and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
-                }));
-            }
+            target_ids.push(id);
         }
     }
+
+    let repo = get_planning_repository();
+    let retrieved_items = match repo.get_scratchpad_by_ids(target_ids).await {
+        Ok(items) => items,
+        Err(e) => {
+            return Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::DatabaseError,
+                format!("Failed to read items: {}", e),
+                vec!["Try again".to_string()],
+                ToolGroup::Planning,
+            )
+            .to_mcp_result())
+        }
+    };
+
+    let items: Vec<Value> = retrieved_items
+        .into_iter()
+        .filter(|i| i.session_id == session_id)
+        .map(|i| {
+            json!({
+                "id": i.id,
+                "title": i.title,
+                "content": i.content,
+                "source": i.source,
+                "tags": i.tags.and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+            })
+        })
+        .collect();
 
     let mut text_output = String::new();
     if items.is_empty() {
@@ -473,7 +468,7 @@ pub async fn read_scratchpad(
 
 /// Clear scratchpad item (Legacy: clearScratchpad)
 pub async fn clear_scratchpad(
-    db: &DatabaseConnection,
+    _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
@@ -488,21 +483,29 @@ pub async fn clear_scratchpad(
         return Ok(invalid_input_error("id must be >= 0", ToolGroup::Planning));
     }
 
-    let result = planning_scratchpad::Entity::delete_by_id(target_id)
-        .filter(planning_scratchpad::Column::SessionId.eq(session_id))
-        .exec(db)
-        .await;
+    let repo = get_planning_repository();
 
-    match result {
-        Ok(_) => {
-            let hint = SuccessHint::new(
-                "✓ Scratchpad item cleared",
-                vec![
-                    "Use addScratchpad to add new items".to_string(),
-                    "Use listScratchpad to see remaining items".to_string(),
-                ],
-            );
-            Ok(hint.to_mcp_result())
+    // Note: repo.delete_scratchpad_item handles session_id check
+    match repo.delete_scratchpad_item(session_id, target_id).await {
+        Ok(found) => {
+            if found {
+                let hint = SuccessHint::new(
+                    "✓ Scratchpad item cleared",
+                    vec![
+                        "Use addScratchpad to add new items".to_string(),
+                        "Use listScratchpad to see remaining items".to_string(),
+                    ],
+                );
+                Ok(hint.to_mcp_result())
+            } else {
+                Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::ResourceNotFound,
+                    format!("Scratchpad item {} not found in this session", target_id),
+                    vec!["Use listScratchpad to verify item exists".to_string()],
+                    ToolGroup::Planning,
+                )
+                .to_mcp_result())
+            }
         }
         Err(e) => Ok(ErrorGuidance::with_guidance(
             ErrorCategory::DatabaseError,

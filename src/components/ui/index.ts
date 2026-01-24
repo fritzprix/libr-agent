@@ -53,7 +53,7 @@ export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 // Custom components that don't have Shadcn equivalents
 export { Dropdown } from './Dropdown';
 export { default as BadgeLegacy } from './BadgeLegacy';
-export { default as ButtonLegacy } from './ButtonLegacy';
+
 export { default as FileAttachment } from './FileAttachment';
 export { default as InputWithLabel } from './InputWithLabel';
 export { default as LoadingSpinner } from './LoadingSpinner';

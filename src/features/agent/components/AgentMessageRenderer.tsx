@@ -5,7 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
-import type { MCPContent } from '@/lib/mcp-types';
+import type { MCPContent, ServiceInfo } from '@/lib/mcp-types';
 import type { Message } from '@/models/chat';
 import { extractServiceInfoFromContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
@@ -34,6 +34,206 @@ import { handleUserToolCall } from '@/lib/backend'; // Import type-safe wrapper
 import { createId } from '@paralleldrive/cuid2';
 
 const logger = getLogger('AgentMessageRenderer');
+
+// Define plugins outside component to maintain stable references
+const REMARK_PLUGINS = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex];
+
+// Define markdown components outside to prevent re-creation on every render
+const MARKDOWN_COMPONENTS: React.ComponentProps<
+  typeof ReactMarkdown
+>['components'] = {
+  p: ({ children, ...props }) => (
+    <p className="mb-2 last:mb-0" {...props}>
+      {children}
+    </p>
+  ),
+  code: ({
+    children,
+    className,
+    ...props
+  }: React.ComponentPropsWithoutRef<'code'> & {
+    inline?: boolean;
+    node?: unknown;
+  }) => {
+    // Distinguish inline code vs block code
+    // ReactMarkdown passes className="language-xxx" for code blocks
+    const match = /language-(\w+)/.exec(className || '');
+    const language = match ? match[1] : '';
+
+    if (!language) {
+      // Inline code
+      return (
+        <code
+          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
+          {...props}
+        >
+          {children}
+        </code>
+      );
+    }
+
+    // Block code with syntax highlighting
+    const code = String(children).replace(/\n$/, '');
+
+    // Detect dark mode
+    // Note: This matches the previous implementation.
+    // For better performance, this could be moved to a hook/context,
+    // but doing it here is acceptable for now.
+    const isDark =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    return (
+      <Highlight
+        theme={isDark ? themes.oneDark : themes.oneLight}
+        code={code}
+        language={language}
+      >
+        {({
+          className: highlightClassName,
+          style,
+          tokens,
+          getLineProps,
+          getTokenProps,
+        }) => (
+          <code
+            className={`${highlightClassName} block font-mono text-sm`}
+            style={style}
+          >
+            {tokens.map((line, i) => (
+              <div key={i} {...getLineProps({ line })}>
+                {line.map((token, key) => (
+                  <span key={key} {...getTokenProps({ token })} />
+                ))}
+              </div>
+            ))}
+          </code>
+        )}
+      </Highlight>
+    );
+  },
+  pre: ({ children, ...props }) => (
+    <pre
+      className="overflow-x-auto bg-muted rounded-lg p-4 my-3 border border-border max-w-full"
+      {...props}
+    >
+      {children}
+    </pre>
+  ),
+  table: ({ children, ...props }) => (
+    <div className="overflow-x-auto w-full max-w-full my-4 border rounded-lg">
+      <table className="w-full text-sm text-left" {...props}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children, ...props }) => (
+    <thead className="bg-muted/50 text-muted-foreground" {...props}>
+      {children}
+    </thead>
+  ),
+  tbody: ({ children, ...props }) => (
+    <tbody className="divide-y divide-border" {...props}>
+      {children}
+    </tbody>
+  ),
+  tr: ({ children, ...props }) => (
+    <tr
+      className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
+      {...props}
+    >
+      {children}
+    </tr>
+  ),
+  th: ({ children, ...props }) => (
+    <th className="px-4 py-3 font-medium" {...props}>
+      {children}
+    </th>
+  ),
+  td: ({ children, ...props }) => (
+    <td className="px-4 py-3" {...props}>
+      {children}
+    </td>
+  ),
+  h1: ({ children, ...props }) => (
+    <h1 className="text-2xl font-bold mb-3 mt-4" {...props}>
+      {children}
+    </h1>
+  ),
+  h2: ({ children, ...props }) => (
+    <h2 className="text-xl font-bold mb-2 mt-3" {...props}>
+      {children}
+    </h2>
+  ),
+  h3: ({ children, ...props }) => (
+    <h3 className="text-lg font-semibold mb-2 mt-2" {...props}>
+      {children}
+    </h3>
+  ),
+  ul: ({
+    children,
+    ...props
+  }: React.ComponentPropsWithoutRef<'ul'> & {
+    ordered?: boolean;
+    node?: unknown;
+  }) => (
+    <ul className="list-disc list-inside mb-2 space-y-1" {...props}>
+      {children}
+    </ul>
+  ),
+  ol: ({
+    children,
+    ...props
+  }: React.ComponentPropsWithoutRef<'ol'> & {
+    node?: unknown;
+    ordered?: boolean;
+  }) => (
+    <ol className="list-decimal list-inside mb-2 space-y-1" {...props}>
+      {children}
+    </ol>
+  ),
+  li: ({
+    children,
+    ...props
+  }: React.ComponentPropsWithoutRef<'li'> & {
+    node?: unknown;
+    ordered?: boolean;
+  }) => (
+    <li className="ml-2" {...props}>
+      {children}
+    </li>
+  ),
+  blockquote: ({ children, ...props }) => (
+    <blockquote
+      className="border-l-4 border-primary pl-4 italic my-2 text-muted-foreground"
+      {...props}
+    >
+      {children}
+    </blockquote>
+  ),
+  strong: ({ children, ...props }) => (
+    <strong className="font-bold" {...props}>
+      {children}
+    </strong>
+  ),
+  em: ({ children, ...props }) => (
+    <em className="italic" {...props}>
+      {children}
+    </em>
+  ),
+  a: ({ children, href, ...props }) => (
+    <a
+      href={href}
+      className="text-primary hover:underline"
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    >
+      {children}
+    </a>
+  ),
+};
 
 interface AgentMessageRendererProps {
   content?: MCPContent[];
@@ -432,220 +632,36 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
                 <ReactMarkdown
                   skipHtml={false}
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                  components={{
-                    p: ({ children, ...props }) => (
-                      <p className="mb-2 last:mb-0" {...props}>
-                        {children}
-                      </p>
-                    ),
-                    code: ({
-                      children,
-                      className,
-                      ...props
-                    }: React.ComponentPropsWithoutRef<'code'> & {
-                      inline?: boolean;
-                      node?: unknown;
-                    }) => {
-                      // Distinguish inline code vs block code
-                      // ReactMarkdown passes className="language-xxx" for code blocks
-                      const match = /language-(\w+)/.exec(className || '');
-                      const language = match ? match[1] : '';
-
-                      if (!language) {
-                        // Inline code
-                        return (
-                          <code
-                            className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
-                            {...props}
-                          >
-                            {children}
-                          </code>
-                        );
-                      }
-
-                      // Block code with syntax highlighting
-                      const code = String(children).replace(/\n$/, '');
-
-                      // Detect dark mode
-                      const isDark =
-                        typeof window !== 'undefined' &&
-                        window.matchMedia('(prefers-color-scheme: dark)')
-                          .matches;
-
-                      return (
-                        <Highlight
-                          theme={isDark ? themes.oneDark : themes.oneLight}
-                          code={code}
-                          language={language}
-                        >
-                          {({
-                            className: highlightClassName,
-                            style,
-                            tokens,
-                            getLineProps,
-                            getTokenProps,
-                          }) => (
-                            <code
-                              className={`${highlightClassName} block font-mono text-sm`}
-                              style={style}
-                            >
-                              {tokens.map((line, i) => (
-                                <div key={i} {...getLineProps({ line })}>
-                                  {line.map((token, key) => (
-                                    <span
-                                      key={key}
-                                      {...getTokenProps({ token })}
-                                    />
-                                  ))}
-                                </div>
-                              ))}
-                            </code>
-                          )}
-                        </Highlight>
-                      );
-                    },
-                    pre: ({ children, ...props }) => (
-                      <pre
-                        className="overflow-x-auto bg-muted rounded-lg p-4 my-3 border border-border max-w-full"
-                        {...props}
-                      >
-                        {children}
-                      </pre>
-                    ),
-                    table: ({ children, ...props }) => (
-                      <div className="overflow-x-auto w-full max-w-full my-4 border rounded-lg">
-                        <table className="w-full text-sm text-left" {...props}>
-                          {children}
-                        </table>
-                      </div>
-                    ),
-                    thead: ({ children, ...props }) => (
-                      <thead
-                        className="bg-muted/50 text-muted-foreground"
-                        {...props}
-                      >
-                        {children}
-                      </thead>
-                    ),
-                    tbody: ({ children, ...props }) => (
-                      <tbody className="divide-y divide-border" {...props}>
-                        {children}
-                      </tbody>
-                    ),
-                    tr: ({ children, ...props }) => (
-                      <tr
-                        className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
-                        {...props}
-                      >
-                        {children}
-                      </tr>
-                    ),
-                    th: ({ children, ...props }) => (
-                      <th className="px-4 py-3 font-medium" {...props}>
-                        {children}
-                      </th>
-                    ),
-                    td: ({ children, ...props }) => (
-                      <td className="px-4 py-3" {...props}>
-                        {children}
-                      </td>
-                    ),
-                    h1: ({ children, ...props }) => (
-                      <h1 className="text-2xl font-bold mb-3 mt-4" {...props}>
-                        {children}
-                      </h1>
-                    ),
-                    h2: ({ children, ...props }) => (
-                      <h2 className="text-xl font-bold mb-2 mt-3" {...props}>
-                        {children}
-                      </h2>
-                    ),
-                    h3: ({ children, ...props }) => (
-                      <h3
-                        className="text-lg font-semibold mb-2 mt-2"
-                        {...props}
-                      >
-                        {children}
-                      </h3>
-                    ),
-                    ul: ({
-                      children,
-                      ...props
-                    }: React.ComponentPropsWithoutRef<'ul'> & {
-                      ordered?: boolean;
-                      node?: unknown;
-                    }) => (
-                      <ul
-                        className="list-disc list-inside mb-2 space-y-1"
-                        {...props}
-                      >
-                        {children}
-                      </ul>
-                    ),
-                    ol: ({
-                      children,
-                      ...props
-                    }: React.ComponentPropsWithoutRef<'ol'> & {
-                      node?: unknown;
-                      ordered?: boolean;
-                    }) => (
-                      <ol
-                        className="list-decimal list-inside mb-2 space-y-1"
-                        {...props}
-                      >
-                        {children}
-                      </ol>
-                    ),
-                    li: ({
-                      children,
-                      ...props
-                    }: React.ComponentPropsWithoutRef<'li'> & {
-                      node?: unknown;
-                      ordered?: boolean;
-                    }) => (
-                      <li className="ml-2" {...props}>
-                        {children}
-                      </li>
-                    ),
-                    blockquote: ({ children, ...props }) => (
-                      <blockquote
-                        className="border-l-4 border-primary pl-4 italic my-2 text-muted-foreground"
-                        {...props}
-                      >
-                        {children}
-                      </blockquote>
-                    ),
-                    strong: ({ children, ...props }) => (
-                      <strong className="font-bold" {...props}>
-                        {children}
-                      </strong>
-                    ),
-                    em: ({ children, ...props }) => (
-                      <em className="italic" {...props}>
-                        {children}
-                      </em>
-                    ),
-                    a: ({ children, href, ...props }) => (
-                      <a
-                        href={href}
-                        className="text-primary hover:underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        {...props}
-                      >
-                        {children}
-                      </a>
-                    ),
-                  }}
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
+                  components={MARKDOWN_COMPONENTS}
                 >
                   {textItem.text}
                 </ReactMarkdown>
               </div>
             );
           }
-          case 'resource':
+          case 'resource': {
+            // Type narrow to extract the resource property
+            const resourceItem = item as {
+              type: 'resource';
+              resource: {
+                uri: string;
+                mimeType: string;
+                text?: string;
+                blob?: string;
+                _meta?: Record<string, unknown>;
+              };
+              serviceInfo?: ServiceInfo;
+            };
+
+            if (!resourceItem.resource) {
+              logger.warn('Resource content is missing resource property', {
+                item,
+              });
+              return null;
+            }
+
             // Prefer a stable, unique key to ensure proper mount/unmount semantics
             // Use message.id + resource.uri to avoid index-based reordering issues
             // Also, pass stable props to avoid unnecessary teardown in the renderer
@@ -669,10 +685,11 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                       className: 'h-auto min-h-[50vh] max-h-none',
                     },
                   }}
-                  resource={item.resource}
+                  resource={resourceItem.resource}
                 />
               </div>
             );
+          }
           case 'image': {
             const imageItem = item as {
               data?: string;

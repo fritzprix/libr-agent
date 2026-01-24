@@ -1,10 +1,14 @@
-import { Route, Routes, Navigate } from 'react-router-dom';
+import { Route, Routes, Navigate, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
 const AgentContainer = lazy(() => import('@/features/agent'));
+const AgentDraftChatView = lazy(
+  () => import('@/features/agent/AgentDraftChatView'),
+);
 const AssistantList = lazy(() => import('@/features/assistant/List'));
+const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 
@@ -19,13 +23,39 @@ import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SettingsProvider } from '../context/SettingsContext';
 import '../styles/globals.css';
 import './App.css';
-import { BuiltInToolProvider } from '@/features/tools';
-import { RustMCPToolProvider } from '@/features/tools/RustMCPToolProvider';
-import { BrowserToolProvider } from '@/features/tools/BrowserToolProvider';
+// Removed legacy tool provider imports
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
+import { AgentSessionProvider } from '@/context/AgentSessionContext';
+import { useAgentSessionListState } from '@/context/AgentSessionListContext';
+
+function PlaybookRoute() {
+  const { sessions } = useAgentSessionListState();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get('sessionId') ?? sessions[0]?.id;
+
+  if (!sessionId) {
+    return (
+      <div className="p-6 h-full bg-background">
+        <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
+          <h2 className="text-xl font-semibold mb-2">No Active Session</h2>
+          <p className="text-center text-sm">
+            Start an agent session from the Agent page to view and manage
+            playbooks.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <AgentSessionProvider sessionId={sessionId} key={sessionId}>
+      <PlaybookList />
+    </AgentSessionProvider>
+  );
+}
 
 function App() {
   return (
@@ -38,62 +68,66 @@ function App() {
                 <MCPServerProvider>
                   <AssistantContextProvider>
                     <AgentSessionListProvider>
-                      <BuiltInToolProvider>
-                        <RustMCPToolProvider />
-                        <BrowserToolProvider />
-                        <SidebarProvider className="h-full overflow-hidden">
-                          <DnDContextProvider>
-                            <AppSidebar />
-                            {/* Main Content Area (children of AppSidebar) */}
-                            <div className="flex flex-1 flex-col min-w-0">
-                              <AppHeader>
-                                <ThemeToggle />
-                              </AppHeader>
-                              <div className="flex-1 w-full min-h-0 overflow-y-auto">
-                                <Suspense
-                                  fallback={
-                                    <div className="flex items-center justify-center h-full">
-                                      Loading...
-                                    </div>
-                                  }
-                                >
-                                  <Routes>
-                                    <Route
-                                      path="/"
-                                      element={<Navigate to="/agent" replace />}
-                                    />
-                                    <Route
-                                      path="/agent"
-                                      element={<AgentContainer />}
-                                    />
-                                    <Route
-                                      path="/agent/:sessionId"
-                                      element={<AgentContainer />}
-                                    />
-                                    <Route
-                                      path="/assistants"
-                                      element={<AssistantList />}
-                                    />
-                                    <Route
-                                      path="/history"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/history/search"
-                                      element={<History />}
-                                    />
-                                    <Route
-                                      path="/settings"
-                                      element={<SettingsPage />}
-                                    />
-                                  </Routes>
-                                </Suspense>
-                              </div>
+                      <SidebarProvider className="h-full overflow-hidden">
+                        <DnDContextProvider>
+                          <AppSidebar />
+                          {/* Main Content Area (children of AppSidebar) */}
+                          <div className="flex flex-1 flex-col min-w-0">
+                            <AppHeader>
+                              <ThemeToggle />
+                            </AppHeader>
+                            <div className="flex-1 w-full min-h-0 overflow-y-auto">
+                              <Suspense
+                                fallback={
+                                  <div className="flex items-center justify-center h-full">
+                                    Loading...
+                                  </div>
+                                }
+                              >
+                                <Routes>
+                                  <Route
+                                    path="/"
+                                    element={<Navigate to="/agent" replace />}
+                                  />
+                                  <Route
+                                    path="/agent"
+                                    element={<AgentContainer />}
+                                  />
+                                  <Route
+                                    path="/agent/draft"
+                                    element={<AgentDraftChatView />}
+                                  />
+                                  <Route
+                                    path="/agent/:sessionId"
+                                    element={<AgentContainer />}
+                                  />
+                                  <Route
+                                    path="/assistants"
+                                    element={<AssistantList />}
+                                  />
+                                  <Route
+                                    path="/playbooks"
+                                    element={<PlaybookRoute />}
+                                  />
+                                  <Route
+                                    path="/history"
+                                    element={<History />}
+                                  />
+                                  <Route
+                                    path="/history/search"
+                                    element={<History />}
+                                  />
+                                  <Route
+                                    path="/settings"
+                                    element={<SettingsPage />}
+                                  />
+                                </Routes>
+                              </Suspense>
                             </div>
-                          </DnDContextProvider>
-                        </SidebarProvider>
-                        <Toaster />
-                      </BuiltInToolProvider>
+                          </div>
+                        </DnDContextProvider>
+                      </SidebarProvider>
+                      <Toaster />
                     </AgentSessionListProvider>
                   </AssistantContextProvider>
                 </MCPServerProvider>

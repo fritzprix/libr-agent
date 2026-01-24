@@ -1,34 +1,29 @@
-use crate::entity::{
-    assistant, assistant::Entity as AssistantEntity, mcp_server::Entity as McpServerEntity,
-};
 use crate::mcp::builtin::error_guidance::{
     duplicate_error, invalid_input_error, missing_param_error, not_found_error,
     operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use sea_orm::*;
+use crate::repositories::{AssistantRepository, MCPServerRepository};
 use serde_json::{json, Value};
 
 use super::AssistantServer;
 
 /// Validate that all mcpServerIds exist in the mcp_servers table
-async fn validate_mcp_server_ids(
-    db: &DatabaseConnection,
-    server_ids: &[String],
-) -> Result<(), String> {
+async fn validate_mcp_server_ids(server_ids: &[String]) -> Result<(), String> {
     if server_ids.is_empty() {
         return Ok(()); // Empty list is valid
     }
 
     // Query database to check which IDs exist
-    let existing_servers = McpServerEntity::find()
-        .filter(
-            sea_orm::sea_query::Expr::col(crate::entity::mcp_server::Column::Name)
-                .is_in(server_ids.to_vec()),
-        )
-        .all(db)
+    let all_servers = crate::get_mcp_server_repository()
+        .list()
         .await
         .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
+
+    let existing_servers: Vec<_> = all_servers
+        .into_iter()
+        .filter(|s| server_ids.contains(&s.name))
+        .collect();
 
     let existing_ids: std::collections::HashSet<_> =
         existing_servers.iter().map(|s| s.name.as_str()).collect();
@@ -55,7 +50,7 @@ async fn validate_mcp_server_ids(
 
 /// Create a new assistant
 pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let db = server.get_db();
+    let repo = crate::get_assistant_repository();
     // Always auto-generate ID
     let id = cuid2::create_id();
 
@@ -65,13 +60,12 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
     };
 
     // Check for duplicate name BEFORE attempting insert
-    let existing = AssistantEntity::find()
-        .filter(assistant::Column::Name.eq(name))
-        .one(db)
+    let exists = repo
+        .check_assistant_exists(name)
         .await
         .map_err(|e| format!("Failed to check for duplicate name: {}", e))?;
 
-    if existing.is_some() {
+    if exists {
         return Ok(duplicate_error("Assistant", name, ToolGroup::Assistant));
     }
 
@@ -122,7 +116,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }
@@ -132,17 +126,9 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
     let config_str =
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
-    let now = chrono::Utc::now().timestamp_millis();
-
-    let model = assistant::ActiveModel {
-        id: Set(id.clone()),
-        name: Set(name.to_string()),
-        config: Set(config_str),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let result = AssistantEntity::insert(model).exec(db).await;
+    let result = repo
+        .create_assistant(id.clone(), name.to_string(), config_str)
+        .await;
 
     match result {
         Ok(_) => {
@@ -173,15 +159,15 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 
 /// Update an existing assistant
 pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let db = server.get_db();
+    let repo = crate::get_assistant_repository();
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
     };
 
     // Fetch existing assistant to merge config
-    let existing_model = AssistantEntity::find_by_id(id)
-        .one(db)
+    let existing_model = repo
+        .get_assistant(id)
         .await
         .map_err(|e| format!("Failed to fetch assistant: {}", e))?;
 
@@ -247,7 +233,7 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(db, &server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }
@@ -256,17 +242,9 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
     let config_str =
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
-    let now = chrono::Utc::now().timestamp_millis();
-
-    let model = assistant::ActiveModel {
-        id: Set(id.to_string()),
-        name: Set(name.to_string()),
-        config: Set(config_str),
-        created_at: NotSet,
-        updated_at: Set(now),
-    };
-
-    let result = AssistantEntity::update(model).exec(db).await;
+    let result = repo
+        .update_assistant(id, Some(name.clone()), Some(config_str))
+        .await;
 
     match result {
         Ok(_) => {
@@ -299,23 +277,20 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
 
 /// Delete an assistant
 pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let db = server.get_db();
+    let repo = crate::get_assistant_repository();
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
         Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
     };
 
     // Hallucination Firewall: Check existence first
-    if AssistantEntity::find_by_id(id)
-        .one(db)
-        .await
-        .unwrap_or(None)
-        .is_none()
-    {
+    let exists = repo.get_assistant(id).await.unwrap_or(None).is_some();
+
+    if !exists {
         return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
     }
 
-    let result = AssistantEntity::delete_by_id(id.to_string()).exec(db).await;
+    let result = repo.delete_assistant(id).await;
 
     match result {
         Ok(_) => {

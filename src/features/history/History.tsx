@@ -12,9 +12,9 @@ import {
 import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import SessionList from '../session/SessionList';
 import { getLogger } from '@/lib/logger';
-import { searchMessages } from '@/lib/rust-backend-client';
+import { searchMessages } from '@/lib/backend/messages';
 import { useDebounced } from '@/hooks/useDebounced';
-import type { SessionWithHits, SortMode } from '@/models/search';
+import type { SortMode } from '@/models/search';
 import { Search, ArrowUp, ArrowDown } from 'lucide-react';
 
 const logger = getLogger('History');
@@ -64,39 +64,32 @@ export default function History() {
     },
   );
 
-  const sessionsWithHits = useMemo(() => {
-    const m = new Map<string, SessionWithHits>();
-    // initialize all sessions with zero hits
-    for (const sess of sessions) {
-      m.set(sess.id, sess);
-    }
+  const searchHitsMap = useMemo(() => {
+    const m = new Map<string, number>();
 
     // accumulate search hits per session (if any)
     if (searchPage?.items && searchPage.items.length > 0) {
       for (const item of searchPage.items) {
-        const sess = m.get(item.sessionId);
-        if (sess) {
-          m.set(item.sessionId, {
-            ...sess,
-            searchHits: (sess.searchHits ?? 0) + 1,
-          });
-        }
+        const current = m.get(item.sessionId) || 0;
+        m.set(item.sessionId, current + 1);
       }
     }
 
     return m;
-  }, [searchPage, sessions]);
+  }, [searchPage]);
 
   const orderedSessions = useMemo(() => {
-    const arr = [...sessionsWithHits.values()];
+    const arr = [...sessions];
 
     // If a search query is active, surface only sessions that have hits
     // and order them by hits desc, then newest first as tiebreaker.
     if (debouncedQuery?.trim()) {
       return arr
-        .filter((s) => (s.searchHits ?? 0) > 0)
+        .filter((s) => (searchHitsMap.get(s.id) ?? 0) > 0)
         .sort((a, b) => {
-          const hitDiff = (b.searchHits ?? 0) - (a.searchHits ?? 0);
+          const hitsA = searchHitsMap.get(a.id) ?? 0;
+          const hitsB = searchHitsMap.get(b.id) ?? 0;
+          const hitDiff = hitsB - hitsA;
           if (hitDiff !== 0) return hitDiff;
           return (
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -110,7 +103,7 @@ export default function History() {
       const bt = new Date(b.createdAt).getTime();
       return sortMode === 'asc' ? at - bt : bt - at;
     });
-  }, [sessionsWithHits, debouncedQuery, sortMode]);
+  }, [sessions, searchHitsMap, debouncedQuery, sortMode]);
 
   // Pagination handling removed for Agent V2 initial migration (full list load)
 
@@ -216,6 +209,7 @@ export default function History() {
             <>
               <SessionList
                 sessions={orderedSessions}
+                searchHits={searchHitsMap}
                 showSearch={false}
                 className="flex-1"
                 emptyMessage="No sessions yet. Start a conversation to create your first session."

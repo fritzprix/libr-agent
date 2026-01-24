@@ -1,40 +1,24 @@
 import { FC, useCallback, useMemo, useState, useEffect } from 'react';
 import { Dropdown } from '@/components/ui';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '@/lib/logger';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import useSWR from 'swr';
-import { Assistant } from '@/models/chat';
 
 const logger = getLogger('AgentModelPicker');
 
 interface AgentModelPickerProps {
-  sessionId: string;
   currentModel?: string;
   currentProvider?: string;
   className?: string;
   onConfigUpdate?: (model: string, provider: string) => void;
-  // We need the full config to ensure preservation of other fields if the backend requires full replace
-  // But our backend implementation `update_session_config` takes `AgentConfig` and replaces it.
-  // The `AgentConfig` struct has all fields.
-  // We should ideally fetch the latest config or use what we have.
-  // For now, we'll assume we update ONLY model/provider if we can, but we likely need to pass the full object.
-  // Since `onConfigUpdate` is for parent notification, internal logic handles the DB update.
-  // BUT: `agent_update_session_config` takes `UpdateAgentConfigRequest` which has `agentConfig`.
-  // If we only send model/provider, other fields might be lost if we don't send them.
-  // The `AgentModelPicker` should ideally receive the *entire* assistant object to clone and modify.
-  // The `AgentModelPicker` should ideally receive the *entire* assistant object to clone and modify.
-  currentAssistantConfig?: Assistant;
 }
 
 export const AgentModelPicker: FC<AgentModelPickerProps> = ({
-  sessionId,
   currentModel,
   currentProvider,
-  currentAssistantConfig,
   className,
   onConfigUpdate,
 }) => {
@@ -150,92 +134,35 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
 
   // --- Update Logic ---
 
-  const [isUpdating, setIsUpdating] = useState(false);
-
   // Handle Provider Change
-  const handleProviderChange = useCallback((newProvider: string) => {
-    setLocalProvider(newProvider);
-    // When provider changes, select the first available model or clear localModel
-    // We can't do this immediately as we might need to fetch models first.
-    // Logic: just set provider, let the user pick the model, OR pick first available once models load.
-    // For now, reset model to empty to force selection, or pick a default if we have static ones.
-    const staticModels = llmConfigManager.getModelsForProvider(
-      newProvider as AIServiceProvider,
-    );
-    if (staticModels && Object.keys(staticModels).length > 0) {
-      setLocalModel(Object.keys(staticModels)[0]);
-    } else {
-      setLocalModel('');
-    }
-  }, []);
+  const handleProviderChange = useCallback(
+    (newProvider: string) => {
+      setLocalProvider(newProvider);
+      onConfigUpdate?.(localModel, newProvider);
 
-  // Confirm / Save Changes
-  // We trigger the update when the user selects a model.
-  // OR we could have a specific "Save" button if we want.
-  // ModelPicker usually updates immediately on selection.
-  const handleModelChange = useCallback(
-    async (newModel: string) => {
-      setLocalModel(newModel);
-
-      if (!sessionId || !currentAssistantConfig) {
-        logger.warn('Missing session ID or config for update');
-        return;
-      }
-
-      setIsUpdating(true);
-      try {
-        // Construct updated config
-        // Assuming currentAssistantConfig holds the rest of the config
-        const updatedConfig = {
-          ...currentAssistantConfig,
-          provider: localProvider,
-          model: newModel,
-          // Ensure we handle defaults if fields are missing
-          temperature: currentAssistantConfig.temperature ?? 0.7,
-          // Rust AgentConfig might have different field names if not mapped 1:1 via serde?
-          // "AgentConfig" in Rust vs "Assistant" in TS.
-          // Check rust AgentConfig: name, description, system_prompt, model, provider, etc.
-          // Check TS Assistant: name, description, systemPrompt, ...
-          // We need to map camelCase (TS) to snake_case (Rust) manually if they differ?
-          // Rust `AgentConfig` has `#[serde(rename_all = "camelCase")]`?
-          // Let's check `src-tauri/src/agent/config.rs`.
-          // Yes, standard tauri commands usually use camelCase JSON.
-        };
-
-        // If strict types are required, ensure all mandatory fields are present.
-        // Rust AgentConfig: name, system_prompt, model, provider.
-        if (!updatedConfig.name) updatedConfig.name = 'Assistant';
-        if (!updatedConfig.systemPrompt)
-          updatedConfig.systemPrompt = 'You are a helpful assistant.';
-
-        await invoke('agent_update_session_config', {
-          request: {
-            sessionId,
-            agentConfig: updatedConfig,
-          },
-        });
-
-        onConfigUpdate?.(newModel, localProvider);
-        logger.info(
-          `Updated session ${sessionId} to ${localProvider}/${newModel}`,
-        );
-      } catch (err) {
-        logger.error('Failed to update agent config', err);
-        // Revert UI on error?
-        setLocalModel(currentModel || '');
-        setLocalProvider(currentProvider || '');
-      } finally {
-        setIsUpdating(false);
+      // Default model selection logic (optional, can be moved to parent or kept here as UI helper)
+      const staticModels = llmConfigManager.getModelsForProvider(
+        newProvider as AIServiceProvider,
+      );
+      if (staticModels && Object.keys(staticModels).length > 0) {
+        const defaultModel = Object.keys(staticModels)[0];
+        setLocalModel(defaultModel);
+        onConfigUpdate?.(defaultModel, newProvider);
+      } else {
+        setLocalModel('');
+        onConfigUpdate?.('', newProvider);
       }
     },
-    [
-      sessionId,
-      currentAssistantConfig,
-      localProvider,
-      currentModel,
-      currentProvider,
-      onConfigUpdate,
-    ],
+    [localModel, onConfigUpdate],
+  );
+
+  // Handle Model Change
+  const handleModelChange = useCallback(
+    (newModel: string) => {
+      setLocalModel(newModel);
+      onConfigUpdate?.(newModel, localProvider);
+    },
+    [localProvider, onConfigUpdate],
   );
 
   if (!localProvider && !localModel) return null;
@@ -244,11 +171,7 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
     <div
       className={`flex items-center space-x-2 bg-muted/50 border border-primary/20 rounded-lg px-2 py-1 font-mono text-xs ${className}`}
     >
-      {isUpdating ? (
-        <Loader2 className="w-3 h-3 animate-spin text-primary" />
-      ) : (
-        <div className="w-2 h-2 rounded-full bg-primary/40" />
-      )}
+      <div className="w-2 h-2 rounded-full bg-primary/40" />
 
       {/* Provider Selector */}
       <Dropdown

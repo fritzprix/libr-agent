@@ -91,7 +91,9 @@ pub struct ServerMetadata {
 /// MCP Server Configuration (MCP 2025-06-18 Spec Compliant)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MCPServerConfig {
-    pub name: String,
+    /// Server name - optional in JSON, will be populated from DB name column if missing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub transport: TransportConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authentication: Option<OAuthConfig>,
@@ -487,7 +489,7 @@ mod tests {
     #[test]
     fn test_mcp_config_stdio_serialization() {
         let config = MCPServerConfig {
-            name: "stdio-server".to_string(),
+            name: Some("stdio-server".to_string()),
             transport: TransportConfig::Stdio {
                 command: "npx".to_string(),
                 args: vec![
@@ -503,7 +505,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.name, "stdio-server");
+        assert_eq!(deserialized.name.as_deref(), Some("stdio-server"));
         match deserialized.transport {
             TransportConfig::Stdio { command, .. } => {
                 assert_eq!(command, "npx");
@@ -515,7 +517,7 @@ mod tests {
     #[test]
     fn test_mcp_config_http_serialization() {
         let config = MCPServerConfig {
-            name: "http-server".to_string(),
+            name: Some("http-server".to_string()),
             transport: TransportConfig::Http {
                 url: "https://api.example.com/mcp".to_string(),
                 protocol_version: "2025-06-18".to_string(),
@@ -531,7 +533,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.name, "http-server");
+        assert_eq!(deserialized.name.as_deref(), Some("http-server"));
         match deserialized.transport {
             TransportConfig::Http {
                 url,
@@ -548,7 +550,7 @@ mod tests {
     #[test]
     fn test_mcp_config_with_oauth_serialization() {
         let config = MCPServerConfig {
-            name: "oauth-server".to_string(),
+            name: Some("oauth-server".to_string()),
             transport: TransportConfig::Http {
                 url: "https://api.example.com/mcp".to_string(),
                 protocol_version: "2025-06-18".to_string(),
@@ -581,7 +583,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let deserialized: MCPServerConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.name, "oauth-server");
+        assert_eq!(deserialized.name.as_deref(), Some("oauth-server"));
         assert!(deserialized.authentication.is_some());
         assert!(deserialized.metadata.is_some());
     }

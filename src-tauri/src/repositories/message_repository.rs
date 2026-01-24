@@ -8,13 +8,11 @@ use sea_orm::{
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
 use crate::entity::{message, message_index_meta};
+use crate::utils::json::{from_json_option, from_json_or_default, to_json_option};
 
 /// Message repository trait for abstraction and testability
 #[async_trait]
 pub trait MessageRepository: Send + Sync {
-    /// Initialize the messages table and indexes
-    async fn create_table(&self) -> Result<(), DbError>;
-
     /// Retrieve a paginated list of messages for a specific session
     async fn get_page(
         &self,
@@ -49,6 +47,32 @@ pub trait MessageRepository: Send + Sync {
 
     /// Check if a session has messages newer than the last index build
     async fn is_index_dirty(&self, session_id: &str) -> Result<bool, DbError>;
+
+    /// Delete index metadata for a specific session
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError>;
+
+    /// Get recent messages for a specific session with limit
+    async fn get_messages_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, DbError>;
+
+    /// Get recent messages across all sessions with limit
+    async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError>;
+
+    /// Get all distinct session IDs that have messages
+    async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError>;
+
+    /// Get message models (raw SeaORM models) for search indexing
+    async fn get_message_models_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<message::Model>, DbError>;
+
+    /// Get recent message models across all sessions for search indexing
+    async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError>;
 }
 
 /// SQLite implementation of MessageRepository using SeaORM
@@ -65,21 +89,16 @@ impl SqliteMessageRepository {
 
     /// Convert SeaORM message model to Message type
     fn model_to_message(model: message::Model) -> Message {
-        let content: Vec<crate::mcp::types::MCPContent> =
-            serde_json::from_str(&model.content).unwrap_or_default();
+        let content: Vec<crate::mcp::types::MCPContent> = from_json_or_default(&model.content);
 
         let tool_calls: Option<Vec<crate::agent::types::ToolCall>> =
-            model.tool_calls.and_then(|s| serde_json::from_str(&s).ok());
+            from_json_option(&model.tool_calls);
 
-        let attachments: Option<serde_json::Value> = model
-            .attachments
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let attachments: Option<serde_json::Value> = from_json_option(&model.attachments);
 
-        let tool_use: Option<serde_json::Value> =
-            model.tool_use.and_then(|s| serde_json::from_str(&s).ok());
+        let tool_use: Option<serde_json::Value> = from_json_option(&model.tool_use);
 
-        let error: Option<serde_json::Value> =
-            model.error.and_then(|s| serde_json::from_str(&s).ok());
+        let error: Option<serde_json::Value> = from_json_option(&model.error);
 
         Message {
             id: model.id,
@@ -101,20 +120,6 @@ impl SqliteMessageRepository {
         }
     }
 
-    /// Helper to serialize optional JSON fields
-    fn serialize_optional_json<T: serde::Serialize>(
-        value: &Option<T>,
-        field_name: &str,
-    ) -> Result<Option<String>, DbError> {
-        value
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(|e| {
-                DbError::SerializationError(format!("Failed to serialize {}: {}", field_name, e))
-            })
-    }
-
     /// Convert Message type to SeaORM ActiveModel
     fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
         // Serialize structured types to JSON strings for DB storage
@@ -122,10 +127,21 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize content: {}", e))
         })?;
 
-        let tool_calls_json = Self::serialize_optional_json(&message.tool_calls, "tool_calls")?;
-        let attachments_json = Self::serialize_optional_json(&message.attachments, "attachments")?;
-        let tool_use_json = Self::serialize_optional_json(&message.tool_use, "tool_use")?;
-        let error_json = Self::serialize_optional_json(&message.error, "error")?;
+        let tool_calls_json = to_json_option(&message.tool_calls).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize tool_calls: {}", e))
+        })?;
+
+        let attachments_json = to_json_option(&message.attachments).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize attachments: {}", e))
+        })?;
+
+        let tool_use_json = to_json_option(&message.tool_use).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize tool_use: {}", e))
+        })?;
+
+        let error_json = to_json_option(&message.error).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize error: {}", e))
+        })?;
 
         Ok(message::ActiveModel {
             id: Set(message.id.clone()),
@@ -150,12 +166,6 @@ impl SqliteMessageRepository {
 
 #[async_trait]
 impl MessageRepository for SqliteMessageRepository {
-    async fn create_table(&self) -> Result<(), DbError> {
-        // No-op: Schema is now managed by SeaORM migrations
-        log::debug!("create_table() called but schema is now managed by migrations");
-        Ok(())
-    }
-
     async fn get_page(
         &self,
         session_id: &str,
@@ -345,5 +355,74 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         Ok(max_created.map(|t| t > last_indexed_at).unwrap_or(false))
+    }
+
+    async fn delete_index_metadata(&self, session_id: &str) -> Result<(), DbError> {
+        MessageIndexMeta::delete_by_id(session_id)
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    async fn get_messages_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<Message>, DbError> {
+        let models = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models.into_iter().map(Self::model_to_message).collect())
+    }
+
+    async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError> {
+        let models = MessageEntity::find()
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models.into_iter().map(Self::model_to_message).collect())
+    }
+
+    async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError> {
+        let sessions: Vec<String> = MessageEntity::find()
+            .select_only()
+            .column(message::Column::SessionId)
+            .distinct()
+            .into_tuple()
+            .all(&self.db)
+            .await?;
+
+        Ok(sessions)
+    }
+
+    async fn get_message_models_by_session(
+        &self,
+        session_id: &str,
+        limit: u64,
+    ) -> Result<Vec<message::Model>, DbError> {
+        let models = MessageEntity::find()
+            .filter(message::Column::SessionId.eq(session_id))
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models)
+    }
+
+    async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError> {
+        let models = MessageEntity::find()
+            .order_by_desc(message::Column::CreatedAt)
+            .limit(limit)
+            .all(&self.db)
+            .await?;
+
+        Ok(models)
     }
 }

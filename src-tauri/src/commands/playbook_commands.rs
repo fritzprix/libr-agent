@@ -1,7 +1,6 @@
-use crate::entity::playbook;
-use crate::entity::session;
-use crate::state::get_database_connection;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
+use crate::entity::playbook::Model as PlaybookModel;
+use crate::repositories::{PaginationParams, PlaybookRepository, SessionRepository};
+use crate::state::get_playbook_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -11,21 +10,20 @@ use tauri::command;
 pub struct PlaybookDto {
     pub id: String,
     pub assistant_id: String,
-    pub session_id: String,
     pub goal: String,
     pub initial_command: Option<String>,
     pub workflow: Value,                 // JSON stored as TEXT
     pub success_criteria: Option<Value>, // JSON stored as TEXT
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
-impl From<playbook::Model> for PlaybookDto {
-    fn from(model: playbook::Model) -> Self {
+impl From<PlaybookModel> for PlaybookDto {
+    fn from(model: PlaybookModel) -> Self {
         Self {
             id: model.id,
             assistant_id: model.assistant_id,
-            session_id: model.session_id,
             goal: model.goal,
             initial_command: model.initial_command,
             workflow: serde_json::from_str(&model.workflow).unwrap_or(Value::Null),
@@ -34,16 +32,15 @@ impl From<playbook::Model> for PlaybookDto {
                 .and_then(|s| serde_json::from_str(&s).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            is_bookmarked: model.is_bookmarked,
         }
     }
 }
 
 /// Helper to get assistant_id from session
 async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-    let db = get_database_connection();
-
-    let session_model = session::Entity::find_by_id(session_id)
-        .one(db)
+    let session_model = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to query session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
@@ -75,30 +72,17 @@ pub async fn create_playbook(
     id: String,
     session_id: String,
     goal: String,
-    initial_command: Option<String>,
+    _initial_command: Option<String>,
     workflow: Value,
-    success_criteria: Option<Value>,
+    _success_criteria: Option<Value>,
 ) -> Result<PlaybookDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
+    let repo = get_playbook_repository();
 
     // Get assistant_id from session
     let assistant_id = get_assistant_id_from_session(&session_id).await?;
 
-    let playbook = playbook::ActiveModel {
-        id: Set(id),
-        assistant_id: Set(assistant_id),
-        session_id: Set(session_id),
-        goal: Set(goal),
-        initial_command: Set(initial_command),
-        workflow: Set(workflow.to_string()),
-        success_criteria: Set(success_criteria.map(|s| s.to_string())),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let result = playbook
-        .insert(db)
+    let result = repo
+        .create_playbook(id, assistant_id, goal, workflow.to_string())
         .await
         .map_err(|e| format!("Failed to create playbook: {}", e))?;
 
@@ -111,35 +95,21 @@ pub async fn update_playbook(
     session_id: String,
     goal: Option<String>,
     workflow: Option<Value>,
-    success_criteria: Option<Value>,
+    _success_criteria: Option<Value>,
 ) -> Result<PlaybookDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
+    let repo = get_playbook_repository();
 
     // Get assistant_id from session
     let assistant_id = get_assistant_id_from_session(&session_id).await?;
 
-    // Composite key (id, assistant_id)
-    let mut playbook: playbook::ActiveModel = playbook::Entity::find_by_id((id, assistant_id))
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to find playbook: {}", e))?
-        .ok_or_else(|| "Playbook not found".to_string())?
-        .into();
-
-    if let Some(goal) = goal {
-        playbook.goal = Set(goal);
-    }
-    if let Some(workflow) = workflow {
-        playbook.workflow = Set(workflow.to_string());
-    }
-    if let Some(success_criteria) = success_criteria {
-        playbook.success_criteria = Set(Some(success_criteria.to_string()));
-    }
-    playbook.updated_at = Set(now);
-
-    let result = playbook
-        .update(db)
+    let result = repo
+        .update_playbook(
+            &id,
+            &assistant_id,
+            goal,
+            workflow.map(|v| v.to_string()),
+            None,
+        )
         .await
         .map_err(|e| format!("Failed to update playbook: {}", e))?;
 
@@ -147,38 +117,75 @@ pub async fn update_playbook(
 }
 
 #[command]
-pub async fn delete_playbook(id: String, session_id: String) -> Result<(), String> {
-    let db = get_database_connection();
+pub async fn delete_playbook(id: String, agent_id: String) -> Result<(), String> {
+    let repo = get_playbook_repository();
 
-    // Get assistant_id from session
-    let assistant_id = get_assistant_id_from_session(&session_id).await?;
-
-    playbook::Entity::delete_by_id((id, assistant_id))
-        .exec(db)
+    repo.delete_playbook(&id, &agent_id)
         .await
         .map_err(|e| format!("Failed to delete playbook: {}", e))?;
     Ok(())
 }
 
 #[command]
-pub async fn list_playbooks(session_id: Option<String>) -> Result<Vec<PlaybookDto>, String> {
-    let db = get_database_connection();
+pub async fn get_playbook(id: String, agent_id: String) -> Result<Option<PlaybookDto>, String> {
+    let repo = get_playbook_repository();
 
-    let query = playbook::Entity::find();
+    let result = repo
+        .get_playbook(&id, &agent_id)
+        .await
+        .map_err(|e| format!("Failed to get playbook: {}", e))?;
 
-    let query = if let Some(sid) = session_id {
-        // Get assistant_id from session and filter by it
-        let assistant_id = get_assistant_id_from_session(&sid).await?;
-        query.filter(playbook::Column::AssistantId.eq(assistant_id))
-    } else {
-        query
+    Ok(result.map(|m| m.into()))
+}
+
+#[command]
+pub async fn toggle_playbook_bookmark(
+    id: String,
+    agent_id: String,
+    bookmarked: bool,
+) -> Result<(), String> {
+    let repo = get_playbook_repository();
+
+    repo.update_playbook(&id, &agent_id, None, None, Some(bookmarked))
+        .await
+        .map_err(|e| format!("Failed to toggle bookmark: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
+pub async fn list_playbooks(
+    agent_id: String,
+    sort_by: Option<String>,
+    bookmark_first: Option<bool>,
+) -> Result<Vec<PlaybookDto>, String> {
+    let repo = get_playbook_repository();
+
+    let assistant_id = agent_id;
+
+    // For now, use list_playbooks without pagination
+    // Full pagination support can be added if needed
+    let pagination = PaginationParams {
+        page: 1,
+        limit: 1000,
     };
 
-    let playbooks = query
-        .order_by_desc(playbook::Column::CreatedAt)
-        .all(db)
+    let page = repo
+        .list_playbooks(&assistant_id, pagination)
         .await
         .map_err(|e| format!("Failed to list playbooks: {}", e))?;
 
-    Ok(playbooks.into_iter().map(|p| p.into()).collect())
+    let mut playbooks: Vec<PlaybookDto> = page.items.into_iter().map(|p| p.into()).collect();
+
+    // Apply sorting
+    if bookmark_first.unwrap_or(false) {
+        playbooks.sort_by(|a, b| b.is_bookmarked.cmp(&a.is_bookmarked));
+    }
+
+    match sort_by.as_deref() {
+        Some("assistant") => playbooks.sort_by(|a, b| a.assistant_id.cmp(&b.assistant_id)),
+        _ => playbooks.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+    };
+
+    Ok(playbooks)
 }

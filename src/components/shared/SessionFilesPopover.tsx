@@ -13,8 +13,7 @@ import {
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { getLogger } from '@/lib/logger';
 import { AttachmentReference } from '@/models/chat';
-import { useServiceContext } from '@/features/tools/useServiceContext';
-import { useBuiltInTool } from '@/features/tools';
+import { agentCallBuiltinTool } from '@/features/agent/api/agent-backend';
 
 const logger = getLogger('SessionFilesPopover');
 
@@ -24,9 +23,6 @@ interface SessionFilesPopoverProps {
 
 export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   const { sessionFiles } = useAgentResourceAttachment();
-  // Ensure content_store service context is loaded (for future structured state)
-  useServiceContext('content_store');
-  const { executeTool } = useBuiltInTool();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AttachmentReference | null>(
     null,
@@ -48,71 +44,86 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
     setIsLoadingContent(false);
   }, [sessionId]);
 
-  const handleFileClick = useCallback(
-    async (file: AttachmentReference) => {
-      setSelectedFile(file);
-      setIsLoadingContent(true);
+  const handleFileClick = useCallback(async (file: AttachmentReference) => {
+    setSelectedFile(file);
+    setIsLoadingContent(true);
 
-      try {
-        let content = file.preview || '';
+    try {
+      let content = file.preview || '';
 
-        if (!content || content.length < 100) {
-          logger.debug('Loading full file content via builtin tool', {
+      if (!content || content.length < 100) {
+        logger.debug('Loading full file content via builtin tool', {
+          sessionId: file.sessionId,
+          contentId: file.contentId,
+          filename: file.filename,
+        });
+
+        const result = await agentCallBuiltinTool(
+          file.sessionId,
+          'builtin_content_store__readContent',
+          {
             sessionId: file.sessionId,
             contentId: file.contentId,
-            filename: file.filename,
-          });
+            lineRange: { fromLine: 1 },
+          },
+        );
 
-          const result = await executeTool({
-            id: `read_content_${Date.now()}`,
-            type: 'function',
-            function: {
-              name: 'builtin_content_store__readContent',
-              arguments: JSON.stringify({
-                sessionId: file.sessionId,
-                contentId: file.contentId,
-                lineRange: { fromLine: 1 },
-              }),
-            },
-          });
+        // Parse the result
+        // The result from agentCallBuiltinTool is strict MCPResult
+        if (result && typeof result === 'object' && 'content' in result) {
+          // Check for structuredContent first (Agent V2 pattern)
+          // But built-in tools often return TextContent or EmbeddedResource
+          const textContent = Array.isArray(result.content)
+            ? result.content.find((c) => c.type === 'text')?.text
+            : undefined;
 
-          // Parse the result
-          if (result.result?.structuredContent) {
-            // If it's structured content, extract the content field
-            const contentData = result.result.structuredContent as {
-              content: string;
-              lineRange: [number, number];
-            };
-            content = contentData.content || 'File content not available';
-          } else if (
-            result.result?.content &&
-            result.result.content[0] &&
-            'text' in result.result.content[0]
-          ) {
-            // Fallback to text content
-            content = (result.result.content[0] as { text: string }).text;
+          if (textContent) {
+            content = textContent;
+          } else if ('structuredContent' in result) {
+            // Some tools might still use this custom field?
+            // Checking types.rs/MCPResult, it has content: Vec<MCPContent>
+            // So structuredContent might be deprecated or non-standard.
+            // However, let's keep the logic aligned with what the legacy tool did if possible.
+            // Legacy tool seemed to handle a custom 'structuredContent' field in result.
+            // Let's assume the Rust tool returns standard MCP content now.
+            content = 'File content format not supported for display.';
           } else {
-            content = 'File content not available';
+            content = 'File content not availble.';
           }
+        } else {
+          content = 'File content not available';
         }
 
-        setFileContent(content);
-        logger.debug('Successfully loaded file content', {
-          filename: file.filename,
-          contentLength: content.length,
-        });
-      } catch (error) {
-        logger.error('Failed to load file content:', {
-          filename: file.filename,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        setFileContent('파일을 읽는 중 오류가 발생했습니다.');
-      } finally {
-        setIsLoadingContent(false);
+        // Refined logic based on expected Rust output for readContent
+        // The Rust `read_content` returns a TextContent block with the file data.
+        // Or if it was structured, it might return a JSON string in text.
+        if (
+          result &&
+          Array.isArray(result.content) &&
+          result.content.length > 0
+        ) {
+          const item = result.content[0];
+          if (item.type === 'text') {
+            content = item.text;
+          }
+        }
       }
-    },
-    [executeTool],
-  );
+
+      setFileContent(content);
+      logger.debug('Successfully loaded file content', {
+        filename: file.filename,
+        contentLength: content.length,
+      });
+    } catch (error) {
+      logger.error('Failed to load file content:', {
+        filename: file.filename,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setFileContent('파일을 읽는 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoadingContent(false);
+    }
+  }, []);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes}B`;

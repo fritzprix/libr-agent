@@ -1,4 +1,5 @@
 use log::{error, info, warn};
+use std::sync::Arc;
 use tauri::{Emitter, Listener, Manager};
 
 mod agent;
@@ -19,12 +20,13 @@ pub mod utils;
 pub use migration;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session, agent_delete_session,
-    agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
-    agent_get_service_contexts, agent_get_session, agent_handle_llm_error,
-    agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow, agent_update_session_config,
+    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,
+    agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,
+    agent_get_all_sessions, agent_get_available_tools, agent_get_service_contexts,
+    agent_get_session, agent_get_tools, agent_handle_llm_error, agent_handle_llm_response,
+    agent_handle_tool_result, agent_init_session_with_messages, agent_inject_messages,
+    agent_pause_workflow, agent_resume_session, agent_resume_workflow, agent_send_message,
+    agent_terminate_workflow, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant,
@@ -55,7 +57,8 @@ use commands::messages_commands::{
     messages_upsert, messages_upsert_many,
 };
 use commands::playbook_commands::{
-    create_playbook, delete_playbook, list_playbooks, update_playbook,
+    create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
+    update_playbook,
 };
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
@@ -71,11 +74,12 @@ use session::get_session_manager;
 
 // Re-export state management functions
 pub use state::{
-    get_content_store_repository, get_database_connection, get_mcp_manager,
-    get_mcp_service_proxy_manager, get_message_repository, get_session_repository,
-    get_sqlite_db_url, set_content_store_repository, set_database_connection, set_mcp_manager,
-    set_mcp_service_proxy_manager, set_message_repository, set_session_repository,
-    set_sqlite_db_url,
+    get_assistant_repository, get_content_store_repository, get_database_connection,
+    get_knowledge_repository, get_mcp_server_repository, get_mcp_service_proxy_manager,
+    get_message_repository, get_playbook_repository, get_session_repository, get_sqlite_db_url,
+    set_assistant_repository, set_content_store_repository, set_database_connection,
+    set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
+    set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
@@ -137,16 +141,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
             .expect("Failed to run database migrations");
         info!("✅ Database migrations applied");
 
-        // Ensure default assistants exist
-        if let Err(e) = services::assistant_init::ensure_default_assistants(&db).await {
-            error!("❌ Failed to ensure default assistants: {}", e);
-        } else {
-            info!("✅ Default assistants verified");
-        }
-
         // Initialize repository instances
         use repositories::{
-            SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+            SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+            SqliteSessionRepository,
         };
 
         let message_repo = SqliteMessageRepository::new(db.clone());
@@ -158,8 +156,62 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let session_repo = SqliteSessionRepository::new(db.clone());
         info!("✅ Session repository initialized");
 
-        // Start background indexing worker (checks every 5 minutes)
-        let _indexing_worker = search::IndexingWorker::new(std::time::Duration::from_secs(300));
+        let mcp_server_repo = SqliteMCPServerRepository::new(db.clone());
+        info!("✅ MCP server repository initialized");
+
+        // Fetch System Settings from DB
+        #[derive(serde::Deserialize, Default)]
+        #[serde(rename_all = "camelCase")]
+        struct SystemSettings {
+            search_index_frequency_minutes: Option<u64>,
+            web_action_timeout_seconds: Option<u64>,
+            active_session_retention_hours: Option<u64>,
+        }
+
+        let system_settings: SystemSettings = {
+            use crate::repositories::settings_repository::SettingsRepository;
+            use crate::repositories::SqliteSettingsRepository;
+            use crate::state::set_settings_repository;
+
+            // Initialize settings repository first
+            let settings_repo = SqliteSettingsRepository::new(db.clone());
+            set_settings_repository(settings_repo.clone());
+            info!("✅ Settings repository initialized");
+
+            match settings_repo.get("systemSettings").await {
+                Ok(Some(model)) => serde_json::from_str(&model.value).unwrap_or_default(),
+                Ok(None) => SystemSettings::default(),
+                Err(e) => {
+                    log::warn!("Failed to fetch system settings: {}, using defaults", e);
+                    SystemSettings::default()
+                }
+            }
+        };
+
+        let index_freq_mins = system_settings.search_index_frequency_minutes.unwrap_or(5);
+        let web_timeout_secs = system_settings.web_action_timeout_seconds.unwrap_or(30);
+        let retention_hours = system_settings.active_session_retention_hours.unwrap_or(24);
+
+        info!(
+            "⚙️ System Configuration: Index Frequency = {}m, Web Timeout = {}s, Retention = {}h",
+            index_freq_mins, web_timeout_secs, retention_hours
+        );
+
+        // Perform session cleanup
+        match session_manager
+            .cleanup_old_sessions(retention_hours, 5)
+            .await
+        {
+            Ok(count) => info!(
+                "🧹 Session cleanup completed: removed {} old sessions",
+                count
+            ),
+            Err(e) => log::error!("❌ Session cleanup failed: {}", e),
+        }
+
+        // Start background indexing worker
+        let _indexing_worker =
+            search::IndexingWorker::new(std::time::Duration::from_secs(index_freq_mins * 60));
         info!("✅ Background message indexing worker started");
 
         // Set the global database connection
@@ -170,19 +222,44 @@ pub fn run_with_sqlite_sync(db_url: String) {
         set_message_repository(message_repo);
         set_content_store_repository(content_store_repo);
         set_session_repository(session_repo);
+        use crate::state::set_mcp_server_repository;
+        set_mcp_server_repository(mcp_server_repo);
+
+        // Initialize Assistant, Playbook, and Knowledge repositories
+        use crate::repositories::{
+            SqliteAssistantRepository, SqliteKnowledgeRepository, SqlitePlanningRepository,
+            SqlitePlaybookRepository,
+        };
+        use crate::state::{
+            set_assistant_repository, set_knowledge_repository, set_planning_repository,
+            set_playbook_repository,
+        };
+        set_assistant_repository(SqliteAssistantRepository::new(db.clone()));
+        set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
+        set_knowledge_repository(SqliteKnowledgeRepository::new(db.clone()));
+        set_planning_repository(SqlitePlanningRepository::new(db.clone()));
+
         info!("✅ Repository instances initialized");
 
+        // Ensure default assistants exist (after repositories are initialized)
+        if let Err(e) = services::assistant_init::ensure_default_assistants().await {
+            error!("❌ Failed to ensure default assistants: {}", e);
+        } else {
+            info!("✅ Default assistants verified");
+        }
+
         // Initialize the MCP manager with database connection
-        let mcp_manager = MCPServerManager::new_with_session_manager_and_db(
+        // NOTE: Global MCPServerManager is deprecated in favor of session-isolated management
+        let _mcp_manager = MCPServerManager::new_with_session_manager_and_db(
             session_manager_arc.clone(),
             db.clone(),
         )
         .await;
 
-        // Set the global MCP manager
-        set_mcp_manager(mcp_manager);
+        // Global MCP manager is no longer set due to Session Isolation architecture
+        // All external server management is now per-session through MCPServiceProxyManager
 
-        info!("✅ SeaORM-backed MCP Manager initialized");
+        info!("✅ Session-Isolated MCP architecture initialized");
 
         // Initialize the MCP Service Proxy Manager for session-aware builtin tools
         use mcp::MCPServiceProxyManager;
@@ -316,6 +393,7 @@ pub fn run() {
                 agent_handle_llm_error,
                 agent_handle_tool_result,
                 agent_get_session,
+                agent_get_tools,
                 agent_get_all_sessions,
                 agent_delete_session,
                 agent_get_available_tools,
@@ -329,6 +407,7 @@ pub fn run() {
                 agent_clear_all_sessions,
                 agent_factory_reset,
                 agent_update_session_config,
+                agent_create_session_with_initial_message,
                 // CRUD Commands
                 create_assistant,
                 update_assistant,
@@ -342,15 +421,19 @@ pub fn run() {
                 create_playbook,
                 update_playbook,
                 delete_playbook,
+                get_playbook,
                 list_playbooks,
+                toggle_playbook_bookmark,
                 set_setting,
+                get_setting,
+                delete_setting,
                 get_setting,
                 delete_setting,
                 list_settings,
             ])
             .setup(|app| {
                 // Setup custom file logger FIRST (before any log calls)
-                let log_dir = app.path().app_log_dir().unwrap();
+                let log_dir = app.path().app_log_dir()?;
                 logger::setup_file_logger(log_dir)?;
 
                 // Test if Rust logger is properly initialized
@@ -359,15 +442,65 @@ pub fn run() {
 
                 // Initialize SecureFileManager and add to managed state
                 // Use a dedicated global directory for the global instance to avoid legacy session dependency
-                let global_file_dir = app.path().app_data_dir().unwrap().join("global_shared");
+                let global_file_dir = app.path().app_data_dir()?.join("global_shared");
                 let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
                 app.manage(file_manager);
                 info!("✅ SecureFileManager initialized");
 
                 // Initialize Interactive Browser Server and add to managed state
-                let browser_server = InteractiveBrowserServer::new(app.handle().clone());
+                // We need to re-fetch settings or pass them down.
+                // Since setup closure doesn't have access to the vars from run_with_sqlite_sync directly easily without passing via state or app handle,
+                // BUT run_with_sqlite_sync calls run(), which sets up the builder.
+                // The `SystemSettings` fetch happened in the async block BEFORE run().
+                // To fetch it here synchronously or async is tricky in setup which is sync-ish or returns Result.
+                // Actually setup is Sync.
+                // We should re-fetch from DB inside setup? Or pass via App Handle state?
+                // `run_with_sqlite_sync` spawns a runtime, waits for it, then calls `run`.
+                // The variables `index_freq_mins` etc are lost.
+
+                // Better approach: Store SystemSettings in a State<SystemSettings> during init?
+                // Or just fetch from DB again in setup. Since we have connection.
+                // But `get_database_connection` relies on global state which IS set.
+
+                let web_action_timeout = {
+                    // We can try to fetch from DB using the global connection which should be set by now
+                    // But strictly speaking, `setup` runs on main thread.
+                    // DB connection is async. We can't easily block on async DB call in sync setup unless we use a runtime.
+                    // The runtime used in `run_with_sqlite_sync` is dropped!
+                    // But we can create a temporary runtime to fetch config.
+
+                    let rt = tokio::runtime::Runtime::new()?;
+                    rt.block_on(async {
+                        #[derive(serde::Deserialize, Default)]
+                        #[serde(rename_all = "camelCase")]
+                        struct SystemSettings {
+                            web_action_timeout_seconds: Option<u64>,
+                        }
+
+                        use crate::repositories::settings_repository::SettingsRepository;
+                        use crate::state::get_settings_repository;
+
+                        let settings_repo = get_settings_repository();
+                        match settings_repo.get("systemSettings").await {
+                            Ok(Some(model)) => {
+                                let s: SystemSettings =
+                                    serde_json::from_str(&model.value).unwrap_or_default();
+                                std::time::Duration::from_secs(
+                                    s.web_action_timeout_seconds.unwrap_or(30),
+                                )
+                            }
+                            _ => std::time::Duration::from_secs(30),
+                        }
+                    })
+                };
+
+                let browser_server =
+                    InteractiveBrowserServer::new(app.handle().clone(), web_action_timeout);
                 app.manage(browser_server);
-                info!("✅ Interactive Browser Server initialized");
+                info!(
+                    "✅ Interactive Browser Server initialized with timeout: {:?}",
+                    web_action_timeout
+                );
 
                 // Initialize Agent Runtime State
                 // Removed duplicate logging
@@ -383,19 +516,28 @@ pub fn run() {
                     cloned
                 };
 
-                let agent_session_manager =
-                    agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc);
+                // Get session repository as Arc<dyn SessionRepository> for dependency injection
+                let session_repo_arc: Arc<dyn repositories::SessionRepository> =
+                    Arc::new(state::get_session_repository().clone());
 
-                // Recover sessions on app startup
-                let manager_for_recovery = agent_session_manager.clone_for_task();
+                let agent_session_manager = agent::AgentSessionManager::new(
+                    app.handle().clone(),
+                    proxy_manager_arc,
+                    session_repo_arc,
+                );
+                app.manage(agent_session_manager);
+
+                // Spawn session recovery in background
+                let recovery_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = manager_for_recovery.recover_sessions().await {
-                        log::error!("Failed to recover sessions on startup: {}", e);
+                    if let Err(e) = recovery_manager.recover_sessions().await {
+                        log::error!("❌ Session recovery failed: {}", e);
                     }
                 });
 
-                app.manage(agent_session_manager);
-                info!("✅ Agent Session Manager initialized with proxy manager");
                 info!("🔄 Session recovery initiated in background");
 
                 // Built-in servers are now automatically initialized with SessionManager support

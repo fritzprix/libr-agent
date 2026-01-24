@@ -14,13 +14,20 @@ import {
   ServiceConfig,
   AdvancedSettings,
   DisplaySettings,
+  SystemSettings,
   DEFAULT_SETTING,
 } from '@/lib/services/settings-service';
 
 const logger = getLogger('SettingsContext');
 
 // Re-export types for backward compatibility
-export type { Settings, ServiceConfig, AdvancedSettings, DisplaySettings };
+export type {
+  Settings,
+  ServiceConfig,
+  AdvancedSettings,
+  DisplaySettings,
+  SystemSettings,
+};
 export { DEFAULT_SETTING };
 
 interface SettingsContextType {

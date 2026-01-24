@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, memo } from 'react';
-import { Bot } from 'lucide-react';
+import { Bot, MoreVertical } from 'lucide-react';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
 import { useNavigate } from 'react-router-dom';
 import { AgentSession } from '@/models/agent';
@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui';
+import { buttonVariants } from '@/components/ui/button';
 import { getLogger } from '@/lib/logger';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import {
@@ -78,11 +79,10 @@ function SessionItem({
   return (
     <div
       className={cn(
-        'flex items-center rounded-lg transition-colors w-full min-w-0 px-2 py-1.5',
+        'flex items-center rounded-lg transition-colors w-full min-w-0 px-2 py-1.5 max-w-full',
         'hover:bg-muted/60',
         className,
       )}
-      style={{ maxWidth: '100%' }}
     >
       <div className="flex flex-1 min-w-0">
         <Button
@@ -141,10 +141,13 @@ function SessionItem({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="h-8 w-8 inline-flex items-center justify-center rounded-md hover:bg-muted"
+                className={cn(
+                  buttonVariants({ variant: 'ghost', size: 'icon' }),
+                  'h-8 w-8',
+                )}
                 aria-label="Session options"
               >
-                ⋮
+                <MoreVertical className="h-4 w-4" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent sideOffset={5} align="end">

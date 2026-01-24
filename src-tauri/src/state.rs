@@ -1,17 +1,16 @@
 /// Global state management module
 ///
 /// This module provides centralized access to application-wide state including
-/// the MCP server manager, MCP service proxy manager, SQLite database URL,
+/// the MCP service proxy manager, SQLite database URL,
 /// database connection, and repositories.
-use crate::mcp::{MCPServerManager, MCPServiceProxyManager};
+use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteContentStoreRepository, SqliteMessageRepository, SqliteSessionRepository,
+    SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
+    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
+    SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::sync::OnceLock;
-
-/// A global, thread-safe, once-initialized instance of the `MCPServerManager`.
-static MCP_MANAGER: OnceLock<MCPServerManager> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<MCPServiceProxyManager> = OnceLock::new();
@@ -31,6 +30,24 @@ static CONTENT_STORE_REPOSITORY: OnceLock<SqliteContentStoreRepository> = OnceLo
 /// A global, thread-safe, once-initialized session repository.
 static SESSION_REPOSITORY: OnceLock<SqliteSessionRepository> = OnceLock::new();
 
+/// A global, thread-safe, once-initialized settings repository.
+static SETTINGS_REPOSITORY: OnceLock<SqliteSettingsRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized MCP server repository.
+static MCP_SERVER_REPOSITORY: OnceLock<SqliteMCPServerRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized assistant repository.
+static ASSISTANT_REPOSITORY: OnceLock<SqliteAssistantRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized playbook repository.
+static PLAYBOOK_REPOSITORY: OnceLock<SqlitePlaybookRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized knowledge repository.
+static KNOWLEDGE_REPOSITORY: OnceLock<SqliteKnowledgeRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized planning repository.
+static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new();
+
 /// Sets the global SQLite database URL.
 ///
 /// # Panics
@@ -45,32 +62,6 @@ pub fn set_sqlite_db_url(url: String) {
 /// An `Option` containing a reference to the URL string, or `None` if not yet set.
 pub fn get_sqlite_db_url() -> Option<&'static String> {
     SQLITE_DB_URL.get()
-}
-
-/// Sets the global MCP server manager instance.
-///
-/// # Panics
-/// This function will panic if the manager is already set.
-pub fn set_mcp_manager(manager: MCPServerManager) {
-    MCP_MANAGER
-        .set(manager)
-        .expect("MCP Manager already initialized");
-}
-
-/// Gets a static reference to the global `MCPServerManager`.
-///
-/// If the manager has not been initialized, it initializes it with the default
-/// `SessionManager`. This function will panic if the `SessionManager` itself is not initialized.
-///
-/// # Panics
-/// Panics if `SessionManager` is not initialized when lazy initialization is attempted.
-pub fn get_mcp_manager() -> &'static MCPServerManager {
-    MCP_MANAGER.get_or_init(|| {
-        let session_manager =
-            crate::session::get_session_manager().expect("SessionManager not initialized");
-        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
-        MCPServerManager::new_with_session_manager(session_manager_arc)
-    })
 }
 
 /// Sets the global database connection.
@@ -165,6 +156,34 @@ pub fn get_session_repository() -> &'static SqliteSessionRepository {
         .expect("Session repository not initialized. Call set_session_repository() first.")
 }
 
+/// Sets the global settings repository instance.
+pub fn set_settings_repository(repo: SqliteSettingsRepository) {
+    SETTINGS_REPOSITORY
+        .set(repo)
+        .expect("Settings repository already initialized");
+}
+
+/// Gets a reference to the global settings repository.
+pub fn get_settings_repository() -> &'static SqliteSettingsRepository {
+    SETTINGS_REPOSITORY
+        .get()
+        .expect("Settings repository not initialized. Call set_settings_repository() first.")
+}
+
+/// Sets the global MCP server repository instance.
+pub fn set_mcp_server_repository(repo: SqliteMCPServerRepository) {
+    MCP_SERVER_REPOSITORY
+        .set(repo)
+        .expect("MCP server repository already initialized");
+}
+
+/// Gets a reference to the global MCP server repository.
+pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
+    MCP_SERVER_REPOSITORY
+        .get()
+        .expect("MCP server repository not initialized. Call set_mcp_server_repository() first.")
+}
+
 /// Sets the global MCP service proxy manager instance.
 ///
 /// # Panics
@@ -186,4 +205,96 @@ pub fn get_mcp_service_proxy_manager() -> &'static MCPServiceProxyManager {
     MCP_SERVICE_PROXY_MANAGER.get().expect(
         "MCP Service Proxy Manager not initialized. Call set_mcp_service_proxy_manager() first.",
     )
+}
+
+/// Sets the global assistant repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_assistant_repository(repo: SqliteAssistantRepository) {
+    ASSISTANT_REPOSITORY
+        .set(repo)
+        .expect("Assistant repository already initialized");
+}
+
+/// Gets a reference to the global assistant repository.
+///
+/// # Returns
+/// A reference to the assistant repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_assistant_repository() -> &'static SqliteAssistantRepository {
+    ASSISTANT_REPOSITORY
+        .get()
+        .expect("Assistant repository not initialized. Call set_assistant_repository() first.")
+}
+
+/// Sets the global playbook repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_playbook_repository(repo: SqlitePlaybookRepository) {
+    PLAYBOOK_REPOSITORY
+        .set(repo)
+        .expect("Playbook repository already initialized");
+}
+
+/// Gets a reference to the global playbook repository.
+///
+/// # Returns
+/// A reference to the playbook repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_playbook_repository() -> &'static SqlitePlaybookRepository {
+    PLAYBOOK_REPOSITORY
+        .get()
+        .expect("Playbook repository not initialized. Call set_playbook_repository() first.")
+}
+
+/// Sets the global knowledge repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_knowledge_repository(repo: SqliteKnowledgeRepository) {
+    KNOWLEDGE_REPOSITORY
+        .set(repo)
+        .expect("Knowledge repository already initialized");
+}
+
+/// Gets a reference to the global knowledge repository.
+///
+/// # Returns
+/// A reference to the knowledge repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_knowledge_repository() -> &'static SqliteKnowledgeRepository {
+    KNOWLEDGE_REPOSITORY
+        .get()
+        .expect("Knowledge repository not initialized. Call set_knowledge_repository() first.")
+}
+
+/// Sets the global planning repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_planning_repository(repo: SqlitePlanningRepository) {
+    PLANNING_REPOSITORY
+        .set(repo)
+        .expect("Planning repository already initialized");
+}
+
+/// Gets a reference to the global planning repository.
+///
+/// # Returns
+/// A reference to the planning repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
+    PLANNING_REPOSITORY
+        .get()
+        .expect("Planning repository not initialized. Call set_planning_repository() first.")
 }

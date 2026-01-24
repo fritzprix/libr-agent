@@ -1,4 +1,6 @@
 use dashmap::DashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tiktoken_rs::cl100k_base;
@@ -14,6 +16,7 @@ pub struct ContentPage {
 struct ContentSession {
     pages: Vec<String>,
     timestamp: u64,
+    content_hash: u64,
 }
 
 /// In-memory content store for browser extracted content
@@ -36,7 +39,43 @@ impl BrowserContentStore {
         content: String,
         target_tokens_per_page: usize,
         auto_merge: bool,
-    ) -> (usize, String, Option<String>, bool) {
+    ) -> (usize, String, Option<String>, bool, bool) {
+        // Calculate hash of the new content
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        let new_hash = hasher.finish();
+
+        // Check if content is unchanged
+        if let Some(mut session) = self.store.get_mut(session_id) {
+            if session.content_hash == new_hash {
+                // Update timestamp to keep session alive
+                session.timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs();
+
+                let total_pages = session.pages.len();
+                let first_page = session.pages.first().cloned().unwrap_or_default();
+
+                // Re-evaluate auto-merge for the return value
+                let total_tokens = Self::count_tokens(&content);
+                let should_auto_merge = auto_merge && (total_pages <= 2 || total_tokens < 5000);
+                let merged_content = if should_auto_merge {
+                    Some(content)
+                } else {
+                    None
+                };
+
+                return (
+                    total_pages,
+                    first_page,
+                    merged_content,
+                    should_auto_merge,
+                    true,
+                );
+            }
+        }
+
         let pages = Self::paginate_by_tokens(&content, target_tokens_per_page);
         let total_pages = pages.len();
         let first_page = pages.first().cloned().unwrap_or_default();
@@ -55,11 +94,21 @@ impl BrowserContentStore {
             .unwrap_or(Duration::from_secs(0))
             .as_secs();
 
-        let session = ContentSession { pages, timestamp };
+        let session = ContentSession {
+            pages,
+            timestamp,
+            content_hash: new_hash,
+        };
 
         self.store.insert(session_id.to_string(), session);
 
-        (total_pages, first_page, merged_content, should_auto_merge)
+        (
+            total_pages,
+            first_page,
+            merged_content,
+            should_auto_merge,
+            false,
+        )
     }
 
     /// Get a specific page of content (1-based index)

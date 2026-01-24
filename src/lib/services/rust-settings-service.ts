@@ -8,6 +8,7 @@ import {
   type ModelChoice,
   type AdvancedSettings,
   type DisplaySettings,
+  type SystemSettings,
 } from './settings-service';
 import type { AIServiceProvider } from '@/lib/ai-service';
 
@@ -21,6 +22,7 @@ type SettingValue =
   | string // uiLanguage, agentHubUrl
   | AdvancedSettings // advancedSettings
   | DisplaySettings // displaySettings
+  | SystemSettings // systemSettings
   | undefined; // agentHubUrl can be undefined
 
 interface SettingDto {
@@ -81,6 +83,7 @@ export class RustSettingsService implements ISettingsService {
         agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
         advanced: getTypedValue('advancedSettings', DEFAULT_SETTING.advanced),
         display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
+        system: getTypedValue('systemSettings', DEFAULT_SETTING.system),
       };
 
       return settings;
@@ -174,6 +177,15 @@ export class RustSettingsService implements ISettingsService {
           invoke('set_setting', {
             key: 'displaySettings',
             value: settings.display,
+          }),
+        );
+      }
+
+      if (settings.system) {
+        promises.push(
+          invoke('set_setting', {
+            key: 'systemSettings',
+            value: settings.system,
           }),
         );
       }

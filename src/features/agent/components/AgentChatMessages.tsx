@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
@@ -21,18 +21,7 @@ export function AgentChatMessages() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   // Group messages for display
-  const groupedMessages = useMessageGrouping(messages);
-
-  // Pre-compute tool results lookup map to avoid O(N*M) lookups
-  const toolResultsMap = useMemo(() => {
-    const map = new Map<string, Message>();
-    for (const msg of messages) {
-      if (msg.role === 'tool' && msg.tool_call_id) {
-        map.set(msg.tool_call_id, msg);
-      }
-    }
-    return map;
-  }, [messages]);
+  const { groupedMessages } = useMessageGrouping(messages);
 
   // Only auto-scroll if enabled
   useEffect(() => {
@@ -77,12 +66,15 @@ export function AgentChatMessages() {
   }, [handleScroll]);
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
-  const getAssistantNameForMessage = useCallback((msg: Message) => {
-    if (msg.role === 'assistant') {
-      return 'Agent';
-    }
-    return '';
-  }, []);
+  const getAssistantNameForMessage = useCallback(
+    (msg: Message) => {
+      if (msg.role === 'assistant') {
+        return session?.assistant?.name || 'Agent';
+      }
+      return '';
+    },
+    [session?.assistant?.name],
+  );
 
   // Adapter to satisfy ErrorBubble's onRetry signature
   const handleRetry = async () => {
@@ -97,18 +89,12 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage, index) => {
           if (groupedMessage.type === 'tool_group') {
-            // Prepare tool results array for this group
-            // This is O(K) where K is number of calls in this group (small)
-            const toolResults = groupedMessage.toolGroup.calls.map((call) =>
-              toolResultsMap.get(call.id),
-            );
-
             return (
               <AgentToolCallGroup
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 toolGroup={groupedMessage.toolGroup}
-                toolResults={toolResults}
+                toolResults={groupedMessage.toolGroup.results}
                 isLast={index === groupedMessages.length - 1}
               />
             );
@@ -178,7 +164,7 @@ export function AgentChatMessages() {
                   <Bot size={16} className="text-primary-foreground" />
                 </div>
                 <span className="text-xs font-medium">
-                  Agent {session?.name && `(${session.name})`}
+                  {session?.assistant?.name || 'Agent'}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

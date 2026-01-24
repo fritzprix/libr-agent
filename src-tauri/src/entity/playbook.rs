@@ -11,13 +11,13 @@ pub struct Model {
     pub id: String,
     #[sea_orm(primary_key, auto_increment = false)]
     pub assistant_id: String,
-    pub session_id: String, // Track which session created this playbook
     pub goal: String,
     pub initial_command: Option<String>,
     pub workflow: String,                 // JSON stored as TEXT
     pub success_criteria: Option<String>, // JSON stored as TEXT
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

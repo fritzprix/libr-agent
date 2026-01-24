@@ -1,15 +1,14 @@
-use crate::entity::session::Entity as SessionEntity;
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::schema::JSONSchema;
-use crate::mcp::types::{MCPResult, MCPTool};
-use crate::mcp::utils::schema_builder::*;
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool};
+use crate::repositories::{PlaybookRepository, SessionRepository};
 use async_trait::async_trait;
 use sea_orm::*;
-use serde_json::Value; // JSON interaction still needed for tool args
+use serde_json::Value;
 use std::sync::Arc;
 
 mod operations;
 mod templates;
+mod tools;
 mod types;
 
 // Re-export types if needed, or just use them internally
@@ -19,7 +18,6 @@ mod types;
 #[derive(Debug)]
 pub struct PlaybookServer {
     assistant_id: String,
-    session_id: String, // For tracking creation context
     db_conn: DatabaseConnection,
 }
 
@@ -28,11 +26,10 @@ impl PlaybookServer {
         let db_conn = (*db).clone();
 
         // Get assistant_id from session
-        let assistant_id = get_assistant_id_from_session(&db_conn, &session_id).await?;
+        let assistant_id = get_assistant_id_from_session(&session_id).await?;
 
         let server = Self {
             assistant_id,
-            session_id,
             db_conn,
         };
         Ok(server)
@@ -44,143 +41,23 @@ impl PlaybookServer {
         &self.db_conn
     }
 
+    /// Get tools statically (without an instance)
     pub fn tools_static() -> Vec<MCPTool> {
-        vec![
-            create_tool_def(
-                "createPlaybook",
-                "Create a new playbook",
-                object_prop(
-                    vec![
-                        ("goal".to_string(), string_prop_required("Goal description")),
-                        (
-                            "initialCommand".to_string(),
-                            string_prop(None, None, Some("Original command")),
-                        ),
-                        (
-                            "workflow".to_string(),
-                            array_schema(playbook_step_schema(), Some("List of steps")),
-                        ),
-                        ("successCriteria".to_string(), success_criteria_schema()),
-                    ],
-                    vec!["goal".to_string(), "workflow".to_string()],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "selectPlaybook",
-                "Select and prepare a playbook",
-                object_prop(
-                    vec![("id".to_string(), string_prop_required("Playbook ID"))],
-                    vec!["id".to_string()],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "listPlaybooks",
-                "List playbooks (text only)",
-                object_prop(
-                    vec![
-                        (
-                            "page".to_string(),
-                            integer_prop(Some(1), None, Some("Page number")),
-                        ),
-                        (
-                            "pageSize".to_string(),
-                            integer_prop(Some(10), None, Some("Items per page")),
-                        ),
-                    ],
-                    vec![],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "showPlaybooks",
-                "Show playbooks (interactive UI)",
-                object_prop(
-                    vec![
-                        (
-                            "page".to_string(),
-                            integer_prop(Some(1), None, Some("Page number")),
-                        ),
-                        (
-                            "pageSize".to_string(),
-                            integer_prop(Some(10), None, Some("Items per page")),
-                        ),
-                    ],
-                    vec![],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "getPlaybookPage",
-                "Navigate playbook UI",
-                object_prop(
-                    vec![
-                        (
-                            "page".to_string(),
-                            integer_prop(Some(1), None, Some("Page number")),
-                        ),
-                        (
-                            "pageSize".to_string(),
-                            integer_prop(Some(10), None, Some("Items per page")),
-                        ),
-                    ],
-                    vec!["page".to_string()],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "deletePlaybook",
-                "Delete a playbook",
-                object_prop(
-                    vec![("id".to_string(), string_prop_required("Playbook ID"))],
-                    vec!["id".to_string()],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "getPlaybook",
-                "Get playbook details",
-                object_prop(
-                    vec![("id".to_string(), string_prop_required("Playbook ID"))],
-                    vec!["id".to_string()],
-                    None,
-                ),
-            ),
-            create_tool_def(
-                "updatePlaybook",
-                "Update a playbook",
-                object_prop(
-                    vec![
-                        ("id".to_string(), string_prop_required("Playbook ID")),
-                        (
-                            "playbook".to_string(),
-                            object_prop(
-                                vec![
-                                    (
-                                        "goal".to_string(),
-                                        string_prop(None, None, Some("Goal description")),
-                                    ),
-                                    (
-                                        "initialCommand".to_string(),
-                                        string_prop(None, None, Some("Original command")),
-                                    ),
-                                    (
-                                        "workflow".to_string(),
-                                        array_schema(playbook_step_schema(), Some("List of steps")),
-                                    ),
-                                    ("successCriteria".to_string(), success_criteria_schema()),
-                                ],
-                                vec![],
-                                Some("Fields to update"),
-                            ),
-                        ),
-                    ],
-                    vec!["id".to_string(), "playbook".to_string()],
-                    None,
-                ),
-            ),
-        ]
+        Self::tools_static_internal()
+    }
+
+    /// Internal static tools definition to avoid duplication
+    fn tools_static_internal() -> Vec<MCPTool> {
+        tools::all_tools()
+    }
+
+    /// Get metadata statically
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Playbook".to_string(),
+            description: "Execute and manage reusable playbooks".to_string(),
+            icon: None,
+        }
     }
 }
 
@@ -198,14 +75,10 @@ impl BuiltinMCPServer for PlaybookServer {
         &self,
         _options: Option<&Value>,
     ) -> crate::mcp::types::ServiceContext {
-        use crate::entity::{playbook, playbook::Entity as PlaybookEntity};
+        let repo = crate::get_playbook_repository();
 
         // Query playbook count for this assistant
-        let total_count = match PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
-            .count(&self.db_conn)
-            .await
-        {
+        let total_count = match repo.count_playbooks(&self.assistant_id).await {
             Ok(count) => count as i64,
             Err(e) => {
                 log::warn!("Failed to count playbooks: {}", e);
@@ -228,14 +101,9 @@ impl BuiltinMCPServer for PlaybookServer {
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)
-        let models = match PlaybookEntity::find()
-            .filter(playbook::Column::AssistantId.eq(&self.assistant_id))
-            .order_by_desc(playbook::Column::UpdatedAt)
-            .limit(3)
-            .all(&self.db_conn)
-            .await
-        {
-            Ok(models) => models,
+        let pagination = crate::repositories::PaginationParams { page: 1, limit: 3 };
+        let models = match repo.list_playbooks(&self.assistant_id, pagination).await {
+            Ok(page) => page.items,
             Err(e) => {
                 log::warn!("Failed to fetch recent playbooks: {}", e);
                 return crate::mcp::types::ServiceContext {
@@ -263,18 +131,10 @@ impl BuiltinMCPServer for PlaybookServer {
             parts.push("Recent:".to_string());
             for playbook in &playbooks {
                 // Truncate goal to 50 chars for token efficiency
-                let goal_display = if playbook.goal.len() > 50 {
-                    format!("{}...", &playbook.goal[..50])
-                } else {
-                    playbook.goal.clone()
-                };
+                let goal_display = crate::utils::truncate_chars(&playbook.goal, 50);
 
                 // Get short ID (first 8 chars)
-                let short_id = if playbook.id.len() > 8 {
-                    &playbook.id[..8]
-                } else {
-                    &playbook.id
-                };
+                let short_id = crate::utils::safe_truncate(&playbook.id, 8);
 
                 parts.push(format!(
                     "- {} steps: {} ({})",
@@ -311,34 +171,28 @@ impl BuiltinMCPServer for PlaybookServer {
     ) -> Result<MCPResult, String> {
         match tool_name {
             "createPlaybook" | "builtin_playbook__createPlaybook" => {
-                operations::create_playbook(
-                    &self.db_conn,
-                    &self.assistant_id,
-                    &self.session_id,
-                    args,
-                )
-                .await
+                operations::create_playbook(&self.assistant_id, args).await
             }
             "selectPlaybook" | "builtin_playbook__selectPlaybook" => {
-                operations::select_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::select_playbook(&self.assistant_id, args).await
             }
             "listPlaybooks" | "builtin_playbook__listPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, false).await
+                operations::list_playbooks(&self.assistant_id, args, false).await
             }
             "showPlaybooks" | "builtin_playbook__showPlaybooks" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
+                operations::list_playbooks(&self.assistant_id, args, true).await
             }
             "getPlaybookPage" | "builtin_playbook__getPlaybookPage" => {
-                operations::list_playbooks(&self.db_conn, &self.assistant_id, args, true).await
+                operations::list_playbooks(&self.assistant_id, args, true).await
             }
             "deletePlaybook" | "builtin_playbook__deletePlaybook" => {
-                operations::delete_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::delete_playbook(&self.assistant_id, args).await
             }
             "getPlaybook" | "builtin_playbook__getPlaybook" => {
-                operations::get_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::get_playbook(&self.assistant_id, args).await
             }
             "updatePlaybook" | "builtin_playbook__updatePlaybook" => {
-                operations::update_playbook(&self.db_conn, &self.assistant_id, args).await
+                operations::update_playbook(&self.assistant_id, args).await
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
@@ -347,83 +201,9 @@ impl BuiltinMCPServer for PlaybookServer {
 
 // Helper functions for tool definitions
 
-fn create_tool_def(name: &str, description: &str, input_schema: JSONSchema) -> MCPTool {
-    MCPTool {
-        name: name.to_string(),
-        description: description.to_string(),
-        input_schema,
-        title: None,
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-fn playbook_step_schema() -> JSONSchema {
-    object_prop(
-        vec![
-            (
-                "stepId".to_string(),
-                string_prop(None, None, Some("Step ID")),
-            ),
-            (
-                "description".to_string(),
-                string_prop_required("Step description"),
-            ),
-            (
-                "action".to_string(),
-                object_prop(
-                    vec![
-                        ("toolName".to_string(), string_prop_required("Tool name")),
-                        (
-                            "purpose".to_string(),
-                            string_prop_required("Purpose of using this tool"),
-                        ),
-                    ],
-                    vec!["toolName".to_string(), "purpose".to_string()],
-                    Some("Action to perform"),
-                ),
-            ),
-            (
-                "requiredData".to_string(),
-                array_schema(string_prop(None, None, None), Some("Required input data")),
-            ),
-            (
-                "outputVariable".to_string(),
-                string_prop_required("Output variable name"),
-            ),
-        ],
-        vec![
-            "description".to_string(),
-            "action".to_string(),
-            "outputVariable".to_string(),
-        ],
-        Some("Playbook step definition"),
-    )
-}
-
-fn success_criteria_schema() -> JSONSchema {
-    object_prop(
-        vec![
-            (
-                "description".to_string(),
-                string_prop_required("Success criteria description"),
-            ),
-            (
-                "requiredArtifacts".to_string(),
-                array_schema(string_prop(None, None, None), Some("Required artifacts")),
-            ),
-        ],
-        vec!["description".to_string()],
-        Some("Success criteria definition"),
-    )
-}
-
-async fn get_assistant_id_from_session(
-    db: &DatabaseConnection,
-    session_id: &str,
-) -> Result<String, String> {
-    let session = SessionEntity::find_by_id(session_id)
-        .one(db)
+async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
+    let session = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Database error fetching session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;

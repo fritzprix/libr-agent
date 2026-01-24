@@ -1,6 +1,5 @@
-use crate::entity::mcp_server;
-use crate::state::get_database_connection;
-use sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set};
+use crate::repositories::mcp_server_repository::MCPServerRepository;
+use crate::state::get_mcp_server_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -15,8 +14,8 @@ pub struct MCPServerDto {
     pub updated_at: i64,
 }
 
-impl From<mcp_server::Model> for MCPServerDto {
-    fn from(model: mcp_server::Model) -> Self {
+impl From<crate::entity::mcp_server::Model> for MCPServerDto {
+    fn from(model: crate::entity::mcp_server::Model) -> Self {
         Self {
             id: model.name.clone(), // ID is name for MCP servers in current schema
             name: model.name,
@@ -29,35 +28,12 @@ impl From<mcp_server::Model> for MCPServerDto {
 
 #[command]
 pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
-
-    // Check if exists
-    let exists = mcp_server::Entity::find_by_id(&name)
-        .one(db)
-        .await
-        .map_err(|e| format!("Failed to check existence: {}", e))?;
-
-    if exists.is_some() {
-        return Err(format!(
-            "MCP server config with name '{}' already exists",
-            name
-        ));
-    }
-
-    let server = mcp_server::ActiveModel {
-        name: Set(name.clone()),
-        config: Set(config.to_string()),
-        created_at: Set(now),
-        updated_at: Set(now),
-    };
-
-    let result = server
-        .insert(db)
+    let repo = get_mcp_server_repository();
+    let model = repo
+        .create(&name, config)
         .await
         .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
-
-    Ok(result.into())
+    Ok(model.into())
 }
 
 #[command]
@@ -65,34 +41,40 @@ pub async fn update_mcp_server_config(
     name: String,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
-    let db = get_database_connection();
-    let now = chrono::Utc::now().timestamp_millis();
+    let repo = get_mcp_server_repository();
 
-    let mut server: mcp_server::ActiveModel = mcp_server::Entity::find_by_id(&name)
-        .one(db)
+    // Since repository update expects a config value, we need to fetch existing config if only partial update logic is needed.
+    // However, the repository `update` method currently takes `config: Value`.
+    // The command receives `Option<Value>`. If `None`, what should happen?
+    // The previous implementation updated *if* present.
+    // We should probably first GET the existing model to merge, or update the repository signature.
+    // Let's reuse the logic from previous implementation: fetch, patch, update.
+    // The repository `update` method takes a FULL `config` value.
+    // So we need to fetch, then if `config` is None, we keep existing. If `config` is Some, we use it.
+
+    let existing = repo
+        .get(&name)
         .await
         .map_err(|e| format!("Failed to find MCP server config: {}", e))?
-        .ok_or_else(|| "MCP server config not found".to_string())?
-        .into();
+        .ok_or_else(|| "MCP server config not found".to_string())?;
 
-    if let Some(config) = config {
-        server.config = Set(config.to_string());
-    }
-    server.updated_at = Set(now);
+    let new_config = match config {
+        Some(c) => c,
+        None => serde_json::from_str(&existing.config).unwrap_or(Value::Null),
+    };
 
-    let result = server
-        .update(db)
+    let updated = repo
+        .update(&name, new_config)
         .await
         .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
-    Ok(result.into())
+    Ok(updated.into())
 }
 
 #[command]
 pub async fn delete_mcp_server_config(name: String) -> Result<(), String> {
-    let db = get_database_connection();
-    mcp_server::Entity::delete_by_id(name)
-        .exec(db)
+    let repo = get_mcp_server_repository();
+    repo.delete(&name)
         .await
         .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
     Ok(())
@@ -100,12 +82,10 @@ pub async fn delete_mcp_server_config(name: String) -> Result<(), String> {
 
 #[command]
 pub async fn list_mcp_server_configs() -> Result<Vec<MCPServerDto>, String> {
-    let db = get_database_connection();
-    let servers = mcp_server::Entity::find()
-        .order_by_asc(mcp_server::Column::CreatedAt)
-        .all(db)
+    let repo = get_mcp_server_repository();
+    let models = repo
+        .list()
         .await
         .map_err(|e| format!("Failed to list MCP server configs: {}", e))?;
-
-    Ok(servers.into_iter().map(|s| s.into()).collect())
+    Ok(models.into_iter().map(|s| s.into()).collect())
 }

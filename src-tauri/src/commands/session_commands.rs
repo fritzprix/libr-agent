@@ -47,9 +47,8 @@ pub async fn switch_session(request: SessionSwitchRequest) -> Result<SessionResp
 /// Deletes search index, metadata, workspace directory, and all associated resources
 #[command]
 pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
-    use crate::repositories::SessionRepository;
+    use crate::repositories::MessageRepository;
     use crate::search::index_storage::delete_index;
-    use crate::state::get_session_repository;
 
     info!("🗑️  Removing session: {session_id}");
 
@@ -60,7 +59,7 @@ pub async fn remove_session(session_id: String) -> Result<SessionResponse, Strin
     }
 
     // Step 2: Delete index metadata from database
-    let repo = get_session_repository();
+    let repo = crate::state::get_message_repository();
     if let Err(e) = repo.delete_index_metadata(&session_id).await {
         error!("Failed to delete index metadata for session {session_id}: {e}");
         // Continue with removal even if metadata deletion fails (best-effort)

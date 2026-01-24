@@ -31,7 +31,6 @@ pub struct SuccessCriteria {
 pub struct Playbook {
     pub id: String,
     pub assistant_id: String,
-    pub session_id: String, // Track which session created this
     pub goal: String,
     #[serde(rename = "initialCommand")]
     pub initial_command: Option<String>,
@@ -40,6 +39,8 @@ pub struct Playbook {
     pub success_criteria: Option<SuccessCriteria>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(rename = "isBookmarked")]
+    pub is_bookmarked: bool,
 }
 
 impl Playbook {
@@ -47,7 +48,6 @@ impl Playbook {
         Self {
             id: model.id.clone(),
             assistant_id: model.assistant_id.clone(),
-            session_id: model.session_id.clone(),
             goal: model.goal.clone(),
             initial_command: model.initial_command.clone(),
             workflow: serde_json::from_str(&model.workflow).unwrap_or_default(),
@@ -57,6 +57,7 @@ impl Playbook {
                 .and_then(|s| serde_json::from_str(s).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            is_bookmarked: model.is_bookmarked,
         }
     }
 }

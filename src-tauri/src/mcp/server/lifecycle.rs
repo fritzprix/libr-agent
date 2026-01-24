@@ -45,11 +45,28 @@ async fn start_stdio_server(
     args: &[String],
     env: &HashMap<String, String>,
 ) -> Result<String> {
-    let name = config.name.clone();
+    let name = config
+        .name
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Server name is required"))?
+        .clone();
+
+    // Prepare command with cross-platform handling
+    // On Windows, this wraps .cmd/.bat files with cmd.exe
+    let (final_command, final_args) =
+        crate::mcp::utils::command_helper::prepare_command(command, args);
+
+    log::info!(
+        "Starting MCP server '{}': {} {:?} (env vars: {})",
+        name,
+        final_command,
+        final_args,
+        env.len()
+    );
 
     // Create command with rmcp - configure returns the modified command
-    let cmd = Command::new(command).configure(|cmd| {
-        for arg in args {
+    let cmd = Command::new(&final_command).configure(|cmd| {
+        for arg in &final_args {
             cmd.arg(arg);
         }
 
@@ -60,7 +77,9 @@ async fn start_stdio_server(
     });
 
     // Create transport and connect using RMCP pattern
+    log::info!("Attempting to spawn process: {} {:?}", command, args);
     let transport = TokioChildProcess::new(cmd)?;
+    log::info!("Successfully spawned process");
     debug!("Created transport for command: {command} {args:?}");
 
     let client = ().serve(transport).await?;
@@ -89,7 +108,11 @@ async fn start_http_server(
     headers: Option<HashMap<String, String>>,
     enable_sse: Option<bool>,
 ) -> Result<String> {
-    let name = config.name.clone();
+    let name = config
+        .name
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Server name is required"))?
+        .clone();
     info!("Starting HTTP MCP server: {name} at {url}");
 
     // prepare headers

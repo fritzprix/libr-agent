@@ -13,6 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Create or update a session in the database
 pub async fn create_session(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
@@ -37,8 +38,7 @@ pub async fn create_session(
         updated_at: now,
     };
 
-    // Persist to database
-    let session_repo = crate::state::get_session_repository();
+    // Persist to database using injected repository
     session_repo
         .upsert_session(&session)
         .await
@@ -80,13 +80,13 @@ pub async fn create_session(
 /// Resume an existing session by loading it into active sessions
 #[allow(dead_code)]
 pub async fn resume_session(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
-    // Get session metadata from database
-    let session_repo = crate::state::get_session_repository();
+    // Get session metadata from database using injected repository
     let session = session_repo
         .get_session(session_id)
         .await
@@ -134,6 +134,7 @@ pub async fn resume_session(
 
 /// Update agent configuration for an existing session
 pub async fn update_session_config(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     _app_handle: &AppHandle,
     session_id: &str,
@@ -145,8 +146,7 @@ pub async fn update_session_config(
     // 2. Serialize config
     let config_json = agent_config.to_json()?;
 
-    // 3. Update in database
-    let session_repo = crate::state::get_session_repository();
+    // 3. Update in database using injected repository
     session_repo
         .update_agent_config(session_id, config_json.clone())
         .await
@@ -181,12 +181,12 @@ pub async fn update_session_config(
 
 /// Update session status in database and emit event
 pub async fn update_session_status(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
-    let session_repo = crate::state::get_session_repository();
     session_repo
         .update_status(session_id, status.clone())
         .await
@@ -211,12 +211,12 @@ pub async fn update_session_status(
 
 /// Recover sessions stuck in BUSY state after app crash/restart
 pub async fn recover_sessions(
+    session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
 ) -> Result<(), String> {
     log::info!("Starting session recovery process...");
 
-    let session_repo = crate::state::get_session_repository();
     let all_sessions = session_repo
         .get_all_sessions()
         .await
@@ -235,6 +235,7 @@ pub async fn recover_sessions(
             // Reset to PAUSED (user can manually resume)
             // Call local update_session_status helper
             update_session_status(
+                session_repo,
                 active_sessions,
                 app_handle,
                 &session.id,
@@ -275,17 +276,20 @@ pub async fn recover_sessions(
 }
 
 /// Get session metadata
-pub async fn get_session(session_id: &str) -> Result<Option<SessionMetadata>, String> {
-    let session_repo = crate::state::get_session_repository();
+pub async fn get_session(
+    session_repo: &Arc<dyn SessionRepository>,
+    session_id: &str,
+) -> Result<Option<SessionMetadata>, String> {
     session_repo
         .get_session(session_id)
         .await
         .map_err(|e| format!("Failed to get session: {}", e))
 }
 
-/// Get all sessions
-pub async fn get_all_sessions() -> Result<Vec<SessionMetadata>, String> {
-    let session_repo = crate::state::get_session_repository();
+/// Get all sessions from database
+pub async fn get_all_sessions(
+    session_repo: &Arc<dyn SessionRepository>,
+) -> Result<Vec<SessionMetadata>, String> {
     session_repo
         .get_all_sessions()
         .await

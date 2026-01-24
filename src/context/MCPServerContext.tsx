@@ -58,7 +58,6 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
   const {
-    listToolsFromConfig,
     getConnectedServers,
     callMCPTool,
     sampleFromModel: rustSampleFromModel,
@@ -87,7 +86,11 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
         });
 
         setServerStatus(serverStatus);
-        const rawToolsByServer = await listToolsFromConfig(mcpConfig);
+
+        // Disable eager tool listing to prevent global server spawning
+        // const rawToolsByServer = await listToolsFromConfig(mcpConfig);
+        const rawToolsByServer: Record<string, MCPTool[]> = {};
+
         toolsByServer.current = rawToolsByServer;
 
         const availableTools: MCPTool[] = Object.entries(

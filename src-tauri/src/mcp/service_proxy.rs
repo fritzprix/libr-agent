@@ -1,14 +1,47 @@
+use crate::repositories::SessionRepository;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
+use tokio::sync::RwLock;
 
 use super::builtin::BuiltinMCPServer;
 use super::server::MCPServerManager;
-use super::types::{MCPResponse, ServiceContext};
+use super::session_isolation::{HttpSessionManager, SessionMCPManager};
+use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
-use sea_orm::EntityTrait; // Needed for find_by_id in helper
+
+/// Configuration for creating an MCPServiceProxy
+#[derive(Debug)]
+pub struct ProxyConfig {
+    /// Unique identifier for the agent session
+    pub session_id: String,
+    /// List of builtin tool IDs to initialize
+    pub tool_ids: Vec<String>,
+    /// Optional Tauri app handle for builtin servers
+    pub app_handle: Option<AppHandle>,
+}
+
+/// Shared manager dependencies for MCPServiceProxy
+#[derive(Debug, Clone)]
+pub struct SharedManagers {
+    /// Shared manager for external MCP servers
+    pub external_mcp: Arc<MCPServerManager>,
+    /// Shared SeaORM database connection
+    pub db: Arc<DatabaseConnection>,
+    /// Shared SessionManager for workspace/content_store
+    pub session_manager: Arc<SessionManager>,
+}
+
+/// Session-specific manager dependencies
+#[derive(Debug, Clone)]
+pub struct SessionManagers {
+    /// Session-specific HTTP manager
+    pub http: Arc<HttpSessionManager>,
+    /// Session-specific Stdio manager
+    pub stdio: Arc<SessionMCPManager>,
+}
 
 /// Session-specific MCP service proxy
 ///
@@ -25,39 +58,117 @@ pub struct MCPServiceProxy {
     /// Value: Boxed trait object implementing BuiltinMCPServer
     builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,
 
-    /// Shared external MCP manager for stdio-based servers
-    external_mcp_manager: Arc<MCPServerManager>,
+    /// Cached tools from session-isolated stdio servers
+    /// Key: server_name, Value: list of tools
+    /// This cache is populated during session creation (eager tool discovery)
+    session_stdio_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
 
-    /// Shared SessionManager for workspace/content_store servers
-    _session_manager: Arc<SessionManager>,
+    /// Cached tools from session-isolated HTTP servers
+    /// Key: server_name, Value: list of tools
+    session_http_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
+
+    /// Session-specific managers
+    session_managers: SessionManagers,
+}
+
+/// Builder for MCPServiceProxy
+pub struct MCPServiceProxyBuilder {
+    session_id: String,
+    tool_ids: Vec<String>,
+    // external_mcp_manager: Arc<MCPServerManager>, // Removed as we use session isolation
+    db: Arc<DatabaseConnection>,
+    session_manager: Arc<SessionManager>,
+    app_handle: Option<AppHandle>,
+    http_manager: Arc<HttpSessionManager>,
+    stdio_manager: Arc<SessionMCPManager>,
+}
+
+impl MCPServiceProxyBuilder {
+    /// Create a new builder with required fields
+    pub fn new(
+        session_id: String,
+        db: Arc<DatabaseConnection>,
+        session_manager: Arc<SessionManager>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
+    ) -> Self {
+        Self {
+            session_id,
+            tool_ids: Vec::new(),
+            db,
+            session_manager,
+            app_handle: None,
+            http_manager,
+            stdio_manager,
+        }
+    }
+
+    /// Set the tool IDs to initialize
+    pub fn with_tool_ids(mut self, tool_ids: Vec<String>) -> Self {
+        self.tool_ids = tool_ids;
+        self
+    }
+
+    /// Set the app handle
+    pub fn with_app_handle(mut self, app_handle: Option<AppHandle>) -> Self {
+        self.app_handle = app_handle;
+        self
+    }
+
+    /// Build the MCPServiceProxy
+    pub async fn build(self) -> Result<MCPServiceProxy, String> {
+        MCPServiceProxy::create(
+            self.session_id,
+            self.tool_ids,
+            self.db,
+            self.session_manager,
+            self.app_handle,
+            self.http_manager,
+            self.stdio_manager,
+        )
+        .await
+    }
 }
 
 impl MCPServiceProxy {
-    /// Create a new session-bound proxy
+    /// Create a new session-bound proxy using builder
     ///
     /// # Arguments
     /// * `session_id` - Unique identifier for the agent session
-    /// * `tool_ids` - List of builtin tool IDs to initialize
     /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
     /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `http_manager` - Session-specific HTTP manager
+    /// * `stdio_manager` - Session-specific Stdio manager
     ///
     /// # Returns
-    /// * `Ok(Self)` - Initialized proxy with builtin servers
-    /// * `Err(String)` - Error if server initialization fails
-    pub async fn new(
+    /// * `MCPServiceProxyBuilder` - Builder to configure additional options
+    pub fn builder(
+        session_id: String,
+        db: Arc<DatabaseConnection>,
+        session_manager: Arc<SessionManager>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
+    ) -> MCPServiceProxyBuilder {
+        MCPServiceProxyBuilder::new(session_id, db, session_manager, http_manager, stdio_manager)
+    }
+
+    /// Internal method to create the proxy (used by builder)
+    #[allow(clippy::too_many_arguments)]
+    async fn create(
         session_id: String,
         tool_ids: Vec<String>,
-        external_mcp_manager: Arc<MCPServerManager>,
         db: Arc<DatabaseConnection>,
         session_manager: Arc<SessionManager>,
         app_handle: Option<AppHandle>,
+        http_manager: Arc<HttpSessionManager>,
+        stdio_manager: Arc<SessionMCPManager>,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
-        for tool_id in tool_ids {
+        for tool_id in &tool_ids {
             if let Some(server) = create_builtin_server(
-                &tool_id,
+                tool_id,
                 session_id.clone(),
                 db.clone(),
                 session_manager.clone(),
@@ -65,7 +176,7 @@ impl MCPServiceProxy {
             )
             .await?
             {
-                builtin_servers.insert(tool_id.clone(), server);
+                builtin_servers.insert(tool_id.to_string(), server);
                 log::debug!(
                     "Initialized builtin server '{}' for session '{}'",
                     tool_id,
@@ -83,8 +194,12 @@ impl MCPServiceProxy {
         Ok(Self {
             session_id,
             builtin_servers,
-            external_mcp_manager,
-            _session_manager: session_manager,
+            session_stdio_tool_cache: Arc::new(RwLock::new(HashMap::new())),
+            session_http_tool_cache: Arc::new(RwLock::new(HashMap::new())),
+            session_managers: SessionManagers {
+                http: http_manager,
+                stdio: stdio_manager,
+            },
         })
     }
 
@@ -138,7 +253,7 @@ impl MCPServiceProxy {
                 error: None,
             })
         } else {
-            // Route to external MCP manager
+            // Route to external MCP manager or session-isolated manager
             // Format is typically "server_name__tool_name"
             log::debug!(
                 "Routing to external MCP: '{}' for session '{}'",
@@ -147,11 +262,32 @@ impl MCPServiceProxy {
             );
 
             if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
-                let response = self
-                    .external_mcp_manager
-                    .call_tool(server_name, real_tool_name, args, None)
-                    .await;
-                Ok(response)
+                // 1. Check if it's a session-isolated HTTP server
+                if self.session_managers.http.has_server(server_name).await {
+                    log::debug!("Routing to session-isolated HTTP server: {}", server_name);
+                    return self
+                        .session_managers
+                        .http
+                        .call_tool(server_name, real_tool_name, args)
+                        .await
+                        .map_err(|e| e.to_string());
+                }
+
+                // 2. Check if it's a session-isolated Stdio server
+                if self.session_managers.stdio.has_server(server_name) {
+                    log::debug!("Routing to session-isolated Stdio server: {}", server_name);
+                    return self
+                        .session_managers
+                        .stdio
+                        .call_tool(server_name, real_tool_name, args)
+                        .await
+                        .map_err(|e| e.to_string());
+                }
+
+                Err(format!(
+                    "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
+                    tool_name, self.session_id
+                ))
             } else {
                 Err(format!(
                     "Invalid external tool name format: {}. Expected 'server__tool'",
@@ -194,6 +330,53 @@ impl MCPServiceProxy {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Get cached tools from session-isolated stdio servers
+    ///
+    /// Returns tools that were fetched during session creation (eager tool discovery).
+    /// These tools are from stdio servers that are spawned per-session for isolation.
+    ///
+    /// # Returns
+    /// * `Vec<MCPTool>` - All cached tools from all session stdio servers
+    pub async fn get_session_stdio_tools(&self) -> Vec<MCPTool> {
+        let cache = self.session_stdio_tool_cache.read().await;
+        cache.values().flatten().cloned().collect()
+    }
+
+    /// Set cached tools for a specific session-isolated stdio server
+    ///
+    /// This is called during session creation to store tools fetched from
+    /// eagerly-spawned stdio servers.
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the stdio server
+    /// * `tools` - List of tools from that server
+    pub async fn set_session_stdio_tools(&self, server_name: String, tools: Vec<MCPTool>) {
+        let mut cache = self.session_stdio_tool_cache.write().await;
+        cache.insert(server_name, tools);
+    }
+
+    /// Get cached tools from session-isolated HTTP servers
+    pub async fn get_session_http_tools(&self) -> Vec<MCPTool> {
+        let cache = self.session_http_tool_cache.read().await;
+        cache.values().flatten().cloned().collect()
+    }
+
+    /// Set cached tools for a specific session-isolated HTTP server
+    pub async fn set_session_http_tools(&self, server_name: String, tools: Vec<MCPTool>) {
+        let mut cache = self.session_http_tool_cache.write().await;
+        cache.insert(server_name, tools);
+    }
+
+    /// Get session-specific HTTP manager
+    pub fn get_http_manager(&self) -> &Arc<HttpSessionManager> {
+        &self.session_managers.http
+    }
+
+    /// Get session-specific Stdio manager
+    pub fn get_stdio_manager(&self) -> &Arc<SessionMCPManager> {
+        &self.session_managers.stdio
     }
 
     /// Collect service contexts from all builtin servers
@@ -250,8 +433,7 @@ async fn create_builtin_server(
             crate::mcp::builtin::bootstrap::BootstrapServer::new(),
         ))),
         "knowledge" => {
-            let db_conn = (*_db).clone();
-            let assistant_id = get_assistant_id_from_session(&db_conn, &_session_id).await?;
+            let assistant_id = get_assistant_id_from_session(&_session_id).await?;
             Ok(Some(Box::new(
                 crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
             )))
@@ -292,34 +474,9 @@ async fn create_builtin_server(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    // use super::*;
-
-    #[tokio::test]
-    async fn test_builtin_tool_routing() {
-        // TODO: Test that builtin_ prefix routes correctly
-    }
-
-    #[tokio::test]
-    async fn test_external_tool_routing() {
-        // TODO: Test that non-builtin tools route to external manager
-    }
-
-    #[tokio::test]
-    async fn test_invalid_tool_name() {
-        // TODO: Test error handling for invalid tool names
-    }
-}
-
-async fn get_assistant_id_from_session(
-    db: &DatabaseConnection,
-    session_id: &str,
-) -> Result<String, String> {
-    use crate::entity::session::Entity as SessionEntity;
-
-    let session = SessionEntity::find_by_id(session_id)
-        .one(db)
+async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
+    let session = crate::get_session_repository()
+        .get_session(session_id)
         .await
         .map_err(|e| format!("Database error fetching session: {}", e))?
         .ok_or_else(|| format!("Session not found: {}", session_id))?;
@@ -339,4 +496,24 @@ async fn get_assistant_id_from_session(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| "No assistant ID in session config".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    // use super::*;
+
+    #[tokio::test]
+    async fn test_builtin_tool_routing() {
+        // TODO: Test that builtin_ prefix routes correctly
+    }
+
+    #[tokio::test]
+    async fn test_external_tool_routing() {
+        // TODO: Test that non-builtin tools route to external manager
+    }
+
+    #[tokio::test]
+    async fn test_invalid_tool_name() {
+        // TODO: Test error handling for invalid tool names
+    }
 }
