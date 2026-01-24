@@ -35,7 +35,7 @@ export const ThinkingBubble: React.FC<ThinkingBubbleProps> = ({
         <span>Thinking Process</span>
       </div>
       <div className="text-xs opacity-50 italic whitespace-pre-wrap max-h-32 overflow-y-auto">
-        {thinking || 'Thinking...'}
+        {thinking != null && thinking.length > 0 ? thinking : 'Thinking...'}
       </div>
     </div>
   );

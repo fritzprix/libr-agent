@@ -126,11 +126,6 @@ function AgentChatInner() {
     }
   };
 
-  logger.info('AGENT_CHAT_INNER: Render with panel states', {
-    showPlanningPanel,
-    showWorkspacePanel,
-  });
-
   return (
     <>
       <TimeLocationSystemPrompt />
