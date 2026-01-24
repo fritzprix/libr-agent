@@ -450,12 +450,8 @@ impl SessionIsolationManager {
             .map_err(|e| format!("Failed to write sandbox profile: {e}"))?;
 
         let mut cmd = AsyncCommand::new("sandbox-exec");
-        cmd.args([
-            "-f",
-            profile_path
-                .to_str()
-                .ok_or_else(|| "Invalid workspace path: non-UTF8 characters not supported".to_string())?,
-        ]);
+        cmd.arg("-f");
+        cmd.arg(&profile_path);
         cmd.arg(&config.command);
         cmd.args(&config.args);
 
