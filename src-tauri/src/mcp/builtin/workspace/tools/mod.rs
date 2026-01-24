@@ -10,8 +10,10 @@ pub fn file_tools() -> Vec<MCPTool> {
     vec![
         file_tools::create_read_file_tool(),
         file_tools::create_create_file_tool(),
+        file_tools::create_delete_file_tool(),
         file_tools::create_list_directory_tool(),
         file_tools::create_edit_file_tool(),
+        file_tools::create_edit_file_multi_tool(),
         file_tools::create_preview_replacement_tool(),
         file_tools::create_import_file_tool(),
         file_tools::create_search_line_in_file_tool(),

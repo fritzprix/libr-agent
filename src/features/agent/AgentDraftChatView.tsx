@@ -275,9 +275,7 @@ function DraftChatInner() {
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="font-semibold text-lg">{assistant.name}</span>
-              <span className="text-xs text-muted-foreground">
-                Draft Session
-              </span>
+              <span className="text-xs text-muted-foreground">New Session</span>
             </div>
           </div>
         </div>

@@ -144,6 +144,7 @@ impl MCPServiceProxyManager {
     /// # Arguments
     /// * `session_id` - Unique identifier for the agent session
     /// * `tool_ids` - List of builtin tool IDs to initialize (e.g., ["knowledge", "planning"])
+    /// * `mcp_server_ids` - List of external MCP server IDs to connect (from agent config)
     ///
     /// # Returns
     /// * `Ok(Arc<MCPServiceProxy>)` - Session-bound proxy instance
@@ -153,13 +154,16 @@ impl MCPServiceProxyManager {
     /// ```rust,ignore
     /// let proxy = manager.create_proxy(
     ///     "session-123".to_string(),
-    ///     vec!["knowledge".to_string(), "planning".to_string()]
+    ///     vec!["knowledge".to_string(), "planning".to_string()],
+    ///     vec!["filesystem".to_string()],
+    ///     None
     /// ).await?;
     /// ```
     pub async fn create_proxy(
         &self,
         session_id: String,
         tool_ids: Vec<String>,
+        mcp_server_ids: Vec<String>,
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
         // Helper to emit status updates
@@ -214,39 +218,72 @@ impl MCPServiceProxyManager {
         let mut http_configs = HashMap::new();
         let repo = get_mcp_server_repository();
 
+        // Filter servers based on mcp_server_ids:
+        // - Empty array = NO external servers (assistant doesn't use any)
+        // - Non-empty array = Only specified servers
+        let use_external_servers = !mcp_server_ids.is_empty();
+
         match repo.list().await {
             Ok(models) => {
                 log::debug!(
-                    "Loaded {} MCP server configs from DB for session {}",
+                    "Loaded {} MCP server configs from DB for session {} (use_external_servers: {}, allowed_ids: {:?})",
                     models.len(),
-                    session_id
+                    session_id,
+                    use_external_servers,
+                    mcp_server_ids
                 );
-                for model in models {
-                    match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
-                    {
-                        Ok(mut config) => {
-                            // Use DB name if JSON doesn't specify one (type-safe approach)
-                            let server_name = config.name.unwrap_or_else(|| model.name.clone());
-                            config.name = Some(server_name.clone());
 
-                            match config.transport {
-                                crate::mcp::types::TransportConfig::Stdio { .. } => {
-                                    stdio_configs.insert(server_name, config);
-                                }
-                                crate::mcp::types::TransportConfig::Http { .. } => {
-                                    http_configs.insert(server_name, config);
+                // Skip all external servers if mcp_server_ids is empty
+                if !use_external_servers {
+                    log::info!(
+                        "Session {} has no external MCP servers configured (mcp_server_ids is empty)",
+                        session_id
+                    );
+                } else {
+                    for model in models {
+                        // Only load servers specified in mcp_server_ids
+                        if !mcp_server_ids.contains(&model.name) {
+                            log::debug!(
+                                "Skipping MCP server '{}' - not in assistant's mcp_server_ids",
+                                model.name
+                            );
+                            continue;
+                        }
+
+                        match serde_json::from_str::<crate::mcp::types::MCPServerConfig>(
+                            &model.config,
+                        ) {
+                            Ok(mut config) => {
+                                // Use DB name if JSON doesn't specify one (type-safe approach)
+                                let server_name = config.name.unwrap_or_else(|| model.name.clone());
+                                config.name = Some(server_name.clone());
+
+                                match config.transport {
+                                    crate::mcp::types::TransportConfig::Stdio { .. } => {
+                                        stdio_configs.insert(server_name, config);
+                                    }
+                                    crate::mcp::types::TransportConfig::Http { .. } => {
+                                        http_configs.insert(server_name, config);
+                                    }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to parse config for MCP server '{}': {}",
-                                model.name,
-                                e
-                            );
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse config for MCP server '{}': {}",
+                                    model.name,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
+
+                log::info!(
+                    "Session {} will connect to {} stdio servers and {} HTTP servers",
+                    session_id,
+                    stdio_configs.len(),
+                    http_configs.len()
+                );
             }
             Err(e) => {
                 log::error!(
@@ -683,7 +720,7 @@ mod tests {
             .unwrap();
 
         manager
-            .create_proxy(session1.clone(), tool_ids1, None)
+            .create_proxy(session1.clone(), tool_ids1, vec![], None)
             .await
             .unwrap();
 
@@ -755,7 +792,7 @@ mod tests {
             .unwrap();
 
         manager
-            .create_proxy(session2.clone(), tool_ids2, None)
+            .create_proxy(session2.clone(), tool_ids2, vec![], None)
             .await
             .unwrap();
 
@@ -933,7 +970,7 @@ mod tests {
 
             let tool_ids = vec!["playbook".to_string(), "assistant".to_string()];
             manager
-                .create_proxy(session_id.clone(), tool_ids, None)
+                .create_proxy(session_id.clone(), tool_ids, vec![], None)
                 .await
                 .unwrap();
         }
@@ -1048,7 +1085,7 @@ mod tests {
         ];
 
         manager
-            .create_proxy(session_id.clone(), all_tools, None)
+            .create_proxy(session_id.clone(), all_tools, vec![], None)
             .await
             .unwrap();
 
@@ -1144,5 +1181,66 @@ mod tests {
             0,
             "All proxies should be destroyed"
         );
+    }
+
+    #[tokio::test]
+    async fn test_empty_mcp_server_ids_means_no_external_servers() {
+        let manager = create_test_manager().await;
+
+        let session_id = "no-external-test".to_string();
+
+        // Insert session into database
+        use crate::entity::session;
+        use sea_orm::Set;
+
+        let new_session = session::ActiveModel {
+            id: Set(session_id.clone()),
+            created_at: Set(chrono::Utc::now().timestamp()),
+            updated_at: Set(0),
+            status: Set("idle".to_string()),
+            ..Default::default()
+        };
+        session::Entity::insert(new_session)
+            .exec(&*manager.db)
+            .await
+            .unwrap();
+
+        // Create proxy with builtin tools but EMPTY mcp_server_ids
+        // This should result in NO external MCP servers being loaded
+        let tool_ids = vec!["bootstrap".to_string()];
+        let mcp_server_ids = vec![]; // Empty = no external servers
+
+        let proxy = manager
+            .create_proxy(session_id.clone(), tool_ids, mcp_server_ids, None)
+            .await
+            .unwrap();
+
+        // Verify: Only builtin tools, no external tools
+        assert_eq!(
+            proxy.builtin_server_count(),
+            1,
+            "Should have 1 builtin server"
+        );
+
+        // Verify: No external stdio tools
+        let stdio_tools = proxy.get_session_stdio_tools().await;
+        assert_eq!(
+            stdio_tools.len(),
+            0,
+            "Should have 0 external stdio tools (mcp_server_ids is empty)"
+        );
+
+        // Verify: No external HTTP tools
+        let http_tools = proxy.get_session_http_tools().await;
+        assert_eq!(
+            http_tools.len(),
+            0,
+            "Should have 0 external HTTP tools (mcp_server_ids is empty)"
+        );
+
+        log::info!("✅ Verified: Empty mcp_server_ids = no external servers loaded");
+
+        // Cleanup
+        manager.destroy_proxy(&session_id).await;
     }
 }

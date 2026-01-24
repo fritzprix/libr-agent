@@ -29,6 +29,55 @@ We design tools for an entity that has **High Reasoning** capabilities but **Zer
 - **Why:** Aliases dilute the semantic weight of the tool in the System Prompt and confuse the Agent's decision tree.
 - **Convention:** Use `camelCase` and `verbNoun` structure (e.g., `addContent`, `keywordSimilaritySearch`).
 
+#### 2.1.1 No Alias Error Hints (Simplicity Rule)
+
+**Rule:** Do NOT provide custom error hints for unmatched tool names in `call_tool()`.
+
+**Anti-Pattern (Over-Engineering):**
+
+```rust
+match tool_name {
+    "readFile" => self.handle_read_file(...),
+    "createFile" => self.handle_create_file(...),
+
+    // ❌ AVOID: Explicit alias handling
+    "read_file" | "readContent" => Ok(MCPResult::error(
+        "Did you mean 'readFile'?"
+    )),
+    "write_file" | "writeFile" => Ok(MCPResult::error(
+        "Did you mean 'createFile'?"
+    )),
+
+    _ => Err(format!("Tool '{}' not found", tool_name)),
+}
+```
+
+**Correct Pattern (Simple & Maintainable):**
+
+```rust
+match tool_name {
+    "readFile" => self.handle_read_file(...),
+    "createFile" => self.handle_create_file(...),
+    "editFile" => self.handle_edit_file(...),
+
+    // ✅ CORRECT: Generic error for all unmatched names
+    _ => Err(format!("Tool '{}' not found", tool_name)),
+}
+```
+
+**Why This Is Anti-Pattern:**
+
+1. **Maintenance Burden:** Adding 1 tool requires adding N alias error handlers
+2. **False Negatives:** Rejects valid camelCase alternatives (`writeFile`, `replaceStringInFile`)
+3. **AI Learning Interference:** Agents should learn from tool schemas, not ad-hoc hints
+4. **Code Bloat:** 15-20 lines of error handling for what should be 1 line
+
+**Correct Approach:**
+
+- Let the agent receive generic `"Tool 'X' not found"` error
+- Agent will consult available tools list (from `list_tools()`)
+- Agent learns canonical names from schema definitions
+
 ### 2.2 Trait-Based Interface
 
 All tools must implement the standard `BuiltinMCPServer` trait to ensure polymorphic handling by the Agent Runtime.
@@ -145,6 +194,46 @@ Context generation (e.g., DOM scraping) can be expensive.
 - _Correct:_ Browser Error → Suggest `scrollPage`.
 - _Incorrect:_ Browser Error → Suggest `createTodo` (Planning).
 
+### 6.3 Success/Error Channel Separation
+
+**Rule:** Never mix success hints with error responses.
+
+**Two Distinct Channels:**
+
+- **Error Response:** Recovery guidance only ("How to fix this")
+- **Success Response:** Next-action hints only ("What to do next")
+
+**Anti-Pattern (causes misleading hints):**
+
+```rust
+// ❌ WRONG: Success hints appear even after operation failure
+let result = match execute_script(...) {
+    Err(e) => { return Ok(operation_failed_error(...)) }
+    Ok(res) => res
+};
+
+let hint = SuccessHint::new(result, vec!["Check for page changes"]); // ⚠️ After error!
+```
+
+**Correct Pattern:**
+
+```rust
+// ✅ CORRECT: Success hints ONLY in success branch
+match execute_script(...) {
+    Ok(res) => {
+        if res.contains("Error") {
+            return Ok(operation_failed_error(...)); // ❌ Recovery hints only
+        }
+        // ✅ Success path: Return next-action hints
+        let hint = SuccessHint::new(res, vec!["Check for page changes"]);
+        Ok(hint.to_mcp_result())
+    }
+    Err(e) => Ok(operation_failed_error(...)) // ❌ Recovery only
+}
+```
+
+**Why This Matters:** If `clickElement` fails due to invalid CSS selector, suggesting "check for page changes" wastes AI tokens on non-existent changes.
+
 ---
 
 ## 7. Description Engineering (Input)
@@ -194,5 +283,6 @@ Before deploying a tool, validation against these checks is mandatory:
 - [ ] **Dual Channel:** Text output contains all IDs/Status needed for reasoning.
 - [ ] **Hints:** Errors provide actionable next steps.
 - [ ] **Isolation:** Hints only suggest tools from the same Tool Group.
+- [ ] **Channel Separation:** Success hints only appear after confirmed operation success, never in error responses.
 - [ ] **Vocabulary:** Descriptions use "Extract/Target" instead of "Copy/Click".
 - [ ] **Testing:** Unit tests exist for Error Guidance formatting.

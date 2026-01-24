@@ -60,7 +60,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                     ToolGroup::Browser,
                 ));
             }
-            
+
             // ✅ Success: Return hints for next actions
             let hint = SuccessHint::new(
                 res,
@@ -164,7 +164,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                     ToolGroup::Browser,
                 ));
             }
-            
+
             // ✅ Success: Return hints for next actions
             let hint = SuccessHint::new(
                 res,

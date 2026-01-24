@@ -350,7 +350,7 @@ mod tests {
         }
 
         let page1 = repo
-            .list_playbooks(assistant_id, PaginationParams { page: 1, limit: 10 })
+            .list_playbooks(Some(assistant_id), PaginationParams { page: 1, limit: 10 })
             .await
             .expect("Failed to list page 1");
 
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(page1.total, 15);
 
         let page2 = repo
-            .list_playbooks(assistant_id, PaginationParams { page: 2, limit: 10 })
+            .list_playbooks(Some(assistant_id), PaginationParams { page: 2, limit: 10 })
             .await
             .expect("Failed to list page 2");
 

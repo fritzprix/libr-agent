@@ -48,9 +48,17 @@ pub async fn create_session(
     // Note: tools.rs already exists in src-tauri/src/agent/tools.rs
     let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
 
+    // Extract external MCP server IDs from agent config
+    let mcp_server_ids = agent_config.mcp_server_ids.clone();
+
     // Create proxy for this session
     proxy_manager
-        .create_proxy(session_id.clone(), tool_ids, Some(app_handle.clone()))
+        .create_proxy(
+            session_id.clone(),
+            tool_ids,
+            mcp_server_ids,
+            Some(app_handle.clone()),
+        )
         .await?;
 
     log::info!(
@@ -102,10 +110,16 @@ pub async fn resume_session(
 
     // Extract builtin tool IDs from agent config
     let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+    let mcp_server_ids = agent_config.mcp_server_ids.clone();
 
     // Create proxy for this session
     proxy_manager
-        .create_proxy(session_id.to_string(), tool_ids, Some(app_handle.clone()))
+        .create_proxy(
+            session_id.to_string(),
+            tool_ids,
+            mcp_server_ids,
+            Some(app_handle.clone()),
+        )
         .await?;
 
     log::info!(

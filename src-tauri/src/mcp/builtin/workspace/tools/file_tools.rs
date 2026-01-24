@@ -525,3 +525,148 @@ ERROR HANDLING:
         annotations: None,
     }
 }
+
+pub fn create_delete_file_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to delete (from workspace root)"),
+        ),
+    );
+
+    MCPTool {
+        name: "deleteFile".to_string(),
+        title: Some("Delete File".to_string()),
+        description: "Delete a file from the workspace. Permanently removes the file.
+
+⚠️ CRITICAL WARNING:
+- This operation is DESTRUCTIVE and PERMANENT
+- Deleted files cannot be recovered through this tool
+- Use with extreme caution
+
+💡 WORKFLOW:
+1. ALWAYS verify file exists: listDirectory or readFile first
+2. Consider backing up important files before deletion
+3. For complete file replacement: deleteFile → createFile
+
+USAGE SCENARIOS:
+✅ Removing temporary/test files
+✅ Cleaning up old/unused files
+✅ Complete file replacement workflow
+✅ Removing generated/build artifacts
+
+❌ AVOID:
+- Deleting files without verification
+- Removing system or critical project files
+- Using as undo mechanism (not recoverable)
+
+🔗 RELATED TOOLS:
+- listDirectory: Verify file exists before deletion
+- readFile: Check file content before deletion
+- createFile: Create new file after deletion (replacement workflow)
+
+💡 TIP: For partial content changes, use editFile instead of deleteFile + createFile"
+            .to_string(),
+        input_schema: object_schema(props, vec!["path".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_edit_file_multi_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the file to modify (from workspace root)"),
+        ),
+    );
+    // Define the replacement item object schema
+    let mut replacement_props = HashMap::new();
+    replacement_props.insert(
+        "oldString".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Exact text to find and replace (must match precisely including whitespace)"),
+        ),
+    );
+    replacement_props.insert(
+        "newString".to_string(),
+        string_prop(None, None, Some("New text to replace oldString with")),
+    );
+
+    let replacement_item = object_schema(
+        replacement_props,
+        vec!["oldString".to_string(), "newString".to_string()],
+    );
+
+    props.insert(
+        "replacements".to_string(),
+        array_schema(
+            replacement_item,
+            Some("Array of replacements to apply sequentially. Each replacement must specify oldString and newString (max 50)."),
+        ),
+    );
+
+    MCPTool {
+        name: "editFileMulti".to_string(),
+        title: Some("Edit File (Multiple Replacements)".to_string()),
+        description: "Apply multiple text replacements to a file in a single atomic operation. All replacements succeed or none are applied.
+
+⚠️ CRITICAL WORKFLOW:
+1. ALWAYS call readFile(path) FIRST to get current content
+2. Extract exact text for EACH oldString from readFile response
+3. Each oldString must match exactly once in the file
+4. Replacements are applied sequentially in array order
+
+PARAMETERS:
+- path: Relative path to file
+- replacements: Array of {oldString, newString} objects (max 50)
+
+BEHAVIOR:
+✅ All patterns valid → All replacements applied atomically
+❌ Any pattern invalid → NO changes applied, detailed error returned
+
+VALIDATION RULES:
+- Each oldString must exist exactly once (not 0, not 2+)
+- Empty oldString not allowed
+- Order matters: Later replacements see results of earlier ones
+- Maximum 50 replacements per call
+
+💡 WHEN TO USE:
+✅ Batch editing multiple sections in same file
+✅ Refactoring with multiple related changes
+✅ Applying systematic updates (e.g., renaming across file)
+✅ When atomic all-or-nothing behavior is required
+
+❌ WHEN NOT TO USE:
+- Single replacement → use editFile (simpler)
+- Changes in different files → call editFile separately
+- Line-based edits with known line numbers → use editLineInFile
+
+EXAMPLE:
+{
+  \"path\": \"src/main.rs\",
+  \"replacements\": [
+    {\"oldString\": \"fn old_name()\", \"newString\": \"fn new_name()\"},
+    {\"oldString\": \"old_name()\", \"newString\": \"new_name()\"}
+  ]
+}
+
+🔗 RELATED TOOLS:
+- editFile: Single replacement (simpler, recommended for most cases)
+- previewReplacement: Preview single replacement before applying
+- readFile: Get current content (MANDATORY before editing)
+
+💡 TIP: For 1-2 changes, use editFile multiple times. For 3+ related changes, use editFileMulti.".to_string(),
+        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}

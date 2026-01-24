@@ -540,8 +540,10 @@ impl BuiltinMCPServer for WorkspaceServer {
             // File operation tools
             "readFile" => self.handle_read_file(args, session_id).await,
             "createFile" => self.handle_create_file(args, session_id).await,
+            "deleteFile" => self.handle_delete_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,
+            "editFileMulti" => self.handle_edit_file_multi(args, session_id).await,
             "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
             "searchLineInFile" => self.handle_grep(args, session_id).await,
@@ -560,7 +562,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             #[cfg(unix)]
             "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
             #[cfg(windows)]
-            "runInPersistentPowerShell" => self.handle_execute_shell(args, &target_session_id).await,
+            "runInPersistentPowerShell" => {
+                self.handle_execute_shell(args, &target_session_id).await
+            }
             // CMD execution tools (Windows only, alternative to PowerShell)
             #[cfg(windows)]
             "runCmd" => self.handle_run_shell(args, &target_session_id).await,
@@ -569,43 +573,27 @@ impl BuiltinMCPServer for WorkspaceServer {
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)
-            "executePendingShell" => self.handle_execute_pending_shell(args, &target_session_id).await,
+            "executePendingShell" => {
+                self.handle_execute_pending_shell(args, &target_session_id)
+                    .await
+            }
             // Cancel pending execution (UI callback tool)
-            "cancelPendingExecution" => self.handle_cancel_pending_execution(args, &target_session_id).await,
+            "cancelPendingExecution" => {
+                self.handle_cancel_pending_execution(args, &target_session_id)
+                    .await
+            }
             // Export tools
             "exportFile" => self.handle_export_file(args, session_id).await,
             "exportZip" => self.handle_export_zip(args, session_id).await,
             // Terminal/Process management tools
             "pollProcess" => self.handle_poll_process(args, &target_session_id).await,
-            "readProcessOutput" => self.handle_read_process_output(args, &target_session_id).await,
+            "readProcessOutput" => {
+                self.handle_read_process_output(args, &target_session_id)
+                    .await
+            }
             "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
             "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
 
-            // --- Error Hints for Common Mistakes ---
-            "read_file" | "readContent" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'readFile'? Please use the exact tool name 'readFile'."
-            )),
-            "write_file" | "writeContent" | "writeFile" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'createFile'? Please use the exact tool name 'createFile' to create or write files."
-            )),
-            "replace_file" | "replaceStringInFile" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'editFile'? Please use the exact tool name 'editFile' to edit file content."
-            )),
-            "list_directory" | "ls" => Ok(MCPResult::error(
-                "Tool not found. Did you mean 'listDirectory'? Please use the exact tool name 'listDirectory'."
-            )),
-            "grep" => Ok(MCPResult::error(
-                "Tool not found. Use 'searchLineInFile' instead. The 'grep' alias has been removed for tool name consistency."
-            )),
-            "execute_shell" | "execute_command" | "run_command" => Ok(MCPResult::error(
-                "Tool not found. Use 'runShell' (Unix) or 'runPowerShell' (Windows) for quick commands. Use exact tool names."
-            )),
-            "execute_windows_cmd" | "executeWindowsCmd" => Ok(MCPResult::error(
-                "Tool not found. Use 'runPowerShell' or 'runCmd' for quick commands. Use 'runInPersistentPowerShell' or 'runInPersistentCmd' for persistent state. Use exact tool names."
-            )),
-            "executeShellAsync" | "executeWindowsCmdAsync" | "runAsync" | "run_async" => Ok(MCPResult::error(
-                "Tool not found. Use 'spawnProcess' for background execution (works on both Unix and Windows)."
-            )),
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
     }
