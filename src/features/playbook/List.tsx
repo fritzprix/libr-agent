@@ -30,7 +30,6 @@ import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
 import { Playbook } from '@/types/playbook';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
 
 const logger = getLogger('PlaybookList');
 
@@ -42,7 +41,6 @@ type PlaybookWithMeta = Playbook & {
 };
 
 export default function PlaybookList() {
-  const { session } = useAgentSessionState();
   const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
   const [assistants, setAssistants] = useState<
     Record<string, { name: string }>
@@ -60,7 +58,6 @@ export default function PlaybookList() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch all playbooks globally (not filtered by current session/assistant)
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
           sortBy: sortMode,
@@ -87,7 +84,7 @@ export default function PlaybookList() {
     } finally {
       setLoading(false);
     }
-  }, [session?.id, sortMode, sortOrder, bookmarkFirst]);
+  }, [sortMode, sortOrder, bookmarkFirst]);
 
   useEffect(() => {
     fetchData();
