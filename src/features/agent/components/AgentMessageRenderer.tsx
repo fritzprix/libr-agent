@@ -631,7 +631,6 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 </button>
 
                 <ReactMarkdown
-                  skipHtml={false}
                   remarkPlugins={REMARK_PLUGINS}
                   rehypePlugins={REHYPE_PLUGINS}
                   components={MARKDOWN_COMPONENTS}
@@ -683,6 +682,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                     style: { height: 'auto', maxHeight: 'unset' },
                     iframeProps: {
                       className: 'h-auto min-h-[50vh] max-h-none',
+                      sandbox: 'allow-scripts allow-popups allow-forms',
                     },
                   }}
                   resource={resourceItem.resource}
