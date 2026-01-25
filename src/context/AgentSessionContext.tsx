@@ -300,6 +300,39 @@ export function AgentSessionProvider({
                 if (prev.some((m) => m.id === newMessage.id)) return prev;
                 return [...prev, newMessage];
               });
+
+              // Recurring Request Logic for Think-Only Messages
+              // If the assistant sends a message with ONLY thinking (no content, no tool calls),
+              // we treat it as an internal thought and automatically trigger the next turn.
+              if (
+                newMessage.role === 'assistant' &&
+                !newMessage.isStreaming && // Only valid for completed messages
+                newMessage.thinking && // Has thinking
+                (!newMessage.content || newMessage.content.length === 0) && // No visible content
+                (!newMessage.tool_calls || newMessage.tool_calls.length === 0) // No tool calls
+              ) {
+                logger.info(
+                  'Detected Think-Only message, triggering recurring request',
+                  {
+                    messageId: newMessage.id,
+                  },
+                );
+
+                // Use resume_workflow to trigger the next turn
+                // We use setTimeout to allow the UI to render the thinking bubble state first
+                // and to avoid immediate state thrashing
+                setTimeout(() => {
+                  invoke('agent_resume_workflow', {
+                    sessionId,
+                  }).catch((err) => {
+                    logger.error(
+                      'Failed to trigger recurring request for thinking message',
+                      err,
+                    );
+                  });
+                }, 100);
+              }
+
               break;
             }
 

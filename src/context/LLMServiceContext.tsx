@@ -84,7 +84,18 @@ interface LLMServiceContextValue {
     systemPrompt?: string,
     temperature?: number,
     maxTokens?: number,
+    availableTools?: MCPTool[],
   ) => Promise<Message>;
+
+  /**
+   * Set agent mode (auto-tool use) for a session
+   */
+  setAgentMode: (sessionId: string, enabled: boolean) => void;
+
+  /**
+   * Get agent mode status for a session
+   */
+  getAgentMode: (sessionId: string) => boolean;
 }
 
 const LLMServiceContext = createContext<LLMServiceContextValue | undefined>(
@@ -137,6 +148,18 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   // Track listener setup to prevent duplicate registration in React Strict Mode
   const listenerSetupRef = useRef(false);
 
+  const [sessionAgentModes, setSessionAgentModes] = useState<
+    Map<string, boolean>
+  >(new Map());
+
+  const setAgentMode = useCallback((sessionId: string, enabled: boolean) => {
+    setSessionAgentModes((prev) => {
+      const next = new Map(prev);
+      next.set(sessionId, enabled);
+      return next;
+    });
+  }, []);
+
   /**
    * Get session status
    */
@@ -159,6 +182,13 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       });
     },
     [],
+  );
+
+  const getAgentMode = useCallback(
+    (sessionId: string) => {
+      return sessionAgentModes.get(sessionId) ?? false;
+    },
+    [sessionAgentModes],
   );
 
   /**
@@ -298,7 +328,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         // Build config
         const config: AIServiceConfig = {
           temperature,
-          maxTokens,
+          maxTokens:
+            maxTokens ||
+            settingsRef.current.advanced?.defaultMaxOutputTokens ||
+            8192,
         };
 
         // Calculate safe input token limit
@@ -326,9 +359,15 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           modelInfo,
         });
 
-        if (modelInfo && maxTokens) {
+        if (modelInfo) {
+          // Use resolved max tokens or fallback
+          const effectiveMaxTokens =
+            maxTokens ||
+            settingsRef.current.advanced?.defaultMaxOutputTokens ||
+            8192;
+
           // Reserve maxTokens + 100 safety buffer
-          const reserved = maxTokens + 100;
+          const reserved = effectiveMaxTokens + 100;
           if (reserved < modelInfo.contextWindow) {
             safeInputTokenLimit = modelInfo.contextWindow - reserved;
           }
@@ -424,7 +463,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
-          forceToolUse: false,
+          forceToolUse: sessionAgentModes.get(sessionId) ?? false,
         });
 
         // Accumulate chunks
@@ -433,6 +472,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         let thinkingContent = '';
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
+        let thinkingStartTime: number | undefined;
 
         for await (const chunk of streamGenerator) {
           // Capture Time to First Token (TTFT) for detailed metrics
@@ -516,7 +556,20 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             parsedChunk.thinking &&
             typeof parsedChunk.thinking === 'string'
           ) {
+            if (thinkingStartTime === undefined) {
+              thinkingStartTime = performance.now();
+            }
             thinkingContent += parsedChunk.thinking;
+          }
+
+          // Calculate Thinking Time (seconds)
+          let currentThinkingTime: number | undefined;
+          if (thinkingStartTime !== undefined) {
+            // If thinking just finished (or still going), duration is now - start
+            // We can refine this: if thinkingContent exists but we get regular content, thinking might be done.
+            // But for now, just tracking elapsed time since thinking started is safe.
+            currentThinkingTime =
+              (performance.now() - thinkingStartTime) / 1000;
           }
 
           // Accumulate usage metrics (merge instead of replace to preserve TTFT data)
@@ -553,6 +606,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 : [],
               tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
               thinking: thinkingContent || undefined,
+              thinkingTime: currentThinkingTime,
               usage: finalUsage,
               isStreaming: true,
             });
@@ -599,6 +653,9 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
           createdAt: new Date(),
           tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
           thinking: thinkingContent || undefined,
+          thinkingTime: thinkingStartTime
+            ? (performance.now() - thinkingStartTime) / 1000
+            : undefined,
           usage: finalUsage,
           isStreaming: false, // ✅ Explicit completion flag to trigger AgentChatContext effect
         };
@@ -918,6 +975,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     getSessionStatus,
     clearStreamingMessage,
     executeCompletionRequest,
+    setAgentMode,
+    getAgentMode,
   };
 
   return (

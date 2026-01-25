@@ -6,3 +6,4 @@
 
 export { LoadingIndicator } from './LoadingIndicator';
 export { ThinkingBubble } from './ThinkingBubble';
+export * from './AnalysisLoader';

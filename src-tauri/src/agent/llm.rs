@@ -275,10 +275,17 @@ pub async fn handle_llm_response(
         // Check if content is also empty (abnormal empty response)
         // Note: A message with tool calls but no content is VALID and normal
         let has_content = !assistant_message.content.is_empty();
-        if !has_content {
-            // BOTH content AND tool_calls are empty - this is an error
+        // ✅ FIX: Also check thinking field to allow thinking-only messages (Spec requirement)
+        let has_thinking = assistant_message
+            .thinking
+            .as_ref()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+
+        if !has_content && !has_thinking {
+            // content, tool_calls, AND thinking are all empty - this is an error
             log::warn!(
-                "⚠️  Empty LLM response detected for session {}: no content and no tool calls. This may indicate a model inference issue.",
+                "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
                 session_id
             );
             // Set status to error
@@ -293,14 +300,94 @@ pub async fn handle_llm_response(
             // Emit workflow error event with specific message
             let error_event = crate::agent::events::AgentEvent::WorkflowError {
                 session_id: session_id.clone(),
-                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content or tool calls. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
+                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
             };
             crate::agent::events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
             return Ok(());
         }
 
-        // Workflow completed normally (has content, no tool calls)
+        // ✅ NEW: Think-only message auto-recurring (Spec requirement 3)
+        if has_thinking && !has_content {
+            // Get current thinking_only_count
+            let current_count = {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    *session.thinking_only_count.read().await
+                } else {
+                    0
+                }
+            };
+
+            // Circuit breaker: max 3 consecutive thinking-only responses
+            if current_count >= 3 {
+                log::warn!(
+                    "⚠️  Circuit breaker triggered for session {}: {} consecutive thinking-only responses. Forcing workflow completion.",
+                    session_id, current_count
+                );
+
+                // Reset counter and complete workflow
+                {
+                    let active = active_sessions.write().await;
+                    if let Some(session) = active.get(&session_id) {
+                        *session.thinking_only_count.write().await = 0;
+                    }
+                }
+
+                crate::agent::lifecycle::update_session_status(
+                    session_repo,
+                    active_sessions,
+                    app_handle,
+                    &session_id,
+                    SessionStatus::Idle,
+                )
+                .await?;
+
+                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+                    session_id: session_id.clone(),
+                };
+                crate::agent::events::emit_agent_event(app_handle, event)
+                    .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+                log::info!(
+                    "Workflow completed with circuit breaker for session: {}",
+                    session_id
+                );
+                return Ok(());
+            }
+
+            // Increment thinking_only_count
+            {
+                let active = active_sessions.write().await;
+                if let Some(session) = active.get(&session_id) {
+                    let mut count = session.thinking_only_count.write().await;
+                    *count += 1;
+                    log::info!(
+                        "🧠 Think-only message detected for session {} (attempt {}/3). Triggering next LLM turn (auto-recurring).",
+                        session_id, *count
+                    );
+                }
+            }
+
+            // Auto-recurring: trigger next LLM turn
+            return request_llm_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+            .await;
+        }
+
+        // ✅ Content present: reset thinking_only_count and complete workflow
+        {
+            let active = active_sessions.write().await;
+            if let Some(session) = active.get(&session_id) {
+                *session.thinking_only_count.write().await = 0;
+            }
+        }
+
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
@@ -324,6 +411,14 @@ pub async fn handle_llm_response(
             tool_calls.len(),
             session_id
         );
+
+        // Reset thinking_only_count (tool calls = normal workflow progress)
+        {
+            let active = active_sessions.write().await;
+            if let Some(session) = active.get(&session_id) {
+                *session.thinking_only_count.write().await = 0;
+            }
+        }
 
         // Update status to Busy
         crate::agent::lifecycle::update_session_status(

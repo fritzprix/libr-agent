@@ -7,14 +7,14 @@ import { useThrottle } from '@/hooks/useThrottle';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
-import { LoadingIndicator } from './shared';
+import { AnalysisLoader } from './shared';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 
 export function AgentChatMessages() {
   const { messages, error, llmError, retryMessage, workflowStatus } =
     useAgentChat();
-  const { session, workflowPhase } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -118,7 +118,33 @@ export function AgentChatMessages() {
 
           // Render regular message
           const msg = groupedMessage.message;
-          if (!msg || msg.content.length === 0) return null;
+
+          // Check if message has any renderable content
+          const hasContent = msg?.content && msg.content.length > 0;
+          const hasThinking = !!msg?.thinking;
+          const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
+
+          // Skip if absolutely nothing to show, unless streaming (show loader)
+          if (!msg || (!hasContent && !hasThinking && !hasToolCalls && workflowStatus === 'busy')) {
+            return (
+              <div className="flex justify-start mb-8 mt-3">
+                <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                      <Bot size={16} className="text-primary-foreground" />
+                    </div>
+                    <span className="text-xs font-medium">
+                      {session?.assistant?.name || 'Agent'}
+                    </span>
+                  </div>
+                  <div className="text-sm">
+                    <AnalysisLoader size="md" />
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <AgentMessageBubble
               key={msg.id}
@@ -156,34 +182,6 @@ export function AgentChatMessages() {
           </div>
         )}
 
-        {/* Show persistent thinking indicator when workflow is busy */}
-        {workflowStatus === 'busy' && (
-          <div className="flex justify-start mb-8 mt-3">
-            <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
-                  <Bot size={16} className="text-primary-foreground" />
-                </div>
-                <span className="text-xs font-medium">
-                  {session?.assistant?.name || 'Agent'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <LoadingIndicator size="md" />
-                <span className="animate-pulse">
-                  {workflowPhase === 'thinking' && 'Thinking...'}
-                  {workflowPhase === 'answering' && 'Answering...'}
-                  {workflowPhase === 'using_tools' &&
-                    'Using tools and processing...'}
-                  {workflowPhase !== 'thinking' &&
-                    workflowPhase !== 'answering' &&
-                    workflowPhase !== 'using_tools' &&
-                    'Processing...'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
         <div ref={messagesEndRef} />
       </div>
     </div>

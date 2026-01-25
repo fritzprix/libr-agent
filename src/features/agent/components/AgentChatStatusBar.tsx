@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Wrench,
   AlertTriangle,
+  Bot,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
@@ -25,8 +26,15 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { session } = useAgentSessionState();
-  const { workflowStatus, error, llmError, retryMessage, resume } =
-    useAgentChat();
+  const {
+    workflowStatus,
+    error,
+    llmError,
+    retryMessage,
+    resume,
+    agentModeEnabled,
+    toggleAgentMode,
+  } = useAgentChat();
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -238,6 +246,28 @@ export function AgentChatStatusBar() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleAgentMode}
+            className={`h-6 px-2 text-xs flex items-center gap-1 ${
+              agentModeEnabled
+                ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                : 'text-muted-foreground hover:bg-muted'
+            }`}
+            title={
+              agentModeEnabled
+                ? 'Agent Mode ON: Forces tool use for autonomous tasks'
+                : 'Agent Mode OFF: Standard interaction'
+            }
+          >
+            <Bot
+              size={14}
+              className={agentModeEnabled ? 'animate-pulse' : ''}
+            />
+            {agentModeEnabled ? 'Agent Mode' : 'Chat Mode'}
+          </Button>
+
           {/* Token Metrics Badge - Show if metrics exist */}
           {displayMetrics && (
             <div className="hidden md:block">

@@ -89,7 +89,8 @@ function AgentMessageBubbleImpl({
                 {(msg.thinking ||
                   (msg.isStreaming && !msg.content?.length)) && (
                   <ThinkingBubble
-                    thinking={msg.thinking || ''}
+                    thinking={msg.thinking}
+                    thinkingTime={msg.thinkingTime}
                     isStreaming={msg.isStreaming}
                     className="mb-3"
                   />

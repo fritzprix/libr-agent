@@ -229,7 +229,10 @@ function DraftChatInner() {
             settings?.preferredModel?.provider ||
             'openai',
           temperature: assistant.temperature ?? 0.7,
-          maxTokens: assistant.maxTokens,
+          maxTokens:
+            assistant.maxTokens ??
+            settings?.advanced?.defaultMaxOutputTokens ??
+            8192,
         };
 
         if (!toastId) toastId = toast.loading('Creating session...');
