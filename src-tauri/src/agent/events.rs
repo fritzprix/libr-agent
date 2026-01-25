@@ -4,6 +4,15 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+/// Initialization step status
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InitializationStatus {
+    Running,
+    Complete,
+    Error,
+}
+
 /// Events emitted from Rust Agent runtime to TypeScript Frontend
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -54,7 +63,7 @@ pub enum AgentEvent {
     InitializationStep {
         session_id: String,
         step: String,
-        status: String,
+        status: InitializationStatus,
     },
 }
 

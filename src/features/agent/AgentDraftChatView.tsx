@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { Button, Badge } from '@/components/ui';
@@ -167,21 +168,19 @@ function DraftChatInner() {
           : input.trim();
 
       try {
-        // Setup temporary listener for initialization steps
-        import('@tauri-apps/api/event').then(async ({ listen }) => {
-          unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-            if (
-              event.payload.sessionId === newSessionId &&
-              event.payload.type === 'initializationStep'
-            ) {
-              const step = event.payload.step;
-              if (toastId) {
-                toast.loading(step, { id: toastId });
-              } else {
-                toastId = toast.loading(step);
-              }
+        // Setup temporary listener for initialization steps BEFORE creating session
+        unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
+          if (
+            event.payload.sessionId === newSessionId &&
+            event.payload.type === 'initializationStep'
+          ) {
+            const step = event.payload.step;
+            if (toastId) {
+              toast.loading(step, { id: toastId });
+            } else {
+              toastId = toast.loading(step);
             }
-          });
+          }
         });
 
         // Prepare message

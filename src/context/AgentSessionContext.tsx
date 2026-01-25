@@ -55,7 +55,7 @@ export type AgentEventPayload =
       type: 'initializationStep';
       sessionId: string;
       step: string;
-      status: string;
+      status: 'running' | 'complete' | 'error';
     };
 
 // Workflow phase within 'busy' status for fine-grained UI feedback
@@ -198,16 +198,31 @@ export function AgentSessionProvider({
 
           switch (payload.type) {
             case 'initializationStep': {
+              const rawStatus = payload.status;
+              const isValidStatus =
+                rawStatus === 'running' ||
+                rawStatus === 'complete' ||
+                rawStatus === 'error';
+              const safeStatus: 'running' | 'complete' | 'error' = isValidStatus
+                ? rawStatus
+                : 'error';
+
+              if (!isValidStatus) {
+                logger.warn(
+                  'Received invalid initialization status from backend',
+                  {
+                    sessionId,
+                    rawStatus,
+                  },
+                );
+              }
+
               setInitializationStep({
                 step: payload.step,
-                status: payload.status as 'running' | 'complete' | 'error',
+                status: safeStatus,
               });
-              if (payload.status === 'complete') {
-                // Small delay to let user see "Complete" before switching to chat
-                setTimeout(() => {
-                  if (isMounted) setIsSessionLoading(false);
-                }, 500);
-              }
+              // Don't set isSessionLoading here - let the main init flow control it
+              // after all operations (agent_init_session_with_messages, loadMessages) complete
               break;
             }
 
