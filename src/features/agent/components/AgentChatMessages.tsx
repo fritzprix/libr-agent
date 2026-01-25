@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
@@ -82,6 +82,11 @@ export function AgentChatMessages() {
     return retryMessage();
   };
 
+  // Check if any message is currently streaming
+  const isAnyStreaming = useMemo(() => {
+    return messages.some((m) => m.isStreaming);
+  }, [messages]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
@@ -124,25 +129,8 @@ export function AgentChatMessages() {
           const hasThinking = !!msg?.thinking;
           const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
 
-          // Skip if absolutely nothing to show, unless streaming (show loader)
           if (!msg || (!hasContent && !hasThinking && !hasToolCalls && workflowStatus === 'busy')) {
-            return (
-              <div className="flex justify-start mb-8 mt-3">
-                <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
-                      <Bot size={16} className="text-primary-foreground" />
-                    </div>
-                    <span className="text-xs font-medium">
-                      {session?.assistant?.name || 'Agent'}
-                    </span>
-                  </div>
-                  <div className="text-sm">
-                    <AnalysisLoader size="md" />
-                  </div>
-                </div>
-              </div>
-            );
+            return null;
           }
 
           return (
@@ -153,6 +141,7 @@ export function AgentChatMessages() {
             />
           );
         })}
+
 
         {/* Global (top-level) error: render aligned with assistant bubbles */}
         {error && (
@@ -179,6 +168,24 @@ export function AgentChatMessages() {
               }}
               onRetry={handleRetry}
             />
+          </div>
+        )}
+        {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
+        {workflowStatus === 'busy' && !isAnyStreaming && (
+          <div className="flex justify-start mb-8 mt-3">
+            <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                  <Bot size={16} className="text-primary-foreground" />
+                </div>
+                <span className="text-xs font-medium">
+                  {session?.assistant?.name || 'Agent'}
+                </span>
+              </div>
+              <div className="text-sm">
+                <AnalysisLoader size="md" />
+              </div>
+            </div>
           </div>
         )}
 
