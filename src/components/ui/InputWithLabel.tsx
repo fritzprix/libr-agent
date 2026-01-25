@@ -40,7 +40,10 @@ export default function InputWithLabel({
       containerClassName={containerClassName}
       labelClassName="text-muted-foreground"
     >
-      <Input className={cn(error && 'border-destructive', className)} {...props} />
+      <Input
+        className={cn(error && 'border-destructive', className)}
+        {...props}
+      />
     </FieldWrapper>
   );
 }

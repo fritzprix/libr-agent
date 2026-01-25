@@ -109,8 +109,7 @@ export function AgentChatStatusBar() {
       return {
         icon: <AlertCircle className="w-4 h-4" />,
         text: `An error occurred: ${error || llmError}`,
-        className:
-          'bg-destructive/10 border-destructive/20 text-destructive',
+        className: 'bg-destructive/10 border-destructive/20 text-destructive',
         showRetry: true,
         showResume: false,
       };
@@ -121,8 +120,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Info className="w-4 h-4" />,
           text: 'Ready for input. Type a message to start.',
-          className:
-            'bg-secondary/50 border-border text-foreground',
+          className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: false,
         };
@@ -130,8 +128,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Loader2 className="w-4 h-4 animate-spin" />,
           text: 'Processing your request... Agent is thinking and using tools.',
-          className:
-            'bg-warning/10 border-warning/20 text-warning-foreground',
+          className: 'bg-warning/10 border-warning/20 text-warning-foreground',
           showRetry: false,
           showResume: false,
         };
@@ -139,8 +136,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Pause className="w-4 h-4" />,
           text: 'Workflow paused. Click Continue to resume processing.',
-          className:
-            'bg-secondary/50 border-border text-foreground',
+          className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: true,
         };
@@ -148,8 +144,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <AlertCircle className="w-4 h-4" />,
           text: 'Workflow encountered an error.',
-          className:
-            'bg-destructive/10 border-destructive/20 text-destructive',
+          className: 'bg-destructive/10 border-destructive/20 text-destructive',
           showRetry: true,
           showResume: false,
         };
@@ -157,8 +152,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Info className="w-4 h-4" />,
           text: `Status: ${workflowStatus}`,
-          className:
-            'bg-muted/50 border-border text-muted-foreground',
+          className: 'bg-muted/50 border-border text-muted-foreground',
           showRetry: false,
           showResume: false,
         };
