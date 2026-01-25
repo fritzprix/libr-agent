@@ -15,7 +15,6 @@ import {
   MCPTool,
   SamplingOptions,
   SamplingResponse,
-  MCPServerConfig,
 } from '../lib/mcp-types';
 import { MCPConfig, ToolCall, Assistant } from '../models/chat';
 import type { MCPServerEntity } from '../models/chat';
@@ -189,7 +188,7 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
                 transport: entity.transport,
                 authentication: entity.authentication,
                 metadata: entity.metadata,
-              } as MCPServerConfig,
+              },
             ]),
           ),
         };

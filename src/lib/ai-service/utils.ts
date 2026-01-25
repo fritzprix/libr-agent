@@ -1,9 +1,19 @@
 import { createId } from '@paralleldrive/cuid2';
+import { AIServiceProvider } from './types';
 import {
   type Message,
   type RustMessage,
   rustMessageToMessage,
 } from '@/models/chat';
+
+/**
+ * Type guard for AIServiceProvider
+ */
+export function isAIServiceProvider(
+  value: unknown,
+): value is AIServiceProvider {
+  return Object.values(AIServiceProvider).includes(value as AIServiceProvider);
+}
 
 /**
  * Safely parse JSON string into a value or return undefined on failure.
