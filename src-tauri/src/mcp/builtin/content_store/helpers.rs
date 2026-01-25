@@ -55,9 +55,69 @@ pub(crate) fn create_text_chunks(lines: &[&str], chunk_size: usize) -> Vec<Strin
         .collect()
 }
 
+/// Validate that a path is within the workspace directory
+///
+/// This function canonicalizes both paths to resolve symlinks and relative components.
+/// It ensures that the target path starts with the workspace path.
+pub(crate) fn validate_path_is_in_workspace(path: &Path, workspace: &Path) -> Result<(), String> {
+    let canonical_workspace = workspace
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize workspace path: {e}"))?;
+
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve file path: {e}"))?;
+
+    if !canonical_path.starts_with(&canonical_workspace) {
+        return Err(format!(
+            "Access denied: Path '{}' is outside the session workspace",
+            path.display()
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_validate_path_is_in_workspace() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace = temp_dir.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+
+        // Valid file inside workspace
+        let valid_file = workspace.join("valid.txt");
+        std::fs::write(&valid_file, "content").unwrap();
+        assert!(validate_path_is_in_workspace(&valid_file, &workspace).is_ok());
+
+        // Valid nested file
+        let nested_dir = workspace.join("nested");
+        std::fs::create_dir(&nested_dir).unwrap();
+        let nested_file = nested_dir.join("nested.txt");
+        std::fs::write(&nested_file, "content").unwrap();
+        assert!(validate_path_is_in_workspace(&nested_file, &workspace).is_ok());
+
+        // Invalid file outside workspace
+        let outside_file = temp_dir.path().join("outside.txt");
+        std::fs::write(&outside_file, "content").unwrap();
+        assert!(validate_path_is_in_workspace(&outside_file, &workspace).is_err());
+
+        // Invalid: path traversal attempting to go outside
+        // Note: canonicalize resolves ".." so this tests if we properly resolve it
+        // However, we can't easily create a path object that hasn't been canonicalized
+        // if we are passing it to the function which canonicalizes it.
+        // But if we construct a path like "workspace/../outside.txt" and it points to an existing file
+        // it should resolve to the outside file.
+
+        // On some systems/configs we can test traversal if the file exists
+        let traversal_path = workspace.join("../outside.txt");
+        // This path physically points to `outside_file` which exists
+        assert!(validate_path_is_in_workspace(&traversal_path, &workspace).is_err());
+    }
 
     #[test]
     #[cfg(unix)]

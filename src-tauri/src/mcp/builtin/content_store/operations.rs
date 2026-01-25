@@ -48,11 +48,29 @@ pub async fn add_content(
                 }
             };
 
-            let mime_type = helpers::mime_type_from_extension(std::path::Path::new(&file_path_str));
+            // Validate file path security
+            let session_dir = server
+                .session_manager
+                .get_session_workspace_dir_by_id(session_id);
+            let file_path = std::path::Path::new(&file_path_str);
+
+            if let Err(e) = helpers::validate_path_is_in_workspace(file_path, &session_dir) {
+                return Ok(operation_failed_error(
+                    "Security Validation",
+                    &e,
+                    vec![
+                        "File must be located within the session workspace".to_string(),
+                        "Use files from your workspace directory".to_string(),
+                    ],
+                    ToolGroup::ContentStore,
+                ));
+            }
+
+            let mime_type = helpers::mime_type_from_extension(file_path);
 
             // Parse file
             match parsers::DocumentParser::parse_file(
-                std::path::Path::new(&file_path_str),
+                file_path,
                 mime_type,
             )
             .await
