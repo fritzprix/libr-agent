@@ -83,8 +83,8 @@ export function AgentChatMessages() {
   };
 
   // Check if any message is currently streaming
-  const isAnyStreaming = useMemo(() => {
-    return messages.some((m) => m.isStreaming);
+  const isLastStreaming = useMemo(() => {
+    return messages[messages.length - 1].isStreaming;
   }, [messages]);
 
   return (
@@ -129,7 +129,13 @@ export function AgentChatMessages() {
           const hasThinking = !!msg?.thinking;
           const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
 
-          if (!msg || (!hasContent && !hasThinking && !hasToolCalls && workflowStatus === 'busy')) {
+          if (
+            !msg ||
+            (!hasContent &&
+              !hasThinking &&
+              !hasToolCalls &&
+              workflowStatus === 'busy')
+          ) {
             return null;
           }
 
@@ -141,7 +147,6 @@ export function AgentChatMessages() {
             />
           );
         })}
-
 
         {/* Global (top-level) error: render aligned with assistant bubbles */}
         {error && (
@@ -171,7 +176,7 @@ export function AgentChatMessages() {
           </div>
         )}
         {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
-        {workflowStatus === 'busy' && !isAnyStreaming && (
+        {workflowStatus === 'busy' && !isLastStreaming && (
           <div className="flex justify-start mb-8 mt-3">
             <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
               <div className="flex items-center gap-3 mb-2">

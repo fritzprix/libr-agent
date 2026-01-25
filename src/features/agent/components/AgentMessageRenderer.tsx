@@ -612,7 +612,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             return (
               <div
                 key={key}
-                className="group relative text-sm leading-relaxed overflow-x-hidden break-words"
+                className="group relative text-sm leading-relaxed break-words"
               >
                 {/* Copy button for individual text */}
                 <button
