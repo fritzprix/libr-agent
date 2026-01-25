@@ -9,6 +9,7 @@ export type GroupedMessage =
       toolGroup: {
         calls: ToolCall[];
         results: (Message | undefined)[];
+        resultsMap: Map<string, Message>;
       };
     };
 
@@ -133,10 +134,17 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             toolResultsMap.get(call.id),
           );
 
+          // Pre-calculate resultsMap to ensure referential stability in render loop
+          const resultsMap = new Map<string, Message>();
+          allToolCalls.forEach((call, idx) => {
+            const res = results[idx];
+            if (res) resultsMap.set(call.id, res);
+          });
+
           groupedMessages.push({
             type: 'tool_group',
             message: msg,
-            toolGroup: { calls: allToolCalls, results },
+            toolGroup: { calls: allToolCalls, results, resultsMap },
           });
         } else {
           // Fallback (shouldn't really happen due to outer if, but safe)

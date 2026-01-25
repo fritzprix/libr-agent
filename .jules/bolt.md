@@ -12,3 +12,8 @@
 
 **Learning:** `AgentChatMessages` was performing a redundant O(N) iteration to build `toolResultsMap` on every render (token update), even though `useMessageGrouping` was already iterating the same list (O(N)).
 **Action:** List-processing hooks should return derived lookups (like maps) alongside the main result when consumers need them. This avoids redundant passes over the data and simplifies the consumer code.
+
+## 2024-05-25 - Referential Stability of Derived Props
+
+**Learning:** `AgentChatMessages` was creating a new `Map` instance for `toolResultsMap` inside the render loop for every tool group. This caused `AgentMessageBubble` (which is memoized) to re-render on *every* parent render, effectively disabling the memoization and wasting CPU on heavy markdown rendering.
+**Action:** Move the creation of derived objects (like Maps or Sets) that are passed as props to memoized components *into* the data processing hook (e.g., `useMessageGrouping`). This ensures the object reference remains stable across renders unless the underlying data actually changes.
