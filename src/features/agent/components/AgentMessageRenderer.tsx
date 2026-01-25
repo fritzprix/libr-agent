@@ -307,8 +307,23 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
       items.push({ type: 'tool_group_block', items: [...currentToolGroup] });
     }
 
+    // Fallback: If no thinking content found but message.thinking exists (e.g. from backend persistence normalization),
+    // inject it at the start to ensure it is displayed.
+    const hasThinkingContent = finalContent.some((c) => c.type === 'thinking');
+    if (
+      !hasThinkingContent &&
+      message?.thinking &&
+      message.thinking.length > 0
+    ) {
+      items.unshift({
+        type: 'thinking',
+        thinking: message.thinking,
+        thinkingTime: message.thinkingTime,
+      } as MCPThinkingContent);
+    }
+
     return items;
-  }, [finalContent]);
+  }, [finalContent, message?.thinking, message?.thinkingTime]);
 
   // Keep latest content in a ref to avoid recreating callbacks on each render
   const contentRef = useRef<MCPContent[]>(finalContent);
@@ -415,7 +430,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                  strippedCommand as keyof typeof tauriCommands
+                strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 try {

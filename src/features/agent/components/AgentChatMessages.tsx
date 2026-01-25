@@ -57,6 +57,8 @@ export function AgentChatMessages() {
     setAutoScrollEnabled(atBottom);
   }, 100);
 
+  const lastMessageWho = useMemo(() => messages[messages.length - 1].role, [messages])
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -180,7 +182,7 @@ export function AgentChatMessages() {
           </div>
         )}
         {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
-        {workflowStatus === 'busy' && !isLastStreaming && (
+        {workflowStatus === 'busy' && (!isLastStreaming || lastMessageWho === 'user') && (
           <div className="flex justify-start mb-8 mt-3">
             <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
               <div className="flex items-center gap-3 mb-2">
