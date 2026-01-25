@@ -13,7 +13,13 @@ import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { AIServiceConfig } from '@/lib/ai-service/types';
 import { AIServiceProvider } from '@/lib/ai-service/types';
 import type { Message, ToolCall } from '@/models/chat';
-import type { MCPTool } from '@/lib/mcp-types';
+import type {
+  MCPTool,
+  MCPContent,
+  MCPTextContent,
+  MCPThinkingContent,
+  MCPToolCallContent,
+} from '@/lib/mcp-types';
 import { getLogger } from '@/lib/logger';
 import {
   selectMessagesWithinContext,
@@ -467,12 +473,13 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         });
 
         // Accumulate chunks
-        let fullContent = '';
-        let toolCalls: ToolCall[] = [];
-        let thinkingContent = '';
+        const content: MCPContent[] = [];
+        // Map chunk tool index -> content array index
+        const activeToolCallIndices = new Map<number, number>();
+
+        let thinkingStartTime: number | undefined;
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
-        let thinkingStartTime: number | undefined;
 
         for await (const chunk of streamGenerator) {
           // Capture Time to First Token (TTFT) for detailed metrics
@@ -494,64 +501,18 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             // If parsing fails, treat it as plain text content
             parsedChunk = { content: chunk };
           }
-          // Accumulate content
+
+          // 1. Accumulate Content (Text)
           if (parsedChunk.content && typeof parsedChunk.content === 'string') {
-            fullContent += parsedChunk.content;
+            const lastItem = content[content.length - 1];
+            if (lastItem && lastItem.type === 'text') {
+              (lastItem as MCPTextContent).text += parsedChunk.content;
+            } else {
+              content.push({ type: 'text', text: parsedChunk.content });
+            }
           }
 
-          // Accumulate tool calls
-          if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
-            (
-              parsedChunk.tool_calls as (ToolCall & { index?: number })[]
-            ).forEach((toolCallChunk) => {
-              const { index } = toolCallChunk;
-
-              // If no index provided, treat as a complete tool call
-              if (index === undefined) {
-                toolCalls.push(toolCallChunk);
-                return;
-              }
-
-              // Index-based merging for incremental chunks
-              if (toolCalls[index]) {
-                // ✅ Merge all fields, not just arguments
-                if (toolCallChunk.id && !toolCalls[index].id) {
-                  toolCalls[index].id = toolCallChunk.id;
-                }
-                if (toolCallChunk.type && !toolCalls[index].type) {
-                  toolCalls[index].type = toolCallChunk.type;
-                }
-                if (toolCallChunk.function) {
-                  if (!toolCalls[index].function) {
-                    toolCalls[index].function = { name: '', arguments: '' };
-                  }
-                  if (
-                    toolCallChunk.function.name &&
-                    !toolCalls[index].function.name
-                  ) {
-                    toolCalls[index].function.name =
-                      toolCallChunk.function.name;
-                  }
-                  if (toolCallChunk.function.arguments) {
-                    toolCalls[index].function.arguments +=
-                      toolCallChunk.function.arguments;
-                  }
-                }
-              } else {
-                // Initialize tool call at index
-                toolCalls[index] = {
-                  id: toolCallChunk.id || '',
-                  type: toolCallChunk.type || 'function',
-                  function: {
-                    name: toolCallChunk.function?.name || '',
-                    arguments: toolCallChunk.function?.arguments || '',
-                  },
-                };
-              }
-            });
-          }
-
-          // Accumulate thinking content
+          // 2. Accumulate Thinking
           if (
             parsedChunk.thinking &&
             typeof parsedChunk.thinking === 'string'
@@ -559,24 +520,78 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
             if (thinkingStartTime === undefined) {
               thinkingStartTime = performance.now();
             }
-            thinkingContent += parsedChunk.thinking;
+
+            const lastItem = content[content.length - 1];
+            if (lastItem && lastItem.type === 'thinking') {
+              (lastItem as MCPThinkingContent).thinking += parsedChunk.thinking;
+            } else {
+              content.push({
+                type: 'thinking',
+                thinking: parsedChunk.thinking,
+              });
+            }
+          }
+
+          // 3. Accumulate Tool Calls
+          if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
+            (
+              parsedChunk.tool_calls as (ToolCall & { index?: number })[]
+            ).forEach((toolCallChunk) => {
+              const { index } = toolCallChunk;
+
+              // Case A: Index undefined (Complete tool call or single linear) -> Push new
+              if (index === undefined) {
+                content.push({
+                  type: 'tool_call',
+                  id: toolCallChunk.id || '',
+                  name: toolCallChunk.function?.name || '',
+                  arguments: toolCallChunk.function?.arguments || '',
+                });
+                return;
+              }
+
+              // Case B: Index defined (Incremental streaming)
+              if (activeToolCallIndices.has(index)) {
+                const contentIndex = activeToolCallIndices.get(index)!;
+                const targetBlock = content[contentIndex] as MCPToolCallContent;
+
+                // Merge
+                if (toolCallChunk.id && !targetBlock.id) {
+                  targetBlock.id = toolCallChunk.id;
+                }
+                // Name update (though rare index-swapped name updates, usually contiguous)
+                if (toolCallChunk.function?.name) {
+                  targetBlock.name += toolCallChunk.function.name;
+                }
+                // Arguments update
+                if (toolCallChunk.function?.arguments) {
+                  targetBlock.arguments += toolCallChunk.function.arguments;
+                }
+              } else {
+                // New tool call at this index
+                const newBlock: MCPToolCallContent = {
+                  type: 'tool_call',
+                  id: toolCallChunk.id || '',
+                  name: toolCallChunk.function?.name || '',
+                  arguments: toolCallChunk.function?.arguments || '',
+                };
+                content.push(newBlock);
+                activeToolCallIndices.set(index, content.length - 1);
+              }
+            });
           }
 
           // Calculate Thinking Time (seconds)
           let currentThinkingTime: number | undefined;
           if (thinkingStartTime !== undefined) {
-            // If thinking just finished (or still going), duration is now - start
-            // We can refine this: if thinkingContent exists but we get regular content, thinking might be done.
-            // But for now, just tracking elapsed time since thinking started is safe.
             currentThinkingTime =
               (performance.now() - thinkingStartTime) / 1000;
           }
 
-          // Accumulate usage metrics (merge instead of replace to preserve TTFT data)
+          // Accumulate usage metrics
           if (parsedChunk.usage) {
             const incomingUsage = parsedChunk.usage as TokenUsage;
             if (finalUsage) {
-              // Merge usage data, preserving existing fields
               finalUsage = {
                 promptTokens:
                   incomingUsage.promptTokens || finalUsage.promptTokens,
@@ -590,22 +605,40 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 },
               };
             } else {
-              // First usage chunk
               finalUsage = incomingUsage;
             }
           }
 
-          // Update streaming message state (no throttling - update on every chunk for responsiveness)
-          // Note: React batching already reduces render overhead
+          // Update streaming message state
           setStreamingMessages((prev) => {
             const next = new Map(prev);
+
+            // Backward compatibility: Derive legacy fields from content
+            const legacyToolCalls: ToolCall[] = content
+              .filter((c) => c.type === 'tool_call')
+              .map((c) => {
+                const tc = c as MCPToolCallContent;
+                return {
+                  id: tc.id,
+                  type: 'function',
+                  function: {
+                    name: tc.name,
+                    arguments: tc.arguments,
+                  },
+                };
+              });
+
+            const legacyThinking = content
+              .filter((c) => c.type === 'thinking')
+              .map((c) => (c as MCPThinkingContent).thinking)
+              .join('\n');
+
             next.set(sessionId, {
               ...streamingMessage,
-              content: fullContent
-                ? [{ type: 'text' as const, text: fullContent }]
-                : [],
-              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-              thinking: thinkingContent || undefined,
+              content, // Unified content array
+              tool_calls:
+                legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
+              thinking: legacyThinking || undefined,
               thinkingTime: currentThinkingTime,
               usage: finalUsage,
               isStreaming: true,
@@ -642,17 +675,37 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         }
 
         // Create final message with isStreaming: false
+        // Derive legacy fields for final message
+        const finalLegacyToolCalls: ToolCall[] = content
+          .filter((c) => c.type === 'tool_call')
+          .map((c) => {
+            const tc = c as MCPToolCallContent;
+            return {
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.name,
+                arguments: tc.arguments,
+              },
+            };
+          });
+
+        const finalLegacyThinking = content
+          .filter((c) => c.type === 'thinking')
+          .map((c) => (c as MCPThinkingContent).thinking)
+          .join('\n');
+
+        // Create final message with isStreaming: false
         const finalMessage: Message = {
           id: streamingMessage.id ?? `msg_${Date.now()}`,
           sessionId,
           threadId: sessionId, // For top-level thread: threadId === sessionId
           role: 'assistant',
-          content: fullContent
-            ? [{ type: 'text' as const, text: fullContent }]
-            : [],
+          content, // Unified content array
           createdAt: new Date(),
-          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-          thinking: thinkingContent || undefined,
+          tool_calls:
+            finalLegacyToolCalls.length > 0 ? finalLegacyToolCalls : undefined,
+          thinking: finalLegacyThinking || undefined,
           thinkingTime: thinkingStartTime
             ? (performance.now() - thinkingStartTime) / 1000
             : undefined,
@@ -662,8 +715,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
 
         logger.info('Completion request completed', {
           sessionId,
-          contentLength: fullContent.length,
-          toolCallCount: toolCalls.length,
+          contentLength: content.length,
+          toolCallCount: finalLegacyToolCalls.length,
         });
 
         // Check for empty message (no content and no tool calls)

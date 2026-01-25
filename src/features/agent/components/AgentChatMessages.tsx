@@ -4,7 +4,6 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
-import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
@@ -93,15 +92,20 @@ export function AgentChatMessages() {
         ref={scrollContainerRef}
         className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6 terminal-scrollbar"
       >
-        {groupedMessages.map((groupedMessage, index) => {
+        {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
+            const resultsMap = new Map<string, Message>();
+            groupedMessage.toolGroup.calls.forEach((call, idx) => {
+              const res = groupedMessage.toolGroup.results[idx];
+              if (res) resultsMap.set(call.id, res);
+            });
+
             return (
-              <AgentToolCallGroup
+              <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
-                toolGroup={groupedMessage.toolGroup}
-                toolResults={groupedMessage.toolGroup.results}
-                isLast={index === groupedMessages.length - 1}
+                getAssistantName={getAssistantNameForMessage}
+                toolResultsMap={resultsMap}
               />
             );
           }

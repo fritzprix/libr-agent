@@ -9,8 +9,6 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AgentMessageRenderer } from './AgentMessageRenderer';
-import { ThinkingBubble } from './shared';
 import {
   hasToolCallError,
   parseToolName,
@@ -302,23 +300,12 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
  * Optimized with React.memo to prevent unnecessary re-renders during streaming or history updates.
  */
 const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
-  message,
   toolGroup,
   toolResults,
   isLast = false,
   visibleCount = 3, // Default to 3 if not provided
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-
-  // Check if this is a multipart message (has text content or thinking)
-  const hasTextContent =
-    message.content &&
-    message.content.length > 0 &&
-    message.content.some(
-      (c) => c.type === 'text' && c.text && c.text.trim().length > 0,
-    );
-
-  const hasThinking = !!message.thinking && message.thinking.trim().length > 0;
 
   // Calculate status summary using passed toolResults
   const statusSummary: StatusSummary = useMemo(() => {
@@ -368,23 +355,6 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
         totalCalls={toolGroup.calls.length}
         statusSummary={statusSummary}
       />
-
-      {/* Thinking Content - shown when reasoning mode is used */}
-      {hasThinking && (
-        <div className="px-4 py-3 border-b border-muted/20">
-          <ThinkingBubble
-            thinking={message.thinking || ''}
-            isStreaming={message.isStreaming}
-          />
-        </div>
-      )}
-
-      {/* Content Rendering - for multipart messages with text or UI resources */}
-      {hasTextContent && (
-        <div className="px-4 py-3 border-b border-muted/20">
-          <AgentMessageRenderer message={message} expandResources={true} />
-        </div>
-      )}
 
       {!isExpanded && (
         <GradientOverlay
