@@ -100,6 +100,22 @@ impl MessageSearchEngine {
         }
     }
 
+    /// Builds a new search engine from a list of message models.
+    ///
+    /// This handles the conversion from database models to indexable documents
+    /// and populates the engine.
+    pub fn build_from_models(
+        session_id: String,
+        models: Vec<Model>,
+        max_docs: usize,
+    ) -> Result<Self, String> {
+        let documents: Vec<MessageDocument> =
+            models.into_iter().map(MessageDocument::from).collect();
+        let mut engine = Self::new(session_id, max_docs);
+        engine.add_documents(documents)?;
+        Ok(engine)
+    }
+
     /// Reads the max documents limit from environment variable.
     ///
     /// Defaults to 10,000 if not set or invalid.

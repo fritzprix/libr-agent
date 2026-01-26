@@ -32,3 +32,8 @@
 
 **Pattern:** Vestigial `create_table` no-op method duplicated in repository traits, and repeated manual `SessionMetadata` mapping in `SessionRepository`.
 **Action:** Removed `create_table` from `MessageRepository` and `SessionRepository` traits, and implemented `TryFrom<session::Model>` for `SessionMetadata` to centralize conversion logic.
+
+## 2026-05-25 - [Message Search Indexing Duplication]
+
+**Pattern:** Identical logic for fetching message models, converting them to `MessageDocument` via `from()`, and populating `MessageSearchEngine` in three different places (`messages_commands.rs` (x2) and `background_worker.rs`).
+**Action:** Extracted `MessageSearchEngine::build_from_models` factory method to centralize this creation logic.
