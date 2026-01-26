@@ -164,4 +164,35 @@ describe('useMessageGrouping', () => {
     expect(result.current.groupedMessages[2].type).toBe('tool_group');
     expect(result.current.groupedMessages[2].message.id).toBe('3');
   });
+  it('preserves all messages in a tool group', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tools'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+      ]),
+      createMessage('3', 'assistant', '', [
+        {
+          id: 'call_2',
+          type: 'function',
+          function: { name: 'tool2', arguments: '{}' },
+        },
+      ]),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    expect(result.current.groupedMessages).toHaveLength(2);
+    const group = result.current.groupedMessages[1];
+
+    expect(group.type).toBe('tool_group');
+    if (group.type === 'tool_group') {
+      expect(group.messages).toHaveLength(2);
+      expect(group.messages[0].id).toBe('2');
+      expect(group.messages[1].id).toBe('3');
+    }
+  });
 });

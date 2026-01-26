@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
+import { MCPContent } from '@/lib/mcp';
 
 export type GroupedMessage =
   | { type: 'single'; message: Message }
   | {
       type: 'tool_group';
       message: Message;
+      messages: Message[]; // All messages in this group
       toolGroup: {
         calls: ToolCall[];
         results: (Message | undefined)[];
@@ -18,21 +20,14 @@ export interface MessageGroupingResult {
   toolResultsMap: Map<string, Message>;
 }
 
-/**
- * Groups messages for display, combining consecutive assistant messages with tool calls
- * into tool groups and leaving other messages as singles.
- *
- * Algorithm:
- * 1. Skip standalone tool results (they're displayed within tool groups)
- * 2. Group consecutive assistant messages with tool_calls
- * 3. Collect all tool calls across consecutive messages
- * 4. Skip associated tool result messages between calls
- * 5. Regular messages (user, assistant w/o tools) remain as singles
- *
- * Performance Optimization:
- * - Computes toolResultsMap in the same pass to avoid a second O(N) iteration in the consumer.
- * - Pre-calculates tool results array for each group to avoid O(K) allocation in render loops.
- */
+function validText(c: MCPContent) {
+  if (c.type === 'text') {
+    return c.text && c.text.trim().length > 0;
+  } else if (c.type === 'thinking') {
+    return c.thinking && c.thinking.trim().length > 0;
+  }
+}
+
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
   return useMemo(() => {
     const groupedMessages: GroupedMessage[] = [];
@@ -46,11 +41,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       }
 
       return (
-        !!msg.content &&
-        msg.content.length > 0 &&
-        msg.content.some(
-          (c) => c.type === 'text' && c.text && c.text.trim().length > 0,
-        )
+        !!msg.content && msg.content.length > 0 && msg.content.some(validText)
       );
     };
 
@@ -89,6 +80,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       ) {
         const allToolCalls: ToolCall[] = [];
         const groupToolCallIds = new Set<string>();
+        const groupMessages: Message[] = []; // Collect all messages in the group
         let j = i;
 
         // Collect consecutive assistant messages with tool calls
@@ -109,6 +101,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             break;
           }
 
+          groupMessages.push(currentMsg);
           allToolCalls.push(...currentMsg.tool_calls);
           currentMsg.tool_calls.forEach((tc) => groupToolCallIds.add(tc.id));
 
@@ -149,6 +142,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           groupedMessages.push({
             type: 'tool_group',
             message: msg,
+            messages: groupMessages,
             toolGroup: { calls: allToolCalls, results, resultsMap },
           });
         } else {

@@ -105,6 +105,8 @@ export function AgentChatMessages() {
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
                 toolResultsMap={groupedMessage.toolGroup.resultsMap}
+                groupedToolCalls={groupedMessage.toolGroup.calls}
+                groupedMessages={groupedMessage.messages}
               />
             );
           }
