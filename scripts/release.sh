@@ -45,17 +45,10 @@ git push origin "v$NEW_VERSION"
 echo ">>> Triggered GitHub Action for Release..."
 echo "The release artifacts (deb, AppImage, etc.) will be built and uploaded by GitHub Actions."
 
-# Snapcraft step (Optional)
-if command -v snapcraft &> /dev/null; then
-    echo ">>> Building Snap..."
-    cd snap
-    snapcraft
-    # If successful, you can upload with: snapcraft upload --release=stable libragent_*.snap
-    echo "Snap built. You can upload it manually using 'snapcraft upload'."
-    cd ..
-else
-    echo ">>> Snapcraft not found. Skipping Snap build."
-    echo "To build snap: Install snapcraft and run 'cd snap && snapcraft'"
-fi
+echo ">>> Publishing release notes from CHANGELOG.md..."
+bash scripts/publish-release-notes.sh "$NEW_VERSION"
 
 echo ">>> Release v$NEW_VERSION completed successfully!"
+echo ""
+echo "Note: Snapcraft build is handled by GitHub Actions."
+echo "      To build snap locally: cd snap && snapcraft"
