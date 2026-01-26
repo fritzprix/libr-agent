@@ -31,6 +31,15 @@ interface TauriDragDropPayload {
   paths?: string[];
 }
 
+function isTauriDragDropPayload(value: unknown): value is TauriDragDropPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<TauriDragDropPayload>;
+  return (
+    typeof v.type === 'string' &&
+    ['enter', 'over', 'leave', 'drop'].includes(v.type)
+  );
+}
+
 interface DnDRegistry {
   id: string;
   ref: RefObject<HTMLElement>;
@@ -123,8 +132,13 @@ function DnDContextProvider({ children }: DnDContextProps) {
       try {
         const webview = getCurrentWebview();
         const unlisten = await webview.onDragDropEvent((evt) => {
-          const payload = (evt.payload ?? {}) as TauriDragDropPayload;
-          const { type, position, paths } = payload;
+          const rawPayload = evt.payload;
+          if (!isTauriDragDropPayload(rawPayload)) {
+            // Optional: logger.warn('Invalid DnD payload received', rawPayload);
+            return;
+          }
+
+          const { type, position, paths } = rawPayload;
 
           // Track paths from enter event
           if (type === 'enter' && paths) {
@@ -132,7 +146,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
           }
 
           // Special-case: 'leave' may not include a position when exiting the window.
-          if (type === 'leave') {
+          if ((type as string) === 'leave') {
             // Clear current target and send leave to all zones
             if (currentTarget.current) {
               currentTarget.current.handler('leave', {
@@ -182,34 +196,38 @@ function DnDContextProvider({ children }: DnDContextProps) {
           }
 
           const target = findTarget(effectivePosition.x, effectivePosition.y);
-
           const data: DragAndDropPayload = {
             position: effectivePosition,
             paths: pathsRef.current,
           };
-          if (type === 'enter' || type === 'over') {
-            // If target changed, send 'leave' to previous target
-            if (currentTarget.current && currentTarget.current !== target) {
-              currentTarget.current.handler('leave', data);
-            }
 
-            // Update current target and send 'drag-over' if we have a target
-            if (target) {
-              currentTarget.current = target;
-              target.handler('drag-over', data);
-            } else {
+          switch (type as string) {
+            case 'enter':
+            case 'over':
+              // If target changed, send 'leave' to previous target
+              if (currentTarget.current && currentTarget.current !== target) {
+                currentTarget.current.handler('leave', data);
+              }
+
+              // Update current target and send 'drag-over' if we have a target
+              if (target) {
+                currentTarget.current = target;
+                target.handler('drag-over', data);
+              } else {
+                currentTarget.current = null;
+              }
+              break;
+            case 'drop':
+              if (target) {
+                target.handler('drop', data);
+              }
+              // Clear current target after drop
               currentTarget.current = null;
-            }
-          } else if (type === 'drop') {
-            if (target) {
-              target.handler('drop', data);
-            }
-            // Clear current target after drop
-            currentTarget.current = null;
-            // Clear paths after drop
-            pathsRef.current = undefined;
-            // Clear browser position after drop
-            browserPositionRef.current = null;
+              // Clear paths after drop
+              pathsRef.current = undefined;
+              // Clear browser position after drop
+              browserPositionRef.current = null;
+              break;
           }
         });
         if (mounted) unlistenRef.current = unlisten;

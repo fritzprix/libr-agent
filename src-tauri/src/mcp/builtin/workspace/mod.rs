@@ -539,7 +539,7 @@ impl BuiltinMCPServer for WorkspaceServer {
         match tool_name {
             // File operation tools
             "readFile" => self.handle_read_file(args, session_id).await,
-            "createFile" => self.handle_create_file(args, session_id).await,
+            "writeFile" => self.handle_write_file(args, session_id).await,
             "deleteFile" => self.handle_delete_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,

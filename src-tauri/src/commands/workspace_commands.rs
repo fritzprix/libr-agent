@@ -216,7 +216,7 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
     #[cfg(target_os = "windows")]
     {
         Command::new("explorer")
-            .arg(format!("/select,{}", workspace_path.display()))
+            .arg(workspace_path)
             .spawn()
             .map_err(|e| format!("Failed to open Explorer: {}", e))?;
     }
@@ -224,7 +224,6 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
     #[cfg(target_os = "macos")]
     {
         Command::new("open")
-            .arg("-R")
             .arg(workspace_path)
             .spawn()
             .map_err(|e| format!("Failed to open Finder: {}", e))?;
@@ -275,9 +274,11 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
             .args([
                 "/c",
                 "start",
+                "Agent Workspace",
+                "/D",
+                &workspace_path.to_string_lossy(),
                 "cmd",
                 "/k",
-                &format!("cd /d \"{}\"", workspace_path.display()),
             ])
             .spawn()
             .map_err(|e| format!("Failed to open terminal: {}", e))?;

@@ -10,11 +10,13 @@ import {
   RefreshCw,
   Wrench,
   AlertTriangle,
+  Bot,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useEffect, useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
 import { useTokenMetrics } from '@/hooks/use-token-metrics';
 import { TokenMetricsBadge } from './TokenMetricsBadge';
@@ -24,8 +26,15 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { session } = useAgentSessionState();
-  const { workflowStatus, error, llmError, retryMessage, resume } =
-    useAgentChat();
+  const {
+    workflowStatus,
+    error,
+    llmError,
+    retryMessage,
+    resume,
+    agentModeEnabled,
+    toggleAgentMode,
+  } = useAgentChat();
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -80,29 +89,6 @@ export function AgentChatStatusBar() {
     }
   };
 
-  const LoadingSpinner = () => (
-    <svg
-      className="animate-spin h-3 w-3 text-yellow-400"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
-    </svg>
-  );
-
   const getToolsDisplayText = () => {
     if (toolsLoading) return 'Loading tools...';
     if (toolsError) return 'Tools error';
@@ -115,13 +101,13 @@ export function AgentChatStatusBar() {
   };
 
   const getToolsColor = () => {
-    if (toolsLoading) return 'text-yellow-400';
-    if (toolsError) return 'text-red-400';
-    return availableTools.length > 0 ? 'text-green-400' : 'text-gray-500';
+    if (toolsLoading) return 'text-warning';
+    if (toolsError) return 'text-destructive';
+    return availableTools.length > 0 ? 'text-success' : 'text-muted-foreground';
   };
 
   const getToolsIcon = () => {
-    if (toolsLoading) return <LoadingSpinner />;
+    if (toolsLoading) return <LoadingSpinner className="w-3 h-3" />;
     if (toolsError) return <AlertTriangle className="w-3.5 h-3.5" />;
     return <Wrench size={14} />;
   };
@@ -131,8 +117,7 @@ export function AgentChatStatusBar() {
       return {
         icon: <AlertCircle className="w-4 h-4" />,
         text: `An error occurred: ${error || llmError}`,
-        className:
-          'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400',
+        className: 'bg-destructive/10 border-destructive/20 text-destructive',
         showRetry: true,
         showResume: false,
       };
@@ -143,8 +128,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Info className="w-4 h-4" />,
           text: 'Ready for input. Type a message to start.',
-          className:
-            'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400',
+          className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: false,
         };
@@ -152,8 +136,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Loader2 className="w-4 h-4 animate-spin" />,
           text: 'Processing your request... Agent is thinking and using tools.',
-          className:
-            'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400',
+          className: 'bg-warning/10 border-warning/20 text-warning-foreground',
           showRetry: false,
           showResume: false,
         };
@@ -161,8 +144,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Pause className="w-4 h-4" />,
           text: 'Workflow paused. Click Continue to resume processing.',
-          className:
-            'bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400',
+          className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: true,
         };
@@ -170,8 +152,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <AlertCircle className="w-4 h-4" />,
           text: 'Workflow encountered an error.',
-          className:
-            'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400',
+          className: 'bg-destructive/10 border-destructive/20 text-destructive',
           showRetry: true,
           showResume: false,
         };
@@ -179,8 +160,7 @@ export function AgentChatStatusBar() {
         return {
           icon: <Info className="w-4 h-4" />,
           text: `Status: ${workflowStatus}`,
-          className:
-            'bg-gray-50 dark:bg-gray-950/20 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-400',
+          className: 'bg-muted/50 border-border text-muted-foreground',
           showRetry: false,
           showResume: false,
         };
@@ -266,6 +246,28 @@ export function AgentChatStatusBar() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleAgentMode}
+            className={`h-6 px-2 text-xs flex items-center gap-1 ${
+              agentModeEnabled
+                ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                : 'text-muted-foreground hover:bg-muted'
+            }`}
+            title={
+              agentModeEnabled
+                ? 'Agent Mode ON: Forces tool use for autonomous tasks'
+                : 'Agent Mode OFF: Standard interaction'
+            }
+          >
+            <Bot
+              size={14}
+              className={agentModeEnabled ? 'animate-pulse' : ''}
+            />
+            {agentModeEnabled ? 'Agent Mode' : 'Chat Mode'}
+          </Button>
+
           {/* Token Metrics Badge - Show if metrics exist */}
           {displayMetrics && (
             <div className="hidden md:block">

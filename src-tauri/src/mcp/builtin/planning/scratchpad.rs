@@ -555,26 +555,31 @@ pub async fn critique_and_reflection(args: Value) -> Result<MCPResult, String> {
     let reflection = args.get("reflection").and_then(|v| v.as_str());
     let next_action = args.get("nextAction").and_then(|v| v.as_str());
 
-    if critique.is_none() {
-        return Ok(missing_param_error("critique", ToolGroup::Planning));
-    }
-    if reflection.is_none() {
-        return Ok(missing_param_error("reflection", ToolGroup::Planning));
-    }
-    if next_action.is_none() {
-        return Ok(missing_param_error("nextAction", ToolGroup::Planning));
-    }
+    let critique_val = match critique {
+        Some(v) => v,
+        None => return Ok(missing_param_error("critique", ToolGroup::Planning)),
+    };
+
+    let reflection_val = match reflection {
+        Some(v) => v,
+        None => return Ok(missing_param_error("reflection", ToolGroup::Planning)),
+    };
+
+    let next_action_val = match next_action {
+        Some(v) => v,
+        None => return Ok(missing_param_error("nextAction", ToolGroup::Planning)),
+    };
 
     let response_id = cuid2::create_id();
 
     let message = format!(
         "## Reflection & Critique Analysis\n\n**Critique:**\n{}\n\n**Reflection:**\n{}\n\n**Next Action:**\n{}\n\n> Based on this reflection, please proceed with the \"Next Action\" carefully. Do not repeat this reflection unless new information surfaces.",
-        critique.unwrap(), reflection.unwrap(), next_action.unwrap()
+        critique_val, reflection_val, next_action_val
     );
 
     let hint = SuccessHint::new(
         message.clone(),
-        vec![format!("Proceed with: {}", next_action.unwrap())],
+        vec![format!("Proceed with: {}", next_action_val)],
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
