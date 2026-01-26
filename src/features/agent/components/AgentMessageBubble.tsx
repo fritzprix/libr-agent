@@ -1,6 +1,7 @@
-import { useCallback, memo } from 'react';
+import { useCallback, memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import type { Message } from '@/models/chat';
+import type { Message, ToolCall } from '@/models/chat';
+import type { MCPContent, MCPToolCallContent } from '@/lib/mcp-types';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 
@@ -8,12 +9,16 @@ interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
   toolResultsMap?: Map<string, Message>;
+  groupedToolCalls?: ToolCall[];
+  groupedMessages?: Message[];
 }
 
 function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
   toolResultsMap,
+  groupedToolCalls,
+  groupedMessages,
 }: AgentMessageBubbleProps) {
   const getAssistantNameForMessage = useCallback(
     (msg: Message) => {
@@ -25,6 +30,51 @@ function AgentMessageBubbleImpl({
     },
     [getAssistantName],
   );
+
+  // Construct display content:
+  // If groupedMessages is present (new logic), we interleave content from all messages.
+  // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
+  const displayContent: MCPContent[] | undefined = useMemo(() => {
+    if (groupedMessages && groupedMessages.length > 0) {
+      return groupedMessages.flatMap((m) => {
+        const originalContent = Array.isArray(m.content) ? m.content : [];
+        const nonToolContent = originalContent.filter(
+          (c) => c.type !== 'tool_call',
+        );
+
+        const toolContent = (m.tool_calls || []).map(
+          (tc): MCPToolCallContent => ({
+            type: 'tool_call',
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          }),
+        );
+
+        return [...nonToolContent, ...toolContent];
+      });
+    }
+
+    if (groupedToolCalls) {
+      const originalContent = Array.isArray(msg.content) ? msg.content : [];
+      const nonToolContent = originalContent.filter(
+        (c) => c.type !== 'tool_call',
+      );
+
+      const toolContent = groupedToolCalls.map(
+        (tc): MCPToolCallContent => ({
+          type: 'tool_call',
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        }),
+      );
+
+      return [...nonToolContent, ...toolContent];
+    }
+
+    return undefined;
+  }, [groupedMessages, groupedToolCalls, msg.content]);
 
   return (
     <div key={msg.id} className="px-4 py-2">
@@ -83,12 +133,12 @@ function AgentMessageBubbleImpl({
             )}
 
             {(msg.content && msg.content.length > 0) ||
-            msg.thinking ||
-            msg.isStreaming ? (
+              msg.thinking ||
+              msg.isStreaming ? (
               <>
                 {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
                 <AgentMessageRenderer
-                  content={msg.content}
+                  content={displayContent || msg.content}
                   message={msg}
                   toolResultsMap={toolResultsMap}
                 />

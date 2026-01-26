@@ -277,7 +277,8 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const tauriCommands = useRustBackend();
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
-  const finalContent: MCPContent[] = message?.content || content || [];
+  // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
+  const finalContent: MCPContent[] = content || message?.content || [];
 
   // Group consecutive tool calls into blocks for display
   const renderItems = useMemo(() => {
@@ -430,7 +431,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                  strippedCommand as keyof typeof tauriCommands
+                strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 try {
