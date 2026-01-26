@@ -45,36 +45,10 @@ git push origin "v$NEW_VERSION"
 echo ">>> Triggered GitHub Action for Release..."
 echo "The release artifacts (deb, AppImage, etc.) will be built and uploaded by GitHub Actions."
 
-echo ">>> Updating AUR..."
-# Create a temporary dir for AUR
-mkdir -p aur_deploy
-cd aur_deploy
-# Clone AUR repo (assuming ssh access is set up)
-if [ ! -d ".git" ]; then
-    git clone ssh://aur@aur.archlinux.org/libragent.git .
-fi
-git pull origin master
-cp ../aur/PKGBUILD ../aur/libragent.desktop .
-makepkg --printsrcinfo > .SRCINFO
-git add PKGBUILD libragent.desktop .SRCINFO
-git commit -m "Release v$NEW_VERSION"
-git push origin master
-cd ..
-rm -rf aur_deploy
-
-echo ">>> AUR Update Complete."
-
-# Snapcraft step (Optional)
-if command -v snapcraft &> /dev/null; then
-    echo ">>> Building Snap..."
-    cd snap
-    snapcraft
-    # If successful, you can upload with: snapcraft upload --release=stable libragent_*.snap
-    echo "Snap built. You can upload it manually using 'snapcraft upload'."
-    cd ..
-else
-    echo ">>> Snapcraft not found. Skipping Snap build."
-    echo "To build snap: Install snapcraft and run 'cd snap && snapcraft'"
-fi
+echo ">>> Publishing release notes from CHANGELOG.md..."
+bash scripts/publish-release-notes.sh "$NEW_VERSION"
 
 echo ">>> Release v$NEW_VERSION completed successfully!"
+echo ""
+echo "Note: Snapcraft build is handled by GitHub Actions."
+echo "      To build snap locally: cd snap && snapcraft"

@@ -24,7 +24,7 @@ export default function InputWithLabel({
     return (
       <Input
         className={cn(
-          'w-full bg-transparent border-none outline-none text-green-400 px-0 py-1 terminal-input focus:ring-2 focus:ring-green-400 focus:ring-offset-2 focus:ring-offset-black transition-all duration-200',
+          'w-full bg-transparent border-none outline-none text-success px-0 py-1 terminal-input focus:ring-2 focus:ring-success focus:ring-offset-2 focus:ring-offset-black transition-all duration-200',
           className,
         )}
         {...props}
@@ -40,7 +40,10 @@ export default function InputWithLabel({
       containerClassName={containerClassName}
       labelClassName="text-muted-foreground"
     >
-      <Input className={cn(error && 'border-red-400', className)} {...props} />
+      <Input
+        className={cn(error && 'border-destructive', className)}
+        {...props}
+      />
     </FieldWrapper>
   );
 }

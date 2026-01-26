@@ -9,7 +9,7 @@ use tokio::time::sleep;
 
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
-use crate::search::message_index::{MessageDocument, MessageSearchEngine};
+use crate::search::message_index::MessageSearchEngine;
 use crate::state::get_message_repository;
 
 /// Background worker that periodically reindexes dirty sessions.
@@ -116,12 +116,9 @@ async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
-    // Convert to MessageDocument
-    let documents: Vec<MessageDocument> = messages.into_iter().map(MessageDocument::from).collect();
-
     // Build index
-    let mut engine = MessageSearchEngine::new(session_id.to_string(), max_docs);
-    engine.add_documents(documents)?;
+    let engine =
+        MessageSearchEngine::build_from_models(session_id.to_string(), messages, max_docs)?;
 
     // Persist to disk
     let serialized = engine.serialize()?;

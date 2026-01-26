@@ -165,21 +165,26 @@ export class MessageNormalizer {
         }
       }
 
-      // Check if message is now empty (no content, no tool_calls)
+      // Check if message is now empty (no content, no tool_calls, no thinking)
       // This prevents sending invalid messages to the API (e.g. 400 Bad Request)
       const hasContent =
         processedMsg.content && processedMsg.content.length > 0;
       const hasToolCalls =
         processedMsg.tool_calls && processedMsg.tool_calls.length > 0;
+      // ✅ FIX: Also check thinking field to allow thinking-only messages (Spec requirement)
+      const hasThinking =
+        processedMsg.thinking && processedMsg.thinking.length > 0;
 
-      if (!hasContent && !hasToolCalls) {
-        logger.warn('Removing empty message after sanitization', {
-          messageId: msg.id,
-          role: msg.role,
-          originalContent: msg.content,
-          originalToolCallsCount: msg.tool_calls?.length ?? 0,
-          fullMessage: msg,
-        });
+      if (!hasContent && !hasToolCalls && !hasThinking) {
+        logger.warn(
+          'Removing truly empty message after sanitization (no content, tool_calls, or thinking)',
+          {
+            messageId: msg.id,
+            role: msg.role,
+            originalContent: msg.content,
+            originalToolCallsCount: msg.tool_calls?.length ?? 0,
+          },
+        );
         continue;
       }
 

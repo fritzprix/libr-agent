@@ -3,7 +3,7 @@ use crate::agent::types::ToolCall;
 use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
-use crate::search::message_index::{MessageDocument, MessageSearchEngine, SearchResult};
+use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -192,12 +192,9 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
         .await
         .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
 
-    // Convert to MessageDocument
-    let documents: Vec<MessageDocument> = messages.into_iter().map(MessageDocument::from).collect();
-
     // Build index
-    let mut engine = MessageSearchEngine::new(session_id.to_string(), max_docs);
-    engine.add_documents(documents)?;
+    let engine =
+        MessageSearchEngine::build_from_models(session_id.to_string(), messages, max_docs)?;
 
     // Persist to disk
     let serialized = engine.serialize()?;
@@ -279,13 +276,9 @@ pub async fn messages_search(
             .await
             .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
 
-        let documents: Vec<MessageDocument> =
-            messages.into_iter().map(MessageDocument::from).collect();
-
-        let mut engine = MessageSearchEngine::new("global".to_string(), max_docs);
-        engine.add_documents(documents)?;
-
         // Perform search on the temporary engine
+        let engine =
+            MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)?;
         engine.search(&query, page * page_size * 2)?
     };
 

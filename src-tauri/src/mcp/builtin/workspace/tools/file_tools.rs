@@ -56,7 +56,7 @@ USAGE:
 ❌ NEVER edit files without reading them first
 ✅ ALWAYS use readFile before any edit operation
 
-💡 NEXT: Use editFile for targeted changes or createFile for new files"
+💡 NEXT: Use editFile for targeted changes or writeFile for new files"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -64,7 +64,7 @@ USAGE:
     }
 }
 
-pub fn create_create_file_tool() -> MCPTool {
+pub fn create_write_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -72,11 +72,11 @@ pub fn create_create_file_tool() -> MCPTool {
             Some(1),
             Some(1000),
             Some(
-                "Relative path from workspace root. Examples: 'src/main.rs', 'docs/README.md'
+                "Relative path from workspace root. Examples: 'src/main.rs', 'config.json'
 
 ⚠️ VALIDATION:
 - Must be relative path (no '../' traversal)
-- Must not exist (checked before creation)
+- Validated against strict security rules
 - Parent directories created automatically
 
 💡 TIP: Use listDirectory('.') to see current workspace structure",
@@ -88,40 +88,54 @@ pub fn create_create_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Content to write to the new file. Maximum size enforced server-side via LIBRAGENT_MAX_FILE_SIZE
+            Some(
+                "Content to write to the file. Maximum size enforced server-side.
 
-⚠️ SIZE LIMITS:
-- Typical limit: 10MB per file
-- For larger files: Split into smaller files or use external storage
+⚠️ LIMITS:
+- String input only
+- For diff generation on overwrite, old content is read first
 
-💡 TIP: Empty content is allowed for creating placeholder files"),
+💡 TIP: Empty content creates an empty file",
+            ),
         ),
+    );
+    props.insert(
+        "overwrite".to_string(),
+        boolean_prop(Some(
+            "Allow overwriting existing files? (default: false)
+- false: Fails if file exists (Safety Check)
+- true: Overwrites and returns exact diff of changes
+
+⚠️ DESTRUCTIVE: Use with caution when true",
+        )),
     );
 
     MCPTool {
-        name: "createFile".to_string(),
-        title: Some("Create File".to_string()),
-        description: "Create a new file in the workspace. FAILS if file already exists.
+        name: "writeFile".to_string(),
+        title: Some("Write File".to_string()),
+        description: "Create a new file or overwrite an existing one. Returns success status and differences if overwritten.
 
 ⚠️ CRITICAL BEHAVIOR:
-- Creates NEW files only
-- FAILS if file already exists (prevents accidental overwrites)
-- Returns error with guidance for existing files
+- Default (overwrite=false): FAILS if file exists (Safe Mode)
+- Overwrite (overwrite=true): Replaces ENTIRE content and returns Diff
+- Atomic operation: All or nothing
 
 💡 WORKFLOW:
-1. Check if file exists: Use listDirectory or readFile first
-2. For new files: Call createFile directly
-3. For existing files: Use editFile for incremental changes
-4. For complete replacement: deleteFile → createFile
+1. New File: writeFile(path, content)
+2. Overwrite: writeFile(path, content, overwrite=true)
+3. Incremental Edit: Use editFile instead (safer)
 
-⚠️ COMMON SCENARIOS:
-- New file: createFile(path, content) → Success
-- Existing file (modify): Use editFile instead
-- Existing file (replace all): deleteFile(path) → createFile(path, content)
+✅ RESPONSE:
+- Returns verified path, size, and line count
+- If overwritten: Returns GIT-STYLE DIFF of changes
+- If truncated: Returns preview + size info
 
-💡 NEXT: Use readFile to verify content or listDirectory to see workspace structure"
+💡 NEXT: Use readFile to verify or editFile for refinements"
             .to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
+        input_schema: object_schema(
+            props,
+            vec!["path".to_string(), "content".to_string()],
+        ),
         output_schema: None,
         annotations: None,
     }
@@ -550,7 +564,7 @@ pub fn create_delete_file_tool() -> MCPTool {
 💡 WORKFLOW:
 1. ALWAYS verify file exists: listDirectory or readFile first
 2. Consider backing up important files before deletion
-3. For complete file replacement: deleteFile → createFile
+3. For complete file replacement: deleteFile → writeFile
 
 USAGE SCENARIOS:
 ✅ Removing temporary/test files
@@ -666,6 +680,80 @@ EXAMPLE:
 
 💡 TIP: For 1-2 changes, use editFile multiple times. For 3+ related changes, use editFileMulti.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_search_files_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the directory to search in (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "pattern".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Glob pattern to match file names (e.g., '*.rs', 'src/**/*.ts')"),
+        ),
+    );
+    props.insert(
+        "max_depth".to_string(),
+        integer_prop(
+            Some(1),
+            Some(100),
+            Some("Maximum depth to traverse (optional)"),
+        ),
+    );
+    props.insert(
+        "file_type".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Type of files to search: 'file', 'dir', or 'both' (default: 'both')"),
+        ),
+    );
+
+    MCPTool {
+        name: "searchFiles".to_string(),
+        title: Some("Search Files by Name".to_string()),
+        description: "Find files and directories using glob patterns.
+        
+⚠️ PRIMARY USE CASE: Finding files when you don't know the exact path
+This tool searches for FILE NAMES, not content.
+
+PARAMETERS:
+- path: Root directory to start search (default: '.')
+- pattern: Glob pattern (e.g., '*.rs', '**/*.test.ts')
+- max_depth: Maximum directory depth to search (optional)
+- file_type: 'file', 'dir', or 'both' (default: 'both')
+
+RETURNS:
+- List of matching file paths
+- File types (file/directory)
+- File sizes
+
+💡 WORKFLOW:
+1. Use searchFiles to find file paths
+2. Use readFile to view content of found files
+3. Use searchLineInFile to search WITHIN files
+
+EXAMPLES:
+- searchFiles({pattern: '*.rs'}) → Find all Rust files in root
+- searchFiles({pattern: 'src/**/*.ts', path: '.'}) → Find all TS files in src recursively
+
+✅ BEST FOR: Locating files by name or extension
+❌ NOT FOR: Searching text content inside files (use searchLineInFile)
+
+💡 TIP: Use '**' in pattern for recursive search (e.g., '**/*.json')"
+            .to_string(),
+        input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
         annotations: None,
     }

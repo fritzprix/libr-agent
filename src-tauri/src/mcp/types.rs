@@ -209,6 +209,19 @@ pub enum MCPContent {
         #[serde(rename = "serviceInfo")]
         service_info: ServiceInfo,
     },
+    #[serde(rename = "thinking")]
+    Thinking {
+        thinking: String,
+        #[serde(rename = "thinkingTime")]
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thinking_time: Option<f64>,
+    },
+    #[serde(rename = "tool_call")]
+    ToolCall {
+        id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 /// Represents the pure result of a tool execution (without JSON-RPC wrapper).

@@ -33,7 +33,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
         ));
     }
 
-    let script = get_click_script(selector);
+    let script = get_click_script(selector)?;
     match service.execute_script(&browser_session_id, &script).await {
         Ok(res) => {
             if res.contains("Element not found") {
@@ -119,6 +119,11 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
         ));
     }
 
+    let selector_json =
+        serde_json::to_string(selector).map_err(|e| format!("Serialization error: {}", e))?;
+    let text_json =
+        serde_json::to_string(text).map_err(|e| format!("Serialization error: {}", e))?;
+
     let script = format!(
         r#"(function() {{
             const el = document.querySelector({});
@@ -134,8 +139,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
             el.dispatchEvent(new Event('change', {{bubbles: true}}));
             return 'Input successful';
         }})()"#,
-        serde_json::to_string(selector).unwrap(),
-        serde_json::to_string(text).unwrap()
+        selector_json, text_json
     );
 
     match service.execute_script(&browser_session_id, &script).await {
@@ -326,8 +330,11 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
 }
 
 /// Helper to inline the clickElement script
-fn get_click_script(selector: &str) -> String {
-    format!(
+fn get_click_script(selector: &str) -> Result<String, String> {
+    let selector_json =
+        serde_json::to_string(selector).map_err(|e| format!("Serialization error: {}", e))?;
+
+    Ok(format!(
         r#"(function() {{
             const el = document.querySelector({});
             if (!el) return 'Element not found';
@@ -342,8 +349,8 @@ fn get_click_script(selector: &str) -> String {
             el.click();
             return 'Clicked element';
         }})()"#,
-        serde_json::to_string(selector).unwrap()
-    )
+        selector_json
+    ))
 }
 
 /// Helper to inline the listInteractable filter script

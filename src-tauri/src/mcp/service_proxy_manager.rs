@@ -11,6 +11,7 @@ use super::service_proxy::MCPServiceProxy;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use super::types::MCPResponse;
+use crate::agent::events::InitializationStatus;
 use crate::session::SessionManager;
 
 /// Manages per-session MCP service proxies for isolated tool execution
@@ -167,12 +168,12 @@ impl MCPServiceProxyManager {
         app_handle: Option<AppHandle>,
     ) -> Result<Arc<MCPServiceProxy>, String> {
         // Helper to emit status updates
-        let emit_status = |step: &str, status: &str| {
+        let emit_status = |step: &str, status: crate::agent::events::InitializationStatus| {
             if let Some(app) = &app_handle {
                 let event = crate::agent::events::AgentEvent::InitializationStep {
                     session_id: session_id.clone(),
                     step: step.to_string(),
-                    status: status.to_string(),
+                    status,
                 };
                 if let Err(e) = crate::agent::events::emit_agent_event(app, event) {
                     log::warn!("Failed to emit initialization status: {}", e);
@@ -186,12 +187,15 @@ impl MCPServiceProxyManager {
             if let Some(existing) = proxies.get(&session_id) {
                 log::debug!("Proxy already exists for session: {}", session_id);
                 // Even if exists, we can emit complete (idempotent for UI)
-                emit_status("Session services ready", "complete");
+                emit_status("Session services ready", InitializationStatus::Complete);
                 return Ok(existing.clone());
             }
         }
 
-        emit_status("Initializing session environment", "running");
+        emit_status(
+            "Initializing session environment",
+            InitializationStatus::Running,
+        );
 
         // Clean up any stale stdio manager (rapid create/destroy cycles)
         {
@@ -212,7 +216,7 @@ impl MCPServiceProxyManager {
         use crate::repositories::mcp_server_repository::MCPServerRepository;
         use crate::state::get_mcp_server_repository;
 
-        emit_status("Loading tool configurations", "running");
+        emit_status("Loading tool configurations", InitializationStatus::Running);
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
@@ -306,7 +310,10 @@ impl MCPServiceProxyManager {
 
         // Start HTTP servers eagerly for session isolation
         if !http_configs.is_empty() {
-            emit_status("Connecting to HTTP tool servers", "running");
+            emit_status(
+                "Connecting to HTTP tool servers",
+                InitializationStatus::Running,
+            );
         }
 
         for (server_name, config) in &http_configs {
@@ -365,7 +372,7 @@ impl MCPServiceProxyManager {
                 i + 1,
                 stdio_configs.len()
             );
-            emit_status(&step_msg, "running");
+            emit_status(&step_msg, InitializationStatus::Running);
 
             log::debug!(
                 "Fetching tools from session stdio server '{}' for session '{}'",
@@ -407,7 +414,10 @@ impl MCPServiceProxyManager {
 
         // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
         if !http_configs.is_empty() {
-            emit_status("Discovering tools from HTTP servers", "running");
+            emit_status(
+                "Discovering tools from HTTP servers",
+                InitializationStatus::Running,
+            );
         }
 
         log::info!(
@@ -450,7 +460,10 @@ impl MCPServiceProxyManager {
 
         log::info!("Created MCP service proxy for session: {}", session_id);
 
-        emit_status("Session initialization complete", "complete");
+        emit_status(
+            "Session initialization complete",
+            InitializationStatus::Complete,
+        );
 
         Ok(proxy_arc)
     }

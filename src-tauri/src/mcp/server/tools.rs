@@ -383,20 +383,7 @@ pub async fn list_builtin_tools_for(manager: &MCPServerManager, server_name: &st
 
     // 2. If no tools found (e.g. server is session-bound/virtual), try static definition
     if tools.is_empty() {
-        match server_name {
-            "planning" => crate::mcp::builtin::planning::PlanningServer::tools_static(),
-            "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
-            "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
-            "assistant" | "assistant_manager" => {
-                crate::mcp::builtin::assistant::AssistantServer::tools_static()
-            }
-            "content_store" | "contentstore" => {
-                crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
-            }
-            "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
-            "workspace" => crate::mcp::builtin::workspace::WorkspaceServer::tools_static(),
-            _ => Vec::new(),
-        }
+        get_static_tools_for_server(server_name)
     } else {
         tools
     }
@@ -430,6 +417,7 @@ pub async fn list_builtin_servers_with_metadata(
 /// regardless of which servers are currently instantiated in the global registry.
 /// Returns static metadata for all builtin servers that can be used in Agent V2 sessions.
 pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
+    use crate::mcp::builtin::BuiltinMCPServer;
     use crate::mcp::builtin::*;
 
     vec![
@@ -441,32 +429,32 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
         BuiltinServerInfo {
             name: "knowledge".to_string(),
             metadata: knowledge::KnowledgeServer::metadata_static(),
-            tool_count: 7, // Approximate count
+            tool_count: knowledge::KnowledgeServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "planning".to_string(),
             metadata: planning::PlanningServer::metadata_static(),
-            tool_count: 8, // Approximate count
+            tool_count: planning::PlanningServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "playbook".to_string(),
             metadata: playbook::PlaybookServer::metadata_static(),
-            tool_count: 4, // Approximate count
+            tool_count: playbook::PlaybookServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "assistant_manager".to_string(),
             metadata: assistant::AssistantServer::metadata_static(),
-            tool_count: 4, // Approximate count
+            tool_count: assistant::AssistantServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "workspace".to_string(),
             metadata: workspace::WorkspaceServer::metadata_static(),
-            tool_count: 7, // runInPersistentShell, runInIsolatedShell, getShellState, pollProcess, listProcesses, killProcess, readProcessOutput
+            tool_count: workspace::WorkspaceServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "contentstore".to_string(),
             metadata: content_store::ContentStoreServer::metadata_static(),
-            tool_count: 5, // storeContent, getContent, listContents, searchContents, deleteContent
+            tool_count: content_store::ContentStoreServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "ui".to_string(),
@@ -476,7 +464,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
         BuiltinServerInfo {
             name: "browser".to_string(),
             metadata: browser::BrowserServer::metadata_static(),
-            tool_count: 10, // Approximate count
+            tool_count: browser::BrowserServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "mcp_manager".to_string(),
@@ -583,4 +571,69 @@ pub async fn get_service_context(
         context_prompt: format!("# MCP Server Context\nServer ID: {server_name}\nStatus: Active"),
         structured_state: None,
     })
+}
+
+/// Get static tool definitions for ALL builtin servers without requiring runtime instantiation.
+/// This provides a centralized access point for discovering all available builtin tools.
+///
+/// Returns a complete list of tool schemas from all 10 builtin servers:
+/// - Planning (15 tools): Goal and todo management
+/// - Knowledge (5 tools): Assistant-scoped knowledge base
+/// - Browser (13 tools): Web browser automation
+/// - Workspace (30+ tools): File operations and shell execution
+/// - ContentStore (5 tools): File attachment and semantic search
+/// - Assistant (4 tools): Assistant configuration management
+/// - Playbook (4 tools): Playbook execution
+/// - Bootstrap (2 tools): Platform and environment info
+/// - UI (2 tools): User interaction prompts
+/// - MCP Manager (8 tools): MCP server management
+///
+/// # Returns
+/// A vector containing all tool schemas (88+ tools total)
+pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
+    let mut tools = Vec::new();
+
+    // All servers use static tool definitions - no instantiation needed
+    tools.extend(crate::mcp::builtin::planning::PlanningServer::tools_static());
+    tools.extend(crate::mcp::builtin::knowledge::KnowledgeServer::tools_static());
+    tools.extend(crate::mcp::builtin::browser::BrowserServer::tools_static());
+    tools.extend(crate::mcp::builtin::workspace::WorkspaceServer::tools_static());
+    tools.extend(crate::mcp::builtin::content_store::ContentStoreServer::tools_static());
+    tools.extend(crate::mcp::builtin::assistant::AssistantServer::tools_static());
+    tools.extend(crate::mcp::builtin::playbook::PlaybookServer::tools_static());
+
+    // Stateless servers - use tools module directly
+    tools.extend(crate::mcp::builtin::bootstrap::tools::all_tools());
+    tools.extend(crate::mcp::builtin::ui::tools::all_tools());
+    tools.extend(crate::mcp::builtin::mcp_manager::tools::all_tools());
+
+    tools
+}
+
+/// Get static tool definitions for a specific builtin server.
+/// This provides per-server tool discovery without requiring runtime instantiation.
+///
+/// # Arguments
+/// * `server_name` - The name of the server (e.g., "planning", "browser", "workspace")
+///
+/// # Returns
+/// A vector of tool schemas for the specified server, or empty vector if server not found
+pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
+    match server_name {
+        "planning" => crate::mcp::builtin::planning::PlanningServer::tools_static(),
+        "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
+        "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
+        "workspace" => crate::mcp::builtin::workspace::WorkspaceServer::tools_static(),
+        "content_store" | "contentstore" => {
+            crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
+        }
+        "assistant" | "assistant_manager" => {
+            crate::mcp::builtin::assistant::AssistantServer::tools_static()
+        }
+        "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
+        "bootstrap" => crate::mcp::builtin::bootstrap::tools::all_tools(),
+        "ui" => crate::mcp::builtin::ui::tools::all_tools(),
+        "mcp_manager" => crate::mcp::builtin::mcp_manager::tools::all_tools(),
+        _ => Vec::new(),
+    }
 }

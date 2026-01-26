@@ -97,6 +97,8 @@ export interface Message {
   thinking?: string;
   /** Cryptographic signature or identifier for the thinking content, used for verification or tracking */
   thinkingSignature?: string;
+  /** Duration of the thinking process in seconds */
+  thinkingTime?: number;
   assistantId?: string; // Optional, used for tracking in multi-agent scenarios
   attachments?: AttachmentReference[]; // Changed to MCP-based file attachment reference
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
@@ -158,6 +160,7 @@ export interface RustMessage {
   isStreaming?: boolean;
   thinking?: string;
   thinkingSignature?: string;
+  thinkingTime?: number;
   assistantId?: string;
   attachments?: AttachmentReference[];
   toolUse?: { id: string; name: string; input: Record<string, unknown> };
@@ -200,6 +203,7 @@ export function rustMessageToMessage(rustMsg: RustMessage): Message {
     isStreaming: rustMsg.isStreaming,
     thinking: rustMsg.thinking,
     thinkingSignature: rustMsg.thinkingSignature,
+    thinkingTime: rustMsg.thinkingTime,
     assistantId: rustMsg.assistantId,
     attachments: rustMsg.attachments,
     tool_use: rustMsg.toolUse,

@@ -12,7 +12,7 @@ use crate::mcp::types::{
 use crate::session::SessionManager;
 
 mod lifecycle;
-mod tools;
+pub mod tools; // Make tools module public for centralized access
 
 /// Manages the lifecycle and communication with both external and built-in MCP servers.
 #[derive(Debug, Clone)]

@@ -539,14 +539,15 @@ impl BuiltinMCPServer for WorkspaceServer {
         match tool_name {
             // File operation tools
             "readFile" => self.handle_read_file(args, session_id).await,
-            "createFile" => self.handle_create_file(args, session_id).await,
+            "writeFile" => self.handle_write_file(args, session_id).await,
             "deleteFile" => self.handle_delete_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,
             "editFileMulti" => self.handle_edit_file_multi(args, session_id).await,
             "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
-            "searchLineInFile" => self.handle_grep(args, session_id).await,
+            "searchLineInFile" => self.handle_search_line_in_file(args, session_id).await,
+            "searchFiles" => self.handle_search_files(args, session_id).await,
             "editLineInFile" => self.handle_edit_line_in_file(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool

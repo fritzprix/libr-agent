@@ -1,11 +1,18 @@
 import React, { useCallback, useMemo, useRef, useEffect, memo } from 'react';
+import { AgentToolCallGroup } from './AgentToolCallGroup';
+import { ThinkingBubble } from './shared';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
-import type { MCPContent, ServiceInfo } from '@/lib/mcp-types';
+import type {
+  MCPContent,
+  ServiceInfo,
+  MCPThinkingContent,
+  MCPToolCallContent,
+} from '@/lib/mcp-types';
 import type { Message } from '@/models/chat';
 import { extractServiceInfoFromContent } from '@/lib/mcp-types';
 import { useRustBackend } from '@/hooks/use-rust-backend';
@@ -241,6 +248,8 @@ interface AgentMessageRendererProps {
   className?: string;
   /** Allow resource blocks to expand to their content height (no internal scroll) */
   expandResources?: boolean;
+  /** Map of tool call ID to result message (for unified rendering) */
+  toolResultsMap?: Map<string, Message>;
 }
 
 /**
@@ -259,6 +268,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   message,
   className = '',
   expandResources = false,
+  toolResultsMap,
 }) => {
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
@@ -267,7 +277,54 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const tauriCommands = useRustBackend();
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
-  const finalContent: MCPContent[] = message?.content || content || [];
+  // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
+  const finalContent: MCPContent[] = content || message?.content || [];
+
+  // Group consecutive tool calls into blocks for display
+  const renderItems = useMemo(() => {
+    const items: (
+      | MCPContent
+      | { type: 'tool_group_block'; items: MCPToolCallContent[] }
+    )[] = [];
+    let currentToolGroup: MCPToolCallContent[] = [];
+
+    finalContent.forEach((item) => {
+      if (item.type === 'tool_call') {
+        currentToolGroup.push(item as MCPToolCallContent);
+      } else {
+        if (currentToolGroup.length > 0) {
+          items.push({
+            type: 'tool_group_block',
+            items: [...currentToolGroup],
+          });
+          currentToolGroup = [];
+        }
+        items.push(item);
+      }
+    });
+
+    // Flush remaining tool group
+    if (currentToolGroup.length > 0) {
+      items.push({ type: 'tool_group_block', items: [...currentToolGroup] });
+    }
+
+    // Fallback: If no thinking content found but message.thinking exists (e.g. from backend persistence normalization),
+    // inject it at the start to ensure it is displayed.
+    const hasThinkingContent = finalContent.some((c) => c.type === 'thinking');
+    if (
+      !hasThinkingContent &&
+      message?.thinking &&
+      message.thinking.length > 0
+    ) {
+      items.unshift({
+        type: 'thinking',
+        thinking: message.thinking,
+        thinkingTime: message.thinkingTime,
+      } as MCPThinkingContent);
+    }
+
+    return items;
+  }, [finalContent, message?.thinking, message?.thinkingTime]);
 
   // Keep latest content in a ref to avoid recreating callbacks on each render
   const contentRef = useRef<MCPContent[]>(finalContent);
@@ -305,7 +362,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     });
 
     return () => observers.forEach((o) => o.disconnect());
-  }, [expandResources, finalContent]);
+  }, [expandResources, renderItems]); // depend on renderItems for stable ref keys
 
   // Memoize renderer props to keep identity stable across re-renders
   const remoteDomProps = useMemo(
@@ -324,6 +381,23 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const supportedContentTypes = useMemo(
     () => ['rawHtml', 'externalUrl', 'remoteDom'] as const,
+    [],
+  );
+
+  // Memoize mutable supported content types array to prevent re-creation on every render
+  const mutableSupportedContentTypes = useMemo(
+    () => [...supportedContentTypes],
+    [supportedContentTypes],
+  );
+
+  // Memoize htmlProps to prevent re-creation on every render
+  const htmlProps = useMemo(
+    () => ({
+      style: { height: 'auto', maxHeight: 'unset' },
+      iframeProps: {
+        className: 'h-auto min-h-[50vh] max-h-none',
+      },
+    }),
     [],
   );
 
@@ -596,23 +670,75 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     [session?.id, submit, openExternalUrl, tauriCommands],
   );
 
-  if (!finalContent.length) {
+  if (!renderItems.length) {
     return null;
   }
 
   return (
     // min-w-0 is crucial for flex items to shrink below their content size, preventing overflow
     <div className={`flex flex-col gap-2 min-w-0 max-w-full ${className}`}>
-      {finalContent.map((item, index) => {
-        const key = `${message?.id}_${item.type}_${index}`;
-        switch (item.type) {
+      {renderItems.map((item, index) => {
+        const key = `${message?.id}_${index}`;
+
+        // Handle specialized tool groups
+        if ('type' in item && item.type === 'tool_group_block') {
+          const groupBlock = item as {
+            type: 'tool_group_block';
+            items: MCPToolCallContent[];
+          };
+          const toolGroupCalls = groupBlock.items.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          }));
+          const toolGroupResults = toolGroupCalls.map((call) =>
+            toolResultsMap?.get(call.id),
+          );
+
+          return (
+            <div key={key} className="my-2">
+              <AgentToolCallGroup
+                message={
+                  message ||
+                  ({
+                    id: 'dummy',
+                    role: 'assistant',
+                    content: [],
+                  } as unknown as Message)
+                } // dummy message if missing, mostly for ID
+                toolGroup={{ calls: toolGroupCalls }}
+                toolResults={toolGroupResults}
+                isLast={index === renderItems.length - 1} // flawed if text follows, but acceptable for visibility logic
+                visibleCount={999} // Expand by default for interleaved? Or keep default 3? Let's default.
+              />
+            </div>
+          );
+        }
+
+        // Handle MCP Content
+        const contentItem = item as MCPContent;
+        const itemKey = `${message?.id}_${contentItem.type}_${index}`;
+
+        switch (contentItem.type) {
+          case 'thinking': {
+            const thinkingItem = contentItem as MCPThinkingContent;
+            return (
+              <div key={itemKey} className="mb-2">
+                <ThinkingBubble
+                  thinking={thinkingItem.thinking}
+                  thinkingTime={thinkingItem.thinkingTime}
+                  isStreaming={message?.isStreaming}
+                />
+              </div>
+            );
+          }
           case 'text': {
-            const textItem = item as { text: string };
+            const textItem = contentItem as { text: string };
 
             return (
               <div
-                key={key}
-                className="group relative text-sm leading-relaxed overflow-x-hidden break-words"
+                key={itemKey}
+                className="group relative text-sm leading-relaxed break-words"
               >
                 {/* Copy button for individual text */}
                 <button
@@ -643,7 +769,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
           }
           case 'resource': {
             // Type narrow to extract the resource property
-            const resourceItem = item as {
+            const resourceItem = contentItem as {
               type: 'resource';
               resource: {
                 uri: string;
@@ -667,9 +793,9 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             // Also, pass stable props to avoid unnecessary teardown in the renderer
             return (
               <div
-                key={key}
+                key={itemKey}
                 ref={(el) => {
-                  resourceRefs.current[key] = el;
+                  resourceRefs.current[itemKey] = el;
                 }}
                 className={
                   expandResources ? 'w-full overflow-visible min-h-[50vh]' : ''
@@ -678,20 +804,15 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 <UIResourceRenderer
                   remoteDomProps={remoteDomProps}
                   onUIAction={handleUIAction}
-                  supportedContentTypes={[...supportedContentTypes]}
-                  htmlProps={{
-                    style: { height: 'auto', maxHeight: 'unset' },
-                    iframeProps: {
-                      className: 'h-auto min-h-[50vh] max-h-none',
-                    },
-                  }}
+                  supportedContentTypes={mutableSupportedContentTypes}
+                  htmlProps={htmlProps}
                   resource={resourceItem.resource}
                 />
               </div>
             );
           }
           case 'image': {
-            const imageItem = item as {
+            const imageItem = contentItem as {
               data?: string;
               source?: { data?: string; uri?: string };
               mimeType?: string;
@@ -700,7 +821,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               imageItem.data || imageItem.source?.data || imageItem.source?.uri;
             return imageSrc ? (
               <img
-                key={key}
+                key={itemKey}
                 src={imageSrc}
                 alt="Tool output"
                 className="max-w-full h-auto rounded-lg shadow-sm"
@@ -708,22 +829,25 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             ) : null;
           }
           case 'audio': {
-            const audioItem = item as { data?: string; mimeType?: string };
+            const audioItem = contentItem as {
+              data?: string;
+              mimeType?: string;
+            };
             return audioItem.data ? (
-              <audio key={key} controls className="w-full">
+              <audio key={itemKey} controls className="w-full">
                 <source src={audioItem.data} type={audioItem.mimeType} />
                 Your browser does not support the audio element.
               </audio>
             ) : null;
           }
           case 'resource_link': {
-            const linkItem = item as {
+            const linkItem = contentItem as {
               uri: string;
               name: string;
               description?: string;
             };
             return (
-              <div key={key} className="p-2 border rounded-lg bg-muted">
+              <div key={itemKey} className="p-2 border rounded-lg bg-muted">
                 <a
                   href={linkItem.uri}
                   onClick={(e) => handleLinkClick(e, linkItem.uri)}
@@ -741,8 +865,12 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
           }
           default:
             return (
-              <div key={key} className="text-muted-foreground italic">
-                [{'type' in item ? (item as { type: string }).type : 'unknown'}]
+              <div key={itemKey} className="text-muted-foreground italic">
+                [
+                {'type' in contentItem
+                  ? (contentItem as { type: string }).type
+                  : 'unknown'}
+                ]
               </div>
             );
         }

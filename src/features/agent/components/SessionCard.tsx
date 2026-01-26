@@ -36,31 +36,31 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
         return {
           icon: 'active',
           badge: 'Active',
-          color: 'bg-green-500/20 text-green-700 dark:text-green-400',
+          color: 'bg-warning/20 text-warning-foreground',
         };
       case 'idle':
         return {
           icon: 'idle',
           badge: 'Idle',
-          color: 'bg-blue-500/20 text-blue-700 dark:text-blue-400',
+          color: 'bg-secondary text-secondary-foreground',
         };
       case 'paused':
         return {
           icon: 'paused',
           badge: 'Paused',
-          color: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400',
+          color: 'bg-secondary text-secondary-foreground',
         };
       case 'error':
         return {
           icon: 'error',
           badge: 'Error',
-          color: 'bg-red-500/20 text-red-700 dark:text-red-400',
+          color: 'bg-destructive/20 text-destructive',
         };
       default:
         return {
           icon: 'unknown',
           badge: 'Unknown',
-          color: 'bg-gray-500/20 text-gray-700 dark:text-gray-400',
+          color: 'bg-muted text-muted-foreground',
         };
     }
   }, []);

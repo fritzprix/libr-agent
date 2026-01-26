@@ -9,7 +9,7 @@ use handlebars::Handlebars;
 use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
-mod tools;
+pub mod tools;
 
 // Embed templates
 const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");

@@ -12,11 +12,8 @@ import {
   useAgentSessionActions,
 } from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
-import { AIServiceProvider } from '@/lib/ai-service';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
-import { useSettings } from '@/hooks/use-settings';
-import { supportsThinking } from '@/lib/ai-service/model-capabilities';
 
 const logger = getLogger('AgentChatContext');
 
@@ -44,8 +41,7 @@ interface AgentChatStateContextValue {
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
-  reasoningEnabled: boolean;
-  canUseReasoning: boolean;
+  agentModeEnabled: boolean;
   serviceContexts: Record<string, ServiceContext>;
 }
 
@@ -72,9 +68,9 @@ interface AgentChatActionsContextValue {
   retryMessage: () => Promise<void>;
 
   /**
-   * Toggle reasoning mode (deep thinking for supported models)
+   * Toggle agent mode (autonomous tool use loop)
    */
-  toggleReasoning: () => void;
+  toggleAgentMode: () => void;
 
   /**
    * Manually update service contexts from backend
@@ -123,16 +119,27 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, addMessage, resumeSession } = useAgentSessionActions();
 
-  const { streamingMessages } = useLLMService();
-  const { value: settingValue } = useSettings();
+  const { streamingMessages, setAgentMode: setLLMAgentMode } = useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
     Record<string, ServiceContext>
   >({});
 
-  const [reasoningEnabled, setReasoningEnabled] = useState(false);
-  const [canUseReasoning, setCanUseReasoning] = useState(false);
+  // Agent Mode state (local UI state, synced to LLMService)
+  const [agentModeEnabled, setAgentModeEnabled] = useState(false);
+
+  // Sync agent mode to LLMServiceContext when session or toggle changes
+  useEffect(() => {
+    if (session?.id) {
+      setLLMAgentMode(session.id, agentModeEnabled);
+    }
+  }, [session?.id, agentModeEnabled, setLLMAgentMode]);
+
+  // Reset agent mode when session changes
+  useEffect(() => {
+    setAgentModeEnabled(false);
+  }, [session?.id]);
 
   // Fetch service contexts from backend
   const updateServiceContexts = useCallback(async () => {
@@ -177,49 +184,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       }
     }
   }, [sessionMessages, updateServiceContexts]);
-
-  /**
-   * Check if current model supports reasoning (matches ChatContext pattern)
-   */
-  useEffect(() => {
-    const checkReasoningSupport = async () => {
-      // Prioritize session-specific config, fallback to global settings
-      const modelName =
-        session?.assistant?.model || settingValue?.preferredModel?.model;
-      const provider =
-        session?.assistant?.provider || settingValue?.preferredModel?.provider;
-
-      if (!modelName || !provider) {
-        setCanUseReasoning(false);
-        return;
-      }
-
-      try {
-        const supports = await supportsThinking(
-          modelName,
-          provider as AIServiceProvider,
-        );
-        setCanUseReasoning(supports);
-
-        // Auto-disable if model doesn't support reasoning
-        if (!supports && reasoningEnabled) {
-          setReasoningEnabled(false);
-          logger.info('Reasoning disabled: model does not support it');
-        }
-      } catch (error) {
-        logger.error('Failed to check reasoning support', error);
-        setCanUseReasoning(false);
-      }
-    };
-
-    checkReasoningSupport();
-  }, [
-    session?.assistant?.model,
-    session?.assistant?.provider,
-    settingValue?.preferredModel?.model,
-    settingValue?.preferredModel?.provider,
-    reasoningEnabled,
-  ]);
 
   /**
    * Extract streaming message for current session
@@ -427,16 +391,12 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   }, [session?.id, resumeSession]);
 
   /**
-   * Toggle reasoning mode
+   * Toggle agent mode
    */
-  const toggleReasoning = useCallback(() => {
-    if (!canUseReasoning) {
-      logger.warn('Reasoning mode not supported for current model');
-      return;
-    }
-    setReasoningEnabled((prev) => !prev);
-    logger.info(`Reasoning mode ${!reasoningEnabled ? 'enabled' : 'disabled'}`);
-  }, [canUseReasoning, reasoningEnabled]);
+  const toggleAgentMode = useCallback(() => {
+    setAgentModeEnabled((prev) => !prev);
+    logger.info(`Agent mode ${!agentModeEnabled ? 'enabled' : 'disabled'}`);
+  }, [agentModeEnabled]);
 
   // Combine state values
   const stateValue: AgentChatStateContextValue = useMemo(
@@ -446,8 +406,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       error,
       llmError,
       workflowStatus,
-      reasoningEnabled,
-      canUseReasoning,
+      agentModeEnabled,
       serviceContexts,
     }),
     [
@@ -456,8 +415,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       error,
       llmError,
       workflowStatus,
-      reasoningEnabled,
-      canUseReasoning,
+      agentModeEnabled,
       serviceContexts,
     ],
   );
@@ -468,7 +426,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       submit,
       cancel,
       retryMessage,
-      toggleReasoning,
+      toggleAgentMode,
       updateServiceContexts,
       injectMessages,
       resume: resumeSession,
@@ -477,7 +435,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       submit,
       cancel,
       retryMessage,
-      toggleReasoning,
+      toggleAgentMode,
       updateServiceContexts,
       injectMessages,
       resumeSession,

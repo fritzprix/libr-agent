@@ -90,7 +90,34 @@ export type MCPContent =
   | MCPImageContent
   | MCPAudioContent
   | MCPResourceLinkContent
-  | MCPResourceContent;
+  | MCPResourceContent
+  | MCPThinkingContent
+  | MCPToolCallContent;
+
+/**
+ * Represents a thinking/reasoning content part.
+ */
+export interface MCPThinkingContent {
+  type: 'thinking';
+  thinking: string;
+  signature?: string;
+  thinkingTime?: number;
+  annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
+}
+
+/**
+ * Represents a tool call within the content stream.
+ */
+export interface MCPToolCallContent {
+  type: 'tool_call';
+  id: string;
+  name: string;
+  arguments: string;
+  isError?: boolean;
+  annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
+}
 
 /**
  * Type guard to check if content is an error content.
