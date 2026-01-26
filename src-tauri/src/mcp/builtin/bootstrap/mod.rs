@@ -11,7 +11,7 @@ use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContex
 
 pub mod guides;
 pub mod platform;
-mod tools;
+pub mod tools;
 
 /// Bootstrap Server - Platform detection and development tool installation guides
 ///

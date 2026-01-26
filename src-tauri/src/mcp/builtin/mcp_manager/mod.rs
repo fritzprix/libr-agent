@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 mod operations;
 mod queries;
-mod tools;
+pub mod tools;
 
 #[derive(Debug, Clone)]
 struct ContextCache {

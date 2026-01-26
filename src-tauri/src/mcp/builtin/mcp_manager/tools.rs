@@ -315,10 +315,18 @@ pub fn list_builtin_tools_tool() -> MCPTool {
     MCPTool {
         name: "listBuiltinTools".to_string(),
         title: Some("List Builtin Tools".to_string()),
-        description: "List all available built-in MCP tools across all servers.
-                
-⚠️ USEFUL FOR DISCOVERY:
-1. Use this to find available capabilities (file ops, browser, etc.).
+        description: "List all available built-in MCP tool schemas across all servers.
+
+Returns static tool definitions including:
+- Tool names and descriptions
+- Input/output schemas
+- Usage annotations
+
+Use serverName parameter to filter by specific server (e.g., 'planning', 'browser', 'workspace').
+Results are paginated (20 tools per page) for large result sets.
+
+Available servers: planning, knowledge, browser, workspace, contentstore, 
+assistant_manager, playbook, bootstrap, ui, mcp_manager
 "
         .to_string(),
         input_schema: object_prop(
@@ -327,7 +335,7 @@ pub fn list_builtin_tools_tool() -> MCPTool {
                 string_prop(
                     None,
                     None,
-                    Some("Optional: Filter by server name (e.g. 'workspace')"),
+                    Some("Optional: Filter by server name (e.g., 'workspace', 'browser', 'planning')"),
                 ),
             )],
             vec![],

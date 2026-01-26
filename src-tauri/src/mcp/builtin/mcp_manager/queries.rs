@@ -200,17 +200,118 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
 }
 
 /// List all builtin tools from the registry
-pub async fn list_builtin_tools(_args: Value) -> Result<MCPResult, String> {
-    // Note: Session Isolation means builtin tools are instantiated per-session
-    // This returns static schema information, not per-session instances
+pub async fn list_builtin_tools(args: Value) -> Result<MCPResult, String> {
+    // Extract optional server_name filter
+    let server_name = args
+        .get("serverName")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
-    let tools_text = "Builtin tools are managed per-session through MCPServiceProxy.\n\n\
-                     To get actual tools available in your session, check the agent's session tools.".to_string();
+    // Get static tool definitions
+    let tools = if let Some(name) = server_name.as_ref() {
+        crate::mcp::server::tools::get_static_tools_for_server(name)
+    } else {
+        crate::mcp::server::tools::get_all_static_builtin_tools()
+    };
+
+    // Paginate results if more than 20 tools
+    const PAGE_SIZE: usize = 20;
+    let total_count = tools.len();
+    let tools_to_show = if total_count > PAGE_SIZE {
+        &tools[..PAGE_SIZE]
+    } else {
+        &tools[..]
+    };
+
+    // Build descriptive text with actual tool details
+    let header = if let Some(name) = &server_name {
+        format!(
+            "Found {} tools from '{}' server{}:\n\n",
+            total_count,
+            name,
+            if total_count > PAGE_SIZE {
+                format!(" (showing first {})", PAGE_SIZE)
+            } else {
+                String::new()
+            }
+        )
+    } else {
+        format!(
+            "Found {} builtin tools across all servers{}:\n\n",
+            total_count,
+            if total_count > PAGE_SIZE {
+                format!(" (showing first {})", PAGE_SIZE)
+            } else {
+                String::new()
+            }
+        )
+    };
+
+    // Generate detailed tool list with descriptions
+    let tool_details = tools_to_show
+        .iter()
+        .map(|tool| {
+            // Truncate long descriptions
+            let description = if tool.description.len() > 100 {
+                format!("{}...", &tool.description[..97].trim())
+            } else {
+                tool.description.clone()
+            };
+
+            // Count parameters from input_schema
+            let param_count = match &tool.input_schema.schema_type {
+                crate::mcp::schema::JSONSchemaType::Object { properties, .. } => {
+                    properties.as_ref().map(|p| p.len()).unwrap_or(0)
+                }
+                _ => 0,
+            };
+
+            format!(
+                "• {} - {} (params: {})",
+                tool.name, description, param_count
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let tools_text = format!("{}{}", header, tool_details);
+
+    // Add tool name list for quick reference
+    let tool_names: Vec<String> = tools_to_show.iter().map(|t| t.name.clone()).collect();
+
+    // List available server names
+    let available_servers = vec![
+        "planning",
+        "knowledge",
+        "browser",
+        "workspace",
+        "content_store",
+        "assistant",
+        "playbook",
+        "bootstrap",
+        "ui",
+        "mcp_manager",
+    ];
+
+    let hints = if total_count > PAGE_SIZE {
+        vec![
+            format!("Available servers: {}", available_servers.join(", ")),
+            "Use serverName parameter to filter (e.g., serverName='planning')".to_string(),
+            format!("Showing {}/{} tools", PAGE_SIZE, total_count),
+        ]
+    } else {
+        vec![
+            format!("Available servers: {}", available_servers.join(", ")),
+            "Use serverName parameter to filter tools by server".to_string(),
+        ]
+    };
 
     Ok(
-        SuccessHint::new(tools_text, vec![]).to_mcp_result_with_data(Some(json!({
-            "tools": [],
-            "note": "Session-specific tools unavailable from global view"
+        SuccessHint::new(tools_text, hints).to_mcp_result_with_data(Some(json!({
+            "tools": tools_to_show,
+            "tool_names": tool_names,
+            "total": total_count,
+            "showing": tools_to_show.len(),
         }))),
     )
 }
