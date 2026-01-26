@@ -330,60 +330,73 @@ async fn extract_html_from_page(
     Ok(raw_html)
 }
 
+// Compiled regexes for HTML cleaning
+static RE_SCRIPT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?is)<script[^>]*>.*?</script>").expect("Invalid regex: RE_SCRIPT"));
+static RE_STYLE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?is)<style[^>]*>.*?</style>").expect("Invalid regex: RE_STYLE"));
+static RE_NOSCRIPT: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?is)<noscript[^>]*>.*?</noscript>").expect("Invalid regex: RE_NOSCRIPT")
+});
+static RE_TABLE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)<table[^>]*>").expect("Invalid regex: RE_TABLE"));
+static RE_TR: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)<tr[^>]*>").expect("Invalid regex: RE_TR"));
+static RE_TD: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)<(td|th)[^>]*>").expect("Invalid regex: RE_TD"));
+static RE_TD_CLOSE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)</(td|th)>").expect("Invalid regex: RE_TD_CLOSE"));
+static RE_TBODY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)</?(thead|tbody|tfoot)[^>]*>").expect("Invalid regex: RE_TBODY"));
+static RE_NEWLINES: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\n{2,}").expect("Invalid regex: RE_NEWLINES"));
+static RE_TRAILING: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[ \t]+\n").expect("Invalid regex: RE_TRAILING"));
+static RE_LEADING: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\n[ \t]+").expect("Invalid regex: RE_LEADING"));
+static RE_SPACES: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"[ \t]{2,}").expect("Invalid regex: RE_SPACES"));
+
 /// Convert HTML to clean markdown
 fn convert_to_markdown(raw_html: &str) -> String {
     // Pre-process HTML to match legacy behavior (remove scripts, flatten tables)
 
     // 1. Remove script, style, noscript
-    let re_script = Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap();
-    let s = re_script.replace_all(raw_html, "");
-
-    let re_style = Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap();
-    let s = re_style.replace_all(&s, "");
-
-    let re_noscript = Regex::new(r"(?is)<noscript[^>]*>.*?</noscript>").unwrap();
-    let s = re_noscript.replace_all(&s, "");
+    let s = RE_SCRIPT.replace_all(raw_html, "");
+    let s = RE_STYLE.replace_all(&s, "");
+    let s = RE_NOSCRIPT.replace_all(&s, "");
 
     // 2. Flatten tables by transmuting them to divs/spans
     // <table...> -> <div>
-    let re_table = Regex::new(r"(?i)<table[^>]*>").unwrap();
-    let s = re_table.replace_all(&s, "<div>");
+    let s = RE_TABLE.replace_all(&s, "<div>");
     let s = s.replace("</table>", "</div>");
 
     // <tr...> -> <div>
-    let re_tr = Regex::new(r"(?i)<tr[^>]*>").unwrap();
-    let s = re_tr.replace_all(&s, "<div>");
+    let s = RE_TR.replace_all(&s, "<div>");
     let s = s.replace("</tr>", "</div>");
 
     // <td...> -> <span>
-    let re_td = Regex::new(r"(?i)<(td|th)[^>]*>").unwrap();
-    let s = re_td.replace_all(&s, "<span> ");
-    let re_td_close = Regex::new(r"(?i)</(td|th)>").unwrap();
-    let s = re_td_close.replace_all(&s, "</span>");
+    let s = RE_TD.replace_all(&s, "<span> ");
+    let s = RE_TD_CLOSE.replace_all(&s, "</span>");
 
     // Remove other table structural tags
-    let re_tbody = Regex::new(r"(?i)</?(thead|tbody|tfoot)[^>]*>").unwrap();
-    let s = re_tbody.replace_all(&s, "");
+    let s = RE_TBODY.replace_all(&s, "");
 
     // 3. Convert to Markdown
     let markdown = html2md::parse_html(&s);
 
     // Apply legacy cleaning rules
     // 1. Replace 2+ newlines with 1 (collapses paragraphs)
-    let re_newlines = Regex::new(r"\n{2,}").unwrap();
-    let s = re_newlines.replace_all(&markdown, "\n");
+    let s = RE_NEWLINES.replace_all(&markdown, "\n");
 
     // 2. Remove trailing spaces before newline
-    let re_trailing = Regex::new(r"[ \t]+\n").unwrap();
-    let s = re_trailing.replace_all(&s, "\n");
+    let s = RE_TRAILING.replace_all(&s, "\n");
 
     // 3. Remove leading spaces after newline
-    let re_leading = Regex::new(r"\n[ \t]+").unwrap();
-    let s = re_leading.replace_all(&s, "\n");
+    let s = RE_LEADING.replace_all(&s, "\n");
 
     // 4. Replace multiple spaces/tabs with single space
-    let re_spaces = Regex::new(r"[ \t]{2,}").unwrap();
-    let s = re_spaces.replace_all(&s, " ");
+    let s = RE_SPACES.replace_all(&s, " ");
 
     s.trim().to_string()
 }
