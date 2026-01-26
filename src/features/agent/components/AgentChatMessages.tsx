@@ -57,7 +57,10 @@ export function AgentChatMessages() {
     setAutoScrollEnabled(atBottom);
   }, 100);
 
-  const lastMessageWho = useMemo(() => messages[messages.length - 1].role, [messages])
+  const lastMessageWho = useMemo(
+    () => messages[messages.length - 1].role,
+    [messages],
+  );
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -176,23 +179,24 @@ export function AgentChatMessages() {
           </div>
         )}
         {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
-        {workflowStatus === 'busy' && (!isLastStreaming || lastMessageWho === 'user') && (
-          <div className="flex justify-start mb-8 mt-3">
-            <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
-                  <Bot size={16} className="text-primary-foreground" />
+        {workflowStatus === 'busy' &&
+          (!isLastStreaming || lastMessageWho === 'user') && (
+            <div className="flex justify-start mb-8 mt-3">
+              <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                    <Bot size={16} className="text-primary-foreground" />
+                  </div>
+                  <span className="text-xs font-medium">
+                    {session?.assistant?.name || 'Agent'}
+                  </span>
                 </div>
-                <span className="text-xs font-medium">
-                  {session?.assistant?.name || 'Agent'}
-                </span>
-              </div>
-              <div className="text-sm">
-                <AnalysisLoader size="md" />
+                <div className="text-sm">
+                  <AnalysisLoader size="md" />
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
         <div ref={messagesEndRef} />
       </div>

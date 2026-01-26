@@ -40,6 +40,11 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
     // Helper: Check if message has text content
     const hasTextContent = (msg: Message): boolean => {
+      // Check for thinking content
+      if (msg.thinking && msg.thinking.trim().length > 0) {
+        return true;
+      }
+
       return (
         !!msg.content &&
         msg.content.length > 0 &&

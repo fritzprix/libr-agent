@@ -383,6 +383,23 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     [],
   );
 
+  // Memoize mutable supported content types array to prevent re-creation on every render
+  const mutableSupportedContentTypes = useMemo(
+    () => [...supportedContentTypes],
+    [supportedContentTypes],
+  );
+
+  // Memoize htmlProps to prevent re-creation on every render
+  const htmlProps = useMemo(
+    () => ({
+      style: { height: 'auto', maxHeight: 'unset' },
+      iframeProps: {
+        className: 'h-auto min-h-[50vh] max-h-none',
+      },
+    }),
+    [],
+  );
+
   const handleLinkClick = async (e: React.MouseEvent, url: string) => {
     e.preventDefault();
 
@@ -430,7 +447,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                strippedCommand as keyof typeof tauriCommands
+                  strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 try {
@@ -786,13 +803,8 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 <UIResourceRenderer
                   remoteDomProps={remoteDomProps}
                   onUIAction={handleUIAction}
-                  supportedContentTypes={[...supportedContentTypes]}
-                  htmlProps={{
-                    style: { height: 'auto', maxHeight: 'unset' },
-                    iframeProps: {
-                      className: 'h-auto min-h-[50vh] max-h-none',
-                    },
-                  }}
+                  supportedContentTypes={mutableSupportedContentTypes}
+                  htmlProps={htmlProps}
                   resource={resourceItem.resource}
                 />
               </div>
