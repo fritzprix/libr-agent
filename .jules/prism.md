@@ -23,3 +23,13 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-24 - [AgentChatStatusBar] **Visual Bug:** Hardcoded colors and inconsistent mapping **Fix:** Use semantic tokens and unified status colors
 
 ## 2026-01-24 - [SessionCard] **Visual Bug:** Hardcoded colors and inconsistent mapping **Fix:** Use semantic tokens and unified status colors
+
+## 2026-01-25 - [SessionFilesPopover] **Visual Bug:** Hardcoded colors (text-gray-400, text-green-400) **Fix:** Use semantic tokens (text-muted-foreground, text-success)
+
+## 2026-01-25 - [ErrorBubble] **Visual Bug:** Hardcoded colors (amber, blue, red) and opacity hacks **Fix:** Use semantic tokens (warning, primary, destructive) with opacity modifiers
+
+## 2026-01-25 - [AssistantCard] **Visual Bug:** Hardcoded badge colors (blue-100, green-100) **Fix:** Use semantic tokens (primary/10, success/10)
+
+## 2026-01-25 - [TokenMetricsBadge] **Visual Bug:** Hardcoded colors (blue, green, yellow) **Fix:** Use semantic tokens (primary, success, warning)
+
+## 2026-01-25 - [FileAttachment] **Visual Bug:** Hardcoded colors (green-400, red-400) **Fix:** Use semantic tokens (success, destructive)

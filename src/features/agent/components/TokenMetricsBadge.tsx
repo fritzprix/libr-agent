@@ -66,7 +66,7 @@ export function TokenMetricsBadge({
       {/* Input Tokens */}
       <div className="flex items-center gap-2">
         <span
-          className="flex items-center gap-0.5 text-blue-400"
+          className="flex items-center gap-0.5 text-primary"
           title={
             (usage.details?.cacheReadInputTokens
               ? `Prompt Tokens (Read from Cache: ${usage.details.cacheReadInputTokens.toLocaleString()}, Created: ${usage.details.cacheCreationInputTokens?.toLocaleString() || 0})`
@@ -79,7 +79,7 @@ export function TokenMetricsBadge({
         {/* Cache Hit Indicator */}
         {usage.details?.cacheReadInputTokens ? (
           <span
-            className="flex items-center gap-0.5 text-xs text-blue-300/70"
+            className="flex items-center gap-0.5 text-xs text-primary/70"
             title="Cached Input Tokens"
           >
             <Zap size={10} className="fill-current" />
@@ -94,7 +94,7 @@ export function TokenMetricsBadge({
 
       {/* Output Tokens */}
       <span
-        className="flex items-center gap-0.5 text-green-400"
+        className="flex items-center gap-0.5 text-success"
         title="Completion Tokens"
       >
         <ArrowDown size={10} className="stroke-[3]" />
@@ -104,14 +104,14 @@ export function TokenMetricsBadge({
       {/* Speed (if available) - Hide on compact unless specifically requested */}
       {showSpeed && tpsFormatted && (
         <>
-          <span className="text-gray-600 mx-0.5">•</span>
+          <span className="text-muted-foreground mx-0.5">•</span>
           <span
-            className="flex items-center gap-0.5 text-yellow-500"
+            className="flex items-center gap-0.5 text-warning"
             title="Tokens per second"
           >
             <Zap size={10} className="stroke-[3]" />
             {tpsFormatted}{' '}
-            <span className="text-[10px] text-gray-500 hidden sm:inline">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">
               t/s
             </span>
           </span>
@@ -120,7 +120,7 @@ export function TokenMetricsBadge({
 
       {/* Load Duration (Ollama only, for debug) - Optional, maybe hide in production UI */}
       {!compact && usage.details?.loadDuration && (
-        <span className="hidden lg:flex items-center gap-0.5 text-gray-500 text-[10px] ml-1">
+        <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-[10px] ml-1">
           (Load: {(usage.details.loadDuration / 1000).toFixed(1)}s)
         </span>
       )}
