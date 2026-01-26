@@ -431,7 +431,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               if (
                 strippedCommand &&
                 typeof tauriCommands[
-                strippedCommand as keyof typeof tauriCommands
+                  strippedCommand as keyof typeof tauriCommands
                 ] === 'function'
               ) {
                 try {

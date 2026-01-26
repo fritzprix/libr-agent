@@ -133,8 +133,8 @@ function AgentMessageBubbleImpl({
             )}
 
             {(msg.content && msg.content.length > 0) ||
-              msg.thinking ||
-              msg.isStreaming ? (
+            msg.thinking ||
+            msg.isStreaming ? (
               <>
                 {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
                 <AgentMessageRenderer

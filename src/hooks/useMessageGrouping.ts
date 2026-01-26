@@ -5,14 +5,14 @@ import { MCPContent } from '@/lib/mcp';
 export type GroupedMessage =
   | { type: 'single'; message: Message }
   | {
-    type: 'tool_group';
-    message: Message;
-    messages: Message[]; // All messages in this group
-    toolGroup: {
-      calls: ToolCall[];
-      results: (Message | undefined)[];
+      type: 'tool_group';
+      message: Message;
+      messages: Message[]; // All messages in this group
+      toolGroup: {
+        calls: ToolCall[];
+        results: (Message | undefined)[];
+      };
     };
-  };
 
 export interface MessageGroupingResult {
   groupedMessages: GroupedMessage[];
@@ -40,9 +40,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       }
 
       return (
-        !!msg.content &&
-        msg.content.length > 0 &&
-        msg.content.some(validText)
+        !!msg.content && msg.content.length > 0 && msg.content.some(validText)
       );
     };
 
