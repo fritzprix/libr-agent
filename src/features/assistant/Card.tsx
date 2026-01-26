@@ -143,7 +143,7 @@ export default function AssistantCard({
               <Badge
                 key={serverId}
                 variant="outline"
-                className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 border-blue-200 dark:border-blue-800"
+                className="bg-primary/10 text-primary border-primary/20"
               >
                 {serverName}
               </Badge>
@@ -154,7 +154,7 @@ export default function AssistantCard({
           {assistant.allowedBuiltInServiceAliases === undefined ? (
             <Badge
               variant="secondary"
-              className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+              className="bg-success/10 text-success"
             >
               {t('assistant.card.allBuiltin')}
             </Badge>
@@ -163,7 +163,7 @@ export default function AssistantCard({
               <Badge
                 key={alias}
                 variant="secondary"
-                className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                className="bg-success/10 text-success"
               >
                 {builtinToolsMap?.[alias] || alias}
               </Badge>

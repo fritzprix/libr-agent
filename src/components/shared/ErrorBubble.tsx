@@ -39,15 +39,15 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
   const getErrorIcon = (errorType: string) => {
     switch (errorType) {
       case 'NETWORK_ERROR':
-        return <Wifi size={16} className="text-amber-600" />;
+        return <Wifi size={16} className="text-warning" />;
       case 'MALFORMED_FUNCTION_CALL':
-        return <Wrench size={16} className="text-blue-600" />;
+        return <Wrench size={16} className="text-primary" />;
       case 'JSON_PARSING_ERROR':
         return <FileX size={16} className="text-destructive" />;
       case 'AUTHENTICATION_ERROR':
-        return <Key size={16} className="text-red-600" />;
+        return <Key size={16} className="text-destructive" />;
       case 'RATE_LIMIT_ERROR':
-        return <Clock size={16} className="text-orange-600" />;
+        return <Clock size={16} className="text-warning" />;
       default:
         return <AlertTriangle size={16} className="text-destructive" />;
     }
@@ -56,15 +56,15 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
   const getErrorColor = (errorType: string) => {
     switch (errorType) {
       case 'NETWORK_ERROR':
-        return 'border-amber-200 bg-amber-50';
+        return 'border-warning/20 bg-warning/5';
       case 'MALFORMED_FUNCTION_CALL':
-        return 'border-blue-200 bg-blue-50';
+        return 'border-primary/20 bg-primary/5';
       case 'JSON_PARSING_ERROR':
         return 'border-destructive/20 bg-destructive/5';
       case 'AUTHENTICATION_ERROR':
-        return 'border-red-200 bg-red-50';
+        return 'border-destructive/20 bg-destructive/5';
       case 'RATE_LIMIT_ERROR':
-        return 'border-orange-200 bg-orange-50';
+        return 'border-warning/20 bg-warning/5';
       default:
         return 'border-destructive/20 bg-destructive/5';
     }
@@ -73,15 +73,15 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
   const getErrorBadgeColor = (errorType: string) => {
     switch (errorType) {
       case 'NETWORK_ERROR':
-        return 'bg-amber-600 text-white';
+        return 'bg-warning text-warning-foreground';
       case 'MALFORMED_FUNCTION_CALL':
-        return 'bg-blue-600 text-white';
+        return 'bg-primary text-primary-foreground';
       case 'JSON_PARSING_ERROR':
         return 'bg-destructive text-destructive-foreground';
       case 'AUTHENTICATION_ERROR':
-        return 'bg-red-600 text-white';
+        return 'bg-destructive text-destructive-foreground';
       case 'RATE_LIMIT_ERROR':
-        return 'bg-orange-600 text-white';
+        return 'bg-warning text-warning-foreground';
       default:
         return 'bg-destructive text-destructive-foreground';
     }
