@@ -18,6 +18,7 @@ pub fn file_tools() -> Vec<MCPTool> {
         file_tools::create_import_file_tool(),
         file_tools::create_search_line_in_file_tool(),
         file_tools::create_edit_line_in_file_tool(),
+        file_tools::create_search_files_tool(),
     ]
 }
 

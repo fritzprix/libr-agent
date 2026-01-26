@@ -300,7 +300,7 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_grep(
+    pub async fn handle_search_line_in_file(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -317,7 +317,7 @@ impl WorkspaceServer {
         let line_numbers = args
             .get("lineNumbers")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(true); // Default to true as per tool definition
 
         let input_text = if let Some(path_str) = args.get("path").and_then(|v| v.as_str()) {
             let file_manager = self.get_file_manager(session_id);
@@ -329,7 +329,7 @@ impl WorkspaceServer {
                     Ok(s) => s,
                     Err(e) => {
                         return Ok(operation_failed_error(
-                            "Read file for grep",
+                            "Read file for search",
                             &e.to_string(),
                             vec![
                                 "Verify the file exists with listDirectory".to_string(),
@@ -409,7 +409,7 @@ impl WorkspaceServer {
 
         let text_output = if matches.is_empty() {
             format!(
-                "**🔍 Grep Results: No matches found**\n\n\
+                "**🔍 Search Results: No matches found**\n\n\
                 Pattern: `{}`\n\
                 Options: {}\n\n\
                 **Next Steps:**\n\
@@ -424,7 +424,10 @@ impl WorkspaceServer {
                 }
             )
         } else {
-            let mut s = format!("**🔍 Grep Results: {} match(es) found**\n\n", matches.len());
+            let mut s = format!(
+                "**🔍 Search Results: {} match(es) found**\n\n",
+                matches.len()
+            );
 
             if let Some(path) = file_path {
                 s.push_str(&format!("File: `{}`\n", path));
@@ -451,22 +454,11 @@ impl WorkspaceServer {
                 if let Some(obj) = match_item.as_object() {
                     if let Some(line_num) = obj.get("line").and_then(|v| v.as_u64()) {
                         let line_idx = (line_num as usize).saturating_sub(1);
+                        let line_content = obj.get("text").and_then(|t| t.as_str()).unwrap_or("");
 
-                        // Show context: ±2 lines
-                        let context_start = line_idx.saturating_sub(2);
-                        let context_end = (line_idx + 3).min(lines.len());
-
-                        for (i, line) in lines
-                            .iter()
-                            .enumerate()
-                            .skip(context_start)
-                            .take(context_end - context_start)
-                        {
-                            let prefix = if i == line_idx { ">" } else { " " };
-                            let line_number = format!("{:4}", i + 1);
-                            s.push_str(&format!("{} {} | {}\n", prefix, line_number, line));
-                        }
-                        s.push('\n');
+                        // ✅ ENHANCED: Explicitly format line number in text output
+                        // Format: "Line 123: content"
+                        s.push_str(&format!("Line {}: {}\n", line_num, line_content));
                     } else if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
                         s.push_str(&format!("{}\n", text));
                     }

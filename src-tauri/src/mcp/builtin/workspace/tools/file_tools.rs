@@ -684,3 +684,77 @@ EXAMPLE:
         annotations: None,
     }
 }
+
+pub fn create_search_files_tool() -> MCPTool {
+    let mut props = HashMap::new();
+    props.insert(
+        "path".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Relative path to the directory to search in (from workspace root)"),
+        ),
+    );
+    props.insert(
+        "pattern".to_string(),
+        string_prop(
+            Some(1),
+            Some(1000),
+            Some("Glob pattern to match file names (e.g., '*.rs', 'src/**/*.ts')"),
+        ),
+    );
+    props.insert(
+        "max_depth".to_string(),
+        integer_prop(
+            Some(1),
+            Some(100),
+            Some("Maximum depth to traverse (optional)"),
+        ),
+    );
+    props.insert(
+        "file_type".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Type of files to search: 'file', 'dir', or 'both' (default: 'both')"),
+        ),
+    );
+
+    MCPTool {
+        name: "searchFiles".to_string(),
+        title: Some("Search Files by Name".to_string()),
+        description: "Find files and directories using glob patterns.
+        
+⚠️ PRIMARY USE CASE: Finding files when you don't know the exact path
+This tool searches for FILE NAMES, not content.
+
+PARAMETERS:
+- path: Root directory to start search (default: '.')
+- pattern: Glob pattern (e.g., '*.rs', '**/*.test.ts')
+- max_depth: Maximum directory depth to search (optional)
+- file_type: 'file', 'dir', or 'both' (default: 'both')
+
+RETURNS:
+- List of matching file paths
+- File types (file/directory)
+- File sizes
+
+💡 WORKFLOW:
+1. Use searchFiles to find file paths
+2. Use readFile to view content of found files
+3. Use searchLineInFile to search WITHIN files
+
+EXAMPLES:
+- searchFiles({pattern: '*.rs'}) → Find all Rust files in root
+- searchFiles({pattern: 'src/**/*.ts', path: '.'}) → Find all TS files in src recursively
+
+✅ BEST FOR: Locating files by name or extension
+❌ NOT FOR: Searching text content inside files (use searchLineInFile)
+
+💡 TIP: Use '**' in pattern for recursive search (e.g., '**/*.json')"
+            .to_string(),
+        input_schema: object_schema(props, vec!["pattern".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
