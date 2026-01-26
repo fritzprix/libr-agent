@@ -52,7 +52,7 @@ jobs:
 
           # Enable codesign to access the key
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          
+
           # Clean up
           rm certificate.p12
 
@@ -66,7 +66,7 @@ jobs:
         run: |
           # Verify identity exists
           security find-identity -v -p codesigning
-          
+
           # Build with Tauri (handles signing & notarization automatically if env vars are set)
           pnpm tauri build --target universal-apple-darwin
 

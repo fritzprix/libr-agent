@@ -92,12 +92,12 @@ describe('useMessageGrouping', () => {
         },
       ]),
       createMessage('3', 'assistant', '', [
-         {
-           id: 'call_2',
-           type: 'function',
-           function: { name: 'tool2', arguments: '{}' },
-         },
-       ]),
+        {
+          id: 'call_2',
+          type: 'function',
+          function: { name: 'tool2', arguments: '{}' },
+        },
+      ]),
       createMessage('4', 'tool', 'Result 1', undefined, 'call_1'),
       createMessage('5', 'tool', 'Result 2', undefined, 'call_2'),
     ];
@@ -121,5 +121,47 @@ describe('useMessageGrouping', () => {
     expect(result.current.toolResultsMap.size).toBe(2);
     expect(result.current.toolResultsMap.get('call_1')).toBeDefined();
     expect(result.current.toolResultsMap.get('call_2')).toBeDefined();
+  });
+
+  it('does NOT group consecutive assistant messages if the second one has thinking content', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tools'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+      ]),
+      {
+        ...createMessage('3', 'assistant', '', [
+          {
+            id: 'call_2',
+            type: 'function',
+            function: { name: 'tool2', arguments: '{}' },
+          },
+        ]),
+        thinking: 'I need to run tool 2 now.',
+      },
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+    // Expected behavior after fix:
+    // Group 1: Single (User)
+    // Group 2: Tool Group (Msg 2 + call_1)
+    // Group 3: Single (Msg 3 + thinking + call_2) - NOT merged because of thinking
+
+    // CURRENT BROKEN BEHAVIOR:
+    // It groups them, effectively hiding the thinking content of Msg 3 because 
+    // the group only keeps the "main" message (Msg 2) and the list of tool calls.
+    // So we expect this test to FAIL if we assert they are separate.
+
+    // For reproduction, we assert the DESIRED behavior.
+    // Msg 3 has tool calls, so it should be a tool_group, but it should be SEPARATE from Group 2.
+    expect(result.current.groupedMessages).toHaveLength(3);
+    expect(result.current.groupedMessages[1].type).toBe('tool_group');
+    expect(result.current.groupedMessages[2].type).toBe('tool_group');
+    expect(result.current.groupedMessages[2].message.id).toBe('3');
   });
 });
