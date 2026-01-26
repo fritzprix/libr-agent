@@ -44,9 +44,7 @@ git push origin "v$NEW_VERSION"
 
 echo ">>> Triggered GitHub Action for Release..."
 echo "The release artifacts (deb, AppImage, etc.) will be built and uploaded by GitHub Actions."
-
-echo ">>> Publishing release notes from CHANGELOG.md..."
-bash scripts/publish-release-notes.sh "$NEW_VERSION"
+echo "Release notes will be automatically extracted from CHANGELOG.md by GitHub Actions."
 
 echo ">>> Release v$NEW_VERSION completed successfully!"
 echo ""
