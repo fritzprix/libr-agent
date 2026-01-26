@@ -32,12 +32,15 @@ export interface DisplaySettings {
   compactMetrics: boolean;
 }
 
+export type IsolationLevel = 'basic' | 'medium' | 'high';
+
 export interface SystemSettings {
   maxFileUploadSizeMB: number;
   workspaceCapacityMB: number;
   webActionTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
   activeSessionRetentionHours: number;
+  shellIsolationLevel: IsolationLevel;
 }
 
 export interface Settings {
@@ -89,6 +92,7 @@ export const DEFAULT_SETTING: Settings = {
     webActionTimeoutSeconds: 30,
     searchIndexFrequencyMinutes: 5,
     activeSessionRetentionHours: 24,
+    shellIsolationLevel: 'medium',
   },
 };
 

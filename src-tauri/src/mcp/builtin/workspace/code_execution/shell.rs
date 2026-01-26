@@ -163,7 +163,7 @@ impl WorkspaceServer {
                 );
 
                 // Fallback to one-shot execution
-                let isolation_level = IsolationLevel::Medium;
+                let isolation_level = utils::get_shell_isolation_level().await;
                 self.execute_shell_with_isolation(
                     command,
                     isolation_level,
@@ -749,14 +749,10 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Execute with Medium isolation (always workspace root anchored)
-        self.execute_shell_with_isolation(
-            raw_command,
-            IsolationLevel::Medium,
-            timeout_secs,
-            session_id,
-        )
-        .await
+        // Execute with configured isolation level (always workspace root anchored)
+        let isolation_level = utils::get_shell_isolation_level().await;
+        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs, session_id)
+            .await
     }
 
     /// Handle async shell execution (separate tool)
@@ -915,8 +911,8 @@ impl WorkspaceServer {
         // Normalize command
         let normalized_command = normalization::normalize_shell_command(command);
 
-        // Always use Medium isolation
-        let isolation_level = IsolationLevel::Medium;
+        // Use configured isolation level
+        let isolation_level = utils::get_shell_isolation_level().await;
 
         // Create isolation config
         let isolation_config = IsolatedProcessConfig {

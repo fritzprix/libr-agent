@@ -1,5 +1,39 @@
+use crate::session_isolation::IsolationLevel;
 use regex::Regex;
 use serde_json::Value;
+
+/// Get configured shell isolation level from settings
+/// Returns the configured isolation level or Medium as default
+pub async fn get_shell_isolation_level() -> IsolationLevel {
+    use crate::repositories::settings_repository::SettingsRepository;
+    use crate::state::get_settings_repository;
+
+    let repo = get_settings_repository();
+
+    // Get systemSettings object which contains shellIsolationLevel
+    match repo.get("systemSettings").await {
+        Ok(Some(model)) => {
+            match serde_json::from_str::<Value>(&model.value) {
+                Ok(json) => {
+                    if let Some(level_str) =
+                        json.get("shellIsolationLevel").and_then(|v| v.as_str())
+                    {
+                        match level_str {
+                            "basic" => IsolationLevel::Basic,
+                            "medium" => IsolationLevel::Medium,
+                            "high" => IsolationLevel::High,
+                            _ => IsolationLevel::Medium, // Invalid value, use default
+                        }
+                    } else {
+                        IsolationLevel::Medium // Field not present, use default
+                    }
+                }
+                Err(_) => IsolationLevel::Medium, // JSON parse error, use default
+            }
+        }
+        _ => IsolationLevel::Medium, // Setting not found, use default
+    }
+}
 
 /// Get diff context lines from settings (defaults to 3)
 pub async fn get_diff_context_lines() -> usize {
