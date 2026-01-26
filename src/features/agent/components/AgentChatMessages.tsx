@@ -99,18 +99,12 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
-            const resultsMap = new Map<string, Message>();
-            groupedMessage.toolGroup.calls.forEach((call, idx) => {
-              const res = groupedMessage.toolGroup.results[idx];
-              if (res) resultsMap.set(call.id, res);
-            });
-
             return (
               <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
-                toolResultsMap={resultsMap}
+                toolResults={groupedMessage.toolGroup.results}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
               />

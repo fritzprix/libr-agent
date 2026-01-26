@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
 
@@ -27,10 +27,19 @@ function validText(c: MCPContent) {
   }
 }
 
+interface GroupCacheEntry {
+  inputs: Message[];
+  output: GroupedMessage;
+}
+
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
+  const groupCache = useRef<Map<string, GroupCacheEntry>>(new Map());
+
   return useMemo(() => {
     const groupedMessages: GroupedMessage[] = [];
     const toolResultsMap = new Map<string, Message>();
+    const nextCache = new Map<string, GroupCacheEntry>();
+    const currentCache = groupCache.current;
 
     // Helper: Check if message has text content
     const hasTextContent = (msg: Message): boolean => {
@@ -44,9 +53,19 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       );
     };
 
+    // Helper: shallow compare arrays
+    const areMessagesEqual = (a: Message[], b: Message[]) => {
+      if (a.length !== b.length) return false;
+      for (let k = 0; k < a.length; k++) {
+        if (a[k] !== b[k]) return false;
+      }
+      return true;
+    };
+
     let i = 0;
     while (i < messages.length) {
       const msg = messages[i];
+      const startIndex = i;
 
       // Capture tool result in map
       if (msg.role === 'tool' && msg.tool_call_id) {
@@ -124,30 +143,64 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           }
         }
 
+        // Determine inputs for cache check
+        // The messages involved are from startIndex to j (exclusive)
+        const inputs = messages.slice(startIndex, j);
+
         // Group if there are any tool calls
         if (allToolCalls.length > 0) {
-          // Pre-calculate results array to avoid O(K) mapping in render loop
-          const results = allToolCalls.map((call) =>
-            toolResultsMap.get(call.id),
-          );
+          // Check cache
+          const cached = currentCache.get(msg.id);
+          if (cached && areMessagesEqual(cached.inputs, inputs)) {
+            groupedMessages.push(cached.output);
+            nextCache.set(msg.id, cached);
+          } else {
+            // Pre-calculate results array to avoid O(K) mapping in render loop
+            const results = allToolCalls.map((call) =>
+              toolResultsMap.get(call.id),
+            );
 
-          groupedMessages.push({
-            type: 'tool_group',
-            message: msg,
-            messages: groupMessages,
-            toolGroup: { calls: allToolCalls, results },
-          });
+            const output: GroupedMessage = {
+              type: 'tool_group',
+              message: msg,
+              messages: groupMessages,
+              toolGroup: { calls: allToolCalls, results },
+            };
+            groupedMessages.push(output);
+            nextCache.set(msg.id, { inputs, output });
+          }
         } else {
           // Fallback (shouldn't really happen due to outer if, but safe)
-          groupedMessages.push({ type: 'single', message: msg });
+          const inputs = [msg];
+          const cached = currentCache.get(msg.id);
+          if (cached && areMessagesEqual(cached.inputs, inputs)) {
+            groupedMessages.push(cached.output);
+            nextCache.set(msg.id, cached);
+          } else {
+            const output: GroupedMessage = { type: 'single', message: msg };
+            groupedMessages.push(output);
+            nextCache.set(msg.id, { inputs, output });
+          }
         }
         i = j;
       } else {
         // Regular message (user or assistant without tool calls)
-        groupedMessages.push({ type: 'single', message: msg });
+        const inputs = [msg];
+        const cached = currentCache.get(msg.id);
+        if (cached && areMessagesEqual(cached.inputs, inputs)) {
+          groupedMessages.push(cached.output);
+          nextCache.set(msg.id, cached);
+        } else {
+          const output: GroupedMessage = { type: 'single', message: msg };
+          groupedMessages.push(output);
+          nextCache.set(msg.id, { inputs, output });
+        }
         i++;
       }
     }
+
+    // Update cache ref for next render
+    groupCache.current = nextCache;
 
     return { groupedMessages, toolResultsMap };
   }, [messages]);

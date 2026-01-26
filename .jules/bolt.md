@@ -17,3 +17,8 @@
 
 **Learning:** `AgentMessageRenderer` was creating new object references for `htmlProps` and spreading `supportedContentTypes` (creating a new array) on every render. This caused `UIResourceRenderer` (which likely contains iframes) to re-render unnecessarily, potentially causing flicker or performance degradation during streaming.
 **Action:** Always memoize complex objects or arrays passed as props to expensive child components (like those rendering iframes or heavy UI), especially within a component that renders frequently (like a chat message renderer).
+
+## 2024-05-27 - Stable Message Grouping
+
+**Learning:** `useMessageGrouping` was recreating all `GroupedMessage` objects (and their internal arrays) on every render (even for historical messages) because it rebuilt the array from scratch. This caused `AgentMessageBubble` (and consequently `AgentMessageRenderer`) to re-render the entire chat history on every token stream, defeating `React.memo`.
+**Action:** Implemented a `useRef`-based cache in `useMessageGrouping` to reuse `GroupedMessage` objects when the input messages for that group haven't changed reference. Also optimized `AgentMessageBubble` to accept a stable `toolResults` array instead of creating a new `Map` in the parent render loop.

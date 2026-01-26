@@ -9,6 +9,7 @@ interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
   toolResultsMap?: Map<string, Message>;
+  toolResults?: (Message | undefined)[];
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
 }
@@ -16,10 +17,25 @@ interface AgentMessageBubbleProps {
 function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
-  toolResultsMap,
+  toolResultsMap: providedToolResultsMap,
+  toolResults,
   groupedToolCalls,
   groupedMessages,
 }: AgentMessageBubbleProps) {
+  // Construct toolResultsMap if not provided directly, memoizing to prevent expensive re-creation
+  const toolResultsMap = useMemo(() => {
+    if (providedToolResultsMap) return providedToolResultsMap;
+    if (groupedToolCalls && toolResults) {
+      const map = new Map<string, Message>();
+      groupedToolCalls.forEach((call, idx) => {
+        const res = toolResults[idx];
+        if (res) map.set(call.id, res);
+      });
+      return map;
+    }
+    return undefined;
+  }, [providedToolResultsMap, groupedToolCalls, toolResults]);
+
   const getAssistantNameForMessage = useCallback(
     (msg: Message) => {
       if (getAssistantName) return getAssistantName(msg);
