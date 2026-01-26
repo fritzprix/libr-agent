@@ -50,6 +50,17 @@ interface AgentSessionListProviderProps {
   children: React.ReactNode;
 }
 
+// Strictly typed interface matching Rust's SessionMetadata
+// (src-tauri/src/repositories/session_repository.rs)
+interface AgentSessionMetadata {
+  id: string;
+  name?: string;
+  status: 'idle' | 'busy' | 'paused' | 'error';
+  agentConfig?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /**
  * AgentSessionListProvider
  *
@@ -71,16 +82,7 @@ export function AgentSessionListProvider({
 
     try {
       // Call Rust backend to get all sessions
-      const response = await invoke<
-        Array<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          agentConfig?: string;
-          createdAt: number;
-          updatedAt?: number;
-        }>
-      >('agent_get_all_sessions');
+      const response = await invoke<AgentSessionMetadata[]>('agent_get_all_sessions');
 
       const sessionList: AgentSession[] = response.map((s) => {
         let assistant: Assistant | undefined;
@@ -98,7 +100,7 @@ export function AgentSessionListProvider({
           status: s.status,
           assistant,
           createdAt: new Date(s.createdAt),
-          updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
+          updatedAt: new Date(s.updatedAt),
         };
       });
 
@@ -153,13 +155,7 @@ export function AgentSessionListProvider({
         const sessionId = createId();
 
         // Call Rust backend to create session
-        const response = await invoke<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          createdAt: number;
-          updatedAt?: number;
-        }>('agent_create_session', {
+        const response = await invoke<AgentSessionMetadata>('agent_create_session', {
           request: {
             sessionId,
             name: name || `Conversation with ${assistant.name}`,
@@ -167,21 +163,12 @@ export function AgentSessionListProvider({
           },
         });
 
-        const respWithDates = response as {
-          createdAt?: number;
-          created_at?: number;
-        };
-        const createdAtMs = respWithDates.createdAt ?? respWithDates.created_at;
-
         const session: AgentSession = {
           id: response.id,
           name: response.name,
-          status:
-            (response.status as 'idle' | 'busy' | 'paused' | 'error') || 'idle',
-          createdAt: createdAtMs ? new Date(createdAtMs) : new Date(),
-          updatedAt: response.updatedAt
-            ? new Date(response.updatedAt)
-            : undefined,
+          status: response.status,
+          createdAt: new Date(response.createdAt),
+          updatedAt: new Date(response.updatedAt),
         };
 
         // Add to list

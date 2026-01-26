@@ -33,7 +33,10 @@ interface TauriDragDropPayload {
 
 function isTauriDragDropPayload(value: unknown): value is TauriDragDropPayload {
   if (typeof value !== 'object' || value === null) return false;
-  const v = value as Partial<TauriDragDropPayload>;
+
+  // Safe cast to access properties for validation
+  const v = value as Record<string, unknown>;
+
   return (
     typeof v.type === 'string' &&
     ['enter', 'over', 'leave', 'drop'].includes(v.type)
@@ -132,21 +135,24 @@ function DnDContextProvider({ children }: DnDContextProps) {
       try {
         const webview = getCurrentWebview();
         const unlisten = await webview.onDragDropEvent((evt) => {
-          const rawPayload = evt.payload;
+          const rawPayload: unknown = evt.payload;
           if (!isTauriDragDropPayload(rawPayload)) {
             // Optional: logger.warn('Invalid DnD payload received', rawPayload);
             return;
           }
 
+          // payload is now narrowed to TauriDragDropPayload
           const { type, position, paths } = rawPayload;
 
           // Track paths from enter event
-          if (type === 'enter' && paths) {
-            pathsRef.current = paths;
+          if (type === 'enter') {
+            if (paths) {
+              pathsRef.current = paths;
+            }
           }
 
           // Special-case: 'leave' may not include a position when exiting the window.
-          if ((type as string) === 'leave') {
+          if (type === 'leave') {
             // Clear current target and send leave to all zones
             if (currentTarget.current) {
               currentTarget.current.handler('leave', {
@@ -201,7 +207,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
             paths: pathsRef.current,
           };
 
-          switch (type as string) {
+          switch (type) {
             case 'enter':
             case 'over':
               // If target changed, send 'leave' to previous target

@@ -201,17 +201,25 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   const displayMessages = useMemo(() => {
     if (!session?.id) return [];
 
+    // Capture the current value to allow narrowing
+    const streamMsg = currentStreamingMessage;
+
     // If there's a streaming message that's not yet in persisted messages
+    // Use explicit type guard to ensure it matches Message interface (needed because streamingMessages is Partial<Message>)
     if (
-      currentStreamingMessage?.id &&
-      currentStreamingMessage.isStreaming !== false
+      streamMsg?.id &&
+      streamMsg.sessionId &&
+      streamMsg.threadId &&
+      streamMsg.role &&
+      streamMsg.content &&
+      streamMsg.isStreaming !== false
     ) {
       const existsInMessages = sessionMessages.some(
-        (m) => m.id === currentStreamingMessage.id,
+        (m) => m.id === streamMsg.id,
       );
       if (!existsInMessages) {
         // Show streaming message alongside persisted messages
-        return [...sessionMessages, currentStreamingMessage as Message];
+        return [...sessionMessages, streamMsg as Message];
       }
     }
 
