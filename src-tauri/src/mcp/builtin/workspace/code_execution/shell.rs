@@ -1087,11 +1087,14 @@ impl WorkspaceServer {
                 process_id, command
             ),
             vec![
-                format!("Use pollProcess(\"{}\") to check status", process_id),
                 format!(
-                    "Use readProcessOutput(\"{}\", \"stdout\") to view output",
+                    "Use pollProcess(\"{}\") to check status and completion",
                     process_id
                 ),
+                "If status is 'failed', use readProcessOutput with 'stderr' to view errors"
+                    .to_string(),
+                "If status is 'finished', use readProcessOutput with 'stdout' to view output"
+                    .to_string(),
                 "Use listProcesses to see all running processes".to_string(),
             ],
         );

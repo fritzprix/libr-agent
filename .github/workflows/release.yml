@@ -57,15 +57,15 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
           VERSION_NUM="${VERSION#v}"
-          
+
           # Extract changelog content for this version
           CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION_NUM\)\]/,/^## \[/p" CHANGELOG.md | head -n -1 | tail -n +3)
-          
+
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "No changelog found for version $VERSION_NUM, using default content"
             CHANGELOG_CONTENT="See CHANGELOG.md for details."
           fi
-          
+
           # Escape content for GitHub Actions output
           echo "content<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
