@@ -1,0 +1,1 @@
+## 2025-05-24 - [Frontend/AgentMessageRenderer] **Threat:** Stored XSS (Cross-Site Scripting) via Unsanitized Markdown Rendering **Mitigation:** Implemented `rehype-sanitize` with a strict schema to whitelist safe tags and attributes (including `className` for syntax highlighting and `style` for KaTeX) while stripping dangerous scripts and event handlers.

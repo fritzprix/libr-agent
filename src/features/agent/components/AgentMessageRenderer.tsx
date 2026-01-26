@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
 import type {
@@ -44,7 +45,22 @@ const logger = getLogger('AgentMessageRenderer');
 
 // Define plugins outside component to maintain stable references
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
-const REHYPE_PLUGINS = [rehypeKatex];
+const REHYPE_PLUGINS = [
+  rehypeKatex,
+  [
+    rehypeSanitize,
+    {
+      ...defaultSchema,
+      attributes: {
+        ...defaultSchema.attributes,
+        code: [...(defaultSchema.attributes?.code || []), 'className'],
+        span: [...(defaultSchema.attributes?.span || []), 'className', 'style'],
+        div: [...(defaultSchema.attributes?.div || []), 'className', 'style'],
+        a: [...(defaultSchema.attributes?.a || []), 'target', 'rel'],
+      },
+    },
+  ],
+];
 
 // Define markdown components outside to prevent re-creation on every render
 const MARKDOWN_COMPONENTS: React.ComponentProps<
