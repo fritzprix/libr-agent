@@ -9,7 +9,7 @@ use tokio::time::sleep;
 
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
-use crate::search::message_index::{MessageDocument, MessageSearchEngine};
+use crate::search::message_index::MessageSearchEngine;
 use crate::state::get_message_repository;
 
 /// Background worker that periodically reindexes dirty sessions.

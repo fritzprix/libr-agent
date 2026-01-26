@@ -139,8 +139,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
             el.dispatchEvent(new Event('change', {{bubbles: true}}));
             return 'Input successful';
         }})()"#,
-        selector_json,
-        text_json
+        selector_json, text_json
     );
 
     match service.execute_script(&browser_session_id, &script).await {

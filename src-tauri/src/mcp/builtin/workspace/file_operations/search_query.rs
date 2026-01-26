@@ -453,7 +453,6 @@ impl WorkspaceServer {
             for match_item in matches.iter().take(matches_to_show) {
                 if let Some(obj) = match_item.as_object() {
                     if let Some(line_num) = obj.get("line").and_then(|v| v.as_u64()) {
-                        let line_idx = (line_num as usize).saturating_sub(1);
                         let line_content = obj.get("text").and_then(|t| t.as_str()).unwrap_or("");
 
                         // ✅ ENHANCED: Explicitly format line number in text output
