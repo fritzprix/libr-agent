@@ -3,16 +3,17 @@ import { cn } from '@/lib/utils';
 import type { Message } from '@/models/chat';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
-import { ThinkingBubble } from './shared';
 
 interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
+  toolResultsMap?: Map<string, Message>;
 }
 
 function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
+  toolResultsMap,
 }: AgentMessageBubbleProps) {
   const getAssistantNameForMessage = useCallback(
     (msg: Message) => {
@@ -85,20 +86,12 @@ function AgentMessageBubbleImpl({
             msg.thinking ||
             msg.isStreaming ? (
               <>
-                {/* Thinking bubble (shown during reasoning phase or when streaming starts) */}
-                {(msg.thinking ||
-                  (msg.isStreaming && !msg.content?.length)) && (
-                  <ThinkingBubble
-                    thinking={msg.thinking || ''}
-                    isStreaming={msg.isStreaming}
-                    className="mb-3"
-                  />
-                )}
-
-                {/* Actual content (shown after thinking completes) */}
-                {msg.content && msg.content.length > 0 && (
-                  <AgentMessageRenderer content={msg.content} message={msg} />
-                )}
+                {/* Unified Rendering: AgentMessageRenderer handles all content types including thinking and tools */}
+                <AgentMessageRenderer
+                  content={msg.content}
+                  message={msg}
+                  toolResultsMap={toolResultsMap}
+                />
               </>
             ) : (
               <span className="text-muted-foreground italic">No content</span>

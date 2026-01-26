@@ -60,7 +60,6 @@ export default function PlaybookList() {
     try {
       const [playbooksData, assistantsData] = await Promise.all([
         listPlaybooks({
-          // agentId: assistantId, // REMOVED: Fetch all globally
           sortBy: sortMode,
           sortOrder: sortOrder,
           bookmarkFirst: bookmarkFirst,

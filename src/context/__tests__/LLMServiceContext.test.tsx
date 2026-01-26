@@ -180,7 +180,7 @@ describe('LLMServiceContext', () => {
           'openai',
           'test-key',
         );
-        
+
         // Wait a bit for streaming state to be set
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
@@ -324,7 +324,10 @@ describe('LLMServiceContext', () => {
       );
 
       expect(resultMessage.thinking).toBe('Let me think...');
-      expect(resultMessage.content).toEqual([{ type: 'text', text: 'Answer' }]);
+      expect(resultMessage.content).toEqual([
+        { type: 'thinking', thinking: 'Let me think...' },
+        { type: 'text', text: 'Answer' },
+      ]);
     });
 
     it('should handle errors and update status', async () => {

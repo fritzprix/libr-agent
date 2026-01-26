@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils';
+
 interface StatusIndicatorProps {
   status: 'connected' | 'disconnected' | 'unknown' | 'connecting';
   label?: string;
@@ -12,10 +14,10 @@ export default function StatusIndicator({
   size = 'md',
 }: StatusIndicatorProps) {
   const statusColors = {
-    connected: 'bg-green-400',
-    disconnected: 'bg-red-400',
-    unknown: 'bg-gray-400',
-    connecting: 'bg-yellow-400 animate-pulse',
+    connected: 'bg-success',
+    disconnected: 'bg-destructive',
+    unknown: 'bg-muted-foreground',
+    connecting: 'bg-warning animate-pulse',
   };
 
   const statusTexts = {
@@ -36,11 +38,11 @@ export default function StatusIndicator({
   return (
     <div className="flex items-center gap-1">
       <div
-        className={`rounded-full ${statusColors[status]} ${sizeClasses[size]}`}
+        className={cn('rounded-full', statusColors[status], sizeClasses[size])}
         title={displayLabel}
       />
       {showLabel && (
-        <span className="text-xs text-gray-400">{displayLabel}</span>
+        <span className="text-xs text-muted-foreground">{displayLabel}</span>
       )}
     </div>
   );

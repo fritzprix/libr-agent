@@ -96,6 +96,8 @@ Contributions welcome.
 
 Download from [releases](https://github.com/fritzprix/libr-agent/releases/latest).
 
+> ⚠️ **macOS Users:** The app is not code-signed. On first launch, you'll see a security warning. **Right-click the app → Open** to bypass Gatekeeper. Subsequent launches will work normally.
+
 Or build from source:
 
 ```bash

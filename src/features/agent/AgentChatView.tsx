@@ -168,14 +168,6 @@ export default function AgentChatView() {
 
             {/* Granular Progress Step */}
             <div className="text-xs text-muted-foreground/70 h-4">
-              {/* Access initializationStep via hook if available, or fallback */}
-              {/* We need to access initializationStep from state. 
-                        But we are inside AgentSessionStateContext scope? 
-                        No, AgentChatView uses useAgentSessionState. 
-                        Let's check if useAgentSessionState returns initializationStep. 
-                        It communicates via Context. We updated Context interface?
-                        Yes in Step 89.
-                     */}
               <InitializationStatusDisplay />
             </div>
           </div>

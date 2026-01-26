@@ -1,20 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
-import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
-import { LoadingIndicator } from './shared';
+import { AnalysisLoader } from './shared';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 
 export function AgentChatMessages() {
   const { messages, error, llmError, retryMessage, workflowStatus } =
     useAgentChat();
-  const { session, workflowPhase } = useAgentSessionState();
+  const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -58,6 +57,11 @@ export function AgentChatMessages() {
     setAutoScrollEnabled(atBottom);
   }, 100);
 
+  const lastMessageWho = useMemo(
+    () => messages[messages.length - 1].role,
+    [messages],
+  );
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -82,21 +86,31 @@ export function AgentChatMessages() {
     return retryMessage();
   };
 
+  // Check if any message is currently streaming
+  const isLastStreaming = useMemo(() => {
+    return messages[messages.length - 1].isStreaming;
+  }, [messages]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
         ref={scrollContainerRef}
         className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6 terminal-scrollbar"
       >
-        {groupedMessages.map((groupedMessage, index) => {
+        {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
+            const resultsMap = new Map<string, Message>();
+            groupedMessage.toolGroup.calls.forEach((call, idx) => {
+              const res = groupedMessage.toolGroup.results[idx];
+              if (res) resultsMap.set(call.id, res);
+            });
+
             return (
-              <AgentToolCallGroup
+              <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
-                toolGroup={groupedMessage.toolGroup}
-                toolResults={groupedMessage.toolGroup.results}
-                isLast={index === groupedMessages.length - 1}
+                getAssistantName={getAssistantNameForMessage}
+                toolResultsMap={resultsMap}
               />
             );
           }
@@ -118,7 +132,22 @@ export function AgentChatMessages() {
 
           // Render regular message
           const msg = groupedMessage.message;
-          if (!msg || msg.content.length === 0) return null;
+
+          // Check if message has any renderable content
+          const hasContent = msg?.content && msg.content.length > 0;
+          const hasThinking = !!msg?.thinking;
+          const hasToolCalls = msg?.tool_calls && msg.tool_calls.length > 0;
+
+          if (
+            !msg ||
+            (!hasContent &&
+              !hasThinking &&
+              !hasToolCalls &&
+              workflowStatus === 'busy')
+          ) {
+            return null;
+          }
+
           return (
             <AgentMessageBubble
               key={msg.id}
@@ -155,35 +184,26 @@ export function AgentChatMessages() {
             />
           </div>
         )}
-
-        {/* Show persistent thinking indicator when workflow is busy */}
-        {workflowStatus === 'busy' && (
-          <div className="flex justify-start mb-8 mt-3">
-            <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
-                  <Bot size={16} className="text-primary-foreground" />
+        {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
+        {workflowStatus === 'busy' &&
+          (!isLastStreaming || lastMessageWho === 'user') && (
+            <div className="flex justify-start mb-8 mt-3">
+              <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center animate-pulse">
+                    <Bot size={16} className="text-primary-foreground" />
+                  </div>
+                  <span className="text-xs font-medium">
+                    {session?.assistant?.name || 'Agent'}
+                  </span>
                 </div>
-                <span className="text-xs font-medium">
-                  {session?.assistant?.name || 'Agent'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <LoadingIndicator size="md" />
-                <span className="animate-pulse">
-                  {workflowPhase === 'thinking' && 'Thinking...'}
-                  {workflowPhase === 'answering' && 'Answering...'}
-                  {workflowPhase === 'using_tools' &&
-                    'Using tools and processing...'}
-                  {workflowPhase !== 'thinking' &&
-                    workflowPhase !== 'answering' &&
-                    workflowPhase !== 'using_tools' &&
-                    'Processing...'}
-                </span>
+                <div className="text-sm">
+                  <AnalysisLoader size="md" />
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
         <div ref={messagesEndRef} />
       </div>
     </div>

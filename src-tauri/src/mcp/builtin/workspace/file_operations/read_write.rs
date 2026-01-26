@@ -179,7 +179,7 @@ impl WorkspaceServer {
                 let text_message = if show_line_numbers {
                     // Line numbers mode: use plain code block
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
+                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
                         size_str,
                         line_count,
@@ -190,7 +190,7 @@ impl WorkspaceServer {
                     let language = detect_language(&safe_path);
 
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `createFile` to create or overwrite the file\n- Use `editFile` to make targeted edits",
+                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```{}\n{}\n```\n\n💡 **Next Steps:**\n- Use `writeFile` to overwrite the file\n- Use `editFile` to make targeted edits",
                         path_str,
                         size_str,
                         line_count,
@@ -230,7 +230,7 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_create_file(
+    pub async fn handle_write_file(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -281,6 +281,12 @@ impl WorkspaceServer {
             }
         };
 
+        // 4. Overwrite parameter (default: false)
+        let overwrite = args
+            .get("overwrite")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         // Validate path security
         let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
@@ -298,37 +304,50 @@ impl WorkspaceServer {
             }
         };
 
-        // Check if file already exists - PREVENT OVERWRITE
-        if safe_path.exists() {
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "File '{}' already exists - createFile cannot overwrite",
-                    path_str
-                ),
-                vec![
-                    "✅ RECOMMENDED: For incremental changes (safer)".to_string(),
+        // Check if file already exists
+        let file_exists = safe_path.exists();
+        let mut old_content = String::new();
+
+        if file_exists {
+            if !overwrite {
+                // Return error if file exists and overwrite is false
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
                     format!(
-                        "   → First: readFile(\"{}\") to see current content",
+                        "File '{}' already exists and overwrite is set to false",
                         path_str
                     ),
-                    format!("   → Then: editFile(\"{}\", oldText, newText)", path_str),
-                    "   → Why: Preserves existing content, only changes specific sections"
-                        .to_string(),
-                    "".to_string(),
-                    "⚠️ ALTERNATIVE: Complete file replacement (destructive)".to_string(),
-                    format!("   → First: deleteFile(\"{}\")", path_str),
-                    format!("   → Then: createFile(\"{}\", newContent)", path_str),
-                    "   → Why: Use when rewriting entire file structure".to_string(),
-                    "".to_string(),
-                    "💡 DECISION GUIDE:".to_string(),
-                    "   • Small edits → Use editFile".to_string(),
-                    "   • Add/remove sections → Use editFile".to_string(),
-                    "   • Complete rewrite → Use deleteFile + createFile".to_string(),
-                ],
-                ToolGroup::Workspace,
-            )
-            .to_mcp_result());
+                    vec![
+                        "✅ To overwrite: Set \"overwrite\": true in your request".to_string(),
+                        format!(
+                            "   → first: readFile(\"{}\") into memory (if needed)",
+                            path_str
+                        ),
+                        "   → then: writeFile(path, content, overwrite=true)".to_string(),
+                        "".to_string(),
+                        "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
+                        format!("   → editFile(\"{}\", oldText, newText)", path_str),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            } else {
+                // File exists and overwrite is true - read old content for diff
+                match tokio::fs::read_to_string(&safe_path).await {
+                    Ok(c) => old_content = c,
+                    Err(e) => {
+                        return Ok(operation_failed_error(
+                            "Read existing file for diff",
+                            &e.to_string(),
+                            vec![
+                                "File exists but could not be read".to_string(),
+                                "Check file permissions".to_string(),
+                            ],
+                            ToolGroup::Workspace,
+                        ));
+                    }
+                }
+            }
         }
 
         let file_manager = self.get_file_manager(session_id.clone());
@@ -336,8 +355,6 @@ impl WorkspaceServer {
 
         match result {
             Ok(()) => {
-                info!("Successfully created new file: {}", path_str);
-
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
@@ -345,63 +362,73 @@ impl WorkspaceServer {
                 let size_str = format_file_size(content.len() as u64);
                 let language = detect_language(std::path::Path::new(path_str));
 
-                // Truncate content for display - show only first 100 lines as preview
-                let max_display_lines = 100;
-                let max_display_bytes = 51200; // 50KB
-                let content_lines: Vec<&str> = content.lines().collect();
-                let is_truncated =
-                    content_lines.len() > max_display_lines || content.len() > max_display_bytes;
-
-                let display_content = if is_truncated {
-                    let truncated_lines: Vec<&str> = if content.len() > max_display_bytes {
-                        // Truncate by bytes first
-                        let truncated = &content[..max_display_bytes.min(content.len())];
-                        truncated.lines().take(max_display_lines).collect()
-                    } else {
-                        content_lines
-                            .iter()
-                            .take(max_display_lines)
-                            .copied()
-                            .collect()
-                    };
-                    format!(
-                        "{}\n\n... ⚠️ TRUNCATED: Showing first {} of {} lines ({}% shown)",
-                        truncated_lines.join("\n"),
-                        truncated_lines.len(),
-                        content_lines.len(),
-                        (truncated_lines.len() * 100) / content_lines.len()
-                    )
+                let message_header = if file_exists {
+                    "**✅ File Overwritten Successfully**"
                 } else {
-                    content.to_string()
+                    "**✅ New File Created Successfully**"
                 };
 
                 let mut message = format!(
-                    "**✅ File Created**\n\n\
-                    **File:** `{}`\n\
-                    **Size:** {}\n\
-                    **Lines:** {}\n\n\
-                    **Content:**\n```{}",
-                    path_str, size_str, lines, language
+                    "{}\n\n**File:** `{}`\n**Size:** {}\n**Lines:** {}\n\n",
+                    message_header, path_str, size_str, lines
                 );
 
-                message.push('\n');
-                message.push_str(&display_content);
-                message.push_str("\n```\n\n");
+                if file_exists {
+                    // Show diff for overwritten files
+                    use super::utils::format_file_diff;
+                    let diff_output = format_file_diff(&old_content, content, path_str);
+                    message.push_str(&diff_output);
+                } else {
+                    // New file - show content preview (truncated if large)
+                    let max_display_lines = 100;
+                    let max_display_bytes = 51200; // 50KB
+                    let content_lines: Vec<&str> = content.lines().collect();
+                    let is_truncated = content_lines.len() > max_display_lines
+                        || content.len() > max_display_bytes;
 
-                if is_truncated {
-                    message.push_str(
-                        "⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n\n",
-                    );
+                    let display_content = if is_truncated {
+                        let truncated_lines: Vec<&str> = if content.len() > max_display_bytes {
+                            // Truncate by bytes first
+                            let truncated = &content[..max_display_bytes.min(content.len())];
+                            truncated.lines().take(max_display_lines).collect()
+                        } else {
+                            content_lines
+                                .iter()
+                                .take(max_display_lines)
+                                .copied()
+                                .collect()
+                        };
+                        format!(
+                            "{}\n\n... ⚠️ TRUNCATED: Showing first {} of {} lines ({}% shown)",
+                            truncated_lines.join("\n"),
+                            truncated_lines.len(),
+                            content_lines.len(),
+                            (truncated_lines.len() * 100) / content_lines.len()
+                        )
+                    } else {
+                        content.to_string()
+                    };
+
+                    message.push_str(&format!(
+                        "**Content:**\n```{}\n{}\n```\n",
+                        language, display_content
+                    ));
+
+                    if is_truncated {
+                        message.push_str(
+                            "\n⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n",
+                        );
+                    }
                 }
 
                 // Context-aware next steps
-                let mut next_steps = vec!["- Content verified above (preview only)".to_string()];
+                let mut next_steps = Vec::new();
 
-                if is_truncated {
-                    next_steps.push(format!(
-                        "- 📖 Use `readFile(\"{}\")` to see full content",
-                        path_str
-                    ));
+                if file_exists {
+                    next_steps.push("- 🔍 Verify changes with `readFile` if unsure".to_string());
+                } else {
+                    next_steps
+                        .push("- 📖 Use `readFile` to see full content (if truncated)".to_string());
                 }
 
                 // File type specific suggestions
@@ -412,16 +439,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for edits",
-                        path_str
-                    ));
-                } else if path_str.ends_with(".json") || path_str.ends_with(".yaml") {
-                    next_steps.push(format!(
-                        "- 🔍 Use `grep(\"{}\", pattern)` to validate structure",
-                        path_str
-                    ));
-                    next_steps.push(format!(
-                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for edits",
+                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for targeted edits",
                         path_str
                     ));
                 }
@@ -431,7 +449,7 @@ impl WorkspaceServer {
                     path_str
                 ));
 
-                message.push_str(&format!("**Next Steps:**\n{}", next_steps.join("\n")));
+                message.push_str(&format!("\n\n**Next Steps:**\n{}", next_steps.join("\n")));
 
                 Ok(MCPResult::success_with_data(
                     &message,
@@ -439,7 +457,7 @@ impl WorkspaceServer {
                         "path": path_str,
                         "bytes_written": content.len(),
                         "lines": lines,
-                        "truncated": is_truncated
+                        "overwritten": file_exists
                     }),
                 ))
             }
@@ -589,7 +607,7 @@ impl WorkspaceServer {
                             "Use readFile(\"{}\") to view imported content",
                             dest_rel_path
                         ),
-                        "Use createFile to modify the imported file".to_string(),
+                        "Use writeFile to modify the imported file".to_string(),
                     ],
                 );
 
@@ -611,7 +629,7 @@ impl WorkspaceServer {
                         ErrorCategory::InvalidInput,
                         vec![
                             format!("File already exists at: {}", dest_rel_path),
-                            "Use createFile to overwrite the existing file".to_string(),
+                            "Use writeFile to overwrite the existing file".to_string(),
                             "Or specify a different destination path with a unique name"
                                 .to_string(),
                         ],

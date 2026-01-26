@@ -57,6 +57,7 @@ async fn initialize_active_session_state(
             messages: Arc::new(RwLock::new(Vec::new())),
             cache_initialized: Arc::new(AtomicBool::new(false)),
             last_synced_at: Arc::new(RwLock::new(None)),
+            thinking_only_count: Arc::new(RwLock::new(0)),
         },
     );
 }

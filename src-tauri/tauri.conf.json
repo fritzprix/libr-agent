@@ -72,6 +72,10 @@
           "gstreamer1.0-pulseaudio"
         ]
       }
+    },
+    "macOS": {
+      "signingIdentity": null,
+      "minimumSystemVersion": "10.15"
     }
   }
 }

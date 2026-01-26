@@ -97,40 +97,10 @@ export default function AgentChatStartView() {
               id: toastId,
             });
 
-          // Setup listener for initialization events BEFORE creating session
-          // We need to guess the session ID? No, createSession returns it.
-          // But createSession calls agent_create which calls tools.
-          // Events will be emitted with the new session ID.
-          // But we don't know the ID until createSession returns?
-          // agent_create_session creates metadata then returns.
-          // IF we use agent_create_session (no message), tools are initialized LATER on resume?
-          // AgentSessionListContext.createSession calls agent_create_session.
-          // Let's check AgentSessionListContext.
-
-          // Wait. AgentSessionListContext's createSession calls 'agent_create_session'.
-          // agent_create_session (Rust) calls create_proxy (which emits events!).
-          // So the events happen DURING createSession call.
-          // But we don't know the Session ID beforehand to filter events.
-          // However, we can listen for ANY initializationStep event where we don't know the ID yet?
-          // Or we can rely on "Status: Running" toast updates.
-          // Since we can't filter by SessionID easily, maybe we just show "Initializing..."
-          // UNLESS we generate ID in frontend and pass it?
-          // createSession (context) generates ID? No, backend usually does... wait.
-          // Let's check createSession in AgentSessionListContext.
-          // If we can't easily correlate, we might skip detailed progress for Playbook start
-          // OR just show a generic spinner.
-          // BUT, AgentSessionContext (Context) creates ID in frontend usually?
-          // Let's assume we can't show granular steps here easily without refactoring createSession signature.
-          // So for now, we'll stick to a simple Loading toast, but maybe we can catch ANY event?
-          // No, that's risky if concurrent sessions start.
-
-          // Actually, createSession in `AgentSessionListContext` typically generates an ID or accepts one?
-          // I should check `AgentSessionListContext`.
-          // If I can't check now, I will assume standard behavior:
-          // Just show "Starting..."
-
-          // Refactored decision: Stick to simple toast for now to avoid complexity,
-          // as user just wants to know what's going on. "Starting playbook..." is visible.
+          // For now we use a simple loading toast during playbook session creation.
+          // Correlating backend initialization events to the new session would require
+          // additional refactoring of the session creation flow, so detailed progress
+          // is intentionally deferred to keep this UI logic straightforward.
 
           const session = await createSession({
             assistant: targetAssistant,

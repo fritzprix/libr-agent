@@ -130,7 +130,7 @@ impl WorkspaceServer {
 (This directory is empty)
 
 💡 Next Steps:
-- Use createFile('{}/filename.txt', content) to create a file
+- Use writeFile('{}/filename.txt', content) to create a file
 - Use listDirectory('{}') to verify the directory exists
 - This is a valid empty directory",
                             path_str, path_str, path_str

@@ -101,6 +101,36 @@ export function AdvancedTab({
         </p>
       </div>
 
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.maxOutputTokens',
+            'Max Output Tokens (Default)',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="e.g., 8192"
+          min={256}
+          max={128000}
+          step={256}
+          value={localAdvancedSettings.defaultMaxOutputTokens ?? 8192} // Fallback for transition
+          onChange={(e) =>
+            onChange(
+              'defaultMaxOutputTokens',
+              parseInt(e.target.value, 10) || 8192,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.maxOutputTokensDescription',
+            'Default maximum output tokens for new sessions if not specified by assistant.',
+          )}
+        </p>
+      </div>
+
       <SystemPerformanceSettings {...systemSettingsProps} />
       <DangerZoneSettings {...dangerZoneProps} />
     </div>

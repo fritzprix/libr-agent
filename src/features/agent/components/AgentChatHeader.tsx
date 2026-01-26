@@ -6,7 +6,7 @@ import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
-import { PanelRight, FolderOpen, Brain, Copy } from 'lucide-react';
+import { PanelRight, FolderOpen, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface AgentChatHeaderProps {
@@ -21,8 +21,7 @@ export function AgentChatHeader({
   const { session } = useAgentSessionState();
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
-  const { reasoningEnabled, canUseReasoning, messages, toggleReasoning } =
-    useAgentChat();
+  const { messages } = useAgentChat();
 
   // Planning toggle comes from AgentPlanningContext to keep state in sync
   const handleTogglePlanning = () => {
@@ -64,20 +63,6 @@ export function AgentChatHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          {canUseReasoning && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleReasoning}
-              title={`Reasoning Mode: ${reasoningEnabled ? 'ON (Deep reasoning enabled - higher cost)' : 'OFF (Standard mode)'}`}
-              className="h-6 px-2"
-            >
-              <Brain
-                className={`h-4 w-4 ${reasoningEnabled ? 'text-purple-400' : ''}`}
-              />
-            </Button>
-          )}
-
           <Button
             variant="ghost"
             size="sm"
