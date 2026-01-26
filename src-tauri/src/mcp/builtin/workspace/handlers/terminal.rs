@@ -184,8 +184,14 @@ impl WorkspaceServer {
                         process_id
                     ),
                 ],
-                terminal_manager::ProcessStatus::Finished
-                | terminal_manager::ProcessStatus::Failed => vec![
+                terminal_manager::ProcessStatus::Failed => vec![
+                    format!(
+                        "Use readProcessOutput('{}', 'stderr') to view error details",
+                        process_id
+                    ),
+                    "Process has completed - no need to poll again".to_string(),
+                ],
+                terminal_manager::ProcessStatus::Finished => vec![
                     format!(
                         "Use readProcessOutput('{}', 'stdout') to view full output",
                         process_id
@@ -491,46 +497,65 @@ impl WorkspaceServer {
                 .join("\n\n")
         };
 
+        // Build context-aware guidance based on process statuses
+        let guidance_lines = if total > 0 {
+            let first_process = processes.first();
+            let first_id = first_process
+                .and_then(|p| p.get("process_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("processId");
+            let first_status = first_process
+                .and_then(|p| p.get("status"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let mut lines = vec![format!("- Use pollProcess('{}') to check status", first_id)];
+
+            // Add appropriate readProcessOutput guidance based on status
+            match first_status {
+                "failed" => {
+                    lines.push(format!(
+                        "- Use readProcessOutput('{}', 'stderr') to view error details",
+                        first_id
+                    ));
+                }
+                "finished" => {
+                    lines.push(format!(
+                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                        first_id
+                    ));
+                }
+                "running" => {
+                    lines.push(format!(
+                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                        first_id
+                    ));
+                    lines.push(format!(
+                        "- Use stopProcess('{}') to terminate running process",
+                        first_id
+                    ));
+                }
+                _ => {
+                    lines.push(format!(
+                        "- Use readProcessOutput('{}', 'stdout') to view output",
+                        first_id
+                    ));
+                }
+            }
+
+            lines.join("\n")
+        } else {
+            "- No processes to manage".to_string()
+        };
+
         let summary = format!(
             "Found {} processes ({} running, {} finished)
 
 {}
 
 💡 Next Steps:
-- Use pollProcess('{}') to check status
-- Use readProcessOutput('{}', 'stdout') to view output
-- Use stopProcess('{}') to terminate running process",
-            total,
-            running,
-            finished,
-            process_list,
-            if total > 0 {
-                processes
-                    .first()
-                    .and_then(|p| p.get("process_id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("processId")
-            } else {
-                "processId"
-            },
-            if total > 0 {
-                processes
-                    .first()
-                    .and_then(|p| p.get("process_id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("processId")
-            } else {
-                "processId"
-            },
-            if total > 0 {
-                processes
-                    .first()
-                    .and_then(|p| p.get("process_id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("processId")
-            } else {
-                "processId"
-            }
+{}",
+            total, running, finished, process_list, guidance_lines
         );
 
         let hint = SuccessHint::new(summary, vec![]); // Guidance is in summary
@@ -569,6 +594,27 @@ impl WorkspaceServer {
 
         // Update status and kill process
         if let Some(entry) = registry.entries.get_mut(process_id) {
+            // Check if process is already terminated
+            if matches!(
+                entry.status,
+                terminal_manager::ProcessStatus::Finished
+                    | terminal_manager::ProcessStatus::Failed
+                    | terminal_manager::ProcessStatus::Killed
+            ) {
+                return Ok(operation_failed_error(
+                    "Stop process",
+                    &format!(
+                        "Process {} has already terminated with status: {:?}",
+                        process_id, entry.status
+                    ),
+                    vec![
+                        "Use listProcesses to see running processes".to_string(),
+                        "Only running processes can be stopped".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
+            }
+
             // Kill process if running
             if let Some(pid) = entry.pid {
                 if matches!(

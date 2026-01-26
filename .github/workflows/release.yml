@@ -52,6 +52,25 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Extract changelog for release notes
+        id: changelog
+        run: |
+          VERSION="${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
+          VERSION_NUM="${VERSION#v}"
+
+          # Extract changelog content for this version
+          CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION_NUM\)\]/,/^## \[/p" CHANGELOG.md | head -n -1 | tail -n +3)
+
+          if [ -z "$CHANGELOG_CONTENT" ]; then
+            echo "No changelog found for version $VERSION_NUM, using default content"
+            CHANGELOG_CONTENT="See CHANGELOG.md for details."
+          fi
+
+          # Escape content for GitHub Actions output
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -60,13 +79,7 @@ jobs:
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseName: LibrAgent ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            A High-Freedom AI Agent Platform - Infinitely Expandable with MCP!
-
-            ## 🎯 What's New
-            - Enhanced AI agent role management
-            - Improved MCP server integration
-            - Better file attachment handling
-            - Performance optimizations
+            ${{ steps.changelog.outputs.content }}
 
             ## 📦 Installation
 
@@ -76,9 +89,23 @@ jobs:
             ### macOS
             Download `LibrAgent.app.tar.gz`, extract and copy to Applications folder
 
-            ### Linux
-            - **Ubuntu/Debian**: Download and install `.deb` package
-            - **AppImage**: Download `.AppImage`, make executable and run
+            ### Linux (Debian/Ubuntu)
+            After downloading the `.deb` package:
+            ```bash
+            sudo apt install -f
+            ```
+            Or install dependencies manually:
+            ```bash
+            sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-gtk3 gstreamer1.0-pulseaudio
+            sudo dpkg -i LibrAgent_*_amd64.deb
+            ```
+
+            ### Linux (AppImage)
+            Download `.AppImage`, make executable and run:
+            ```bash
+            chmod +x LibrAgent_*.AppImage
+            ./LibrAgent_*.AppImage
+            ```
 
             ## 🔧 Requirements
             - Windows 10+ / macOS 10.15+ / Linux (modern distribution)

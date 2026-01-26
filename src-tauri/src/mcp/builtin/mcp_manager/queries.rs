@@ -280,7 +280,7 @@ pub async fn list_builtin_tools(args: Value) -> Result<MCPResult, String> {
     let tool_names: Vec<String> = tools_to_show.iter().map(|t| t.name.clone()).collect();
 
     // List available server names
-    let available_servers = vec![
+    let available_servers = [
         "planning",
         "knowledge",
         "browser",

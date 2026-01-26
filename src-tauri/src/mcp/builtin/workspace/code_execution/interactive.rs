@@ -10,10 +10,10 @@ use crate::mcp::builtin::error_guidance::{
     ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
+use crate::session_isolation::IsolatedProcessConfig;
 
 use super::super::{
-    terminal_manager, PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
+    terminal_manager, utils, PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
 use super::{normalization, validation};
 
@@ -342,13 +342,14 @@ impl WorkspaceServer {
 
         // Create isolation config
         let normalized_command = normalization::normalize_shell_command(&final_command);
+        let isolation_level = utils::get_shell_isolation_level().await;
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),
             command: normalized_command,
             args: vec![],
             env_vars: HashMap::new(),
-            isolation_level: IsolationLevel::Medium,
+            isolation_level,
             shell_type: None, // Default to platform default shell
         };
 
@@ -588,9 +589,13 @@ impl WorkspaceServer {
                 ),
                 vec![
                     format!(
-                        "Use pollProcess with process_id \"{}\" to check status",
+                        "Use pollProcess(\"{}\") to check status and completion",
                         process_id
                     ),
+                    "If status is 'failed', use readProcessOutput with 'stderr' to view errors"
+                        .to_string(),
+                    "If status is 'finished', use readProcessOutput with 'stdout' to view output"
+                        .to_string(),
                     "Use listProcesses to see all running processes".to_string(),
                 ],
             );

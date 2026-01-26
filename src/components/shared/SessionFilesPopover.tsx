@@ -145,7 +145,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
         <DropdownMenuTrigger asChild>
           <button
-            className="text-xs hover:text-blue-400 transition-colors flex items-center gap-1"
+            className="text-xs hover:text-primary transition-colors flex items-center gap-1"
             title="세션 파일 보기"
           >
             <Folder className="w-3 h-3" />
@@ -155,11 +155,11 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
           <div className="border-b px-3 py-2">
             <h4 className="text-sm font-medium">세션 파일 목록</h4>
-            <p className="text-xs text-gray-400">Session ID: {sessionId}</p>
+            <p className="text-xs text-muted-foreground">Session ID: {sessionId}</p>
           </div>
 
           {currentSessionFiles.length === 0 ? (
-            <div className="p-4 text-center text-xs text-gray-400">
+            <div className="p-4 text-center text-xs text-muted-foreground">
               저장된 파일이 없습니다.
             </div>
           ) : (
@@ -175,7 +175,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                       <div className="text-xs font-medium truncate">
                         {file.filename}
                       </div>
-                      <div className="text-xs text-gray-400 mt-1">
+                      <div className="text-xs text-muted-foreground mt-1">
                         {file.mimeType && (
                           <span className="mr-2">{file.mimeType}</span>
                         )}
@@ -190,19 +190,19 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                           </span>
                         )}
                         {file.workspacePath && (
-                          <span className="text-green-400 flex items-center gap-1">
+                          <span className="text-success flex items-center gap-1">
                             <FolderOpen className="w-3 h-3" />
                             Workspace
                           </span>
                         )}
                       </div>
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-muted-foreground">
                       <FileText className="w-4 h-4" />
                     </div>
                   </div>
                   {file.preview && (
-                    <div className="text-xs text-gray-400 mt-1 truncate">
+                    <div className="text-xs text-muted-foreground mt-1 truncate">
                       {file.preview.slice(0, 50)}...
                     </div>
                   )}
@@ -222,7 +222,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             <DialogTitle className="text-sm">
               {selectedFile?.filename}
             </DialogTitle>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-muted-foreground">
               {selectedFile?.mimeType && (
                 <span className="mr-4">타입: {selectedFile.mimeType}</span>
               )}
@@ -237,7 +237,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                 </span>
               )}
               {selectedFile?.workspacePath && (
-                <span className="text-green-400">
+                <span className="text-success">
                   워크스페이스: {selectedFile.workspacePath}
                 </span>
               )}
@@ -247,10 +247,10 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
           <div className="flex-1 min-h-0 mt-4">
             {isLoadingContent ? (
               <div className="flex items-center justify-center h-32">
-                <div className="text-sm text-gray-400">로딩 중...</div>
+                <div className="text-sm text-muted-foreground">로딩 중...</div>
               </div>
             ) : (
-              <div className="h-full overflow-auto border rounded p-3 bg-gray-900/30">
+              <div className="h-full overflow-auto border rounded p-3 bg-muted">
                 <pre className="text-xs whitespace-pre-wrap font-mono">
                   {fileContent}
                 </pre>

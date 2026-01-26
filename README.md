@@ -98,6 +98,19 @@ Download from [releases](https://github.com/fritzprix/libr-agent/releases/latest
 
 > ⚠️ **macOS Users:** The app is not code-signed. On first launch, you'll see a security warning. **Right-click the app → Open** to bypass Gatekeeper. Subsequent launches will work normally.
 
+> ⚠️ **Linux (Debian/Ubuntu) Users:** After downloading the `.deb` package, install dependencies and the package:
+>
+> ```bash
+> sudo apt install -f
+> ```
+>
+> Or install dependencies manually before installing:
+>
+> ```bash
+> sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-gtk3 gstreamer1.0-pulseaudio
+> sudo dpkg -i LibrAgent_*_amd64.deb
+> ```
+
 Or build from source:
 
 ```bash
