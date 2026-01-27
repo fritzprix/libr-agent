@@ -3,6 +3,35 @@ import { Message } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
 import { MCPContent } from '@/lib/mcp-types';
 
+interface BaseMessageOptions {
+  role: Message['role'];
+  content: MCPContent[];
+  sessionId: string;
+  threadId?: string;
+  assistantId?: string;
+  source?: 'assistant' | 'ui';
+  additionalFields?: Partial<Message>;
+}
+
+const createBaseMessage = ({
+  role,
+  content,
+  sessionId,
+  threadId,
+  assistantId,
+  source,
+  additionalFields = {},
+}: BaseMessageOptions): Message => ({
+  id: createId(),
+  content,
+  role,
+  sessionId,
+  threadId: threadId || sessionId, // Default to top thread
+  assistantId,
+  source,
+  ...additionalFields,
+});
+
 /**
  * Creates a system message object.
  * System messages are typically used to provide instructions or context to the AI model.
@@ -20,15 +49,15 @@ export const createSystemMessage = (
   threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
-): Message => ({
-  id: createId(),
-  content: stringToMCPContentArray(text),
-  role: 'system',
-  sessionId,
-  threadId: threadId || sessionId, // Default to top thread
-  assistantId,
-  source,
-});
+): Message =>
+  createBaseMessage({
+    role: 'system',
+    content: stringToMCPContentArray(text),
+    sessionId,
+    threadId,
+    assistantId,
+    source,
+  });
 
 /**
  * Creates a user message object.
@@ -47,15 +76,15 @@ export const createUserMessage = (
   threadId?: string,
   assistantId?: string,
   source?: 'assistant' | 'ui',
-): Message => ({
-  id: createId(),
-  content: stringToMCPContentArray(text),
-  role: 'user',
-  sessionId,
-  threadId: threadId || sessionId, // Default to top thread
-  assistantId,
-  source,
-});
+): Message =>
+  createBaseMessage({
+    role: 'user',
+    content: stringToMCPContentArray(text),
+    sessionId,
+    threadId,
+    assistantId,
+    source,
+  });
 
 /**
  * Creates a tool message object.
@@ -83,16 +112,15 @@ export const createToolMessage = (
     throw new Error('tool_call_id is required for tool messages');
   }
 
-  return {
-    id: createId(),
-    content,
+  return createBaseMessage({
     role: 'tool',
-    tool_call_id: toolCallId,
+    content,
     sessionId,
-    threadId: threadId || sessionId, // Default to top thread
+    threadId,
     assistantId,
     source,
-  };
+    additionalFields: { tool_call_id: toolCallId },
+  });
 };
 
 /**
@@ -154,40 +182,41 @@ export const createToolMessagePair = (
 ): [Message, Message] => {
   const delayMsValue = delayMs ?? 300;
   const callTime = new Date();
-  const effectiveThreadId = threadId || sessionId; // Default to top thread
 
-  const toolCallMessage: Message = {
-    id: createId(),
-    content: [], // Tool calls can have empty content
+  const toolCallMessage = createBaseMessage({
     role: 'assistant',
-    tool_calls: [
-      {
-        id: toolCallId,
-        type: 'function',
-        function: {
-          name: toolName,
-          arguments: JSON.stringify(params),
+    content: [], // Tool calls can have empty content
+    sessionId,
+    threadId,
+    assistantId,
+    source,
+    additionalFields: {
+      tool_calls: [
+        {
+          id: toolCallId,
+          type: 'function',
+          function: {
+            name: toolName,
+            arguments: JSON.stringify(params),
+          },
         },
-      },
-    ],
-    sessionId,
-    threadId: effectiveThreadId,
-    assistantId,
-    source, // Source indicator applied to both messages in the pair
-    createdAt: callTime,
-  };
+      ],
+      createdAt: callTime,
+    },
+  });
 
-  const toolResultMessage: Message = {
-    id: createId(),
-    content: result,
+  const toolResultMessage = createBaseMessage({
     role: 'tool',
-    tool_call_id: toolCallId,
+    content: result,
     sessionId,
-    threadId: effectiveThreadId,
+    threadId,
     assistantId,
-    source, // Source indicator applied to both messages in the pair
-    createdAt: new Date(callTime.getTime() + delayMsValue),
-  };
+    source,
+    additionalFields: {
+      tool_call_id: toolCallId,
+      createdAt: new Date(callTime.getTime() + delayMsValue),
+    },
+  });
 
   return [toolCallMessage, toolResultMessage];
 };
