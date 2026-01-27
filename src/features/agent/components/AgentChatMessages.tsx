@@ -21,7 +21,7 @@ export function AgentChatMessages() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
 
   // Group messages for display
-  const { groupedMessages } = useMessageGrouping(messages);
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
 
   // Only auto-scroll if enabled
   useEffect(() => {
@@ -99,18 +99,12 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
-            const resultsMap = new Map<string, Message>();
-            groupedMessage.toolGroup.calls.forEach((call, idx) => {
-              const res = groupedMessage.toolGroup.results[idx];
-              if (res) resultsMap.set(call.id, res);
-            });
-
             return (
               <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
-                toolResultsMap={resultsMap}
+                toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
               />
