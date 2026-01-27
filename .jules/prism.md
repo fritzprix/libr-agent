@@ -33,3 +33,19 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-25 - [TokenMetricsBadge] **Visual Bug:** Hardcoded colors (blue, green, yellow) **Fix:** Use semantic tokens (primary, success, warning)
 
 ## 2026-01-25 - [FileAttachment] **Visual Bug:** Hardcoded colors (green-400, red-400) **Fix:** Use semantic tokens (success, destructive)
+
+## 2026-01-26 - [AgentPlanningPanel] **Visual Bug:** Hardcoded priority colors (red-500, yellow-500, green-500) **Fix:** Use semantic tokens (destructive, warning, success)
+
+## 2026-01-26 - [AgentChatHeader] **Visual Bug:** Hardcoded active state color (text-blue-400) **Fix:** Use semantic token (text-primary)
+
+## 2026-01-26 - [AgentWorkspacePanel] **Visual Bug:** Hardcoded alert colors (yellow-500, green-500) **Fix:** Use semantic tokens (warning, success)
+
+## 2026-01-26 - [AgentToolsModal] **Visual Bug:** Hardcoded error text color (text-red-500) **Fix:** Use semantic token (text-destructive)
+
+## 2026-01-26 - [PlaybookCard] **Visual Bug:** Hardcoded bookmark color (yellow-500) and magic number width **Fix:** Use semantic token (warning) and grid value (max-w-36)
+
+## 2026-01-26 - [FieldWrapper] **Visual Bug:** Hardcoded error text color (text-red-400) **Fix:** Use semantic token (text-destructive)
+
+## 2026-01-26 - [AgentToolCallDetails] **Visual Bug:** Hardcoded error colors (red-50/200/600/900) and dark mode overrides **Fix:** Use semantic tokens (destructive) with opacity modifiers
+
+## 2026-01-26 - [AgentChatAttachedFiles] **Visual Bug:** Magic number width (max-w-[150px]) **Fix:** Use grid value (max-w-36)

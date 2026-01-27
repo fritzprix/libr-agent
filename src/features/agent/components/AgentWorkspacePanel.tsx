@@ -571,12 +571,12 @@ export function AgentWorkspacePanel() {
     <div
       ref={panelRef}
       className={`w-80 h-full ${
-        dragState.isOver ? 'ring-2 ring-green-500' : ''
+        dragState.isOver ? 'ring-2 ring-success' : ''
       }`}
     >
       <Card
         className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${
-          dragState.isOver ? 'border-green-500 bg-green-500/10' : ''
+          dragState.isOver ? 'border-success bg-success/10' : ''
         }`}
       >
         <CardHeader className="pb-3">
@@ -660,7 +660,7 @@ export function AgentWorkspacePanel() {
               )}
             </div>
             {isOverrideActive && (
-              <p className="text-[10px] text-yellow-500 flex items-center gap-1">
+              <p className="text-[10px] text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Using custom workspace
               </p>
