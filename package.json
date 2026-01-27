@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.4.13",
+  "version": "0.4.14",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
