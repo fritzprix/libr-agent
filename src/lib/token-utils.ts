@@ -77,7 +77,7 @@ export function estimateTokensBPE(message: Message): number {
 /**
  * Splits assistant messages with excessive tool calls into multiple messages
  * to prevent context window issues and improve readability.
- * 
+ *
  * When an assistant message contains more tool calls than the specified threshold,
  * this function creates multiple assistant messages with batched tool calls,
  * maintaining proper pairing with their corresponding tool response messages.
@@ -85,7 +85,7 @@ export function estimateTokensBPE(message: Message): number {
  * @param messages The array of messages to process.
  * @param maxToolCallsPerMessage Maximum number of tool calls per assistant message (default: 4).
  * @returns A new array of messages with tool calls batched appropriately.
- * 
+ *
  * @example
  * Input: [
  *   { role: 'assistant', tool_calls: [tc1, tc2, tc3, tc4, tc5, tc6] },
@@ -93,7 +93,7 @@ export function estimateTokensBPE(message: Message): number {
  *   { role: 'tool', tool_call_id: 'tc2', ... },
  *   ...
  * ]
- * 
+ *
  * Output (with maxToolCallsPerMessage=4): [
  *   { role: 'assistant', tool_calls: [tc1, tc2, tc3, tc4], content: [...] },
  *   { role: 'tool', tool_call_id: 'tc1', ... },
@@ -136,7 +136,9 @@ export function batchToolCallsInMessages(
         messageId: msg.id,
         totalToolCalls: msg.tool_calls.length,
         maxPerMessage: maxToolCallsPerMessage,
-        batchesNeeded: Math.ceil(msg.tool_calls.length / maxToolCallsPerMessage),
+        batchesNeeded: Math.ceil(
+          msg.tool_calls.length / maxToolCallsPerMessage,
+        ),
       });
 
       // Mark original message as processed

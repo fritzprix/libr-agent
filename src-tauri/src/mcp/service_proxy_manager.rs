@@ -12,6 +12,7 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use super::types::MCPResponse;
 use crate::agent::events::InitializationStatus;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::session::SessionManager;
 
 /// Manages per-session MCP service proxies for isolated tool execution
@@ -298,12 +299,28 @@ impl MCPServiceProxyManager {
             }
         }
 
+        // Apply user settings to config (especially startup timeout)
+        let mut config = self.config.clone();
+        if let Ok(settings_repo) = std::panic::catch_unwind(crate::state::get_settings_repository) {
+            if let Ok(Some(model)) = settings_repo.get("systemSettings").await {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct SystemSettings {
+                    mcp_server_startup_timeout_seconds: Option<u64>,
+                }
+
+                if let Ok(settings) = serde_json::from_str::<SystemSettings>(&model.value) {
+                    if let Some(timeout) = settings.mcp_server_startup_timeout_seconds {
+                        log::debug!("Applying user setting: MCP startup timeout = {}s", timeout);
+                        config = config.with_startup_timeout(timeout);
+                    }
+                }
+            }
+        }
+
         // Create session stdio manager
-        let stdio_manager = SessionMCPManager::new(
-            session_id.clone(),
-            stdio_configs.clone(),
-            self.config.clone(),
-        );
+        let stdio_manager =
+            SessionMCPManager::new(session_id.clone(), stdio_configs.clone(), config);
 
         // Create session HTTP manager
         let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());
