@@ -24,7 +24,7 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     let _initial_command = args.get("initialCommand").and_then(|v| v.as_str());
 
     let workflow = match args.get("workflow") {
-        Some(w) if w.is_array() && !w.as_array().unwrap().is_empty() => w,
+        Some(w) if w.as_array().map_or(false, |arr| !arr.is_empty()) => w,
         Some(w) if w.is_array() => {
             return Ok(invalid_input_error(
                 "Workflow cannot be empty array",

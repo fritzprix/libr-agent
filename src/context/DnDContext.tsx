@@ -146,7 +146,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
           }
 
           // Special-case: 'leave' may not include a position when exiting the window.
-          if ((type as string) === 'leave') {
+          if ((type as TauriDragDropPayload['type']) === 'leave') {
             // Clear current target and send leave to all zones
             if (currentTarget.current) {
               currentTarget.current.handler('leave', {
@@ -201,7 +201,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
             paths: pathsRef.current,
           };
 
-          switch (type as string) {
+          switch (type as TauriDragDropPayload['type']) {
             case 'enter':
             case 'over':
               // If target changed, send 'leave' to previous target
