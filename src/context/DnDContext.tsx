@@ -201,7 +201,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
             paths: pathsRef.current,
           };
 
-          switch (type as TauriDragDropPayload['type']) {
+          switch (type) {
             case 'enter':
             case 'over':
               // If target changed, send 'leave' to previous target
