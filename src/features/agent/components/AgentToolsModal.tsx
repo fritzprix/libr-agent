@@ -70,7 +70,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
         {/* Error State */}
         {error && (
-          <div className="text-center py-8 text-red-500">
+          <div className="text-center py-8 text-destructive">
             Error loading tools: {error}
           </div>
         )}
