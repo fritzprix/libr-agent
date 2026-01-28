@@ -24,6 +24,7 @@ import type { Assistant, Message } from '@/models/chat';
 import { TimeLocationSystemPrompt } from '@/features/prompts/TimeLocationSystemPrompt';
 import { useSystemPrompt } from '@/context/SystemPromptContext';
 import { useSettings } from '@/context/SettingsContext';
+import { parseAssistant } from '@/models/validation';
 
 const logger = getLogger('AgentDraftChatView');
 
@@ -117,29 +118,15 @@ function DraftChatInner() {
       }
 
       try {
-        // cast to unknown first to handle DTO vs Model mismatch safely
-        const rawData = (await invoke('get_assistant', {
+        const rawData = await invoke('get_assistant', {
           id: assistantId,
-        })) as { id: string; name: string; config: unknown };
+        });
 
         if (!rawData) throw new Error('Assistant not found');
 
-        // If returned data has a 'config' object (DTO style), flatten it
-        let flattenedAssistant: Assistant;
-        if (
-          rawData.config &&
-          typeof rawData.config === 'object' &&
-          !Array.isArray(rawData.config)
-        ) {
-          flattenedAssistant = {
-            ...rawData,
-            ...(rawData.config as Partial<Assistant>),
-          } as Assistant;
-        } else {
-          flattenedAssistant = rawData as unknown as Assistant;
-        }
-
-        setAssistant(flattenedAssistant);
+        // Safe parsing with Zod to enforce contract and handle flattening
+        const assistant = parseAssistant(rawData);
+        setAssistant(assistant);
       } catch (err) {
         logger.error('Failed to load assistant', err);
         toast.error('Failed to load assistant');
