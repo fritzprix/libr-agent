@@ -1,5 +1,6 @@
 use super::error::DbError;
-use crate::commands::messages_commands::{Message, Page};
+use crate::commands::messages_commands::Message;
+use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
@@ -196,18 +197,7 @@ impl MessageRepository for SqliteMessageRepository {
 
         let messages: Vec<Message> = models.into_iter().map(Self::model_to_message).collect();
 
-        let total_usize = total as usize;
-        let has_prev = page > 1;
-        let has_next = page * page_size < total_usize;
-
-        Ok(Page {
-            items: messages,
-            page,
-            page_size,
-            total_items: total_usize,
-            has_next_page: has_next,
-            has_previous_page: has_prev,
-        })
+        Ok(Page::new(messages, page, page_size, total as usize))
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {

@@ -2,7 +2,8 @@ use crate::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::{AssistantRepository, PaginationParams};
+use crate::repositories::AssistantRepository;
+use crate::utils::pagination::PaginationParams;
 use serde_json::{json, Value};
 
 /// List all assistants with pagination support
@@ -25,8 +26,8 @@ pub async fn list_assistants(
         .clamp(1, 100) as u64;
 
     let _pagination = PaginationParams {
-        page,
-        limit: page_size,
+        page: page as usize,
+        page_size: page_size as usize,
     };
 
     // Get total count for pagination metadata

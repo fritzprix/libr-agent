@@ -1,6 +1,7 @@
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool};
 use crate::repositories::{PlaybookRepository, SessionRepository};
+use crate::utils::pagination::PaginationParams;
 use async_trait::async_trait;
 use sea_orm::*;
 use serde_json::Value;
@@ -101,7 +102,10 @@ impl BuiltinMCPServer for PlaybookServer {
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)
-        let pagination = crate::repositories::PaginationParams { page: 1, limit: 3 };
+        let pagination = PaginationParams {
+            page: 1,
+            page_size: 3,
+        };
         let models = match repo
             .list_playbooks(Some(&self.assistant_id), pagination)
             .await

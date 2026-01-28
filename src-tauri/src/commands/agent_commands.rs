@@ -1,6 +1,7 @@
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::ServiceContext;
 use crate::repositories::{AssistantRepository, PlaybookRepository, SessionMetadata};
+use crate::utils::pagination::PaginationParams;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
@@ -525,9 +526,9 @@ pub async fn agent_factory_reset(
     let all_playbooks = playbook_repo
         .list_playbooks(
             None,
-            crate::repositories::PaginationParams {
+            PaginationParams {
                 page: 1,
-                limit: 100000,
+                page_size: 100000,
             },
         )
         .await

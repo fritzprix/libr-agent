@@ -2,7 +2,8 @@ use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, not_found_error, operation_failed_error, ToolGroup,
 };
 use crate::mcp::types::{MCPContent, MCPResult};
-use crate::repositories::{PaginationParams, PlaybookRepository};
+use crate::repositories::PlaybookRepository;
+use crate::utils::pagination::PaginationParams;
 use handlebars::Handlebars;
 use serde_json::{json, Value};
 
@@ -142,7 +143,7 @@ pub async fn list_playbooks(
     } else {
         let pagination = PaginationParams {
             page: 1,
-            limit: 10000,
+            page_size: 10000,
         };
         repo.list_playbooks(Some(assistant_id), pagination)
             .await

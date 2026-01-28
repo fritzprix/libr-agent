@@ -5,6 +5,7 @@ use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
+use crate::utils::pagination::Page;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -18,19 +19,6 @@ fn default_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-
-/// Generic pagination wrapper for query results.
-/// This type is shared across all paginated responses in the application.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub page: usize,
-    pub page_size: usize,
-    pub total_items: usize,
-    pub has_next_page: bool,
-    pub has_previous_page: bool,
 }
 
 /// Message data model matching the frontend TypeScript Message interface.
@@ -250,14 +238,7 @@ pub async fn messages_search(
     page_size: usize,
 ) -> Result<Page<SearchResult>, String> {
     if query.trim().is_empty() {
-        return Ok(Page {
-            items: Vec::new(),
-            page,
-            page_size,
-            total_items: 0,
-            has_next_page: false,
-            has_previous_page: false,
-        });
+        return Ok(Page::new(Vec::new(), page, page_size, 0));
     }
 
     // If a session_id was provided, use the per-session cached index.
@@ -293,12 +274,5 @@ pub async fn messages_search(
         Vec::new()
     };
 
-    Ok(Page {
-        items,
-        page,
-        page_size,
-        total_items,
-        has_next_page: end_idx < total_items,
-        has_previous_page: page > 1,
-    })
+    Ok(Page::new(items, page, page_size, total_items))
 }
