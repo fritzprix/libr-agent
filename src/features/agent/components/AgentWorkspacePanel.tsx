@@ -658,7 +658,7 @@ export function AgentWorkspacePanel() {
               )}
             </div>
             {isOverrideActive && (
-              <p className="text-[10px] text-warning flex items-center gap-1">
+              <p className="text-xs text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Using custom workspace
               </p>
