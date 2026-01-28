@@ -195,4 +195,75 @@ describe('useMessageGrouping', () => {
       expect(group.messages[1].id).toBe('3');
     }
   });
+
+  it('maintains referential stability for unchanged prefix', () => {
+    const msg1 = createMessage('1', 'user', 'Hello');
+    const msg2 = createMessage('2', 'assistant', 'Hi');
+    const msg3 = createMessage('3', 'user', 'Bye');
+
+    const messages1 = [msg1, msg2];
+    const { result, rerender } = renderHook(({ msgs }) => useMessageGrouping(msgs), {
+      initialProps: { msgs: messages1 },
+    });
+
+    const firstResult = result.current;
+
+    // Add a new message
+    const messages2 = [msg1, msg2, msg3];
+    rerender({ msgs: messages2 });
+
+    const secondResult = result.current;
+
+    // First group should be strictly equal (same object reference)
+    // Note: The second group (msg2) ends exactly at divergence index, so it is re-evaluated
+    // to check if it merges with the new message. This is expected behavior for correctness.
+    expect(secondResult.groupedMessages[0]).toBe(firstResult.groupedMessages[0]);
+    expect(secondResult.groupedMessages[1]).not.toBe(firstResult.groupedMessages[1]);
+    // But content should be same
+    expect(secondResult.groupedMessages[1].message.id).toBe(firstResult.groupedMessages[1].message.id);
+
+    // The toolResultsMap should be the same instance
+    expect(secondResult.toolResultsMap).toBe(firstResult.toolResultsMap);
+
+    // The third group is new
+    expect(secondResult.groupedMessages).toHaveLength(3);
+    expect(secondResult.groupedMessages[2].message.id).toBe('3');
+  });
+
+  it('correctly merges a new tool result into an existing assistant group', () => {
+    const msgAssistant = createMessage('1', 'assistant', 'Calling tool...', [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'test_tool', arguments: '{}' },
+      },
+    ]);
+
+    // Step 1: Just the assistant message
+    const messages1 = [msgAssistant];
+    const { result, rerender } = renderHook(({ msgs }) => useMessageGrouping(msgs), {
+      initialProps: { msgs: messages1 },
+    });
+
+    expect(result.current.groupedMessages).toHaveLength(1);
+    expect(result.current.groupedMessages[0].type).toBe('tool_group');
+    if (result.current.groupedMessages[0].type === 'tool_group') {
+      expect(result.current.groupedMessages[0].toolGroup.results).toHaveLength(1);
+      expect(result.current.groupedMessages[0].toolGroup.results[0]).toBeUndefined();
+    }
+
+    // Step 2: Add the tool result
+    const msgTool = createMessage('2', 'tool', 'Result 1', undefined, 'call_1');
+    const messages2 = [msgAssistant, msgTool];
+    rerender({ msgs: messages2 });
+
+    expect(result.current.groupedMessages).toHaveLength(1); // Should still be 1 group!
+    expect(result.current.groupedMessages[0].type).toBe('tool_group');
+
+    if (result.current.groupedMessages[0].type === 'tool_group') {
+       // The result should now be present
+       expect(result.current.groupedMessages[0].toolGroup.results[0]).toBeDefined();
+       expect(result.current.groupedMessages[0].toolGroup.results[0]?.id).toBe('2');
+    }
+  });
 });
