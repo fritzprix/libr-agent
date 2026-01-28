@@ -56,9 +56,7 @@ export function AgentChatHeader({
         <div className="flex items-center">
           {children}
           {assistantName && (
-            <span className="ml-2 text-xs text-primary">
-              [{assistantName}]
-            </span>
+            <span className="ml-2 text-xs text-primary">[{assistantName}]</span>
           )}
         </div>
 

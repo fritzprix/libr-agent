@@ -66,7 +66,6 @@ describe('chat-utils', () => {
 
     it('should throw error if toolCallId is missing', () => {
       expect(() => {
-        // @ts-expect-error Testing runtime check
         createToolMessage([], '', sessionId);
       }).toThrow('tool_call_id is required');
     });

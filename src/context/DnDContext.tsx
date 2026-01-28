@@ -139,14 +139,16 @@ function DnDContextProvider({ children }: DnDContextProps) {
           }
 
           const { type, position, paths } = rawPayload;
+          // Use type assertion to prevent TypeScript from narrowing the union type
+          const eventType = type as 'enter' | 'over' | 'leave' | 'drop';
 
           // Track paths from enter event
-          if (type === 'enter' && paths) {
+          if (eventType === 'enter' && paths) {
             pathsRef.current = paths;
           }
 
-          // Special-case: 'leave' may not include a position when exiting the window.
-          if (type === 'leave') {
+          // Handle leave event separately (may not have position)
+          if (eventType === 'leave') {
             // Clear current target and send leave to all zones
             if (currentTarget.current) {
               currentTarget.current.handler('leave', {
@@ -176,6 +178,7 @@ function DnDContextProvider({ children }: DnDContextProps) {
             return;
           }
 
+          // Handle enter, over, and drop events (all require position)
           // Use browser position if available, fallback to Tauri position
           const effectivePosition = browserPositionRef.current || position;
 
@@ -201,33 +204,30 @@ function DnDContextProvider({ children }: DnDContextProps) {
             paths: pathsRef.current,
           };
 
-          switch (type) {
-            case 'enter':
-            case 'over':
-              // If target changed, send 'leave' to previous target
-              if (currentTarget.current && currentTarget.current !== target) {
-                currentTarget.current.handler('leave', data);
-              }
+          // Handle enter/over/drop events
+          if (eventType === 'enter' || eventType === 'over') {
+            // If target changed, send 'leave' to previous target
+            if (currentTarget.current && currentTarget.current !== target) {
+              currentTarget.current.handler('leave', data);
+            }
 
-              // Update current target and send 'drag-over' if we have a target
-              if (target) {
-                currentTarget.current = target;
-                target.handler('drag-over', data);
-              } else {
-                currentTarget.current = null;
-              }
-              break;
-            case 'drop':
-              if (target) {
-                target.handler('drop', data);
-              }
-              // Clear current target after drop
+            // Update current target and send 'drag-over' if we have a target
+            if (target) {
+              currentTarget.current = target;
+              target.handler('drag-over', data);
+            } else {
               currentTarget.current = null;
-              // Clear paths after drop
-              pathsRef.current = undefined;
-              // Clear browser position after drop
-              browserPositionRef.current = null;
-              break;
+            }
+          } else if (eventType === 'drop') {
+            if (target) {
+              target.handler('drop', data);
+            }
+            // Clear current target after drop
+            currentTarget.current = null;
+            // Clear paths after drop
+            pathsRef.current = undefined;
+            // Clear browser position after drop
+            browserPositionRef.current = null;
           }
         });
         if (mounted) unlistenRef.current = unlisten;

@@ -570,9 +570,7 @@ export function AgentWorkspacePanel() {
   return (
     <div
       ref={panelRef}
-      className={`w-80 h-full ${
-        dragState.isOver ? 'ring-2 ring-success' : ''
-      }`}
+      className={`w-80 h-full ${dragState.isOver ? 'ring-2 ring-success' : ''}`}
     >
       <Card
         className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${

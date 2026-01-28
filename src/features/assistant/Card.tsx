@@ -152,10 +152,7 @@ export default function AssistantCard({
 
           {/* Built-in Tools - Green Badges */}
           {assistant.allowedBuiltInServiceAliases === undefined ? (
-            <Badge
-              variant="secondary"
-              className="bg-success/10 text-success"
-            >
+            <Badge variant="secondary" className="bg-success/10 text-success">
               {t('assistant.card.allBuiltin')}
             </Badge>
           ) : (

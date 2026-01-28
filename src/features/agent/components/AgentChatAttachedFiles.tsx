@@ -30,9 +30,7 @@ export function AgentChatAttachedFiles() {
             key={file.contentId}
             className="flex items-center px-2 py-1 rounded border border-gray-700"
           >
-            <span className="text-xs truncate max-w-36">
-              {file.filename}
-            </span>
+            <span className="text-xs truncate max-w-36">{file.filename}</span>
             <Button
               type="button"
               onClick={() => removeAttachedFile(file)}

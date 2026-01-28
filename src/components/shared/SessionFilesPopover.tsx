@@ -155,7 +155,9 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
           <div className="border-b px-3 py-2">
             <h4 className="text-sm font-medium">세션 파일 목록</h4>
-            <p className="text-xs text-muted-foreground">Session ID: {sessionId}</p>
+            <p className="text-xs text-muted-foreground">
+              Session ID: {sessionId}
+            </p>
           </div>
 
           {currentSessionFiles.length === 0 ? (
