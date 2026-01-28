@@ -8,6 +8,19 @@ use std::path::PathBuf;
 use std::process::Command;
 use tokio::fs;
 
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    if session_id == "default" {
+        return Ok(());
+    }
+    if session_id.is_empty() {
+        return Err("Session ID cannot be empty".to_string());
+    }
+    if !session_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(format!("Invalid session ID format: {}", session_id));
+    }
+    Ok(())
+}
+
 /// Represents a file or directory item in the workspace for display in the frontend.
 #[derive(serde::Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +60,10 @@ pub async fn list_workspace_files(
     path: Option<String>,
     session_id: Option<String>,
 ) -> Result<Vec<WorkspaceFileItem>, String> {
+    if let Some(id) = &session_id {
+        validate_session_id(id)?;
+    }
+
     // Get the workspace base directory from session manager
     let session_manager =
         get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
@@ -58,11 +75,11 @@ pub async fn list_workspace_files(
     let full_path = base_dir.join(&target_path);
 
     // Validate path is within workspace
-    let canonical_base = base_dir
-        .canonicalize()
+    let canonical_base = fs::canonicalize(&base_dir)
+        .await
         .map_err(|e| format!("Failed to canonicalize base dir: {e}"))?;
-    let canonical_target = full_path
-        .canonicalize()
+    let canonical_target = fs::canonicalize(&full_path)
+        .await
         .map_err(|e| format!("Failed to canonicalize target path: {e}"))?;
 
     if !canonical_target.starts_with(&canonical_base) {
@@ -160,6 +177,10 @@ pub async fn open_workspace_file_with_default_app(
     file_path: String,
     session_id: Option<String>,
 ) -> Result<(), String> {
+    if let Some(id) = &session_id {
+        validate_session_id(id)?;
+    }
+
     // Get workspace directory via SessionManager
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager
@@ -174,7 +195,14 @@ pub async fn open_workspace_file_with_default_app(
     }
 
     // Security validation: ensure path is within workspace
-    if !full_path.starts_with(&workspace_dir) {
+    let canonical_base = fs::canonicalize(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to canonicalize base dir: {e}"))?;
+    let canonical_target = fs::canonicalize(&full_path)
+        .await
+        .map_err(|e| format!("Failed to canonicalize target path: {e}"))?;
+
+    if !canonical_target.starts_with(&canonical_base) {
         return Err("Access denied: Path outside workspace".to_string());
     }
 
@@ -210,6 +238,8 @@ async fn check_dir_access(path: &PathBuf) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
 
@@ -265,6 +295,8 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
 
 #[tauri::command]
 pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
 
@@ -328,6 +360,8 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
 
 #[tauri::command]
 pub async fn get_workspace_override(session_id: String) -> Result<Option<String>, String> {
+    validate_session_id(&session_id)?;
+
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
 
     // Ensure session workspace exists in pool (triggers lazy loading)
@@ -346,6 +380,8 @@ pub async fn set_workspace_override(
     session_id: String,
     override_path: String,
 ) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+
     let override_path = PathBuf::from(&override_path);
 
     if !override_path.exists() {
@@ -375,10 +411,29 @@ pub async fn set_workspace_override(
 
 #[tauri::command]
 pub async fn cancel_workspace_override(session_id: String) -> Result<(), String> {
+    validate_session_id(&session_id)?;
+
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
 
     // Ensure session workspace exists in pool (triggers lazy loading)
     let _workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
 
     session_manager.remove_workspace_override(&session_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_session_id() {
+        assert!(validate_session_id("default").is_ok());
+        assert!(validate_session_id("session-123456789").is_ok());
+        assert!(validate_session_id("abc_def-123").is_ok());
+
+        assert!(validate_session_id("../etc").is_err());
+        assert!(validate_session_id("session/123").is_err());
+        assert!(validate_session_id("session 123").is_err());
+        assert!(validate_session_id("").is_err());
+    }
 }
