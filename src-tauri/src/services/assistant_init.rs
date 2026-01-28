@@ -48,9 +48,7 @@ Strategy:
                 "browser",
                 "planning",
                 "playbook",
-                "mcp_manager",
                 "ui",
-                "assistant",
             ]
         });
 
