@@ -12,11 +12,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-# Check for gh CLI
-if ! command -v gh &> /dev/null; then
-    echo "Error: GitHub CLI (gh) is not installed."
-    exit 1
-fi
+
 
 echo ">>> Running pre-release checks..."
 # 1. Frontend Tests
