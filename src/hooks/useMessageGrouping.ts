@@ -1,6 +1,9 @@
 import { useMemo, useRef, useEffect } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('useMessageGrouping');
 
 export type GroupedMessage =
   | { type: 'single'; message: Message }
@@ -84,25 +87,28 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     // 3. Initialize with reused data
     const groupedMessages: GroupedMessage[] = [];
     const groupEndIndices: number[] = [];
-    let toolResultsMap: Map<string, Message>;
+    // Always create a fresh map per calculation to avoid stale tool result entries.
+    const toolResultsMap = new Map<string, Message>();
 
-    // Special case: If we are clearing chat (divergence at 0), reset everything.
-    // Also if we have no reused groups, it's safer to start fresh map to avoid stale keys.
-    if (reuseCount === 0) {
-      toolResultsMap = new Map<string, Message>();
-    } else {
-      // Reuse objects
+    // Reuse previously computed groups where safe.
+    if (reuseCount > 0) {
       for (let k = 0; k < reuseCount; k++) {
         groupedMessages.push(prevCache.groupedMessages[k]);
         groupEndIndices.push(prevCache.groupEndIndices[k]);
       }
-      // Reuse the map instance (mutation strategy)
-      toolResultsMap = prevCache.toolResultsMap;
     }
 
     // 4. Process new/changed messages
     // Start index is the end index of the last reused group (or 0)
     let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
+
+    // Pre-populate toolResultsMap from the reused prefix of messages to keep it in sync.
+    for (let prefixIndex = 0; prefixIndex < i; prefixIndex++) {
+      const msg = messages[prefixIndex];
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        toolResultsMap.set(msg.tool_call_id, msg);
+      }
+    }
 
     // Helper to capture tool results (needed for map population)
     const captureToolResult = (msg: Message) => {
@@ -195,7 +201,13 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           });
           groupEndIndices.push(j);
         } else {
-          // Fallback (shouldn't really happen due to outer if, but safe)
+          // Defensive fallback: This theoretically shouldn't happen since the outer
+          // condition checks msg.tool_calls.length > 0. If we hit this, log it and
+          // treat the message as a single message.
+          logger.warn(
+            'Unexpected state: assistant message with tool_calls but allToolCalls is empty',
+            { messageId: msg.id },
+          );
           groupedMessages.push({ type: 'single', message: msg });
           groupEndIndices.push(i + 1);
           j = i + 1;
