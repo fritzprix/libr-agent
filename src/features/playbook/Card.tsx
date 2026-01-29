@@ -126,7 +126,7 @@ export function PlaybookCard({
 
         <Button
           size="sm"
-          className="gap-2 w-full max-w-[120px]"
+          className="gap-2 w-full max-w-32"
           onClick={handleStart}
         >
           <Play className="h-3.5 w-3.5" />
