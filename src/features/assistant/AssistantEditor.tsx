@@ -20,6 +20,7 @@ import BuiltInToolsEditor from './BuiltInToolsEditor';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAssistantContext } from '@/context/AssistantContext';
 
 export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
@@ -153,6 +154,7 @@ export default function AssistantEditor() {
 
 function AssistantDialog(props: DialogProps) {
   const { draft, commit } = useEditor<Assistant>();
+  const { assistants } = useAssistantContext();
   const { t } = useTranslation('common');
 
   const handleSave = () => {
@@ -163,12 +165,15 @@ function AssistantDialog(props: DialogProps) {
     if (props.onOpenChange) props.onOpenChange(false);
   };
 
+  // Check if assistant exists to determine title (since draft now always has an ID)
+  const isExisting = assistants.some((a) => a.id === draft.id);
+
   return (
     <Dialog {...props} open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] p-0 flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0 p-4 border-b">
           <DialogTitle>
-            {draft.id
+            {isExisting
               ? t('assistant.edit.titleEdit')
               : t('assistant.edit.titleNew')}
           </DialogTitle>

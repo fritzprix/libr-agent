@@ -117,7 +117,7 @@ export class RustAssistantService implements IAssistantService {
       // However, `save` implies upsert.
 
       // Let's try to get it first.
-      const existing = await this.getById(id!);
+      const existing = await this.getById(id);
 
       let resultDto: AssistantDto;
 
@@ -130,18 +130,18 @@ export class RustAssistantService implements IAssistantService {
         this.emitRevalidate({
           entity: 'assistants',
           action: 'save',
-          entityId: id!,
+          entityId: id,
         });
       } else {
         resultDto = await invoke<AssistantDto>('create_assistant', {
-          id: id!,
+          id,
           name,
           config,
         });
         this.emitRevalidate({
           entity: 'assistants',
           action: 'save',
-          entityId: id!,
+          entityId: id,
         });
       }
 

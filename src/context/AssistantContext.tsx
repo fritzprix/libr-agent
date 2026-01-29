@@ -253,7 +253,6 @@ export const AssistantContextProvider = ({
       const systemPrompt = editingAssistant.systemPrompt || DEFAULT_PROMPT;
 
       try {
-        // ID is always present (required field), no need to generate
         const assistantToSave: Assistant = {
           id: editingAssistant.id,
           name: editingAssistant.name,
@@ -261,7 +260,7 @@ export const AssistantContextProvider = ({
           mcpServerIds: editingAssistant.mcpServerIds,
           deletionProtected: editingAssistant.deletionProtected ?? false,
           localServices: editingAssistant.localServices ?? [],
-          createdAt: editingAssistant.createdAt,
+          createdAt: editingAssistant.createdAt || new Date(),
           updatedAt: new Date(),
         };
 
