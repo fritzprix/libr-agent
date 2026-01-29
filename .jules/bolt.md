@@ -17,3 +17,8 @@
 
 **Learning:** `AgentMessageRenderer` was creating new object references for `htmlProps` and spreading `supportedContentTypes` (creating a new array) on every render. This caused `UIResourceRenderer` (which likely contains iframes) to re-render unnecessarily, potentially causing flicker or performance degradation during streaming.
 **Action:** Always memoize complex objects or arrays passed as props to expensive child components (like those rendering iframes or heavy UI), especially within a component that renders frequently (like a chat message renderer).
+
+## 2025-02-19 - Redundant Map Creation in Render Loop
+
+**Learning:** `AgentChatMessages` was creating a new `Map` for `toolResults` inside the render loop for every tool group message, even though `useMessageGrouping` already provided a global map. This caused unnecessary object allocations and potentially triggered re-renders in children if they relied on prop identity.
+**Action:** Utilize the global lookup map provided by the data processing hook (`useMessageGrouping`) instead of reconstructing partial maps in the render loop. Pass the global map to child components, allowing them to look up what they need.

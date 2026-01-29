@@ -25,7 +25,7 @@ export function FieldWrapper({
         </Label>
       )}
       {children}
-      {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
+      {error && <p className="text-destructive text-xs mt-1">{error}</p>}
     </div>
   );
 }

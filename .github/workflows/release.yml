@@ -54,6 +54,7 @@ jobs:
 
       - name: Extract changelog for release notes
         id: changelog
+        shell: bash
         run: |
           VERSION="${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
           VERSION_NUM="${VERSION#v}"

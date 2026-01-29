@@ -132,7 +132,8 @@ function AgentMessageBubbleImpl({
               </div>
             )}
 
-            {(msg.content && msg.content.length > 0) ||
+            {(displayContent && displayContent.length > 0) ||
+            (msg.content && msg.content.length > 0) ||
             msg.thinking ||
             msg.isStreaming ? (
               <>

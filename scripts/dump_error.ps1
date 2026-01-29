@@ -11,15 +11,15 @@ Write-Host "📊 Lines to extract: $Lines" -ForegroundColor Cyan
 
 # Run dump_log.ps1
 # Note: dump_log.ps1 handles its own output messages
-& .\dump_log.ps1 -Lines $Lines
+$ScriptDir = $PSScriptRoot
+& (Join-Path $ScriptDir "dump_log.ps1") -Lines $Lines
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✅ Log extraction completed" -ForegroundColor Green
     Write-Host "🔧 Processing error context..." -ForegroundColor Cyan
 
     # Define paths
-    $ScriptDir = $PSScriptRoot
-    $PyScript = Join-Path $ScriptDir "scripts\extract_context.py"
+    $PyScript = Join-Path $ScriptDir "extract_context.py"
     $LogFile = "log.txt"
     $ErrorFile = "error.txt"
 

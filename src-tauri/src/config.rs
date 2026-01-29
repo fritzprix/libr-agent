@@ -22,7 +22,6 @@
 /// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: user data directory)
 /// - `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES`: MCP server idle timeout in minutes (default: 5)
 /// - `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES`: MCP cleanup interval in minutes (default: 5)
-/// - `LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS`: MCP server startup timeout in seconds (default: 10)
 use std::env;
 
 /// Default maximum file size (100 MB)
@@ -217,24 +216,15 @@ pub fn mcp_cleanup_interval_minutes() -> u64 {
         })
 }
 
-/// Default MCP server startup timeout (10 seconds)
-const DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS: u64 = 10;
+/// Default MCP server startup timeout (30 seconds)
+const DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS: u64 = 30;
 
-/// Get MCP server startup timeout in seconds from environment or use default
+/// Get MCP server startup timeout in seconds
 ///
-/// Environment variable: LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS
-/// Default: 10 seconds
+/// Returns the default value of 30 seconds.
+/// User settings are applied through SessionIsolationConfig after initialization.
 pub fn mcp_startup_timeout_seconds() -> u64 {
-    env::var("LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| {
-            tracing::debug!(
-                "Using default MCP startup timeout: {} seconds",
-                DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
-            );
-            DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
-        })
+    DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
 }
 
 #[cfg(test)]

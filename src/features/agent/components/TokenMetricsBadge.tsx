@@ -111,7 +111,7 @@ export function TokenMetricsBadge({
           >
             <Zap size={10} className="stroke-[3]" />
             {tpsFormatted}{' '}
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">
+            <span className="text-xs text-muted-foreground hidden sm:inline">
               t/s
             </span>
           </span>
@@ -120,7 +120,7 @@ export function TokenMetricsBadge({
 
       {/* Load Duration (Ollama only, for debug) - Optional, maybe hide in production UI */}
       {!compact && usage.details?.loadDuration && (
-        <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-[10px] ml-1">
+        <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-xs ml-1">
           (Load: {(usage.details.loadDuration / 1000).toFixed(1)}s)
         </span>
       )}

@@ -37,3 +37,8 @@
 
 **Pattern:** Identical logic for fetching message models, converting them to `MessageDocument` via `from()`, and populating `MessageSearchEngine` in three different places (`messages_commands.rs` (x2) and `background_worker.rs`).
 **Action:** Extracted `MessageSearchEngine::build_from_models` factory method to centralize this creation logic.
+
+## 2026-01-27 - [Chat Message Creation Duplication]
+
+**Pattern:** Identical object literal structure and initialization logic (e.g., `createId`, `threadId` fallback) repeated across `createSystemMessage`, `createUserMessage`, and `createToolMessage`.
+**Action:** Extracted `createBaseMessage` helper to centralize message instantiation and reduce structural repetition.
