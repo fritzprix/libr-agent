@@ -342,11 +342,14 @@ export function AgentWorkspacePanel() {
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-            'importFile',
+            'builtin_workspace__importFile',
             { src_abs_path: srcPath, dest_rel_path: destRelPath },
             stringToMCPContentArray(resultText),
             toolCallId,
             session.id,
+            undefined,
+            session.assistant?.id,
+            'ui',
           );
 
           // Submit messages atomically using injectMessages

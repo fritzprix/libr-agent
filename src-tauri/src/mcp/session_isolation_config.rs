@@ -5,24 +5,17 @@ use serde::{Deserialize, Serialize};
 /// This struct holds settings that control how external MCP servers are managed
 /// on a per-session basis, including process lifecycle, timeouts, and resource cleanup.
 ///
-/// ## Environment Variables
+/// ## User Settings (Database)
 ///
-/// All settings can be configured via environment variables:
-/// - `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES` - Idle timeout (default: 5 minutes)
-/// - `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES` - Cleanup interval (default: 5 minutes)
-/// - `LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS` - Startup timeout (default: 10 seconds)
+/// The startup timeout can be configured in the application UI:
+/// Settings → Advanced → System & Performance → MCP Server Startup Timeout
 ///
 /// ## Example
 ///
-/// ```bash
-/// # Set 10 minute idle timeout
-/// export LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES=10
-///
-/// # Set 2 minute cleanup interval
-/// export LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES=2
-///
-/// # Set 30 second startup timeout
-/// export LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS=30
+/// ```rust
+/// # use tauri_mcp_agent_lib::mcp::SessionIsolationConfig;
+/// let config = SessionIsolationConfig::default()
+///     .with_startup_timeout(60); // Override to 60 seconds
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionIsolationConfig {
@@ -37,8 +30,8 @@ pub struct SessionIsolationConfig {
     pub cleanup_interval_minutes: u64,
 
     /// Timeout in seconds for MCP server process startup/initialization.
-    /// Default: 10 seconds
-    /// Environment variable: `LIBRAGENT_MCP_STARTUP_TIMEOUT_SECONDS`
+    /// Default: 30 seconds
+    /// User setting: Settings → Advanced → System & Performance → MCP Server Startup Timeout
     pub process_startup_timeout_seconds: u64,
 
     /// Maximum number of restart attempts for crashed processes.
