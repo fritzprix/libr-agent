@@ -50,7 +50,7 @@
 **Action:** Extracted `createBaseMessage` helper to centralize message instantiation and reduce structural repetition.
 
 
-## 2026-05-26 - [Unified Pagination Logic]
+## 2026-01-26 - [Unified Pagination Logic]
 
 **Pattern:** Duplicate `Page` and `PaginationParams` structs in `messages_commands.rs` and `playbook_repository.rs` with slight field variations (`limit` vs `page_size`, `total` vs `total_items`).
 **Action:** Created `src-tauri/src/utils/pagination.rs` with shared generic `Page<T>` and `PaginationParams`, standardizing on `page_size` and `total_items` (camelCase serialized). Refactored consumers to use the unified types.
