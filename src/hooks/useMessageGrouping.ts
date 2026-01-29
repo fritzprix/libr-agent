@@ -1,6 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('useMessageGrouping');
 
 export type GroupedMessage =
   | { type: 'single'; message: Message }
@@ -27,28 +30,97 @@ function validText(c: MCPContent) {
   }
 }
 
+// Helper: Check if message has text content
+const hasTextContent = (msg: Message): boolean => {
+  // Check for thinking content
+  if (msg.thinking && msg.thinking.trim().length > 0) {
+    return true;
+  }
+
+  return !!msg.content && msg.content.length > 0 && msg.content.some(validText);
+};
+
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
-  return useMemo(() => {
+  // Cache the previous result and metadata to enable differential updates
+  const cache = useRef<{
+    messages: Message[];
+    groupedMessages: GroupedMessage[];
+    // Track where each grouped message "ends" in the original messages array
+    // This allows us to know which groups are affected by changes at index X
+    groupEndIndices: number[];
+    toolResultsMap: Map<string, Message>;
+  }>({
+    messages: [],
+    groupedMessages: [],
+    groupEndIndices: [],
+    toolResultsMap: new Map(),
+  });
+
+  const calculation = useMemo(() => {
+    const prevCache = cache.current;
+
+    // 1. Find the divergence point (where messages differ from previous render)
+    let divergenceIndex = 0;
+    while (
+      divergenceIndex < prevCache.messages.length &&
+      divergenceIndex < messages.length &&
+      prevCache.messages[divergenceIndex] === messages[divergenceIndex]
+    ) {
+      divergenceIndex++;
+    }
+
+    // 2. Identify stable groups
+    // CRITICAL: Only reuse groups that end strictly BEFORE the divergence point.
+    // If a group ends AT the divergence point (endIndex == divergenceIndex), it means the messages
+    // *immediately following* the group have changed or are new.
+    // Since "tool_group" messages can consume subsequent tool results, we must re-evaluate
+    // the last group to see if it should now consume the new/changed messages.
+    let reuseCount = 0;
+    for (let k = 0; k < prevCache.groupEndIndices.length; k++) {
+      if (prevCache.groupEndIndices[k] < divergenceIndex) {
+        reuseCount++;
+      } else {
+        break;
+      }
+    }
+
+    // 3. Initialize with reused data
     const groupedMessages: GroupedMessage[] = [];
+    const groupEndIndices: number[] = [];
+    // Always create a fresh map per calculation to avoid stale tool result entries.
     const toolResultsMap = new Map<string, Message>();
 
-    // Helper: Check if message has text content
-    const hasTextContent = (msg: Message): boolean => {
-      // Check for thinking content
-      if (msg.thinking && msg.thinking.trim().length > 0) {
-        return true;
+    // Reuse previously computed groups where safe.
+    if (reuseCount > 0) {
+      for (let k = 0; k < reuseCount; k++) {
+        groupedMessages.push(prevCache.groupedMessages[k]);
+        groupEndIndices.push(prevCache.groupEndIndices[k]);
       }
+    }
 
-      return (
-        !!msg.content && msg.content.length > 0 && msg.content.some(validText)
-      );
+    // 4. Process new/changed messages
+    // Start index is the end index of the last reused group (or 0)
+    let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
+
+    // Pre-populate toolResultsMap from the reused prefix of messages to keep it in sync.
+    for (let prefixIndex = 0; prefixIndex < i; prefixIndex++) {
+      const msg = messages[prefixIndex];
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        toolResultsMap.set(msg.tool_call_id, msg);
+      }
+    }
+
+    // Helper to capture tool results (needed for map population)
+    const captureToolResult = (msg: Message) => {
+      if (msg.role === 'tool' && msg.tool_call_id) {
+        toolResultsMap.set(msg.tool_call_id, msg);
+      }
     };
 
-    let i = 0;
     while (i < messages.length) {
       const msg = messages[i];
 
-      // Capture tool result in map
+      // Capture tool result in map (even if skipped later)
       if (msg.role === 'tool' && msg.tool_call_id) {
         const previous = i > 0 ? messages[i - 1] : undefined;
         const isImmediatelyAfterAssistantToolCall =
@@ -56,12 +128,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           Array.isArray(previous.tool_calls) &&
           previous.tool_calls.some((call) => call.id === msg.tool_call_id);
 
-        // Avoid double insertion for tool results that immediately follow
-        // assistant messages with matching tool_calls. Those associations
-        // are handled when processing the assistant message. We still capture
-        // orphan tool results here so they are available in toolResultsMap.
         if (!isImmediatelyAfterAssistantToolCall) {
-          toolResultsMap.set(msg.tool_call_id, msg);
+          captureToolResult(msg);
         }
       }
 
@@ -113,13 +181,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             groupToolCallIds.has(messages[j].tool_call_id!)
           ) {
             // Capture skipped tool result in map.
-            // These tool results were already encountered when they were at position i
-            // in the outer loop; we add them here as well because i will later jump to j,
-            // effectively skipping these indices. The has-check avoids redundant overwrites.
-            const toolCallId = messages[j].tool_call_id!;
-            if (!toolResultsMap.has(toolCallId)) {
-              toolResultsMap.set(toolCallId, messages[j]);
-            }
+            captureToolResult(messages[j]);
             j++;
           }
         }
@@ -137,18 +199,43 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             messages: groupMessages,
             toolGroup: { calls: allToolCalls, results },
           });
+          groupEndIndices.push(j);
         } else {
-          // Fallback (shouldn't really happen due to outer if, but safe)
+          // Defensive fallback: This theoretically shouldn't happen since the outer
+          // condition checks msg.tool_calls.length > 0. If we hit this, log it and
+          // treat the message as a single message.
+          logger.warn(
+            'Unexpected state: assistant message with tool_calls but allToolCalls is empty',
+            { messageId: msg.id },
+          );
           groupedMessages.push({ type: 'single', message: msg });
+          groupEndIndices.push(i + 1);
+          j = i + 1;
         }
         i = j;
       } else {
         // Regular message (user or assistant without tool calls)
         groupedMessages.push({ type: 'single', message: msg });
         i++;
+        groupEndIndices.push(i);
       }
     }
 
-    return { groupedMessages, toolResultsMap };
+    return {
+      result: { groupedMessages, toolResultsMap },
+      newCache: {
+        messages,
+        groupedMessages,
+        groupEndIndices,
+        toolResultsMap,
+      },
+    };
   }, [messages]);
+
+  // Update cache in useEffect to keep render phase pure(r)
+  useEffect(() => {
+    cache.current = calculation.newCache;
+  }, [calculation.newCache]);
+
+  return calculation.result;
 }

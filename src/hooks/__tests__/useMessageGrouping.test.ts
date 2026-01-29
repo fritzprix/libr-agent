@@ -195,4 +195,136 @@ describe('useMessageGrouping', () => {
       expect(group.messages[1].id).toBe('3');
     }
   });
+
+  it('maintains referential stability for unchanged prefix', () => {
+    const msg1 = createMessage('1', 'user', 'Hello');
+    const msg2 = createMessage('2', 'assistant', 'Hi');
+    const msg3 = createMessage('3', 'user', 'Bye');
+
+    const messages1 = [msg1, msg2];
+    const { result, rerender } = renderHook(({ msgs }) => useMessageGrouping(msgs), {
+      initialProps: { msgs: messages1 },
+    });
+
+    const firstResult = result.current;
+
+    // Add a new message
+    const messages2 = [msg1, msg2, msg3];
+    rerender({ msgs: messages2 });
+
+    const secondResult = result.current;
+
+    // First group should be strictly equal (same object reference)
+    // Note: The second group (msg2) ends exactly at divergence index, so it is re-evaluated
+    // to check if it merges with the new message. This is expected behavior for correctness.
+    expect(secondResult.groupedMessages[0]).toBe(firstResult.groupedMessages[0]);
+    expect(secondResult.groupedMessages[1]).not.toBe(firstResult.groupedMessages[1]);
+    // But content should be same
+    expect(secondResult.groupedMessages[1].message.id).toBe(firstResult.groupedMessages[1].message.id);
+
+    // The toolResultsMap is now always a fresh instance to prevent stale entries,
+    // but it should have the same content (empty in this case)
+    expect(secondResult.toolResultsMap).not.toBe(firstResult.toolResultsMap);
+    expect(secondResult.toolResultsMap.size).toBe(firstResult.toolResultsMap.size);
+    expect(secondResult.toolResultsMap.size).toBe(0);
+
+    // The third group is new
+    expect(secondResult.groupedMessages).toHaveLength(3);
+    expect(secondResult.groupedMessages[2].message.id).toBe('3');
+  });
+
+  it('correctly merges a new tool result into an existing assistant group', () => {
+    const msgAssistant = createMessage('1', 'assistant', 'Calling tool...', [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'test_tool', arguments: '{}' },
+      },
+    ]);
+
+    // Step 1: Just the assistant message
+    const messages1 = [msgAssistant];
+    const { result, rerender } = renderHook(({ msgs }) => useMessageGrouping(msgs), {
+      initialProps: { msgs: messages1 },
+    });
+
+    expect(result.current.groupedMessages).toHaveLength(1);
+    expect(result.current.groupedMessages[0].type).toBe('tool_group');
+    if (result.current.groupedMessages[0].type === 'tool_group') {
+      expect(result.current.groupedMessages[0].toolGroup.results).toHaveLength(1);
+      expect(result.current.groupedMessages[0].toolGroup.results[0]).toBeUndefined();
+    }
+
+    // Step 2: Add the tool result
+    const msgTool = createMessage('2', 'tool', 'Result 1', undefined, 'call_1');
+    const messages2 = [msgAssistant, msgTool];
+    rerender({ msgs: messages2 });
+
+    expect(result.current.groupedMessages).toHaveLength(1); // Should still be 1 group!
+    expect(result.current.groupedMessages[0].type).toBe('tool_group');
+
+    if (result.current.groupedMessages[0].type === 'tool_group') {
+       // The result should now be present
+       expect(result.current.groupedMessages[0].toolGroup.results[0]).toBeDefined();
+       expect(result.current.groupedMessages[0].toolGroup.results[0]?.id).toBe('2');
+    }
+  });
+
+  it('does not contain stale toolResultsMap entries when messages are removed', () => {
+    // Step 1: Start with messages including tool calls and their results
+    const messages1: Message[] = [
+      createMessage('1', 'user', 'Run tool'),
+      createMessage('2', 'assistant', 'Calling tool...', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'test_tool', arguments: '{}' },
+        },
+      ]),
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+      createMessage('4', 'user', 'Another request'),
+      createMessage('5', 'assistant', 'Calling another tool...', [
+        {
+          id: 'call_2',
+          type: 'function',
+          function: { name: 'another_tool', arguments: '{}' },
+        },
+      ]),
+      createMessage('6', 'tool', 'Result 2', undefined, 'call_2'),
+    ];
+
+    const { result, rerender } = renderHook(({ msgs }) => useMessageGrouping(msgs), {
+      initialProps: { msgs: messages1 },
+    });
+
+    // Verify initial state has both tool results in map
+    expect(result.current.toolResultsMap.size).toBe(2);
+    expect(result.current.toolResultsMap.get('call_1')).toBeDefined();
+    expect(result.current.toolResultsMap.get('call_2')).toBeDefined();
+
+    // Step 2: Remove messages from the end (last 3 messages)
+    const messages2 = messages1.slice(0, 3); // Keep only first 3 messages
+    rerender({ msgs: messages2 });
+
+    // Verify toolResultsMap does NOT contain stale entry for 'call_2'
+    expect(result.current.toolResultsMap.size).toBe(1);
+    expect(result.current.toolResultsMap.get('call_1')).toBeDefined();
+    expect(result.current.toolResultsMap.get('call_2')).toBeUndefined();
+
+    // Verify groupedMessages correctly reflects remaining messages
+    expect(result.current.groupedMessages).toHaveLength(2); // user message + tool_group
+
+    // Step 3: Remove more messages (remove tool call and result)
+    const messages3 = messages1.slice(0, 1); // Keep only first message
+    rerender({ msgs: messages3 });
+
+    // Verify toolResultsMap is empty (no tool results exist anymore)
+    expect(result.current.toolResultsMap.size).toBe(0);
+    expect(result.current.toolResultsMap.get('call_1')).toBeUndefined();
+
+    // Verify only user message remains
+    expect(result.current.groupedMessages).toHaveLength(1);
+    expect(result.current.groupedMessages[0].type).toBe('single');
+    expect(result.current.groupedMessages[0].message.id).toBe('1');
+  });
 });
