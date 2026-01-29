@@ -389,7 +389,7 @@ function DraftChatInner() {
 
             {/* Local Context Indicator */}
             <div
-              className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold"
+              className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold"
               title="Local Context Injection Active"
             >
               <MapPin size={10} />
@@ -408,7 +408,7 @@ function DraftChatInner() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Message ${assistant.name}...`}
-              className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
+              className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-[44px] py-3 px-2"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

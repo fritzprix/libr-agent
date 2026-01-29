@@ -342,14 +342,11 @@ export function AgentWorkspacePanel() {
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-            'builtin_workspace__importFile',
+            'importFile',
             { src_abs_path: srcPath, dest_rel_path: destRelPath },
             stringToMCPContentArray(resultText),
             toolCallId,
             session.id,
-            undefined,
-            session.assistant?.id,
-            'ui',
           );
 
           // Submit messages atomically using injectMessages
@@ -661,7 +658,7 @@ export function AgentWorkspacePanel() {
               )}
             </div>
             {isOverrideActive && (
-              <p className="text-xs text-warning flex items-center gap-1">
+              <p className="text-[10px] text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
                 Using custom workspace
               </p>

@@ -189,7 +189,7 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
         options={modelOptions}
         value={localModel}
         onChange={handleModelChange}
-        className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0"
+        className="min-w-[120px] h-6 text-xs bg-transparent border-none focus:ring-0"
         placeholder={isRefreshing ? 'Loading...' : 'Model'}
         disabled={isRefreshing || !localProvider}
       />

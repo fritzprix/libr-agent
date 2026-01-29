@@ -38,7 +38,6 @@ export interface SystemSettings {
   maxFileUploadSizeMB: number;
   workspaceCapacityMB: number;
   webActionTimeoutSeconds: number;
-  mcpServerStartupTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
   activeSessionRetentionHours: number;
   shellIsolationLevel: IsolationLevel;
@@ -91,7 +90,6 @@ export const DEFAULT_SETTING: Settings = {
     maxFileUploadSizeMB: 50,
     workspaceCapacityMB: 10,
     webActionTimeoutSeconds: 30,
-    mcpServerStartupTimeoutSeconds: 30,
     searchIndexFrequencyMinutes: 5,
     activeSessionRetentionHours: 24,
     shellIsolationLevel: 'medium',
