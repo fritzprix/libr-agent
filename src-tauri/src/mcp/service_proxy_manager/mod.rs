@@ -122,11 +122,6 @@ impl MCPServiceProxyManager {
     ///
     /// This is a convenience constructor that retrieves the global MCP manager
     /// and SeaORM database connection from the application state and creates Arc references.
-    ///
-    /// # Safety
-    /// This uses unsafe Arc::from_raw with static references. The Arc is cloned
-    /// and the original is forgotten to prevent double-free. This is safe because
-    /// the underlying data has 'static lifetime.
     pub fn new_from_static_refs() -> Self {
         use crate::state::get_database_connection;
 
