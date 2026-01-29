@@ -2,7 +2,6 @@ use crate::agent::session_manager::AgentSessionManager;
 use crate::agent::types::ToolCall;
 use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
-use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use serde::{Deserialize, Serialize};
@@ -162,8 +161,6 @@ static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEng
 /// Load or rebuild the search index for a session.
 async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, String> {
     let repo = get_message_repository();
-    let index_path = get_index_path(session_id)?;
-    let max_docs = MessageSearchEngine::max_docs_from_env();
 
     // Check if index exists and is up to date
     let is_dirty = repo
@@ -184,42 +181,7 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
     }
 
     // If dirty or not cached, rebuild
-    let start_time = std::time::Instant::now();
-
-    // Fetch messages from database (most recent max_docs)
-    let messages = crate::get_message_repository()
-        .get_message_models_by_session(session_id, max_docs as u64)
-        .await
-        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
-
-    // Build index
-    let engine =
-        MessageSearchEngine::build_from_models(session_id.to_string(), messages, max_docs)?;
-
-    // Persist to disk
-    let serialized = engine.serialize()?;
-    let index_data = IndexData {
-        metadata: IndexMetadata {
-            version: 1,
-            session_id: session_id.to_string(),
-            doc_count: engine.doc_count(),
-            last_built_at: chrono::Utc::now().timestamp_millis(),
-        },
-        index_content: serialized,
-    };
-
-    write_index_atomic(&index_path, &index_data)?;
-
-    // Update metadata in database
-    let rebuild_duration = start_time.elapsed().as_millis() as i64;
-    repo.update_index_meta(
-        session_id,
-        &index_path.to_string_lossy(),
-        engine.doc_count(),
-        rebuild_duration,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let engine = crate::search::service::rebuild_and_persist_index(session_id).await?;
 
     // Cache the engine
     {

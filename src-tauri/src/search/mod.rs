@@ -8,5 +8,6 @@
 pub mod background_worker;
 pub mod index_storage;
 pub mod message_index;
+pub mod service;
 
 pub use background_worker::IndexingWorker;
