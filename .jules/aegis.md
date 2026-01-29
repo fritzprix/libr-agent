@@ -7,3 +7,5 @@
 ## 2026-01-25 - src/context/DnDContext.tsx **Safety Breach:** `as string` type assertions masking strict union types. **Fix:** Replaced with `as TauriDragDropPayload['type']` to enforce strict union contract.
 
 ## 2026-01-25 - src-tauri/src/mcp/builtin/playbook/operations.rs **Safety Breach:** `unwrap()` on `Option` in match guard. **Fix:** Replaced with `map_or(false, ...)` for safe boolean evaluation.
+
+## 2026-01-29 - [src-tauri/src/lib.rs, src-tauri/src/state.rs] **Safety Breach:** unsafe { Arc::from_raw(...) } used to recreate Arc from static reference **Fix:** Changed static storage to OnceLock<Arc<MCPServiceProxyManager>> for safe cloning
