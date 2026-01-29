@@ -34,9 +34,7 @@ const hasTextContent = (msg: Message): boolean => {
     return true;
   }
 
-  return (
-    !!msg.content && msg.content.length > 0 && msg.content.some(validText)
-  );
+  return !!msg.content && msg.content.length > 0 && msg.content.some(validText);
 };
 
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
