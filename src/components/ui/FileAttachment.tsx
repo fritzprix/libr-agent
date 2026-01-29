@@ -62,7 +62,7 @@ export default function FileAttachment({
           size="icon"
           type="button"
           onClick={handleFileSelect}
-          className="h-8 w-8 text-muted-foreground hover:text-green-400"
+          className="h-8 w-8 text-muted-foreground hover:text-success"
           title="Attach files"
         >
           <Paperclip className="h-4 w-4" />
@@ -70,7 +70,7 @@ export default function FileAttachment({
 
         {/* File Count Indicator */}
         {files.length > 0 && (
-          <span className="text-xs text-gray-400">{files.length}</span>
+          <span className="text-xs text-muted-foreground">{files.length}</span>
         )}
       </div>
     );
@@ -94,7 +94,7 @@ export default function FileAttachment({
         size="sm"
         type="button"
         onClick={handleFileSelect}
-        className="text-muted-foreground hover:text-green-400 border border-muted"
+        className="text-muted-foreground hover:text-success border border-muted"
         title="Attach files"
       >
         <Paperclip className="h-4 w-4" />
@@ -113,7 +113,7 @@ export default function FileAttachment({
                 key={index}
                 className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border-muted"
               >
-                <span className="text-xs text-green-400 truncate flex-1">
+                <span className="text-xs text-success truncate flex-1">
                   {file.name}
                 </span>
                 <Button
@@ -121,7 +121,7 @@ export default function FileAttachment({
                   variant="ghost"
                   size="icon"
                   onClick={() => onRemove(index)}
-                  className="h-6 w-6 ml-2 text-red-400 hover:text-red-300"
+                  className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
                   title="Remove file"
                 >
                   <Trash2 className="h-3 w-3" />

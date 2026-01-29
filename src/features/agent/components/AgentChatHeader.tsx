@@ -56,9 +56,7 @@ export function AgentChatHeader({
         <div className="flex items-center">
           {children}
           {assistantName && (
-            <span className="ml-2 text-xs text-blue-400">
-              [{assistantName}]
-            </span>
+            <span className="ml-2 text-xs text-primary">[{assistantName}]</span>
           )}
         </div>
 
@@ -81,7 +79,7 @@ export function AgentChatHeader({
             className="h-6 px-2"
           >
             <FolderOpen
-              className={`h-4 w-4 ${showWorkspacePanel ? 'text-blue-400' : ''}`}
+              className={`h-4 w-4 ${showWorkspacePanel ? 'text-primary' : ''}`}
             />
           </Button>
 
@@ -93,7 +91,7 @@ export function AgentChatHeader({
             className="h-6 px-2"
           >
             <PanelRight
-              className={`h-4 w-4 ${showPlanningPanel ? 'text-blue-400' : ''}`}
+              className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
             />
           </Button>
 

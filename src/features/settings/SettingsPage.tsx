@@ -297,7 +297,7 @@ export default function SettingsPage() {
 
   const handleSystemSettingsChange = (
     key: keyof SystemSettings,
-    value: number,
+    value: number | string,
   ) => {
     const newSettings = { ...localSystemSettings, [key]: value };
     setLocalSystemSettings(newSettings);

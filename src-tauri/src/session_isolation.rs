@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
@@ -44,7 +45,8 @@ pub struct IsolatedProcessConfig {
     pub shell_type: Option<ShellType>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum IsolationLevel {
     /// Basic process isolation (environment variables only)
     #[allow(dead_code)] // Reserved for future use
@@ -634,8 +636,39 @@ impl SessionIsolationManager {
             // - System32\WindowsPowerShell\v1.0: PowerShell (if available)
             // Note: We intentionally restrict access to user-installed software
             "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0"
+                .to_string()
         } else {
-            "/bin:/usr/bin:/usr/local/bin"
+            // Unix: Include common user installation paths
+            // - /bin, /usr/bin: System binaries
+            // - /usr/local/bin: User-installed software (brew, etc.)
+            // - ~/.local/bin: Python pip, pipx, uv, etc.
+            // - ~/.cargo/bin: Rust cargo-installed tools
+            let mut paths = vec![
+                "/bin".to_string(),
+                "/usr/bin".to_string(),
+                "/usr/local/bin".to_string(),
+            ];
+
+            // Add user-specific paths if HOME is available
+            if let Ok(home) = std::env::var("HOME") {
+                let home_path = PathBuf::from(home);
+                paths.push(
+                    home_path
+                        .join(".local")
+                        .join("bin")
+                        .to_string_lossy()
+                        .to_string(),
+                );
+                paths.push(
+                    home_path
+                        .join(".cargo")
+                        .join("bin")
+                        .to_string_lossy()
+                        .to_string(),
+                );
+            }
+
+            paths.join(":")
         }
         .to_string()
     }

@@ -96,10 +96,10 @@ export function AgentPlanningPanel() {
                             <Circle
                               className={`w-2 h-2 fill-current ${
                                 todo.priority === 'high'
-                                  ? 'text-red-500'
+                                  ? 'text-destructive'
                                   : todo.priority === 'medium'
-                                    ? 'text-yellow-500'
-                                    : 'text-green-500'
+                                    ? 'text-warning'
+                                    : 'text-success'
                               }`}
                             />
                             {todo.priority === 'high'

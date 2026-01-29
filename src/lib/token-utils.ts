@@ -75,6 +75,144 @@ export function estimateTokensBPE(message: Message): number {
 }
 
 /**
+ * Splits assistant messages with excessive tool calls into multiple messages
+ * to prevent context window issues and improve readability.
+ *
+ * When an assistant message contains more tool calls than the specified threshold,
+ * this function creates multiple assistant messages with batched tool calls,
+ * maintaining proper pairing with their corresponding tool response messages.
+ *
+ * @param messages The array of messages to process.
+ * @param maxToolCallsPerMessage Maximum number of tool calls per assistant message (default: 4).
+ * @returns A new array of messages with tool calls batched appropriately.
+ *
+ * @example
+ * Input: [
+ *   { role: 'assistant', tool_calls: [tc1, tc2, tc3, tc4, tc5, tc6] },
+ *   { role: 'tool', tool_call_id: 'tc1', ... },
+ *   { role: 'tool', tool_call_id: 'tc2', ... },
+ *   ...
+ * ]
+ *
+ * Output (with maxToolCallsPerMessage=4): [
+ *   { role: 'assistant', tool_calls: [tc1, tc2, tc3, tc4], content: [...] },
+ *   { role: 'tool', tool_call_id: 'tc1', ... },
+ *   { role: 'tool', tool_call_id: 'tc2', ... },
+ *   { role: 'tool', tool_call_id: 'tc3', ... },
+ *   { role: 'tool', tool_call_id: 'tc4', ... },
+ *   { role: 'assistant', tool_calls: [tc5, tc6], content: '[Continuing tool calls]' },
+ *   { role: 'tool', tool_call_id: 'tc5', ... },
+ *   { role: 'tool', tool_call_id: 'tc6', ... },
+ * ]
+ */
+export function batchToolCallsInMessages(
+  messages: Message[],
+  maxToolCallsPerMessage: number = 4,
+): Message[] {
+  if (maxToolCallsPerMessage < 1) {
+    logger.warn('Invalid maxToolCallsPerMessage, using default of 4', {
+      provided: maxToolCallsPerMessage,
+    });
+    maxToolCallsPerMessage = 4;
+  }
+
+  const result: Message[] = [];
+  const processedMessageIds = new Set<string>(); // Track which messages we've already added
+  let batchCounter = 0;
+
+  for (const msg of messages) {
+    // Skip if already processed
+    if (processedMessageIds.has(msg.id)) {
+      continue;
+    }
+
+    // Only process assistant messages with tool calls exceeding threshold
+    if (
+      msg.role === 'assistant' &&
+      msg.tool_calls &&
+      msg.tool_calls.length > maxToolCallsPerMessage
+    ) {
+      logger.info('Batching tool calls for assistant message', {
+        messageId: msg.id,
+        totalToolCalls: msg.tool_calls.length,
+        maxPerMessage: maxToolCallsPerMessage,
+        batchesNeeded: Math.ceil(
+          msg.tool_calls.length / maxToolCallsPerMessage,
+        ),
+      });
+
+      // Mark original message as processed
+      processedMessageIds.add(msg.id);
+
+      // Split tool calls into batches
+      const batches: Message['tool_calls'][] = [];
+      for (let i = 0; i < msg.tool_calls.length; i += maxToolCallsPerMessage) {
+        batches.push(msg.tool_calls.slice(i, i + maxToolCallsPerMessage));
+      }
+
+      // Create separate assistant messages for each batch
+      batches.forEach((batch, batchIndex) => {
+        batchCounter++;
+        const batchMsg: Message = {
+          ...msg,
+          id: `${msg.id}_batch_${batchIndex}`,
+          tool_calls: batch,
+          // Keep original content only for first batch, add continuation marker for others
+          content:
+            batchIndex === 0
+              ? msg.content
+              : [
+                  {
+                    type: 'text',
+                    text: `[Continuing tool calls - Batch ${batchIndex + 1}/${batches.length}]`,
+                  },
+                ],
+        };
+        result.push(batchMsg);
+
+        // Find and add corresponding tool responses for this batch
+        const toolCallIds = new Set(batch?.map((tc) => tc.id) ?? []);
+        const batchResponses = messages.filter(
+          (m) =>
+            m.role === 'tool' &&
+            m.tool_call_id &&
+            toolCallIds.has(m.tool_call_id),
+        );
+
+        // Add tool responses immediately after this batch
+        result.push(...batchResponses);
+
+        // Mark these tool responses as processed
+        batchResponses.forEach((r) => processedMessageIds.add(r.id));
+
+        logger.debug('Created tool call batch', {
+          batchId: batchMsg.id,
+          batchIndex: batchIndex + 1,
+          totalBatches: batches.length,
+          toolCallsInBatch: batch?.length ?? 0,
+          toolResponsesInBatch: batchResponses.length,
+        });
+      });
+    } else {
+      // Keep message as-is if it doesn't need batching
+      result.push(msg);
+      processedMessageIds.add(msg.id);
+    }
+  }
+
+  if (batchCounter > 0) {
+    logger.info('Tool call batching completed', {
+      originalMessages: messages.length,
+      batchedMessages: result.length,
+      totalBatchesCreated: batchCounter,
+      maxToolCallsPerMessage,
+    });
+  }
+
+  return result;
+}
+
+/**
  * Selects a subset of messages from the end of an array that fits within a model's context window.
  * It calculates a token limit (either from `maxTokens` or 90% of the model's context window)
  * and includes messages from the most recent until the limit is reached.
@@ -98,8 +236,15 @@ export function selectMessagesWithinContext(
     systemPrompt?: string;
     toolsJson?: string;
     maxMessages?: number;
+    maxToolCallsPerMessage?: number; // NEW: Maximum tool calls per assistant message
   },
 ): Message[] {
+  // STEP 1: Batch tool calls BEFORE any processing to prevent context window issues
+  const batchedMessages = batchToolCallsInMessages(
+    messages,
+    options?.maxToolCallsPerMessage || 4,
+  );
+
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
 
   // If model info not found, apply message count limit only (no token-based truncation)
@@ -111,25 +256,25 @@ export function selectMessagesWithinContext(
     // If no maxMessages specified, return all messages
     if (!options?.maxMessages) {
       logger.info('No message count limit specified, returning all messages', {
-        inputMessageCount: messages.length,
+        inputMessageCount: batchedMessages.length,
       });
-      return messages;
+      return batchedMessages;
     }
 
     // Apply simple message count-based truncation
     logger.info('📊 Starting message selection (count-based only)', {
-      inputMessageCount: messages.length,
+      inputMessageCount: batchedMessages.length,
       maxMessages: options.maxMessages,
       provider: providerId,
       model: modelId,
     });
 
-    const selected = messages.slice(-options.maxMessages);
+    const selected = batchedMessages.slice(-options.maxMessages);
 
     logger.info('✅ Message selection complete (count-based)', {
-      inputCount: messages.length,
+      inputCount: batchedMessages.length,
       selectedCount: selected.length,
-      trimmedCount: messages.length - selected.length,
+      trimmedCount: batchedMessages.length - selected.length,
       maxMessages: options.maxMessages,
     });
 
@@ -151,7 +296,7 @@ export function selectMessagesWithinContext(
   const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens); // Keep at least 1K for messages
 
   logger.info('📊 Starting message selection', {
-    inputMessageCount: messages.length,
+    inputMessageCount: batchedMessages.length,
     maxMessages: options?.maxMessages || 'unlimited',
     provider: providerId,
     model: modelId,
@@ -168,8 +313,8 @@ export function selectMessagesWithinContext(
   let totalTokens = 0;
   const selected: Message[] = [];
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
+  for (let i = batchedMessages.length - 1; i >= 0; i--) {
+    const msg = batchedMessages[i];
     const tokens = estimateTokensBPE(msg);
 
     logger.info(
@@ -263,9 +408,9 @@ export function selectMessagesWithinContext(
   }
 
   logger.info('✅ Message selection complete', {
-    inputCount: messages.length,
+    inputCount: batchedMessages.length,
     selectedCount: selected.length,
-    trimmedCount: messages.length - selected.length,
+    trimmedCount: batchedMessages.length - selected.length,
     totalTokens,
     tokenLimit,
     maxMessages: options?.maxMessages || 'unlimited',

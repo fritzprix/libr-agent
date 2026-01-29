@@ -51,7 +51,7 @@ export function PlaybookCard({
         <div className="flex justify-between items-start gap-4">
           <Badge
             variant="outline"
-            className="font-normal text-xs text-muted-foreground w-fit truncate max-w-[150px]"
+            className="font-normal text-xs text-muted-foreground w-fit truncate max-w-36"
           >
             {assistantName}
           </Badge>
@@ -62,7 +62,7 @@ export function PlaybookCard({
               className={cn(
                 'h-8 w-8 hover:bg-transparent',
                 playbook.isBookmarked
-                  ? 'text-yellow-500 hover:text-yellow-600'
+                  ? 'text-warning hover:text-warning/80'
                   : 'text-muted-foreground/30 hover:text-muted-foreground group-hover:text-muted-foreground',
               )}
               onClick={(e) => {
@@ -126,7 +126,7 @@ export function PlaybookCard({
 
         <Button
           size="sm"
-          className="gap-2 w-full max-w-[120px]"
+          className="gap-2 w-full max-w-32"
           onClick={handleStart}
         >
           <Play className="h-3.5 w-3.5" />
