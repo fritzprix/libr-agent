@@ -183,7 +183,7 @@ export default function PlaybookList() {
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-          <div className="relative flex-1 sm:w-64">
+          <div className="relative flex-1 sm:w-[250px]">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"

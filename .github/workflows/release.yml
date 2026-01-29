@@ -2,13 +2,13 @@ name: 📦 Release LibrAgent
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.1.1). If omitted when manually dispatching, the pushed tag (if any) will be used."
+        description: 'Tag to release (e.g. v0.1.1). If omitted when manually dispatching, the pushed tag (if any) will be used.'
         required: false
-        default: ""
+        default: ''
 
 jobs:
   release:
@@ -36,7 +36,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: './src-tauri -> target'
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -46,21 +46,20 @@ jobs:
       - name: Sync node version and setup cache
         uses: actions/setup-node@v5
         with:
-          node-version: "lts/*"
-          cache: "pnpm"
+          node-version: 'lts/*'
+          cache: 'pnpm'
 
       - name: Install frontend dependencies
         run: pnpm install
 
       - name: Extract changelog for release notes
         id: changelog
-        shell: bash
         run: |
           VERSION="${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
           VERSION_NUM="${VERSION#v}"
 
           # Extract changelog content for this version
-          CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION_NUM\)\]/,/^## \[/p" CHANGELOG.md | sed '$d' | tail -n +3)
+          CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION_NUM\)\]/,/^## \[/p" CHANGELOG.md | head -n -1 | tail -n +3)
 
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "No changelog found for version $VERSION_NUM, using default content"

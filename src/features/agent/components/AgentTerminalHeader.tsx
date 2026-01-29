@@ -24,7 +24,7 @@ export default function AgentTerminalHeader({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs">Session:</span>
-          <span className="text-sm truncate max-w-xs" title={sessionName}>
+          <span className="text-sm truncate max-w-[300px]" title={sessionName}>
             {sessionName} ({sessionType})
           </span>
         </div>

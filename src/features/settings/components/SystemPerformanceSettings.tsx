@@ -147,36 +147,6 @@ export function SystemPerformanceSettings({
             </p>
           </div>
 
-          {/* MCP Server Startup Timeout */}
-          <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t(
-                'settings.system.mcpServerStartupTimeout',
-                'MCP Server Startup Timeout (Sec)',
-              )}
-            </label>
-            <Input
-              type="number"
-              placeholder="e.g., 30"
-              min={10}
-              max={120}
-              value={localSystemSettings.mcpServerStartupTimeoutSeconds}
-              onChange={(e) =>
-                onChange(
-                  'mcpServerStartupTimeoutSeconds',
-                  parseInt(e.target.value, 10) || 30,
-                )
-              }
-              className="bg-background border text-foreground w-full max-w-xs"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              {t(
-                'settings.system.mcpServerStartupTimeoutDescription',
-                'How long to wait for MCP tool servers to initialize. Increase if servers fail to start.',
-              )}
-            </p>
-          </div>
-
           {/* Session Retention */}
           <div className="min-w-0">
             <label className="block text-muted-foreground mb-2 font-medium">

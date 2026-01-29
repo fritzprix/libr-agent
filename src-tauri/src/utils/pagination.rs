@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct Page<T> {
     pub items: Vec<T>,
     pub page: usize,
+    #[serde(alias = "limit")]
     pub page_size: usize,
+    #[serde(alias = "total")]
     pub total_items: usize,
     pub has_next_page: bool,
     pub has_previous_page: bool,
@@ -49,6 +51,7 @@ impl<T> Page<T> {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct PaginationParams {
     pub page: usize,
+    #[serde(alias = "limit")]
     pub page_size: usize,
 }
 

@@ -1,7 +1,7 @@
 use crate::entity::playbook::Model as PlaybookModel;
 use crate::repositories::{PlaybookRepository, SessionRepository};
 use crate::state::get_playbook_repository;
-use crate::utils::pagination::{Page, PaginationParams};
+use crate::utils::pagination::PaginationParams;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;

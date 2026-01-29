@@ -49,19 +49,3 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-26 - [AgentToolCallDetails] **Visual Bug:** Hardcoded error colors (red-50/200/600/900) and dark mode overrides **Fix:** Use semantic tokens (destructive) with opacity modifiers
 
 ## 2026-01-26 - [AgentChatAttachedFiles] **Visual Bug:** Magic number width (max-w-[150px]) **Fix:** Use grid value (max-w-36)
-
-## 2026-01-27 - [AgentWorkspacePanel] **Visual Bug:** Magic number width (text-[10px]) **Fix:** Use standard token (text-xs)
-
-## 2026-01-27 - [TokenMetricsBadge] **Visual Bug:** Magic number width (text-[10px]) **Fix:** Use standard token (text-xs)
-
-## 2026-01-27 - [AgentModelPicker] **Visual Bug:** Arbitrary width (min-w-[120px]) **Fix:** Use grid value (min-w-32)
-
-## 2026-01-27 - [AgentToolCallDetails] **Visual Bug:** Arbitrary height (max-h-[400px]) **Fix:** Use grid value (max-h-96)
-
-## 2026-01-27 - [AgentTerminalHeader] **Visual Bug:** Arbitrary width (max-w-[300px]) **Fix:** Use standard token (max-w-xs)
-
-## 2026-01-27 - [AgentDraftChatView] **Visual Bug:** Magic numbers (text-[10px], min-h-[44px]) **Fix:** Use standard tokens (text-xs, min-h-11)
-
-## 2026-01-27 - [Playbook/Card] **Visual Bug:** Arbitrary width (max-w-[120px]) **Fix:** Use grid value (max-w-32)
-
-## 2026-01-27 - [Playbook/List] **Visual Bug:** Arbitrary width (sm:w-[250px]) **Fix:** Use grid value (sm:w-64)

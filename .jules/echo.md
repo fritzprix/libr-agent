@@ -38,20 +38,12 @@
 **Pattern:** Identical logic for fetching message models, converting them to `MessageDocument` via `from()`, and populating `MessageSearchEngine` in three different places (`messages_commands.rs` (x2) and `background_worker.rs`).
 **Action:** Extracted `MessageSearchEngine::build_from_models` factory method to centralize this creation logic.
 
-
-## 2026-05-26 - [Message Repository Query Duplication]
-
-**Pattern:** Identical query construction for fetching `Message` (domain object) and `message::Model` (database entity) in `MessageRepository`, and repeated `OnConflict` logic in insert methods.
-**Action:** Refactored getter methods to chain calls (reusing model retrieval) and extracted `get_upsert_on_conflict` helper for consistent upsert logic.
-
 ## 2026-01-27 - [Chat Message Creation Duplication]
 
 **Pattern:** Identical object literal structure and initialization logic (e.g., `createId`, `threadId` fallback) repeated across `createSystemMessage`, `createUserMessage`, and `createToolMessage`.
 **Action:** Extracted `createBaseMessage` helper to centralize message instantiation and reduce structural repetition.
 
-
 ## 2026-05-26 - [Unified Pagination Logic]
 
 **Pattern:** Duplicate `Page` and `PaginationParams` structs in `messages_commands.rs` and `playbook_repository.rs` with slight field variations (`limit` vs `page_size`, `total` vs `total_items`).
 **Action:** Created `src-tauri/src/utils/pagination.rs` with shared generic `Page<T>` and `PaginationParams`, standardizing on `page_size` and `total_items` (camelCase serialized). Refactored consumers to use the unified types.
-
