@@ -61,15 +61,15 @@ export function parseAssistant(data: unknown): Assistant {
   let configParsed = {};
 
   if (dto.config && typeof dto.config === 'object') {
-     // Safe parse the config part
-     // We use safeParse to avoid blowing up if config is slightly malformed,
-     // but for strictness, maybe we should throw?
-     // Aegis says: "Ambiguity is the root of all runtime errors".
-     // So we should enforce valid config.
-     configParsed = AssistantConfigSchema.parse(dto.config);
+    // Safe parse the config part
+    // We use safeParse to avoid blowing up if config is slightly malformed,
+    // but for strictness, maybe we should throw?
+    // Aegis says: "Ambiguity is the root of all runtime errors".
+    // So we should enforce valid config.
+    configParsed = AssistantConfigSchema.parse(dto.config);
   } else {
     // If config is missing or not an object, fallback to defaults
-     configParsed = AssistantConfigSchema.parse({});
+    configParsed = AssistantConfigSchema.parse({});
   }
 
   // 3. Construct the final object
