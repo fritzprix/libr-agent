@@ -122,6 +122,7 @@ export const DEFAULT_MCP_CONFIG = {
 
 export function getNewAssistantTemplate(): Assistant {
   return {
+    id: createId(),
     name: 'New Assistant',
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
@@ -252,22 +253,15 @@ export const AssistantContextProvider = ({
       const systemPrompt = editingAssistant.systemPrompt || DEFAULT_PROMPT;
 
       try {
-        // Keep existing id for updates, generate new id for new assistants
-        let assistantId = editingAssistant.id;
-        let assistantCreatedAt = editingAssistant.createdAt;
-        if (!assistantId) {
-          assistantId = createId();
-          assistantCreatedAt = new Date();
-        }
-
+        // ID is always present (required field), no need to generate
         const assistantToSave: Assistant = {
-          id: assistantId,
+          id: editingAssistant.id,
           name: editingAssistant.name,
           systemPrompt,
           mcpServerIds: editingAssistant.mcpServerIds,
           deletionProtected: editingAssistant.deletionProtected ?? false,
           localServices: editingAssistant.localServices ?? [],
-          createdAt: assistantCreatedAt || new Date(),
+          createdAt: editingAssistant.createdAt,
           updatedAt: new Date(),
         };
 
