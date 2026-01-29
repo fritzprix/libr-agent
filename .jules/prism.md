@@ -65,3 +65,11 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-27 - [Playbook/Card] **Visual Bug:** Arbitrary width (max-w-[120px]) **Fix:** Use grid value (max-w-32)
 
 ## 2026-01-27 - [Playbook/List] **Visual Bug:** Arbitrary width (sm:w-[250px]) **Fix:** Use grid value (sm:w-64)
+
+## 2026-01-27 - [SortControls] **Visual Bug:** Arbitrary width (w-[200px]) **Fix:** Use grid value (w-52)
+
+## 2026-01-27 - [AgentChatView] **Visual Bug:** Arbitrary height (max-h-[100vh]) **Fix:** Use standard token (max-h-screen)
+
+## 2026-01-27 - [AgentDraftChatView] **Visual Bug:** Arbitrary height (max-h-[100vh]) **Fix:** Use standard token (max-h-screen)
+
+## 2026-01-27 - [AgentWorkspacePanel] **Visual Bug:** Magic number inline styles (8 + depth * 16) **Fix:** Use named constants (BASE_PADDING, DEPTH_STEP)

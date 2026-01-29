@@ -40,6 +40,9 @@ import { stringToMCPContentArray } from '@/lib/utils';
 
 const logger = getLogger('AgentWorkspacePanel');
 
+const BASE_PADDING = 8;
+const DEPTH_STEP = 16;
+
 interface FileNode {
   id: string;
   name: string;
@@ -508,7 +511,7 @@ export function AgentWorkspacePanel() {
       <div key={node.id} className="select-none">
         <div
           className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 cursor-pointer group"
-          style={{ paddingLeft: `${8 + depth * 16}px` }}
+          style={{ paddingLeft: `${BASE_PADDING + depth * DEPTH_STEP}px` }}
           onClick={() => {
             logger.info('FILE/DIRECTORY CLICK', {
               path: node.path,
