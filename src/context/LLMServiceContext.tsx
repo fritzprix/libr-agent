@@ -290,6 +290,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         hasDynamicPrompt: !!dynamicSystemPrompt,
         finalPromptLength: finalSystemPrompt?.length ?? 0,
         systemPromptPreview: finalSystemPrompt?.substring(0, 200) + '...',
+        includesSkills:
+          finalSystemPrompt?.includes('<available_skills>') ?? false,
       });
 
       if (finalSystemPrompt) {

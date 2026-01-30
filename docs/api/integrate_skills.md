@@ -1,4 +1,5 @@
 > ## Documentation Index
+>
 > Fetch the complete documentation index at: https://agentskills.io/llms.txt
 > Use this file to discover all available pages before exploring further.
 
@@ -54,7 +55,7 @@ Include skill metadata in the system prompt so the model knows what skills are a
 
 Follow your platform's guidance for system prompt updates. For example, for Claude models, the recommended format uses XML:
 
-```xml  theme={null}
+```xml theme={null}
 <available_skills>
   <skill>
     <name>pdf-processing</name>
@@ -77,10 +78,10 @@ Keep metadata concise. Each skill should add roughly 50-100 tokens to the contex
 
 Script execution introduces security risks. Consider:
 
-* **Sandboxing**: Run scripts in isolated environments
-* **Allowlisting**: Only execute scripts from trusted skills
-* **Confirmation**: Ask users before running potentially dangerous operations
-* **Logging**: Record all script executions for auditing
+- **Sandboxing**: Run scripts in isolated environments
+- **Allowlisting**: Only execute scripts from trusted skills
+- **Confirmation**: Ask users before running potentially dangerous operations
+- **Logging**: Record all script executions for auditing
 
 ## Reference implementation
 
