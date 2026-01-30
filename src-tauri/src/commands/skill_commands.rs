@@ -17,6 +17,18 @@ struct SkillFrontmatter {
     description: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SkillsError {
+    pub code: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for SkillsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", serde_json::to_string(self).unwrap_or_else(|_| self.message.clone()))
+    }
+}
+
 /// Create a skills directory if it doesn't exist.
 /// This is a separate, explicit operation from scanning.
 #[tauri::command]
@@ -44,16 +56,25 @@ pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadat
 
     // Don't create directories as a side effect of scanning
     if !root_path.exists() {
-        return Err(format!(
-            "Skills directory does not exist: {}. Please create it first.",
-            directory
-        ));
+        let error = SkillsError {
+            code: "DIRECTORY_NOT_FOUND".to_string(),
+            message: format!("Skills directory does not exist: {}", directory),
+        };
+        return Err(error.to_string());
     }
 
     // Offload blocking I/O operations to a blocking thread pool
-    tokio::task::spawn_blocking(move || scan_skills_blocking(&root_path))
+    // Clone root_path before moving it into the closure
+    let root_path_clone = root_path.clone();
+    tokio::task::spawn_blocking(move || scan_skills_blocking(&root_path_clone))
         .await
-        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| {
+            let error = SkillsError {
+                code: "TASK_JOIN_ERROR".to_string(),
+                message: format!("Task join error: {}", e),
+            };
+            error.to_string()
+        })?
 }
 
 /// Blocking implementation of directory scanning.

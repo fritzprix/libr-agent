@@ -15,6 +15,11 @@ interface SkillMetadata {
   path: string;
 }
 
+interface SkillsError {
+  code: string;
+  message: string;
+}
+
 interface GeneralTabProps {
   localLanguage: string;
   onChange: (lang: string) => void;
@@ -55,13 +60,25 @@ export function GeneralTab({
         const errorStr = String(error);
         logger.error('Failed to verify skills directory', error);
         
-        // Check if error is about directory not existing
-        if (errorStr.includes('does not exist')) {
-          setVerificationStatus('missing');
-          setErrorMessage('Directory does not exist');
-        } else {
-          setVerificationStatus('error');
-          setErrorMessage(errorStr);
+        // Try to parse structured error
+        try {
+          const skillsError = JSON.parse(errorStr) as SkillsError;
+          if (skillsError.code === 'DIRECTORY_NOT_FOUND') {
+            setVerificationStatus('missing');
+            setErrorMessage('Directory does not exist');
+          } else {
+            setVerificationStatus('error');
+            setErrorMessage(skillsError.message);
+          }
+        } catch {
+          // Fallback to string matching if JSON parse fails
+          if (errorStr.includes('does not exist')) {
+            setVerificationStatus('missing');
+            setErrorMessage('Directory does not exist');
+          } else {
+            setVerificationStatus('error');
+            setErrorMessage(errorStr);
+          }
         }
       }
     }
