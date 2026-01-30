@@ -358,14 +358,12 @@ export class GeminiService extends BaseAIService {
         ];
       }
 
-      // 🔍 Detailed Logging before API Call
+      // 🔍 Logging before API Call (debug level to avoid leaking sensitive data)
       const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
-      logger.info('🚀 Calling Gemini API - System Prompt Verification', {
+      logger.debug('🚀 Calling Gemini API - System Prompt Verification', {
         model,
         systemPromptLength: sysPromptText.length,
         includesSkills: sysPromptText.includes('<available_skills>'),
-        first500Chars: sysPromptText.substring(0, 500),
-        last500Chars: sysPromptText.substring(sysPromptText.length - 500),
       });
 
       const result = await this.withRetry(async () => {

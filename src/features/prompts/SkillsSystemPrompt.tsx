@@ -5,6 +5,16 @@ import { useSkills } from '@/context/SkillsContext';
 
 const logger = getLogger('SkillsSystemPrompt');
 
+// Escape XML special characters to prevent injection
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 export function SkillsSystemPrompt() {
   const { register, unregister } = useSystemPrompt();
   const { skills } = useSkills();
@@ -17,9 +27,9 @@ export function SkillsSystemPrompt() {
     const skillsXml = skills
       .map(
         (skill) => `  <skill>
-    <name>${skill.name}</name>
-    <description>${skill.description}</description>
-    <location>${skill.path}</location>
+    <name>${escapeXml(skill.name)}</name>
+    <description>${escapeXml(skill.description)}</description>
+    <location>${escapeXml(skill.path)}</location>
   </skill>`,
       )
       .join('\n');

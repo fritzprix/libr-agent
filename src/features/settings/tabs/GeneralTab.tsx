@@ -5,6 +5,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
 import { FolderOpen, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useDebounced } from '@/hooks/useDebounced';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('GeneralTab');
 
 interface SkillMetadata {
   name: string;
@@ -49,7 +52,7 @@ export function GeneralTab({
         setSkillCount(skills.length);
         setVerificationStatus('success');
       } catch (error) {
-        console.error('Failed to verify skills directory', error);
+        logger.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
         setErrorMessage(String(error));
       }
@@ -108,6 +111,7 @@ export function GeneralTab({
               variant="outline"
               onClick={handleBrowseEvents}
               title="Browse"
+              aria-label="Browse for skills directory"
               className="px-3"
             >
               <FolderOpen className="w-4 h-4" />

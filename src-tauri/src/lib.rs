@@ -428,9 +428,6 @@ pub fn run() {
                 set_setting,
                 get_setting,
                 delete_setting,
-                get_setting,
-                delete_setting,
-                delete_setting,
                 list_settings,
                 scan_skills_directory,
             ])
