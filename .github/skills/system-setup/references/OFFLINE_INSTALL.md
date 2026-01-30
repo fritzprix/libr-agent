@@ -9,11 +9,13 @@ Install Python, Node.js, and uv without internet connectivity.
 ### Download Python
 
 **Windows:**
+
 1. Visit python.org/downloads
 2. Download "Windows installer (64-bit)"
 3. Save file: `python-3.11.x-amd64.exe`
 
 **Linux:**
+
 ```bash
 # Download source tarball
 wget https://www.python.org/ftp/python/3.11.x/Python-3.11.x.tgz
@@ -24,6 +26,7 @@ dnf download python3 python3-pip
 ```
 
 **macOS:**
+
 ```bash
 # Download official installer
 curl -O https://www.python.org/ftp/python/3.11.x/python-3.11.x-macos11.pkg
@@ -32,17 +35,20 @@ curl -O https://www.python.org/ftp/python/3.11.x/python-3.11.x-macos11.pkg
 ### Download Node.js
 
 **Windows:**
+
 1. Visit nodejs.org/download
 2. Download "Windows Installer (.msi)" - 64-bit
 3. Save file: `node-v20.x.x-x64.msi`
 
 **Linux:**
+
 ```bash
 # Download binary tarball
 wget https://nodejs.org/dist/v20.x.x/node-v20.x.x-linux-x64.tar.xz
 ```
 
 **macOS:**
+
 ```bash
 # Download PKG installer
 curl -O https://nodejs.org/dist/v20.x.x/node-v20.x.x.pkg
@@ -51,6 +57,7 @@ curl -O https://nodejs.org/dist/v20.x.x/node-v20.x.x.pkg
 ### Download uv
 
 **All Platforms:**
+
 ```bash
 # Download prebuilt binary
 # Windows
@@ -86,12 +93,14 @@ pip download -r requirements.txt -d ./packages/
 ### Python Installation
 
 **Windows:**
+
 ```powershell
 # Run installer
 .\python-3.11.x-amd64.exe /quiet InstallAllUsers=1 PrependPath=1
 ```
 
 **Linux (from binary):**
+
 ```bash
 # Extract and install
 tar xzf Python-3.11.x.tgz
@@ -102,12 +111,14 @@ sudo make install
 ```
 
 **Linux (from .deb packages):**
+
 ```bash
 sudo dpkg -i python3_*.deb python3-pip_*.deb
 sudo apt-get install -f  # Fix dependencies if needed
 ```
 
 **macOS:**
+
 ```bash
 # Install PKG
 sudo installer -pkg python-3.11.x-macos11.pkg -target /
@@ -116,12 +127,14 @@ sudo installer -pkg python-3.11.x-macos11.pkg -target /
 ### Node.js Installation
 
 **Windows:**
+
 ```powershell
 # Run MSI installer
 msiexec /i node-v20.x.x-x64.msi /quiet
 ```
 
 **Linux:**
+
 ```bash
 # Extract binary
 tar xJf node-v20.x.x-linux-x64.tar.xz
@@ -133,6 +146,7 @@ source ~/.bashrc
 ```
 
 **macOS:**
+
 ```bash
 # Install PKG
 sudo installer -pkg node-v20.x.x.pkg -target /
@@ -141,6 +155,7 @@ sudo installer -pkg node-v20.x.x.pkg -target /
 ### uv Installation
 
 **Windows:**
+
 ```powershell
 # Extract and move to PATH
 Expand-Archive uv-x86_64-pc-windows-msvc.zip
@@ -148,6 +163,7 @@ Move-Item uv-x86_64-pc-windows-msvc\uv.exe $env:USERPROFILE\.cargo\bin\
 ```
 
 **Linux/macOS:**
+
 ```bash
 # Extract and install
 tar xzf uv-*.tar.gz
@@ -267,6 +283,7 @@ npm config set https-proxy http://proxy:8080
 ### Missing System Libraries (Linux)
 
 Python compilation may need:
+
 ```bash
 # Debian/Ubuntu
 sudo apt-get install build-essential libssl-dev libffi-dev python3-dev

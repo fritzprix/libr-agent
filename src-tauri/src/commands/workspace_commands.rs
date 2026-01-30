@@ -5,7 +5,6 @@
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
-use std::process::Command;
 use tokio::fs;
 
 /// Represents a file or directory item in the workspace for display in the frontend.

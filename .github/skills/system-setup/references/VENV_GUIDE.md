@@ -3,6 +3,7 @@
 ## Why Virtual Environments?
 
 Virtual environments isolate Python dependencies per project, preventing:
+
 - Version conflicts between projects
 - Global package pollution
 - Permission issues with system Python
@@ -13,6 +14,7 @@ Virtual environments isolate Python dependencies per project, preventing:
 ### Python venv (Built-in)
 
 **All Platforms:**
+
 ```bash
 # Create venv
 python -m venv myenv
@@ -29,6 +31,7 @@ deactivate
 ### uv (Recommended for Speed)
 
 **All Platforms:**
+
 ```bash
 # Create venv with uv (much faster)
 uv venv
@@ -47,10 +50,12 @@ uv pip freeze > requirements.txt
 ## Virtual Environment Locations
 
 **Standard locations:**
+
 - Project root: `./venv` or `./.venv`
 - Centralized: `~/.virtualenvs/project-name/`
 
 **LibrAgent MCP servers:**
+
 - Each MCP server may have its own venv
 - Check `mcp-server-directory/.venv/`
 
@@ -89,6 +94,7 @@ pip freeze --all > requirements.txt
 ### VS Code
 
 Add to `.vscode/settings.json`:
+
 ```json
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
@@ -110,6 +116,7 @@ Add to `.vscode/settings.json`:
 **Symptoms:** `(venv)` prefix doesn't appear
 
 **Solutions:**
+
 - Ensure correct activation script path
 - Check script execution policy (Windows): `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
 - Try absolute path: `C:\path\to\venv\Scripts\activate`
@@ -119,6 +126,7 @@ Add to `.vscode/settings.json`:
 **Symptoms:** Venv uses different Python than expected
 
 **Solutions:**
+
 ```bash
 # Specify Python version explicitly
 python3.11 -m venv myenv
@@ -131,6 +139,7 @@ C:\Python311\python.exe -m venv myenv
 **Symptoms:** `ModuleNotFoundError` despite installing package
 
 **Solutions:**
+
 - Verify venv is activated: `which python` or `Get-Command python`
 - Check pip installation: `pip list`
 - Reinstall package in activated venv
@@ -140,6 +149,7 @@ C:\Python311\python.exe -m venv myenv
 **Symptoms:** Venv directory consumes excessive disk space
 
 **Solutions:**
+
 - Don't commit venv to git (add to `.gitignore`)
 - Use `--without-pip` and install pip later if needed
 - Clean up unused packages: `pip uninstall package-name`
@@ -159,6 +169,7 @@ project/
 ### Gitignore
 
 Add to `.gitignore`:
+
 ```
 # Virtual environments
 venv/
@@ -170,10 +181,12 @@ ENV/
 ### Requirements.txt Management
 
 **Split requirements:**
+
 - `requirements.txt` - Production dependencies
 - `requirements-dev.txt` - Development tools (pytest, black, etc.)
 
 Install both:
+
 ```bash
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
@@ -196,6 +209,7 @@ pip-sync requirements.txt
 LibrAgent MCP servers may use venvs:
 
 **Check MCP server venv:**
+
 ```bash
 # Look for .venv or venv directory
 ls -la /path/to/mcp-server/
@@ -205,6 +219,7 @@ cat /path/to/mcp-server/start.sh
 ```
 
 **Activate MCP server venv manually:**
+
 ```bash
 cd /path/to/mcp-server
 source .venv/bin/activate
@@ -230,6 +245,7 @@ uv pip compile requirements.in -o requirements.txt
 ```
 
 **Benefits:**
+
 - 10-100x faster than pip
 - Parallel downloads
 - Disk cache for offline installs

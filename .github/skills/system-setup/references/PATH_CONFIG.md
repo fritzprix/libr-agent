@@ -7,11 +7,13 @@ The PATH environment variable tells the operating system where to find executabl
 ## Viewing Current PATH
 
 **Windows PowerShell:**
+
 ```powershell
 $env:PATH -split ';'
 ```
 
 **Linux/macOS:**
+
 ```bash
 echo $PATH | tr ':' '\n'
 ```
@@ -21,6 +23,7 @@ echo $PATH | tr ':' '\n'
 ### Windows
 
 **Method 1: System Settings (Permanent)**
+
 1. Search "Environment Variables" in Start menu
 2. Click "Environment Variables"
 3. Under "User variables" or "System variables", select "Path"
@@ -29,11 +32,13 @@ echo $PATH | tr ':' '\n'
 6. Click OK and restart terminal
 
 **Method 2: PowerShell (Current Session)**
+
 ```powershell
 $env:PATH += ";C:\path\to\directory"
 ```
 
 **Method 3: PowerShell Profile (Permanent)**
+
 ```powershell
 # Edit profile
 notepad $PROFILE
@@ -47,21 +52,25 @@ $env:PATH += ";C:\path\to\directory"
 **Method 1: Shell RC File (Permanent)**
 
 For Bash (`~/.bashrc` or `~/.bash_profile`):
+
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 For Zsh (`~/.zshrc`):
+
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Apply changes:
+
 ```bash
 source ~/.bashrc  # or ~/.zshrc
 ```
 
 **Method 2: Current Session Only**
+
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
@@ -71,16 +80,19 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Python
 
 **Windows:**
+
 - `C:\Python311\`
 - `C:\Python311\Scripts\`
 - `%APPDATA%\Python\Python311\Scripts\`
 
 **Linux:**
+
 - `/usr/bin/`
 - `/usr/local/bin/`
 - `~/.local/bin/`
 
 **macOS:**
+
 - `/usr/local/bin/`
 - `/opt/homebrew/bin/` (Apple Silicon)
 - `~/Library/Python/3.11/bin/`
@@ -88,24 +100,29 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Node.js
 
 **Windows:**
+
 - `C:\Program Files\nodejs\`
 - `%APPDATA%\npm\`
 
 **Linux:**
+
 - `/usr/bin/`
 - `/usr/local/bin/`
 - `~/.npm-global/bin/`
 
 **macOS:**
+
 - `/usr/local/bin/`
 - `/opt/homebrew/bin/`
 
 ### uv
 
 **Windows:**
+
 - `%USERPROFILE%\.cargo\bin\`
 
 **Linux/macOS:**
+
 - `~/.cargo/bin/`
 
 ## Troubleshooting
@@ -113,11 +130,13 @@ export PATH="$HOME/.local/bin:$PATH"
 ### PATH Not Updating
 
 **Windows:**
+
 - Close all terminal windows and reopen
 - Log out and log back in
 - Restart computer (system-wide changes)
 
 **Linux/macOS:**
+
 - Run `source ~/.bashrc` or `source ~/.zshrc`
 - Close terminal and open new one
 - Check shell type: `echo $SHELL`
@@ -125,6 +144,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ### Duplicate Entries
 
 **Windows:**
+
 ```powershell
 # Remove duplicates
 $paths = $env:PATH -split ';' | Select-Object -Unique
@@ -132,6 +152,7 @@ $env:PATH = $paths -join ';'
 ```
 
 **Linux/macOS:**
+
 ```bash
 # View duplicates
 echo $PATH | tr ':' '\n' | sort | uniq -d
@@ -140,6 +161,7 @@ echo $PATH | tr ':' '\n' | sort | uniq -d
 ### Permission Denied
 
 **Linux/macOS:**
+
 - Ensure directories have execute permissions: `chmod +x /path/to/executable`
 - Check file ownership: `ls -la /path/to/executable`
 
@@ -167,6 +189,7 @@ Order matters: The first match in PATH is executed.
 ## PATH Priority
 
 Directories are searched in order:
+
 1. **Windows:** Left to right (separated by `;`)
 2. **Linux/macOS:** Left to right (separated by `:`)
 

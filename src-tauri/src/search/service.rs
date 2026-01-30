@@ -2,7 +2,6 @@
 ///
 /// Contains high-level business logic for search operations, orchestrating
 /// between repositories, index storage, and the search engine itself.
-
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
 use crate::search::message_index::MessageSearchEngine;
