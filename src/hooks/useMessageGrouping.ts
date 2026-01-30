@@ -40,6 +40,19 @@ const hasTextContent = (msg: Message): boolean => {
   return !!msg.content && msg.content.length > 0 && msg.content.some(validText);
 };
 
+// Helper: Check if two maps are identical (shallow equality of keys and values)
+function areMapsEqual(
+  map1: Map<string, Message>,
+  map2: Map<string, Message>,
+): boolean {
+  if (map1.size !== map2.size) return false;
+  for (const [key, val] of map1) {
+    if (!map2.has(key)) return false;
+    if (map2.get(key) !== val) return false;
+  }
+  return true;
+}
+
 export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
   // Cache the previous result and metadata to enable differential updates
   const cache = useRef<{
@@ -221,13 +234,23 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       }
     }
 
+    // Performance Optimization:
+    // If the newly computed toolResultsMap is identical (by reference for keys/values)
+    // to the previous one, reuse the previous Map instance.
+    // This prevents AgentMessageBubble (which receives this map as a prop) from re-rendering
+    // unnecessarily when tool results haven't changed (e.g. during text streaming).
+    let finalToolResultsMap = toolResultsMap;
+    if (areMapsEqual(toolResultsMap, prevCache.toolResultsMap)) {
+      finalToolResultsMap = prevCache.toolResultsMap;
+    }
+
     return {
-      result: { groupedMessages, toolResultsMap },
+      result: { groupedMessages, toolResultsMap: finalToolResultsMap },
       newCache: {
         messages,
         groupedMessages,
         groupEndIndices,
-        toolResultsMap,
+        toolResultsMap: finalToolResultsMap,
       },
     };
   }, [messages]);
