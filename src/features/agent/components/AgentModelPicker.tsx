@@ -107,16 +107,11 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
   // Combine static and dynamic models
   const availableModels = useMemo(() => {
     if (!localProvider) return {};
-    
-    const providerConfig = serviceConfigs[localProvider as AIServiceProvider] || {};
-    const staticModels =
-      llmConfigManager.getModelsForProvider(
-        localProvider as AIServiceProvider,
-      ) || {};
-    
-    let models = Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
-    
-    // Add custom model ID if 3rd party is enabled for OpenAI
+
+    const providerConfig =
+      serviceConfigs[localProvider as AIServiceProvider] || {};
+
+    // If 3rd party is enabled for OpenAI, show only custom model ID
     if (
       localProvider === AIServiceProvider.OpenAI &&
       providerConfig.use3rdParty &&
@@ -124,7 +119,7 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
     ) {
       const customModel: ModelInfo = {
         id: providerConfig.customModelId,
-        name: `${providerConfig.customModelId} (Custom)`,
+        name: providerConfig.customModelId,
         contextWindow: 128000,
         supportReasoning: false,
         supportTools: true,
@@ -135,14 +130,19 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
         },
         description: 'Custom 3rd party OpenAI-compatible model',
       };
-      
-      models = {
-        ...models,
+
+      return {
         [providerConfig.customModelId]: customModel,
       };
     }
-    
-    return models;
+
+    // Otherwise, show static or dynamic models
+    const staticModels =
+      llmConfigManager.getModelsForProvider(
+        localProvider as AIServiceProvider,
+      ) || {};
+
+    return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
   }, [localProvider, dynamicModels, serviceConfigs]);
 
   const modelOptions = useMemo(() => {

@@ -35,8 +35,12 @@ function ProviderCardBase({
 }: ProviderCardProps) {
   const [localApiKey, setLocalApiKey] = useState(apiKey || '');
   const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
-  const [localUse3rdParty, setLocalUse3rdParty] = useState(use3rdParty || false);
-  const [localCustomModelId, setLocalCustomModelId] = useState(customModelId || '');
+  const [localUse3rdParty, setLocalUse3rdParty] = useState(
+    use3rdParty || false,
+  );
+  const [localCustomModelId, setLocalCustomModelId] = useState(
+    customModelId || '',
+  );
 
   // Use debounce hook for pending changes
   const { debounced: schedulePending } = useDebounce(
@@ -130,12 +134,15 @@ function ProviderCardBase({
                     schedulePending({ customModelId: v });
                   }}
                   onBlur={() =>
-                    onPendingChange(provider, { customModelId: localCustomModelId })
+                    onPendingChange(provider, {
+                      customModelId: localCustomModelId,
+                    })
                   }
                   className="bg-background border text-foreground w-full"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Enter the model ID supported by your 3rd party API (e.g., LM Studio, LocalAI)
+                  Enter the model ID supported by your 3rd party API (e.g., LM
+                  Studio, LocalAI)
                 </p>
               </div>
             )}
