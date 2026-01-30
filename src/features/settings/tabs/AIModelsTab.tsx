@@ -48,6 +48,8 @@ export function AIModelsTab({
                 providerName={providerName}
                 apiKey={cfg.apiKey || ''}
                 baseUrl={cfg.baseUrl}
+                use3rdParty={cfg.use3rdParty}
+                customModelId={cfg.customModelId}
                 onPendingChange={onPendingChange}
               />
             );

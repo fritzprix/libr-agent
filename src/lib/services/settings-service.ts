@@ -10,6 +10,8 @@ export interface ServiceConfig {
   apiKey?: string;
   baseUrl?: string;
   safetySettings?: SafetySetting[];
+  use3rdParty?: boolean;
+  customModelId?: string;
 }
 
 export interface ModelChoice {

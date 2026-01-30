@@ -4,6 +4,7 @@
       "name": "OpenAI",
       "apiKeyEnvVar": "OPENAI_API_KEY",
       "baseUrl": "https://api.openai.com/v1",
+      "requiresApiKey": false,
       "models": {
         "skt/ax-k1": {
           "name": "skt/ax-k1",

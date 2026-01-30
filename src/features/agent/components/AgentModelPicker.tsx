@@ -107,15 +107,43 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
   // Combine static and dynamic models
   const availableModels = useMemo(() => {
     if (!localProvider) return {};
+    
+    const providerConfig = serviceConfigs[localProvider as AIServiceProvider] || {};
     const staticModels =
       llmConfigManager.getModelsForProvider(
         localProvider as AIServiceProvider,
       ) || {};
-    if (Object.keys(dynamicModels).length > 0) {
-      return dynamicModels;
+    
+    let models = Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
+    
+    // Add custom model ID if 3rd party is enabled for OpenAI
+    if (
+      localProvider === AIServiceProvider.OpenAI &&
+      providerConfig.use3rdParty &&
+      providerConfig.customModelId
+    ) {
+      const customModel: ModelInfo = {
+        id: providerConfig.customModelId,
+        name: `${providerConfig.customModelId} (Custom)`,
+        contextWindow: 128000,
+        supportReasoning: false,
+        supportTools: true,
+        supportStreaming: true,
+        cost: {
+          input: 0,
+          output: 0,
+        },
+        description: 'Custom 3rd party OpenAI-compatible model',
+      };
+      
+      models = {
+        ...models,
+        [providerConfig.customModelId]: customModel,
+      };
     }
-    return staticModels;
-  }, [localProvider, dynamicModels]);
+    
+    return models;
+  }, [localProvider, dynamicModels, serviceConfigs]);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
