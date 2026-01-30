@@ -129,6 +129,7 @@ function AgentChatInner() {
   return (
     <>
       <TimeLocationSystemPrompt />
+
       <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
         {/* Workspace side panel */}
         {showWorkspacePanel && <AgentWorkspacePanel />}

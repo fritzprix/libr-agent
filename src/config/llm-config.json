@@ -17,6 +17,18 @@
           },
           "description": "Advanced model with 1M context, excellent for coding and instruction following"
         },
+        "mlx-community/GLM-4.7-Flash-8bit": {
+          "name": "mlx-community/GLM-4.7-Flash-8bit",
+          "contextWindow": 1000000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.003,
+            "output": 0.012
+          },
+          "description": "Advanced model with 1M context, excellent for coding and instruction following"
+        },
         "gpt-4.1-mini": {
           "name": "GPT-4.1 Mini",
           "contextWindow": 1000000,

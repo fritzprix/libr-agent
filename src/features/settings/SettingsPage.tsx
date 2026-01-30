@@ -452,6 +452,10 @@ export default function SettingsPage() {
             <GeneralTab
               localLanguage={localLanguage}
               onChange={handleLanguageChange}
+              skillsDirectory={localSystemSettings.skillsDirectory}
+              onSkillsDirectoryChange={(path) =>
+                handleSystemSettingsChange('skillsDirectory', path)
+              }
             />
           </TabsContent>
 

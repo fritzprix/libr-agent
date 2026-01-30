@@ -21,7 +21,9 @@ import { MCPServerProvider } from '../context/MCPServerContext';
 import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SettingsProvider } from '../context/SettingsContext';
+import { SkillsProvider } from '../context/SkillsContext';
 import '../styles/globals.css';
+import { SkillsSystemPrompt } from '@/features/prompts/SkillsSystemPrompt';
 import './App.css';
 // Removed legacy tool provider imports
 import { SystemPromptProvider } from '@/context/SystemPromptContext';
@@ -33,80 +35,83 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <ModelOptionsProvider>
-          <SystemPromptProvider>
-            <LLMServiceProvider>
-              <MCPServerRegistryProvider>
-                <MCPServerProvider>
-                  <AssistantContextProvider>
-                    <AgentSessionListProvider>
-                      <SidebarProvider className="h-full overflow-hidden">
-                        <DnDContextProvider>
-                          <AppSidebar />
-                          {/* Main Content Area (children of AppSidebar) */}
-                          <div className="flex flex-1 flex-col min-w-0">
-                            <AppHeader>
-                              <ThemeToggle />
-                            </AppHeader>
-                            <div className="flex-1 w-full min-h-0 overflow-y-auto">
-                              <Suspense
-                                fallback={
-                                  <div className="flex items-center justify-center h-full">
-                                    Loading...
-                                  </div>
-                                }
-                              >
-                                <Routes>
-                                  <Route
-                                    path="/"
-                                    element={<Navigate to="/agent" replace />}
-                                  />
-                                  <Route
-                                    path="/agent"
-                                    element={<AgentContainer />}
-                                  />
-                                  <Route
-                                    path="/agent/draft"
-                                    element={<AgentDraftChatView />}
-                                  />
-                                  <Route
-                                    path="/agent/:sessionId"
-                                    element={<AgentContainer />}
-                                  />
-                                  <Route
-                                    path="/assistants"
-                                    element={<AssistantList />}
-                                  />
-                                  <Route
-                                    path="/playbooks"
-                                    element={<PlaybookList />}
-                                  />
-                                  <Route
-                                    path="/history"
-                                    element={<History />}
-                                  />
-                                  <Route
-                                    path="/history/search"
-                                    element={<History />}
-                                  />
-                                  <Route
-                                    path="/settings"
-                                    element={<SettingsPage />}
-                                  />
-                                </Routes>
-                              </Suspense>
+        <SkillsProvider>
+          <ModelOptionsProvider>
+            <SystemPromptProvider>
+              <SkillsSystemPrompt />
+              <LLMServiceProvider>
+                <MCPServerRegistryProvider>
+                  <MCPServerProvider>
+                    <AssistantContextProvider>
+                      <AgentSessionListProvider>
+                        <SidebarProvider className="h-full overflow-hidden">
+                          <DnDContextProvider>
+                            <AppSidebar />
+                            {/* Main Content Area (children of AppSidebar) */}
+                            <div className="flex flex-1 flex-col min-w-0">
+                              <AppHeader>
+                                <ThemeToggle />
+                              </AppHeader>
+                              <div className="flex-1 w-full min-h-0 overflow-y-auto">
+                                <Suspense
+                                  fallback={
+                                    <div className="flex items-center justify-center h-full">
+                                      Loading...
+                                    </div>
+                                  }
+                                >
+                                  <Routes>
+                                    <Route
+                                      path="/"
+                                      element={<Navigate to="/agent" replace />}
+                                    />
+                                    <Route
+                                      path="/agent"
+                                      element={<AgentContainer />}
+                                    />
+                                    <Route
+                                      path="/agent/draft"
+                                      element={<AgentDraftChatView />}
+                                    />
+                                    <Route
+                                      path="/agent/:sessionId"
+                                      element={<AgentContainer />}
+                                    />
+                                    <Route
+                                      path="/assistants"
+                                      element={<AssistantList />}
+                                    />
+                                    <Route
+                                      path="/playbooks"
+                                      element={<PlaybookList />}
+                                    />
+                                    <Route
+                                      path="/history"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/history/search"
+                                      element={<History />}
+                                    />
+                                    <Route
+                                      path="/settings"
+                                      element={<SettingsPage />}
+                                    />
+                                  </Routes>
+                                </Suspense>
+                              </div>
                             </div>
-                          </div>
-                        </DnDContextProvider>
-                      </SidebarProvider>
-                      <Toaster />
-                    </AgentSessionListProvider>
-                  </AssistantContextProvider>
-                </MCPServerProvider>
-              </MCPServerRegistryProvider>
-            </LLMServiceProvider>
-          </SystemPromptProvider>
-        </ModelOptionsProvider>
+                          </DnDContextProvider>
+                        </SidebarProvider>
+                        <Toaster />
+                      </AgentSessionListProvider>
+                    </AssistantContextProvider>
+                  </MCPServerProvider>
+                </MCPServerRegistryProvider>
+              </LLMServiceProvider>
+            </SystemPromptProvider>
+          </ModelOptionsProvider>
+        </SkillsProvider>
       </SettingsProvider>
     </div>
   );

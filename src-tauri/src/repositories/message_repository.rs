@@ -405,7 +405,6 @@ mod tests {
     use super::*;
     use crate::entity::prelude::Session as SessionEntity;
     use crate::entity::session;
-    use crate::mcp::types::MCPContent;
     use sea_orm::ActiveModelTrait;
 
     async fn setup_test_db() -> SqliteMessageRepository {
