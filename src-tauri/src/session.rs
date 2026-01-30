@@ -77,6 +77,9 @@ impl SessionManager {
         fs::create_dir_all(base_data_dir.join("config"))
             .map_err(|e| format!("Failed to create config directory: {e}"))?;
 
+        fs::create_dir_all(base_data_dir.join("skills"))
+            .map_err(|e| format!("Failed to create skills directory: {e}"))?;
+
         // Create default workspace
         let default_workspace = base_data_dir.join("workspaces").join("default");
         fs::create_dir_all(&default_workspace)

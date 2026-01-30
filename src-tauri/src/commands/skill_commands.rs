@@ -1,3 +1,4 @@
+use crate::session::get_session_manager;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -15,6 +16,25 @@ pub struct SkillMetadata {
 struct SkillFrontmatter {
     name: String,
     description: String,
+}
+
+#[tauri::command]
+pub async fn get_default_skills_directory() -> Result<String, String> {
+    let session_manager = get_session_manager()?;
+    let skills_dir = session_manager.get_base_data_dir().join("skills");
+    Ok(skills_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn open_skills_directory_in_explorer() -> Result<(), String> {
+    let session_manager = get_session_manager()?;
+    let skills_dir = session_manager.get_base_data_dir().join("skills");
+
+    if !skills_dir.exists() {
+        return Err("Skills directory does not exist".to_string());
+    }
+
+    crate::utils::fs::open_in_file_manager(&skills_dir)
 }
 
 #[tauri::command]

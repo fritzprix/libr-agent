@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
-import { FolderOpen, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { useDebounced } from '@/hooks/useDebounced';
+import {
+  FolderOpen,
+  FolderOutput,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+} from 'lucide-react';
+import { SkillsListModal } from '../components/SkillsListModal';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('GeneralTab');
 
 interface SkillMetadata {
   name: string;
@@ -29,38 +38,55 @@ export function GeneralTab({
   const [verificationStatus, setVerificationStatus] = useState<
     'idle' | 'loading' | 'success' | 'error'
   >('idle');
-  const [skillCount, setSkillCount] = useState<number>(0);
+  const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>('');
-
-  const debouncedSkillsDirectory = useDebounced(skillsDirectory, 500);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     async function verifySkills() {
-      if (!debouncedSkillsDirectory) {
+      if (!skillsDirectory) {
+        try {
+          // If no directory is set, try to get the default one
+          const defaultDir = await invoke<string>(
+            'get_default_skills_directory',
+          );
+          onSkillsDirectoryChange(defaultDir);
+          return; // The change will trigger the effect again
+        } catch (error) {
+          console.warn('Failed to get default skills directory', error);
+          // Fall through to empty state
+        }
+      }
+
+      const dirToVerify = skillsDirectory || '';
+
+      if (!dirToVerify) {
         setVerificationStatus('idle');
+        setSkills([]);
         return;
       }
 
       setVerificationStatus('loading');
       try {
-        const skills = await invoke<SkillMetadata[]>('scan_skills_directory', {
-          directory: debouncedSkillsDirectory,
+        const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
+          directory: dirToVerify,
         });
-        setSkillCount(skills.length);
+        setSkills(result);
         setVerificationStatus('success');
       } catch (error) {
         console.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
         setErrorMessage(String(error));
+        setSkills([]);
       }
     }
 
     verifySkills();
-  }, [debouncedSkillsDirectory]);
+  }, [skillsDirectory]);
 
   const handleBrowseEvents = async () => {
     try {
-      const selected = await open({
+      const selected = await openDialog({
         directory: true,
         multiple: false,
         title: 'Select Skills Directory',
@@ -70,7 +96,22 @@ export function GeneralTab({
         onSkillsDirectoryChange(selected);
       }
     } catch (error) {
-      console.error('Failed to open folder dialog', error);
+      logger.error('Failed to open folder dialog', error);
+    }
+  };
+
+  const handleOpenDirectory = async () => {
+    if (!skillsDirectory) {
+      logger.warn('handleOpenDirectory called but skillsDirectory is empty');
+      return;
+    }
+    logger.info(`Attempting to open directory: ${skillsDirectory}`);
+    try {
+      await invoke('open_skills_directory_in_explorer');
+      logger.info(`Successfully requested open_skills_directory_in_explorer`);
+    } catch (error) {
+      logger.error('Failed to open directory', error);
+      // Optional: show toast error
     }
   };
 
@@ -112,6 +153,16 @@ export function GeneralTab({
             >
               <FolderOpen className="w-4 h-4" />
             </Button>
+            {skillsDirectory && (
+              <Button
+                variant="outline"
+                onClick={handleOpenDirectory}
+                title="Open in Explorer"
+                className="px-3"
+              >
+                <FolderOutput className="w-4 h-4" />
+              </Button>
+            )}
           </div>
 
           {/* Verification Status */}
@@ -123,12 +174,15 @@ export function GeneralTab({
               </>
             )}
             {verificationStatus === 'success' && (
-              <>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 hover:underline focus:outline-none"
+              >
                 <CheckCircle className="w-4 h-4 text-green-500" />
                 <span className="text-green-500">
-                  Found {skillCount} skill{skillCount !== 1 ? 's' : ''}
+                  Found {skills.length} skill{skills.length !== 1 ? 's' : ''}
                 </span>
-              </>
+              </button>
             )}
             {verificationStatus === 'error' && (
               <>
@@ -147,6 +201,12 @@ export function GeneralTab({
           )}
         </p>
       </div>
+
+      <SkillsListModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        skills={skills}
+      />
     </div>
   );
 }

@@ -127,8 +127,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
           effectiveApiKey,
           providerConfig,
         );
-        // Use 5-second timeout for model loading to prevent UI hangs
-        const modelList = await withTimeout(service.listModels(), 5000);
+        // Use 20-second timeout for model loading to prevent UI hangs
+        const modelList = await withTimeout(service.listModels(), 20000);
 
         // Convert ModelInfo[] into Record<string, ModelInfo>
         const modelsRecord = modelList.reduce(

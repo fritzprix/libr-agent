@@ -405,7 +405,7 @@ mod tests {
     use super::*;
     use crate::entity::prelude::Session as SessionEntity;
     use crate::entity::session;
-    use sea_orm::ActiveModelTrait;
+    use crate::mcp::types::MCPContent;
 
     async fn setup_test_db() -> SqliteMessageRepository {
         let db = sea_orm::Database::connect("sqlite::memory:")

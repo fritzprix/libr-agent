@@ -62,7 +62,9 @@ use commands::playbook_commands::{
 };
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
-use commands::skill_commands::scan_skills_directory;
+use commands::skill_commands::{
+    get_default_skills_directory, open_skills_directory_in_explorer, scan_skills_directory,
+};
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_override, greet,
@@ -433,6 +435,8 @@ pub fn run() {
                 delete_setting,
                 list_settings,
                 scan_skills_directory,
+                get_default_skills_directory,
+                open_skills_directory_in_explorer,
             ])
             .setup(|app| {
                 // Setup custom file logger FIRST (before any log calls)
