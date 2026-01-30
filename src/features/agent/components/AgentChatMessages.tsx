@@ -58,7 +58,8 @@ export function AgentChatMessages() {
   }, 100);
 
   const lastMessageWho = useMemo(
-    () => (messages.length > 0 ? messages[messages.length - 1].role : undefined),
+    () =>
+      messages.length > 0 ? messages[messages.length - 1].role : undefined,
     [messages],
   );
 
@@ -88,7 +89,9 @@ export function AgentChatMessages() {
 
   // Check if any message is currently streaming
   const isLastStreaming = useMemo(() => {
-    return messages.length > 0 ? messages[messages.length - 1].isStreaming : false;
+    return messages.length > 0
+      ? messages[messages.length - 1].isStreaming
+      : false;
   }, [messages]);
 
   return (

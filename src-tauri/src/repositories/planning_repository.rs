@@ -67,6 +67,14 @@ pub trait PlanningRepository: Send + Sync {
         content: &str,
     ) -> Result<bool, DbError>;
 
+    async fn update_scratchpad_by_id(
+        &self,
+        session_id: &str,
+        id: i64,
+        content: &str,
+        new_title: Option<String>,
+    ) -> Result<bool, DbError>;
+
     async fn list_scratchpad(
         &self,
         session_id: &str,
@@ -416,6 +424,40 @@ impl PlanningRepository for SqlitePlanningRepository {
         let item = planning_scratchpad::Entity::find()
             .filter(planning_scratchpad::Column::SessionId.eq(session_id))
             .filter(planning_scratchpad::Column::Title.eq(title))
+            .one(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)?;
+
+        if let Some(i) = item {
+            let mut active: planning_scratchpad::ActiveModel = i.into();
+            active.content = Set(content.to_string());
+            if let Some(nt) = new_title {
+                active.title = Set(Some(nt));
+            }
+            active.updated_at = Set(now);
+
+            active
+                .update(&self.db)
+                .await
+                .map_err(DbError::SeaOrmQueryFailed)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn update_scratchpad_by_id(
+        &self,
+        session_id: &str,
+        id: i64,
+        content: &str,
+        new_title: Option<String>,
+    ) -> Result<bool, DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let item = planning_scratchpad::Entity::find()
+            .filter(planning_scratchpad::Column::SessionId.eq(session_id))
+            .filter(planning_scratchpad::Column::Id.eq(id))
             .one(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;

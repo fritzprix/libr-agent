@@ -147,11 +147,7 @@ pub async fn update_scratchpad(
     session_id: &str,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let title = args
-        .get("title")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty());
+    let id = args.get("id").and_then(|v| v.as_i64());
 
     let note = args
         .get("note")
@@ -159,9 +155,9 @@ pub async fn update_scratchpad(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
-    let title_val = match title {
-        Some(t) => t,
-        None => return Ok(missing_param_error("title", ToolGroup::Planning)),
+    let id_val = match id {
+        Some(i) => i,
+        None => return Ok(missing_param_error("id", ToolGroup::Planning)),
     };
     let note_val = match note {
         Some(n) => n,
@@ -169,40 +165,39 @@ pub async fn update_scratchpad(
     };
 
     let new_title = args
-        .get("newTitle")
+        .get("title")
         .and_then(|v| v.as_str())
-        .map(|s| s.trim());
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
 
     let repo = get_planning_repository();
 
     match repo
-        .update_scratchpad(
+        .update_scratchpad_by_id(
             session_id,
-            title_val,
-            new_title.map(|s| s.to_string()),
+            id_val,
             note_val,
+            new_title.map(|s| s.to_string()),
         )
         .await
     {
         Ok(found) => {
             if found {
-                let final_title = new_title.unwrap_or(title_val);
                 let hint = SuccessHint::new(
-                    format!("✓ Scratchpad note '{}' updated", final_title),
+                    format!("✓ Scratchpad note (ID: {}) updated", id_val),
                     vec![
-                        "Use readScratchpad to verify content".to_string(),
-                        "Use listScratchpad to see all items".to_string(),
+                        "Use readScratchpad or listScratchpad to verify".to_string(),
+                        "Use getCurrentState to see updated context".to_string(),
                     ],
                 );
                 Ok(hint.to_mcp_result())
             } else {
                 Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::ResourceNotFound,
-                    format!("No scratchpad item found with title '{}'", title_val),
+                    format!("Scratchpad note with ID {} not found", id_val),
                     vec![
-                        "Use listScratchpad to see available items".to_string(),
-                        "Use addScratchpad to create a new note".to_string(),
-                        "Check for typos in the title".to_string(),
+                        "Use listScratchpad or getCurrentState to see available notes".to_string(),
+                        "Verify the ID is correct".to_string(),
                     ],
                     ToolGroup::Planning,
                 )
@@ -211,11 +206,8 @@ pub async fn update_scratchpad(
         }
         Err(e) => Ok(ErrorGuidance::with_guidance(
             ErrorCategory::DatabaseError,
-            format!("Failed to update note: {}", e),
-            vec![
-                "Try again".to_string(),
-                "Use getCurrentState to verify item status".to_string(),
-            ],
+            format!("Database error: {}", e),
+            vec!["Try again".to_string()],
             ToolGroup::Planning,
         )
         .to_mcp_result()),

@@ -268,7 +268,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
         // We'll modify the state management to use Arc storage pattern
         let proxy_manager = MCPServiceProxyManager::new_from_static_refs();
 
-        set_mcp_service_proxy_manager(proxy_manager);
+        set_mcp_service_proxy_manager(std::sync::Arc::new(proxy_manager));
 
         info!("✅ MCP Service Proxy Manager initialized");
     });
@@ -506,15 +506,8 @@ pub fn run() {
                 // Removed duplicate logging
 
                 // Initialize Agent Session Manager with proxy manager
-                // Get static reference and wrap in Arc using the same unsafe pattern
-                let proxy_manager_arc = unsafe {
-                    let ptr = get_mcp_service_proxy_manager() as *const mcp::MCPServiceProxyManager;
-                    let arc: std::sync::Arc<mcp::MCPServiceProxyManager> =
-                        std::sync::Arc::from_raw(ptr);
-                    let cloned = arc.clone();
-                    std::mem::forget(arc);
-                    cloned
-                };
+                // Get proxy manager directly as Arc (safe now)
+                let proxy_manager_arc = get_mcp_service_proxy_manager();
 
                 // Get session repository as Arc<dyn SessionRepository> for dependency injection
                 let session_repo_arc: Arc<dyn repositories::SessionRepository> =

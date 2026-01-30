@@ -22,3 +22,8 @@
 
 **Learning:** `AgentChatMessages` was creating a new `Map` for `toolResults` inside the render loop for every tool group message, even though `useMessageGrouping` already provided a global map. This caused unnecessary object allocations and potentially triggered re-renders in children if they relied on prop identity.
 **Action:** Utilize the global lookup map provided by the data processing hook (`useMessageGrouping`) instead of reconstructing partial maps in the render loop. Pass the global map to child components, allowing them to look up what they need.
+
+## 2025-05-21 - Unstable Hook Return Values
+
+**Learning:** `useRustBackend` was returning a new object literal on every render, causing consumers like `AgentMessageRenderer` (which renders frequently during streaming) to recreate callbacks (`handleUIAction`) and unnecessarily re-render heavy children (`UIResourceRenderer` with iframes).
+**Action:** When a hook returns an object composed entirely of static or stable values (like imported module functions), define the object constant outside the hook to ensure referential stability and prevent cascading re-renders.
