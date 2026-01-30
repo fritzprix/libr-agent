@@ -30,7 +30,7 @@ export function GeneralTab({
 }: GeneralTabProps) {
   const { t } = useTranslation('common');
   const [verificationStatus, setVerificationStatus] = useState<
-    'idle' | 'loading' | 'success' | 'error'
+    'idle' | 'loading' | 'success' | 'error' | 'missing'
   >('idle');
   const [skillCount, setSkillCount] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -52,14 +52,44 @@ export function GeneralTab({
         setSkillCount(skills.length);
         setVerificationStatus('success');
       } catch (error) {
+        const errorStr = String(error);
         logger.error('Failed to verify skills directory', error);
-        setVerificationStatus('error');
-        setErrorMessage(String(error));
+        
+        // Check if error is about directory not existing
+        if (errorStr.includes('does not exist')) {
+          setVerificationStatus('missing');
+          setErrorMessage('Directory does not exist');
+        } else {
+          setVerificationStatus('error');
+          setErrorMessage(errorStr);
+        }
       }
     }
 
     verifySkills();
   }, [debouncedSkillsDirectory]);
+
+  const handleCreateDirectory = async () => {
+    if (!skillsDirectory) return;
+    
+    try {
+      setVerificationStatus('loading');
+      await invoke('create_skills_directory', {
+        directory: skillsDirectory,
+      });
+      
+      // Re-verify after creation
+      const skills = await invoke<SkillMetadata[]>('scan_skills_directory', {
+        directory: skillsDirectory,
+      });
+      setSkillCount(skills.length);
+      setVerificationStatus('success');
+    } catch (error) {
+      logger.error('Failed to create skills directory', error);
+      setVerificationStatus('error');
+      setErrorMessage(String(error));
+    }
+  };
 
   const handleBrowseEvents = async () => {
     try {
@@ -73,7 +103,7 @@ export function GeneralTab({
         onSkillsDirectoryChange(selected);
       }
     } catch (error) {
-      console.error('Failed to open folder dialog', error);
+      logger.error('Failed to open folder dialog', error);
     }
   };
 
@@ -132,6 +162,20 @@ export function GeneralTab({
                 <span className="text-green-500">
                   Found {skillCount} skill{skillCount !== 1 ? 's' : ''}
                 </span>
+              </>
+            )}
+            {verificationStatus === 'missing' && (
+              <>
+                <AlertCircle className="w-4 h-4 text-yellow-500" />
+                <span className="text-yellow-500">Directory does not exist</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCreateDirectory}
+                  className="ml-2 h-6 px-2 text-xs"
+                >
+                  Create Directory
+                </Button>
               </>
             )}
             {verificationStatus === 'error' && (

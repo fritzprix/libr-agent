@@ -17,6 +17,24 @@ struct SkillFrontmatter {
     description: String,
 }
 
+/// Create a skills directory if it doesn't exist.
+/// This is a separate, explicit operation from scanning.
+#[tauri::command]
+pub async fn create_skills_directory(directory: String) -> Result<(), String> {
+    let path = PathBuf::from(&directory);
+    
+    if path.exists() {
+        return Ok(()); // Directory already exists
+    }
+    
+    tokio::task::spawn_blocking(move || {
+        fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create directory: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 /// Scan a directory for SKILL.md files and extract their metadata.
 /// This function is side-effect free: it returns an error if the directory doesn't exist,
 /// rather than creating it. Directory creation should be done explicitly in a separate step.
