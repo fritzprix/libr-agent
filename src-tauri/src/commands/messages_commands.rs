@@ -4,6 +4,7 @@ use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
+use crate::utils::pagination::Page;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -17,19 +18,6 @@ fn default_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
-}
-
-/// Generic pagination wrapper for query results.
-/// This type is shared across all paginated responses in the application.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub page: usize,
-    pub page_size: usize,
-    pub total_items: usize,
-    pub has_next_page: bool,
-    pub has_previous_page: bool,
 }
 
 /// Message data model matching the frontend TypeScript Message interface.
@@ -74,8 +62,8 @@ pub struct Message {
 #[command]
 pub async fn messages_get_page(
     session_id: String,
-    page: usize,
-    page_size: usize,
+    page: u64,
+    page_size: u64,
 ) -> Result<Page<Message>, String> {
     let repo = get_message_repository();
     repo.get_page(&session_id, page, page_size)
@@ -208,18 +196,11 @@ async fn get_or_build_index(session_id: &str) -> Result<MessageSearchEngine, Str
 pub async fn messages_search(
     query: String,
     session_id: Option<String>,
-    page: usize,
-    page_size: usize,
+    page: u64,
+    page_size: u64,
 ) -> Result<Page<SearchResult>, String> {
     if query.trim().is_empty() {
-        return Ok(Page {
-            items: Vec::new(),
-            page,
-            page_size,
-            total_items: 0,
-            has_next_page: false,
-            has_previous_page: false,
-        });
+        return Ok(Page::new(Vec::new(), page, page_size, 0));
     }
 
     // If a session_id was provided, use the per-session cached index.
@@ -227,7 +208,7 @@ pub async fn messages_search(
     let all_results = if let Some(target_session) = session_id {
         // Per-session behavior (cached index)
         let engine = get_or_build_index(&target_session).await?;
-        engine.search(&query, page * page_size * 2)?
+        engine.search(&query, (page * page_size * 2) as usize)?
     } else {
         // Global search: build a temporary index from messages across all sessions.
         let max_docs = MessageSearchEngine::max_docs_from_env();
@@ -241,13 +222,13 @@ pub async fn messages_search(
         // Perform search on the temporary engine
         let engine =
             MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)?;
-        engine.search(&query, page * page_size * 2)?
+        engine.search(&query, (page * page_size * 2) as usize)?
     };
 
     // Paginate results
     let total_items = all_results.len();
-    let start_idx = (page.saturating_sub(1)) * page_size;
-    let end_idx = (start_idx + page_size).min(total_items);
+    let start_idx = (page.saturating_sub(1) as usize) * (page_size as usize);
+    let end_idx = (start_idx + (page_size as usize)).min(total_items);
 
     let items: Vec<SearchResult> = if start_idx < total_items {
         all_results[start_idx..end_idx].to_vec()
@@ -255,12 +236,5 @@ pub async fn messages_search(
         Vec::new()
     };
 
-    Ok(Page {
-        items,
-        page,
-        page_size,
-        total_items,
-        has_next_page: end_idx < total_items,
-        has_previous_page: page > 1,
-    })
+    Ok(Page::new(items, page, page_size, total_items as u64))
 }
