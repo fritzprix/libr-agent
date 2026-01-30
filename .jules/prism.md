@@ -65,3 +65,11 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-27 - [Playbook/Card] **Visual Bug:** Arbitrary width (max-w-[120px]) **Fix:** Use grid value (max-w-32)
 
 ## 2026-01-27 - [Playbook/List] **Visual Bug:** Arbitrary width (sm:w-[250px]) **Fix:** Use grid value (sm:w-64)
+
+## 2026-01-27 - [GeneralTab] **Visual Bug:** Hardcoded colors (green-500, red-500) **Fix:** Use semantic tokens (text-success, text-destructive)
+
+## 2026-01-27 - [SettingsPage] **Visual Bug:** Hardcoded color (yellow-400) **Fix:** Use semantic token (text-warning)
+
+## 2026-01-27 - [AgentChatInput] **Visual Bug:** Hardcoded colors (green-500, destructive, amber-500) **Fix:** Use semantic tokens (border-success, bg-success/10, text-warning)
+
+## 2026-01-27 - [SortControls] **Visual Bug:** Arbitrary width (w-[200px]) **Fix:** Use grid value (w-52)

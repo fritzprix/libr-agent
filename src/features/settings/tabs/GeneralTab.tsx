@@ -180,16 +180,16 @@ export function GeneralTab({
                 onClick={() => setIsModalOpen(true)}
                 className="flex items-center gap-2 hover:underline focus:outline-none"
               >
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-green-500">
+                <CheckCircle className="w-4 h-4 text-success" />
+                <span className="text-success">
                   Found {skills.length} skill{skills.length !== 1 ? 's' : ''}
                 </span>
               </button>
             )}
             {verificationStatus === 'error' && (
               <>
-                <AlertCircle className="w-4 h-4 text-red-500" />
-                <span className="text-red-500">
+                <AlertCircle className="w-4 h-4 text-destructive" />
+                <span className="text-destructive">
                   {errorMessage || 'Invalid directory'}
                 </span>
               </>
