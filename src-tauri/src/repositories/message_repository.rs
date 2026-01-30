@@ -351,7 +351,9 @@ impl MessageRepository for SqliteMessageRepository {
         session_id: &str,
         limit: u64,
     ) -> Result<Vec<Message>, DbError> {
-        let models = self.get_message_models_by_session(session_id, limit).await?;
+        let models = self
+            .get_message_models_by_session(session_id, limit)
+            .await?;
         Ok(models.into_iter().map(Self::model_to_message).collect())
     }
 
@@ -401,9 +403,9 @@ impl MessageRepository for SqliteMessageRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::types::MCPContent;
     use crate::entity::prelude::Session as SessionEntity;
     use crate::entity::session;
+    use crate::mcp::types::MCPContent;
     use sea_orm::ActiveModelTrait;
 
     async fn setup_test_db() -> SqliteMessageRepository {
@@ -430,7 +432,10 @@ mod tests {
             updated_at: Set(now),
             ..Default::default()
         };
-        SessionEntity::insert(session).exec(db).await.expect("Failed to create session");
+        SessionEntity::insert(session)
+            .exec(db)
+            .await
+            .expect("Failed to create session");
     }
 
     fn create_dummy_message(id: &str, session_id: &str) -> Message {
@@ -464,7 +469,8 @@ mod tests {
 
         repo.insert(&message).await.expect("Failed to insert");
 
-        let messages = repo.get_messages_by_session("session1", 10)
+        let messages = repo
+            .get_messages_by_session("session1", 10)
             .await
             .expect("Failed to get messages");
 
@@ -481,9 +487,12 @@ mod tests {
             create_dummy_message("msg2", "session1"),
         ];
 
-        repo.insert_many(messages).await.expect("Failed to insert many");
+        repo.insert_many(messages)
+            .await
+            .expect("Failed to insert many");
 
-        let messages = repo.get_messages_by_session("session1", 10)
+        let messages = repo
+            .get_messages_by_session("session1", 10)
             .await
             .expect("Failed to get messages");
 
@@ -504,7 +513,10 @@ mod tests {
         repo.insert(&msg1).await.expect("Failed to insert");
         repo.insert(&msg2).await.expect("Failed to insert");
 
-        let recent = repo.get_recent_messages(10).await.expect("Failed to get recent");
+        let recent = repo
+            .get_recent_messages(10)
+            .await
+            .expect("Failed to get recent");
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].id, "msg2"); // msg2 is newer
     }
