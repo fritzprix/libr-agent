@@ -9,3 +9,7 @@
 ## 2026-01-25 - src-tauri/src/mcp/builtin/playbook/operations.rs **Safety Breach:** `unwrap()` on `Option` in match guard. **Fix:** Replaced with `map_or(false, ...)` for safe boolean evaluation.
 
 ## 2026-01-29 - [src-tauri/src/lib.rs, src-tauri/src/state.rs] **Safety Breach:** unsafe { Arc::from_raw(...) } used to recreate Arc from static reference **Fix:** Changed static storage to OnceLock<Arc<MCPServiceProxyManager>> for safe cloning
+
+## 2026-02-04 - src/features/agent/AgentDraftChatView.tsx **Safety Breach:** `as unknown as Assistant` casting used to flatten backend DTO. **Fix:** Implemented `parseAssistant` with Zod validation in `src/models/validation.ts`.
+
+## 2026-02-04 - src-tauri/src/mcp/builtin/workspace/file_operations/edit_replace.rs **Safety Breach:** `unwrap()` on `Option` in boolean logic. **Fix:** Replaced with `map_or(true, ...)` for safe boolean evaluation.
