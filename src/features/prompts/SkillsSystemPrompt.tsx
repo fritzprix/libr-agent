@@ -24,7 +24,9 @@ export function SkillsSystemPrompt() {
       )
       .join('\n');
 
-    return `<available_skills>
+    return `You have access to the following skills. The <location> tag specifies the main documentation file for each skill.
+To use a skill, you MUST first read its <location> file using the \`readFile\` tool. This file contains all necessary instructions and commands.
+<available_skills>
 ${skillsXml}
 </available_skills>
 `;

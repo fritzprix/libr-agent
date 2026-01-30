@@ -26,9 +26,13 @@ pub async fn get_default_skills_directory() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn open_skills_directory_in_explorer() -> Result<(), String> {
-    let session_manager = get_session_manager()?;
-    let skills_dir = session_manager.get_base_data_dir().join("skills");
+pub async fn open_skills_directory_in_explorer(directory: Option<String>) -> Result<(), String> {
+    let skills_dir = if let Some(dir) = directory {
+        PathBuf::from(dir)
+    } else {
+        let session_manager = get_session_manager()?;
+        session_manager.get_base_data_dir().join("skills")
+    };
 
     if !skills_dir.exists() {
         return Err("Skills directory does not exist".to_string());
