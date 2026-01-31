@@ -16,7 +16,7 @@ pub struct Page<T> {
 impl<T> Page<T> {
     /// Creates a new Page with calculated navigation flags
     pub fn new(items: Vec<T>, page: u64, page_size: u64, total_items: u64) -> Self {
-        let has_next_page = page * page_size < total_items;
+        let has_next_page = page.saturating_mul(page_size) < total_items;
         let has_previous_page = page > 1;
         Self {
             items,
