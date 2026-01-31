@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
+use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel, SessionIsolationManager};
+
 use super::persistent_shell::PersistentShell;
 use super::ShellType;
 
@@ -20,6 +22,9 @@ pub struct PersistentShellManager {
     /// session_id -> PersistentShell mapping
     shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
 
+    /// Session isolation manager for creating secure shell commands
+    isolation_manager: Arc<SessionIsolationManager>,
+
     /// Maximum shells per session (resource limit)
     #[allow(dead_code)]
     max_shells_per_session: usize,
@@ -27,9 +32,10 @@ pub struct PersistentShellManager {
 
 impl PersistentShellManager {
     /// Create a new persistent shell manager
-    pub fn new() -> Self {
+    pub fn new(isolation_manager: Arc<SessionIsolationManager>) -> Self {
         Self {
             shells: Arc::new(Mutex::new(HashMap::new())),
+            isolation_manager,
             max_shells_per_session: 3,
         }
     }
@@ -67,7 +73,31 @@ impl PersistentShellManager {
         #[cfg(windows)]
         let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
 
-        let shell = PersistentShell::new(session_id.clone(), workspace_path, shell_type)
+        // Create isolated command for the shell
+        // We use Medium isolation for persistent shells to allow some flexibility
+        // while still providing process group isolation and resource limits.
+        let isolation_config = IsolatedProcessConfig {
+            session_id: session_id.clone(),
+            workspace_path: workspace_path.clone(),
+            command: if cfg!(windows) {
+                "powershell".to_string()
+            } else {
+                "bash".to_string()
+            },
+            args: vec![],
+            env_vars: HashMap::new(),
+            isolation_level: IsolationLevel::Medium,
+            shell_type: None, // Will default correctly based on platform/command
+            interactive: true, // IMPORTANT: Enables interactive shell mode
+        };
+
+        let cmd = self
+            .isolation_manager
+            .create_isolated_command(isolation_config)
+            .await
+            .map_err(|e| format!("Failed to create isolated shell command: {e}"))?;
+
+        let shell = PersistentShell::new(session_id.clone(), workspace_path, shell_type, cmd)
             .await
             .map_err(|e| format!("Failed to create shell: {e}"))?;
 
@@ -234,7 +264,7 @@ impl PersistentShellManager {
 
 impl Default for PersistentShellManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(Arc::new(SessionIsolationManager::new()))
     }
 }
 
@@ -244,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_creation_and_reuse() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(Arc::new(SessionIsolationManager::new()));
         let session_id = "test-session".to_string();
         let workspace_path = std::env::temp_dir().join("test_shell_reuse");
         std::fs::create_dir_all(&workspace_path)?;
@@ -275,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_basic_command() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(Arc::new(SessionIsolationManager::new()));
         let session_id = "test-exec".to_string();
         let workspace_path = std::env::temp_dir().join("test_execute_basic");
         std::fs::create_dir_all(&workspace_path)?;
@@ -313,7 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_persistence_across_commands() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(Arc::new(SessionIsolationManager::new()));
         let session_id = "test-state".to_string();
         let workspace_path = std::env::temp_dir().join("test_state_persistence");
         std::fs::create_dir_all(&workspace_path)?;
@@ -376,7 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_all() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(Arc::new(SessionIsolationManager::new()));
         let ws1 = std::env::temp_dir().join("test_cleanup_1");
         let ws2 = std::env::temp_dir().join("test_cleanup_2");
         let ws3 = std::env::temp_dir().join("test_cleanup_3");

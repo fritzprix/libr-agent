@@ -82,62 +82,44 @@ impl PersistentShell {
     /// * `shell_type` - Type of shell to spawn (Bash, PowerShell, or Cmd)
     ///
     /// # Platform-specific behavior
-    /// - Unix: Spawns `bash --norc --noprofile` (shell_type must be Bash)
-    /// - Windows (PowerShell): Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
-    /// - Windows (Cmd): Spawns `cmd.exe /Q /K` (no echo, keep running)
+    /// - Unix: Expects `bash` command, adds `--norc --noprofile`
+    /// - Windows (PowerShell): Expects `powershell.exe`, adds `-NoProfile -NoLogo -NonInteractive`
+    /// - Windows (Cmd): Expects `cmd.exe`, adds `/Q /K`
     pub async fn new(
         session_id: String,
         workspace_path: PathBuf,
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
+        mut cmd: Command,
     ) -> Result<Self> {
-        #[cfg(unix)]
-        let mut cmd = Command::new("bash");
         #[cfg(unix)]
         {
             cmd.arg("--norc");
             cmd.arg("--noprofile");
 
-            // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
-            // This is critical for pip installed binaries
-            if let Ok(home) = std::env::var("HOME") {
-                let local_bin = format!("{}/.local/bin", home);
-                if let Ok(path) = std::env::var("PATH") {
-                    if !path.contains(&local_bin) {
-                        // Prepend to prioritize local binaries
-                        let new_path = format!("{}:{}", local_bin, path);
-                        cmd.env("PATH", new_path);
-                    }
-                } else {
-                    cmd.env("PATH", local_bin);
-                }
-            }
-
             debug!("Creating persistent bash shell for session: {}", session_id);
         }
 
         #[cfg(windows)]
-        let mut cmd = match shell_type {
-            ShellType::PowerShell => {
-                let mut c = Command::new("powershell.exe");
-                c.arg("-NoProfile");
-                c.arg("-NoLogo");
-                c.arg("-NonInteractive"); // Critical: removes prompts and echo
-                debug!("Creating persistent PowerShell session for: {}", session_id);
-                c
+        {
+            match shell_type {
+                ShellType::PowerShell => {
+                    cmd.arg("-NoProfile");
+                    cmd.arg("-NoLogo");
+                    cmd.arg("-NonInteractive"); // Critical: removes prompts and echo
+                    debug!("Creating persistent PowerShell session for: {}", session_id);
+                }
+                ShellType::Cmd => {
+                    cmd.arg("/Q"); // Echo off
+                    cmd.arg("/K"); // Keep running (don't exit after first command)
+                    debug!("Creating persistent Cmd shell for: {}", session_id);
+                }
+                ShellType::Bash => {
+                    return Err(anyhow::anyhow!(
+                        "Bash shell type is not supported on Windows"
+                    ));
+                }
             }
-            ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
-                c.arg("/Q"); // Echo off
-                c.arg("/K"); // Keep running (don't exit after first command)
-                debug!("Creating persistent Cmd shell for: {}", session_id);
-                c
-            }
-            ShellType::Bash => {
-                return Err(anyhow::anyhow!(
-                    "Bash shell type is not supported on Windows"
-                ));
-            }
-        };
+        }
 
         // Set working directory to workspace
         cmd.current_dir(&workspace_path);
@@ -572,14 +554,20 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell =
-            PersistentShell::new("test-basic".to_string(), temp_dir.clone(), ShellType::Bash)
+            PersistentShell::new("test-basic".to_string(), temp_dir.clone(), ShellType::Bash, cmd)
                 .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-basic".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -602,13 +590,20 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell =
-            PersistentShell::new("test-cd".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+            PersistentShell::new("test-cd".to_string(), temp_dir.clone(), ShellType::Bash, cmd)
+                .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-cd".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -641,13 +636,20 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell =
-            PersistentShell::new("test-env".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+            PersistentShell::new("test-env".to_string(), temp_dir.clone(), ShellType::Bash, cmd)
+                .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-env".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -677,14 +679,20 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell =
-            PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash)
+            PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash, cmd)
                 .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-safety".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -719,10 +727,16 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-isolation".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            cmd,
         )
         .await?;
         #[cfg(windows)]
@@ -730,6 +744,7 @@ mod tests {
             "test-isolation".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -758,10 +773,16 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-no-newline".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            cmd,
         )
         .await?;
         #[cfg(windows)]
@@ -769,6 +790,7 @@ mod tests {
             "test-no-newline".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 
@@ -799,10 +821,16 @@ mod tests {
         std::fs::create_dir_all(&temp_dir)?;
 
         #[cfg(unix)]
+        let cmd = Command::new("bash");
+        #[cfg(windows)]
+        let cmd = Command::new("powershell");
+
+        #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-unicode".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            cmd,
         )
         .await?;
         #[cfg(windows)]
@@ -810,6 +838,7 @@ mod tests {
             "test-unicode".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            cmd,
         )
         .await?;
 

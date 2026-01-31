@@ -257,6 +257,7 @@ impl WorkspaceServer {
             env_vars: HashMap::new(),
             isolation_level,
             shell_type: None, // Default to platform default shell
+            interactive: false,
         };
 
         // Create isolated command
@@ -923,6 +924,7 @@ impl WorkspaceServer {
             env_vars: HashMap::new(),
             isolation_level,
             shell_type: None, // Default to platform default shell
+            interactive: false,
         };
 
         // Create isolated command

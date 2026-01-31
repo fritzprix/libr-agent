@@ -43,6 +43,7 @@ pub struct IsolatedProcessConfig {
     pub env_vars: HashMap<String, String>,
     pub isolation_level: IsolationLevel,
     pub shell_type: Option<ShellType>,
+    pub interactive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,7 +198,14 @@ impl SessionIsolationManager {
         }
 
         // Set command arguments based on platform and shell type
-        if cfg!(target_os = "windows") {
+        if config.interactive {
+            // Interactive mode: Don't wrap command or add -c/-Command flags
+            // The shell itself is being spawned as a persistent process
+            info!(
+                "Interactive shell configuration enabled for session: {}",
+                config.session_id
+            );
+        } else if cfg!(target_os = "windows") {
             if !use_shell_wrapper {
                 // Direct PowerShell execution: parse and pass arguments directly
                 // Extract PowerShell args from the command string
