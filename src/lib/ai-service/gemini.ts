@@ -358,6 +358,16 @@ export class GeminiService extends BaseAIService {
         ];
       }
 
+      // 🔍 Detailed Logging before API Call
+      const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
+      logger.debug('🚀 Calling Gemini API - System Prompt Verification', {
+        model,
+        systemPromptLength: sysPromptText.length,
+        includesSkills: sysPromptText.includes('<available_skills>'),
+        first500Chars: sysPromptText.substring(0, 500),
+        last500Chars: sysPromptText.substring(sysPromptText.length - 500),
+      });
+
       const result = await this.withRetry(async () => {
         return this.genAI.models.generateContentStream({
           model: model,

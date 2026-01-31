@@ -49,8 +49,9 @@ impl AssistantServer {
     }
 
     pub(crate) async fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = None;
+        match self.cache.try_write() {
+            Ok(mut cache) => *cache = None,
+            Err(_) => log::warn!("Failed to invalidate assistant cache - lock contention"),
         }
     }
 
@@ -119,7 +120,8 @@ impl BuiltinMCPServer for AssistantServer {
             }
         }
 
-        let repo = crate::get_assistant_repository();
+        // Use repository from db connection
+        let repo = crate::repositories::SqliteAssistantRepository::new(self.get_db().clone());
         let total_count = repo.count_assistants().await.unwrap_or(0);
 
         let context_prompt = format!(
@@ -149,6 +151,7 @@ impl BuiltinMCPServer for AssistantServer {
 mod tests {
     use super::*;
     use crate::entity::assistant::Entity as AssistantEntity;
+    use crate::entity::mcp_server::Entity as MCPServerEntity;
     use sea_orm::{ConnectionTrait, Database, Schema};
     use serde_json::json;
 
@@ -158,22 +161,32 @@ mod tests {
             .expect("Failed to connect to in-memory database");
 
         let schema = Schema::new(db.get_database_backend());
-        let stmt = schema.create_table_from_entity(AssistantEntity);
 
+        // Create assistants table
+        let stmt = schema.create_table_from_entity(AssistantEntity);
         db.execute(db.get_database_backend().build(&stmt))
             .await
-            .expect("Failed to create table");
+            .expect("Failed to create assistants table");
+
+        // Create mcp_servers table for validation tests
+        let stmt = schema.create_table_from_entity(MCPServerEntity);
+        db.execute(db.get_database_backend().build(&stmt))
+            .await
+            .expect("Failed to create mcp_servers table");
 
         Arc::new(db)
     }
 
+    async fn setup_test_server() -> AssistantServer {
+        let db = create_test_db().await;
+        AssistantServer::new(db)
+            .await
+            .expect("Failed to create server")
+    }
+
     #[tokio::test]
     async fn test_create_and_get_assistant() {
-        let db = create_test_db().await;
-        // Use operations directly for specialized testing, or server.call_tool for integration
-        let server = AssistantServer::new(db.clone())
-            .await
-            .expect("Failed to create server");
+        let server = setup_test_server().await;
 
         // Create assistant
         let create_result = server
@@ -208,7 +221,6 @@ mod tests {
             .expect("Failed to get assistant");
 
         assert!(get_result.is_error == Some(false));
-        // Note: structured_content is Option<Value>
         let content = get_result.structured_content.unwrap();
         assert_eq!(content["name"], "Test Assistant");
         assert_eq!(content["config"]["modelName"], "gpt-4");
@@ -222,5 +234,200 @@ mod tests {
             created_id.len() > 10,
             "Expected CUID-like ID format (length > 10)"
         );
+    }
+
+    #[tokio::test]
+    async fn test_update_assistant() {
+        let server = setup_test_server().await;
+
+        // Create assistant first
+        let create_result = server
+            .call_tool(
+                "createAssistant",
+                json!({
+                    "name": "Original Name",
+                    "modelProvider": "openai",
+                    "modelName": "gpt-4"
+                }),
+                None,
+            )
+            .await
+            .expect("Failed to create assistant");
+
+        let created_id = create_result
+            .structured_content
+            .as_ref()
+            .and_then(|c| c.get("id"))
+            .and_then(|id| id.as_str())
+            .expect("Expected id");
+
+        // Update assistant
+        let update_result = server
+            .call_tool(
+                "updateAssistant",
+                json!({
+                    "id": created_id,
+                    "name": "Updated Name",
+                    "temperature": 0.9
+                }),
+                None,
+            )
+            .await
+            .expect("Failed to update assistant");
+
+        assert!(update_result.is_error == Some(false));
+
+        // Verify update
+        let get_result = server
+            .call_tool("getAssistant", json!({"id": created_id}), None)
+            .await
+            .expect("Failed to get assistant");
+
+        let content = get_result.structured_content.unwrap();
+        assert_eq!(content["name"], "Updated Name");
+        assert_eq!(content["config"]["temperature"], 0.9);
+        assert_eq!(content["config"]["modelName"], "gpt-4"); // Unchanged
+    }
+
+    #[tokio::test]
+    async fn test_delete_assistant() {
+        let server = setup_test_server().await;
+
+        // Create assistant
+        let create_result = server
+            .call_tool("createAssistant", json!({"name": "To Delete"}), None)
+            .await
+            .expect("Failed to create assistant");
+
+        let created_id = create_result
+            .structured_content
+            .as_ref()
+            .and_then(|c| c.get("id"))
+            .and_then(|id| id.as_str())
+            .expect("Expected id");
+
+        // Delete assistant
+        let delete_result = server
+            .call_tool("deleteAssistant", json!({"id": created_id}), None)
+            .await
+            .expect("Failed to delete assistant");
+
+        assert!(delete_result.is_error == Some(false));
+
+        // Verify deletion
+        let get_result = server
+            .call_tool("getAssistant", json!({"id": created_id}), None)
+            .await
+            .expect("Failed to get assistant");
+
+        assert!(get_result.is_error == Some(true)); // Should be not found error
+    }
+
+    #[tokio::test]
+    async fn test_list_assistants_pagination() {
+        let server = setup_test_server().await;
+
+        // Create multiple assistants
+        for i in 1..=5 {
+            server
+                .call_tool(
+                    "createAssistant",
+                    json!({"name": format!("Assistant {}", i)}),
+                    None,
+                )
+                .await
+                .expect("Failed to create assistant");
+        }
+
+        // Test first page
+        let list_result = server
+            .call_tool("listAssistants", json!({"limit": 2, "offset": 0}), None)
+            .await
+            .expect("Failed to list assistants");
+
+        let content = list_result.structured_content.unwrap();
+        assert_eq!(content["returned"], 2);
+        assert_eq!(content["total"], 5);
+        assert_eq!(content["has_more"], true);
+
+        // Test second page
+        let list_result = server
+            .call_tool("listAssistants", json!({"limit": 2, "offset": 2}), None)
+            .await
+            .expect("Failed to list assistants");
+
+        let content = list_result.structured_content.unwrap();
+        assert_eq!(content["returned"], 2);
+        assert_eq!(content["has_more"], true);
+    }
+
+    #[tokio::test]
+    async fn test_duplicate_name_error() {
+        let server = setup_test_server().await;
+
+        // Create first assistant
+        server
+            .call_tool("createAssistant", json!({"name": "Duplicate Name"}), None)
+            .await
+            .expect("Failed to create assistant");
+
+        // Try to create duplicate
+        let duplicate_result = server
+            .call_tool("createAssistant", json!({"name": "Duplicate Name"}), None)
+            .await
+            .expect("Failed to call createAssistant");
+
+        assert!(duplicate_result.is_error == Some(true));
+    }
+
+    #[tokio::test]
+    async fn test_search_assistant() {
+        let server = setup_test_server().await;
+
+        // Create assistants with different names
+        server
+            .call_tool("createAssistant", json!({"name": "Code Helper"}), None)
+            .await
+            .expect("Failed to create assistant");
+
+        server
+            .call_tool(
+                "createAssistant",
+                json!({"name": "Writing Assistant"}),
+                None,
+            )
+            .await
+            .expect("Failed to create assistant");
+
+        // Search for "Code"
+        let search_result = server
+            .call_tool("searchAssistant", json!({"query": "Code"}), None)
+            .await
+            .expect("Failed to search assistants");
+
+        let content = search_result.structured_content.unwrap();
+        let assistants = content["assistants"].as_array().unwrap();
+        assert_eq!(assistants.len(), 1);
+        assert_eq!(assistants[0]["name"], "Code Helper");
+    }
+
+    #[tokio::test]
+    async fn test_invalid_mcp_server_ids() {
+        let server = setup_test_server().await;
+
+        // Try to create with invalid MCP server IDs
+        let result = server
+            .call_tool(
+                "createAssistant",
+                json!({
+                    "name": "Test",
+                    "mcpServerIds": ["nonexistent-server"]
+                }),
+                None,
+            )
+            .await
+            .expect("Failed to call createAssistant");
+
+        assert!(result.is_error == Some(true));
     }
 }

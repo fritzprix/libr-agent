@@ -28,7 +28,6 @@ import {
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import type { IAIService, TokenUsage } from '@/lib/ai-service/types';
 import { useSettings } from './SettingsContext';
-import { useSystemPrompt } from './SystemPromptContext';
 
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
@@ -130,7 +129,6 @@ interface LLMServiceProviderProps {
  */
 export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   const { value: settings } = useSettings();
-  const { getSystemPrompt } = useSystemPrompt();
 
   // Use ref to always access latest settings in event listeners
   const settingsRef = useRef(settings);
@@ -275,21 +273,17 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
         })),
       });
 
-      // Fetch dynamic system prompt extensions (e.g. Time & Location)
-      const dynamicSystemPrompt = await getSystemPrompt();
-
-      // Combine with the provided system prompt (from Rust/Agent Config)
-      const finalSystemPrompt = systemPrompt
-        ? `${systemPrompt}\n\n${dynamicSystemPrompt}`
-        : dynamicSystemPrompt;
+      // System prompt is now built entirely in Rust via ContextProvider framework
+      // (includes time/location, skills, and other dynamic context)
+      const finalSystemPrompt = systemPrompt;
 
       // 🔍 Log system prompt
       logger.info('📋 System Prompt Configuration', {
         sessionId,
-        hasSystemPrompt: !!systemPrompt,
-        hasDynamicPrompt: !!dynamicSystemPrompt,
         finalPromptLength: finalSystemPrompt?.length ?? 0,
         systemPromptPreview: finalSystemPrompt?.substring(0, 200) + '...',
+        includesSkills:
+          finalSystemPrompt?.includes('<available_skills>') ?? false,
       });
 
       if (finalSystemPrompt) {

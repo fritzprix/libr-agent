@@ -27,7 +27,6 @@ import { AgentChatInput } from './components/AgentChatInput';
 import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
-import { TimeLocationSystemPrompt } from '@/features/prompts/TimeLocationSystemPrompt';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('AgentChatView');
@@ -128,7 +127,6 @@ function AgentChatInner() {
 
   return (
     <>
-      <TimeLocationSystemPrompt />
       <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
         {/* Workspace side panel */}
         {showWorkspacePanel && <AgentWorkspacePanel />}

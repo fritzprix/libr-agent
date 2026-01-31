@@ -101,7 +101,10 @@ impl BuiltinMCPServer for PlaybookServer {
         }
 
         // Fetch recent 3 playbooks (Planning-style detail)
-        let pagination = crate::repositories::PaginationParams { page: 1, limit: 3 };
+        let pagination = crate::repositories::PaginationParams {
+            page: 1,
+            page_size: 3,
+        };
         let models = match repo
             .list_playbooks(Some(&self.assistant_id), pagination)
             .await

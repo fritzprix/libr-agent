@@ -2,15 +2,16 @@ use crate::mcp::builtin::error_guidance::{
     missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::{AssistantRepository, PaginationParams};
+use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
 
 /// List all assistants with pagination support
 pub async fn list_assistants(
-    _db: &sea_orm::DatabaseConnection,
+    db: &sea_orm::DatabaseConnection,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
+    // Use repository from db connection instead of global state
+    let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
 
     // Legacy support: page/pageSize -> limit/offset
     let page = args
@@ -24,32 +25,34 @@ pub async fn list_assistants(
         .unwrap_or(20)
         .clamp(1, 100) as u64;
 
-    let _pagination = PaginationParams {
-        page,
-        limit: page_size,
-    };
+    // Modern API: limit/offset (takes precedence)
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.clamp(1, 100) as u64)
+        .unwrap_or(page_size);
+    let offset = args
+        .get("offset")
+        .and_then(|v| v.as_i64())
+        .map(|v| v.max(0) as u64)
+        .unwrap_or((page - 1) * page_size);
 
     // Get total count for pagination metadata
     let total_count = repo.count_assistants().await.unwrap_or(0);
 
-    // Fetch paginated results
-    let result = repo.list_assistants().await;
+    // Fetch paginated results using database-level pagination
+    let result = repo.list_assistants_paginated(limit, offset).await;
 
     match result {
-        Ok(all_models) => {
-            // Manual pagination on client side since repository returns all
-            let offset = (page - 1) * page_size;
-            let models: Vec<_> = all_models
-                .into_iter()
-                .skip(offset as usize)
-                .take(page_size as usize)
-                .collect();
-
+        Ok(models) => {
             let assistants: Vec<Value> = models
                 .into_iter()
                 .map(|model| {
-                    // Parse config JSON
-                    let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
+                    // Parse config JSON with error logging
+                    let config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
+                        log::warn!("Failed to parse config for assistant {}: {}", model.id, e);
+                        json!({})
+                    });
 
                     json!({
                         "id": model.id,
@@ -61,7 +64,7 @@ pub async fn list_assistants(
                 })
                 .collect();
 
-            let has_more = (offset + page_size) < total_count;
+            let has_more = (offset + limit) < total_count;
 
             // Format list for AI readability
             let assistants_text = assistants
@@ -105,8 +108,8 @@ pub async fn list_assistants(
                 if has_more {
                     vec![format!(
                         "Use limit={} offset={} to see more assistants",
-                        page_size,
-                        offset + page_size
+                        limit,
+                        offset + limit
                     )]
                 } else if total_count > 0 {
                     vec!["Use builtin_assistant__getAssistant to view details".to_string()]
@@ -120,7 +123,7 @@ pub async fn list_assistants(
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "assistants": assistants,
                 "total": total_count,
-                "limit": page_size,
+                "limit": limit,
                 "offset": offset,
                 "returned": assistants.len(),
                 "has_more": has_more
@@ -140,10 +143,11 @@ pub async fn list_assistants(
 
 /// Search assistants
 pub async fn search_assistant(
-    _db: &sea_orm::DatabaseConnection,
+    db: &sea_orm::DatabaseConnection,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
+    // Use repository from db connection
+    let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
 
     let query = match args.get("query").and_then(|v| v.as_str()) {
         Some(v) => v,
@@ -164,7 +168,10 @@ pub async fn search_assistant(
                 .into_iter()
                 .take(limit as usize)
                 .map(|model| {
-                    let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
+                    let config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
+                        log::warn!("Failed to parse config for assistant {}: {}", model.id, e);
+                        json!({})
+                    });
                     json!({
                         "id": model.id,
                         "name": model.name,
@@ -221,10 +228,11 @@ pub async fn search_assistant(
 
 /// Get an assistant by ID
 pub async fn get_assistant(
-    _db: &sea_orm::DatabaseConnection,
+    db: &sea_orm::DatabaseConnection,
     args: Value,
 ) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
+    // Use repository from db connection
+    let repo = crate::repositories::SqliteAssistantRepository::new(db.clone());
 
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
@@ -235,8 +243,11 @@ pub async fn get_assistant(
 
     match result {
         Ok(Some(model)) => {
-            // Parse config JSON
-            let config = serde_json::from_str::<Value>(&model.config).unwrap_or(json!({}));
+            // Parse config JSON with error logging
+            let config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
+                log::warn!("Failed to parse config for assistant {}: {}", model.id, e);
+                json!({})
+            });
 
             let config_display =
                 serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());

@@ -21,10 +21,10 @@ import { MCPServerProvider } from '../context/MCPServerContext';
 import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
 import { ModelOptionsProvider } from '../context/ModelProvider';
 import { SettingsProvider } from '../context/SettingsContext';
+import { SkillsProvider } from '../context/SkillsContext';
 import '../styles/globals.css';
 import './App.css';
 // Removed legacy tool provider imports
-import { SystemPromptProvider } from '@/context/SystemPromptContext';
 import { DnDContextProvider } from '@/context/DnDContext';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
@@ -33,8 +33,8 @@ function App() {
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
-        <ModelOptionsProvider>
-          <SystemPromptProvider>
+        <SkillsProvider>
+          <ModelOptionsProvider>
             <LLMServiceProvider>
               <MCPServerRegistryProvider>
                 <MCPServerProvider>
@@ -105,8 +105,8 @@ function App() {
                 </MCPServerProvider>
               </MCPServerRegistryProvider>
             </LLMServiceProvider>
-          </SystemPromptProvider>
-        </ModelOptionsProvider>
+          </ModelOptionsProvider>
+        </SkillsProvider>
       </SettingsProvider>
     </div>
   );

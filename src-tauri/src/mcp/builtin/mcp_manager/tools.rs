@@ -262,45 +262,29 @@ pub fn delete_server_tool() -> MCPTool {
     }
 }
 
-/// Connect to an existing MCP server
-pub fn connect_server_tool() -> MCPTool {
+/// Verify server connectivity and configuration
+pub fn verify_server_tool() -> MCPTool {
     MCPTool {
-        name: "connectServer".to_string(),
-        title: Some("Connect Server".to_string()),
-        description: "Connect to an existing MCP server.
+        name: "verifyServer".to_string(),
+        title: Some("Verify Server".to_string()),
+        description:
+            "Verify that an MCP server configuration is correct and the server can be connected.
+                
+This tool tests the server by:
+- Validating configuration exists
+- Attempting to spawn/connect (stdio/http)
+- Calling listTools to verify functionality
+- Reporting diagnostics (transport type, tool count, latency, errors)
                 
 ⚠️ MANDATORY:
 1. Extract the 'name' from 'listServers' FIRST.
+2. This creates a temporary test connection and does not affect active sessions.
 "
-        .to_string(),
+            .to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
-                string_prop_required("Target server name"),
-            )],
-            vec!["name".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Disconnect an MCP server
-pub fn disconnect_server_tool() -> MCPTool {
-    MCPTool {
-        name: "disconnectServer".to_string(),
-        title: Some("Disconnect Server".to_string()),
-        description: "Disconnect an MCP server.
-                
-⚠️ MANDATORY:
-1. Extract the 'name' from 'listServers' FIRST.
-"
-        .to_string(),
-        input_schema: object_prop(
-            vec![(
-                "name".to_string(),
-                string_prop_required("Target server name"),
+                string_prop_required("Server name to verify"),
             )],
             vec!["name".to_string()],
             None,
@@ -354,8 +338,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_server_tool(),
         update_server_tool(),
         delete_server_tool(),
-        connect_server_tool(),
-        disconnect_server_tool(),
+        verify_server_tool(),
         list_builtin_tools_tool(),
     ]
 }

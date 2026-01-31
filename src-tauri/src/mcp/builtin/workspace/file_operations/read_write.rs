@@ -100,16 +100,20 @@ impl WorkspaceServer {
         }
 
         // 4. Path security validation
-        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
+        let file_manager = self.get_file_manager(session_id.clone());
+        let safe_path = match file_manager
+            .get_security_validator()
+            .validate_path_for_read(path_str)
+        {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
                     vec![
-                        "Verify the file path is within workspace boundaries".to_string(),
+                        "Verify the file path is correct".to_string(),
                         "Use listDirectory to see available files".to_string(),
-                        "Avoid absolute paths outside workspace".to_string(),
+                        "Ensure you have read permissions for the file".to_string(),
                     ],
                     ToolGroup::Workspace,
                 )

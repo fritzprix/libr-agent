@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle,
   Input,
+  Checkbox,
 } from '@/components/ui';
 import { useDebounce } from '@/hooks/useDebounce';
 
@@ -15,6 +16,8 @@ export interface ProviderCardProps {
   providerName: string;
   apiKey: string;
   baseUrl?: string;
+  use3rdParty?: boolean;
+  customModelId?: string;
   onPendingChange: (
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
@@ -26,10 +29,18 @@ function ProviderCardBase({
   providerName,
   apiKey,
   baseUrl,
+  use3rdParty,
+  customModelId,
   onPendingChange,
 }: ProviderCardProps) {
   const [localApiKey, setLocalApiKey] = useState(apiKey || '');
   const [localBaseUrl, setLocalBaseUrl] = useState(baseUrl || '');
+  const [localUse3rdParty, setLocalUse3rdParty] = useState(
+    use3rdParty || false,
+  );
+  const [localCustomModelId, setLocalCustomModelId] = useState(
+    customModelId || '',
+  );
 
   // Use debounce hook for pending changes
   const { debounced: schedulePending } = useDebounce(
@@ -87,6 +98,56 @@ function ProviderCardBase({
             />
           </div>
         )}
+
+        {provider === AIServiceProvider.OpenAI && (
+          <>
+            <div className="flex items-center space-x-2 min-w-0">
+              <Checkbox
+                id={`use3rdParty-${provider}`}
+                checked={localUse3rdParty}
+                onCheckedChange={(checked) => {
+                  const value = checked === true;
+                  setLocalUse3rdParty(value);
+                  onPendingChange(provider, { use3rdParty: value });
+                }}
+              />
+              <label
+                htmlFor={`use3rdParty-${provider}`}
+                className="text-sm font-medium text-muted-foreground cursor-pointer"
+              >
+                Use 3rd party OpenAI-compatible API
+              </label>
+            </div>
+
+            {localUse3rdParty && (
+              <div className="min-w-0">
+                <label className="block text-muted-foreground mb-2 text-sm font-medium">
+                  Custom Model ID
+                </label>
+                <Input
+                  type="text"
+                  placeholder="e.g., llama-3.1-70b, mistral-large"
+                  value={localCustomModelId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setLocalCustomModelId(v);
+                    schedulePending({ customModelId: v });
+                  }}
+                  onBlur={() =>
+                    onPendingChange(provider, {
+                      customModelId: localCustomModelId,
+                    })
+                  }
+                  className="bg-background border text-foreground w-full"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enter the model ID supported by your 3rd party API (e.g., LM
+                  Studio, LocalAI)
+                </p>
+              </div>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );
@@ -94,6 +155,9 @@ function ProviderCardBase({
 
 export const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
   return (
-    prev.apiKey === next.apiKey && (prev.baseUrl || '') === (next.baseUrl || '')
+    prev.apiKey === next.apiKey &&
+    (prev.baseUrl || '') === (next.baseUrl || '') &&
+    prev.use3rdParty === next.use3rdParty &&
+    (prev.customModelId || '') === (next.customModelId || '')
   );
 });

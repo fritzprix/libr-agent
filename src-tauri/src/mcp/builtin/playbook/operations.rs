@@ -142,7 +142,7 @@ pub async fn list_playbooks(
     } else {
         let pagination = PaginationParams {
             page: 1,
-            limit: 10000,
+            page_size: 10000,
         };
         repo.list_playbooks(Some(assistant_id), pagination)
             .await

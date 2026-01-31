@@ -8,8 +8,6 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use crate::repositories::MessageRepository;
-use crate::search::index_storage::{get_index_path, write_index_atomic, IndexData, IndexMetadata};
-use crate::search::message_index::MessageSearchEngine;
 use crate::state::get_message_repository;
 
 /// Background worker that periodically reindexes dirty sessions.
@@ -105,46 +103,7 @@ async fn reindex_dirty_sessions() -> Result<(), String> {
 
 /// Rebuilds the search index for a specific session.
 async fn rebuild_session_index(session_id: &str) -> Result<(), String> {
-    let index_path = get_index_path(session_id)?;
-    let max_docs = MessageSearchEngine::max_docs_from_env();
-
-    let start_time = std::time::Instant::now();
-
-    // Fetch messages from database (most recent max_docs)
-    let messages = crate::get_message_repository()
-        .get_message_models_by_session(session_id, max_docs as u64)
+    crate::search::service::rebuild_and_persist_index(session_id)
         .await
-        .map_err(|e| format!("Failed to fetch messages for indexing: {e}"))?;
-
-    // Build index
-    let engine =
-        MessageSearchEngine::build_from_models(session_id.to_string(), messages, max_docs)?;
-
-    // Persist to disk
-    let serialized = engine.serialize()?;
-    let index_data = IndexData {
-        metadata: IndexMetadata {
-            version: 1,
-            session_id: session_id.to_string(),
-            doc_count: engine.doc_count(),
-            last_built_at: chrono::Utc::now().timestamp_millis(),
-        },
-        index_content: serialized,
-    };
-
-    write_index_atomic(&index_path, &index_data)?;
-
-    // Update metadata in database
-    let rebuild_duration = start_time.elapsed().as_millis() as i64;
-    let repo = get_message_repository();
-    repo.update_index_meta(
-        session_id,
-        &index_path.to_string_lossy(),
-        engine.doc_count(),
-        rebuild_duration,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(())
+        .map(|_| ())
 }

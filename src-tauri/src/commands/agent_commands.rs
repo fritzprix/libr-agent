@@ -527,7 +527,7 @@ pub async fn agent_factory_reset(
             None,
             crate::repositories::PaginationParams {
                 page: 1,
-                limit: 100000,
+                page_size: 100000,
             },
         )
         .await

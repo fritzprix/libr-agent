@@ -715,25 +715,27 @@ async fn build_session_system_prompt(
 
     let config_clone = agent_config.clone();
     let session_name = session.metadata.name.clone(); // Clone name early
+    let context_registry = session.context_registry.clone(); // Clone registry
     drop(active);
 
     let proxy = proxy_manager.get_proxy(session_id).await;
 
-    // Pass session name to build_system_prompt
-    build_system_prompt(&config_clone, session_name, proxy).await
+    // Pass session name and context registry to build_system_prompt
+    build_system_prompt(&config_clone, session_name, proxy, Some(context_registry)).await
 }
 
 /// Build complete system prompt (Pure logic)
 ///
-/// Structure (Legacy-inspired, tool-first approach):
+/// Structure:
 /// 1. Agent Identity & Strategy (who am I, how do I work)
 /// 2. Session Context (Session Name)
-/// 3. Service Contexts (tools & current state - immediately actionable)
-/// 4. Time & Location (contextual reference information)
+/// 3. Read-only Context Providers (time, skills, documentation)
+/// 4. Service Contexts (tools & current state - immediately actionable)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
     session_name: Option<String>,
     proxy: Option<Arc<MCPServiceProxy>>,
+    context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
 ) -> Result<String, String> {
     let mut parts = Vec::new();
 
@@ -762,7 +764,15 @@ pub async fn build_system_prompt(
         }
     }
 
-    // 3. Service Contexts - immediately actionable information
+    // 3. Read-only Context Providers (time, skills, documentation, etc.)
+    if let Some(registry) = context_registry {
+        let context = registry.build_context().await;
+        if !context.trim().is_empty() {
+            parts.push(context);
+        }
+    }
+
+    // 4. Service Contexts - immediately actionable information
     if let Some(p) = proxy {
         let contexts = p.get_service_contexts().await;
 
@@ -777,68 +787,5 @@ pub async fn build_system_prompt(
         }
     }
 
-    // 3. Time and location context (reference information, last)
-    parts.push(build_time_location_context());
-
     Ok(parts.join("\n"))
-}
-
-/// Build time and location context for system prompt
-fn build_time_location_context() -> String {
-    use chrono::{Datelike, Local, Timelike};
-
-    let now = Local::now();
-
-    // Format date as "Monday, December 30, 2025"
-    let weekday = match now.weekday() {
-        chrono::Weekday::Mon => "Monday",
-        chrono::Weekday::Tue => "Tuesday",
-        chrono::Weekday::Wed => "Wednesday",
-        chrono::Weekday::Thu => "Thursday",
-        chrono::Weekday::Fri => "Friday",
-        chrono::Weekday::Sat => "Saturday",
-        chrono::Weekday::Sun => "Sunday",
-    };
-
-    let month = match now.month() {
-        1 => "January",
-        2 => "February",
-        3 => "March",
-        4 => "April",
-        5 => "May",
-        6 => "June",
-        7 => "July",
-        8 => "August",
-        9 => "September",
-        10 => "October",
-        11 => "November",
-        12 => "December",
-        _ => "Unknown",
-    };
-
-    let current_date = format!("{}, {} {}, {}", weekday, month, now.day(), now.year());
-
-    // Format time with timezone
-    let current_time = format!(
-        "{:02}:{:02}:{:02} {}",
-        now.hour(),
-        now.minute(),
-        now.second(),
-        now.offset()
-    );
-
-    // Get timezone name
-    let timezone = format!("{}", now.offset());
-
-    format!(
-        "# Current Context Information\n\n\
-        ## Date and Time\n\
-        - **Current Date**: {}\n\
-        - **Current Time**: {}\n\
-        - **Timezone**: {}\n\n\
-        *This information is automatically updated to help you understand the user's current temporal context.*",
-        current_date,
-        current_time,
-        timezone
-    )
 }

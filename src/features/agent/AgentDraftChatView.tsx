@@ -21,8 +21,7 @@ import {
   Puzzle,
 } from 'lucide-react';
 import type { Assistant, Message } from '@/models/chat';
-import { TimeLocationSystemPrompt } from '@/features/prompts/TimeLocationSystemPrompt';
-import { useSystemPrompt } from '@/context/SystemPromptContext';
+import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
 
 const logger = getLogger('AgentDraftChatView');
@@ -69,7 +68,7 @@ const getIconForService = (iconId?: string) => {
 
 function DraftChatInner() {
   const navigate = useNavigate();
-  const { getSystemPrompt } = useSystemPrompt();
+
   const { value: settings } = useSettings();
   const [searchParams] = useSearchParams();
   const [assistant, setAssistant] = useState<Assistant | null>(null);
@@ -117,28 +116,13 @@ function DraftChatInner() {
       }
 
       try {
-        // cast to unknown first to handle DTO vs Model mismatch safely
-        const rawData = (await invoke('get_assistant', {
+        const rawData = await invoke('get_assistant', {
           id: assistantId,
-        })) as { id: string; name: string; config: unknown };
+        });
 
         if (!rawData) throw new Error('Assistant not found');
 
-        // If returned data has a 'config' object (DTO style), flatten it
-        let flattenedAssistant: Assistant;
-        if (
-          rawData.config &&
-          typeof rawData.config === 'object' &&
-          !Array.isArray(rawData.config)
-        ) {
-          flattenedAssistant = {
-            ...rawData,
-            ...(rawData.config as Partial<Assistant>),
-          } as Assistant;
-        } else {
-          flattenedAssistant = rawData as unknown as Assistant;
-        }
-
+        const flattenedAssistant = parseAssistant(rawData);
         setAssistant(flattenedAssistant);
       } catch (err) {
         logger.error('Failed to load assistant', err);
@@ -201,20 +185,17 @@ function DraftChatInner() {
           updatedAt: now.getTime(),
         };
 
-        // Fetch dynamic prompts (e.g. Location)
-        const dynamicPrompts = await getSystemPrompt();
+        // System prompt is built in Rust via ContextProvider framework
+        // (includes time/location, skills, and other dynamic context)
         const baseSystemPrompt =
           assistant.systemPrompt || 'You are a helpful assistant.';
-        const fullSystemPrompt = dynamicPrompts
-          ? `${baseSystemPrompt}\n\n${dynamicPrompts}`
-          : baseSystemPrompt;
 
         // Prepare Config
         const agentConfig = {
           id: assistant.id,
           name: assistant.name,
           description: assistant.description,
-          systemPrompt: fullSystemPrompt,
+          systemPrompt: baseSystemPrompt,
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
@@ -261,7 +242,7 @@ function DraftChatInner() {
         if (unlisten) unlisten();
       }
     },
-    [input, assistant, isSubmitting, navigate, settings, getSystemPrompt], // Add missing deps
+    [input, assistant, isSubmitting, navigate, settings],
   );
 
   if (isLoadingAssistant) {
@@ -275,164 +256,161 @@ function DraftChatInner() {
   if (!assistant) return null;
 
   return (
-    <>
-      <TimeLocationSystemPrompt />
-      <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
-        {/* Header */}
-        {/* We need to wrap Header or pass props. AgentChatHeader uses context. 
+    <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
+      {/* Header */}
+      {/* We need to wrap Header or pass props. AgentChatHeader uses context. 
               Refactoring Header to accept props is best, or mock the context.
               For simplicity now, let's just render a simple header or mock context provider?
               A simple custom header is cleaner for Draft View to avoid Context hell.
           */}
-        <div className="flex items-center justify-between px-6 py-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="flex items-center gap-3">
-            <div className="flex flex-col">
-              <span className="font-semibold text-lg">{assistant.name}</span>
-              <span className="text-xs text-muted-foreground">New Session</span>
-            </div>
+      <div className="flex items-center justify-between px-6 py-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col">
+            <span className="font-semibold text-lg">{assistant.name}</span>
+            <span className="text-xs text-muted-foreground">New Session</span>
           </div>
-        </div>
-
-        {/* Assistant Profile Card */}
-        <div className="flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar">
-          {/* Identity Section */}
-          <div className="flex flex-col items-center space-y-4">
-            <div className="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center shadow-sm">
-              <Bot className="w-10 h-10 text-primary" />
-            </div>
-            <div className="space-y-2 max-w-lg">
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                {assistant.name}
-              </h1>
-              {assistant.description && (
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  {assistant.description}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Capabilities Grid */}
-          <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
-            {/* Built-in Tools: If allowedBuiltInServiceAliases is undefined/null, it means ALL are allowed */}
-            {(
-              assistant.allowedBuiltInServiceAliases ||
-              builtinServices.map((s) => s.name)
-            )?.map((alias) => {
-              const info = builtinServices.find((s) => s.name === alias);
-              const label = info?.metadata.displayName || alias;
-              const Icon = getIconForService(info?.metadata.icon);
-
-              return (
-                <Badge
-                  key={alias}
-                  variant="secondary"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
-                  title={info?.metadata.description} // Tooltip showing description
-                >
-                  <Icon size={12} className="opacity-70" />
-                  {label}
-                </Badge>
-              );
-            })}
-
-            {/* External MCP Servers */}
-            {assistant.mcpServerIds?.map((serverId) => {
-              // Resolve display name from fetched MCP servers
-              const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
-              const label = serverConfig?.name || serverId;
-
-              return (
-                <Badge
-                  key={serverId}
-                  variant="outline"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
-                >
-                  <Puzzle size={12} className="opacity-70" />
-                  {label}
-                </Badge>
-              );
-            })}
-
-            {/* Fallback if list is EXPLICITLY empty (not undefined, which means all) */}
-            {assistant.allowedBuiltInServiceAliases &&
-              assistant.allowedBuiltInServiceAliases.length === 0 &&
-              (!assistant.mcpServerIds ||
-                assistant.mcpServerIds.length === 0) && (
-                <Badge
-                  variant="outline"
-                  className="text-xs text-muted-foreground opacity-50"
-                >
-                  No specific tools enabled
-                </Badge>
-              )}
-          </div>
-
-          {/* Configuration Footer */}
-          <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
-            {/* Model Picker */}
-            <AgentModelPicker
-              currentModel={
-                assistant.model || settings?.preferredModel?.model || 'gpt-4'
-              }
-              currentProvider={
-                assistant.provider ||
-                settings?.preferredModel?.provider ||
-                'openai'
-              }
-              onConfigUpdate={(model, provider) => {
-                setOverrideModel(model);
-                setOverrideProvider(provider);
-              }}
-              className="w-full max-w-xs"
-            />
-
-            {/* Local Context Indicator */}
-            <div
-              className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold"
-              title="Local Context Injection Active"
-            >
-              <MapPin size={10} />
-              Local Context
-            </div>
-          </div>
-        </div>
-
-        {/* Simplified Input Area */}
-        <div className="p-4 border-t">
-          <form
-            onSubmit={handleSubmit}
-            className="flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20"
-          >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder={`Message ${assistant.name}...`}
-              className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit(e);
-                }
-              }}
-              disabled={isSubmitting}
-            />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={!input.trim() || isSubmitting}
-              className="mb-1"
-            >
-              {isSubmitting ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </Button>
-          </form>
         </div>
       </div>
-    </>
+
+      {/* Assistant Profile Card */}
+      <div className="flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar">
+        {/* Identity Section */}
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center shadow-sm">
+            <Bot className="w-10 h-10 text-primary" />
+          </div>
+          <div className="space-y-2 max-w-lg">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              {assistant.name}
+            </h1>
+            {assistant.description && (
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {assistant.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Capabilities Grid */}
+        <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
+          {/* Built-in Tools: If allowedBuiltInServiceAliases is undefined/null, it means ALL are allowed */}
+          {(
+            assistant.allowedBuiltInServiceAliases ||
+            builtinServices.map((s) => s.name)
+          )?.map((alias) => {
+            const info = builtinServices.find((s) => s.name === alias);
+            const label = info?.metadata.displayName || alias;
+            const Icon = getIconForService(info?.metadata.icon);
+
+            return (
+              <Badge
+                key={alias}
+                variant="secondary"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+                title={info?.metadata.description} // Tooltip showing description
+              >
+                <Icon size={12} className="opacity-70" />
+                {label}
+              </Badge>
+            );
+          })}
+
+          {/* External MCP Servers */}
+          {assistant.mcpServerIds?.map((serverId) => {
+            // Resolve display name from fetched MCP servers
+            const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
+            const label = serverConfig?.name || serverId;
+
+            return (
+              <Badge
+                key={serverId}
+                variant="outline"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
+              >
+                <Puzzle size={12} className="opacity-70" />
+                {label}
+              </Badge>
+            );
+          })}
+
+          {/* Fallback if list is EXPLICITLY empty (not undefined, which means all) */}
+          {assistant.allowedBuiltInServiceAliases &&
+            assistant.allowedBuiltInServiceAliases.length === 0 &&
+            (!assistant.mcpServerIds ||
+              assistant.mcpServerIds.length === 0) && (
+              <Badge
+                variant="outline"
+                className="text-xs text-muted-foreground opacity-50"
+              >
+                No specific tools enabled
+              </Badge>
+            )}
+        </div>
+
+        {/* Configuration Footer */}
+        <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
+          {/* Model Picker */}
+          <AgentModelPicker
+            currentModel={
+              assistant.model || settings?.preferredModel?.model || 'gpt-4'
+            }
+            currentProvider={
+              assistant.provider ||
+              settings?.preferredModel?.provider ||
+              'openai'
+            }
+            onConfigUpdate={(model, provider) => {
+              setOverrideModel(model);
+              setOverrideProvider(provider);
+            }}
+            className="w-full max-w-xs"
+          />
+
+          {/* Local Context Indicator */}
+          <div
+            className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold"
+            title="Local Context Injection Active"
+          >
+            <MapPin size={10} />
+            Local Context
+          </div>
+        </div>
+      </div>
+
+      {/* Simplified Input Area */}
+      <div className="p-4 border-t">
+        <form
+          onSubmit={handleSubmit}
+          className="flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20"
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={`Message ${assistant.name}...`}
+            className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e);
+              }
+            }}
+            disabled={isSubmitting}
+          />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={!input.trim() || isSubmitting}
+            className="mb-1"
+          >
+            {isSubmitting ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </Button>
+        </form>
+      </div>
+    </div>
   );
 }
 

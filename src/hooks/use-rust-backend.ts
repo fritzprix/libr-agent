@@ -134,6 +134,66 @@ export interface RustBackendAPI {
   ) => Promise<SamplingResponse>;
 }
 
+// Define the API object outside the hook to ensure referential stability
+const backendAPI: RustBackendAPI = {
+  // Workspace Management
+  listWorkspaceFiles: client.listWorkspaceFiles,
+  openWorkspaceFileWithDefaultApp: client.openWorkspaceFileWithDefaultApp,
+
+  // MCP Server Management
+  startMCPServer: client.startServer,
+  stopMCPServer: client.stopServer,
+  callMCPTool: client.callTool,
+  listMCPTools: client.listTools,
+  listToolsFromConfig: client.listToolsFromConfig,
+  getConnectedServers: client.getConnectedServers,
+  checkServerStatus: client.checkServerStatus,
+  checkAllServersStatus: client.checkAllServersStatus,
+  listAllTools: client.listAllTools,
+  getValidatedTools: client.getValidatedTools,
+  validateToolSchema: client.validateToolSchema,
+
+  // Built-in Tools
+  listBuiltinServers: client.listBuiltinServers,
+  listBuiltinTools: client.listBuiltinTools,
+  listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
+  listAvailableBuiltinServerDefinitions:
+    client.listAvailableBuiltinServerDefinitions,
+  callBuiltinTool: client.callBuiltinTool,
+
+  // Unified Tools API
+  listAllToolsUnified: client.listAllToolsUnified,
+  callToolUnified: client.callToolUnified,
+
+  // File System Operations
+  readFile: client.readFile,
+  readDroppedFile: client.readDroppedFile,
+  writeFile: client.writeFile,
+
+  // Log Management
+  getAppLogsDir: client.getAppLogsDir,
+  backupCurrentLog: client.backupCurrentLog,
+  clearCurrentLog: client.clearCurrentLog,
+  listLogFiles: client.listLogFiles,
+
+  // External URL handling
+  openExternalUrl: client.openExternalUrl,
+
+  // File Download Operations
+  downloadWorkspaceFile: client.downloadWorkspaceFile,
+  exportAndDownloadZip: client.exportAndDownloadZip,
+
+  // Service Context
+  getServiceContext: client.getServiceContext,
+
+  // Utility
+  greet: client.greet,
+  agentCallBuiltinTool: client.agentCallBuiltinTool,
+
+  // Additional methods that may be used by legacy code
+  sampleFromModel: client.sampleFromModel,
+};
+
 /**
  * React hook wrapping the shared Rust backend client
  * Provides a React-friendly API while delegating to the shared implementation
@@ -141,62 +201,5 @@ export interface RustBackendAPI {
  * @returns Strongly-typed interface to Rust backend operations
  */
 export const useRustBackend = (): RustBackendAPI => {
-  return {
-    // Workspace Management
-    listWorkspaceFiles: client.listWorkspaceFiles,
-    openWorkspaceFileWithDefaultApp: client.openWorkspaceFileWithDefaultApp,
-
-    // MCP Server Management
-    startMCPServer: client.startServer,
-    stopMCPServer: client.stopServer,
-    callMCPTool: client.callTool,
-    listMCPTools: client.listTools,
-    listToolsFromConfig: client.listToolsFromConfig,
-    getConnectedServers: client.getConnectedServers,
-    checkServerStatus: client.checkServerStatus,
-    checkAllServersStatus: client.checkAllServersStatus,
-    listAllTools: client.listAllTools,
-    getValidatedTools: client.getValidatedTools,
-    validateToolSchema: client.validateToolSchema,
-
-    // Built-in Tools
-    listBuiltinServers: client.listBuiltinServers,
-    listBuiltinTools: client.listBuiltinTools,
-    listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
-    listAvailableBuiltinServerDefinitions:
-      client.listAvailableBuiltinServerDefinitions,
-    callBuiltinTool: client.callBuiltinTool,
-
-    // Unified Tools API
-    listAllToolsUnified: client.listAllToolsUnified,
-    callToolUnified: client.callToolUnified,
-
-    // File System Operations
-    readFile: client.readFile,
-    readDroppedFile: client.readDroppedFile,
-    writeFile: client.writeFile,
-
-    // Log Management
-    getAppLogsDir: client.getAppLogsDir,
-    backupCurrentLog: client.backupCurrentLog,
-    clearCurrentLog: client.clearCurrentLog,
-    listLogFiles: client.listLogFiles,
-
-    // External URL handling
-    openExternalUrl: client.openExternalUrl,
-
-    // File Download Operations
-    downloadWorkspaceFile: client.downloadWorkspaceFile,
-    exportAndDownloadZip: client.exportAndDownloadZip,
-
-    // Service Context
-    getServiceContext: client.getServiceContext,
-
-    // Utility
-    greet: client.greet,
-    agentCallBuiltinTool: client.agentCallBuiltinTool,
-
-    // Additional methods that may be used by legacy code
-    sampleFromModel: client.sampleFromModel,
-  };
+  return backendAPI;
 };

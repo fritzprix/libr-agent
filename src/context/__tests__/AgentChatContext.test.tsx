@@ -24,8 +24,6 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
-import { SystemPromptProvider } from '../SystemPromptContext';
-
 // Mock AgentSessionContext
 vi.mock('../AgentSessionContext', () => ({
   useAgentSessionState: vi.fn(),
@@ -52,11 +50,9 @@ vi.mock('@/lib/logger', () => ({
 function TestWrapper({ children }: { children: ReactNode }) {
   return (
     <SettingsProvider>
-      <SystemPromptProvider>
-        <LLMServiceProvider>
-          <AgentChatProvider>{children}</AgentChatProvider>
-        </LLMServiceProvider>
-      </SystemPromptProvider>
+      <LLMServiceProvider>
+        <AgentChatProvider>{children}</AgentChatProvider>
+      </LLMServiceProvider>
     </SettingsProvider>
   );
 }

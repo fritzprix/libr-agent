@@ -1,5 +1,6 @@
 use super::error::DbError;
-use crate::commands::messages_commands::{Message, Page};
+use crate::commands::messages_commands::Message;
+use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
@@ -17,8 +18,8 @@ pub trait MessageRepository: Send + Sync {
     async fn get_page(
         &self,
         session_id: &str,
-        page: usize,
-        page_size: usize,
+        page: u64,
+        page_size: u64,
     ) -> Result<Page<Message>, DbError>;
 
     /// Insert or update a single message
@@ -162,6 +163,29 @@ impl SqliteMessageRepository {
             error: Set(error_json),
         })
     }
+
+    /// Helper to get the OnConflict strategy for upserting messages
+    fn get_upsert_on_conflict() -> sea_orm::sea_query::OnConflict {
+        use sea_orm::sea_query::OnConflict;
+        OnConflict::column(message::Column::Id)
+            .update_columns([
+                message::Column::SessionId,
+                message::Column::Role,
+                message::Column::Content,
+                message::Column::ToolCalls,
+                message::Column::ToolCallId,
+                message::Column::IsStreaming,
+                message::Column::Thinking,
+                message::Column::ThinkingSignature,
+                message::Column::AssistantId,
+                message::Column::Attachments,
+                message::Column::ToolUse,
+                message::Column::UpdatedAt,
+                message::Column::Source,
+                message::Column::Error,
+            ])
+            .to_owned()
+    }
 }
 
 #[async_trait]
@@ -169,8 +193,8 @@ impl MessageRepository for SqliteMessageRepository {
     async fn get_page(
         &self,
         session_id: &str,
-        page: usize,
-        page_size: usize,
+        page: u64,
+        page_size: u64,
     ) -> Result<Page<Message>, DbError> {
         if page_size == 0 {
             return Err(DbError::InvalidInput("page_size must be > 0".into()));
@@ -183,59 +207,27 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         // Calculate offset
-        let offset = (page.saturating_sub(1)) as u64 * page_size as u64;
+        let offset = page.saturating_sub(1).saturating_mul(page_size);
 
         // Fetch paginated messages
         let models = MessageEntity::find()
             .filter(message::Column::SessionId.eq(session_id))
             .order_by_asc(message::Column::CreatedAt)
             .offset(offset)
-            .limit(page_size as u64)
+            .limit(page_size)
             .all(&self.db)
             .await?;
 
         let messages: Vec<Message> = models.into_iter().map(Self::model_to_message).collect();
 
-        let total_usize = total as usize;
-        let has_prev = page > 1;
-        let has_next = page * page_size < total_usize;
-
-        Ok(Page {
-            items: messages,
-            page,
-            page_size,
-            total_items: total_usize,
-            has_next_page: has_next,
-            has_previous_page: has_prev,
-        })
+        Ok(Page::new(messages, page, page_size, total))
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
-        use sea_orm::sea_query::OnConflict;
-
         let model = Self::message_to_active_model(message)?;
 
         MessageEntity::insert(model)
-            .on_conflict(
-                OnConflict::column(message::Column::Id)
-                    .update_columns([
-                        message::Column::SessionId,
-                        message::Column::Role,
-                        message::Column::Content,
-                        message::Column::ToolCalls,
-                        message::Column::ToolCallId,
-                        message::Column::IsStreaming,
-                        message::Column::Thinking,
-                        message::Column::ThinkingSignature,
-                        message::Column::AssistantId,
-                        message::Column::Attachments,
-                        message::Column::ToolUse,
-                        message::Column::UpdatedAt,
-                        message::Column::Source,
-                        message::Column::Error,
-                    ])
-                    .to_owned(),
-            )
+            .on_conflict(Self::get_upsert_on_conflict())
             .exec(&self.db)
             .await?;
 
@@ -243,7 +235,6 @@ impl MessageRepository for SqliteMessageRepository {
     }
 
     async fn insert_many(&self, messages: Vec<Message>) -> Result<(), DbError> {
-        use sea_orm::sea_query::OnConflict;
         use sea_orm::TransactionTrait;
 
         let txn = self.db.begin().await?;
@@ -252,26 +243,7 @@ impl MessageRepository for SqliteMessageRepository {
             let model = Self::message_to_active_model(&message)?;
 
             MessageEntity::insert(model)
-                .on_conflict(
-                    OnConflict::column(message::Column::Id)
-                        .update_columns([
-                            message::Column::SessionId,
-                            message::Column::Role,
-                            message::Column::Content,
-                            message::Column::ToolCalls,
-                            message::Column::ToolCallId,
-                            message::Column::IsStreaming,
-                            message::Column::Thinking,
-                            message::Column::ThinkingSignature,
-                            message::Column::AssistantId,
-                            message::Column::Attachments,
-                            message::Column::ToolUse,
-                            message::Column::UpdatedAt,
-                            message::Column::Source,
-                            message::Column::Error,
-                        ])
-                        .to_owned(),
-                )
+                .on_conflict(Self::get_upsert_on_conflict())
                 .exec(&txn)
                 .await?;
         }
@@ -369,23 +341,14 @@ impl MessageRepository for SqliteMessageRepository {
         session_id: &str,
         limit: u64,
     ) -> Result<Vec<Message>, DbError> {
-        let models = MessageEntity::find()
-            .filter(message::Column::SessionId.eq(session_id))
-            .order_by_desc(message::Column::CreatedAt)
-            .limit(limit)
-            .all(&self.db)
+        let models = self
+            .get_message_models_by_session(session_id, limit)
             .await?;
-
         Ok(models.into_iter().map(Self::model_to_message).collect())
     }
 
     async fn get_recent_messages(&self, limit: u64) -> Result<Vec<Message>, DbError> {
-        let models = MessageEntity::find()
-            .order_by_desc(message::Column::CreatedAt)
-            .limit(limit)
-            .all(&self.db)
-            .await?;
-
+        let models = self.get_recent_message_models(limit).await?;
         Ok(models.into_iter().map(Self::model_to_message).collect())
     }
 
@@ -424,5 +387,126 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         Ok(models)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entity::prelude::Session as SessionEntity;
+    use crate::entity::session;
+    use crate::mcp::types::MCPContent;
+
+    async fn setup_test_db() -> SqliteMessageRepository {
+        let db = sea_orm::Database::connect("sqlite::memory:")
+            .await
+            .expect("Failed to create in-memory database");
+
+        // Run migrations
+        use migration::{Migrator, MigratorTrait};
+        Migrator::up(&db, None)
+            .await
+            .expect("Failed to run migrations");
+
+        SqliteMessageRepository::new(db)
+    }
+
+    async fn create_test_session(db: &DatabaseConnection, session_id: &str) {
+        let now = chrono::Utc::now().timestamp_millis();
+        let session = session::ActiveModel {
+            id: Set(session_id.to_string()),
+            name: Set(Some("Test Session".to_string())),
+            status: Set("idle".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        SessionEntity::insert(session)
+            .exec(db)
+            .await
+            .expect("Failed to create session");
+    }
+
+    fn create_dummy_message(id: &str, session_id: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            session_id: session_id.to_string(),
+            role: "user".to_string(),
+            content: vec![MCPContent::Text {
+                text: "Hello".to_string(),
+            }],
+            tool_calls: None,
+            tool_call_id: None,
+            is_streaming: Some(false),
+            thinking: None,
+            thinking_signature: None,
+            assistant_id: None,
+            attachments: None,
+            tool_use: None,
+            created_at: 1000,
+            updated_at: 1000,
+            source: None,
+            error: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_insert_and_get_messages() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+        let message = create_dummy_message("msg1", "session1");
+
+        repo.insert(&message).await.expect("Failed to insert");
+
+        let messages = repo
+            .get_messages_by_session("session1", 10)
+            .await
+            .expect("Failed to get messages");
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, "msg1");
+    }
+
+    #[tokio::test]
+    async fn test_insert_many() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+        let messages = vec![
+            create_dummy_message("msg1", "session1"),
+            create_dummy_message("msg2", "session1"),
+        ];
+
+        repo.insert_many(messages)
+            .await
+            .expect("Failed to insert many");
+
+        let messages = repo
+            .get_messages_by_session("session1", 10)
+            .await
+            .expect("Failed to get messages");
+
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_recent_messages() {
+        let repo = setup_test_db().await;
+        create_test_session(&repo.db, "session1").await;
+        create_test_session(&repo.db, "session2").await;
+
+        let mut msg1 = create_dummy_message("msg1", "session1");
+        msg1.created_at = 1000;
+        let mut msg2 = create_dummy_message("msg2", "session2");
+        msg2.created_at = 2000;
+
+        repo.insert(&msg1).await.expect("Failed to insert");
+        repo.insert(&msg2).await.expect("Failed to insert");
+
+        let recent = repo
+            .get_recent_messages(10)
+            .await
+            .expect("Failed to get recent");
+        assert_eq!(recent.len(), 2);
+        assert_eq!(recent[0].id, "msg2"); // msg2 is newer
     }
 }

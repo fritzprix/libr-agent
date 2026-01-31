@@ -1,21 +1,149 @@
 use crate::mcp::builtin::error_guidance::{
-    duplicate_error, invalid_input_error, missing_param_error, not_found_error,
-    operation_failed_error, SuccessHint, ToolGroup,
+    duplicate_error, invalid_input_error, not_found_error, operation_failed_error, SuccessHint,
+    ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::{AssistantRepository, MCPServerRepository};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::AssistantServer;
 
+/// Request structure for creating an assistant
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAssistantRequest {
+    pub name: String,
+    #[serde(rename = "systemPrompt")]
+    pub system_prompt: Option<String>,
+    pub description: Option<String>,
+    #[serde(rename = "modelProvider")]
+    pub model_provider: Option<String>,
+    #[serde(rename = "modelName")]
+    pub model_name: Option<String>,
+    pub temperature: Option<f64>,
+    #[serde(rename = "maxTokens")]
+    pub max_tokens: Option<i64>,
+    #[serde(rename = "allowedBuiltInServiceAliases")]
+    pub allowed_builtin_service_aliases: Option<Vec<String>>,
+    #[serde(rename = "mcpServerIds")]
+    pub mcp_server_ids: Option<Vec<String>>,
+    // Legacy v2 fields
+    pub tools: Option<Vec<String>>,
+    #[serde(rename = "mcpServers")]
+    pub mcp_servers: Option<Vec<String>>,
+    // Nested config object (deprecated pattern)
+    pub config: Option<Value>,
+}
+
+/// Request structure for updating an assistant
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAssistantRequest {
+    pub id: String,
+    pub name: Option<String>,
+    #[serde(rename = "systemPrompt")]
+    pub system_prompt: Option<String>,
+    pub description: Option<String>,
+    #[serde(rename = "modelProvider")]
+    pub model_provider: Option<String>,
+    #[serde(rename = "modelName")]
+    pub model_name: Option<String>,
+    pub temperature: Option<f64>,
+    #[serde(rename = "maxTokens")]
+    pub max_tokens: Option<i64>,
+    #[serde(rename = "allowedBuiltInServiceAliases")]
+    pub allowed_builtin_service_aliases: Option<Vec<String>>,
+    #[serde(rename = "mcpServerIds")]
+    pub mcp_server_ids: Option<Vec<String>>,
+    // Legacy v2 fields
+    pub tools: Option<Vec<String>>,
+    #[serde(rename = "mcpServers")]
+    pub mcp_servers: Option<Vec<String>>,
+    // Nested config object (deprecated pattern)
+    pub config: Option<Value>,
+}
+
+/// Request structure for deleting an assistant
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DeleteAssistantRequest {
+    pub id: String,
+}
+
+/// Parameters for merging config fields from request
+/// Using struct to avoid Clippy warning about too many arguments
+struct ConfigMergeParams<'a> {
+    base_config: Option<Value>,
+    system_prompt: Option<&'a str>,
+    description: Option<&'a str>,
+    model_provider: Option<&'a str>,
+    model_name: Option<&'a str>,
+    temperature: Option<f64>,
+    max_tokens: Option<i64>,
+    allowed_builtin_service_aliases: Option<&'a Vec<String>>,
+    mcp_server_ids: Option<&'a Vec<String>>,
+    tools: Option<&'a Vec<String>>,
+    mcp_servers: Option<&'a Vec<String>>,
+}
+
+/// Merge config from request fields into JSON object
+/// Handles both flat fields and nested config, with legacy v2 field mapping
+fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
+    let mut config = params.base_config.unwrap_or_else(|| json!({}));
+
+    // Map flat fields to config
+    if let Some(v) = params.system_prompt {
+        config["systemPrompt"] = json!(v);
+    }
+    if let Some(v) = params.description {
+        config["description"] = json!(v);
+    }
+    if let Some(v) = params.model_provider {
+        config["modelProvider"] = json!(v);
+    }
+    if let Some(v) = params.model_name {
+        config["modelName"] = json!(v);
+    }
+    if let Some(v) = params.temperature {
+        config["temperature"] = json!(v);
+    }
+    if let Some(v) = params.max_tokens {
+        config["maxTokens"] = json!(v);
+    }
+
+    // Handle tools (v2) -> allowedBuiltInServiceAliases
+    if let Some(v) = params.tools {
+        config["allowedBuiltInServiceAliases"] = json!(v);
+    }
+    // Handle allowedBuiltInServiceAliases (v1) - takes precedence
+    if let Some(v) = params.allowed_builtin_service_aliases {
+        config["allowedBuiltInServiceAliases"] = json!(v);
+    }
+
+    // Handle mcpServers (v2) and mcpServerIds (v1)
+    if let Some(v) = params.mcp_servers {
+        config["mcpServerIds"] = json!(v);
+    }
+    // mcpServerIds (v1) - takes precedence
+    if let Some(v) = params.mcp_server_ids {
+        config["mcpServerIds"] = json!(v);
+    }
+
+    config
+}
+
 /// Validate that all mcpServerIds exist in the mcp_servers table
-async fn validate_mcp_server_ids(server_ids: &[String]) -> Result<(), String> {
+async fn validate_mcp_server_ids(
+    db: &sea_orm::DatabaseConnection,
+    server_ids: &[String],
+) -> Result<(), String> {
     if server_ids.is_empty() {
         return Ok(()); // Empty list is valid
     }
 
     // Query database to check which IDs exist
-    let all_servers = crate::get_mcp_server_repository()
+    let repo = crate::repositories::SqliteMCPServerRepository::new(db.clone());
+    let all_servers = repo
         .list()
         .await
         .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
@@ -50,63 +178,46 @@ async fn validate_mcp_server_ids(server_ids: &[String]) -> Result<(), String> {
 
 /// Create a new assistant
 pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
+    // Parse request with type safety
+    let request: CreateAssistantRequest = serde_json::from_value(args).map_err(|e| {
+        log::error!("Failed to parse CreateAssistantRequest: {}", e);
+        format!("Invalid request format: {}", e)
+    })?;
+
     // Always auto-generate ID
     let id = cuid2::create_id();
 
-    let name = match args.get("name").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        Option::None => return Ok(missing_param_error("name", ToolGroup::Assistant)),
-    };
+    // Use repository from server's db connection instead of global state
+    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
 
     // Check for duplicate name BEFORE attempting insert
     let exists = repo
-        .check_assistant_exists(name)
+        .check_assistant_exists(&request.name)
         .await
         .map_err(|e| format!("Failed to check for duplicate name: {}", e))?;
 
     if exists {
-        return Ok(duplicate_error("Assistant", name, ToolGroup::Assistant));
+        return Ok(duplicate_error(
+            "Assistant",
+            &request.name,
+            ToolGroup::Assistant,
+        ));
     }
 
-    // Extract config fields
-    let mut config = args.get("config").cloned().unwrap_or(json!({}));
-
-    // Map legacy/flat fields to config
-    if let Some(v) = args.get("systemPrompt") {
-        config["systemPrompt"] = v.clone();
-    }
-    if let Some(v) = args.get("description") {
-        config["description"] = v.clone();
-    }
-    if let Some(v) = args.get("modelProvider") {
-        config["modelProvider"] = v.clone();
-    }
-    if let Some(v) = args.get("modelName") {
-        config["modelName"] = v.clone();
-    }
-    if let Some(v) = args.get("temperature") {
-        config["temperature"] = v.clone();
-    }
-    if let Some(v) = args.get("maxTokens") {
-        config["maxTokens"] = v.clone();
-    }
-
-    // Handle tools (v2) -> allowedBuiltInServiceAliases
-    if let Some(v) = args.get("tools") {
-        config["allowedBuiltInServiceAliases"] = v.clone();
-    }
-    // Handle allowedBuiltInServiceAliases (v1)
-    if let Some(v) = args.get("allowedBuiltInServiceAliases") {
-        config["allowedBuiltInServiceAliases"] = v.clone();
-    }
-
-    // Handle mcpServers (v2) and mcpServerIds (v1)
-    if let Some(v) = args.get("mcpServers") {
-        config["mcpServerIds"] = v.clone();
-    } else if let Some(v) = args.get("mcpServerIds") {
-        config["mcpServerIds"] = v.clone();
-    }
+    // Merge config from all possible sources using helper function
+    let config = merge_config_from_request(ConfigMergeParams {
+        base_config: request.config,
+        system_prompt: request.system_prompt.as_deref(),
+        description: request.description.as_deref(),
+        model_provider: request.model_provider.as_deref(),
+        model_name: request.model_name.as_deref(),
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+        allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
+        mcp_server_ids: request.mcp_server_ids.as_ref(),
+        tools: request.tools.as_ref(),
+        mcp_servers: request.mcp_servers.as_ref(),
+    });
 
     // Validate mcpServerIds if provided
     if let Some(server_ids_value) = config.get("mcpServerIds") {
@@ -116,7 +227,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }
@@ -127,13 +238,16 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
     let result = repo
-        .create_assistant(id.clone(), name.to_string(), config_str)
+        .create_assistant(id.clone(), request.name.clone(), config_str)
         .await;
 
     match result {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!("Assistant '{}' created successfully (ID: {})", name, id),
+                format!(
+                    "Assistant '{}' created successfully (ID: {})",
+                    request.name, id
+                ),
                 vec![
                     "Use builtin_assistant__listAssistants to see all assistants".to_string(),
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
@@ -145,7 +259,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
                 "id": id,
-                "name": name
+                "name": request.name
             }))))
         }
         Err(e) => Ok(operation_failed_error(
@@ -159,70 +273,60 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 
 /// Update an existing assistant
 pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
-    let id = match args.get("id").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
-    };
+    // Parse request with type safety
+    let request: UpdateAssistantRequest = serde_json::from_value(args).map_err(|e| {
+        log::error!("Failed to parse UpdateAssistantRequest: {}", e);
+        format!("Invalid request format: {}", e)
+    })?;
+
+    // Use repository from server's db connection
+    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
 
     // Fetch existing assistant to merge config
     let existing_model = repo
-        .get_assistant(id)
+        .get_assistant(&request.id)
         .await
         .map_err(|e| format!("Failed to fetch assistant: {}", e))?;
 
-    let (mut name, mut config) = if let Some(model) = existing_model {
-        (
-            model.name,
-            serde_json::from_str::<Value>(&model.config).unwrap_or(json!({})),
-        )
+    let (mut name, base_config) = if let Some(model) = existing_model {
+        let parsed_config = serde_json::from_str::<Value>(&model.config).unwrap_or_else(|e| {
+            log::warn!("Failed to parse config for assistant {}: {}", model.id, e);
+            json!({})
+        });
+        (model.name, parsed_config)
     } else {
-        return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
+        return Ok(not_found_error(
+            "Assistant",
+            &request.id,
+            ToolGroup::Assistant,
+        ));
     };
 
     // Update name if provided
-    if let Some(n) = args.get("name").and_then(|v| v.as_str()) {
-        name = n.to_string();
+    if let Some(ref n) = request.name {
+        name = n.clone();
     }
 
-    // Update config from 'config' object if provided
-    if let Some(c) = args.get("config").and_then(|v| v.as_object()) {
+    // Merge config from all sources, starting with base config
+    let mut config = merge_config_from_request(ConfigMergeParams {
+        base_config: Some(base_config),
+        system_prompt: request.system_prompt.as_deref(),
+        description: request.description.as_deref(),
+        model_provider: request.model_provider.as_deref(),
+        model_name: request.model_name.as_deref(),
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+        allowed_builtin_service_aliases: request.allowed_builtin_service_aliases.as_ref(),
+        mcp_server_ids: request.mcp_server_ids.as_ref(),
+        tools: request.tools.as_ref(),
+        mcp_servers: request.mcp_servers.as_ref(),
+    });
+
+    // Merge nested config object if provided (deprecated pattern)
+    if let Some(c) = request.config.as_ref().and_then(|v| v.as_object()) {
         for (k, v) in c {
             config[k] = v.clone();
         }
-    }
-
-    // Update config fields (individual overrides)
-    if let Some(v) = args.get("systemPrompt") {
-        config["systemPrompt"] = v.clone();
-    }
-    if let Some(v) = args.get("modelProvider") {
-        config["modelProvider"] = v.clone();
-    }
-    if let Some(v) = args.get("modelName") {
-        config["modelName"] = v.clone();
-    }
-    if let Some(v) = args.get("temperature") {
-        config["temperature"] = v.clone();
-    }
-    if let Some(v) = args.get("maxTokens") {
-        config["maxTokens"] = v.clone();
-    }
-    // Handle tools (v2) -> allowedBuiltInServiceAliases
-    if let Some(v) = args.get("tools") {
-        config["allowedBuiltInServiceAliases"] = v.clone();
-    }
-    // Handle allowedBuiltInServiceAliases (v1)
-    if let Some(v) = args.get("allowedBuiltInServiceAliases") {
-        config["allowedBuiltInServiceAliases"] = v.clone();
-    }
-
-    // Handle mcpServers (v2) and mcpServerIds (v1)
-    if let Some(v) = args.get("mcpServers") {
-        config["mcpServerIds"] = v.clone();
-    }
-    if let Some(v) = args.get("mcpServerIds") {
-        config["mcpServerIds"] = v.clone();
     }
 
     // Validate mcpServerIds if provided
@@ -233,7 +337,7 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
 
-            if let Err(err_msg) = validate_mcp_server_ids(&server_ids).await {
+            if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
                 return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
             }
         }
@@ -243,13 +347,13 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
         serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
 
     let result = repo
-        .update_assistant(id, Some(name.clone()), Some(config_str))
+        .update_assistant(&request.id, Some(name.clone()), Some(config_str))
         .await;
 
     match result {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!("Assistant '{}' updated successfully", id),
+                format!("Assistant '{}' updated successfully", request.id),
                 vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
             );
 
@@ -257,7 +361,7 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
-                "id": id,
+                "id": request.id,
                 "name": name,
                 "config": config
             }))))
@@ -277,27 +381,38 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
 
 /// Delete an assistant
 pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
-    let repo = crate::get_assistant_repository();
-    let id = match args.get("id").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
-    };
+    // Parse request with type safety
+    let request: DeleteAssistantRequest = serde_json::from_value(args).map_err(|e| {
+        log::error!("Failed to parse DeleteAssistantRequest: {}", e);
+        format!("Invalid request format: {}", e)
+    })?;
+
+    // Use repository from server's db connection
+    let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
 
     // Hallucination Firewall: Check existence first
-    let exists = repo.get_assistant(id).await.unwrap_or(None).is_some();
+    let exists = repo
+        .get_assistant(&request.id)
+        .await
+        .unwrap_or(None)
+        .is_some();
 
     if !exists {
-        return Ok(not_found_error("Assistant", id, ToolGroup::Assistant));
+        return Ok(not_found_error(
+            "Assistant",
+            &request.id,
+            ToolGroup::Assistant,
+        ));
     }
 
-    let result = repo.delete_assistant(id).await;
+    let result = repo.delete_assistant(&request.id).await;
 
     match result {
         Ok(_) => {
             server.invalidate_cache().await;
 
             let hint = SuccessHint::new(
-                format!("Assistant '{}' deleted successfully", id),
+                format!("Assistant '{}' deleted successfully", request.id),
                 vec![
                     "Use builtin_assistant__listAssistants to see remaining assistants".to_string(),
                 ],
@@ -305,7 +420,7 @@ pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<M
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
-                "id": id
+                "id": request.id
             }))))
         }
         Err(e) => Ok(operation_failed_error(

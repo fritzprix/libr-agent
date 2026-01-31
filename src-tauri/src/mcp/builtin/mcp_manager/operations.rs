@@ -252,14 +252,18 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     Ok(hint.to_mcp_result())
 }
 
-/// Connect to a server
-pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
+/// Verify server configuration and connectivity
+pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
+    use crate::mcp::types::TransportConfig;
+    use std::time::Instant;
+
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) => n,
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
-    let _config = match get_server_config(name).await? {
+    // Get server config
+    let config = match get_server_config(name).await? {
         Some(c) => c,
         Option::None => {
             return Ok(ErrorGuidance::with_guidance(
@@ -275,40 +279,199 @@ pub async fn connect_server(server: &MCPManagerServer, args: Value) -> Result<MC
         }
     };
 
-    // Note: Session Isolation means connection is per-session, not global
-    // This tool validates the config exists but doesn't actually connect
-    // Actual connection happens in MCPServiceProxyManager when session is created
-
-    server.invalidate_cache().await;
-
-    Ok(SuccessHint::new(
-        format!("Target server '{}' configuration validated", name),
-        vec![],
-    )
-    .to_mcp_result())
-}
-
-/// Disconnect a server
-pub async fn disconnect_server(
-    server: &MCPManagerServer,
-    args: Value,
-) -> Result<MCPResult, String> {
-    let name = match args.get("name").and_then(|v| v.as_str()) {
-        Some(n) => n,
-        Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
+    // Determine transport type
+    let (transport_type, transport_details) = match &config.transport {
+        TransportConfig::Stdio { command, args, .. } => {
+            let args_str = if args.is_empty() {
+                "(no arguments)".to_string()
+            } else {
+                args.join(" ")
+            };
+            (
+                "stdio",
+                format!("Command: {}\nArguments: {}", command, args_str),
+            )
+        }
+        TransportConfig::Http { url, .. } => ("http", format!("URL: {}", url)),
     };
 
-    // Note: Session Isolation means disconnection is per-session, not global
-    // This tool only validates the server exists; actual disconnection happens in session cleanup
+    // Test connection and list tools
+    let start_time = Instant::now();
+    let verification_result = test_server_connection(&config, name).await;
+    let latency_ms = start_time.elapsed().as_millis();
 
     server.invalidate_cache().await;
 
-    Ok(SuccessHint::new(
-        format!(
-            "Target server '{}' marked for disconnection in current session",
-            name
-        ),
-        vec![],
-    )
-    .to_mcp_result())
+    match verification_result {
+        Ok(tool_count) => {
+            let result_text = format!(
+                "✓ Server '{}' verification successful\n\n\
+                Transport: {}\n\
+                {}\n\
+                Status: Connected and responsive\n\
+                Available tools: {}\n\
+                Connection latency: {}ms\n\n\
+                The server is properly configured and ready to use.",
+                name, transport_type, transport_details, tool_count, latency_ms
+            );
+
+            Ok(SuccessHint::new(
+                result_text,
+                vec!["Server configuration is valid and operational".to_string()],
+            )
+            .to_mcp_result())
+        }
+        Err(error) => {
+            let error_msg = format!("✗ Server '{}' verification failed", name);
+            let error_details = format!(
+                "Transport: {}\n\
+                {}\n\
+                Status: Failed to connect or respond\n\
+                Error: {}\n\
+                Test duration: {}ms",
+                transport_type, transport_details, error, latency_ms
+            );
+
+            let suggestions = match transport_type {
+                "stdio" => vec![
+                    "Verify the command path is correct and executable".to_string(),
+                    "Check that all required arguments are provided".to_string(),
+                    "Ensure the MCP server package is installed".to_string(),
+                    "Test the command manually in terminal".to_string(),
+                ],
+                "http" => vec![
+                    "Verify the URL is correct and accessible".to_string(),
+                    "Check that the HTTP server is running".to_string(),
+                    "Ensure network connectivity to the endpoint".to_string(),
+                    "Verify authentication headers if required".to_string(),
+                ],
+                _ => vec!["Review server configuration".to_string()],
+            };
+
+            Ok(ErrorGuidance::with_guidance(
+                ErrorCategory::OperationFailed,
+                format!("{}\n\n{}", error_msg, error_details),
+                suggestions,
+                ToolGroup::McpManager,
+            )
+            .to_mcp_result())
+        }
+    }
+}
+
+/// Test server connection by spawning/connecting and calling listTools
+async fn test_server_connection(
+    config: &crate::mcp::types::MCPServerConfig,
+    server_name: &str,
+) -> Result<usize, String> {
+    use crate::mcp::types::TransportConfig;
+    use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+    use rmcp::ServiceExt;
+    use std::time::Duration;
+
+    match &config.transport {
+        TransportConfig::Stdio { command, args, env } => {
+            // Prepare command with cross-platform support (Windows .cmd/.bat wrapping)
+            let (final_command, final_args) =
+                crate::mcp::utils::command_helper::prepare_command(command, args);
+
+            log::debug!(
+                "Testing stdio server '{}': {} {:?}",
+                server_name,
+                final_command,
+                final_args
+            );
+
+            // Spawn process
+            let cmd = tokio::process::Command::new(&final_command).configure(|cmd| {
+                for arg in &final_args {
+                    cmd.arg(arg);
+                }
+                for (key, value) in env {
+                    cmd.env(key, value);
+                }
+            });
+
+            let transport = TokioChildProcess::new(cmd)
+                .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+            // Initialize with timeout
+            let client = tokio::time::timeout(Duration::from_secs(30), ().serve(transport))
+                .await
+                .map_err(|_| "Initialization timeout (30s)".to_string())?
+                .map_err(|e| format!("Initialization failed: {}", e))?;
+
+            // List tools
+            let tools = client
+                .list_all_tools()
+                .await
+                .map_err(|e| format!("Failed to list tools: {}", e))?;
+
+            log::info!(
+                "Stdio server '{}' verified: {} tools available",
+                server_name,
+                tools.len()
+            );
+
+            Ok(tools.len())
+        }
+        TransportConfig::Http {
+            url,
+            headers,
+            enable_sse,
+            ..
+        } => {
+            use rmcp::transport::streamable_http_client::{
+                StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+            };
+
+            log::debug!("Testing HTTP server '{}': {}", server_name, url);
+
+            // Build header map
+            let mut header_map = reqwest::header::HeaderMap::new();
+            if let Some(headers) = headers {
+                for (k, v) in headers {
+                    if let (Ok(k), Ok(v)) = (
+                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(v),
+                    ) {
+                        header_map.insert(k, v);
+                    }
+                }
+            }
+
+            let http_client = reqwest::Client::builder()
+                .default_headers(header_map)
+                .build()
+                .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+            let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.as_str());
+            if let Some(sse) = enable_sse {
+                transport_config.allow_stateless = !sse;
+            }
+
+            let transport =
+                StreamableHttpClientTransport::with_client(http_client, transport_config);
+
+            // Initialize with timeout
+            let client = tokio::time::timeout(Duration::from_secs(30), ().serve(transport))
+                .await
+                .map_err(|_| "Initialization timeout (30s)".to_string())?
+                .map_err(|e| format!("Initialization failed: {}", e))?;
+
+            // List tools
+            let tools = client
+                .list_all_tools()
+                .await
+                .map_err(|e| format!("Failed to list tools: {}", e))?;
+
+            log::info!(
+                "HTTP server '{}' verified: {} tools available",
+                server_name,
+                tools.len()
+            );
+
+            Ok(tools.len())
+        }
+    }
 }

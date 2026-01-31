@@ -10,10 +10,10 @@ use crate::repositories::{
     SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
-static MCP_SERVICE_PROXY_MANAGER: OnceLock<MCPServiceProxyManager> = OnceLock::new();
+static MCP_SERVICE_PROXY_MANAGER: OnceLock<Arc<MCPServiceProxyManager>> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized string for the SQLite database URL.
 static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
@@ -188,7 +188,7 @@ pub fn get_mcp_server_repository() -> &'static SqliteMCPServerRepository {
 ///
 /// # Panics
 /// This function will panic if the manager is already set.
-pub fn set_mcp_service_proxy_manager(manager: MCPServiceProxyManager) {
+pub fn set_mcp_service_proxy_manager(manager: Arc<MCPServiceProxyManager>) {
     MCP_SERVICE_PROXY_MANAGER
         .set(manager)
         .expect("MCP Service Proxy Manager already initialized");
@@ -201,10 +201,13 @@ pub fn set_mcp_service_proxy_manager(manager: MCPServiceProxyManager) {
 ///
 /// # Panics
 /// Panics if the manager has not been initialized.
-pub fn get_mcp_service_proxy_manager() -> &'static MCPServiceProxyManager {
-    MCP_SERVICE_PROXY_MANAGER.get().expect(
-        "MCP Service Proxy Manager not initialized. Call set_mcp_service_proxy_manager() first.",
-    )
+pub fn get_mcp_service_proxy_manager() -> Arc<MCPServiceProxyManager> {
+    MCP_SERVICE_PROXY_MANAGER
+        .get()
+        .expect(
+            "MCP Service Proxy Manager not initialized. Call set_mcp_service_proxy_manager() first.",
+        )
+        .clone()
 }
 
 /// Sets the global assistant repository instance.

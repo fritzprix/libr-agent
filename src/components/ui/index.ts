@@ -49,6 +49,7 @@ export {
   TooltipTrigger,
 } from './tooltip';
 export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
+export { ScrollArea, ScrollBar } from './scroll-area';
 
 // Custom components that don't have Shadcn equivalents
 export { Dropdown } from './Dropdown';

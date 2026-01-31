@@ -281,27 +281,27 @@ fn update_scratchpad_tool() -> MCPTool {
     MCPTool {
         name: "updateScratchpad".to_string(),
         title: Some("Update Scratchpad".to_string()),
-        description: "Update an existing scratchpad note. Use this when you want to modify the content of a note (e.g., adding more findings, correcting information) identified by its title.".to_string(),
+        description: "Update an existing scratchpad note. Use the ID shown in getCurrentState or listScratchpad to identify which note to update.".to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "title".to_string(),
-                    string_prop_required("The title of the scratchpad note to update."),
+                    "id".to_string(),
+                    integer_prop(None, None, Some("The ID of the scratchpad note to update (get from getCurrentState or listScratchpad).")),
                 ),
                 (
                     "note".to_string(),
                     string_prop_required("The new content for the note."),
                 ),
                 (
-                    "newTitle".to_string(),
+                    "title".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Optional: New title for the note if you want to rename it."),
+                        Some("Optional: New title for the note."),
                     ),
                 ),
             ],
-            vec!["title".to_string(), "note".to_string()],
+            vec!["id".to_string(), "note".to_string()],
             None,
         ),
         output_schema: None,

@@ -4,9 +4,22 @@
       "name": "OpenAI",
       "apiKeyEnvVar": "OPENAI_API_KEY",
       "baseUrl": "https://api.openai.com/v1",
+      "requiresApiKey": false,
       "models": {
         "skt/ax-k1": {
           "name": "skt/ax-k1",
+          "contextWindow": 1000000,
+          "supportReasoning": false,
+          "supportTools": true,
+          "supportStreaming": true,
+          "cost": {
+            "input": 0.003,
+            "output": 0.012
+          },
+          "description": "Advanced model with 1M context, excellent for coding and instruction following"
+        },
+        "mlx-community/GLM-4.7-Flash-8bit": {
+          "name": "mlx-community/GLM-4.7-Flash-8bit",
           "contextWindow": 1000000,
           "supportReasoning": false,
           "supportTools": true,

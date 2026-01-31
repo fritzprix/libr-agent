@@ -1,3 +1,6 @@
+use crate::agent::context::registry::ContextRegistry;
+use crate::agent::context::skills::SkillsContextProvider;
+use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
@@ -20,6 +23,7 @@ pub struct AgentSessionManager {
     app_handle: AppHandle,
     proxy_manager: Arc<MCPServiceProxyManager>,
     session_repo: Arc<dyn SessionRepository>,
+    context_registry: Arc<ContextRegistry>,
 }
 
 // Manual Debug implementation since dyn Trait doesn't auto-implement Debug
@@ -30,6 +34,7 @@ impl std::fmt::Debug for AgentSessionManager {
             .field("app_handle", &"<AppHandle>")
             .field("proxy_manager", &"<Arc<MCPServiceProxyManager>>")
             .field("session_repo", &"<Arc<dyn SessionRepository>>")
+            .field("context_registry", &"<Arc<ContextRegistry>>")
             .finish()
     }
 }
@@ -41,11 +46,26 @@ impl AgentSessionManager {
         proxy_manager: Arc<MCPServiceProxyManager>,
         session_repo: Arc<dyn SessionRepository>,
     ) -> Self {
+        // Initialize context registry with providers
+        let mut registry = ContextRegistry::new();
+
+        // Register time/location context provider (high priority)
+        registry.register(Box::new(TimeLocationContextProvider::new()));
+
+        // Register skills context provider
+        registry.register(Box::new(SkillsContextProvider::new()));
+
+        log::info!(
+            "✅ Context registry initialized with {} providers",
+            registry.provider_count()
+        );
+
         Self {
             active_sessions: Arc::new(RwLock::new(HashMap::new())),
             app_handle,
             proxy_manager,
             session_repo,
+            context_registry: Arc::new(registry),
         }
     }
 
@@ -58,6 +78,7 @@ impl AgentSessionManager {
             app_handle: self.app_handle.clone(),
             proxy_manager: self.proxy_manager.clone(),
             session_repo: self.session_repo.clone(),
+            context_registry: self.context_registry.clone(),
         }
     }
 
@@ -69,15 +90,16 @@ impl AgentSessionManager {
         name: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
-        crate::agent::lifecycle::create_session(
-            &self.session_repo,
-            &self.active_sessions,
-            &self.proxy_manager,
-            &self.app_handle,
+        crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
+            session_repo: self.session_repo.clone(),
+            active_sessions: self.active_sessions.clone(),
+            proxy_manager: self.proxy_manager.clone(),
+            app_handle: self.app_handle.clone(),
+            context_registry: self.context_registry.clone(),
             session_id,
             name,
             agent_config,
-        )
+        })
         .await
     }
 
@@ -89,15 +111,16 @@ impl AgentSessionManager {
         name: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
-        crate::agent::lifecycle::create_session(
-            &session_repo,
-            &self.active_sessions,
-            &self.proxy_manager,
-            &self.app_handle,
+        crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
+            session_repo,
+            active_sessions: self.active_sessions.clone(),
+            proxy_manager: self.proxy_manager.clone(),
+            app_handle: self.app_handle.clone(),
+            context_registry: self.context_registry.clone(),
             session_id,
             name,
             agent_config,
-        )
+        })
         .await
     }
 
@@ -125,6 +148,7 @@ impl AgentSessionManager {
             &self.active_sessions,
             &self.proxy_manager,
             &self.app_handle,
+            self.context_registry.clone(),
             session_id,
         )
         .await
@@ -180,6 +204,7 @@ impl AgentSessionManager {
             &self.session_repo,
             &self.active_sessions,
             &self.app_handle,
+            self.context_registry.clone(),
         )
         .await
     }

@@ -17,10 +17,12 @@ export function AgentPlanningPanel() {
   // Component lifecycle logging
   useEffect(() => {
     logger.info('AGENT_PLANNING_PANEL: Component mounted');
+    // Ensure we have the latest planning state when the panel opens
+    updateServiceContexts();
     return () => {
       logger.info('AGENT_PLANNING_PANEL: Component unmounted');
     };
-  }, []);
+  }, [updateServiceContexts]);
 
   // Auto-update service contexts on every message arrival (Chat V1 pattern)
   // Debounce to ensure backend state is fully committed before fetching

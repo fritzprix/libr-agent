@@ -5,7 +5,6 @@
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
-use std::process::Command;
 use tokio::fs;
 
 /// Represents a file or directory item in the workspace for display in the frontend.
@@ -213,54 +212,7 @@ pub async fn open_workspace_in_explorer(session_id: String) -> Result<(), String
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
 
-    #[cfg(target_os = "windows")]
-    {
-        Command::new("explorer")
-            .arg(workspace_path)
-            .spawn()
-            .map_err(|e| format!("Failed to open Explorer: {}", e))?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(workspace_path)
-            .spawn()
-            .map_err(|e| format!("Failed to open Finder: {}", e))?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let file_managers = ["nautilus", "dolphin", "thunar", "pcmanfm"];
-        let mut opened = false;
-        let mut errors: Vec<String> = Vec::new();
-
-        for fm in &file_managers {
-            match Command::new(fm).arg(&workspace_path).spawn() {
-                Ok(_) => {
-                    opened = true;
-                    break;
-                }
-                Err(e) => {
-                    errors.push(format!("{}: {}", fm, e));
-                }
-            }
-        }
-
-        if !opened {
-            let error_details = if errors.is_empty() {
-                String::new()
-            } else {
-                format!("\n\nAttempted commands and errors:\n{}", errors.join("\n"))
-            };
-            return Err(format!(
-                "No file manager found. Supported: nautilus, dolphin, thunar, pcmanfm{}",
-                error_details
-            ));
-        }
-    }
-
-    Ok(())
+    crate::utils::fs::open_in_file_manager(&workspace_path)
 }
 
 #[tauri::command]

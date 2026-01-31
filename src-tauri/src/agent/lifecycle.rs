@@ -1,3 +1,4 @@
+use crate::agent::context::registry::ContextRegistry;
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
@@ -11,16 +12,31 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+/// Parameters for session creation
+pub struct CreateSessionParams {
+    pub session_repo: Arc<dyn SessionRepository>,
+    pub active_sessions: Arc<RwLock<HashMap<String, AgentSession>>>,
+    pub proxy_manager: Arc<MCPServiceProxyManager>,
+    pub app_handle: AppHandle,
+    pub context_registry: Arc<ContextRegistry>,
+    pub session_id: String,
+    pub name: Option<String>,
+    pub agent_config: crate::agent::AgentConfig,
+}
+
 /// Create or update a session in the database
-pub async fn create_session(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
-    session_id: String,
-    name: Option<String>,
-    agent_config: crate::agent::AgentConfig,
-) -> Result<SessionMetadata, String> {
+pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetadata, String> {
+    let CreateSessionParams {
+        session_repo,
+        active_sessions,
+        proxy_manager,
+        app_handle,
+        context_registry,
+        session_id,
+        name,
+        agent_config,
+    } = params;
+
     let now = chrono::Utc::now().timestamp_millis();
 
     // Validate agent config
@@ -79,6 +95,7 @@ pub async fn create_session(
             cache_initialized: Arc::new(AtomicBool::new(false)),
             last_synced_at: Arc::new(RwLock::new(None)),
             thinking_only_count: Arc::new(RwLock::new(0)),
+            context_registry,
         },
     );
 
@@ -93,6 +110,7 @@ pub async fn resume_session(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
+    context_registry: Arc<ContextRegistry>,
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
     // Get session metadata from database using injected repository
@@ -141,6 +159,7 @@ pub async fn resume_session(
             cache_initialized: Arc::new(AtomicBool::new(false)),
             last_synced_at: Arc::new(RwLock::new(None)),
             thinking_only_count: Arc::new(RwLock::new(0)),
+            context_registry,
         },
     );
 
@@ -230,6 +249,7 @@ pub async fn recover_sessions(
     session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
+    context_registry: Arc<ContextRegistry>,
 ) -> Result<(), String> {
     log::info!("Starting session recovery process...");
 
@@ -272,6 +292,7 @@ pub async fn recover_sessions(
                     cache_initialized: Arc::new(AtomicBool::new(false)),
                     last_synced_at: Arc::new(RwLock::new(None)),
                     thinking_only_count: Arc::new(RwLock::new(0)),
+                    context_registry: context_registry.clone(),
                 },
             );
             drop(active); // Release lock early
@@ -322,7 +343,7 @@ pub async fn init_session_with_messages(
 
     // Load last 1000 messages from DB (one-time operation)
     let page = message_repo
-        .get_page(session_id, 1, MAX_CACHED_MESSAGES)
+        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
         .await
         .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
 

@@ -266,7 +266,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const inputClassName = useMemo(() => {
     return `flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${
       dragState === 'valid'
-        ? 'border-green-500 bg-green-500/10'
+        ? 'border-success bg-success/10'
         : dragState === 'invalid'
           ? 'border-destructive bg-destructive/10'
           : ''
@@ -276,7 +276,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const formClassName = useMemo(() => {
     return `px-4 py-4 border-t flex items-center gap-2 transition-colors ${
       dragState === 'valid'
-        ? 'bg-green-500/10 border-green-500'
+        ? 'bg-success/10 border-success'
         : dragState === 'invalid'
           ? 'bg-destructive/10 border-destructive'
           : ''
@@ -331,7 +331,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             title={pendingCancel ? 'Cancelling...' : 'Cancel request'}
           >
             {pendingCancel ? (
-              <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+              <Loader2 className="h-4 w-4 animate-spin text-warning" />
             ) : (
               <Square className="h-4 w-4" />
             )}

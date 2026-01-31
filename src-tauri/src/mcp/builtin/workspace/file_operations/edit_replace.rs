@@ -82,8 +82,7 @@ impl WorkspaceServer {
             for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
                 let window_text = window.join("\n");
                 let similarity = calculate_similarity(&window_text, old_string);
-                if similarity > 0.3 && (best_match.is_none() || similarity > best_match.unwrap().1)
-                {
+                if similarity > 0.3 && best_match.is_none_or(|m| similarity > m.1) {
                     best_match = Some((line_idx + 1, similarity));
                 }
             }
@@ -258,7 +257,7 @@ impl WorkspaceServer {
 
                 if similarity > 0.3 {
                     // 30% threshold
-                    if best_match.is_none() || similarity > best_match.unwrap().1 {
+                    if best_match.is_none_or(|m| similarity > m.1) {
                         best_match = Some((idx + 1, similarity));
                     }
                 }
@@ -478,25 +477,27 @@ impl WorkspaceServer {
             None => return Ok(missing_param_error("replacements", ToolGroup::Workspace)),
         };
 
+        // Normalization: Handle both objects and JSON strings
+        let normalized_replacements = match normalize_replacements(replacements) {
+            Ok(normalized) => normalized,
+            Err((msg, idx)) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::InvalidInput,
+                    msg,
+                    vec![
+                        "Each replacement must be an object: {oldString, newString}".to_string(),
+                        format!("Found invalid type at index {}", idx),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        };
+
         // Validate replacements structure and extract pairs
         let mut replacement_pairs: Vec<(&str, &str)> = Vec::new();
-        for (idx, replacement) in replacements.iter().enumerate() {
-            let obj = match replacement.as_object() {
-                Some(o) => o,
-                None => {
-                    return Ok(ErrorGuidance::with_guidance(
-                        ErrorCategory::InvalidInput,
-                        format!("Replacement at index {} is not an object", idx),
-                        vec![
-                            "Each replacement must be an object: {oldString, newString}"
-                                .to_string(),
-                            format!("Found invalid type at index {}", idx),
-                        ],
-                        ToolGroup::Workspace,
-                    )
-                    .to_mcp_result());
-                }
-            };
+        for (idx, replacement) in normalized_replacements.iter().enumerate() {
+            let obj = replacement.as_object().unwrap();
 
             let old_string = match obj.get("oldString").and_then(|v| v.as_str()) {
                 Some(s) if !s.is_empty() => s,
@@ -613,9 +614,7 @@ impl WorkspaceServer {
                 for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
                     let window_text = window.join("\n");
                     let similarity = calculate_similarity(&window_text, old_string);
-                    if similarity > 0.3
-                        && (best_match.is_none() || similarity > best_match.unwrap().1)
-                    {
+                    if similarity > 0.3 && best_match.is_none_or(|m| similarity > m.1) {
                         best_match = Some((line_idx + 1, similarity));
                     }
                 }
@@ -753,5 +752,114 @@ impl WorkspaceServer {
                 ))
             }
         }
+    }
+}
+
+/// Helper function to normalize replacements array
+/// Returns Ok(Vec<Value>) if all replacements are valid objects (or valid JSON strings parsing to objects)
+/// Returns Err((error_message, index)) if any replacement is invalid
+fn normalize_replacements(replacements: &[Value]) -> Result<Vec<Value>, (String, usize)> {
+    let mut normalized = Vec::with_capacity(replacements.len());
+
+    for (idx, replacement) in replacements.iter().enumerate() {
+        if replacement.is_object() {
+            normalized.push(replacement.clone());
+        } else if let Some(s) = replacement.as_str() {
+            match serde_json::from_str::<Value>(s) {
+                Ok(v) if v.is_object() => normalized.push(v),
+                _ => {
+                    return Err((
+                        format!(
+                            "Replacement at index {} is not a valid object or JSON string",
+                            idx
+                        ),
+                        idx,
+                    ));
+                }
+            }
+        } else {
+            return Err((
+                format!("Replacement at index {} is not an object", idx),
+                idx,
+            ));
+        }
+    }
+
+    Ok(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_normalize_replacements_objects() {
+        let input = vec![
+            json!({"oldString": "foo", "newString": "bar"}),
+            json!({"oldString": "baz", "newString": "qux"}),
+        ];
+
+        let result = normalize_replacements(&input);
+        assert!(result.is_ok());
+        let normalized = result.unwrap();
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0]["oldString"], "foo");
+        assert_eq!(normalized[1]["newString"], "qux");
+    }
+
+    #[test]
+    fn test_normalize_replacements_strings() {
+        let input = vec![
+            json!("{\"oldString\": \"foo\", \"newString\": \"bar\"}"),
+            json!("{\"oldString\": \"baz\", \"newString\": \"qux\"}"),
+        ];
+
+        let result = normalize_replacements(&input);
+        assert!(result.is_ok());
+        let normalized = result.unwrap();
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0]["oldString"], "foo");
+        assert_eq!(normalized[1]["newString"], "qux");
+    }
+
+    #[test]
+    fn test_normalize_replacements_mixed() {
+        let input = vec![
+            json!({"oldString": "foo", "newString": "bar"}),
+            json!("{\"oldString\": \"baz\", \"newString\": \"qux\"}"),
+        ];
+
+        let result = normalize_replacements(&input);
+        assert!(result.is_ok());
+        let normalized = result.unwrap();
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0]["oldString"], "foo");
+        assert_eq!(normalized[1]["newString"], "qux");
+    }
+
+    #[test]
+    fn test_normalize_replacements_invalid_string() {
+        let input = vec![
+            json!({"oldString": "foo", "newString": "bar"}),
+            json!("invalid-json"),
+        ];
+
+        let result = normalize_replacements(&input);
+        assert!(result.is_err());
+        let (msg, idx) = result.unwrap_err();
+        assert_eq!(idx, 1);
+        assert!(msg.contains("not a valid object or JSON string"));
+    }
+
+    #[test]
+    fn test_normalize_replacements_invalid_type() {
+        let input = vec![json!({"oldString": "foo", "newString": "bar"}), json!(123)];
+
+        let result = normalize_replacements(&input);
+        assert!(result.is_err());
+        let (msg, idx) = result.unwrap_err();
+        assert_eq!(idx, 1);
+        assert!(msg.contains("not an object"));
     }
 }

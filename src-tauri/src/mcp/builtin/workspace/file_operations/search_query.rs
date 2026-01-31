@@ -14,19 +14,24 @@ impl WorkspaceServer {
     ) -> Result<MCPResult, String> {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
+        let file_manager = self.get_file_manager(session_id.clone());
+        let safe_path = match file_manager
+            .get_security_validator()
+            .validate_path_for_read(path_str)
+        {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
                     vec![
-                        "Verify the directory path is within allowed directories".to_string(),
-                        "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
-                        "Try using '.' to list the current directory".to_string(),
+                        "Verify the directory path is correct".to_string(),
+                        "Use listDirectory to see available files".to_string(),
+                        "Ensure you have read permissions for the directory".to_string(),
                     ],
                     ToolGroup::Workspace,
-                ).to_mcp_result());
+                )
+                .to_mcp_result());
             }
         };
 
@@ -205,7 +210,25 @@ impl WorkspaceServer {
             .and_then(|v| v.as_str())
             .unwrap_or("both");
 
-        let safe_path = self.validate_path_with_error(search_path, session_id)?;
+        let file_manager = self.get_file_manager(session_id.clone());
+        let safe_path = match file_manager
+            .get_security_validator()
+            .validate_path_for_read(search_path)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                return Ok(ErrorGuidance::with_guidance(
+                    ErrorCategory::PermissionDenied,
+                    format!("Path validation failed: {}", e),
+                    vec![
+                        "Verify the directory path is correct".to_string(),
+                        "Use listDirectory to see available files".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+        };
 
         match self
             .search_files_by_pattern(&safe_path, pattern, max_depth, file_type)

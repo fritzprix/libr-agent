@@ -5,33 +5,12 @@
 
 use super::error::DbError;
 use crate::entity::playbook::{self, Entity as PlaybookEntity};
+use crate::utils::pagination::{Page, PaginationParams};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Order,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
-
-/// Pagination parameters for playbook queries
-#[derive(Clone, Debug)]
-pub struct PaginationParams {
-    pub page: u64,
-    pub limit: u64,
-}
-
-impl Default for PaginationParams {
-    fn default() -> Self {
-        Self { page: 1, limit: 10 }
-    }
-}
-
-/// Paginated response
-#[derive(Clone, Debug)]
-pub struct Page<T> {
-    pub items: Vec<T>,
-    pub total: u64,
-    pub page: u64,
-    pub limit: u64,
-}
 
 /// Playbook repository trait for abstraction and testability
 #[async_trait::async_trait]
@@ -152,8 +131,8 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         assistant_id: Option<&str>,
         pagination: PaginationParams,
     ) -> Result<Page<playbook::Model>, DbError> {
-        let limit = pagination.limit;
-        let offset = (pagination.page - 1) * limit;
+        let page_size = pagination.page_size;
+        let offset = pagination.page.saturating_sub(1).saturating_mul(page_size);
 
         // Apply filters
         let mut query = PlaybookEntity::find();
@@ -172,18 +151,13 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         // Get paginated items
         let items = query
             .order_by(playbook::Column::UpdatedAt, Order::Desc)
-            .limit(limit)
+            .limit(page_size)
             .offset(offset)
             .all(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)?;
 
-        Ok(Page {
-            items,
-            total,
-            page: pagination.page,
-            limit,
-        })
+        Ok(Page::new(items, pagination.page, page_size, total))
     }
 
     async fn update_playbook(
@@ -350,15 +324,27 @@ mod tests {
         }
 
         let page1 = repo
-            .list_playbooks(Some(assistant_id), PaginationParams { page: 1, limit: 10 })
+            .list_playbooks(
+                Some(assistant_id),
+                PaginationParams {
+                    page: 1,
+                    page_size: 10,
+                },
+            )
             .await
             .expect("Failed to list page 1");
 
         assert_eq!(page1.items.len(), 10);
-        assert_eq!(page1.total, 15);
+        assert_eq!(page1.total_items, 15);
 
         let page2 = repo
-            .list_playbooks(Some(assistant_id), PaginationParams { page: 2, limit: 10 })
+            .list_playbooks(
+                Some(assistant_id),
+                PaginationParams {
+                    page: 2,
+                    page_size: 10,
+                },
+            )
             .await
             .expect("Failed to list page 2");
 

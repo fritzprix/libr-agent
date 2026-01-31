@@ -66,8 +66,7 @@ impl BuiltinMCPServer for MCPManagerServer {
             "createServer" => operations::create_server(self, args).await,
             "updateServer" => operations::update_server(self, args).await,
             "deleteServer" => operations::delete_server(self, args).await,
-            "connectServer" => operations::connect_server(self, args).await,
-            "disconnectServer" => operations::disconnect_server(self, args).await,
+            "verifyServer" => operations::verify_server(self, args).await,
             "listBuiltinTools" => queries::list_builtin_tools(args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

@@ -266,7 +266,14 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
 
         for (idx, item) in scratchpad.iter().enumerate() {
             let title_part = if let Some(title) = &item.title {
-                format!("**{}**", title)
+                let safe_title = title.replace(['\n', '\r'], " ");
+                let truncated_title = if safe_title.chars().count() > 50 {
+                    let s: String = safe_title.chars().take(47).collect();
+                    format!("**{}...**", s)
+                } else {
+                    format!("**{}**", safe_title)
+                };
+                truncated_title
             } else {
                 String::new()
             };
