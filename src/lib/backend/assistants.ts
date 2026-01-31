@@ -14,11 +14,6 @@ interface AssistantDto {
   updatedAt: number;
 }
 
-// Convert backend DTO to frontend Assistant model
-function deserializeAssistant(dto: AssistantDto): Assistant {
-  return parseAssistant(dto);
-}
-
 // Convert frontend Assistant model to backend params
 function serializeAssistant(assistant: Assistant): {
   id: string;
@@ -49,7 +44,7 @@ export async function createAssistant(
     name: params.name,
     config: JSON.parse(params.config), // Rust generic Value usually expects parsed JSON or string? Command expectation: Value which implies parsed JSON in invoke args
   });
-  return deserializeAssistant(dto);
+  return parseAssistant(dto);
 }
 
 /**
@@ -64,7 +59,7 @@ export async function updateAssistant(
     name: params.name,
     config: JSON.parse(params.config),
   });
-  return deserializeAssistant(dto);
+  return parseAssistant(dto);
 }
 
 /**
@@ -72,7 +67,7 @@ export async function updateAssistant(
  */
 export async function getAssistant(id: string): Promise<Assistant | undefined> {
   const dto = await safeInvoke<AssistantDto | null>('get_assistant', { id });
-  return dto ? deserializeAssistant(dto) : undefined;
+  return dto ? parseAssistant(dto) : undefined;
 }
 
 /**
@@ -87,7 +82,7 @@ export async function deleteAssistant(id: string): Promise<void> {
  */
 export async function listAssistants(): Promise<Assistant[]> {
   const dtos = await safeInvoke<AssistantDto[]>('list_assistants');
-  return dtos.map(deserializeAssistant);
+  return dtos.map(parseAssistant);
 }
 
 /**
