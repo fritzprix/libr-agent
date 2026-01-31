@@ -26,8 +26,5 @@ export * from './protocol';
 // Configuration types
 export * from './config';
 
-// Web Worker types
-export * from './web-worker';
-
 // Utility functions
 export * from './utils';
