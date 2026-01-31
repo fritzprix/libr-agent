@@ -167,18 +167,11 @@ export function AgentSessionListProvider({
           },
         });
 
-        const respWithDates = response as {
-          createdAt?: number;
-          created_at?: number;
-        };
-        const createdAtMs = respWithDates.createdAt ?? respWithDates.created_at;
-
         const session: AgentSession = {
           id: response.id,
           name: response.name,
-          status:
-            (response.status as 'idle' | 'busy' | 'paused' | 'error') || 'idle',
-          createdAt: createdAtMs ? new Date(createdAtMs) : new Date(),
+          status: response.status || 'idle',
+          createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
