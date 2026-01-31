@@ -32,7 +32,31 @@ impl WorkspaceServer {
                     // Access granted, continue
                 }
                 _ => {
-                    return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
+                    // ✅ ENHANCED: Process-specific error with available process IDs for recovery
+                    let available: Vec<String> = registry
+                        .entries
+                        .values()
+                        .filter(|e| e.session_id == session_id)
+                        .take(5)
+                        .map(|e| format!("{} [{}]", e.id, e.command))
+                        .collect();
+
+                    let available_text = if available.is_empty() {
+                        "No processes found in this session".to_string()
+                    } else {
+                        format!("Available processes: {}", available.join(", "))
+                    };
+
+                    return Ok(operation_failed_error(
+                        "Poll Process",
+                        &format!("Process '{}' not found in session", process_id),
+                        vec![
+                            available_text,
+                            "Use listProcesses() to see all active processes".to_string(),
+                            "Process IDs are case-sensitive and must match exactly".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ));
                 }
             }
         }
@@ -253,13 +277,46 @@ impl WorkspaceServer {
         let entry = match registry.entries.get(process_id) {
             Some(e) => e.clone(),
             None => {
-                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
+                // ✅ ENHANCED: Process-specific error with available process IDs
+                let available: Vec<String> = registry
+                    .entries
+                    .values()
+                    .filter(|e| e.session_id == session_id)
+                    .take(5)
+                    .map(|e| format!("{} [{}]", e.id, e.command))
+                    .collect();
+
+                let available_text = if available.is_empty() {
+                    "No processes found in this session".to_string()
+                } else {
+                    format!("Available processes: {}", available.join(", "))
+                };
+
+                return Ok(operation_failed_error(
+                    "Read Process Output",
+                    &format!("Process '{}' not found", process_id),
+                    vec![
+                        available_text,
+                        "Use listProcesses() to see all processes with IDs".to_string(),
+                        "Check if process has finished - finished processes are kept for 24 hours".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         };
 
         // Verify session access
         if entry.session_id != session_id {
-            return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
+            // ✅ ENHANCED: Better error message for session mismatch
+            return Ok(operation_failed_error(
+                "Read Process Output",
+                &format!("Process '{}' not found in current session", process_id),
+                vec![
+                    "Process may belong to a different session".to_string(),
+                    "Use listProcesses() to see processes in your session".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
         drop(registry);
 
@@ -581,10 +638,44 @@ impl WorkspaceServer {
         // Check if process exists and belongs to session
         if let Some(entry) = registry.entries.get(process_id) {
             if entry.session_id != session_id {
-                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
+                // ✅ ENHANCED: Process-specific error for session mismatch
+                return Ok(operation_failed_error(
+                    "Stop Process",
+                    &format!("Process '{}' not found in current session", process_id),
+                    vec![
+                        "Process may belong to a different session".to_string(),
+                        "Use listProcesses() to see processes in your session".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                ));
             }
         } else {
-            return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
+            // ✅ ENHANCED: Process-specific error with running process IDs
+            let running: Vec<String> = registry
+                .entries
+                .values()
+                .filter(|e| e.session_id == session_id)
+                .filter(|e| matches!(e.status, terminal_manager::ProcessStatus::Running))
+                .take(5)
+                .map(|e| format!("{} [{}]", e.id, e.command))
+                .collect();
+
+            let running_text = if running.is_empty() {
+                "No running processes found in this session".to_string()
+            } else {
+                format!("Running processes: {}", running.join(", "))
+            };
+
+            return Ok(operation_failed_error(
+                "Stop Process",
+                &format!("Process '{}' not found", process_id),
+                vec![
+                    running_text,
+                    "Use listProcesses() to see all processes".to_string(),
+                    "Only running processes can be stopped".to_string(),
+                ],
+                ToolGroup::Workspace,
+            ));
         }
 
         // Cancel process via token
