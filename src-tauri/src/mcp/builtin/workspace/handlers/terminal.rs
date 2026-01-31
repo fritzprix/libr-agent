@@ -298,7 +298,8 @@ impl WorkspaceServer {
                     vec![
                         available_text,
                         "Use listProcesses() to see all processes with IDs".to_string(),
-                        "Check if process has finished - finished processes are kept for 24 hours".to_string(),
+                        "Check if process has finished - finished processes are kept for 24 hours"
+                            .to_string(),
                     ],
                     ToolGroup::Workspace,
                 ));

@@ -3,6 +3,7 @@
 ## When to Use This Skill
 
 Use this skill when:
+
 - Creating a new builtin MCP server for LibrAgent
 - Adding tools to existing builtin servers
 - Refactoring tool implementations to follow best practices
@@ -186,7 +187,7 @@ use std::collections::HashMap;
 /// ✅ CREATE TOOL: No ID parameter (Rule 1: Immutable ID Rule)
 pub fn create_your_resource_tool() -> MCPTool {
     let mut props = HashMap::new();
-    
+
     // ❌ NEVER include "id" field in create tools
     props.insert(
         "name".to_string(),
@@ -196,7 +197,7 @@ pub fn create_your_resource_tool() -> MCPTool {
             Some("Resource name (required)")
         ),
     );
-    
+
     props.insert(
         "description".to_string(),
         string_prop(
@@ -235,7 +236,7 @@ RESPONSE:
 /// ✅ UPDATE/DELETE TOOLS: ID is required (Rule 1)
 pub fn create_update_resource_tool() -> MCPTool {
     let mut props = HashMap::new();
-    
+
     // ✅ ID is REQUIRED for updates
     props.insert(
         "id".to_string(),
@@ -245,7 +246,7 @@ pub fn create_update_resource_tool() -> MCPTool {
             Some("Resource ID (from createResource or listResources)")
         ),
     );
-    
+
     props.insert(
         "name".to_string(),
         string_prop(
@@ -344,7 +345,7 @@ pub async fn handle_create_resource(
 
     // ✅ SYSTEM GENERATES ID (Rule 1: Immutable ID Rule)
     let resource_id = generate_id();  // Use UUID, CUID, or domain-specific format
-    
+
     // TODO: Insert into database
     // db.resources.insert(Resource {
     //     id: resource_id.clone(),
@@ -398,9 +399,9 @@ pub async fn handle_update_resource(
     // Check existence BEFORE attempting database write
     // let exists = db.resources.exists(&args.id).await
     //     .map_err(|e| format!("Database error: {}", e))?;
-    
+
     let exists = false;  // TODO: Replace with actual DB check
-    
+
     if !exists {
         // ✅ SUCCESS HINT PATTERN (Rule 5)
         return Ok(operation_failed_error(
@@ -448,7 +449,7 @@ pub async fn handle_list_resources(
 ) -> Result<MCPResult, String> {
     // TODO: Fetch from database
     // let resources = db.resources.list(&server.session_id).await?;
-    
+
     // Mock data for example
     let resources = vec![
         ("res_abc123", "Example Resource 1", "Active"),
@@ -524,7 +525,7 @@ impl BuiltinServerRegistry {
             _ => None,
         }
     }
-    
+
     pub fn list_available_servers(&self) -> Vec<BuiltinServerDefinition> {
         vec![
             // ... existing servers
@@ -550,14 +551,14 @@ mod tests {
     #[tokio::test]
     async fn test_create_resource_generates_id() {
         let server = YourServer::new("test_session".to_string());
-        
+
         let args = json!({
             "name": "Test Resource",
             "description": "Test description"
         });
-        
+
         let result = handlers::handle_create_resource(&server, args, None).await.unwrap();
-        
+
         // ✅ Verify ID is in text content (Rule 3)
         let text_content = result.content.iter()
             .find_map(|c| match c {
@@ -565,10 +566,10 @@ mod tests {
                 _ => None
             })
             .expect("Expected text content");
-        
+
         assert!(text_content.contains("ID:"), "ID must be in text for AI");
         assert!(text_content.contains("res_"), "ID must be visible in output");
-        
+
         // ✅ Verify ID is also in structured content (for UI)
         assert!(result.structured_content.is_some());
         let data = result.structured_content.unwrap();
@@ -578,24 +579,24 @@ mod tests {
     #[tokio::test]
     async fn test_update_validates_id_existence() {
         let server = YourServer::new("test_session".to_string());
-        
+
         let args = json!({
             "id": "nonexistent_id",
             "name": "Updated Name"
         });
-        
+
         let result = handlers::handle_update_resource(&server, args, None).await.unwrap();
-        
+
         // ✅ Verify hallucination firewall (Rule 2)
         assert_eq!(result.is_error, Some(true), "Should return error for invalid ID");
-        
+
         let text_content = result.content.iter()
             .find_map(|c| match c {
                 MCPContent::Text { text } => Some(text.as_str()),
                 _ => None
             })
             .unwrap();
-        
+
         // ✅ Verify success hint pattern (Rule 5)
         assert!(text_content.contains("listResources"), "Error should suggest recovery tool");
     }
@@ -606,7 +607,7 @@ mod tests {
         let create_tool = tools.iter()
             .find(|t| t.name.starts_with("create"))
             .expect("Should have create tool");
-        
+
         // ✅ Verify Rule 1: Immutable ID Rule
         let props = &create_tool.input_schema.properties;
         assert!(!props.contains_key("id"), "Create tool must NOT have ID parameter");
@@ -794,11 +795,11 @@ fn generate_id() -> String {
 #[tokio::test]
 async fn test_create_tool_dual_channel_response() {
     let result = handlers::handle_create(...).await.unwrap();
-    
+
     // Test text content has ID
     let text = extract_text(&result);
     assert!(text.contains("ID:"), "Must show ID in text");
-    
+
     // Test structured content has ID
     let data = result.structured_content.unwrap();
     assert!(data.get("id").is_some(), "Must have ID in JSON");
@@ -807,7 +808,7 @@ async fn test_create_tool_dual_channel_response() {
 #[tokio::test]
 async fn test_update_tool_hallucination_firewall() {
     let result = handlers::handle_update(invalid_id_args).await.unwrap();
-    
+
     assert_eq!(result.is_error, Some(true));
     let text = extract_text(&result);
     assert!(text.contains("listResources"), "Must suggest recovery");
@@ -820,24 +821,24 @@ async fn test_update_tool_hallucination_firewall() {
 #[tokio::test]
 async fn test_create_update_delete_workflow() {
     let server = YourServer::new("test_session".to_string());
-    
+
     // 1. Create resource
     let create_result = server.call_tool(
         "createResource",
         json!({"name": "Test"}),
         None
     ).await.unwrap();
-    
+
     // 2. Extract ID from text (simulate agent reading)
     let id = extract_id_from_text(&create_result);
-    
+
     // 3. Update with extracted ID
     let update_result = server.call_tool(
         "updateResource",
         json!({"id": id, "name": "Updated"}),
         None
     ).await.unwrap();
-    
+
     assert_eq!(update_result.is_error, Some(false));
 }
 ```
@@ -857,7 +858,7 @@ import type { MCPResponse } from '@/lib/mcp-types';
 export async function createYourResource(
   serverName: string,
   name: string,
-  description?: string
+  description?: string,
 ): Promise<MCPResponse<unknown>> {
   return safeInvoke('call_builtin_tool', {
     serverName,
@@ -867,7 +868,7 @@ export async function createYourResource(
 }
 
 export async function listYourResources(
-  serverName: string
+  serverName: string,
 ): Promise<MCPResponse<unknown>> {
   return safeInvoke('call_builtin_tool', {
     serverName,
@@ -882,6 +883,7 @@ export async function listYourResources(
 ## Summary
 
 **Key Principles:**
+
 1. **No ID inputs for CREATE** - System generates, agent receives
 2. **Validate before writes** - Hallucination firewall on all ID-based operations
 3. **Dual-channel responses** - IDs visible in BOTH text (AI) and JSON (UI)
@@ -889,6 +891,7 @@ export async function listYourResources(
 5. **Recovery hints** - Every error suggests a path forward
 
 **Quality Gates:**
+
 - [ ] All tests pass (unit + integration)
 - [ ] Manifesto compliance checklist complete
 - [ ] Frontend TypeScript wrappers added

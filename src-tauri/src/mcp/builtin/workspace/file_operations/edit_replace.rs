@@ -82,7 +82,7 @@ impl WorkspaceServer {
             for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
                 let window_text = window.join("\n");
                 let similarity = calculate_similarity(&window_text, old_string);
-                if similarity > 0.3 && best_match.map_or(true, |m| similarity > m.1) {
+                if similarity > 0.3 && best_match.is_none_or(|m| similarity > m.1) {
                     best_match = Some((line_idx + 1, similarity));
                 }
             }
@@ -257,7 +257,7 @@ impl WorkspaceServer {
 
                 if similarity > 0.3 {
                     // 30% threshold
-                    if best_match.map_or(true, |m| similarity > m.1) {
+                    if best_match.is_none_or(|m| similarity > m.1) {
                         best_match = Some((idx + 1, similarity));
                     }
                 }
@@ -614,7 +614,7 @@ impl WorkspaceServer {
                 for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
                     let window_text = window.join("\n");
                     let similarity = calculate_similarity(&window_text, old_string);
-                    if similarity > 0.3 && best_match.map_or(true, |m| similarity > m.1) {
+                    if similarity > 0.3 && best_match.is_none_or(|m| similarity > m.1) {
                         best_match = Some((line_idx + 1, similarity));
                     }
                 }

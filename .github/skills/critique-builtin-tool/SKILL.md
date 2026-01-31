@@ -3,6 +3,7 @@
 ## When to Use This Skill
 
 Use this skill when:
+
 - Auditing existing builtin MCP server implementations for compliance
 - Reviewing pull requests that add or modify builtin tools
 - Validating tool implementations against the Tool Design Manifesto v2.1
@@ -20,27 +21,32 @@ Use this skill when:
 Before auditing, internalize these 5 critical rules:
 
 #### **Rule 1: The Immutable ID Rule (Schema Design)**
+
 - **Never** expose system-critical IDs as input for CREATE operations
 - CREATE tools: System generates ID, agent receives it
 - UPDATE/DELETE tools: ID is required input (validated before use)
 
 #### **Rule 2: The Hallucination Firewall (Execution Logic)**
+
 - **Never** trust agent-provided IDs without validation
 - Check existence BEFORE any database/state mutation
 - Return logic errors (not DB errors) with recovery hints
 
 #### **Rule 3: The Dual-Channel Response Rule (Output)**
+
 - **Text content** (what AI sees): Complete narrative with IDs, status, next steps
 - **Structured content** (what UI sees): JSON for rendering tables/graphs
 - Critical IDs MUST be in BOTH channels
 
 #### **Rule 4: AI-Native Descriptions (Input)**
+
 - Use data operation terms: "extract", "use", "target"
 - Avoid human UI actions: "click", "type", "copy", "paste"
 - Document prerequisites explicitly
 - Show workflow patterns, not button clicks
 
 #### **Rule 5: The "Success Hint" Pattern (Error Handling)**
+
 - Every error includes path to success
 - Suggest recovery tools from same tool group
 - Format: "❌ Problem. 💡 Use toolName() to fix"
@@ -61,6 +67,7 @@ src-tauri/src/mcp/builtin/your_server/
 ```
 
 **Critical Files to Examine:**
+
 1. **Tool Schemas** - Check for ID parameters in CREATE operations
 2. **Tool Handlers** - Check for validation before mutations
 3. **Response Building** - Check dual-channel compliance
@@ -99,12 +106,14 @@ pub fn create_resource_tool() -> MCPTool {
 ```
 
 **Audit Checklist:**
+
 - [ ] All CREATE tools have NO `id` parameter in schema
 - [ ] UPDATE/DELETE tools have REQUIRED `id` parameter
 - [ ] IDs are generated server-side (UUID/CUID/domain-specific)
 - [ ] Generated IDs are returned in responses
 
 **Common False Positives:**
+
 - File paths are NOT system IDs (user-controlled, not DB PKs) ✅ OK
 - Session IDs passed as options (not creation parameters) ✅ OK
 
@@ -118,10 +127,10 @@ pub fn create_resource_tool() -> MCPTool {
 // ❌ VIOLATION: Direct database access without validation
 pub async fn handle_update_resource(args: Value) -> Result<MCPResult, String> {
     let args: UpdateArgs = serde_json::from_value(args)?;
-    
+
     // ❌ No existence check - agent can hallucinate ID
     db.resources.update(&args.id, data).await?;
-    
+
     Ok(success_result())
 }
 ```
@@ -130,7 +139,7 @@ pub async fn handle_update_resource(args: Value) -> Result<MCPResult, String> {
 // ✅ COMPLIANT: Validation before mutation
 pub async fn handle_update_resource(args: Value) -> Result<MCPResult, String> {
     let args: UpdateArgs = serde_json::from_value(args)?;
-    
+
     // ✅ Hallucination firewall
     if !db.resources.exists(&args.id).await? {
         return Ok(operation_failed_error(
@@ -143,7 +152,7 @@ pub async fn handle_update_resource(args: Value) -> Result<MCPResult, String> {
             ToolGroup::YourServer
         ));
     }
-    
+
     // Safe to proceed
     db.resources.update(&args.id, data).await?;
     Ok(success_result())
@@ -151,12 +160,14 @@ pub async fn handle_update_resource(args: Value) -> Result<MCPResult, String> {
 ```
 
 **Audit Checklist:**
+
 - [ ] All ID-based operations validate existence FIRST
 - [ ] Validation happens BEFORE database writes
 - [ ] Invalid IDs return logic errors (not DB constraint errors)
 - [ ] Error messages suggest how to find valid IDs
 
 **Common Pitfalls:**
+
 - Registry lookups that assume ID exists ❌
 - Direct `.get(id).unwrap()` without checking ❌
 - Generic `not_found_error` without context ⚠️ (functional but not ideal)
@@ -208,12 +219,14 @@ MCPResult {
 4. **Verify in structured_content** - Is the same data in JSON for UI?
 
 **Audit Checklist:**
+
 - [ ] All generated IDs appear in text content (AI-visible)
 - [ ] Text content is self-sufficient (no dependency on JSON)
 - [ ] Critical values repeated in structured_content for UI
 - [ ] No orphaned IDs (only in JSON, not in text)
 
 **Testing Trick:**
+
 ```
 Read only the text field. Can an agent:
 1. Know what happened?
@@ -248,6 +261,7 @@ PREREQUISITE: Resource must exist (created via createResource)"
 ```
 
 **Audit Checklist:**
+
 - [ ] No human UI verbs: click, type, copy, paste, drag, select
 - [ ] Uses data operation verbs: extract, use, pass, call, retrieve
 - [ ] Prerequisites explicitly documented
@@ -255,6 +269,7 @@ PREREQUISITE: Resource must exist (created via createResource)"
 - [ ] Examples demonstrate actual usage patterns
 
 **Red Flags:**
+
 - References to "UI", "button", "dialog", "form", "screen"
 - Phrases like "enter your input", "click to confirm"
 - Missing prerequisite tools in workflow
@@ -291,6 +306,7 @@ return Ok(operation_failed_error(
 ```
 
 **Audit Checklist:**
+
 - [ ] All errors include 2-3 actionable recovery steps
 - [ ] Suggested tools are from same tool group
 - [ ] Error format includes ✗ marker and 💡 hints
@@ -298,6 +314,7 @@ return Ok(operation_failed_error(
 - [ ] Generic helpers used appropriately (or replaced with specific hints)
 
 **Common Issues:**
+
 - Using `not_found_error` helper for different resource types
 - Missing tool suggestions for recovery
 - Hints reference wrong tool group (browser hints for workspace errors)
@@ -311,13 +328,13 @@ return Ok(operation_failed_error(
 ```markdown
 ## Compliance Audit: [ServerName] Builtin Tools
 
-| Rule | Status | Grade | Evidence |
-|------|--------|-------|----------|
-| 1. Immutable ID Rule | ✅/⚠️/🔴 | A-F | [Details] |
-| 2. Hallucination Firewall | ✅/⚠️/🔴 | A-F | [Details] |
-| 3. Dual-Channel Response | ✅/⚠️/🔴 | A-F | [Details] |
-| 4. AI-Native Descriptions | ✅/⚠️/🔴 | A-F | [Details] |
-| 5. Success Hint Pattern | ✅/⚠️/🔴 | A-F | [Details] |
+| Rule                      | Status   | Grade | Evidence  |
+| ------------------------- | -------- | ----- | --------- |
+| 1. Immutable ID Rule      | ✅/⚠️/🔴 | A-F   | [Details] |
+| 2. Hallucination Firewall | ✅/⚠️/🔴 | A-F   | [Details] |
+| 3. Dual-Channel Response  | ✅/⚠️/🔴 | A-F   | [Details] |
+| 4. AI-Native Descriptions | ✅/⚠️/🔴 | A-F   | [Details] |
+| 5. Success Hint Pattern   | ✅/⚠️/🔴 | A-F   | [Details] |
 
 **Overall Grade:** [A-F] - [Summary]
 ```
@@ -336,7 +353,7 @@ return Ok(operation_failed_error(
 
 ### Feedback Template
 
-```markdown
+````markdown
 ### [Priority Level] [Rule Name] - [Title]
 
 **Problem:** [Clear description of what's wrong]
@@ -344,13 +361,16 @@ return Ok(operation_failed_error(
 **Location:** `file.rs` lines X-Y
 
 **Current Code:**
+
 ```rust
 // Show the problematic code
 ```
+````
 
 **Issue:** [Why this violates the manifesto]
 
 **Recommended Fix:**
+
 ```rust
 // Show the corrected code
 ```
@@ -358,7 +378,8 @@ return Ok(operation_failed_error(
 **Impact:** [How this affects AI agents]
 
 **Priority:** P0 (Blocker) / P1 (High) / P2 (Medium) / P3 (Low)
-```
+
+````
 
 ### Priority Guidelines
 
@@ -395,20 +416,21 @@ return Ok(operation_failed_error(
 **Finding:** Process IDs only in structured_content, agents can't see them.
 
 **Evidence:** Assumed text content didn't include IDs based on quick scan.
-```
+````
 
 ### Corrected Assessment (After Deep Analysis)
 
-```markdown
+````markdown
 ## 📊 Compliance Score (CORRECTED)
 
-| Rule | Grade | Evidence |
-|------|-------|----------|
-| 3. Dual-Channel Response | A ✅ | Process IDs ARE in text content |
+| Rule                     | Grade | Evidence                        |
+| ------------------------ | ----- | ------------------------------- |
+| 3. Dual-Channel Response | A ✅  | Process IDs ARE in text content |
 
 **Finding:** IDs are properly visible in BOTH channels.
 
 **Evidence from code (lines 1075-1090):**
+
 ```rust
 let hint = SuccessHint::new(
     format!(
@@ -424,8 +446,10 @@ Use pollProcess(\"{}\") to check status",
     // ...
 );
 ```
+````
 
 **Lesson:** Always verify by reading actual response text, not just scanning for patterns.
+
 ```
 
 ---
@@ -436,50 +460,62 @@ Use pollProcess(\"{}\") to check status",
 
 **Wrong Approach:**
 ```
+
 Search for "process_id" in structured_content → Found!
 Assume it's not in text → Mark as violation ❌
+
 ```
 
 **Right Approach:**
 ```
+
 1. Find response building code
 2. Extract literal text content
 3. Read what AI actually sees
 4. Then check structured_content
 5. Verify both channels have critical data ✅
+
 ```
 
 ### ❌ Mistake 2: Assuming Generic Helpers Are Wrong
 
 **Wrong Assumption:**
 ```
+
 Code uses not_found_error() → Must be bad ❌
+
 ```
 
 **Right Analysis:**
 ```
+
 1. Check what not_found_error() returns
 2. Read the default hints for this tool group
 3. Verify hints match the resource type
 4. If hints are generic → Suggest improvement ⚠️
 5. If hints are wrong → Mark as issue 🔴
+
 ```
 
 ### ❌ Mistake 3: Missing Context
 
 **Wrong Critique:**
 ```
+
 "File operations lack validation" ❌
 (Actually, they use SecureFileManager with validation)
+
 ```
 
 **Right Critique:**
 ```
+
 1. Trace validation through call stack
 2. Check if validation helper exists
 3. Verify validation catches edge cases
 4. Only flag if genuinely missing ✅
-```
+
+````
 
 ---
 
@@ -524,21 +560,24 @@ Before submitting audit findings:
 **Evidence:**
 ```rust
 // Code examples
-```
+````
 
 ### [Repeat for Rules 2-5]
 
 ## Priority Fixes
 
 ### P0 (Blocker)
+
 1. [Issue title] - [File location]
    - Impact: [Description]
    - Fix: [Code example]
 
 ### P1 (High)
+
 [Similar format]
 
 ### P2 (Medium)
+
 [Similar format]
 
 ## What's Already Good
@@ -555,7 +594,8 @@ Before submitting audit findings:
 ## Conclusion
 
 [Final assessment and next steps]
-```
+
+````
 
 ---
 
@@ -601,7 +641,7 @@ rg 'MCPResult|SuccessHint::new|to_mcp_result'
 
 # Rule 5: Find raw Err returns
 rg 'Err\(format!\(".*not found'
-```
+````
 
 ### Code Review Checklist
 
@@ -642,6 +682,7 @@ When reviewing PR:
 ```
 
 **When in Doubt:**
+
 - Read the actual code path
 - Check if helpers abstract the pattern correctly
 - Look for working examples in the codebase

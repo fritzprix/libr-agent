@@ -1,6 +1,5 @@
 import { safeInvoke } from './core';
 import type { Assistant } from '@/models/chat';
-import { parseAssistant } from '@/models/validation';
 import type { Page } from '@/lib/db/types';
 import { parseAssistant } from '@/models/validation';
 

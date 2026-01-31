@@ -322,7 +322,7 @@ pub async fn init_session_with_messages(
 
     // Load last 1000 messages from DB (one-time operation)
     let page = message_repo
-        .get_page(session_id, 1, MAX_CACHED_MESSAGES)
+        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
         .await
         .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
 

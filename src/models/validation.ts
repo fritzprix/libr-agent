@@ -1,26 +1,25 @@
 import { z } from 'zod';
 import { getLogger } from '@/lib/logger';
 import type { Assistant } from './chat';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('AssistantValidation');
 
 const logger = getLogger('AssistantValidation');
 
 // Schema for the nested config object
-const AssistantConfigSchema = z.object({
-  description: z.string().optional(),
-  avatar: z.string().optional(),
-  systemPrompt: z.string().default('You are a helpful assistant.'),
-  mcpServerIds: z.array(z.string()).optional(),
-  localServices: z.array(z.string()).optional(),
-  allowedBuiltInServiceAliases: z.array(z.string()).optional(),
-  deletionProtected: z.boolean().default(false),
-  model: z.string().optional(),
-  provider: z.string().optional(),
-  temperature: z.number().optional(),
-  maxTokens: z.number().optional(),
-}).passthrough();
+const AssistantConfigSchema = z
+  .object({
+    description: z.string().optional(),
+    avatar: z.string().optional(),
+    systemPrompt: z.string().default('You are a helpful assistant.'),
+    mcpServerIds: z.array(z.string()).optional(),
+    localServices: z.array(z.string()).optional(),
+    allowedBuiltInServiceAliases: z.array(z.string()).optional(),
+    deletionProtected: z.boolean().default(false),
+    model: z.string().optional(),
+    provider: z.string().optional(),
+    temperature: z.number().optional(),
+    maxTokens: z.number().optional(),
+  })
+  .passthrough();
 
 type AssistantConfig = z.infer<typeof AssistantConfigSchema>;
 
@@ -42,7 +41,9 @@ export const parseAssistant = (data: unknown): Assistant => {
     logger.warn('Assistant config validation failed', configParsed.error);
   }
 
-  const config: Partial<AssistantConfig> = configParsed.success ? configParsed.data : {};
+  const config: Partial<AssistantConfig> = configParsed.success
+    ? configParsed.data
+    : {};
 
   return {
     id: dto.id,

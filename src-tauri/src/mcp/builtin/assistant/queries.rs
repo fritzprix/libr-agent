@@ -24,10 +24,7 @@ pub async fn list_assistants(
         .unwrap_or(20)
         .clamp(1, 100) as u64;
 
-    let _pagination = PaginationParams {
-        page,
-        limit: page_size,
-    };
+    let _pagination = PaginationParams { page, page_size };
 
     // Get total count for pagination metadata
     let total_count = repo.count_assistants().await.unwrap_or(0);

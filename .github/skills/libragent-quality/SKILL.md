@@ -182,6 +182,7 @@ The project uses GitHub Actions for CI. All validation commands must pass before
 ## Reference
 
 For detailed project guidelines, see:
+
 - `.github/copilot-instructions.md` - Complete coding standards
 - `agents.md` - Agent-specific guidelines
 - `docs/architecture/` - Architecture documentation
