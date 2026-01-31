@@ -205,6 +205,13 @@ pub async fn messages_search(
 
     // If a session_id was provided, use the per-session cached index.
     // Otherwise perform a global search by building a temporary index over all messages.
+    // Safe multiplication for search limit to prevent overflow
+    let search_limit = page
+        .saturating_mul(page_size)
+        .saturating_mul(2)
+        .try_into()
+        .unwrap_or(usize::MAX);
+
     let all_results = if let Some(target_session) = session_id {
         // Per-session behavior (cached index)
         let engine = get_or_build_index(&target_session).await?;
