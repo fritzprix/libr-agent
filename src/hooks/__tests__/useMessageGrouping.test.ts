@@ -222,9 +222,9 @@ describe('useMessageGrouping', () => {
     // But content should be same
     expect(secondResult.groupedMessages[1].message.id).toBe(firstResult.groupedMessages[1].message.id);
 
-    // The toolResultsMap is now always a fresh instance to prevent stale entries,
-    // but it should have the same content (empty in this case)
-    expect(secondResult.toolResultsMap).not.toBe(firstResult.toolResultsMap);
+    // The toolResultsMap is now stable if content hasn't changed (empty in this case)
+    // optimization: reuses previous map instance
+    expect(secondResult.toolResultsMap).toBe(firstResult.toolResultsMap);
     expect(secondResult.toolResultsMap.size).toBe(firstResult.toolResultsMap.size);
     expect(secondResult.toolResultsMap.size).toBe(0);
 
