@@ -1,4 +1,5 @@
 pub mod config;
+pub mod context;
 pub mod events;
 pub mod lifecycle;
 pub mod llm;

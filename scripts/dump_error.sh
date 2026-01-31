@@ -7,7 +7,7 @@ LINES="${1:-20}"
 echo "🔍 Extracting error logs..."
 echo "📊 Lines to extract: $LINES"
 
-if ./dump_log.sh "$LINES"; then
+if ./scripts/dump_log.sh "$LINES"; then
     echo "✅ Log extraction completed"
     echo "🔧 Processing error context..."
     ./scripts/extract_error_context.sh > error.txt

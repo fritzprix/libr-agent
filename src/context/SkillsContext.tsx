@@ -31,7 +31,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { value: settings } = useSettings();
+  const { value: settings, isLoading: settingsLoading } = useSettings();
 
   const fetchSkills = useCallback(async () => {
     setIsLoading(true);
@@ -72,10 +72,15 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.system?.skillsDirectory]);
 
-  // Initial fetch
+  // Initial fetch - wait for settings to load and only scan if skillsDirectory is configured
   useEffect(() => {
-    fetchSkills();
-  }, [fetchSkills]);
+    if (!settingsLoading && settings.system?.skillsDirectory) {
+      fetchSkills();
+    } else if (!settingsLoading && !settings.system?.skillsDirectory) {
+      logger.warn('Skills directory not configured, skipping scan');
+      setSkills([]);
+    }
+  }, [fetchSkills, settingsLoading, settings.system?.skillsDirectory]);
 
   return (
     <SkillsContext.Provider

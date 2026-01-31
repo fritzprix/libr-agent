@@ -16,6 +16,7 @@ pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;
 pub mod playbook;
+pub mod skills;
 pub mod ui;
 pub mod utils;
 pub mod workspace;

@@ -1,3 +1,4 @@
+use crate::agent::context::registry::ContextRegistry;
 use crate::commands::messages_commands::Message;
 use crate::repositories::SessionMetadata;
 use std::collections::HashMap;
@@ -43,4 +44,7 @@ pub struct AgentSession {
     /// Reset to 0 when content or tool_calls are generated
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
+
+    /// Context registry for read-only information providers
+    pub context_registry: Arc<ContextRegistry>,
 }

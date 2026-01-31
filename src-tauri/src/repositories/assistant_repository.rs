@@ -28,6 +28,13 @@ pub trait AssistantRepository: Send + Sync {
     /// Get all assistants
     async fn list_assistants(&self) -> Result<Vec<assistant::Model>, DbError>;
 
+    /// Get assistants with pagination
+    async fn list_assistants_paginated(
+        &self,
+        limit: u64,
+        offset: u64,
+    ) -> Result<Vec<assistant::Model>, DbError>;
+
     /// Update an assistant
     async fn update_assistant(
         &self,
@@ -95,6 +102,21 @@ impl AssistantRepository for SqliteAssistantRepository {
 
     async fn list_assistants(&self) -> Result<Vec<assistant::Model>, DbError> {
         AssistantEntity::find()
+            .all(&self.db)
+            .await
+            .map_err(DbError::SeaOrmQueryFailed)
+    }
+
+    async fn list_assistants_paginated(
+        &self,
+        limit: u64,
+        offset: u64,
+    ) -> Result<Vec<assistant::Model>, DbError> {
+        use sea_orm::QuerySelect;
+
+        AssistantEntity::find()
+            .limit(limit)
+            .offset(offset)
             .all(&self.db)
             .await
             .map_err(DbError::SeaOrmQueryFailed)
