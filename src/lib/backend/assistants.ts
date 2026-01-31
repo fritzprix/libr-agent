@@ -1,6 +1,7 @@
 import { safeInvoke } from './core';
 import type { Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
+import { parseAssistant } from '@/models/validation';
 
 /**
  * Backend DTO for Assistant
@@ -15,14 +16,7 @@ interface AssistantDto {
 
 // Convert backend DTO to frontend Assistant model
 function deserializeAssistant(dto: AssistantDto): Assistant {
-  const config = dto.config as Partial<Assistant>;
-  return {
-    ...config,
-    id: dto.id,
-    name: dto.name,
-    createdAt: new Date(dto.createdAt),
-    updatedAt: new Date(dto.updatedAt),
-  } as Assistant;
+  return parseAssistant(dto);
 }
 
 // Convert frontend Assistant model to backend params

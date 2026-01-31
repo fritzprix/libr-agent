@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import type { Assistant } from './chat';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('AssistantValidation');
 
 // Schema for the nested config object
 const AssistantConfigSchema = z.object({
@@ -33,7 +36,7 @@ export const parseAssistant = (data: unknown): Assistant => {
   const configParsed = AssistantConfigSchema.safeParse(dto.config);
 
   if (!configParsed.success && dto.config) {
-     console.warn('Assistant config validation failed', configParsed.error);
+    logger.warn('Assistant config validation failed', configParsed.error);
   }
 
   const config: Partial<AssistantConfig> = configParsed.success ? configParsed.data : {};
