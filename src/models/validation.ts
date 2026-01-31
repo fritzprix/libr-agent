@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { getLogger } from '@/lib/logger';
 import type { Assistant } from './chat';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('AssistantValidation');
 
 const logger = getLogger('AssistantValidation');
 
