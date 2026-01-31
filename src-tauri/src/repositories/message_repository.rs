@@ -207,7 +207,7 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         // Calculate offset
-        let offset = (page.saturating_sub(1)) * page_size;
+        let offset = page.saturating_sub(1).saturating_mul(page_size);
 
         // Fetch paginated messages
         let models = MessageEntity::find()

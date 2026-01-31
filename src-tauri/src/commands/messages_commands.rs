@@ -208,7 +208,11 @@ pub async fn messages_search(
     let all_results = if let Some(target_session) = session_id {
         // Per-session behavior (cached index)
         let engine = get_or_build_index(&target_session).await?;
-        engine.search(&query, (page * page_size * 2) as usize)?
+        let search_limit = page
+            .saturating_mul(page_size)
+            .saturating_mul(2)
+            .min(usize::MAX as u64) as usize;
+        engine.search(&query, search_limit)?
     } else {
         // Global search: build a temporary index from messages across all sessions.
         let max_docs = MessageSearchEngine::max_docs_from_env();
@@ -222,7 +226,11 @@ pub async fn messages_search(
         // Perform search on the temporary engine
         let engine =
             MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)?;
-        engine.search(&query, (page * page_size * 2) as usize)?
+        let search_limit = page
+            .saturating_mul(page_size)
+            .saturating_mul(2)
+            .min(usize::MAX as u64) as usize;
+        engine.search(&query, search_limit)?
     };
 
     // Paginate results
