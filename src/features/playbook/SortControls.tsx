@@ -43,7 +43,7 @@ export function SortControls({
             <span>Display</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-[200px]">
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel>Sort By</DropdownMenuLabel>
           <DropdownMenuCheckboxItem
             checked={sortMode === 'created_at'}

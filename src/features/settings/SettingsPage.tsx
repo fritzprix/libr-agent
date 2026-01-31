@@ -415,7 +415,7 @@ export default function SettingsPage() {
         </div>
         <div className="flex items-center gap-3">
           {pendingCount > 0 && (
-            <span className="text-sm text-yellow-400">
+            <span className="text-sm text-warning">
               {t('settings.unsaved', 'Unsaved')} ({pendingCount})
             </span>
           )}
