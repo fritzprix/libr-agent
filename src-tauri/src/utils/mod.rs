@@ -1,5 +1,6 @@
 pub mod fs;
 pub mod json;
+pub mod pagination;
 pub mod platform;
 
 /// Safely truncates a string to a maximum number of characters.

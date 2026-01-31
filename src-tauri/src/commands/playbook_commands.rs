@@ -171,7 +171,7 @@ pub async fn list_playbooks(
     // Full pagination support can be added if needed
     let pagination = PaginationParams {
         page: 1,
-        limit: 1000,
+        page_size: 1000,
     };
 
     let page = repo

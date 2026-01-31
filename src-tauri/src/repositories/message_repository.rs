@@ -1,5 +1,6 @@
 use super::error::DbError;
-use crate::commands::messages_commands::{Message, Page};
+use crate::commands::messages_commands::Message;
+use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
@@ -17,8 +18,8 @@ pub trait MessageRepository: Send + Sync {
     async fn get_page(
         &self,
         session_id: &str,
-        page: usize,
-        page_size: usize,
+        page: u64,
+        page_size: u64,
     ) -> Result<Page<Message>, DbError>;
 
     /// Insert or update a single message
@@ -192,8 +193,8 @@ impl MessageRepository for SqliteMessageRepository {
     async fn get_page(
         &self,
         session_id: &str,
-        page: usize,
-        page_size: usize,
+        page: u64,
+        page_size: u64,
     ) -> Result<Page<Message>, DbError> {
         if page_size == 0 {
             return Err(DbError::InvalidInput("page_size must be > 0".into()));
@@ -206,31 +207,20 @@ impl MessageRepository for SqliteMessageRepository {
             .await?;
 
         // Calculate offset
-        let offset = (page.saturating_sub(1)) as u64 * page_size as u64;
+        let offset = page.saturating_sub(1).saturating_mul(page_size);
 
         // Fetch paginated messages
         let models = MessageEntity::find()
             .filter(message::Column::SessionId.eq(session_id))
             .order_by_asc(message::Column::CreatedAt)
             .offset(offset)
-            .limit(page_size as u64)
+            .limit(page_size)
             .all(&self.db)
             .await?;
 
         let messages: Vec<Message> = models.into_iter().map(Self::model_to_message).collect();
 
-        let total_usize = total as usize;
-        let has_prev = page > 1;
-        let has_next = page * page_size < total_usize;
-
-        Ok(Page {
-            items: messages,
-            page,
-            page_size,
-            total_items: total_usize,
-            has_next_page: has_next,
-            has_previous_page: has_prev,
-        })
+        Ok(Page::new(messages, page, page_size, total))
     }
 
     async fn insert(&self, message: &Message) -> Result<(), DbError> {
