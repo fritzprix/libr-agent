@@ -96,12 +96,13 @@ export function AgentPlanningPanel() {
                             className="text-xs px-1 py-0 h-4 flex items-center gap-1"
                           >
                             <Circle
-                              className={`w-2 h-2 fill-current ${todo.priority === 'high'
+                              className={`w-2 h-2 fill-current ${
+                                todo.priority === 'high'
                                   ? 'text-destructive'
                                   : todo.priority === 'medium'
                                     ? 'text-warning'
                                     : 'text-success'
-                                }`}
+                              }`}
                             />
                             {todo.priority === 'high'
                               ? 'High'
@@ -164,7 +165,7 @@ export function AgentPlanningPanel() {
           </h4>
           <div className="max-h-32 overflow-y-auto space-y-1">
             {planningState?.scratchpad &&
-              planningState.scratchpad.length > 0 ? (
+            planningState.scratchpad.length > 0 ? (
               planningState.scratchpad.map((m: ScratchpadItem) => (
                 <div
                   key={m.id}

@@ -46,35 +46,40 @@ pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadat
     let root_path = PathBuf::from(&directory);
 
     if !root_path.exists() {
-        info!("Skills directory does not exist, creating: {}", directory);
-        fs::create_dir_all(&root_path)
-            .map_err(|e| format!("Failed to create skills directory: {}", e))?;
+        // Critique #3: Side-effect on scan (mkdir) - Removed
+        // Also critique #5: Return empty list or error instead of creating
+        info!("Skills directory does not exist: {}", directory);
+        return Ok(Vec::new());
     }
-
-    let mut skills = Vec::new();
 
     info!("Scanning skills directory: {}", directory);
 
-    // We scan specifically for SKILL.md files
-    for entry in WalkDir::new(&root_path)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "SKILL.md" {
-            let path = entry.path();
-            match parse_skill_metadata(path) {
-                Ok(metadata) => {
-                    skills.push(metadata);
-                }
-                Err(e) => {
-                    warn!("Failed to parse skill at {:?}: {}", path, e);
+    // Critique #2: Blocking I/O in async. Offload to spawn_blocking.
+    tokio::task::spawn_blocking(move || {
+        let mut skills = Vec::new();
+
+        // Critique #1: Unintended filesystem access (symlinks). Disable follow_links.
+        for entry in WalkDir::new(&root_path)
+            .follow_links(false) // Changed from true to false
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            if entry.file_name() == "SKILL.md" {
+                let path = entry.path();
+                match parse_skill_metadata(path) {
+                    Ok(metadata) => {
+                        skills.push(metadata);
+                    }
+                    Err(e) => {
+                        warn!("Failed to parse skill at {:?}: {}", path, e);
+                    }
                 }
             }
         }
-    }
-
-    Ok(skills)
+        Ok(skills)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
 }
 
 fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
@@ -96,4 +101,62 @@ fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
     }
 
     Err("No valid YAML frontmatter found".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_parse_skill_metadata_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("SKILL.md");
+        let mut file = fs::File::create(&file_path).unwrap();
+
+        let content = r#"---
+name: Test Skill
+description: A test skill
+---
+# Content
+"#;
+        file.write_all(content.as_bytes()).unwrap();
+
+        let metadata = parse_skill_metadata(&file_path).unwrap();
+        assert_eq!(metadata.name, "Test Skill");
+        assert_eq!(metadata.description, "A test skill");
+        assert_eq!(metadata.path, file_path.to_string_lossy());
+    }
+
+    #[test]
+    fn test_parse_skill_metadata_missing_frontmatter() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("SKILL.md");
+        let mut file = fs::File::create(&file_path).unwrap();
+
+        let content = "# Just markdown content";
+        file.write_all(content.as_bytes()).unwrap();
+
+        let result = parse_skill_metadata(&file_path);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "No valid YAML frontmatter found");
+    }
+
+    #[test]
+    fn test_parse_skill_metadata_invalid_yaml() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("SKILL.md");
+        let mut file = fs::File::create(&file_path).unwrap();
+
+        let content = r#"---
+name: [Invalid YAML
+---
+"#;
+        file.write_all(content.as_bytes()).unwrap();
+
+        let result = parse_skill_metadata(&file_path);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("YAML parse error"));
+    }
 }

@@ -53,7 +53,7 @@ export function GeneralTab({
           onSkillsDirectoryChange(defaultDir);
           return; // The change will trigger the effect again
         } catch (error) {
-          console.warn('Failed to get default skills directory', error);
+          logger.warn('Failed to get default skills directory', error);
           // Fall through to empty state
         }
       }
@@ -74,7 +74,7 @@ export function GeneralTab({
         setSkills(result);
         setVerificationStatus('success');
       } catch (error) {
-        console.error('Failed to verify skills directory', error);
+        logger.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
         setErrorMessage(String(error));
         setSkills([]);
@@ -152,6 +152,7 @@ export function GeneralTab({
               onClick={handleBrowseEvents}
               title="Browse"
               className="px-3"
+              aria-label="Browse skills directory"
             >
               <FolderOpen className="w-4 h-4" />
             </Button>

@@ -15,7 +15,10 @@ impl WorkspaceServer {
         let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
         let file_manager = self.get_file_manager(session_id.clone());
-        let safe_path = match file_manager.get_security_validator().validate_path_for_read(path_str) {
+        let safe_path = match file_manager
+            .get_security_validator()
+            .validate_path_for_read(path_str)
+        {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
@@ -27,7 +30,8 @@ impl WorkspaceServer {
                         "Ensure you have read permissions for the directory".to_string(),
                     ],
                     ToolGroup::Workspace,
-                ).to_mcp_result());
+                )
+                .to_mcp_result());
             }
         };
 
@@ -207,18 +211,22 @@ impl WorkspaceServer {
             .unwrap_or("both");
 
         let file_manager = self.get_file_manager(session_id.clone());
-        let safe_path = match file_manager.get_security_validator().validate_path_for_read(search_path) {
+        let safe_path = match file_manager
+            .get_security_validator()
+            .validate_path_for_read(search_path)
+        {
             Ok(path) => path,
             Err(e) => {
                 return Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
                     vec![
-                        "Verify the directory path is correct".to_string(), 
+                        "Verify the directory path is correct".to_string(),
                         "Use listDirectory to see available files".to_string(),
                     ],
                     ToolGroup::Workspace,
-                ).to_mcp_result());
+                )
+                .to_mcp_result());
             }
         };
 

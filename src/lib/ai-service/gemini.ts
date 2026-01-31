@@ -360,7 +360,7 @@ export class GeminiService extends BaseAIService {
 
       // 🔍 Detailed Logging before API Call
       const sysPromptText = geminiConfig.systemInstruction?.[0]?.text || '';
-      logger.info('🚀 Calling Gemini API - System Prompt Verification', {
+      logger.debug('🚀 Calling Gemini API - System Prompt Verification', {
         model,
         systemPromptLength: sysPromptText.length,
         includesSkills: sysPromptText.includes('<available_skills>'),
