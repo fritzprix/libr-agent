@@ -56,3 +56,80 @@ impl Default for PaginationParams {
         }
     }
 }
+
+/// Helper function to perform in-memory pagination on a vector of items.
+/// Useful when search/filtering is done in memory (e.g. global search)
+/// rather than in the database query.
+pub fn paginate_in_memory<T: Clone>(
+    all_items: Vec<T>,
+    page: u64,
+    page_size: u64,
+) -> Page<T> {
+    let total_items = all_items.len() as u64;
+    // Handle 0-based index calculation safely
+    let start_idx = (page.saturating_sub(1) as usize).saturating_mul(page_size as usize);
+    let end_idx = start_idx.saturating_add(page_size as usize).min(all_items.len());
+
+    let items = if start_idx < all_items.len() {
+        all_items[start_idx..end_idx].to_vec()
+    } else {
+        Vec::new()
+    };
+
+    Page::new(items, page, page_size, total_items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paginate_in_memory_basic() {
+        let items: Vec<i32> = (1..=25).collect();
+
+        // Page 1, size 10
+        let page1 = paginate_in_memory(items.clone(), 1, 10);
+        assert_eq!(page1.items.len(), 10);
+        assert_eq!(page1.items[0], 1);
+        assert_eq!(page1.items[9], 10);
+        assert_eq!(page1.total_pages, 3);
+        assert!(page1.has_next_page);
+        assert!(!page1.has_previous_page);
+
+        // Page 2, size 10
+        let page2 = paginate_in_memory(items.clone(), 2, 10);
+        assert_eq!(page2.items.len(), 10);
+        assert_eq!(page2.items[0], 11);
+        assert_eq!(page2.items[9], 20);
+        assert!(page2.has_next_page);
+        assert!(page2.has_previous_page);
+
+        // Page 3, size 10 (partial)
+        let page3 = paginate_in_memory(items.clone(), 3, 10);
+        assert_eq!(page3.items.len(), 5);
+        assert_eq!(page3.items[0], 21);
+        assert_eq!(page3.items[4], 25);
+        assert!(!page3.has_next_page);
+        assert!(page3.has_previous_page);
+    }
+
+    #[test]
+    fn test_paginate_in_memory_out_of_bounds() {
+        let items: Vec<i32> = vec![1, 2, 3];
+        let page = paginate_in_memory(items, 5, 10);
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.total_items, 3);
+        assert_eq!(page.page, 5);
+    }
+
+    #[test]
+    fn test_paginate_in_memory_empty() {
+        let items: Vec<i32> = Vec::new();
+        let page = paginate_in_memory(items, 1, 10);
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.total_items, 0);
+        assert_eq!(page.total_pages, 0);
+    }
+}
