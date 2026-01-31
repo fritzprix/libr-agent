@@ -5,14 +5,8 @@ use super::ContextProvider;
 
 /// Registry for managing context providers
 ///
-/// Example usage:
-/// ```
-/// let mut registry = ContextRegistry::new();
-/// registry.register(Box::new(SkillsContextProvider::new(settings)));
-/// registry.register(Box::new(TimeContextProvider::new()));
-///
-/// let context = registry.build_context().await;
-/// ```
+/// Providers are stored with priority (lower = higher priority).
+/// System prompts are built by calling each provider in priority order.
 pub struct ContextRegistry {
     providers: Vec<Box<dyn ContextProvider>>,
 }
