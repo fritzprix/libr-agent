@@ -111,7 +111,7 @@ export default function FileAttachment({
             {files.map((file, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border-muted"
+                className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
               >
                 <span className="text-xs text-success truncate flex-1">
                   {file.name}
