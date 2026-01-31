@@ -131,11 +131,11 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         assistant_id: Option<&str>,
         pagination: PaginationParams,
     ) -> Result<Page<playbook::Model>, DbError> {
-        if pagination.page_size == 0 {
-            return Err(DbError::InvalidInput("page_size must be > 0".into()));
-        }
         let page_size = pagination.page_size;
-        let offset = (pagination.page.saturating_sub(1)) * page_size;
+        let offset = pagination
+            .page
+            .saturating_sub(1)
+            .saturating_mul(page_size);
 
         // Apply filters
         let mut query = PlaybookEntity::find();
