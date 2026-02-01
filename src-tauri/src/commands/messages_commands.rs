@@ -4,7 +4,7 @@ use crate::mcp::types::MCPContent;
 use crate::repositories::MessageRepository;
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
-use crate::utils::pagination::Page;
+use crate::utils::pagination::{paginate_in_memory, Page};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -203,53 +203,23 @@ pub async fn messages_search(
         return Ok(Page::new(Vec::new(), page, page_size, 0));
     }
 
-    // If a session_id was provided, use the per-session cached index.
-    // Otherwise perform a global search by building a temporary index over all messages.
-    // Safe multiplication for search limit to prevent overflow
-    let _search_limit = page
+    // Calculate search limit to ensure we fetch enough results for the requested page
+    // We multiply by 2 to account for potential relevance variance or future filtering
+    let search_limit = page
         .saturating_mul(page_size)
         .saturating_mul(2)
-        .try_into()
-        .unwrap_or(usize::MAX);
+        .min(usize::MAX as u64) as usize;
 
     let all_results = if let Some(target_session) = session_id {
         // Per-session behavior (cached index)
         let engine = get_or_build_index(&target_session).await?;
-        let search_limit = page
-            .saturating_mul(page_size)
-            .saturating_mul(2)
-            .min(usize::MAX as u64) as usize;
         engine.search(&query, search_limit)?
     } else {
-        // Global search: build a temporary index from messages across all sessions.
-        let max_docs = MessageSearchEngine::max_docs_from_env();
-
-        // Fetch recent messages across all sessions up to max_docs
-        let messages = crate::get_message_repository()
-            .get_recent_message_models(max_docs as u64)
-            .await
-            .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
-
-        // Perform search on the temporary engine
-        let engine =
-            MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)?;
-        let search_limit = page
-            .saturating_mul(page_size)
-            .saturating_mul(2)
-            .min(usize::MAX as u64) as usize;
+        // Global search: build a temporary index from messages across all sessions
+        let engine = crate::search::service::build_global_temporary_index().await?;
         engine.search(&query, search_limit)?
     };
 
-    // Paginate results
-    let total_items = all_results.len();
-    let start_idx = (page.saturating_sub(1) as usize) * (page_size as usize);
-    let end_idx = (start_idx + (page_size as usize)).min(total_items);
-
-    let items: Vec<SearchResult> = if start_idx < total_items {
-        all_results[start_idx..end_idx].to_vec()
-    } else {
-        Vec::new()
-    };
-
-    Ok(Page::new(items, page, page_size, total_items as u64))
+    // Use shared in-memory pagination logic
+    Ok(paginate_in_memory(all_results, page, page_size))
 }

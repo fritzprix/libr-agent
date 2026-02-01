@@ -64,3 +64,24 @@ pub async fn rebuild_and_persist_index(session_id: &str) -> Result<MessageSearch
 
     Ok(engine)
 }
+
+/// Builds a temporary global search index from messages across all sessions.
+///
+/// This is used for global search when no session ID is specified.
+/// The index is in-memory only and is not persisted to disk.
+///
+/// # Returns
+/// A `MessageSearchEngine` containing recent messages from all sessions.
+pub async fn build_global_temporary_index() -> Result<MessageSearchEngine, String> {
+    let repo = get_message_repository();
+    let max_docs = MessageSearchEngine::max_docs_from_env();
+
+    // Fetch recent messages across all sessions up to max_docs
+    let messages = repo
+        .get_recent_message_models(max_docs as u64)
+        .await
+        .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
+
+    // Build a temporary in-memory global search engine
+    MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)
+}

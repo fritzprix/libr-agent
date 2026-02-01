@@ -47,3 +47,8 @@
 
 **Pattern:** Identical object literal structure and initialization logic (e.g., `createId`, `threadId` fallback) repeated across `createSystemMessage`, `createUserMessage`, and `createToolMessage`.
 **Action:** Extracted `createBaseMessage` helper to centralize message instantiation and reduce structural repetition.
+
+## 2026-06-05 - [Search Pagination and Indexing Duplication]
+
+**Pattern:** Repeated manual pagination (vector slicing) and index building logic in `messages_commands.rs` and `search/service.rs`.
+**Action:** Extracted `paginate_in_memory` into `utils/pagination.rs` and `build_global_temporary_index` into `search/service.rs` to centralize this logic.
