@@ -73,3 +73,9 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-27 - [AgentChatInput] **Visual Bug:** Hardcoded colors (green-500, destructive, amber-500) **Fix:** Use semantic tokens (border-success, bg-success/10, text-warning)
 
 ## 2026-01-27 - [SortControls] **Visual Bug:** Arbitrary width (w-[200px]) **Fix:** Use grid value (w-52)
+
+## 2026-01-27 - [AppHeader] **Visual Bug:** Inconsistent border radius (rounded-2xl) **Fix:** Use standard radius (rounded-lg)
+
+## 2026-01-27 - [AgentChatAttachedFiles] **Visual Bug:** Hardcoded colors (border-gray-700), raw button usage, generic rounded **Fix:** Use semantic tokens (border-border), Button component, rounded-md
+
+## 2026-01-27 - [FileAttachment] **Visual Bug:** Typo in border class (border-border-muted) **Fix:** Use valid semantic class (border-border)
