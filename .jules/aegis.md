@@ -13,3 +13,7 @@
 ## 2026-02-04 - src/features/agent/AgentDraftChatView.tsx **Safety Breach:** `as unknown as Assistant` casting used to flatten backend DTO. **Fix:** Implemented `parseAssistant` with Zod validation in `src/models/validation.ts`.
 
 ## 2026-02-04 - src-tauri/src/mcp/builtin/workspace/file_operations/edit_replace.rs **Safety Breach:** `unwrap()` on `Option` in boolean logic. **Fix:** Replaced with `map_or(true, ...)` for safe boolean evaluation.
+
+## 2026-02-05 - src/context/AgentChatContext.tsx **Safety Breach:** `as Message` type assertion masking potential partial data in streaming messages. **Fix:** Implemented `isValidMessage` type guard in `src/models/validation.ts` to strictly validate message shape.
+
+## 2026-02-05 - src/context/AgentSessionListContext.tsx **Safety Breach:** `as { ... }` assertions and snake_case fallbacks masking backend contract. **Fix:** Removed assertions and fallbacks, enforcing strict adherence to backend camelCase contract.

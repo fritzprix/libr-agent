@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getLogger } from '@/lib/logger';
-import type { Assistant } from './chat';
+import type { Assistant, Message } from './chat';
 
 const logger = getLogger('AssistantValidation');
 
@@ -64,4 +64,21 @@ export const parseAssistant = (data: unknown): Assistant => {
     temperature: config.temperature,
     maxTokens: config.maxTokens,
   };
+};
+
+/**
+ * Type guard to validate if a partial message has all required fields to be treated as a full Message.
+ * This is crucial for streaming messages which start as Partial<Message>.
+ */
+export const isValidMessage = (
+  msg: Partial<Message> | undefined,
+): msg is Message => {
+  if (!msg) return false;
+  return (
+    typeof msg.id === 'string' &&
+    typeof msg.sessionId === 'string' &&
+    typeof msg.threadId === 'string' &&
+    typeof msg.role === 'string' &&
+    Array.isArray(msg.content)
+  );
 };
