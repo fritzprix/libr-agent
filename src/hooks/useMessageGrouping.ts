@@ -116,9 +116,11 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
 
     // Pre-populate toolResultsMap from the reused prefix of messages to keep it in sync.
-    // Optimization: If we are strictly appending (i.e. reused all previous messages),
-    // we can clone the previous map instead of rebuilding it.
-    if (i === prevCache.messages.length) {
+    // Optimization: If we are strictly appending (divergenceIndex == prevCache.messages.length),
+    // we can clone the previous map instead of rebuilding it from scratch.
+    // Note: We check divergenceIndex, not i, because reuseCount only includes groups with
+    // endIndex < divergenceIndex, so i will always be < prevCache.messages.length even during appends.
+    if (divergenceIndex === prevCache.messages.length) {
       toolResultsMap = new Map(prevCache.toolResultsMap);
     } else {
       toolResultsMap = new Map();

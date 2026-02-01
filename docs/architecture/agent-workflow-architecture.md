@@ -204,11 +204,12 @@ pub struct AgentSession {
 ```
 
 **Memory Management Strategy**:
+
 - **Initialization**: Loads last 50 messages from DB on session creation/resume.
 - **Sliding Window**: Keeps `MAX_CACHED_MESSAGES` (default 1000) in memory.
 - **Synchronization**:
-    - **Read**: Always reads from `messages` RwLock (Zero DB latency).
-    - **Write**: Updates `messages` RwLock immediately, persists to SQLite asynchronously.
+  - **Read**: Always reads from `messages` RwLock (Zero DB latency).
+  - **Write**: Updates `messages` RwLock immediately, persists to SQLite asynchronously.
 
 ---
 
@@ -328,6 +329,7 @@ pub struct MCPServiceProxyManager {
 ---
 
 ## 5. Session State Machine
+
 (No changes to state machine logic)
 
 ---
@@ -344,13 +346,14 @@ We implemented `messages: Arc<RwLock<Vec<Message>>>` in `AgentSession`.
 
 ### 6.2 Current Performance Characteristics
 
-| Metric                         | With DB Load (Old) | With Memory Cache (New) | Improvement |
-| ------------------------------ | ------------------ | ----------------------- | ----------- |
-| Context Loading Latency        | 10-300ms (linear)  | <1ms (constant)         | **~99%**    |
-| DB Queries per turn            | 2-10+              | 2 (Async Inserts)       | **Resolved**|
-| Data transferred (IPC)         | Full History       | Events Only             | **Minimized**|
+| Metric                  | With DB Load (Old) | With Memory Cache (New) | Improvement   |
+| ----------------------- | ------------------ | ----------------------- | ------------- |
+| Context Loading Latency | 10-300ms (linear)  | <1ms (constant)         | **~99%**      |
+| DB Queries per turn     | 2-10+              | 2 (Async Inserts)       | **Resolved**  |
+| Data transferred (IPC)  | Full History       | Events Only             | **Minimized** |
 
 **Memory Footprint**:
+
 - **Sliding Window**: Limited to 1000 messages per session.
 - **Estimated Usage**: ~2MB per active session (acceptable).
 

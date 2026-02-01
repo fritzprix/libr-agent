@@ -4,6 +4,7 @@
 
 This document describes the structured error handling system designed to replace string-matching based error handling in browser tools.
 **Status**:
+
 - ✅ **Rust Backend**: Fully Implemented (`src-tauri/src/services/browser_error.rs`)
 - 🚧 **TypeScript Frontend**: Pending Implementation (Design Phase)
 
@@ -34,6 +35,7 @@ pub enum BrowserError {
 ```
 
 **Key Features:**
+
 - `#[serde(tag = "code", content = "context")]`: Ensures structured JSON output.
 - `From<BrowserError> for String`: Automatically converts to JSON string when returning `Result<String, String>`, maintaining backward compatibility with signatures expecting strings.
 
@@ -68,6 +70,7 @@ export type BrowserError =
 ```
 
 **Planned Utilities:**
+
 - `isBrowserError(error)`: Type guard.
 - `parseBrowserError(error)`: Logic to parse the JSON string returned by backend.
 - `getBrowserErrorMessage(error)`: User-friendly message generator.
