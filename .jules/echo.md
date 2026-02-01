@@ -52,3 +52,8 @@
 
 **Pattern:** Repeated manual pagination (vector slicing) and index building logic in `messages_commands.rs` and `search/service.rs`.
 **Action:** Extracted `paginate_in_memory` into `utils/pagination.rs` and `build_global_temporary_index` into `search/service.rs` to centralize this logic.
+
+## 2026-06-06 - [Workspace Path Security Duplication]
+
+**Pattern:** Repeated path resolution, canonicalization, and security verification checks (e.g., `canonicalize`, `starts_with`) in `workspace_commands.rs` and `download_commands.rs`, including a security vulnerability where one check bypassed canonicalization.
+**Action:** Created `src-tauri/src/utils/security.rs` with `resolve_secure_path` to centralize secure path resolution logic, fix the vulnerability, and ensure consistent usage of `tokio::fs` for non-blocking I/O.

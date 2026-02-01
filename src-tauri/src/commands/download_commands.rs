@@ -28,17 +28,10 @@ pub async fn download_workspace_file(
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
 
-    // Construct the full path of the requested file
-    let full_path = workspace_dir.join(&file_path);
-
-    // Verify file existence and security
-    if !full_path.exists() {
-        return Err(format!("File not found: {file_path}"));
-    }
-
-    if !full_path.starts_with(&workspace_dir) {
-        return Err("Access denied: Path outside workspace".to_string());
-    }
+    // Resolve and validate path securely
+    let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, &file_path)
+        .await
+        .map_err(|e| format!("Access denied or file not found: {}", e))?;
 
     // Extract filename
     let file_name = full_path
@@ -106,7 +99,10 @@ pub async fn export_and_download_zip(
 ) -> Result<String, String> {
     let session_manager = get_session_manager().map_err(|e| e.to_string())?;
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
-    let workspace_dir_canon = std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir);
+    // Canonicalize base for stripping prefixes later
+    let workspace_dir_canon = tokio::fs::canonicalize(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to canonicalize workspace: {}", e))?;
 
     if files.is_empty() {
         return Err("Files array cannot be empty".to_string());
@@ -129,10 +125,14 @@ pub async fn export_and_download_zip(
     let mut processed_files = Vec::new();
     let mut added_archive_paths = HashSet::<String>::new();
     for file_path in &files {
-        let source_path = workspace_dir_canon.join(file_path);
-        if !source_path.exists() {
-            continue;
-        }
+        // Resolve path securely
+        let source_path = match crate::utils::security::resolve_secure_path(&workspace_dir, file_path).await {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Skipping invalid path {}: {}", file_path, e);
+                continue;
+            }
+        };
 
         let roots: Vec<PathBuf> = if source_path.is_file() {
             vec![source_path]

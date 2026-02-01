@@ -56,19 +56,11 @@ pub async fn list_workspace_files(
 
     // Default to current directory if no path provided
     let target_path = path.unwrap_or_else(|| ".".to_string());
-    let full_path = base_dir.join(&target_path);
 
-    // Validate path is within workspace
-    let canonical_base = base_dir
-        .canonicalize()
-        .map_err(|e| format!("Failed to canonicalize base dir: {e}"))?;
-    let canonical_target = full_path
-        .canonicalize()
-        .map_err(|e| format!("Failed to canonicalize target path: {e}"))?;
-
-    if !canonical_target.starts_with(&canonical_base) {
-        return Err("Path is outside workspace".to_string());
-    }
+    // Resolve and validate path securely
+    let full_path = crate::utils::security::resolve_secure_path(&base_dir, &target_path)
+        .await
+        .map_err(|e| format!("Invalid path: {}", e))?;
 
     // Read directory entries
     let mut entries = fs::read_dir(&full_path)
@@ -166,18 +158,10 @@ pub async fn open_workspace_file_with_default_app(
     let workspace_dir = session_manager
         .get_session_workspace_dir_by_id(&session_id.unwrap_or_else(|| "default".to_string()));
 
-    // Construct the full path of the requested file
-    let full_path = workspace_dir.join(&file_path);
-
-    // Security validation: verify file exists
-    if !full_path.exists() {
-        return Err(format!("File not found: {}", file_path));
-    }
-
-    // Security validation: ensure path is within workspace
-    if !full_path.starts_with(&workspace_dir) {
-        return Err("Access denied: Path outside workspace".to_string());
-    }
+    // Resolve and validate path securely
+    let full_path = crate::utils::security::resolve_secure_path(&workspace_dir, &file_path)
+        .await
+        .map_err(|e| format!("Access denied or file not found: {}", e))?;
 
     // Security validation: ensure it's a file, not a directory
     if !full_path.is_file() {
