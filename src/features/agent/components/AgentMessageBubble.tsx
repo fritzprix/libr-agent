@@ -86,7 +86,7 @@ function AgentMessageBubbleImpl({
       >
         <div
           className={cn(
-            'inline-block max-w-[70%] p-3 rounded-lg',
+            'inline-block max-w-[85%] md:max-w-2xl p-3 rounded-lg',
             msg.role === 'user'
               ? 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground',

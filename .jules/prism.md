@@ -79,3 +79,19 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-27 - [AgentChatAttachedFiles] **Visual Bug:** Hardcoded colors (border-gray-700), raw button usage, generic rounded **Fix:** Use semantic tokens (border-border), Button component, rounded-md
 
 ## 2026-01-27 - [FileAttachment] **Visual Bug:** Typo in border class (border-border-muted) **Fix:** Use valid semantic class (border-border)
+
+## 2026-01-28 - [AgentMessageBubble] **Visual Bug:** Magic number width (max-w-[70%]) **Fix:** Use responsive standard classes (max-w-[85%] md:max-w-2xl)
+
+## 2026-01-28 - [AgentToolsModal] **Visual Bug:** Magic number heights (max-h-[80vh], max-h-[60vh]) **Fix:** Use percentage based heights (max-h-[80%], max-h-[60%])
+
+## 2026-01-28 - [AgentToolsModal] **Visual Bug:** Hardcoded colors (emerald, sky) **Fix:** Use semantic tokens (success, primary)
+
+## 2026-01-28 - [AgentToolsModal] **Visual Bug:** Undefined class (terminal-scrollbar) **Fix:** Removed undefined class
+
+## 2026-01-28 - [AgentChatView] **Visual Bug:** Magic number height (max-h-[100vh]) **Fix:** Use standard utility (h-full)
+
+## 2026-01-28 - [AgentDraftChatView] **Visual Bug:** Magic number height (max-h-[100vh]) **Fix:** Use standard utility (h-full)
+
+## 2026-01-28 - [AgentMessageRenderer] **Visual Bug:** Magic number height (min-h-[50vh]) **Fix:** Use standard spacing token (min-h-96)
+
+## 2026-01-28 - [SessionFilesPopover] **Visual Bug:** Magic number height (max-h-[80vh]) **Fix:** Use percentage based height (max-h-[80%])
