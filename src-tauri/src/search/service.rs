@@ -82,6 +82,6 @@ pub async fn build_global_temporary_index() -> Result<MessageSearchEngine, Strin
         .await
         .map_err(|e| format!("Failed to fetch messages for global indexing: {e}"))?;
 
-    // Perform search on the temporary engine
+    // Build a temporary in-memory global search engine
     MessageSearchEngine::build_from_models("global".to_string(), messages, max_docs)
 }
