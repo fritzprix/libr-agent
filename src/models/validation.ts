@@ -78,10 +78,7 @@ export const isValidMessage = (
     typeof msg.id === 'string' &&
     typeof msg.sessionId === 'string' &&
     typeof msg.threadId === 'string' &&
-    (msg.role === 'user' ||
-      msg.role === 'assistant' ||
-      msg.role === 'system' ||
-      msg.role === 'tool') &&
+    typeof msg.role === 'string' &&
     Array.isArray(msg.content)
   );
 };
