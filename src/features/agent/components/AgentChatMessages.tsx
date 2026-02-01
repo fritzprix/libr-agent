@@ -30,21 +30,25 @@ export function AgentChatMessages() {
     }
   }, [messages, autoScrollEnabled]);
 
+  // Throttle the refetch function to prevent excessive backend calls
+  const throttledRefetch = useThrottle(() => {
+    refetchSessionFiles();
+  }, 2000);
+
   // Refetch session files when message stack updates
   // This ensures SessionFilesPopover reflects any files added by agent tool calls
   useEffect(() => {
     if (messages.length > 0) {
       // Check if last message contains tool results (file operations)
       const lastMessage = messages[messages.length - 1];
-      const hasToolResults =
-        lastMessage.role === 'tool' ||
-        (lastMessage.role === 'assistant' && lastMessage.tool_calls);
-
-      if (hasToolResults) {
-        refetchSessionFiles();
+      // Only refetch when we have a tool result (role === 'tool').
+      // We do NOT refetch on 'assistant' messages with tool_calls, as the files
+      // are only created after the tool execution is complete.
+      if (lastMessage.role === 'tool') {
+        throttledRefetch();
       }
     }
-  }, [messages, refetchSessionFiles]);
+  }, [messages, throttledRefetch]);
 
   // Detect user scroll position with throttling to improve performance
   const handleScroll = useThrottle(() => {
