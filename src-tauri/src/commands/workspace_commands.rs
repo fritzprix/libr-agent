@@ -175,7 +175,16 @@ pub async fn open_workspace_file_with_default_app(
     }
 
     // Security validation: ensure path is within workspace
-    if !full_path.starts_with(&workspace_dir) {
+    // We must canonicalize to resolve '..' and symlinks to prevent path traversal
+    let canonical_base = tokio::fs::canonicalize(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to resolve workspace path: {e}"))?;
+
+    let canonical_target = tokio::fs::canonicalize(&full_path)
+        .await
+        .map_err(|e| format!("Failed to resolve target path: {e}"))?;
+
+    if !canonical_target.starts_with(&canonical_base) {
         return Err("Access denied: Path outside workspace".to_string());
     }
 
@@ -185,7 +194,7 @@ pub async fn open_workspace_file_with_default_app(
     }
 
     // Convert to absolute path string
-    let abs_path_str = full_path
+    let abs_path_str = canonical_target
         .to_str()
         .ok_or_else(|| "Invalid path encoding".to_string())?;
 

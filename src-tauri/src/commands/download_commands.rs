@@ -36,18 +36,27 @@ pub async fn download_workspace_file(
         return Err(format!("File not found: {file_path}"));
     }
 
-    if !full_path.starts_with(&workspace_dir) {
+    // We must canonicalize to resolve '..' and symlinks to prevent path traversal
+    let canonical_base = tokio::fs::canonicalize(&workspace_dir)
+        .await
+        .map_err(|e| format!("Failed to resolve workspace path: {e}"))?;
+
+    let canonical_target = tokio::fs::canonicalize(&full_path)
+        .await
+        .map_err(|e| format!("Failed to resolve target path: {e}"))?;
+
+    if !canonical_target.starts_with(&canonical_base) {
         return Err("Access denied: Path outside workspace".to_string());
     }
 
     // Extract filename
-    let file_name = full_path
+    let file_name = canonical_target
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("download");
 
     // Read file content
-    let file_content = match tokio::fs::read(&full_path).await {
+    let file_content = match tokio::fs::read(&canonical_target).await {
         Ok(content) => content,
         Err(e) => return Err(format!("Failed to read file: {e}")),
     };
