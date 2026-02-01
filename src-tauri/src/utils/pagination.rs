@@ -60,15 +60,41 @@ impl Default for PaginationParams {
 /// Helper function to perform in-memory pagination on a vector of items.
 /// Useful when search/filtering is done in memory (e.g. global search)
 /// rather than in the database query.
-pub fn paginate_in_memory<T: Clone>(
-    all_items: Vec<T>,
-    page: u64,
-    page_size: u64,
-) -> Page<T> {
+pub fn paginate_in_memory<T: Clone>(all_items: Vec<T>, page: u64, page_size: u64) -> Page<T> {
     let total_items = all_items.len() as u64;
-    // Handle 0-based index calculation safely
-    let start_idx = (page.saturating_sub(1) as usize).saturating_mul(page_size as usize);
-    let end_idx = start_idx.saturating_add(page_size as usize).min(all_items.len());
+
+    // If there are no items, return an empty page while still letting Page::new
+    // compute navigation flags and total_pages consistently.
+    if all_items.is_empty() {
+        return Page::new(Vec::new(), page, page_size, total_items);
+    }
+
+    // Normalize page_size in the same way as Page::new so that slicing behavior
+    // matches the metadata reported in the returned Page.
+    let safe_page_size = if page_size == 0 { 10 } else { page_size };
+
+    // Convert to usize safely; if values do not fit in usize (e.g. on 32-bit
+    // platforms or for extremely large inputs), treat the page as out-of-range
+    // and return an empty slice while keeping metadata consistent.
+    let page_index_usize = match usize::try_from(page.saturating_sub(1)) {
+        Ok(value) => value,
+        Err(_) => {
+            return Page::new(Vec::new(), page, page_size, total_items);
+        }
+    };
+
+    let page_size_usize = match usize::try_from(safe_page_size) {
+        Ok(value) => value,
+        Err(_) => {
+            return Page::new(Vec::new(), page, page_size, total_items);
+        }
+    };
+
+    // Handle 0-based index calculation safely using the normalized, clamped values.
+    let start_idx = page_index_usize.saturating_mul(page_size_usize);
+    let end_idx = start_idx
+        .saturating_add(page_size_usize)
+        .min(all_items.len());
 
     let items = if start_idx < all_items.len() {
         all_items[start_idx..end_idx].to_vec()

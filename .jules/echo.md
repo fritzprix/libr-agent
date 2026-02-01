@@ -51,4 +51,4 @@
 ## 2026-06-05 - [Search Pagination and Indexing Duplication]
 
 **Pattern:** Repeated manual pagination (vector slicing) and index building logic in `messages_commands.rs` and `search/service.rs`.
-**Action:** Extracted `paginate_in_memory` into `utils/pagination.rs` and `build_global_temporary_index` into `search/service.rs` to centralize these logics.
+**Action:** Extracted `paginate_in_memory` into `utils/pagination.rs` and `build_global_temporary_index` into `search/service.rs` to centralize this logic.
