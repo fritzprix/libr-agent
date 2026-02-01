@@ -101,7 +101,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     const groupedMessages: GroupedMessage[] = [];
     const groupEndIndices: number[] = [];
     // Always create a fresh map per calculation to avoid stale tool result entries.
-    const toolResultsMap = new Map<string, Message>();
+    let toolResultsMap: Map<string, Message>;
 
     // Reuse previously computed groups where safe.
     if (reuseCount > 0) {
@@ -116,10 +116,19 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
 
     // Pre-populate toolResultsMap from the reused prefix of messages to keep it in sync.
-    for (let prefixIndex = 0; prefixIndex < i; prefixIndex++) {
-      const msg = messages[prefixIndex];
-      if (msg.role === 'tool' && msg.tool_call_id) {
-        toolResultsMap.set(msg.tool_call_id, msg);
+    // Optimization: If we are strictly appending (divergenceIndex == prevCache.messages.length),
+    // we can clone the previous map instead of rebuilding it from scratch.
+    // Note: We check divergenceIndex, not i, because reuseCount only includes groups with
+    // endIndex < divergenceIndex, so i will always be < prevCache.messages.length even during appends.
+    if (divergenceIndex === prevCache.messages.length) {
+      toolResultsMap = new Map(prevCache.toolResultsMap);
+    } else {
+      toolResultsMap = new Map();
+      for (let prefixIndex = 0; prefixIndex < i; prefixIndex++) {
+        const msg = messages[prefixIndex];
+        if (msg.role === 'tool' && msg.tool_call_id) {
+          toolResultsMap.set(msg.tool_call_id, msg);
+        }
       }
     }
 
