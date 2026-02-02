@@ -445,7 +445,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     () => ({
       style: { height: 'auto', maxHeight: 'unset' },
       iframeProps: {
-        className: 'h-auto min-h-[50vh] max-h-none',
+        className: 'h-auto min-h-96 max-h-none',
       },
     }),
     [],
@@ -848,7 +848,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                   resourceRefs.current[itemKey] = el;
                 }}
                 className={
-                  expandResources ? 'w-full overflow-visible min-h-[50vh]' : ''
+                  expandResources ? 'w-full overflow-visible min-h-96' : ''
                 }
               >
                 <UIResourceRenderer

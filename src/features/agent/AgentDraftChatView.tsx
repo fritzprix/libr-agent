@@ -256,7 +256,7 @@ function DraftChatInner() {
   if (!assistant) return null;
 
   return (
-    <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
+    <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
       {/* Header */}
       {/* We need to wrap Header or pass props. AgentChatHeader uses context. 
               Refactoring Header to accept props is best, or mock the context.
