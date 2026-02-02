@@ -35,7 +35,7 @@
 
 ## 2025-06-25 - Premature Backend Refetch on Streaming
 
-**Learning:** `AgentChatMessages` was triggering session file refetches on every streaming chunk of an assistant message if it contained tool calls, causing N+1 backend requests. However, files are only created after tool *execution*, not during the *call*.
+**Learning:** `AgentChatMessages` was triggering session file refetches on every streaming chunk of an assistant message if it contained tool calls, causing N+1 backend requests. However, files are only created after tool _execution_, not during the _call_.
 **Action:** Only trigger refetches when a `tool` role message (the result) appears. Use `useThrottle` to debounce these refetches when multiple tool results arrive in rapid succession (e.g. parallel tool execution).
 
 ## 2025-06-25 - Layout Thrashing in Markdown Rendering

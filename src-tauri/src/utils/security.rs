@@ -19,10 +19,7 @@ use tokio::fs;
 /// # Returns
 /// * `Ok(PathBuf)` - The canonicalized absolute path if valid and safe.
 /// * `Err(String)` - Error message if path is invalid or outside base.
-pub async fn resolve_secure_path(
-    base_dir: &Path,
-    relative_path: &str,
-) -> Result<PathBuf, String> {
+pub async fn resolve_secure_path(base_dir: &Path, relative_path: &str) -> Result<PathBuf, String> {
     // 1. Canonicalize base_dir
     let canonical_base = fs::canonicalize(base_dir)
         .await
@@ -31,7 +28,7 @@ pub async fn resolve_secure_path(
     // 2. Prevent absolute paths in relative_path from bypassing the join.
     // We treat the input as strictly relative to the base.
     // Remove leading separators and check for drive letters.
-    let safe_relative = relative_path.trim_start_matches(|c| c == '/' || c == '\\');
+    let safe_relative = relative_path.trim_start_matches(['/', '\\']);
 
     // Reject Windows drive letters (e.g. "C:...") only on Windows, and only when the
     // first character is an ASCII alphabetic drive letter.
@@ -142,7 +139,10 @@ mod tests {
         File::create(&file_path).unwrap();
 
         let result = resolve_secure_path(dir.path(), "a:b").await;
-        assert!(result.is_ok(), "Unix filename with colon should be accepted");
+        assert!(
+            result.is_ok(),
+            "Unix filename with colon should be accepted"
+        );
 
         let resolved = result.unwrap();
         let expected = fs::canonicalize(&file_path).await.unwrap();
