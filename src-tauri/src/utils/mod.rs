@@ -2,6 +2,7 @@ pub mod fs;
 pub mod json;
 pub mod pagination;
 pub mod platform;
+pub mod security;
 
 /// Safely truncates a string to a maximum number of characters.
 /// If truncated, adds an ellipsis (...) to the end.
