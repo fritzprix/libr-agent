@@ -1,4 +1,11 @@
-import React, { useCallback, useMemo, useRef, useEffect, memo } from 'react';
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+  memo,
+  useState,
+} from 'react';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { ThinkingBubble } from './shared';
 import ReactMarkdown from 'react-markdown';
@@ -46,80 +53,99 @@ const logger = getLogger('AgentMessageRenderer');
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex];
 
-// Define markdown components outside to prevent re-creation on every render
-const MARKDOWN_COMPONENTS: React.ComponentProps<
-  typeof ReactMarkdown
->['components'] = {
+/**
+ * Custom hook to detect dark mode preference
+ * Avoids querying window.matchMedia in every render cycle
+ */
+function useIsDarkMode() {
+  const [isDark, setIsDark] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    media.addEventListener('change', handler);
+    return () => media.removeEventListener('change', handler);
+  }, []);
+
+  return isDark;
+}
+
+// Extract CodeBlock component to allow injecting isDark prop
+const CodeBlock = ({
+  children,
+  className,
+  isDark,
+  ...props
+}: React.ComponentPropsWithoutRef<'code'> & {
+  inline?: boolean;
+  node?: unknown;
+  isDark?: boolean;
+}) => {
+  // Distinguish inline code vs block code
+  // ReactMarkdown passes className="language-xxx" for code blocks
+  const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1] : '';
+
+  if (!language) {
+    // Inline code
+    return (
+      <code
+        className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  }
+
+  // Block code with syntax highlighting
+  const code = String(children).replace(/\n$/, '');
+
+  return (
+    <Highlight
+      theme={isDark ? themes.oneDark : themes.oneLight}
+      code={code}
+      language={language}
+    >
+      {({
+        className: highlightClassName,
+        style,
+        tokens,
+        getLineProps,
+        getTokenProps,
+      }) => (
+        <code
+          className={`${highlightClassName} block font-mono text-sm`}
+          style={style}
+        >
+          {tokens.map((line, i) => (
+            <div key={i} {...getLineProps({ line })}>
+              {line.map((token, key) => (
+                <span key={key} {...getTokenProps({ token })} />
+              ))}
+            </div>
+          ))}
+        </code>
+      )}
+    </Highlight>
+  );
+};
+
+// Define static markdown components outside to prevent re-creation on every render
+const STATIC_MARKDOWN_COMPONENTS: Omit<
+  React.ComponentProps<typeof ReactMarkdown>['components'],
+  'code'
+> = {
   p: ({ children, ...props }) => (
     <p className="mb-2 last:mb-0" {...props}>
       {children}
     </p>
   ),
-  code: ({
-    children,
-    className,
-    ...props
-  }: React.ComponentPropsWithoutRef<'code'> & {
-    inline?: boolean;
-    node?: unknown;
-  }) => {
-    // Distinguish inline code vs block code
-    // ReactMarkdown passes className="language-xxx" for code blocks
-    const match = /language-(\w+)/.exec(className || '');
-    const language = match ? match[1] : '';
-
-    if (!language) {
-      // Inline code
-      return (
-        <code
-          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
-          {...props}
-        >
-          {children}
-        </code>
-      );
-    }
-
-    // Block code with syntax highlighting
-    const code = String(children).replace(/\n$/, '');
-
-    // Detect dark mode
-    // Note: This matches the previous implementation.
-    // For better performance, this could be moved to a hook/context,
-    // but doing it here is acceptable for now.
-    const isDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    return (
-      <Highlight
-        theme={isDark ? themes.oneDark : themes.oneLight}
-        code={code}
-        language={language}
-      >
-        {({
-          className: highlightClassName,
-          style,
-          tokens,
-          getLineProps,
-          getTokenProps,
-        }) => (
-          <code
-            className={`${highlightClassName} block font-mono text-sm`}
-            style={style}
-          >
-            {tokens.map((line, i) => (
-              <div key={i} {...getLineProps({ line })}>
-                {line.map((token, key) => (
-                  <span key={key} {...getTokenProps({ token })} />
-                ))}
-              </div>
-            ))}
-          </code>
-        )}
-      </Highlight>
-    );
-  },
   pre: ({ children, ...props }) => (
     <pre
       className="overflow-x-auto bg-muted rounded-lg p-4 my-3 border border-border max-w-full"
@@ -275,6 +301,30 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const { submit, injectMessages } = useAgentChatActions();
   const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
+
+  // Detect dark mode once per component mount (or change)
+  const isDark = useIsDarkMode();
+
+  // Memoize markdown components to include dynamic isDark prop
+  // This avoids window.matchMedia calls in every code block render
+  const markdownComponents = useMemo(
+    () => ({
+      ...STATIC_MARKDOWN_COMPONENTS,
+      code: ({
+        children,
+        className,
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & {
+        inline?: boolean;
+        node?: unknown;
+      }) => (
+        <CodeBlock isDark={isDark} className={className} {...props}>
+          {children}
+        </CodeBlock>
+      ),
+    }),
+    [isDark],
+  );
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
   // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
@@ -760,7 +810,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                   skipHtml={false}
                   remarkPlugins={REMARK_PLUGINS}
                   rehypePlugins={REHYPE_PLUGINS}
-                  components={MARKDOWN_COMPONENTS}
+                  components={markdownComponents}
                 >
                   {textItem.text}
                 </ReactMarkdown>
