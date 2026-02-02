@@ -71,7 +71,6 @@ impl AgentSessionManager {
 
     /// Clone self for use in async tasks
     /// This creates a new instance with shared Arc references
-    #[allow(dead_code)]
     pub fn clone_for_task(&self) -> Self {
         Self {
             active_sessions: self.active_sessions.clone(),
@@ -80,27 +79,6 @@ impl AgentSessionManager {
             session_repo: self.session_repo.clone(),
             context_registry: self.context_registry.clone(),
         }
-    }
-
-    /// Create or update a session in the database
-    #[allow(dead_code)]
-    pub async fn create_session(
-        &self,
-        session_id: String,
-        name: Option<String>,
-        agent_config: crate::agent::AgentConfig,
-    ) -> Result<SessionMetadata, String> {
-        crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
-            session_repo: self.session_repo.clone(),
-            active_sessions: self.active_sessions.clone(),
-            proxy_manager: self.proxy_manager.clone(),
-            app_handle: self.app_handle.clone(),
-            context_registry: self.context_registry.clone(),
-            session_id,
-            name,
-            agent_config,
-        })
-        .await
     }
 
     /// Create or update a session with a specific repository (for ephemeral vs persistent)
@@ -141,7 +119,6 @@ impl AgentSessionManager {
     }
 
     /// Resume an existing session by loading it into active sessions
-    #[allow(dead_code)]
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::resume_session(
             &self.session_repo,
