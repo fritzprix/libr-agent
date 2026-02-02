@@ -33,8 +33,13 @@ pub async fn resolve_secure_path(
     // Remove leading separators and check for drive letters.
     let safe_relative = relative_path.trim_start_matches(|c| c == '/' || c == '\\');
 
-    // Reject Windows drive letters (e.g. "C:...")
-    if safe_relative.len() >= 2 && safe_relative.chars().nth(1) == Some(':') {
+    // Reject Windows drive letters (e.g. "C:...") only on Windows, and only when the
+    // first character is an ASCII alphabetic drive letter.
+    if cfg!(windows)
+        && safe_relative.len() >= 2
+        && safe_relative.as_bytes()[0].is_ascii_alphabetic()
+        && safe_relative.as_bytes()[1] == b':'
+    {
         return Err("Absolute paths with drive letters are not allowed".to_string());
     }
 
@@ -126,5 +131,21 @@ mod tests {
         let result = resolve_secure_path(dir.path(), "nonexistent.txt").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("File not found"));
+    }
+
+    #[tokio::test]
+    #[cfg(not(windows))]
+    async fn test_resolve_secure_path_unix_filename_with_colon() {
+        // On Unix, filenames can contain colons (e.g., "a:b")
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("a:b");
+        File::create(&file_path).unwrap();
+
+        let result = resolve_secure_path(dir.path(), "a:b").await;
+        assert!(result.is_ok(), "Unix filename with colon should be accepted");
+
+        let resolved = result.unwrap();
+        let expected = fs::canonicalize(&file_path).await.unwrap();
+        assert_eq!(resolved, expected);
     }
 }
