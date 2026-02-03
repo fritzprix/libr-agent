@@ -183,12 +183,11 @@ impl SessionIsolationManager {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // Unix: Safe to clear environment for better isolation
-            cmd.env_clear();
+            // Unix: Inherit environment variables (do not clear)
             cmd.env("HOME", &config.workspace_path);
             cmd.env("PWD", &config.workspace_path);
             cmd.env("TMPDIR", config.workspace_path.join("tmp"));
-            cmd.env("PATH", self.get_restricted_path());
+            // PATH is inherited from parent process (agent)
         }
 
         // Add user-specified environment variables (applies to all platforms)
@@ -415,10 +414,9 @@ impl SessionIsolationManager {
 
         // Set environment and working directory
         cmd.current_dir(&config.workspace_path);
-        cmd.env_clear();
         cmd.env("HOME", &config.workspace_path);
         cmd.env("PWD", &config.workspace_path);
-        cmd.env("PATH", self.get_restricted_path());
+        // PATH and other envs inherited (if unshare allows, though user namespaces might be tricky)
 
         for (key, value) in config.env_vars {
             cmd.env(key, value);
@@ -463,10 +461,9 @@ impl SessionIsolationManager {
 
         // Set environment and working directory
         cmd.current_dir(&config.workspace_path);
-        cmd.env_clear();
         cmd.env("HOME", &config.workspace_path);
         cmd.env("PWD", &config.workspace_path);
-        cmd.env("PATH", self.get_restricted_path());
+        // PATH and other envs inherited
 
         for (key, value) in config.env_vars {
             cmd.env(key, value);

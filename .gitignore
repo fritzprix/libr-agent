@@ -28,6 +28,8 @@ error.txt
 error_*.txt
 .claude
 .vscode
+.agent
+.serena
 # LangGraph API
 .langgraph_api
 log.txt

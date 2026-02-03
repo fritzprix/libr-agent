@@ -169,6 +169,7 @@ impl WorkspaceServer {
                     isolation_level,
                     timeout_secs,
                     &session_id,
+                    HashMap::new(), // Pass empty env vars for fallback
                 )
                 .await
             }
@@ -209,6 +210,7 @@ impl WorkspaceServer {
         isolation_level: IsolationLevel,
         timeout_secs: u64,
         session_id: &str,
+        env_vars: HashMap<String, String>,
     ) -> Result<MCPResult, String> {
         let session_id = session_id.to_string();
 
@@ -254,7 +256,7 @@ impl WorkspaceServer {
             workspace_path: workspace_path.clone(),
             command: normalized_command,
             args: vec![],
-            env_vars: HashMap::new(),
+            env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
         };
@@ -705,21 +707,24 @@ impl WorkspaceServer {
             }
         }
 
-        // ✅ ENHANCED: Detect commands requiring interactive input BEFORE execution
+        // Check for interactive patterns but allow execution (removed blocking heuristic)
         if validation::is_likely_interactive_command(raw_command) {
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::InvalidInput,
-                "This command likely requires interactive input (prompts, passwords, confirmations)",
-                vec![
-                    format!("Detected interactive pattern in: {}", raw_command),
-                    format!("Use {} with requireUserInput: true for interactive commands", PERSISTENT_SHELL_TOOL),
-                    "Or add non-interactive flags to your command (e.g. npm init --yes)".to_string(),
-                    format!("See {} tool description for requireUserInput usage", PERSISTENT_SHELL_TOOL),
-                ],
-                ToolGroup::Workspace,
-            )
-            .to_mcp_result());
+            tracing::debug!(
+                "Command '{}' matches interactive patterns but execution is allowed",
+                raw_command
+            );
         }
+
+        // Parse optional environment variables
+        let env_vars = args
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
 
         // Get timeout (use default if not specified)
         let timeout_secs = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
@@ -751,8 +756,14 @@ impl WorkspaceServer {
 
         // Execute with configured isolation level (always workspace root anchored)
         let isolation_level = utils::get_shell_isolation_level().await;
-        self.execute_shell_with_isolation(raw_command, isolation_level, timeout_secs, session_id)
-            .await
+        self.execute_shell_with_isolation(
+            raw_command,
+            isolation_level,
+            timeout_secs,
+            session_id,
+            env_vars,
+        )
+        .await
     }
 
     /// Handle async shell execution (separate tool)
@@ -813,23 +824,12 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        // Check validation for interactive commands (async mode cannot handle them)
+        // Async mode does not support interactive input validation (heuristic removed)
         if validation::is_likely_interactive_command(raw_command) {
-            // Warn but allow execution (user might know what they are doing, e.g. using expect script)
-            tracing::warn!("Async command likely interactive: {}", raw_command);
-            // We could return an error here, but for now we trust the user if they didn't set requireUserInput
-            // Actually, requireUserInput was false (checked above), so we should warn the user.
-            // Given the critique, let's follow the pattern in handle_run_shell and return an error/guidance
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::InvalidInput,
-                "This command likely requires interactive input but async mode does not support interaction",
-                vec![
-                    format!("Detected interactive pattern in: {}", raw_command),
-                    format!("Use {} (sync mode) with requireUserInput: true", PERSISTENT_SHELL_TOOL),
-                    "Or add non-interactive flags to your command".to_string(),
-                ],
-                ToolGroup::Workspace,
-            ).to_mcp_result());
+            tracing::warn!(
+                "Async command likely interactive: {} (execution allowed)",
+                raw_command
+            );
         }
 
         // Execute in background
@@ -920,7 +920,15 @@ impl WorkspaceServer {
             workspace_path: workspace_path.clone(),
             command: normalized_command.clone(),
             args: vec![],
-            env_vars: HashMap::new(),
+            env_vars: _args
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
             isolation_level,
             shell_type: None, // Default to platform default shell
         };

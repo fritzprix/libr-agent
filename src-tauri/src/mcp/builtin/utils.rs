@@ -96,14 +96,8 @@ impl SecurityValidator {
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        // 부모 디렉터리 생성 (쓰기 작업을 위해)
-        if let Some(parent) = absolute_path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return Err(SecurityError::InvalidPath(format!(
-                    "Failed to create directory: {e}"
-                )));
-            }
-        }
+        // 부모 디렉터리 생성 로직 제거 (SecurityValidator는 검증만 수행해야 함)
+        // 쓰기 작업 시에는 SecureFileManager가 명시적으로 디렉터리를 생성함
 
         // 정규화하여 심볼릭 링크 공격 방지
         let canonical_path = match absolute_path.canonicalize() {
