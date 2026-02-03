@@ -256,7 +256,10 @@ export class OpenAIService extends BaseAIService {
           yield JSON.stringify({ usage });
         }
 
-        const delta = chunk.choices[0]?.delta as any;
+        const delta = chunk.choices[0]
+          ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
+          reasoning_content?: string;
+        };
         if (delta?.reasoning_content) {
           yield JSON.stringify({
             thinking: delta.reasoning_content || '',

@@ -936,10 +936,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               // Ensure all tool calls have the required 'type' field
               toolCalls: result.tool_calls
                 ? result.tool_calls.map((tc) => ({
-                  id: tc.id,
-                  type: tc.type || 'function',
-                  function: tc.function,
-                }))
+                    id: tc.id,
+                    type: tc.type || 'function',
+                    function: tc.function,
+                  }))
                 : undefined,
               toolCallId: result.tool_call_id || undefined,
               isStreaming: result.isStreaming || undefined,
@@ -956,10 +956,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 result.updatedAt instanceof Date
                   ? result.updatedAt.getTime()
                   : result.updatedAt ||
-                  (result.createdAt instanceof Date
-                    ? result.createdAt.getTime()
-                    : result.createdAt) ||
-                  now,
+                    (result.createdAt instanceof Date
+                      ? result.createdAt.getTime()
+                      : result.createdAt) ||
+                    now,
               source: result.source || undefined,
               error: result.error || undefined,
             };
