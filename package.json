@@ -43,8 +43,10 @@
     "rust:test": "cd src-tauri && cargo test",
     "rust:validate": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check:all",
     "refactor:validate": "pnpm lint && pnpm format && pnpm test:run && pnpm rust:validate && pnpm rust:test && pnpm build && pnpm dead-code",
-    "verify-planning": "node scripts/extract-planning-logs.js",
-    "verify-planning:file": "node scripts/extract-planning-logs.js",
+    "verify-planning": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
+    "verify-planning:file": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
+    "log": "node scripts/manage-logs.js",
+    "error": "node scripts/manage-logs.js --error",
     "release": "bash scripts/release.sh"
   },
   "dependencies": {

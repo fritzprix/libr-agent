@@ -256,13 +256,20 @@ export class OpenAIService extends BaseAIService {
           yield JSON.stringify({ usage });
         }
 
-        if (chunk.choices[0]?.delta?.tool_calls) {
+        const delta = chunk.choices[0]?.delta as any;
+        if (delta?.reasoning_content) {
           yield JSON.stringify({
-            tool_calls: chunk.choices[0].delta.tool_calls,
+            thinking: delta.reasoning_content || '',
           });
-        } else if (chunk.choices[0]?.delta?.content) {
+        }
+
+        if (delta?.tool_calls) {
           yield JSON.stringify({
-            content: chunk.choices[0]?.delta?.content || '',
+            tool_calls: delta.tool_calls,
+          });
+        } else if (delta?.content) {
+          yield JSON.stringify({
+            content: delta.content || '',
           });
         }
       }

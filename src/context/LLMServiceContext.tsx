@@ -555,7 +555,19 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 }
                 // Name update (though rare index-swapped name updates, usually contiguous)
                 if (toolCallChunk.function?.name) {
-                  targetBlock.name += toolCallChunk.function.name;
+                  // Only set name if it's currently empty or strictly different
+                  // This prevents the repeated-name bug seen in logs while still allowing
+                  // potential chunked name streaming (if any provider does that for names)
+                  if (!targetBlock.name) {
+                    targetBlock.name = toolCallChunk.function.name;
+                  } else if (
+                    targetBlock.name !== toolCallChunk.function.name &&
+                    !toolCallChunk.function.name.startsWith(targetBlock.name)
+                  ) {
+                    // If it's a completely different name, it might be an error or a replace
+                    // But usually name is sent in one chunk or as a prefix
+                    targetBlock.name = toolCallChunk.function.name;
+                  }
                 }
                 // Arguments update
                 if (toolCallChunk.function?.arguments) {
@@ -924,10 +936,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
               // Ensure all tool calls have the required 'type' field
               toolCalls: result.tool_calls
                 ? result.tool_calls.map((tc) => ({
-                    id: tc.id,
-                    type: tc.type || 'function',
-                    function: tc.function,
-                  }))
+                  id: tc.id,
+                  type: tc.type || 'function',
+                  function: tc.function,
+                }))
                 : undefined,
               toolCallId: result.tool_call_id || undefined,
               isStreaming: result.isStreaming || undefined,
@@ -944,10 +956,10 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
                 result.updatedAt instanceof Date
                   ? result.updatedAt.getTime()
                   : result.updatedAt ||
-                    (result.createdAt instanceof Date
-                      ? result.createdAt.getTime()
-                      : result.createdAt) ||
-                    now,
+                  (result.createdAt instanceof Date
+                    ? result.createdAt.getTime()
+                    : result.createdAt) ||
+                  now,
               source: result.source || undefined,
               error: result.error || undefined,
             };

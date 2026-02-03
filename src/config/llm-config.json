@@ -59,7 +59,7 @@
           "contextWindow": 200000,
           "supportReasoning": true,
           "supportTools": true,
-          "supportStreaming": false,
+          "supportStreaming": true,
           "cost": {
             "input": 0.06,
             "output": 0.24
@@ -71,7 +71,7 @@
           "contextWindow": 200000,
           "supportReasoning": true,
           "supportTools": true,
-          "supportStreaming": false,
+          "supportStreaming": true,
           "cost": {
             "input": 0.003,
             "output": 0.012

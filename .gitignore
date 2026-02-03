@@ -25,11 +25,13 @@ dist-ssr
 .env
 prompt
 error.txt
+error_*.txt
 .claude
 .vscode
 # LangGraph API
 .langgraph_api
 log.txt
+log_*.txt
 .envfile
 target
 .mcp.json
