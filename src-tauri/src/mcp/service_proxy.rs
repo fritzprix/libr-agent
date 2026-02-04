@@ -69,6 +69,9 @@ pub struct MCPServiceProxy {
 
     /// Session-specific managers
     session_managers: SessionManagers,
+
+    /// Tool execution timeout in seconds
+    tool_timeout_seconds: u64,
 }
 
 /// Builder for MCPServiceProxy
@@ -117,6 +120,9 @@ impl MCPServiceProxyBuilder {
 
     /// Build the MCPServiceProxy
     pub async fn build(self) -> Result<MCPServiceProxy, String> {
+        // Fetch system settings to get timeout configuration
+        let timeout = Self::fetch_tool_timeout().await;
+
         MCPServiceProxy::create(
             self.session_id,
             self.tool_ids,
@@ -125,8 +131,32 @@ impl MCPServiceProxyBuilder {
             self.app_handle,
             self.http_manager,
             self.stdio_manager,
+            timeout,
         )
         .await
+    }
+
+    /// Helper to fetch tool timeout from system settings in DB
+    async fn fetch_tool_timeout() -> u64 {
+        use crate::repositories::settings_repository::SettingsRepository;
+        use crate::state::get_settings_repository;
+
+        // Use the repository via dependency injection if possible, or global state as fallback
+        // Since we have db connection, we could query directly, but using repo is cleaner.
+        // However, repo requires global state access or instantiation.
+        // Let's use the global repo getter since it's available in this context usually.
+        let repo = get_settings_repository();
+
+        match repo.get("systemSettings").await {
+            Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
+                Ok(json) => json
+                    .get("mcpToolTimeoutSeconds")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or_else(crate::config::mcp_tool_call_timeout_seconds),
+                Err(_) => crate::config::mcp_tool_call_timeout_seconds(),
+            },
+            _ => crate::config::mcp_tool_call_timeout_seconds(),
+        }
     }
 }
 
@@ -163,6 +193,7 @@ impl MCPServiceProxy {
         app_handle: Option<AppHandle>,
         http_manager: Arc<HttpSessionManager>,
         stdio_manager: Arc<SessionMCPManager>,
+        tool_timeout_seconds: u64,
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
@@ -200,6 +231,7 @@ impl MCPServiceProxy {
                 http: http_manager,
                 stdio: stdio_manager,
             },
+            tool_timeout_seconds,
         })
     }
 
@@ -217,84 +249,91 @@ impl MCPServiceProxy {
     /// * `Ok(MCPResponse)` - Tool execution result
     /// * `Err(String)` - Error if tool not found or execution fails
     pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResponse, String> {
-        if tool_name.starts_with("builtin_") {
-            // Extract tool ID from full name (builtin_content_store__addContent -> content_store)
-            let tool_id = tool_name
-                .strip_prefix("builtin_")
-                .and_then(|s| s.split("__").next())
-                .ok_or_else(|| format!("Invalid builtin tool name: {}", tool_name))?;
+        let timeout_duration = std::time::Duration::from_secs(self.tool_timeout_seconds);
 
-            let server = self
-                .builtin_servers
-                .get(tool_id)
-                .ok_or_else(|| format!("Built-in server not found: {}", tool_id))?;
+        // Wrap the entire execution in a timeout
+        tokio::time::timeout(timeout_duration, async {
+            if tool_name.starts_with("builtin_") {
+                // Extract tool ID from full name (builtin_content_store__addContent -> content_store)
+                let tool_id = tool_name
+                    .strip_prefix("builtin_")
+                    .and_then(|s| s.split("__").next())
+                    .ok_or_else(|| format!("Invalid builtin tool name: {}", tool_name))?;
 
-            log::debug!(
-                "Calling builtin tool '{}' for session '{}'",
-                tool_name,
-                self.session_id
-            );
+                let server = self
+                    .builtin_servers
+                    .get(tool_id)
+                    .ok_or_else(|| format!("Built-in server not found: {}", tool_id))?;
 
-            let result = {
-                let prefix = format!("builtin_{}__", tool_id);
-                let real_tool_name = tool_name.strip_prefix(&prefix).unwrap_or(tool_name);
-                server
-                    .call_tool(real_tool_name, args, Some(self.session_id.clone()))
-                    .await?
-            };
+                log::debug!(
+                    "Calling builtin tool '{}' for session '{}'",
+                    tool_name,
+                    self.session_id
+                );
 
-            // Convert MCPResult to MCPResponse with proper type
-            Ok(MCPResponse {
-                jsonrpc: "2.0".to_string(),
-                id: Some(super::types::JsonRpcId::String(
-                    uuid::Uuid::new_v4().to_string(),
-                )),
-                result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                error: None,
-            })
-        } else {
-            // Route to external MCP manager or session-isolated manager
-            // Format is typically "server_name__tool_name"
-            log::debug!(
-                "Routing to external MCP: '{}' for session '{}'",
-                tool_name,
-                self.session_id
-            );
+                let result = {
+                    let prefix = format!("builtin_{}__", tool_id);
+                    let real_tool_name = tool_name.strip_prefix(&prefix).unwrap_or(tool_name);
+                    server
+                        .call_tool(real_tool_name, args, Some(self.session_id.clone()))
+                        .await?
+                };
 
-            if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
-                // 1. Check if it's a session-isolated HTTP server
-                if self.session_managers.http.has_server(server_name).await {
-                    log::debug!("Routing to session-isolated HTTP server: {}", server_name);
-                    return self
-                        .session_managers
-                        .http
-                        .call_tool(server_name, real_tool_name, args)
-                        .await
-                        .map_err(|e| e.to_string());
-                }
-
-                // 2. Check if it's a session-isolated Stdio server
-                if self.session_managers.stdio.has_server(server_name) {
-                    log::debug!("Routing to session-isolated Stdio server: {}", server_name);
-                    return self
-                        .session_managers
-                        .stdio
-                        .call_tool(server_name, real_tool_name, args)
-                        .await
-                        .map_err(|e| e.to_string());
-                }
-
-                Err(format!(
-                    "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
-                    tool_name, self.session_id
-                ))
+                // Convert MCPResult to MCPResponse with proper type
+                Ok(MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Some(super::types::JsonRpcId::String(
+                        uuid::Uuid::new_v4().to_string(),
+                    )),
+                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                    error: None,
+                })
             } else {
-                Err(format!(
-                    "Invalid external tool name format: {}. Expected 'server__tool'",
-                    tool_name
-                ))
+                // Route to external MCP manager or session-isolated manager
+                // Format is typically "server_name__tool_name"
+                log::debug!(
+                    "Routing to external MCP: '{}' for session '{}'",
+                    tool_name,
+                    self.session_id
+                );
+
+                if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
+                    // 1. Check if it's a session-isolated HTTP server
+                    if self.session_managers.http.has_server(server_name).await {
+                        log::debug!("Routing to session-isolated HTTP server: {}", server_name);
+                        return self
+                            .session_managers
+                            .http
+                            .call_tool(server_name, real_tool_name, args)
+                            .await
+                            .map_err(|e| e.to_string());
+                    }
+
+                    // 2. Check if it's a session-isolated Stdio server
+                    if self.session_managers.stdio.has_server(server_name) {
+                        log::debug!("Routing to session-isolated Stdio server: {}", server_name);
+                        return self
+                            .session_managers
+                            .stdio
+                            .call_tool(server_name, real_tool_name, args)
+                            .await
+                            .map_err(|e| e.to_string());
+                    }
+
+                    Err(format!(
+                        "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
+                        tool_name, self.session_id
+                    ))
+                } else {
+                    Err(format!(
+                        "Invalid external tool name format: {}. Expected 'server__tool'",
+                        tool_name
+                    ))
+                }
             }
-        }
+        })
+        .await
+        .map_err(|_| format!("Tool execution timed out after {} seconds", self.tool_timeout_seconds))?
     }
 
     /// Get the session ID this proxy is bound to
