@@ -242,6 +242,9 @@ export interface MCPServerEntity {
   transport: TransportConfig;
   authentication?: OAuthConfig;
   metadata?: ServerMetadata;
+
+  // Cached tool count (from last verification/connection)
+  toolCount?: number;
 }
 
 export interface Assistant {

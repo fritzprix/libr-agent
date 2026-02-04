@@ -56,6 +56,12 @@ export type AgentEventPayload =
       sessionId: string;
       step: string;
       status: 'running' | 'complete' | 'error';
+    }
+  | {
+      type: 'resourceUpdated';
+      resourceType: string;
+      action: string;
+      resourceId?: string;
     };
 
 // Workflow phase within 'busy' status for fine-grained UI feedback
@@ -187,7 +193,12 @@ export function AgentSessionProvider({
           const payload = event.payload;
 
           // Strict Session Isolation: Only process events for THIS session
-          if (payload.sessionId !== sessionId) {
+          // (except for global events like resourceUpdated that don't have a sessionId)
+          if (
+            payload.type !== 'resourceUpdated' &&
+            'sessionId' in payload &&
+            payload.sessionId !== sessionId
+          ) {
             return;
           }
 

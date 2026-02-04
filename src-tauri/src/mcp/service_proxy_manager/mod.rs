@@ -369,23 +369,26 @@ impl MCPServiceProxyManager {
             .await
             .insert(session_id.clone(), http_manager.clone());
 
-        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated stdio servers
+        // ✅ CACHE-FIRST TOOL LOADING: Skip eager discovery if tools are already cached
         if !stdio_configs.is_empty() {
             log::info!(
-                "Starting eager tool discovery for {} session-isolated stdio servers",
+                "Loading tools for {} session-isolated stdio servers (cache-first strategy)",
                 stdio_configs.len()
             );
         }
 
         for (i, server_name) in stdio_configs.keys().enumerate() {
             let step_msg = format!(
-                "Discovering tools from {} ({}/{})",
+                "Loading tools from {} ({}/{})",
                 server_name,
                 i + 1,
                 stdio_configs.len()
             );
             emit_status(&step_msg, InitializationStatus::Running);
 
+            // Check if we have cached tool count (indicates tools were fetched before)
+            // Always fetch tools to populate proxy, regardless of cache status
+            // The server will spawn on-demand when list_tools is called
             log::debug!(
                 "Fetching tools from session stdio server '{}' for session '{}'",
                 server_name,
@@ -400,6 +403,15 @@ impl MCPServiceProxyManager {
                         server_name,
                         session_id
                     );
+
+                    // Cache tool count in database for UI display
+                    let repo = crate::state::get_mcp_server_repository();
+                    if let Err(e) = repo
+                        .update_tool_count(server_name, tools.len() as i32)
+                        .await
+                    {
+                        log::warn!("Failed to cache tool count for '{}': {}", server_name, e);
+                    }
 
                     let prefixed_tools: Vec<_> = tools
                         .into_iter()
@@ -424,20 +436,38 @@ impl MCPServiceProxyManager {
             }
         }
 
-        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
+        // ✅ CACHE-FIRST TOOL LOADING: Skip eager discovery for HTTP servers if cached
         if !http_configs.is_empty() {
+            log::info!(
+                "Loading tools for {} session-isolated HTTP servers (cache-first strategy)",
+                http_configs.len()
+            );
             emit_status(
-                "Discovering tools from HTTP servers",
+                "Loading tools from HTTP servers",
                 InitializationStatus::Running,
             );
         }
 
-        log::info!(
-            "Starting eager tool discovery for {} session-isolated HTTP servers",
-            http_configs.len()
-        );
-
         for server_name in http_configs.keys() {
+            // Check if tools are already cached in-memory for this session
+            // Note: We check the in-memory cache (source of truth), not DB tool_count
+            // DB tool_count persists across restarts but in-memory cache is session-specific
+            let has_cache = proxy_arc.has_http_tools_cached(server_name).await;
+
+            if has_cache {
+                log::info!(
+                    "⚡ Skipping eager discovery for HTTP server '{}' - tools already cached in session",
+                    server_name
+                );
+                continue;
+            }
+
+            log::debug!(
+                "No cache for HTTP server '{}', fetching tools for session '{}'",
+                server_name,
+                session_id
+            );
+
             match http_manager.list_tools(server_name).await {
                 Ok(tools) => {
                     log::info!(
@@ -446,6 +476,15 @@ impl MCPServiceProxyManager {
                         server_name,
                         session_id
                     );
+
+                    // Cache tool count in database for UI display
+                    let repo = crate::state::get_mcp_server_repository();
+                    if let Err(e) = repo
+                        .update_tool_count(server_name, tools.len() as i32)
+                        .await
+                    {
+                        log::warn!("Failed to cache tool count for '{}': {}", server_name, e);
+                    }
 
                     let prefixed_tools: Vec<_> = tools
                         .into_iter()
@@ -663,6 +702,77 @@ impl MCPServiceProxyManager {
             *task = Some(handle);
         }
     }
+}
+
+/// Update tool cache in background after server initialization
+///
+/// This centralized function fetches tools from a server and updates the database cache.
+/// It's called automatically when stdio or HTTP servers are spawned/connected.
+///
+/// # Arguments
+/// * `server_name` - Name of the MCP server
+/// * `session_id` - Session identifier for logging context
+/// * `server_type` - Type of server ("stdio" or "HTTP") for logging
+/// * `fetch_tools` - Async closure that fetches tools from the server
+///
+/// # Type Parameters
+/// * `F` - Function that returns a Future
+/// * `Fut` - Future that resolves to Result<Vec<MCPTool>, String>
+pub fn spawn_tool_cache_update<F, Fut>(
+    server_name: String,
+    session_id: String,
+    server_type: &'static str,
+    fetch_tools: F,
+) where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<Vec<super::types::MCPTool>, String>> + Send,
+{
+    tokio::spawn(async move {
+        log::debug!(
+            "Fetching tools to update cache for {} server '{}' (session: {})",
+            server_type,
+            server_name,
+            session_id
+        );
+
+        match fetch_tools().await {
+            Ok(tools) => {
+                let tool_count = tools.len();
+
+                // Update database cache
+                use crate::repositories::mcp_server_repository::MCPServerRepository;
+                let repo = crate::state::get_mcp_server_repository();
+
+                if let Err(e) = repo
+                    .update_tool_count(&server_name, tool_count as i32)
+                    .await
+                {
+                    log::warn!(
+                        "Failed to cache tool count for {} server '{}': {}",
+                        server_type,
+                        server_name,
+                        e
+                    );
+                } else {
+                    log::info!(
+                        "✅ Updated tool cache for {} server '{}': {} tools (session: {})",
+                        server_type,
+                        server_name,
+                        tool_count,
+                        session_id
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to fetch tools for cache update from {} server '{}': {}",
+                    server_type,
+                    server_name,
+                    e
+                );
+            }
+        }
+    });
 }
 
 #[cfg(test)]

@@ -158,6 +158,7 @@ export const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
     prev.apiKey === next.apiKey &&
     (prev.baseUrl || '') === (next.baseUrl || '') &&
     prev.use3rdParty === next.use3rdParty &&
-    (prev.customModelId || '') === (next.customModelId || '')
+    (prev.customModelId || '') === (next.customModelId || '') &&
+    prev.onPendingChange === next.onPendingChange // Critical: check callback stability
   );
 });

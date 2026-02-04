@@ -87,8 +87,8 @@ pub fn search_server_tool() -> MCPTool {
     }
 }
 
-/// Register and start a new MCP server
-pub fn create_server_tool() -> MCPTool {
+/// Register a new MCP server configuration
+pub fn register_server_tool() -> MCPTool {
     let transport_schema = object_prop(
         vec![
             (
@@ -124,9 +124,9 @@ pub fn create_server_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "createServer".to_string(),
-        title: Some("Create Server".to_string()),
-        description: "Register and start a new MCP server.
+        name: "registerServer".to_string(),
+        title: Some("Register Server".to_string()),
+        description: "Register a new MCP server configuration.
 
 ⚠️ PREREQUISITES:
 1. Verify target command exists before registration (stdio servers)
@@ -163,6 +163,14 @@ EXAMPLE:
                     ),
                 ),
                 ("transport".to_string(), transport_schema),
+                (
+                    "description".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional description of the server's purpose and capabilities"),
+                    ),
+                ),
             ],
             vec!["name".to_string(), "transport".to_string()],
             None,
@@ -230,6 +238,14 @@ Returns:
                     string_prop_required("Target name of the server to update"),
                 ),
                 ("transport".to_string(), transport_schema),
+                (
+                    "description".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional description of the server's purpose and capabilities"),
+                    ),
+                ),
             ],
             vec!["name".to_string(), "transport".to_string()],
             None,
@@ -294,23 +310,31 @@ This tool tests the server by:
     }
 }
 
-/// List all available built-in MCP tools
-pub fn list_builtin_tools_tool() -> MCPTool {
+/// List all available internal LibrAgent tools (NEW NAME)
+pub fn list_internal_tools_tool() -> MCPTool {
     MCPTool {
-        name: "listBuiltinTools".to_string(),
-        title: Some("List Builtin Tools".to_string()),
-        description: "List all available built-in MCP tool schemas across all servers.
+        name: "listInternalTools".to_string(),
+        title: Some("List Internal Tools".to_string()),
+        description: "List tool schemas from INTERNAL LibrAgent services.
 
-Returns static tool definitions including:
-- Tool names and descriptions
-- Input/output schemas
-- Usage annotations
+⚠️ IMPORTANT: This tool does NOT work with external MCP servers.
 
-Use serverName parameter to filter by specific server (e.g., 'planning', 'browser', 'workspace').
+🏠 INTERNAL SERVICES (this tool):
+• planning, knowledge, browser, workspace
+• content_store, assistant, playbook
+• bootstrap, ui, mcp_manager
+
+🌐 EXTERNAL SERVERS (not supported):
+• Use listExternalServers to see user-registered servers
+• Use verifyExternalServer to check specific server tools
+• Add to assistant via updateAssistant(mcpServerIds: [...])
+
+USAGE:
+• No parameter: List all internal tools (88+ tools)
+• serverName='workspace': Filter by specific internal service
+
+PAGINATION:
 Results are paginated (20 tools per page) for large result sets.
-
-Available servers: planning, knowledge, browser, workspace, contentstore, 
-assistant_manager, playbook, bootstrap, ui, mcp_manager
 "
         .to_string(),
         input_schema: object_prop(
@@ -319,7 +343,7 @@ assistant_manager, playbook, bootstrap, ui, mcp_manager
                 string_prop(
                     None,
                     None,
-                    Some("Optional: Filter by server name (e.g., 'workspace', 'browser', 'planning')"),
+                    Some("Optional: Internal service name to filter by. Valid: planning, knowledge, browser, workspace, content_store, assistant, playbook, bootstrap, ui, mcp_manager"),
                 ),
             )],
             vec![],
@@ -330,15 +354,49 @@ assistant_manager, playbook, bootstrap, ui, mcp_manager
     }
 }
 
+/// List all available built-in MCP tools (DEPRECATED - use listInternalTools)
+#[deprecated(since = "0.4.0", note = "Use list_internal_tools_tool() instead")]
+pub fn list_builtin_tools_tool() -> MCPTool {
+    let mut tool = list_internal_tools_tool();
+    tool.name = "listBuiltinTools".to_string();
+    tool.title = Some("List Builtin Tools (DEPRECATED)".to_string());
+    tool.description = format!(
+        "⚠️ DEPRECATED: Use 'listInternalTools' instead. This tool will be removed in v0.6.0.\n\n{}",
+        tool.description
+    );
+    tool
+}
+
+/// List all registered external MCP servers (NEW NAME)
+pub fn list_external_servers_tool() -> MCPTool {
+    let mut tool = list_servers_tool();
+    tool.name = "listExternalServers".to_string();
+    tool.title = Some("List External Servers".to_string());
+    tool.description = "List all registered EXTERNAL MCP servers.
+
+🌐 EXTERNAL SERVERS (this tool):
+• User-registered MCP servers (yahoo-finance-mcp, ddg-search, etc.)
+
+🏠 INTERNAL SERVICES (use listInternalTools):
+• LibrAgent built-in services (planning, knowledge, browser, workspace, etc.)
+
+⚠️ MANDATORY:
+1. Extract the 'name' from the list for subsequent operations.
+2. Use this tool if server status is unknown.
+"
+    .to_string();
+    tool
+}
+
 /// Returns all MCP Manager tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        list_servers_tool(),
+        list_external_servers_tool(),
+        list_internal_tools_tool(),
         search_server_tool(),
-        create_server_tool(),
+        register_server_tool(),
         update_server_tool(),
         delete_server_tool(),
         verify_server_tool(),
-        list_builtin_tools_tool(),
     ]
 }

@@ -390,9 +390,9 @@ impl SuccessHint {
             // MCP Manager tools
             ("listServers", ToolGroup::McpManager) => vec![
                 "Use connectServer to connect to a server".to_string(),
-                "Use createServer to register new servers".to_string(),
+                "Use registerServer to register new servers".to_string(),
             ],
-            ("createServer", ToolGroup::McpManager) => {
+            ("registerServer", ToolGroup::McpManager) => {
                 vec!["Use listServers to verify server was created".to_string()]
             }
             ("connectServer", ToolGroup::McpManager) => {

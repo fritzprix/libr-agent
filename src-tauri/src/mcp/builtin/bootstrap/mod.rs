@@ -555,7 +555,7 @@ mod tests {
             "Should only suggest Bootstrap tools"
         );
         assert!(
-            !text.contains("listServers") && !text.contains("createServer"),
+            !text.contains("listServers") && !text.contains("registerServer"),
             "Should not suggest MCP Manager tools"
         );
     }

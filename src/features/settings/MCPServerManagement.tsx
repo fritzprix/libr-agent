@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import { Plus } from 'lucide-react';
 import { createId } from '@paralleldrive/cuid2';
@@ -30,7 +30,89 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('MCPServerManagement');
 
-export function MCPServerManagement() {
+// Memoized ServerCard component to prevent unnecessary re-renders
+interface ServerCardProps {
+  server: MCPServerEntity;
+  onEdit: (server: MCPServerEntity) => void;
+  onDelete: (server: MCPServerEntity) => void;
+  onToggleActive: (server: MCPServerEntity, checked: boolean) => void;
+}
+
+const ServerCard = React.memo(
+  ({ server, onEdit, onDelete, onToggleActive }: ServerCardProps) => {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div className="flex-1">
+            <CardTitle className="text-base">
+              {server.name || 'Unnamed Server'}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {server.metadata?.description || 'No description'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Transport: {server.transport.type}
+              {server.transport.type === 'stdio' &&
+                ` • ${server.transport.command}`}
+              {((server.transport.type as string) === 'http' ||
+                server.transport.type === 'http-sse') &&
+                ` • ${(server.transport as { url: string }).url}`}
+            </p>
+            {server.toolCount !== undefined && server.toolCount !== null && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {server.toolCount} tool{server.toolCount !== 1 ? 's' : ''}{' '}
+                available
+              </p>
+            )}
+            {(server.toolCount === undefined || server.toolCount === null) && (
+              <p className="text-xs text-muted-foreground italic mt-1">
+                Tool count unknown (not yet verified)
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-xs text-muted-foreground">Active</span>
+              <Switch
+                checked={server.isActive}
+                onCheckedChange={(checked) => onToggleActive(server, checked)}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onEdit(server)}>
+              Edit
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => onDelete(server)}
+            >
+              Delete
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.server.id === next.server.id &&
+      prev.server.name === next.server.name &&
+      prev.server.isActive === next.server.isActive &&
+      prev.server.updatedAt?.getTime() === next.server.updatedAt?.getTime() &&
+      prev.onEdit === next.onEdit &&
+      prev.onDelete === next.onDelete &&
+      prev.onToggleActive === next.onToggleActive
+    );
+  },
+);
+
+ServerCard.displayName = 'ServerCard';
+
+function MCPServerManagementComponent() {
   const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
   const { value: settings } = useSettings();
 
@@ -54,6 +136,8 @@ export function MCPServerManagement() {
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
+      dedupingInterval: 2000, // Dedupe requests within 2 seconds
+      keepPreviousData: true, // Keep previous data while loading new
     },
   );
 
@@ -71,7 +155,7 @@ export function MCPServerManagement() {
     null,
   );
 
-  const handleCreateNew = () => {
+  const handleCreateNew = useCallback(() => {
     const newServer: MCPServerEntity = {
       id: createId(),
       name: '',
@@ -85,30 +169,34 @@ export function MCPServerManagement() {
       },
     };
     setEditingServer(newServer);
-  };
+  }, []);
 
-  const handleEdit = (server: MCPServerEntity) => {
+  const handleEdit = useCallback((server: MCPServerEntity) => {
     setEditingServer(server);
-  };
+  }, []);
 
-  const handleSave = async (server: MCPServerEntity) => {
-    try {
-      await saveServer(server);
-      await mutateServers();
-      setEditingServer(null);
-      toast.success('MCP server saved successfully');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to save server: ${message}`);
-      logger.error('Failed to save MCP server', error);
-    }
-  };
+  const handleSave = useCallback(
+    async (server: MCPServerEntity) => {
+      try {
+        await saveServer(server);
+        await mutateServers();
+        setEditingServer(null);
+        toast.success('MCP server saved successfully');
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        toast.error(`Failed to save server: ${message}`);
+        logger.error('Failed to save MCP server', error);
+      }
+    },
+    [saveServer, mutateServers],
+  );
 
-  const handleDelete = (server: MCPServerEntity) => {
+  const handleDelete = useCallback((server: MCPServerEntity) => {
     setServerToDelete(server);
-  };
+  }, []);
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!serverToDelete) return;
 
     try {
@@ -122,22 +210,23 @@ export function MCPServerManagement() {
     } finally {
       setServerToDelete(null);
     }
-  };
+  }, [serverToDelete, deleteServer, mutateServers]);
 
-  const handleToggleActive = async (
-    server: MCPServerEntity,
-    checked: boolean,
-  ) => {
-    try {
-      await toggleActive(server.id, checked);
-      await mutateServers();
-      toast.success(`MCP server ${checked ? 'activated' : 'deactivated'}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to toggle server: ${message}`);
-      logger.error('Failed to toggle MCP server active status', error);
-    }
-  };
+  const handleToggleActive = useCallback(
+    async (server: MCPServerEntity, checked: boolean) => {
+      try {
+        await toggleActive(server.id, checked);
+        await mutateServers();
+        toast.success(`MCP server ${checked ? 'activated' : 'deactivated'}`);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        toast.error(`Failed to toggle server: ${message}`);
+        logger.error('Failed to toggle MCP server active status', error);
+      }
+    },
+    [toggleActive, mutateServers],
+  );
 
   return (
     <div className="space-y-4">
@@ -162,57 +251,13 @@ export function MCPServerManagement() {
         <>
           <div className="grid gap-4">
             {servers.map((server) => (
-              <Card key={server.id}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <div className="flex-1">
-                    <CardTitle className="text-base">
-                      {server.name || 'Unnamed Server'}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {server.metadata?.description || 'No description'}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Transport: {server.transport.type}
-                      {server.transport.type === 'stdio' &&
-                        ` • ${server.transport.command}`}
-                      {((server.transport.type as string) === 'http' ||
-                        server.transport.type === 'http-sse') &&
-                        ` • ${(server.transport as { url: string }).url}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex flex-col items-end gap-1">
-                      <span className="text-xs text-muted-foreground">
-                        Active
-                      </span>
-                      <Switch
-                        checked={server.isActive}
-                        onCheckedChange={(checked) =>
-                          handleToggleActive(server, checked)
-                        }
-                      />
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(server)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(server)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+              <ServerCard
+                key={server.id}
+                server={server}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onToggleActive={handleToggleActive}
+              />
             ))}
           </div>
 
@@ -261,3 +306,6 @@ export function MCPServerManagement() {
     </div>
   );
 }
+
+// Memoize entire component - only re-render when explicitly needed
+export const MCPServerManagement = React.memo(MCPServerManagementComponent);

@@ -8,10 +8,12 @@ import React, {
   useState,
 } from 'react';
 import { mutate } from 'swr';
+import { listen } from '@tauri-apps/api/event';
 import { MCPServerEntity } from '@/models/chat';
 import { McpServerService } from '@/lib/services/mcp-server-service';
 import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
+import type { AgentEventPayload } from '@/context/AgentSessionContext';
 
 const logger = getLogger('MCPServerRegistryContext');
 
@@ -165,6 +167,42 @@ export const MCPServerRegistryProvider = ({
     });
     return unsubscribe;
   }, [mcpServerService, refreshAll]);
+
+  // Subscribe to agent:event for AI agent resource updates (with debouncing)
+  useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    const unlisten = listen<AgentEventPayload>('agent:event', (event) => {
+      const payload = event.payload;
+      if (
+        payload.type === 'resourceUpdated' &&
+        payload.resourceType === 'mcpServer'
+      ) {
+        logger.debug(
+          'Agent updated MCP server resource, debouncing refresh...',
+          payload,
+        );
+
+        // Clear existing timer
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        // Set new timer
+        debounceTimer = setTimeout(() => {
+          logger.debug('Debounce complete, refreshing MCP servers...');
+          refreshAll();
+        }, 300);
+      }
+    });
+
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      unlisten.then((fn) => fn());
+    };
+  }, [refreshAll]);
 
   // Initial load on mount
   useEffect(() => {

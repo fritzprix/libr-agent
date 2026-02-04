@@ -408,6 +408,18 @@ impl MCPServiceProxy {
         cache.insert(server_name, tools);
     }
 
+    /// Check if HTTP tools are cached for a specific server in this session
+    ///
+    /// # Arguments
+    /// * `server_name` - Name of the HTTP server to check
+    ///
+    /// # Returns
+    /// * `bool` - true if tools are cached, false otherwise
+    pub async fn has_http_tools_cached(&self, server_name: &str) -> bool {
+        let cache = self.session_http_tool_cache.read().await;
+        cache.contains_key(server_name)
+    }
+
     /// Get session-specific HTTP manager
     pub fn get_http_manager(&self) -> &Arc<HttpSessionManager> {
         &self.session_managers.http

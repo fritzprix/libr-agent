@@ -26,10 +26,10 @@ import {
   factoryReset as backendFactoryReset,
   clearAllSessions as backendClearAllSessions,
 } from '@/lib/backend/sessions';
-import { GeneralTab } from './tabs/GeneralTab';
-import { AIModelsTab } from './tabs/AIModelsTab';
-import { ChatInterfaceTab } from './tabs/ChatInterfaceTab';
-import { AdvancedTab } from './tabs/AdvancedTab';
+import GeneralTab from './tabs/GeneralTab';
+import AIModelsTab from './tabs/AIModelsTab';
+import ChatInterfaceTab from './tabs/ChatInterfaceTab';
+import AdvancedTab from './tabs/AdvancedTab';
 
 const logger = getLogger('SettingsPage');
 
@@ -50,6 +50,12 @@ export default function SettingsPage() {
     update,
   } = useSettings();
   const { t } = useTranslation('common');
+
+  // Store serviceConfigs in ref to avoid callback recreation
+  const serviceConfigsRef = useRef(serviceConfigs);
+  useEffect(() => {
+    serviceConfigsRef.current = serviceConfigs;
+  }, [serviceConfigs]);
 
   // pending updates are collected here without causing re-renders
   const pendingRef = useRef<Partial<Record<AIServiceProvider, ServiceConfig>>>(
@@ -215,10 +221,11 @@ export default function SettingsPage() {
 
   const handlePendingChange = useCallback(
     (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
+      const currentConfig = serviceConfigsRef.current[provider] || {};
       pendingRef.current = {
         ...(pendingRef.current || {}),
         [provider]: {
-          ...(pendingRef.current[provider] || serviceConfigs[provider] || {}),
+          ...(pendingRef.current[provider] || currentConfig),
           ...patch,
         },
       } as Partial<Record<AIServiceProvider, ServiceConfig>>;
@@ -227,7 +234,7 @@ export default function SettingsPage() {
           Object.keys(otherPendingRef.current).length,
       );
     },
-    [serviceConfigs],
+    [], // No dependencies - using refs
   );
 
   const handleWindowSizeChange = useCallback((value: number) => {
@@ -242,71 +249,77 @@ export default function SettingsPage() {
     );
   }, []);
 
-  const handleLanguageChange = (lang: string) => {
+  const handleLanguageChange = useCallback((lang: string) => {
     setLocalLanguage(lang);
     otherPendingRef.current.uiLanguage = lang;
     setPendingCount(
       Object.keys(pendingRef.current).length +
         Object.keys(otherPendingRef.current).length,
     );
-  };
+  }, []);
 
-  const handleToolCallGroupVisibleCountChange = (count: number) => {
+  const handleToolCallGroupVisibleCountChange = useCallback((count: number) => {
     setLocalToolCallGroupVisibleCount(count);
     otherPendingRef.current.toolCallGroupVisibleCount = count;
     setPendingCount(
       Object.keys(pendingRef.current).length +
         Object.keys(otherPendingRef.current).length,
     );
-  };
+  }, []);
 
-  const handleAgentHubUrlChange = (url: string) => {
+  const handleAgentHubUrlChange = useCallback((url: string) => {
     setLocalAgentHubUrl(url);
     otherPendingRef.current.agentHubUrl = url;
     setPendingCount(
       Object.keys(pendingRef.current).length +
         Object.keys(otherPendingRef.current).length,
     );
-  };
+  }, []);
 
-  const handleAdvancedSettingsChange = (
-    key: keyof AdvancedSettings,
-    value: number,
-  ) => {
-    const newSettings = { ...localAdvancedSettings, [key]: value };
-    setLocalAdvancedSettings(newSettings);
-    otherPendingRef.current.advanced = newSettings;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  };
+  const handleAdvancedSettingsChange = useCallback(
+    (key: keyof AdvancedSettings, value: number) => {
+      setLocalAdvancedSettings((prev) => {
+        const newSettings = { ...prev, [key]: value };
+        otherPendingRef.current.advanced = newSettings;
+        setPendingCount(
+          Object.keys(pendingRef.current).length +
+            Object.keys(otherPendingRef.current).length,
+        );
+        return newSettings;
+      });
+    },
+    [],
+  );
 
-  const handleDisplaySettingsChange = (
-    key: keyof DisplaySettings,
-    value: string | boolean,
-  ) => {
-    const newSettings = { ...localDisplay, [key]: value };
-    setLocalDisplay(newSettings);
-    otherPendingRef.current.display = newSettings;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  };
+  const handleDisplaySettingsChange = useCallback(
+    (key: keyof DisplaySettings, value: string | boolean) => {
+      setLocalDisplay((prev) => {
+        const newSettings = { ...prev, [key]: value };
+        otherPendingRef.current.display = newSettings;
+        setPendingCount(
+          Object.keys(pendingRef.current).length +
+            Object.keys(otherPendingRef.current).length,
+        );
+        return newSettings;
+      });
+    },
+    [],
+  );
 
-  const handleSystemSettingsChange = (
-    key: keyof SystemSettings,
-    value: number | string,
-  ) => {
-    const newSettings = { ...localSystemSettings, [key]: value };
-    setLocalSystemSettings(newSettings);
-    otherPendingRef.current.system = newSettings;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  };
+  const handleSystemSettingsChange = useCallback(
+    (key: keyof SystemSettings, value: number | string) => {
+      setLocalSystemSettings((prev) => {
+        const newSettings = { ...prev, [key]: value };
+        otherPendingRef.current.system = newSettings;
+        setPendingCount(
+          Object.keys(pendingRef.current).length +
+            Object.keys(otherPendingRef.current).length,
+        );
+        return newSettings;
+      });
+    },
+    [],
+  );
 
   const handlePreferredModelChange = useCallback(
     (model: string, provider: string) => {
@@ -345,7 +358,7 @@ export default function SettingsPage() {
       // Merge pending service configs
       if (pending && Object.keys(pending).length > 0) {
         const merged: Record<AIServiceProvider, ServiceConfig> = {
-          ...(serviceConfigs || {}),
+          ...(serviceConfigsRef.current || {}),
         } as Record<AIServiceProvider, ServiceConfig>;
 
         for (const k of Object.keys(pending) as Array<AIServiceProvider>) {
@@ -391,13 +404,32 @@ export default function SettingsPage() {
       logger.error('Failed to apply pending settings', e);
       throw e;
     }
-  }, [serviceConfigs, update]);
+  }, [update]);
 
   const providerEntries = useMemo(() => {
     return Object.values(AIServiceProvider).filter(
       (p) => p !== AIServiceProvider.Empty,
     ) as AIServiceProvider[];
   }, []);
+
+  // Memoize stable props objects to prevent child re-renders
+  const systemSettingsProps = useMemo(
+    () => ({
+      localSystemSettings,
+      onChange: handleSystemSettingsChange,
+    }),
+    [localSystemSettings, handleSystemSettingsChange],
+  );
+
+  const dangerZoneProps = useMemo(
+    () => ({
+      isDeleting,
+      isResetting,
+      onDelete: handleClearAllSessions,
+      onReset: handleFactoryReset,
+    }),
+    [isDeleting, isResetting],
+  );
 
   return (
     <div className="p-6 text-muted-foreground min-h-screen">
@@ -494,16 +526,8 @@ export default function SettingsPage() {
             <AdvancedTab
               localAdvancedSettings={localAdvancedSettings}
               onChange={handleAdvancedSettingsChange}
-              systemSettingsProps={{
-                localSystemSettings: localSystemSettings,
-                onChange: handleSystemSettingsChange,
-              }}
-              dangerZoneProps={{
-                isDeleting,
-                isResetting,
-                onDelete: handleClearAllSessions,
-                onReset: handleFactoryReset,
-              }}
+              systemSettingsProps={systemSettingsProps}
+              dangerZoneProps={dangerZoneProps}
             />
           </TabsContent>
         </Tabs>

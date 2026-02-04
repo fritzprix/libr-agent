@@ -524,6 +524,10 @@ pub fn run() {
                 );
                 app.manage(agent_session_manager);
 
+                // Initialize global AppHandle for event emission from builtin tools
+                crate::state::init_app_handle(app.handle().clone());
+                info!("✅ Global AppHandle initialized for event emission");
+
                 // Spawn session recovery in background
                 let recovery_manager = app
                     .state::<agent::AgentSessionManager>()

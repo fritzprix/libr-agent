@@ -1,3 +1,4 @@
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, DisplaySettings } from '@/context/SettingsContext';
 import { Input } from '@/components/ui';
@@ -19,7 +20,7 @@ interface ChatInterfaceTabProps {
   ) => void;
 }
 
-export function ChatInterfaceTab({
+function ChatInterfaceTabComponent({
   localWindowSize,
   localToolCallGroupVisibleCount,
   localAdvancedSettings,
@@ -229,3 +230,24 @@ export function ChatInterfaceTab({
     </div>
   );
 }
+
+export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
+  return (
+    prev.localWindowSize === next.localWindowSize &&
+    prev.localToolCallGroupVisibleCount ===
+      next.localToolCallGroupVisibleCount &&
+    prev.localAdvancedSettings.diffContextLines ===
+      next.localAdvancedSettings.diffContextLines &&
+    prev.localDisplay.metricDisplayMode ===
+      next.localDisplay.metricDisplayMode &&
+    prev.localDisplay.prefillDisplayFormat ===
+      next.localDisplay.prefillDisplayFormat &&
+    prev.localDisplay.showTokenSpeed === next.localDisplay.showTokenSpeed &&
+    prev.localDisplay.compactMetrics === next.localDisplay.compactMetrics &&
+    prev.onWindowSizeChange === next.onWindowSizeChange &&
+    prev.onToolCallGroupVisibleCountChange ===
+      next.onToolCallGroupVisibleCountChange &&
+    prev.onAdvancedSettingsChange === next.onAdvancedSettingsChange &&
+    prev.onDisplaySettingsChange === next.onDisplaySettingsChange
+  );
+});

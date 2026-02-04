@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
 import {
@@ -35,7 +35,7 @@ interface CustomHeader {
   value: string;
 }
 
-export function MCPServerDialog({
+function MCPServerDialogComponent({
   server,
   onSave,
   onCancel,
@@ -594,3 +594,15 @@ export function MCPServerDialog({
     </Dialog>
   );
 }
+
+export const MCPServerDialog = React.memo(
+  MCPServerDialogComponent,
+  (prev, next) => {
+    return (
+      prev.server.id === next.server.id &&
+      prev.server.updatedAt?.getTime() === next.server.updatedAt?.getTime() &&
+      prev.onSave === next.onSave &&
+      prev.onCancel === next.onCancel
+    );
+  },
+);

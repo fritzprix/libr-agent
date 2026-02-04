@@ -114,7 +114,7 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
             total, page, total_pages, servers_text
         ),
         vec![
-            "Use createServer to initiate a new server configuration".to_string(),
+            "Use registerServer to initiate a new server configuration".to_string(),
             "Use connectServer/disconnectServer to target connection status".to_string(),
         ],
     );

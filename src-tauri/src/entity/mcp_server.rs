@@ -9,7 +9,8 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub name: String,
-    pub config: String, // JSON stored as TEXT
+    pub config: String,          // JSON stored as TEXT
+    pub tool_count: Option<i32>, // Cached tool count (from last verification/connection)
     pub created_at: i64,
     pub updated_at: i64,
 }

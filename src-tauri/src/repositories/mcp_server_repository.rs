@@ -21,6 +21,9 @@ pub trait MCPServerRepository: Send + Sync {
 
     /// List all MCP server configs
     async fn list(&self) -> Result<Vec<mcp_server::Model>, DbError>;
+
+    /// Update tool count for an MCP server after verification/connection
+    async fn update_tool_count(&self, name: &str, tool_count: i32) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -54,6 +57,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
         let active = mcp_server::ActiveModel {
             name: Set(name.to_string()),
             config: Set(config.to_string()),
+            tool_count: Set(None), // NULL initially - will be populated during verification/connection
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -101,6 +105,22 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             .all(&self.db)
             .await?;
         Ok(results)
+    }
+
+    async fn update_tool_count(&self, name: &str, tool_count: i32) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let existing = mcp_server::Entity::find_by_id(name).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.tool_count = Set(Some(tool_count));
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", name)))
+        }
     }
 }
 
@@ -186,5 +206,21 @@ mod tests {
 
         let result = repo.get(name).await.expect("Failed to get after delete");
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_tool_count() {
+        let repo = setup_test_db().await;
+        let name = "tool_count_server";
+
+        repo.create(name, serde_json::json!({})).await.unwrap();
+
+        // Update tool count
+        repo.update_tool_count(name, 42)
+            .await
+            .expect("Failed to update tool count");
+
+        let result = repo.get(name).await.expect("Failed to get").unwrap();
+        assert_eq!(result.tool_count, Some(42));
     }
 }

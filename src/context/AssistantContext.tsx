@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import { useAsyncFn } from 'react-use';
+import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import type { Assistant } from '../models/chat';
 import { toast } from 'sonner';
@@ -18,6 +19,7 @@ import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import type { MCPTool } from '@/lib/mcp-types';
 import { useSettings } from '@/hooks/use-settings';
 import { AssistantService } from '@/lib/services/assistant-service';
+import type { AgentEventPayload } from '@/context/AgentSessionContext';
 
 const logger = getLogger('AssistantContext');
 
@@ -406,6 +408,42 @@ export const AssistantContextProvider = ({
     });
     return unsubscribe;
   }, [assistantService, loadAssistants]);
+
+  // Subscribe to agent:event for AI agent resource updates (with debouncing)
+  useEffect(() => {
+    let debounceTimer: NodeJS.Timeout | null = null;
+
+    const unlisten = listen<AgentEventPayload>('agent:event', (event) => {
+      const payload = event.payload;
+      if (
+        payload.type === 'resourceUpdated' &&
+        payload.resourceType === 'assistant'
+      ) {
+        logger.debug(
+          'Agent updated assistant resource, debouncing refresh...',
+          payload,
+        );
+
+        // Clear existing timer
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        // Set new timer
+        debounceTimer = setTimeout(() => {
+          logger.debug('Debounce complete, refreshing assistants...');
+          loadAssistants();
+        }, 300);
+      }
+    });
+
+    return () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      unlisten.then((fn) => fn());
+    };
+  }, [loadAssistants]);
 
   const contextValue: AssistantContextType = useMemo(
     () => ({

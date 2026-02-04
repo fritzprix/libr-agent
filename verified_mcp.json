@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "yfinance": {
+      "command": "uvx",
+      "args": ["yahoo-finance-mcp"]
+    },
+    "ddg-search": {
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"]
+    }
+  }
+}

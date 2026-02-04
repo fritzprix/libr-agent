@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -28,7 +29,7 @@ interface GeneralTabProps {
   onSkillsDirectoryChange: (path: string) => void;
 }
 
-export function GeneralTab({
+function GeneralTabComponent({
   localLanguage,
   onChange,
   skillsDirectory,
@@ -213,3 +214,12 @@ export function GeneralTab({
     </div>
   );
 }
+
+export default React.memo(GeneralTabComponent, (prev, next) => {
+  return (
+    prev.localLanguage === next.localLanguage &&
+    prev.skillsDirectory === next.skillsDirectory &&
+    prev.onChange === next.onChange &&
+    prev.onSkillsDirectoryChange === next.onSkillsDirectoryChange
+  );
+});

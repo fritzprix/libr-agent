@@ -1,3 +1,4 @@
+use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance,
     SuccessHint, ToolGroup,
@@ -45,8 +46,8 @@ async fn delete_server_config_db(name: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Create and start a new MCP server
-pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
+/// Register a new MCP server configuration
+pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
     // Get and validate name (required parameter)
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(custom_name) if !custom_name.trim().is_empty() => {
@@ -96,11 +97,21 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     let transport: TransportConfig = serde_json::from_value(transport_val.clone())
         .map_err(|e| format!("Invalid transport config: {}", e))?;
 
+    // Extract optional description for metadata
+    let metadata = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|desc| crate::mcp::types::ServerMetadata {
+            description: Some(desc.to_string()),
+            vendor: None,
+            version: None,
+        });
+
     let config = MCPServerConfig {
         name: Some(name.clone()),
         transport,
         authentication: None,
-        metadata: None,
+        metadata,
     };
 
     if let Err(e) = save_server_config(&config).await {
@@ -115,6 +126,9 @@ pub async fn create_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     // Note: Session Isolation means we cannot auto-start via global manager
     // External servers are now created per-session through MCPServiceProxyManager
     server.invalidate_cache().await;
+
+    // Emit resource updated event for frontend cache revalidation
+    events::emit_resource_updated("mcpServer", "create", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         format!(
@@ -174,6 +188,9 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     server.invalidate_cache().await;
 
+    // Emit resource updated event for frontend cache revalidation
+    events::emit_resource_updated("mcpServer", "delete", Some(name.to_string()));
+
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
         vec!["Use listServers to verify remaining servers".to_string()],
@@ -223,11 +240,21 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         .to_mcp_result());
     }
 
+    // Extract optional description for metadata
+    let metadata = args
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|desc| crate::mcp::types::ServerMetadata {
+            description: Some(desc.to_string()),
+            vendor: None,
+            version: None,
+        });
+
     let config = MCPServerConfig {
         name: Some(name.to_string()),
         transport: transport_config,
         authentication: None,
-        metadata: None,
+        metadata,
     };
 
     // Update config
@@ -244,6 +271,9 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     // Configuration updates take effect when servers are next started in a session
 
     server.invalidate_cache().await;
+
+    // Emit resource updated event for frontend cache revalidation
+    events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
 
     let hint = SuccessHint::new(
         "Server configuration updated".to_string(),
@@ -302,14 +332,24 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     server.invalidate_cache().await;
 
+    // Emit resource updated event for frontend cache revalidation
+    events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
+
     match verification_result {
         Ok(tool_count) => {
+            // Persist tool count to database for UI display
+            let repo = get_mcp_server_repository();
+            if let Err(e) = repo.update_tool_count(name, tool_count as i32).await {
+                log::warn!("Failed to cache tool count for '{}': {}", name, e);
+                // Continue - don't fail verification if cache update fails
+            }
+
             let result_text = format!(
                 "✓ Server '{}' verification successful\n\n\
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {}\n\
+                Available tools: {} (cached)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
                 name, transport_type, transport_details, tool_count, latency_ms

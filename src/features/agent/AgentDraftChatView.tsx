@@ -155,8 +155,8 @@ function DraftChatInner() {
         // Setup temporary listener for initialization steps BEFORE creating session
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
           if (
-            event.payload.sessionId === newSessionId &&
-            event.payload.type === 'initializationStep'
+            event.payload.type === 'initializationStep' &&
+            event.payload.sessionId === newSessionId
           ) {
             const step = event.payload.step;
             if (toastId) {
@@ -242,7 +242,15 @@ function DraftChatInner() {
         if (unlisten) unlisten();
       }
     },
-    [input, assistant, isSubmitting, navigate, settings],
+    [
+      input,
+      assistant,
+      isSubmitting,
+      navigate,
+      settings,
+      overrideModel,
+      overrideProvider,
+    ],
   );
 
   if (isLoadingAssistant) {

@@ -9,7 +9,8 @@ use tauri::command;
 pub struct MCPServerDto {
     pub id: String,
     pub name: String,
-    pub config: Value, // JSON config
+    pub config: Value,           // JSON config
+    pub tool_count: Option<i32>, // Cached tool count from last verification/connection
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -20,6 +21,7 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
             id: model.name.clone(), // ID is name for MCP servers in current schema
             name: model.name,
             config: serde_json::from_str(&model.config).unwrap_or(Value::Null),
+            tool_count: model.tool_count, // Include cached tool count
             created_at: model.created_at,
             updated_at: model.updated_at,
         }

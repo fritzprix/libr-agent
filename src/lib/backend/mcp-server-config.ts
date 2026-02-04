@@ -9,6 +9,7 @@ interface MCPServerDto {
   id: string; // Likely name
   name: string;
   config: unknown; // JSON
+  toolCount: number | null; // Cached tool count from last verification/connection
   createdAt: number;
   updatedAt: number;
 }
@@ -24,6 +25,7 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
     transport: (config as Record<string, unknown>).transport,
     authentication: (config as Record<string, unknown>).authentication,
     metadata: (config as Record<string, unknown>).metadata,
+    toolCount: dto.toolCount !== null ? dto.toolCount : undefined, // Convert null to undefined
     isActive: true, // Backend stored configs are generally considered "available". Activity state is runtime.
     // But wait, frontend has isActive toggle.
     // Where is isActive stored? Likely inside 'config' JSON in backend.
