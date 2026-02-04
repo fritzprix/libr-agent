@@ -4,7 +4,6 @@ import React, {
   useRef,
   useEffect,
   memo,
-  useState,
 } from 'react';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { ThinkingBubble } from './shared';
@@ -52,28 +51,6 @@ const logger = getLogger('AgentMessageRenderer');
 // Define plugins outside component to maintain stable references
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex];
-
-/**
- * Custom hook to detect dark mode preference
- * Avoids querying window.matchMedia in every render cycle
- */
-function useIsDarkMode() {
-  const [isDark, setIsDark] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches,
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    media.addEventListener('change', handler);
-    return () => media.removeEventListener('change', handler);
-  }, []);
-
-  return isDark;
-}
 
 // Extract CodeBlock component to allow injecting isDark prop
 const CodeBlock = ({
@@ -264,6 +241,8 @@ interface AgentMessageRendererProps {
   expandResources?: boolean;
   /** Map of tool call ID to result message (for unified rendering) */
   toolResultsMap?: Map<string, Message>;
+  /** Dark mode flag passed from parent to avoid redundant listeners */
+  isDark?: boolean;
 }
 
 /**
@@ -283,15 +262,13 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   className = '',
   expandResources = false,
   toolResultsMap,
+  isDark = false,
 }) => {
   const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
   const { submit, injectMessages } = useAgentChatActions();
   const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
-
-  // Detect dark mode once per component mount (or change)
-  const isDark = useIsDarkMode();
 
   // Memoize markdown components to include dynamic isDark prop
   // This avoids window.matchMedia calls in every code block render
@@ -748,6 +725,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 toolResults={toolGroupResults}
                 isLast={index === renderItems.length - 1} // flawed if text follows, but acceptable for visibility logic
                 visibleCount={999} // Expand by default for interleaved? Or keep default 3? Let's default.
+                isDark={isDark}
               />
             </div>
           );

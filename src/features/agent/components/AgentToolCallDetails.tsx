@@ -9,6 +9,7 @@ interface AgentToolCallDetailsProps {
   toolResult?: Message;
   hasError?: boolean;
   isLoading?: boolean;
+  isDark?: boolean;
 }
 
 /**
@@ -23,6 +24,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   toolResult,
   hasError = false,
   isLoading = false,
+  isDark,
 }) => {
   const params = parseToolArguments(toolCall.function.arguments);
   const hasParams = Object.keys(params).length > 0;
@@ -57,6 +59,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
                   <AgentMessageRenderer
                     message={toolResult}
                     className="text-sm text-foreground"
+                    isDark={isDark}
                   />
                 </div>
               </div>
@@ -67,6 +70,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
                 message={toolResult}
                 className="text-sm"
                 expandResources={true}
+                isDark={isDark}
               />
             </div>
           )}

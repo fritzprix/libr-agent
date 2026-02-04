@@ -27,6 +27,7 @@ interface AgentToolCallGroupProps {
   toolResults: (Message | undefined)[];
   isLast?: boolean;
   visibleCount?: number; // Default visible count if settings not available
+  isDark?: boolean;
 }
 
 interface StatusSummary {
@@ -62,6 +63,7 @@ interface ToolCallCompactItemProps {
   toolCall: ToolCall;
   toolResult?: Message;
   isLast?: boolean;
+  isDark?: boolean;
 }
 
 interface ToolStatusIconProps {
@@ -213,6 +215,7 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
   isLast = false,
+  isDark,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -288,6 +291,7 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
             toolResult={toolResult}
             hasError={hasError}
             isLoading={!toolResult}
+            isDark={isDark}
           />
         </div>
       )}
@@ -304,6 +308,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   toolResults,
   isLast = false,
   visibleCount = 3, // Default to 3 if not provided
+  isDark,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -382,6 +387,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
               toolCall={toolCall}
               toolResult={toolResult}
               isLast={isLastItem}
+              isDark={isDark}
             />
           );
         })}
@@ -409,6 +415,7 @@ function arePropsEqual(
   // Check primitive props
   if (prev.isLast !== next.isLast) return false;
   if (prev.visibleCount !== next.visibleCount) return false;
+  if (prev.isDark !== next.isDark) return false;
 
   // Check calls array content (length and reference of items)
   // We assume ToolCall objects inside are stable if unchanged.

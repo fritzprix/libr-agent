@@ -11,6 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
+  isDark?: boolean;
 }
 
 function AgentMessageBubbleImpl({
@@ -19,6 +20,7 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
+  isDark,
 }: AgentMessageBubbleProps) {
   const getAssistantNameForMessage = useCallback(
     (msg: Message) => {
@@ -142,6 +144,7 @@ function AgentMessageBubbleImpl({
                   content={displayContent || msg.content}
                   message={msg}
                   toolResultsMap={toolResultsMap}
+                  isDark={isDark}
                 />
               </>
             ) : (

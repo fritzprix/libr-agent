@@ -4,6 +4,7 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { useThrottle } from '@/hooks/useThrottle';
+import { useIsDarkMode } from '@/hooks/useIsDarkMode';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
@@ -15,6 +16,9 @@ export function AgentChatMessages() {
     useAgentChat();
   const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
+
+  // Detect dark mode once at the top level
+  const isDark = useIsDarkMode();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -114,6 +118,7 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
+                isDark={isDark}
               />
             );
           }
@@ -156,6 +161,7 @@ export function AgentChatMessages() {
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
+              isDark={isDark}
             />
           );
         })}
