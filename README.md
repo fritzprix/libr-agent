@@ -113,6 +113,12 @@ Download from [releases](https://github.com/fritzprix/libr-agent/releases/latest
 
 Or build from source:
 
+> **Linux (Debian/Ubuntu) Build Prerequisites:**
+>
+> ```bash
+> sudo apt install libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev
+> ```
+
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent
