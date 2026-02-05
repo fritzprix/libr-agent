@@ -1,11 +1,4 @@
-import React, {
-  useCallback,
-  useMemo,
-  useRef,
-  useEffect,
-  memo,
-  useState,
-} from 'react';
+import React, { useCallback, useMemo, useRef, useEffect, memo } from 'react';
 import { AgentToolCallGroup } from './AgentToolCallGroup';
 import { ThinkingBubble } from './shared';
 import ReactMarkdown from 'react-markdown';
@@ -26,6 +19,7 @@ import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
 import { Highlight, themes } from 'prism-react-renderer';
+import { useTheme } from 'next-themes';
 import {
   basicComponentLibrary,
   UIResourceRenderer,
@@ -54,25 +48,12 @@ const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex];
 
 /**
- * Custom hook to detect dark mode preference
- * Avoids querying window.matchMedia in every render cycle
+ * Custom hook to detect dark mode from centralized theme state
+ * Uses next-themes resolvedTheme to ensure consistency with app theme
  */
 function useIsDarkMode() {
-  const [isDark, setIsDark] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches,
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    media.addEventListener('change', handler);
-    return () => media.removeEventListener('change', handler);
-  }, []);
-
-  return isDark;
+  const { resolvedTheme } = useTheme();
+  return resolvedTheme === 'dark';
 }
 
 // Extract CodeBlock component to allow injecting isDark prop
