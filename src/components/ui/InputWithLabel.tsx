@@ -28,6 +28,7 @@ export default function InputWithLabel({
     return (
       <Input
         id={inputId}
+        aria-describedby={errorId}
         aria-invalid={!!error}
         className={cn(
           'w-full bg-transparent border-none outline-none text-success px-0 py-1 terminal-input focus:ring-2 focus:ring-success focus:ring-offset-2 focus:ring-offset-black transition-all duration-200',
