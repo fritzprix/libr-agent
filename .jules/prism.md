@@ -95,3 +95,7 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-28 - [AgentMessageRenderer] **Visual Bug:** Magic number height (min-h-[50vh]) **Fix:** Use standard spacing token (min-h-96)
 
 ## 2026-01-28 - [SessionFilesPopover] **Visual Bug:** Magic number height (max-h-[80vh]) **Fix:** Use percentage based height (max-h-[80%])
+
+## 2026-01-28 - [AgentMessageRenderer] **Visual Bug:** Hardcoded link color (text-blue-600) **Fix:** Use semantic token (text-primary)
+
+## 2026-01-28 - [TextareaWithLabel] **Visual Bug:** Hardcoded error border color (border-red-400) **Fix:** Use semantic token (border-destructive)
