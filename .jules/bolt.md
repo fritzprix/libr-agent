@@ -42,3 +42,8 @@
 
 **Learning:** `AgentMessageRenderer` was calling `window.matchMedia` inside the render function of every `<code>` block to check for dark mode. For long messages with many code blocks, this caused excessive DOM queries and layout invalidation risks.
 **Action:** Move global environment checks (like dark mode) to a custom hook (`useIsDarkMode`) at the parent level and inject the value into memoized components via props, preventing repeated DOM queries.
+
+## 2026-02-05 - Lazy Map Cloning and Group Reuse
+
+**Learning:** `useMessageGrouping` was performing O(N) map cloning and scanning on every streaming token update, even when the new content (text) didn't add any new tool results. It also unnecessarily re-evaluated stable "single" message groups ending at the divergence point.
+**Action:** Implement "lazy cloning" for derived maps: track the index of the last contributing item (`lastToolResultIndex`) and reuse the previous map reference if the update is strictly after that index. Also, allow reusing "single" message groups ending at the divergence point since they can't consume subsequent messages.

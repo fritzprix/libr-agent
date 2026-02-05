@@ -215,10 +215,14 @@ describe('useMessageGrouping', () => {
     const secondResult = result.current;
 
     // First group should be strictly equal (same object reference)
-    // Note: The second group (msg2) ends exactly at divergence index, so it is re-evaluated
-    // to check if it merges with the new message. This is expected behavior for correctness.
     expect(secondResult.groupedMessages[0]).toBe(firstResult.groupedMessages[0]);
-    expect(secondResult.groupedMessages[1]).not.toBe(firstResult.groupedMessages[1]);
+
+    // OPTIMIZATION UPDATE:
+    // The second group (msg2) ends exactly at divergence index. Previously, it was re-evaluated.
+    // However, since it is a 'single' message type, it cannot consume subsequent messages.
+    // Thus, it is safe to reuse it, ensuring referential stability for the stable prefix.
+    expect(secondResult.groupedMessages[1]).toBe(firstResult.groupedMessages[1]);
+
     // But content should be same
     expect(secondResult.groupedMessages[1].message.id).toBe(firstResult.groupedMessages[1].message.id);
 
