@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 export interface FieldWrapperProps {
   label?: string;
   error?: string;
+  inputId?: string;
+  errorId?: string;
   containerClassName?: string;
   labelClassName?: string;
   children: React.ReactNode;
@@ -13,6 +15,8 @@ export interface FieldWrapperProps {
 export function FieldWrapper({
   label,
   error,
+  inputId,
+  errorId,
   containerClassName,
   labelClassName,
   children,
@@ -20,12 +24,19 @@ export function FieldWrapper({
   return (
     <div className={containerClassName}>
       {label && (
-        <Label className={cn('block mb-2 font-medium', labelClassName)}>
+        <Label
+          htmlFor={inputId}
+          className={cn('block mb-2 font-medium', labelClassName)}
+        >
           {label}
         </Label>
       )}
       {children}
-      {error && <p className="text-destructive text-xs mt-1">{error}</p>}
+      {error && (
+        <p id={errorId} className="text-destructive text-xs mt-1">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
