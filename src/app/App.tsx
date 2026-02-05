@@ -26,7 +26,7 @@ import '../styles/globals.css';
 import './App.css';
 // Removed legacy tool provider imports
 import { DnDContextProvider } from '@/context/DnDContext';
-import { LLMServiceProvider } from '@/context/LLMServiceContext';
+import { LLMServiceProvider } from '@/context/llm-service';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
 
 function App() {

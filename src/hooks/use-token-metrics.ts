@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useLLMService } from '@/context/LLMServiceContext';
+import { useLLMService } from '@/context/llm-service';
 import type { TokenUsage } from '@/lib/ai-service/types';
 
 export function useTokenMetrics(sessionId: string | undefined): {

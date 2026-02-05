@@ -11,7 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
 import type { Message } from '@/models/chat';
 import { getMessagesPageForSession } from '@/lib/backend/messages';
-import { LLMServiceProvider } from '../LLMServiceContext';
+import { LLMServiceProvider } from '../llm-service';
 import { SettingsProvider } from '../SettingsContext';
 import type { ReactNode } from 'react';
 
