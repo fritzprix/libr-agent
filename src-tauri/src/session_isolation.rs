@@ -227,7 +227,13 @@ impl SessionIsolationManager {
                 let full_command = if config.args.is_empty() {
                     config.command.clone()
                 } else {
-                    format!("{} {}", config.command, config.args.join(" "))
+                    // CRITICAL FIX: Escape arguments to prevent injection
+                    let escaped_args: Vec<String> = config
+                        .args
+                        .iter()
+                        .map(|arg| format!("'{}'", arg.replace("'", "''")))
+                        .collect();
+                    format!("{} {}", config.command, escaped_args.join(" "))
                 };
 
                 // Override to use PowerShell
@@ -289,13 +295,21 @@ impl SessionIsolationManager {
             }
         } else {
             // Unix shells (bash, sh) use -c flag
-            let full_command = if config.args.is_empty() {
-                config.command.clone()
+            if config.args.is_empty() {
+                info!("Unix shell execution: {} -c {}", shell_cmd, config.command);
+                cmd.args(["-c", &config.command]);
             } else {
-                format!("{} {}", config.command, config.args.join(" "))
-            };
-            info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
-            cmd.args(["-c", &full_command]);
+                // Safe argument handling using "$@" to pass args as parameters
+                info!(
+                    "Unix shell execution with args: {} {:?}",
+                    config.command, config.args
+                );
+                cmd.arg("-c");
+                cmd.arg("\"$@\"");
+                cmd.arg("--"); // $0 (script name)
+                cmd.arg(&config.command); // $1 (actual command)
+                cmd.args(&config.args); // $2...
+            }
         }
 
         info!(

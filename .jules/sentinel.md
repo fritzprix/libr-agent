@@ -1,0 +1,4 @@
+## 2026-02-06 - Command Injection in Isolation Wrapper
+**Vulnerability:** The session isolation manager blindly concatenated shell command arguments using spaces when constructing wrapper commands for `bash -c` and PowerShell. This allowed command injection if the arguments list contained shell metacharacters, bypassing the intended command structure.
+**Learning:** Even if input fields are currently unused or empty in practice (like `args`), providing an insecure implementation in a security-critical module invites future vulnerabilities when those fields are eventually used.
+**Prevention:** Never use string concatenation to build shell commands. Use the shell's argument vector support (e.g., `bash -c "$@"`) or robust escaping mechanisms (PowerShell single-quote escaping) to treat arguments as data, not code.
