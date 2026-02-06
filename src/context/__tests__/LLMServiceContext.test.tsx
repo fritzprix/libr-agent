@@ -1,6 +1,6 @@
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
+import { LLMServiceProvider, useLLMService } from '../llm-service';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { AIServiceFactory } from '@/lib/ai-service/factory';

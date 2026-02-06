@@ -11,7 +11,7 @@ import {
   useAgentSessionState,
   useAgentSessionActions,
 } from './AgentSessionContext';
-import { useLLMService } from './LLMServiceContext';
+import { useLLMService } from './llm-service';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';
 import type { Message, RustMessage } from '@/models/chat';

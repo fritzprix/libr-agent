@@ -30,7 +30,7 @@ export type {
 };
 export { DEFAULT_SETTING };
 
-interface SettingsContextType {
+export interface SettingsContextType {
   value: Settings;
   update: (settings: Partial<Settings>) => Promise<void>;
   isLoading: boolean;
