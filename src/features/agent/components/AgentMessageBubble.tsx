@@ -1,4 +1,4 @@
-import { useCallback, memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type { MCPContent, MCPToolCallContent } from '@/lib/mcp-types';
@@ -20,17 +20,6 @@ function AgentMessageBubbleImpl({
   groupedToolCalls,
   groupedMessages,
 }: AgentMessageBubbleProps) {
-  const getAssistantNameForMessage = useCallback(
-    (msg: Message) => {
-      if (getAssistantName) return getAssistantName(msg);
-      if (msg.role === 'assistant') {
-        return 'Agent';
-      }
-      return '';
-    },
-    [getAssistantName],
-  );
-
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -94,7 +83,8 @@ function AgentMessageBubbleImpl({
         >
           <div className="text-xs font-semibold mb-1 opacity-70">
             {msg.role === 'assistant'
-              ? getAssistantNameForMessage(msg) || 'ASSISTANT'
+              ? (getAssistantName ? getAssistantName(msg) : 'Agent') ||
+                'ASSISTANT'
               : msg.role.toUpperCase()}
           </div>
           <div className="whitespace-pre-wrap">
