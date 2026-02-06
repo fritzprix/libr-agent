@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::mcp::builtin::error_guidance::{
-    ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};

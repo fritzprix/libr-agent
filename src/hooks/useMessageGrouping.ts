@@ -145,7 +145,10 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         const msg = messages[prefixIndex];
         if (msg.role === 'tool' && msg.tool_call_id) {
           toolResultsMap.set(msg.tool_call_id, msg);
-          newLastToolResultIndex = Math.max(newLastToolResultIndex, prefixIndex);
+          newLastToolResultIndex = Math.max(
+            newLastToolResultIndex,
+            prefixIndex,
+          );
         }
       }
     }

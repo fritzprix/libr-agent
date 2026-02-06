@@ -16,7 +16,7 @@ CREATE INDEX idx_assistants_name ON assistants(name);
 CREATE INDEX idx_messages_session_id ON messages(session_id);
 
 -- Composite index for multi-column queries
-CREATE INDEX idx_messages_session_created 
+CREATE INDEX idx_messages_session_created
 ON messages(session_id, created_at DESC);
 ```
 
@@ -30,7 +30,7 @@ ON messages(session_id, created_at DESC);
 
 ```sql
 EXPLAIN QUERY PLAN
-SELECT m.* 
+SELECT m.*
 FROM messages m
 JOIN sessions s ON m.session_id = s.id
 WHERE s.assistant_id = 'asst_123'
@@ -39,6 +39,7 @@ LIMIT 50;
 ```
 
 **Output Interpretation**:
+
 - `SCAN TABLE` - Full table scan (slow, needs index)
 - `SEARCH TABLE ... USING INDEX` - Uses index (fast)
 - `USE TEMP B-TREE FOR ORDER BY` - Sorts in memory (acceptable for small results)
@@ -48,19 +49,21 @@ LIMIT 50;
 ### 3. Pagination Best Practices
 
 **❌ WRONG** (Slow for large offsets):
+
 ```sql
 SELECT * FROM messages ORDER BY created_at DESC LIMIT 50 OFFSET 10000;
 ```
 
 **✅ CORRECT** (Cursor-based pagination):
+
 ```sql
 -- First page
 SELECT * FROM messages ORDER BY created_at DESC LIMIT 50;
 
 -- Next page (using last created_at from previous page)
-SELECT * FROM messages 
+SELECT * FROM messages
 WHERE created_at < ?last_created_at
-ORDER BY created_at DESC 
+ORDER BY created_at DESC
 LIMIT 50;
 ```
 
@@ -69,17 +72,20 @@ LIMIT 50;
 ### 4. Foreign Key Performance
 
 **Enable foreign key constraints**:
+
 ```sql
 PRAGMA foreign_keys = ON;
 ```
 
 **Check constraint violations** (expensive, run occasionally):
+
 ```sql
 PRAGMA foreign_key_check;
 PRAGMA foreign_key_check(table_name);
 ```
 
 **Index foreign key columns**:
+
 ```sql
 -- Speeds up JOIN operations
 CREATE INDEX idx_messages_session_id ON messages(session_id);
@@ -91,6 +97,7 @@ CREATE INDEX idx_sessions_assistant_id ON sessions(assistant_id);
 ### 5. Aggregate Query Optimization
 
 **COUNT() optimization**:
+
 ```sql
 -- ❌ SLOW: Full table scan
 SELECT COUNT(*) FROM messages WHERE session_id = 'sess_123';
@@ -101,6 +108,7 @@ SELECT COUNT(*) FROM messages WHERE session_id = 'sess_123';
 ```
 
 **Statistics queries**:
+
 ```sql
 -- Get approximate row count (fast)
 SELECT seq FROM sqlite_sequence WHERE name='messages';
@@ -115,6 +123,7 @@ SELECT * FROM sqlite_stat1;
 ### 6. Transaction Performance
 
 **Batch inserts**:
+
 ```sql
 BEGIN TRANSACTION;
 INSERT INTO messages (session_id, role, content) VALUES ('s1', 'user', 'Hi');
@@ -132,6 +141,7 @@ COMMIT;
 #### Anti-Pattern 1: N+1 Query Problem
 
 **❌ WRONG**:
+
 ```rust
 // Fetches assistants
 let assistants = get_all_assistants().await?;
@@ -144,6 +154,7 @@ for assistant in assistants {
 ```
 
 **✅ CORRECT**:
+
 ```rust
 // Fetch all assistants
 let assistants = get_all_assistants().await?;
@@ -158,17 +169,19 @@ let all_server_ids: Vec<String> = assistants
 let all_servers = get_mcp_servers_by_ids(&all_server_ids).await?;
 ```
 
-#### Anti-Pattern 2: SELECT *
+#### Anti-Pattern 2: SELECT \*
 
 **❌ WRONG**:
+
 ```sql
 SELECT * FROM messages WHERE session_id = 'sess_123';
 ```
 
 **✅ CORRECT**:
+
 ```sql
-SELECT id, role, content, created_at 
-FROM messages 
+SELECT id, role, content, created_at
+FROM messages
 WHERE session_id = 'sess_123';
 ```
 
@@ -179,6 +192,7 @@ WHERE session_id = 'sess_123';
 ### 8. Query Profiling
 
 **Measure query performance**:
+
 ```sql
 -- Turn on timing
 .timer on
@@ -190,6 +204,7 @@ SELECT COUNT(*) FROM messages;
 ```
 
 **Use ANALYZE for query planner**:
+
 ```sql
 ANALYZE;
 -- Now query planner has better statistics
@@ -202,7 +217,7 @@ ANALYZE;
 - [ ] Indexes created for frequently queried columns
 - [ ] Foreign key columns indexed
 - [ ] Composite indexes for multi-column WHERE clauses
-- [ ] Avoid SELECT * - specify columns
+- [ ] Avoid SELECT \* - specify columns
 - [ ] Use cursor-based pagination for large datasets
 - [ ] Batch inserts in transactions
 - [ ] Avoid N+1 query problems
@@ -214,9 +229,10 @@ ANALYZE;
 ## Benchmarking Tips
 
 **Test with realistic data volume**:
+
 ```sql
 -- Check row counts
-SELECT 
+SELECT
     name AS table_name,
     (SELECT COUNT(*) FROM sqlite_master sm WHERE sm.name = m.name) AS row_count
 FROM sqlite_master m

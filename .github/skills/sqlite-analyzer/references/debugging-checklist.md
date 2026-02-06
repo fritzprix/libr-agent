@@ -269,18 +269,23 @@ impl From<Model> for MCPServerDto {
 
 ```typescript
 // In service.ts
-export async function getMCPServersByIds(ids: string[]): Promise<MCPServerDto[]> {
+export async function getMCPServersByIds(
+  ids: string[],
+): Promise<MCPServerDto[]> {
   const logger = getLogger('DBService');
-  
+
   const allServers = await getAllMCPServers();
   logger.debug('🔍 Database getMCPServersByIds', {
     requestedIds: ids,
-    allServersFromBackend: allServers.map(s => ({ id: s.id, name: s.name })),
+    allServersFromBackend: allServers.map((s) => ({ id: s.id, name: s.name })),
   });
-  
-  const filtered = allServers.filter(server => ids.includes(server.id));
-  logger.debug('🎯 Filtered servers', { count: filtered.length, servers: filtered });
-  
+
+  const filtered = allServers.filter((server) => ids.includes(server.id));
+  logger.debug('🎯 Filtered servers', {
+    count: filtered.length,
+    servers: filtered,
+  });
+
   return filtered;
 }
 ```
@@ -453,12 +458,12 @@ PRAGMA foreign_key_check;
 
 ## Tools Reference
 
-| Tool | Purpose | Usage |
-|------|---------|-------|
+| Tool                | Purpose                | Usage                                         |
+| ------------------- | ---------------------- | --------------------------------------------- |
 | `analyze_schema.py` | Generate schema report | `python analyze_schema.py db.db -o report.md` |
-| `find_orphans.py` | Find orphaned records | `python find_orphans.py db.db` |
-| `compare_ids.py` | Detect ID format bugs | `python compare_ids.py db.db -t table_name` |
-| `export_sample.py` | Export sample data | `python export_sample.py db.db table -f json` |
+| `find_orphans.py`   | Find orphaned records  | `python find_orphans.py db.db`                |
+| `compare_ids.py`    | Detect ID format bugs  | `python compare_ids.py db.db -t table_name`   |
+| `export_sample.py`  | Export sample data     | `python export_sample.py db.db table -f json` |
 
 ---
 

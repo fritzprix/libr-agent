@@ -54,6 +54,7 @@ CREATE TABLE assistants (
 ```
 
 **Problems**:
+
 - Can't query efficiently
 - Can't enforce foreign key constraints
 - Can't join properly
@@ -173,8 +174,8 @@ UPDATE sessions SET deleted_at = strftime('%s', 'now') WHERE id = 'sess_123';
 UPDATE sessions SET deleted_at = NULL WHERE id = 'sess_123';
 
 -- Permanent cleanup (run periodically)
-DELETE FROM sessions 
-WHERE deleted_at IS NOT NULL 
+DELETE FROM sessions
+WHERE deleted_at IS NOT NULL
 AND deleted_at < strftime('%s', 'now') - (30 * 24 * 60 * 60);  -- 30 days ago
 ```
 
@@ -226,8 +227,8 @@ CREATE TABLE mcp_servers (
 
 ```sql
 -- Extract JSON field
-SELECT 
-    id, 
+SELECT
+    id,
     name,
     json_extract(config, '$.transport.type') as transport_type
 FROM mcp_servers;

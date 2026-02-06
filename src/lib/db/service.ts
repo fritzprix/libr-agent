@@ -88,21 +88,21 @@ export const dbUtils = {
     // Backend doesn't have bulk get. Fetch all and filter? Or loop get?
     // List is usually small.
     const all = await mcpBackent.listMCPServers();
-    
+
     // Debug: Log all servers in database
     logger.info('🔍 Database getMCPServersByIds', {
       requestedIds: ids,
       allServersCount: all.length,
-      allServers: all.map(s => ({ id: s.id, name: s.name }))
+      allServers: all.map((s) => ({ id: s.id, name: s.name })),
     });
-    
+
     const filtered = all.filter((s) => ids.includes(s.id));
-    
+
     logger.info('🎯 Filtered servers', {
       filteredCount: filtered.length,
-      filtered: filtered.map(s => ({ id: s.id, name: s.name }))
+      filtered: filtered.map((s) => ({ id: s.id, name: s.name })),
     });
-    
+
     return filtered;
   },
   mcpServerExists: async (id: string): Promise<boolean> => {
