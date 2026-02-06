@@ -95,7 +95,9 @@ function AgentMessageBubbleImpl({
           <div className="text-xs font-semibold mb-1 opacity-70">
             {msg.role === 'assistant'
               ? getAssistantNameForMessage(msg) || 'ASSISTANT'
-              : msg.role.toUpperCase()}
+              : msg.role === 'user'
+                ? 'You'
+                : msg.role.toUpperCase()}
           </div>
           <div className="whitespace-pre-wrap">
             {/* File Attachments Display */}
@@ -108,9 +110,9 @@ function AgentMessageBubbleImpl({
                     {msg.attachments.length > 1 ? 's' : ''} attached
                   </span>
                 </div>
-                <div className="space-y-2">
+                <ul className="space-y-2" aria-label="Attached files">
                   {msg.attachments.map((attachment) => (
-                    <div
+                    <li
                       key={attachment.contentId}
                       className="flex items-center justify-between p-2 bg-background/50 rounded border"
                     >
@@ -126,9 +128,9 @@ function AgentMessageBubbleImpl({
                       <div className="text-xs opacity-50 whitespace-nowrap ml-2">
                         {attachment.lineCount} lines
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
 
