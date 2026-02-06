@@ -287,17 +287,19 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
       code: ({
         children,
         className,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         node, // Destructure node to exclude it from props passed to CodeBlock
         ...props
       }: React.ComponentPropsWithoutRef<'code'> & {
         inline?: boolean;
         node?: unknown;
-      }) => (
-        <CodeBlock isDark={isDark} className={className} {...props}>
-          {children}
-        </CodeBlock>
-      ),
+      }) => {
+        void node; // Explicitly mark as intentionally unused to satisfy linter
+        return (
+          <CodeBlock isDark={isDark} className={className} {...props}>
+            {children}
+          </CodeBlock>
+        );
+      },
     }),
     [isDark],
   );
