@@ -21,10 +21,11 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
 
     let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
-    // Try to update first, create if doesn't exist
-    match repo.get(server_name).await {
-        Ok(Some(_)) => {
-            repo.update(server_name, config_value)
+    // Try to update first (by name lookup), create if doesn't exist
+    match repo.get_by_name(server_name).await {
+        Ok(Some(existing)) => {
+            // Update by ID with new config
+            repo.update(&existing.id, None, Some(config_value))
                 .await
                 .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
         }
@@ -40,7 +41,15 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
 
 async fn delete_server_config_db(name: String) -> Result<(), String> {
     let repo = get_mcp_server_repository();
-    repo.delete(&name)
+
+    // Lookup by name first, then delete by ID
+    let server = repo
+        .get_by_name(&name)
+        .await
+        .map_err(|e| format!("DB Query Error: {}", e))?
+        .ok_or_else(|| format!("MCP server '{}' not found", name))?;
+
+    repo.delete(&server.id)
         .await
         .map_err(|e| format!("DB Delete Error: {}", e))?;
     Ok(())

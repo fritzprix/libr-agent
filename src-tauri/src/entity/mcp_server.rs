@@ -8,7 +8,9 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "mcp_servers")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub name: String,
+    pub id: String, // Immutable UUID (cuid2)
+    #[sea_orm(unique)]
+    pub name: String, // User-visible identifier (mutable, but unique)
     pub config: String,          // JSON stored as TEXT
     pub tool_count: Option<i32>, // Cached tool count (from last verification/connection)
     pub created_at: i64,

@@ -266,12 +266,6 @@ export interface Assistant {
   allowedBuiltInServiceAliases?: string[];
   deletionProtected: boolean;
 
-  // Model configuration
-  model?: string;
-  provider?: string;
-  temperature?: number;
-  maxTokens?: number;
-
   createdAt: Date;
   updatedAt: Date;
 }

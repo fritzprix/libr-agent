@@ -8,30 +8,39 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 ## Key Architecture Patterns
 
-**Dual MCP Backend System:**
+**Agent V2 Architecture (Session-Isolated):**
 
-- **Rust Tauri Backend**: Native stdio MCP server communication via `MCPServerManager`
-- **Web Worker Backend**: Browser-based MCP servers for dependency-free execution (`src/lib/web-mcp/`)
-- **Unified API**: `rust-backend-client.ts` provides consistent interface using `safeInvoke()` wrapper
+- **Per-Session Tool Instances**: Each agent session gets isolated `MCPServiceProxy` with dedicated builtin server instances
+- **Session-Specific MCP Managers**: Separate `HttpSessionManager` and `SessionMCPManager` per session
+- **Context Registry System**: Dynamic context providers (time/location, skills) inject state into system prompts
+- **Rust-Orchestrated Workflows**: Think-Act-Observe loop managed entirely in Rust backend (`AgentSessionManager`)
+
+**MCP Integration Architecture:**
+
+- **External MCP Servers**: Stdio/HTTP protocol via `rmcp` library, managed by session-isolated managers
+- **Builtin MCP Servers**: Native Rust implementations via `BuiltinMCPServer` trait
+  - Planning, Knowledge, Browser, Workspace, Content Store, etc.
+  - Session-isolated instances with dedicated state
+- **Unified Tool Discovery**: `MCPServiceProxy` routes calls to builtin or external servers transparently
 
 **Feature-Based Organization:**
 
 - Each feature in `src/features/` contains components, hooks, and README documentation
 - Compound component patterns (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`)
-- React Context providers for state sharing (`ChatProvider`, `EditorProvider`, `WebMCPProvider`)
+- React Context providers for state sharing (`ChatProvider`, `AgentSessionProvider`, `AgentChatProvider`)
 
 **Service Layer Pattern:**
 
-- `src/lib/` contains business logic and Tauri command wrappers
+- `src/lib/backend/` contains Tauri command wrappers with centralized `safeInvoke()` utility
 - Centralized logging via `getLogger('ComponentName')` instead of console methods
-- All API communication through service classes with error handling
+- All API communication through typed service modules with error handling
 
 **Key Features:**
 
-- **AI Agent Management**: Role-based system prompts and multi-agent collaboration
+- **AI Agent Management**: Session-isolated agents with independent tool state and context
 - **LLM Provider Support**: 8 providers, 50+ models including reasoning models (o3, DeepSeek R1)
-- **Built-in Tool Ecosystem**: SecureFileManager, code execution, browser automation
-- **MCP Integration**: Real-time stdio protocol with security validation
+- **Built-in Tool Ecosystem**: Planning, Knowledge, Browser, Workspace, Code Execution
+- **MCP Integration**: Session-isolated stdio/HTTP protocol with security validation
 
 ## Technology Stack
 
@@ -47,16 +56,17 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 - Tailwind CSS 4.x (Latest utility-first styling)
 - Radix UI (Accessible component primitives)
-- Dexie (TypeScript-friendly IndexedDB wrapper)
-- Zustand (Lightweight state management)
-- Vite (Fast development and build tool)
+- SeaORM (Database ORM for SQLite, used via Rust backend)
+- React Context (State management with providers)
+- Vite 6.x (Fast development and build tool)
 
 **Backend Technologies:**
 
 - Rust (High-performance native operations)
-- Tokio (Async runtime for concurrent operations)
-- SecurityValidator (Built-in security validation)
-- Warp (HTTP server for browser automation)
+- Tokio 1.49+ (Async runtime for concurrent operations)
+- SeaORM (Type-safe database ORM for SQLite)
+- rmcp 0.8.1+ (MCP client library with stdio/HTTP transport)
+- reqwest 0.12+ (HTTP client for MCP servers and browser automation)
 
 ## Development Scripts & Workflow
 
@@ -474,31 +484,48 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 ### Layer Responsibilities
 
-- Use `shadcn/ui` components as the primary building blocks for UI, customizing as needed for project requirements.
-- Manages local UI state and user input validation.
-- Communicates with Tauri backend through the service layer.
+**Frontend Layer (`src/`):**
 
-#### Service Layer (`src/lib/`)
+- Use `shadcn/ui` components as the primary building blocks for UI
+- Manages local UI state via React Context providers
+- Communicates with Tauri backend through `src/lib/backend/` service modules
+- React components consume state from context providers (no prop drilling)
 
-- Business logic and data transformation.
-- Tauri command invocations and API integrations.
-- IndexedDB operations and local data management.
-- MCP client communication protocols.
+**Service Layer (`src/lib/backend/`):**
 
-#### Backend Layer (`src-tauri/src/`)
+- Typed wrappers around Tauri commands using `safeInvoke()`
+- Centralized error handling and logging
+- Type-safe API contracts between frontend and backend
+- Organized by domain (assistants, browser, mcp-server, workspace, etc.)
 
-- Native system operations and file I/O.
-- MCP server process management and stdio communication.
-- Cross-platform compatibility handling.
-- Security and permission management.
+**Backend Layer (`src-tauri/src/`):**
+
+- **Agent Orchestration** (`agent/`): Session lifecycle, LLM interaction, tool execution
+- **MCP Integration** (`mcp/`): Session-isolated server managers and builtin tool implementations
+- **Database Layer** (`repositories/`, `entities/`): SeaORM models and data access
+- **Service Layer** (`services/`): Browser automation, workspace management
+- **Commands** (`commands/`): Tauri command handlers exposing backend functionality
 
 ### Data Flow
 
-1. User interaction in React components
-2. Service layer processes requests and calls Tauri commands
-3. Rust backend executes native operations or MCP communications
-4. Results flow back through the same layers
-5. UI updates reflect the changes
+**Legacy Chat V1 (React-Orchestrated):**
+
+1. User sends message via `ChatInput` component
+2. `ChatProvider` context invokes LLM service
+3. LLM response triggers tool calls
+4. `BuiltInToolProvider` routes to appropriate backend
+5. Results returned to `MessageRenderer` for display
+
+**Agent V2 (Rust-Orchestrated):**
+
+1. User sends task via `AgentChatProvider`
+2. Rust `AgentSessionManager` starts Think-Act-Observe loop
+3. Backend builds system prompt with context providers + service contexts
+4. LLM generates tool calls, backend executes via `MCPServiceProxy`
+5. Backend emits events (`agent:event`) to update UI reactively
+6. Frontend (`AgentSessionContext`) consumes events and updates message list
+
+**Key Difference:** In Agent V2, frontend is purely reactive. All orchestration logic (loop control, tool execution, state management) resides in Rust.
 
 ### Service Context System
 
@@ -592,6 +619,83 @@ ServiceContext {
 ```
 
 **Remember:** `context_prompt` is the ONLY field that reaches the AI's system prompt. Everything else is discarded during prompt construction.
+
+### Agent V2 Architecture
+
+**Overview:**
+
+Agent V2 is a "Dual-Track" architecture supporting autonomous, multi-turn workflows while maintaining legacy chat compatibility:
+
+- **Track 1 (Legacy Chat V1)**: Standard request/response chat orchestrated by React (`ChatContext`)
+- **Track 2 (Agent V2)**: Autonomous workflows orchestrated entirely by Rust backend (`AgentSessionManager`)
+
+**Rust-Based Orchestration:**
+
+```
+AgentSessionManager (Rust)
+  ├── Session Lifecycle (create, recover, cleanup)
+  ├── Workflow Control (start, stop, pause, resume)
+  ├── LLM Interaction (Think phase)
+  └── Tool Execution (Act phase) → MCPServiceProxy
+```
+
+**Session Isolation:**
+
+- **One MCPServiceProxy per Agent Session**: Each session gets isolated tool instances
+- **Stateful Tools**: Planning todos, Knowledge items, Browser sessions scoped to session ID
+- **No Global State**: Complete isolation prevents cross-session interference
+- **Session-Specific Workspace**: Each agent operates in isolated directory
+
+**Context Registry System:**
+
+Dynamic context providers inject read-only information into system prompts:
+
+```rust
+// System Prompt Structure (Agent V2)
+1. Agent Identity (system_prompt from config)
+2. Session Context (user-defined session name)
+3. Context Providers (ContextRegistry)
+   ├── TimeLocationContextProvider (current time/location)
+   └── SkillsContextProvider (available skills/documentation)
+4. Service Contexts (from builtin tools)
+   ├── Planning (current goal, todos)
+   ├── Browser (active sessions, URLs)
+   └── Workspace (file tree, recent changes)
+```
+
+**Event-Driven UI Updates:**
+
+Frontend is purely reactive, consuming events from backend:
+
+```typescript
+// Frontend (AgentSessionContext)
+useEffect(() => {
+  const unlisten = listen('agent:event', (event) => {
+    // Update session state based on backend events
+    if (event.status) setWorkflowStatus(event.status);
+    if (event.phase) setWorkflowPhase(event.phase);
+  });
+}, [sessionId]);
+```
+
+**Tool Execution Flow:**
+
+```
+1. LLM generates tool call
+2. AgentSessionManager validates and routes to MCPServiceProxy
+3. MCPServiceProxy checks if builtin or external:
+   - Builtin: Direct method call on session-specific server instance
+   - External: Route to SessionMCPManager/HttpSessionManager
+4. Tool result converted to MCPContent and added to conversation
+5. Loop continues until completion or error
+```
+
+**Migration Notes:**
+
+- Legacy Chat V1 uses global MCP manager (deprecated)
+- New Agent V2 sessions automatically use session isolation
+- Builtin servers implement both APIs for backward compatibility
+- Frontend gradually transitioning from `ChatContext` to `AgentSessionContext`
 
 ### MCP Tool Response Design
 
@@ -709,7 +813,7 @@ let data = json!({"execution_type": "persistent", "cwd": "/project"});
 - `react`: Version 18.x - UI library
 - `react-dom`: Version 18.x - React DOM renderer
 - `typescript`: Version 5.x - Type safety
-- `vite`: Version 4.x - Build tool and dev server
+- `vite`: Version 6.x - Build tool and dev server
 - `tailwindcss`: Version 4.x - Utility-first CSS framework
 
 ### Backend Dependencies (Rust)
@@ -745,12 +849,12 @@ export default function ComponentName({ props }: ComponentNameProps) {
 ### Service Layer Structure
 
 ```typescript
-// src/lib/service-name.ts
-export class ServiceName {
-  // Public methods for component usage
-}
+// src/lib/backend/module-name.ts
+import { safeInvoke } from './core';
 
-export const serviceInstance = new ServiceName();
+export async function someBackendOperation(param: Type): Promise<Result> {
+  return safeInvoke<Result>('rust_command_name', { param });
+}
 ```
 
 ### Tauri Command Structure
@@ -803,6 +907,72 @@ These steps must be completed successfully before considering any refactoring ta
 - Proper formatting standards are maintained
 - The application remains buildable after changes
 
+#### File Editing Best Practices: Micro-Edits vs. Wholesale Replacement
+
+**⚠️ CRITICAL: Use micro-edits for large files to avoid token limit issues**
+
+When editing large files (>500 lines) or making multiple updates to documentation/code:
+
+**❌ AVOID: Wholesale file replacement**
+
+- Regenerating entire files wastes tokens
+- High risk of hitting output token limits (causing operation failure)
+- Loses context and makes review difficult
+- Can introduce unintended changes
+
+**✅ PREFER: Targeted micro-edits**
+
+- Use `replace_string_in_file` tool for each logical change
+- Include 3-5 lines of context before/after the change
+- Make changes incrementally, one section at a time
+- Each edit is atomic and reviewable
+
+**Example Scenario: Updating a 700-line migration plan**
+
+```
+❌ WRONG APPROACH:
+- Try to regenerate entire 700-line document
+- Hit token limit at line 400
+- Operation fails, nothing happens
+- Have to retry multiple times
+
+✅ CORRECT APPROACH:
+- Edit #1: Update Phase 1 schema (lines 100-150)
+- Edit #2: Update Phase 2 tool responses (lines 300-400)
+- Edit #3: Add Phase 3 validation (lines 500-580)
+- Edit #4: Update frontend section (lines 620-680)
+- Each edit succeeds independently
+```
+
+**When to use micro-edits:**
+
+- Files > 500 lines
+- Multiple unrelated changes
+- Complex refactoring with review checkpoints
+- Documentation updates with many sections
+- When previous attempts hit token limits
+
+**When wholesale replacement is acceptable:**
+
+- New files being created (< 200 lines)
+- Small files (< 100 lines) with pervasive changes
+- Generated code (configs, types) where consistency matters
+
+**Token Limit Indicators:**
+
+- Response suddenly stops mid-generation
+- Tool call succeeds but file unchanged
+- "Token limit exceeded" errors
+- Response cuts off during code block
+
+**Recovery Strategy:**
+If you hit token limits:
+
+1. Identify what was successfully changed (check file state)
+2. Break remaining changes into 3-5 smaller edits
+3. Use specific line number ranges for targeting
+4. Complete edits in priority order (P0 → P1 → P2)
+
 ### Core Design Principles
 
 When refactoring or implementing new features, adhere to these fundamental software design principles:
@@ -843,38 +1013,48 @@ When refactoring or implementing new features, adhere to these fundamental softw
 
 **MCP Communication:**
 
-- Always use `safeInvoke()` from `rust-backend-client.ts` for Tauri command calls
-- MCP servers are managed through global `MCPServerManager` in Rust backend
-- Web Worker MCP servers use `WebMCPProvider` context for browser-based tools
+- Always use `safeInvoke()` from `src/lib/backend/core.ts` for Tauri command calls
+- MCP servers are session-isolated via `MCPServiceProxyManager` in Rust backend
+- Builtin servers implement `BuiltinMCPServer` trait with session-specific state
+- External servers managed by `SessionMCPManager` and `HttpSessionManager` per session
 
 **Component Architecture:**
 
 - Feature components follow compound patterns: `Chat.Header`, `Chat.Messages`, `Chat.Input`
 - Each feature directory contains `components/`, `hooks/`, and `README.md`
 - Use React Context for cross-component state sharing, not prop drilling
+- Agent V2 uses `AgentSessionContext` + `AgentChatContext` for reactive state management
 
 **Error Handling:**
 
 - Backend commands return `Result<T, String>` in Rust
-- Frontend wraps all Tauri calls in try-catch with centralized error logging
-- Use structured error objects, never throw raw strings
+- Frontend wraps all Tauri calls via `safeInvoke()` with centralized error logging
+- Use structured error objects with `MCPError` type for protocol errors
+- Builtin tools return `Result<MCPResult, String>` for consistent error handling
+
+**Session Isolation:**
+
+- Each agent session has isolated `MCPServiceProxy` with dedicated builtin server instances
+- No global state sharing between sessions
+- Tool state (Planning todos, Knowledge items, etc.) scoped to session ID
+- Workspace and Content Store use session-specific directories
 
 **Development Commands:**
 
 - `pnpm tauri dev` - Development with hot reload (port 1420)
 - `pnpm tauri build` - Production build for distribution
 - `pnpm dead-code` - Find unused code with unimported tool
-- `pnpm refactor:validate` - Complete validation pipeline
+- `pnpm refactor:validate` - Complete validation pipeline (lint, format, build, test)
 
 **⚠️ CRITICAL: Content Security Policy (CSP) Warning:**
 
 - **DO NOT add CSP configuration to `tauri.conf.json`** for desktop applications
 - CSP is designed for web browsers, not desktop environments
-- Tauri desktop apps using Web Workers and WASM require unrestricted access
-- Adding CSP will cause blank white screens in release builds due to Worker blob URL blocking
+- Tauri desktop apps require unrestricted access for native operations
+- Adding CSP will cause blank white screens in release builds
 - Dev mode has relaxed CSP enforcement, masking production issues
-- Industry-standard practice (validated against Jan project): No CSP in Tauri desktop apps
-- If security restrictions are absolutely necessary, use Tauri's native security features instead
+- Industry-standard practice: No CSP in Tauri desktop apps
+- Use Tauri's native security features (allowlist, capability system) instead
 
 ## Security Considerations
 
@@ -926,5 +1106,11 @@ When refactoring or implementing new features, adhere to these fundamental softw
 
 ## References
 
-- [Chat Feature Architecture & Implementation Manual](../docs/architecture/chat-feature-architecture.md)
-- [UI Resource Implementation Guide](../docs/guides/ui-resource-implementation.md)
+- [Project README](../README.md) - Overview, features, and quick start
+- [Documentation Index](../docs/README.md) - Complete documentation structure
+- [API Reference](../docs/api/tauri-commands.md) - Tauri command reference
+- [Built-in Tools Guide](../docs/guides/builtin_tool_bp.md) - Tool design standards
+- [UI Resource Implementation](../docs/guides/ui-resource-implementation.md) - Interactive HTML interfaces
+- [External MCP Integration](../docs/architecture/external-mcp-integration.md) - Session isolation architecture
+- [Workspace Tool Critique](../docs/analysis/workspace-tool-critique.md) - Implementation patterns
+- [Type Safety Refactoring](../docs/refactoring/) - Migration guides and plans

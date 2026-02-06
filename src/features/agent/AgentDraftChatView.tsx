@@ -199,21 +199,11 @@ function DraftChatInner() {
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          model:
-            overrideModel ||
-            assistant.model ||
-            settings?.preferredModel?.model ||
-            'gpt-4',
+          model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
           provider:
-            overrideProvider ||
-            assistant.provider ||
-            settings?.preferredModel?.provider ||
-            'openai',
-          temperature: assistant.temperature ?? 0.7,
-          maxTokens:
-            assistant.maxTokens ??
-            settings?.advanced?.defaultMaxOutputTokens ??
-            8192,
+            overrideProvider || settings?.preferredModel?.provider || 'openai',
+          temperature: 0.7,
+          maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
         };
 
         if (!toastId) toastId = toast.loading('Creating session...');
@@ -359,14 +349,8 @@ function DraftChatInner() {
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}
           <AgentModelPicker
-            currentModel={
-              assistant.model || settings?.preferredModel?.model || 'gpt-4'
-            }
-            currentProvider={
-              assistant.provider ||
-              settings?.preferredModel?.provider ||
-              'openai'
-            }
+            currentModel={settings?.preferredModel?.model || 'gpt-4'}
+            currentProvider={settings?.preferredModel?.provider || 'openai'}
             onConfigUpdate={(model, provider) => {
               setOverrideModel(model);
               setOverrideProvider(provider);

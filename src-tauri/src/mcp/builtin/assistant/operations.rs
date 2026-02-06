@@ -149,13 +149,9 @@ async fn validate_mcp_server_ids(
         .await
         .map_err(|e| format!("Failed to validate MCP server IDs: {}", e))?;
 
-    let existing_servers: Vec<_> = all_servers
-        .into_iter()
-        .filter(|s| server_ids.contains(&s.name))
-        .collect();
-
+    // Build set of valid server IDs
     let existing_ids: std::collections::HashSet<_> =
-        existing_servers.iter().map(|s| s.name.as_str()).collect();
+        all_servers.iter().map(|s| s.id.as_str()).collect();
 
     // Find invalid IDs
     let invalid_ids: Vec<_> = server_ids
@@ -165,7 +161,7 @@ async fn validate_mcp_server_ids(
 
     if !invalid_ids.is_empty() {
         return Err(format!(
-            "Invalid MCP server IDs: {}. Use builtin_mcp_manager__listMcpServers to see available servers.",
+            "Invalid MCP server IDs: {}. Use builtin_mcp_manager__listMcpServers to see available servers with their IDs.",
             invalid_ids
                 .iter()
                 .map(|id| format!("'{}'", id))

@@ -55,7 +55,7 @@ pub async fn update_mcp_server_config(
     // So we need to fetch, then if `config` is None, we keep existing. If `config` is Some, we use it.
 
     let existing = repo
-        .get(&name)
+        .get_by_name(&name)
         .await
         .map_err(|e| format!("Failed to find MCP server config: {}", e))?
         .ok_or_else(|| "MCP server config not found".to_string())?;
@@ -66,7 +66,7 @@ pub async fn update_mcp_server_config(
     };
 
     let updated = repo
-        .update(&name, new_config)
+        .update(&existing.id, None, Some(new_config))
         .await
         .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
@@ -76,7 +76,14 @@ pub async fn update_mcp_server_config(
 #[command]
 pub async fn delete_mcp_server_config(name: String) -> Result<(), String> {
     let repo = get_mcp_server_repository();
-    repo.delete(&name)
+    // Lookup by name first, then delete by ID
+    let existing = repo
+        .get_by_name(&name)
+        .await
+        .map_err(|e| format!("Failed to find MCP server config: {}", e))?
+        .ok_or_else(|| "MCP server config not found".to_string())?;
+
+    repo.delete(&existing.id)
         .await
         .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
     Ok(())

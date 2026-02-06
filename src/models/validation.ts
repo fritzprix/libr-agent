@@ -59,10 +59,6 @@ export const parseAssistant = (data: unknown): Assistant => {
     localServices: config.localServices,
     allowedBuiltInServiceAliases: config.allowedBuiltInServiceAliases,
     deletionProtected: config.deletionProtected ?? false,
-    model: config.model,
-    provider: config.provider,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
   };
 };
 

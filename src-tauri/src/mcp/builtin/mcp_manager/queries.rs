@@ -49,78 +49,99 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
         .unwrap_or(20)
         .min(50) as usize;
 
-    let configs = list_all_configs().await?;
-
-    // Note: Session Isolation means we cannot query global connection state
-    // All servers are shown as "disconnected" in this view because connections are per-session
-    let mut servers = Vec::new();
-    for config in configs {
-        let server_name = config
-            .name
-            .as_ref()
-            .ok_or_else(|| "Server config missing name".to_string())?;
-
-        let status = "configured"; // Changed from "connected"/"disconnected" to "configured"
-
-        servers.push(json!({
-            "name": server_name,
-            "transport": config.transport,
-            "status": status
-        }));
-    }
+    // Use repository to get full models (includes tool_count from DB)
+    let repo = get_mcp_server_repository();
+    let models = repo.list().await.map_err(|e| format!("DB error: {}", e))?;
 
     // Pagination
-    let total = servers.len();
+    let total = models.len();
     let start = ((page - 1) * page_size as u64) as usize;
-    let servers_slice = if start >= total {
+    let models_slice: Vec<_> = if start >= total {
         Vec::new()
     } else {
         let end = (start + page_size).min(total);
-        servers[start..end].to_vec()
+        models[start..end].to_vec()
     };
 
-    // Generate human-readable list with transport details (Section 4.2 - Narrative Requirement)
-    let servers_text = servers_slice
+    // Generate human-readable list with transport details and tool counts
+    let servers_text = models_slice
         .iter()
-        .map(|s| {
-            let transport_type = s["transport"]["type"].as_str().unwrap_or("?");
-            let detail = match transport_type {
-                "stdio" => {
-                    let cmd = s["transport"]["command"].as_str().unwrap_or("unknown");
-                    format!(" | Command: {}", cmd)
+        .map(|model| {
+            let config: MCPServerConfig = serde_json::from_str(&model.config)
+                .unwrap_or_else(|_| panic!("Invalid config for {}", model.name));
+
+            let transport_type = match config.transport {
+                crate::mcp::types::TransportConfig::Stdio { ref command, .. } => {
+                    format!("stdio | Command: {}", command)
                 }
-                "http" => {
-                    let url = s["transport"]["url"].as_str().unwrap_or("unknown");
-                    format!(" | URL: {}", url)
+                crate::mcp::types::TransportConfig::Http { ref url, .. } => {
+                    format!("http | URL: {}", url)
                 }
-                _ => String::new(),
             };
+
+            let tool_count_str = model
+                .tool_count
+                .map(|c| format!(" [{} tools]", c))
+                .unwrap_or_default();
+
+            // Show both name and ID for clarity
             format!(
-                "• {} [Status: {}] (Type: {}{})",
-                s["name"].as_str().unwrap_or("?"),
-                s["status"].as_str().unwrap_or("?"),
-                transport_type,
-                detail
+                "• {}{}\n  ID: {}\n  Type: {}",
+                model.name, tool_count_str, model.id, transport_type
             )
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n\n");
 
     let total_pages = (total as f64 / page_size as f64).ceil() as u64;
 
+    // Show actual IDs in example
+    let example_ids = models_slice
+        .iter()
+        .take(2)
+        .map(|m| format!("\"{}\"", m.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+
     let hint = SuccessHint::new(
         format!(
-            "Found {} servers (Page {}/{}):\n\n{}",
-            total, page, total_pages, servers_text
+            "📋 MCP Servers (Page {}/{}):\n\n{}\n\n\
+            💡 When creating an assistant, use the ID values:\n\n\
+            Example:\n\
+            mcpServerIds: [{}]\n\n\
+            ⚠️ IMPORTANT: Use ID (not name). IDs are stable even if you rename the server.",
+            page,
+            total_pages,
+            servers_text,
+            if example_ids.is_empty() {
+                "/* no servers yet */".to_string()
+            } else {
+                example_ids
+            }
         ),
         vec![
-            "Use registerServer to initiate a new server configuration".to_string(),
-            "Use connectServer/disconnectServer to target connection status".to_string(),
+            "Copy the ID line exactly (case-sensitive UUID)".to_string(),
+            "Names can change, IDs cannot - always use IDs for references".to_string(),
+            "Use registerServer to add new MCP servers".to_string(),
         ],
     );
 
+    // structured_content with machine-readable IDs
+    let servers_json: Vec<Value> = models_slice
+        .iter()
+        .map(|m| {
+            json!({
+                "id": m.id,
+                "name": m.name,
+                "toolCount": m.tool_count,
+                "createdAt": m.created_at,
+                "updatedAt": m.updated_at
+            })
+        })
+        .collect();
+
     Ok(hint.to_mcp_result_with_data(Some(json!({
-        "servers": servers_slice,
+        "servers": servers_json,
         "total": total,
         "page": page,
         "pageSize": page_size
