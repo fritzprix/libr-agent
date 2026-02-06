@@ -137,12 +137,63 @@ pub fn run_with_sqlite_sync(db_url: String) {
             });
         info!("✅ Database connected: {db_url}");
 
-        // Run migrations
+        // Run migrations with auto-recovery
         use migration::{Migrator, MigratorTrait};
-        Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        info!("✅ Database migrations applied");
+
+        let migration_result = Migrator::up(&db, None).await;
+
+        // Handle migration result, resetting DB if necessary
+        let db = match migration_result {
+            Ok(_) => {
+                info!("✅ Database migrations applied");
+                db
+            }
+            Err(e) => {
+                error!("❌ Database migration failed: {e}");
+
+                if let Some(path_str) = db_url.strip_prefix("sqlite://") {
+                    // Handle connection options like ?mode=rwc
+                    let path_parts: Vec<&str> = path_str.split('?').collect();
+                    let file_path = path_parts[0];
+
+                    warn!(
+                        "⚠️ Migration failed. Attempting to reset database at: {}",
+                        file_path
+                    );
+
+                    // Drop existing connection to release file lock
+                    drop(db);
+
+                    // Delete the corrupted database file
+                    if let Err(err) = std::fs::remove_file(file_path) {
+                        error!("Failed to delete corrupted database file: {err}");
+                    } else {
+                        info!("✅ Corrupted database file deleted");
+                    }
+
+                    // Create fresh file
+                    if let Err(err) = std::fs::File::create(file_path) {
+                        panic!("Failed to recreate database file: {err}");
+                    }
+                    info!("✅ Created fresh database file");
+
+                    // Reconnect
+                    let new_db = sea_orm::Database::connect(&db_url)
+                        .await
+                        .expect("Failed to reconnect to database after reset");
+
+                    // Retry migrations on fresh DB
+                    Migrator::up(&new_db, None)
+                        .await
+                        .expect("Failed to run migrations on reset database");
+
+                    info!("✅ Database reset and migrations applied successfully");
+                    new_db
+                } else {
+                    panic!("Failed to run database migrations: {e}");
+                }
+            }
+        };
 
         // Initialize repository instances
         use repositories::{
