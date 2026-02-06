@@ -14,10 +14,6 @@ const AssistantConfigSchema = z
     localServices: z.array(z.string()).optional(),
     allowedBuiltInServiceAliases: z.array(z.string()).optional(),
     deletionProtected: z.boolean().default(false),
-    model: z.string().optional(),
-    provider: z.string().optional(),
-    temperature: z.number().optional(),
-    maxTokens: z.number().optional(),
   })
   .passthrough();
 

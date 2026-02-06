@@ -18,6 +18,9 @@ import * as assistantsBackend from '@/lib/backend/assistants';
 import * as mcpBackent from '@/lib/backend/mcp-server-config';
 import * as settingsBackend from '@/lib/backend/settings';
 import * as sessionsBackend from '@/lib/backend/session-crud';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('DBService');
 import * as messagesBackend from '@/lib/backend/messages';
 import * as playbooksBackend from '@/lib/backend/playbooks';
 
@@ -85,7 +88,22 @@ export const dbUtils = {
     // Backend doesn't have bulk get. Fetch all and filter? Or loop get?
     // List is usually small.
     const all = await mcpBackent.listMCPServers();
-    return all.filter((s) => ids.includes(s.id));
+    
+    // Debug: Log all servers in database
+    logger.info('🔍 Database getMCPServersByIds', {
+      requestedIds: ids,
+      allServersCount: all.length,
+      allServers: all.map(s => ({ id: s.id, name: s.name }))
+    });
+    
+    const filtered = all.filter((s) => ids.includes(s.id));
+    
+    logger.info('🎯 Filtered servers', {
+      filteredCount: filtered.length,
+      filtered: filtered.map(s => ({ id: s.id, name: s.name }))
+    });
+    
+    return filtered;
   },
   mcpServerExists: async (id: string): Promise<boolean> => {
     const s = await mcpBackent.getMCPServer(id);

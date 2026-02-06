@@ -25,22 +25,6 @@ pub fn create_assistant_tool() -> MCPTool {
                     string_prop(None, None, Some("System prompt for the assistant")),
                 ),
                 (
-                    "modelProvider".to_string(),
-                    string_prop(None, None, Some("AI model provider (e.g., openai, anthropic, ollama)")),
-                ),
-                (
-                    "modelName".to_string(),
-                    string_prop(None, None, Some("Specific model name (e.g., gpt-4, claude-3-5-sonnet)")),
-                ),
-                (
-                    "temperature".to_string(),
-                    number_prop(Some(0.0), Some(1.0), Some("Model temperature (0.0 to 1.0)")),
-                ),
-                (
-                    "maxTokens".to_string(),
-                    integer_prop(None, None, Some("Maximum tokens for response")),
-                ),
-                (
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
@@ -88,22 +72,6 @@ pub fn update_assistant_tool() -> MCPTool {
                 (
                     "systemPrompt".to_string(),
                     string_prop(None, None, Some("New system prompt")),
-                ),
-                (
-                    "modelProvider".to_string(),
-                    string_prop(None, None, Some("New AI model provider")),
-                ),
-                (
-                    "modelName".to_string(),
-                    string_prop(None, None, Some("New model name")),
-                ),
-                (
-                    "temperature".to_string(),
-                    number_prop(None, None, Some("New temperature")),
-                ),
-                (
-                    "maxTokens".to_string(),
-                    integer_prop(None, None, Some("New max tokens")),
                 ),
                 (
                     "allowedBuiltInServiceAliases".to_string(),

@@ -18,7 +18,7 @@ pub struct MCPServerDto {
 impl From<crate::entity::mcp_server::Model> for MCPServerDto {
     fn from(model: crate::entity::mcp_server::Model) -> Self {
         Self {
-            id: model.name.clone(), // ID is name for MCP servers in current schema
+            id: model.id.clone(), // Use actual database ID (cuid2)
             name: model.name,
             config: serde_json::from_str(&model.config).unwrap_or(Value::Null),
             tool_count: model.tool_count, // Include cached tool count

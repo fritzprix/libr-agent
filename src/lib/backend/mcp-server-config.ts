@@ -6,8 +6,8 @@ import type { Page } from '@/lib/db/types';
  * Backend DTO for MCP Server Config
  */
 interface MCPServerDto {
-  id: string; // Likely name
-  name: string;
+  id: string; // Database ID (CUID2 format)
+  name: string; // Human-readable name
   config: unknown; // JSON
   toolCount: number | null; // Cached tool count from last verification/connection
   createdAt: number;
@@ -19,7 +19,7 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
   const config = dto.config as Partial<MCPServerEntity>;
   return {
     ...config,
-    id: dto.name, // Force ID to be name as backend uses name as PK
+    id: dto.id, // Use actual database ID (CUID2)
     name: dto.name,
     // ensure transport/auth are present if they were in config
     transport: (config as Record<string, unknown>).transport,
