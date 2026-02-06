@@ -227,7 +227,7 @@ const STATIC_MARKDOWN_COMPONENTS: Omit<
   a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => (
     <a
       href={href}
-      className="text-blue-600 dark:text-blue-400 hover:underline underline font-medium"
+      className="text-primary hover:text-primary/90 underline font-medium"
       target="_blank"
       rel="noopener noreferrer"
       {...props}
