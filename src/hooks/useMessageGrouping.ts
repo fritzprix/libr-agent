@@ -114,7 +114,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     const groupedMessages: GroupedMessage[] = [];
     const groupEndIndices: number[] = [];
 
-    // Always create a fresh map per calculation (unless optimization allows reuse)
+    // Decide whether to reuse the previous map or create a fresh one based on lastToolResultIndex
     let toolResultsMap: Map<string, Message>;
     let isMapCloned = false; // Track if we have cloned the map (copy-on-write)
     let newLastToolResultIndex = -1;
@@ -138,8 +138,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       toolResultsMap = new Map();
       isMapCloned = true; // It's a fresh map
 
-      // We must scan the prefix (0..i) to populate the map because we couldn't reuse the old one
-      // i is the start of the "new/changed" processing, but if we reused groups, i > 0.
+      // We must scan the stable prefix (0..startIndex) to populate the map because we couldn't reuse the old one
+      // startIndex is the end index of the last reused group (or 0 if none were reused), i.e. the start of "new/changed" processing.
       const startIndex = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
       for (let prefixIndex = 0; prefixIndex < startIndex; prefixIndex++) {
         const msg = messages[prefixIndex];
@@ -238,11 +238,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         // Group if there are any tool calls
         if (allToolCalls.length > 0) {
           // Pre-calculate results array to avoid O(K) mapping in render loop
-          // Note: accessing toolResultsMap here is safe because we populated it during the scan (captureToolResult)
-          // even if we are processing the tool result message "later" in the loop logic,
-          // the tool result message (at index j) was captured before j was incremented.
-          // Wait, 'j' loop increments j. Inside the inner while loop, we call captureToolResult(messages[j]).
-          // So map is updated.
+          // Note: captureToolResult is called for each tool result message during the scan,
+          // so toolResultsMap is populated before we access it here.
           const results = allToolCalls.map((call) =>
             toolResultsMap.get(call.id),
           );
