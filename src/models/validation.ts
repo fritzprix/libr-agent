@@ -14,10 +14,6 @@ const AssistantConfigSchema = z
     localServices: z.array(z.string()).optional(),
     allowedBuiltInServiceAliases: z.array(z.string()).optional(),
     deletionProtected: z.boolean().default(false),
-    model: z.string().optional(),
-    provider: z.string().optional(),
-    temperature: z.number().optional(),
-    maxTokens: z.number().optional(),
   })
   .passthrough();
 
@@ -59,10 +55,6 @@ export const parseAssistant = (data: unknown): Assistant => {
     localServices: config.localServices,
     allowedBuiltInServiceAliases: config.allowedBuiltInServiceAliases,
     deletionProtected: config.deletionProtected ?? false,
-    model: config.model,
-    provider: config.provider,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
   };
 };
 

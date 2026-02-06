@@ -1,4 +1,11 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { createId } from '@paralleldrive/cuid2';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
@@ -34,6 +41,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     'none',
   );
   const chatInputRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { subscribe } = useDnDContext();
 
   const {
@@ -74,6 +82,17 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     }
     return 'Query agent or drop files...';
   }, [dragState, isBusy, isAttachmentLoading]);
+
+  // Auto-resize textarea
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      const maxHeightPx = 96; // 6rem, matching Tailwind max-h-24
+      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
+      textarea.style.height = `${nextHeight}px`;
+    }
+  }, [input]);
 
   const handleAgentInputChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -288,6 +307,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       <span className="font-bold flex-shrink-0">$</span>
       <div className="flex-1 flex items-center gap-2 min-w-0">
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={handleAgentInputChange}
           onKeyDown={handleKeyDown}
@@ -298,6 +318,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           autoComplete="off"
           spellCheck="false"
           rows={1}
+          aria-label="Chat input"
         />
 
         <FileAttachment
@@ -318,6 +339,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           variant="ghost"
           size="icon"
           title="Send message"
+          aria-label="Send message"
         >
           <Send className="h-4 w-4" />
         </Button>
@@ -329,6 +351,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             size="icon"
             disabled={pendingCancel}
             title={pendingCancel ? 'Cancelling...' : 'Cancel request'}
+            aria-label="Cancel request"
           >
             {pendingCancel ? (
               <Loader2 className="h-4 w-4 animate-spin text-warning" />

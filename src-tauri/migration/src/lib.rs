@@ -10,6 +10,7 @@ mod m20260116_000001_add_assistant_id_to_playbooks;
 mod m20260121_000001_add_bookmark_to_playbooks;
 mod m20260123_000001_remove_session_id_from_playbooks;
 mod m20260205_000001_add_tool_count_to_mcp_servers;
+mod m20260206_000001_add_mcp_server_id;
 
 pub struct Migrator;
 
@@ -27,6 +28,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260121_000001_add_bookmark_to_playbooks::Migration),
             Box::new(m20260123_000001_remove_session_id_from_playbooks::Migration),
             Box::new(m20260205_000001_add_tool_count_to_mcp_servers::Migration),
+            Box::new(m20260206_000001_add_mcp_server_id::Migration),
         ]
     }
 }

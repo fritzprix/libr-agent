@@ -222,7 +222,7 @@ export function AgentChatStatusBar() {
                     provider,
                     model,
                     // Ensure required fields
-                    temperature: session.assistant.temperature ?? 0.7,
+                    temperature: 0.7,
                     name: session.assistant.name || 'Assistant',
                     systemPrompt:
                       session.assistant.systemPrompt ||

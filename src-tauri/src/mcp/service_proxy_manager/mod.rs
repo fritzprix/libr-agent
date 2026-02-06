@@ -216,6 +216,7 @@ impl MCPServiceProxyManager {
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
+        let mut server_name_to_id = HashMap::new(); // Map server names to IDs for tool count updates
         let repo = get_mcp_server_repository();
 
         // Filter servers based on mcp_server_ids:
@@ -241,11 +242,12 @@ impl MCPServiceProxyManager {
                     );
                 } else {
                     for model in models {
-                        // Only load servers specified in mcp_server_ids
-                        if !mcp_server_ids.contains(&model.name) {
+                        // Only load servers specified in mcp_server_ids (IDs, not names)
+                        if !mcp_server_ids.contains(&model.id) {
                             log::debug!(
-                                "Skipping MCP server '{}' - not in assistant's mcp_server_ids",
-                                model.name
+                                "Skipping MCP server '{}' (ID: {}) - not in assistant's mcp_server_ids",
+                                model.name,
+                                model.id
                             );
                             continue;
                         }
@@ -258,6 +260,16 @@ impl MCPServiceProxyManager {
                                 let server_name = config.name.unwrap_or_else(|| model.name.clone());
                                 config.name = Some(server_name.clone());
 
+                                // Store name -> ID mapping for tool count updates
+                                server_name_to_id.insert(server_name.clone(), model.id.clone());
+
+                                log::debug!(
+                                    "Loading MCP server '{}' (ID: {}) into session {}",
+                                    server_name,
+                                    model.id,
+                                    session_id
+                                );
+
                                 match config.transport {
                                     crate::mcp::types::TransportConfig::Stdio { .. } => {
                                         stdio_configs.insert(server_name, config);
@@ -269,8 +281,9 @@ impl MCPServiceProxyManager {
                             }
                             Err(e) => {
                                 log::warn!(
-                                    "Failed to parse config for MCP server '{}': {}",
+                                    "Failed to parse config for MCP server '{}' (ID: {}): {}",
                                     model.name,
+                                    model.id,
                                     e
                                 );
                             }
@@ -405,12 +418,17 @@ impl MCPServiceProxyManager {
                     );
 
                     // Cache tool count in database for UI display
-                    let repo = crate::state::get_mcp_server_repository();
-                    if let Err(e) = repo
-                        .update_tool_count(server_name, tools.len() as i32)
-                        .await
-                    {
-                        log::warn!("Failed to cache tool count for '{}': {}", server_name, e);
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
+                        }
                     }
 
                     let prefixed_tools: Vec<_> = tools
@@ -478,12 +496,17 @@ impl MCPServiceProxyManager {
                     );
 
                     // Cache tool count in database for UI display
-                    let repo = crate::state::get_mcp_server_repository();
-                    if let Err(e) = repo
-                        .update_tool_count(server_name, tools.len() as i32)
-                        .await
-                    {
-                        log::warn!("Failed to cache tool count for '{}': {}", server_name, e);
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
+                        }
                     }
 
                     let prefixed_tools: Vec<_> = tools
@@ -743,24 +766,43 @@ pub fn spawn_tool_cache_update<F, Fut>(
                 use crate::repositories::mcp_server_repository::MCPServerRepository;
                 let repo = crate::state::get_mcp_server_repository();
 
-                if let Err(e) = repo
-                    .update_tool_count(&server_name, tool_count as i32)
-                    .await
-                {
-                    log::warn!(
-                        "Failed to cache tool count for {} server '{}': {}",
-                        server_type,
-                        server_name,
-                        e
-                    );
-                } else {
-                    log::info!(
-                        "✅ Updated tool cache for {} server '{}': {} tools (session: {})",
-                        server_type,
-                        server_name,
-                        tool_count,
-                        session_id
-                    );
+                // Lookup server ID by name first
+                match repo.get_by_name(&server_name).await {
+                    Ok(Some(server)) => {
+                        if let Err(e) = repo.update_tool_count(&server.id, tool_count as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for {} server '{}' (ID: {}): {}",
+                                server_type,
+                                server_name,
+                                server.id,
+                                e
+                            );
+                        } else {
+                            log::debug!(
+                                "Cached {} tools for {} server '{}' (ID: {})",
+                                tool_count,
+                                server_type,
+                                server_name,
+                                server.id
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        log::warn!(
+                            "Cannot cache tool count for {} server '{}': server not found in database",
+                            server_type,
+                            server_name
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to lookup {} server '{}' for tool count caching: {}",
+                            server_type,
+                            server_name,
+                            e
+                        );
+                    }
                 }
             }
             Err(e) => {

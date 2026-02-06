@@ -48,7 +48,7 @@ for await (const chunk of chatCompletion) {
 
 ### Tool Use
 
-```js
+```python
 # imports calculate function from step 1
 def run_conversation(user_prompt):
     # Initialize the conversation with system and user messages
@@ -132,7 +132,7 @@ user_prompt = "What is 25 * 4 + 10?"
 print(run_conversation(user_prompt))
 ```
 
-## OpneAI
+## OpenAI
 
 ### Tool Use
 
@@ -164,7 +164,7 @@ const tools = [
 ];
 
 const completion = await openai.chat.completions.create({
-  model: 'gpt-4.1',
+  model: 'gpt-4o',
   messages: [
     { role: 'user', content: 'What is the weather like in Paris today?' },
   ],
@@ -188,7 +188,7 @@ format '[1,2],[3,4],[5,6]' and prints the transpose in the same format.
 `;
 
 const completion = await openai.chat.completions.create({
-  model: 'o4-mini',
+  model: 'o1-mini',
   reasoning_effort: 'medium',
   messages: [
     {

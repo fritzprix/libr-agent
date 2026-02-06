@@ -62,11 +62,15 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     // This allows us to know which groups are affected by changes at index X
     groupEndIndices: number[];
     toolResultsMap: Map<string, Message>;
+    // Index of the last message that contributed to the toolResultsMap.
+    // If divergenceIndex > lastToolResultIndex, we can reuse the map without rebuilding.
+    lastToolResultIndex: number;
   }>({
     messages: [],
     groupedMessages: [],
     groupEndIndices: [],
     toolResultsMap: new Map(),
+    lastToolResultIndex: -1,
   });
 
   const calculation = useMemo(() => {
@@ -84,14 +88,23 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
     // 2. Identify stable groups
     // CRITICAL: Only reuse groups that end strictly BEFORE the divergence point.
-    // If a group ends AT the divergence point (endIndex == divergenceIndex), it means the messages
-    // *immediately following* the group have changed or are new.
-    // Since "tool_group" messages can consume subsequent tool results, we must re-evaluate
-    // the last group to see if it should now consume the new/changed messages.
+    // Optimization: If a 'single' group ends AT the divergence point, it is safe to reuse
+    // because it cannot consume subsequent messages (unlike 'tool_group').
+    // Since the next message (at divergenceIndex) has changed, we only need to ensure
+    // the current group doesn't need to change its "consumption" logic.
     let reuseCount = 0;
     for (let k = 0; k < prevCache.groupEndIndices.length; k++) {
-      if (prevCache.groupEndIndices[k] < divergenceIndex) {
+      const groupEnd = prevCache.groupEndIndices[k];
+      const groupType = prevCache.groupedMessages[k].type;
+
+      if (groupEnd < divergenceIndex) {
         reuseCount++;
+      } else if (groupEnd === divergenceIndex && groupType === 'single') {
+        // Safe to reuse single message groups ending exactly at divergence
+        reuseCount++;
+        // If we reuse a group ending at divergenceIndex, the next group starts at divergenceIndex.
+        // Messages starting at divergenceIndex ARE changed, so we cannot reuse any further groups.
+        break;
       } else {
         break;
       }
@@ -100,8 +113,11 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     // 3. Initialize with reused data
     const groupedMessages: GroupedMessage[] = [];
     const groupEndIndices: number[] = [];
-    // Always create a fresh map per calculation to avoid stale tool result entries.
+
+    // Decide whether to reuse the previous map or create a fresh one based on lastToolResultIndex
     let toolResultsMap: Map<string, Message>;
+    let isMapCloned = false; // Track if we have cloned the map (copy-on-write)
+    let newLastToolResultIndex = -1;
 
     // Reuse previously computed groups where safe.
     if (reuseCount > 0) {
@@ -111,33 +127,44 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
       }
     }
 
-    // 4. Process new/changed messages
-    // Start index is the end index of the last reused group (or 0)
-    let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
-
-    // Pre-populate toolResultsMap from the reused prefix of messages to keep it in sync.
-    // Optimization: If we are strictly appending (divergenceIndex == prevCache.messages.length),
-    // we can clone the previous map instead of rebuilding it from scratch.
-    // Note: We check divergenceIndex, not i, because reuseCount only includes groups with
-    // endIndex < divergenceIndex, so i will always be < prevCache.messages.length even during appends.
-    if (divergenceIndex === prevCache.messages.length) {
-      toolResultsMap = new Map(prevCache.toolResultsMap);
+    // 4. Initialize Tool Map
+    // Optimization: If the stable prefix covers all previous tool results, reuse the map instance.
+    if (divergenceIndex > prevCache.lastToolResultIndex) {
+      toolResultsMap = prevCache.toolResultsMap;
+      isMapCloned = false; // We are holding a ref to the old map, treated as immutable until write
+      newLastToolResultIndex = prevCache.lastToolResultIndex;
     } else {
+      // Rebuild map from scratch (partial prefix)
       toolResultsMap = new Map();
-      for (let prefixIndex = 0; prefixIndex < i; prefixIndex++) {
+      isMapCloned = true; // It's a fresh map
+
+      // We must scan the stable prefix (0..startIndex) to populate the map because we couldn't reuse the old one
+      // startIndex is the end index of the last reused group (or 0 if none were reused), i.e. the start of "new/changed" processing.
+      const startIndex = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
+      for (let prefixIndex = 0; prefixIndex < startIndex; prefixIndex++) {
         const msg = messages[prefixIndex];
         if (msg.role === 'tool' && msg.tool_call_id) {
           toolResultsMap.set(msg.tool_call_id, msg);
+          newLastToolResultIndex = Math.max(newLastToolResultIndex, prefixIndex);
         }
       }
     }
 
-    // Helper to capture tool results (needed for map population)
-    const captureToolResult = (msg: Message) => {
+    // Helper to capture tool results with copy-on-write logic
+    const captureToolResult = (msg: Message, index: number) => {
       if (msg.role === 'tool' && msg.tool_call_id) {
+        if (!isMapCloned) {
+          toolResultsMap = new Map(toolResultsMap);
+          isMapCloned = true;
+        }
         toolResultsMap.set(msg.tool_call_id, msg);
+        newLastToolResultIndex = Math.max(newLastToolResultIndex, index);
       }
     };
+
+    // 5. Process new/changed messages
+    // Start index is the end index of the last reused group (or 0)
+    let i = reuseCount > 0 ? groupEndIndices[reuseCount - 1] : 0;
 
     while (i < messages.length) {
       const msg = messages[i];
@@ -151,7 +178,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           previous.tool_calls.some((call) => call.id === msg.tool_call_id);
 
         if (!isImmediatelyAfterAssistantToolCall) {
-          captureToolResult(msg);
+          captureToolResult(msg, i);
         }
       }
 
@@ -203,7 +230,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
             groupToolCallIds.has(messages[j].tool_call_id!)
           ) {
             // Capture skipped tool result in map.
-            captureToolResult(messages[j]);
+            captureToolResult(messages[j], j);
             j++;
           }
         }
@@ -211,6 +238,8 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         // Group if there are any tool calls
         if (allToolCalls.length > 0) {
           // Pre-calculate results array to avoid O(K) mapping in render loop
+          // Note: captureToolResult is called for each tool result message during the scan,
+          // so toolResultsMap is populated before we access it here.
           const results = allToolCalls.map((call) =>
             toolResultsMap.get(call.id),
           );
@@ -223,9 +252,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           });
           groupEndIndices.push(j);
         } else {
-          // Defensive fallback: This theoretically shouldn't happen since the outer
-          // condition checks msg.tool_calls.length > 0. If we hit this, log it and
-          // treat the message as a single message.
+          // Defensive fallback
           logger.warn(
             'Unexpected state: assistant message with tool_calls but allToolCalls is empty',
             { messageId: msg.id },
@@ -246,11 +273,14 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     // Performance Optimization:
     // If the newly computed toolResultsMap is identical (by reference for keys/values)
     // to the previous one, reuse the previous Map instance.
-    // This prevents AgentMessageBubble (which receives this map as a prop) from re-rendering
-    // unnecessarily when tool results haven't changed (e.g. during text streaming).
     let finalToolResultsMap = toolResultsMap;
-    if (areMapsEqual(toolResultsMap, prevCache.toolResultsMap)) {
-      finalToolResultsMap = prevCache.toolResultsMap;
+
+    // Only verify equality if we created a new map (isMapCloned)
+    // If !isMapCloned, it IS the previous map.
+    if (isMapCloned) {
+      if (areMapsEqual(toolResultsMap, prevCache.toolResultsMap)) {
+        finalToolResultsMap = prevCache.toolResultsMap;
+      }
     }
 
     return {
@@ -260,6 +290,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         groupedMessages,
         groupEndIndices,
         toolResultsMap: finalToolResultsMap,
+        lastToolResultIndex: newLastToolResultIndex,
       },
     };
   }, [messages]);

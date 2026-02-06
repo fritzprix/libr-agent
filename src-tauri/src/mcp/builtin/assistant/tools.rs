@@ -25,22 +25,6 @@ pub fn create_assistant_tool() -> MCPTool {
                     string_prop(None, None, Some("System prompt for the assistant")),
                 ),
                 (
-                    "modelProvider".to_string(),
-                    string_prop(None, None, Some("AI model provider (e.g., openai, anthropic, ollama)")),
-                ),
-                (
-                    "modelName".to_string(),
-                    string_prop(None, None, Some("Specific model name (e.g., gpt-4, claude-3-5-sonnet)")),
-                ),
-                (
-                    "temperature".to_string(),
-                    number_prop(Some(0.0), Some(1.0), Some("Model temperature (0.0 to 1.0)")),
-                ),
-                (
-                    "maxTokens".to_string(),
-                    integer_prop(None, None, Some("Maximum tokens for response")),
-                ),
-                (
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
@@ -51,7 +35,7 @@ pub fn create_assistant_tool() -> MCPTool {
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ CRITICAL: IDs must be valid.\n1. Call builtin_mcp_manager__listMcpServers FIRST to get valid IDs\n2. Extract exact ID values from listMcpServers response\n3. Invalid IDs will cause validation error"),
+                        Some("List of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n1. Call builtin_mcp_manager__listMcpServers FIRST\n2. Extract ID field (UUID format like 'cm3x...') from response\n3. NEVER use server name - it will fail validation\n4. Empty array = no external MCP servers\n\nExample valid ID: \"cm3xkn2w00000ld...\"\nExample INVALID: \"filesystem\" (this is a name, not ID)"),
                     ),
                 ),
             ],
@@ -90,22 +74,6 @@ pub fn update_assistant_tool() -> MCPTool {
                     string_prop(None, None, Some("New system prompt")),
                 ),
                 (
-                    "modelProvider".to_string(),
-                    string_prop(None, None, Some("New AI model provider")),
-                ),
-                (
-                    "modelName".to_string(),
-                    string_prop(None, None, Some("New model name")),
-                ),
-                (
-                    "temperature".to_string(),
-                    number_prop(None, None, Some("New temperature")),
-                ),
-                (
-                    "maxTokens".to_string(),
-                    integer_prop(None, None, Some("New max tokens")),
-                ),
-                (
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
@@ -116,7 +84,7 @@ pub fn update_assistant_tool() -> MCPTool {
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update list of enabled MCP server IDs (must exist in mcp_servers table).\n\n⚠️ Use builtin_mcp_manager__listMcpServers to get valid IDs before updating"),
+                        Some("Update list of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n• Call builtin_mcp_manager__listMcpServers first\n• Extract ID field (UUID format) from response\n• NEVER use server name - validation will fail"),
                     ),
                 ),
             ],

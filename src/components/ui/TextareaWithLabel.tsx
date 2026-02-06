@@ -34,7 +34,7 @@ export default function TextareaWithLabel({
         id={inputId}
         aria-describedby={errorId}
         aria-invalid={!!error}
-        className={cn(error && 'border-red-400', className)}
+        className={cn(error && 'border-destructive', className)}
         {...props}
       />
     </FieldWrapper>

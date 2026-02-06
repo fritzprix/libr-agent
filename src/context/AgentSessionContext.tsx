@@ -9,7 +9,7 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Message, RustMessage, Assistant } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
@@ -389,7 +389,7 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
-        let assistant: Assistant | undefined;
+        let assistant: import('@/models/agent').AgentConfig | undefined;
         if (response.agentConfig) {
           try {
             assistant = JSON.parse(response.agentConfig);

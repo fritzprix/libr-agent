@@ -1,12 +1,4 @@
-# Fractal Decomposition Log
 
-## 2024-05-22 - src/context/LLMServiceContext.tsx
-**Split:**
-- `src/context/llm-service/types.ts`
-- `src/context/llm-service/stream-processor.ts`
-- `src/context/llm-service/useLLMState.ts`
-- `src/context/llm-service/useCompletionExecutor.ts`
-- `src/context/llm-service/useLLMListener.ts`
-- `src/context/llm-service/index.tsx`
-**Result:** Original file (1046 lines) -> New Main File `index.tsx` (approx 100 lines).
-**Rationale:** Decomposed God Object into cohesive modules for state, execution, streaming, and events.
+## 2026-02-05 - src-tauri/src/mcp/builtin/workspace/code_execution/shell.rs
+**Split:** `handlers.rs`, `persistent.rs`, `isolated.rs`, `async_exec.rs`
+**Improvement:** Decoupled MCP request handling from core execution logic. Separated persistent shell state management from isolated process execution. Reduced file size from >1100 lines to focused <300 line modules.

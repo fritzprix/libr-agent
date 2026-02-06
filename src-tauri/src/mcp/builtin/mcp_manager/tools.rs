@@ -139,8 +139,14 @@ NAMING (REQUIRED):
 • Must be unique across all servers
 • Use descriptive names for easy identification
 
+IDENTIFICATION:
+• System automatically generates a unique ID (UUID format)
+• This ID is used in assistant configurations (mcpServerIds)
+• Call listMcpServers after registration to get the auto-generated ID
+
 RETURNS:
-• Server name for subsequent management operations
+• Server name for management operations
+• Auto-generated ID for assistant configuration
 • Connection status
 
 EXAMPLE:
