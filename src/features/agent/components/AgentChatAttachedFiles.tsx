@@ -21,7 +21,7 @@ export function AgentChatAttachedFiles() {
   return (
     <div className="px-4 py-2 border-t">
       <div className="text-xs mb-2 flex items-center gap-1">
-        <Paperclip className="w-3 h-3" />
+        <Paperclip className="w-4 h-4" />
         <span>Attached Files:</span>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -36,9 +36,9 @@ export function AgentChatAttachedFiles() {
               variant="ghost"
               size="icon"
               onClick={() => removeAttachedFile(file)}
-              className="ml-1 h-5 w-5"
+              className="ml-1 h-6 w-6"
             >
-              <X className="h-3 w-3" />
+              <X className="w-4 h-4" />
             </Button>
           </div>
         ))}
