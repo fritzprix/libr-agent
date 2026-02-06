@@ -1,73 +1,16 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
-/// Shell type enumeration for cross-platform shell support
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Used by tool handlers and future shell selection logic
-pub enum ShellType {
-    Bash,
-    PowerShell,
-    Cmd,
-}
+pub mod common;
+pub mod platforms;
+pub mod types;
+
+pub use types::*;
 
 /// Cross-platform session isolation manager
 #[derive(Debug, Clone)]
 pub struct SessionIsolationManager {
     isolation_config: IsolationConfig,
-}
-
-#[derive(Debug, Clone)]
-pub struct IsolationConfig {
-    pub resource_limits: ResourceLimits,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResourceLimits {
-    #[allow(dead_code)] // Planned for future use
-    pub max_memory_mb: Option<u64>,
-    #[allow(dead_code)] // Planned for future use
-    pub max_execution_time_secs: Option<u64>,
-    #[allow(dead_code)] // Planned for future use
-    pub max_open_files: Option<u64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IsolatedProcessConfig {
-    pub session_id: String,
-    pub workspace_path: PathBuf,
-    pub command: String,
-    pub args: Vec<String>,
-    pub env_vars: HashMap<String, String>,
-    pub isolation_level: IsolationLevel,
-    pub shell_type: Option<ShellType>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IsolationLevel {
-    /// Basic process isolation (environment variables only)
-    #[allow(dead_code)] // Reserved for future use
-    Basic,
-    /// Medium isolation (process groups + limited resources)
-    Medium,
-    /// High isolation (platform-specific sandboxing)
-    #[allow(dead_code)] // Reserved for future use
-    High,
-}
-
-impl Default for IsolationConfig {
-    fn default() -> Self {
-        Self {
-            resource_limits: ResourceLimits {
-                max_memory_mb: Some(512),
-                max_execution_time_secs: Some(300),
-                max_open_files: Some(1024),
-            },
-        }
-    }
 }
 
 impl SessionIsolationManager {
@@ -115,10 +58,10 @@ impl SessionIsolationManager {
                     false,
                 )
             } else {
-                (self.get_shell_command(config.shell_type).to_string(), true)
+                (common::get_shell_command(config.shell_type).to_string(), true)
             }
         } else {
-            (self.get_shell_command(None).to_string(), true)
+            (common::get_shell_command(None).to_string(), true)
         };
 
         let mut cmd = AsyncCommand::new(&shell_cmd);
@@ -145,7 +88,7 @@ impl SessionIsolationManager {
             // Smart Discovery: Auto-detect and prepend valid Python to PATH
             // This fixes issues where the Windows Store shim (WindowsApps\python.exe) takes precedence
             let current_path = std::env::var("PATH").unwrap_or_default();
-            if let Some(python_dir) = self.detect_python_path().await {
+            if let Some(python_dir) = platforms::windows::detect_python_path().await {
                 let python_str = python_dir.to_string_lossy();
                 // Simple check to avoid duplicate appending if it's already in PATH
                 if !current_path.contains(python_str.as_ref()) {
@@ -344,161 +287,39 @@ impl SessionIsolationManager {
         &self,
         config: IsolatedProcessConfig,
     ) -> Result<AsyncCommand, String> {
-        match std::env::consts::OS {
-            "linux" => {
-                #[cfg(target_os = "linux")]
-                {
-                    self.create_linux_high_isolation(config).await
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    warn!("Linux isolation not available on this platform, falling back to medium isolation");
-                    self.create_medium_isolated_command(config).await
-                }
+        // Try Linux High Isolation
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(cmd) = platforms::linux::create_high_isolation(&config).await? {
+                return Ok(cmd);
             }
-            "macos" => {
-                #[cfg(target_os = "macos")]
-                {
-                    self.create_macos_high_isolation(config).await
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    warn!("macOS isolation not available on this platform, falling back to medium isolation");
-                    self.create_medium_isolated_command(config).await
-                }
-            }
-            "windows" => {
-                #[cfg(target_os = "windows")]
-                {
-                    self.create_windows_high_isolation(config).await
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    warn!("Windows isolation not available on this platform, falling back to medium isolation");
-                    self.create_medium_isolated_command(config).await
-                }
-            }
-            _ => {
-                warn!("High isolation not supported on this platform, falling back to medium isolation");
-                self.create_medium_isolated_command(config).await
-            }
-        }
-    }
-
-    /// Linux high isolation using unshare (user namespaces)
-    #[cfg(target_os = "linux")]
-    async fn create_linux_high_isolation(
-        &self,
-        config: IsolatedProcessConfig,
-    ) -> Result<AsyncCommand, String> {
-        // Check if unshare is available
-        if !self.is_command_available("unshare").await {
-            warn!("unshare not available, falling back to medium isolation");
-            return self.create_medium_isolated_command(config).await;
+            warn!("Linux isolation not available on this platform, falling back to medium isolation");
         }
 
-        let mut cmd = AsyncCommand::new("unshare");
-
-        // Configure namespaces for isolation
-        cmd.args([
-            "--user",  // User namespace isolation
-            "--pid",   // PID namespace isolation
-            "--mount", // Mount namespace isolation
-            "--fork",  // Fork before exec
-            "--",
-        ]);
-
-        // Add the actual command
-        cmd.arg(&config.command);
-        cmd.args(&config.args);
-
-        // Set environment and working directory
-        cmd.current_dir(&config.workspace_path);
-        cmd.env("HOME", &config.workspace_path);
-        cmd.env("PWD", &config.workspace_path);
-        // PATH and other envs inherited (if unshare allows, though user namespaces might be tricky)
-
-        for (key, value) in config.env_vars {
-            cmd.env(key, value);
+        // Try macOS High Isolation
+        #[cfg(target_os = "macos")]
+        {
+             if let Some(cmd) = platforms::macos::create_high_isolation(&config).await? {
+                 return Ok(cmd);
+             }
+             warn!("macOS isolation not available on this platform, falling back to medium isolation");
         }
 
-        info!(
-            "Created Linux high isolation command for session: {}",
-            config.session_id
-        );
-        Ok(cmd)
-    }
-
-    /// macOS high isolation using sandbox-exec
-    #[cfg(target_os = "macos")]
-    async fn create_macos_high_isolation(
-        &self,
-        config: IsolatedProcessConfig,
-    ) -> Result<AsyncCommand, String> {
-        // Check if sandbox-exec is available
-        if !self.is_command_available("sandbox-exec").await {
-            warn!("sandbox-exec not available, falling back to medium isolation");
-            return self.create_medium_isolated_command(config).await;
+        // Windows High Isolation
+        #[cfg(target_os = "windows")]
+        {
+             // Windows high isolation builds on medium (wraps cmd/powershell)
+             let mut cmd = self.create_medium_isolated_command(config.clone()).await?;
+             platforms::windows::apply_high_isolation(&mut cmd)?;
+             info!("Created Windows high isolation command for session: {}", config.session_id);
+             return Ok(cmd);
         }
 
-        // Create a sandbox profile for this session
-        let profile_content = self.create_macos_sandbox_profile(&config)?;
-        let profile_path = config.workspace_path.join(".sandbox_profile");
-
-        tokio::fs::write(&profile_path, profile_content)
-            .await
-            .map_err(|e| format!("Failed to write sandbox profile: {e}"))?;
-
-        let mut cmd = AsyncCommand::new("sandbox-exec");
-        cmd.args([
-            "-f",
-            profile_path
-                .to_str()
-                .ok_or_else(|| "Failed to convert profile path to string".to_string())?,
-        ]);
-        cmd.arg(&config.command);
-        cmd.args(&config.args);
-
-        // Set environment and working directory
-        cmd.current_dir(&config.workspace_path);
-        cmd.env("HOME", &config.workspace_path);
-        cmd.env("PWD", &config.workspace_path);
-        // PATH and other envs inherited
-
-        for (key, value) in config.env_vars {
-            cmd.env(key, value);
+        // Fallback for Linux/Mac if high isolation failed (returned None)
+        #[cfg(not(target_os = "windows"))]
+        {
+            self.create_medium_isolated_command(config).await
         }
-
-        info!(
-            "Created macOS high isolation command for session: {}",
-            config.session_id
-        );
-        Ok(cmd)
-    }
-
-    /// Windows high isolation using job objects and restricted tokens
-    #[cfg(target_os = "windows")]
-    async fn create_windows_high_isolation(
-        &self,
-        config: IsolatedProcessConfig,
-    ) -> Result<AsyncCommand, String> {
-        let mut cmd = self.create_medium_isolated_command(config.clone()).await?;
-
-        // Apply Windows-specific isolation
-        #[allow(unused_imports)]
-        use std::os::windows::process::CommandExt;
-
-        // Windows high isolation flags:
-        // - CREATE_NEW_PROCESS_GROUP: Isolate process for signal handling
-        // Note: Both CREATE_NO_WINDOW and DETACHED_PROCESS break stdio for cmd.exe!
-        // Using only CREATE_NEW_PROCESS_GROUP for same reason as Medium isolation
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
-
-        info!(
-            "Created Windows high isolation command for session: {}",
-            config.session_id
-        );
-        Ok(cmd)
     }
 
     /// Apply resource limits to the command
@@ -537,209 +358,7 @@ impl SessionIsolationManager {
 
         Ok(())
     }
-
-    /// Create macOS sandbox profile
-    #[cfg(target_os = "macos")]
-    fn create_macos_sandbox_profile(
-        &self,
-        config: &IsolatedProcessConfig,
-    ) -> Result<String, String> {
-        let workspace_path_str = config
-            .workspace_path
-            .to_str()
-            .ok_or("Invalid workspace path")?;
-
-        let profile = format!(
-            r#"
-(version 1)
-(deny default)
-
-;; Allow basic system operations
-(allow process-info* (target self))
-(allow signal (target self))
-(allow sysctl-read)
-
-;; Allow reading system frameworks and libraries
-(allow file-read*
-    (subpath "/System/Library")
-    (subpath "/usr/lib")
-    (subpath "/usr/bin")
-    (subpath "/bin"))
-
-;; Allow access to workspace directory
-(allow file-read* file-write* file-ioctl
-    (subpath "{workspace_path}"))
-
-;; Allow temporary directory access
-(allow file-read* file-write* file-ioctl
-    (subpath "/tmp")
-    (subpath "/var/tmp"))
-
-;; Allow network access if enabled
-{network_rules}
-
-;; Deny access to sensitive directories
-(deny file-read* file-write*
-    (subpath "/private")
-    (subpath "$HOME" (except (subpath "{workspace_path}"))))
-"#,
-            workspace_path = workspace_path_str,
-            network_rules = "(allow network*)" // Allow network access by default
-        );
-
-        Ok(profile)
-    }
-
-    /// Check if a command is available on the system
-    #[allow(dead_code)] // Used by platform-specific high isolation
-    async fn is_command_available(&self, command: &str) -> bool {
-        // Use the async Tokio Command to avoid blocking the async runtime
-        let mut cmd = if cfg!(target_os = "windows") {
-            AsyncCommand::new("where")
-        } else {
-            AsyncCommand::new("which")
-        };
-
-        cmd.arg(command);
-
-        match cmd.output().await {
-            Ok(output) => output.status.success(),
-            Err(err) => {
-                warn!("Failed to check command availability: {err}");
-                false
-            }
-        }
-    }
-
-    /// Get the appropriate shell command for the platform and shell type
-    fn get_shell_command(&self, shell_type: Option<ShellType>) -> &str {
-        if cfg!(target_os = "windows") {
-            match shell_type {
-                Some(ShellType::Cmd) => "cmd",
-                Some(ShellType::PowerShell) | Some(ShellType::Bash) | None => "powershell",
-            }
-        } else {
-            "bash"
-        }
-    }
-
-    /// Get restricted PATH for security
-    #[allow(dead_code)] // Used only on Unix platforms
-    fn get_restricted_path(&self) -> String {
-        if cfg!(target_os = "windows") {
-            // Windows PATH must include:
-            // - System32: Core Windows commands (cmd, findstr, etc.)
-            // - Windows: Additional system utilities
-            // - System32\WindowsPowerShell\v1.0: PowerShell (if available)
-            // Note: We intentionally restrict access to user-installed software
-            "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\WindowsPowerShell\\v1.0"
-                .to_string()
-        } else {
-            // Unix: Include common user installation paths
-            // - /bin, /usr/bin: System binaries
-            // - /usr/local/bin: User-installed software (brew, etc.)
-            // - ~/.local/bin: Python pip, pipx, uv, etc.
-            // - ~/.cargo/bin: Rust cargo-installed tools
-            let mut paths = vec![
-                "/bin".to_string(),
-                "/usr/bin".to_string(),
-                "/usr/local/bin".to_string(),
-            ];
-
-            // Add user-specific paths if HOME is available
-            if let Ok(home) = std::env::var("HOME") {
-                let home_path = PathBuf::from(home);
-                paths.push(
-                    home_path
-                        .join(".local")
-                        .join("bin")
-                        .to_string_lossy()
-                        .to_string(),
-                );
-                paths.push(
-                    home_path
-                        .join(".cargo")
-                        .join("bin")
-                        .to_string_lossy()
-                        .to_string(),
-                );
-            }
-
-            paths.join(":")
-        }
-        .to_string()
-    }
-
-    /// Detects a valid Python installation on Windows, prioritizing non-Store versions.
-    #[cfg(target_os = "windows")]
-    async fn detect_python_path(&self) -> Option<PathBuf> {
-        // 1. Try `where python` to find registered executables
-        if let Ok(output) = AsyncCommand::new("where").arg("python").output().await {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let path = PathBuf::from(line.trim());
-                    // Filter out WindowsApps shim which redirects to Microsoft Store
-                    if !path.to_string_lossy().contains("WindowsApps") && path.exists() {
-                        if let Some(parent) = path.parent() {
-                            info!("Detected Python via 'where': {:?}", parent);
-                            return Some(parent.to_path_buf());
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Check standard installation locations as fallback
-        let common_paths = vec![
-            // Anaconda (User)
-            std::env::var("LOCALAPPDATA")
-                .ok()
-                .map(|p| PathBuf::from(p).join("Anaconda3")),
-            // Anaconda (System)
-            std::env::var("ProgramData")
-                .ok()
-                .map(|p| PathBuf::from(p).join("Anaconda3")),
-            // Anaconda (User Profile)
-            std::env::var("USERPROFILE")
-                .ok()
-                .map(|p| PathBuf::from(p).join("anaconda3")),
-            // Standard Python (User) - check for Python3* directories
-            std::env::var("LOCALAPPDATA")
-                .ok()
-                .map(|p| PathBuf::from(p).join("Programs").join("Python")),
-        ];
-
-        for path in common_paths.into_iter().flatten() {
-            // For standard Python, we might need to look deeper (e.g. Python39, Python310)
-            if path.join("python.exe").exists() {
-                info!("Detected Python via standard path: {:?}", path);
-                return Some(path);
-            }
-
-            // Check subdirectories for standard Python installs
-            if path.exists() && path.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&path) {
-                    for entry in entries.flatten() {
-                        let subpath = entry.path();
-                        if subpath.join("python.exe").exists() {
-                            info!(
-                                "Detected Python via standard path subdirectory: {:?}",
-                                subpath
-                            );
-                            return Some(subpath);
-                        }
-                    }
-                }
-            }
-        }
-
-        None
-    }
 }
-
-// Note: AsyncCommand argument manipulation is complex and platform-specific
-// For now, we'll build commands differently to avoid this issue
 
 #[cfg(test)]
 mod tests {
