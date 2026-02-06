@@ -1,4 +1,11 @@
-import { useState, useRef, useCallback, useMemo, useEffect, useLayoutEffect } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { createId } from '@paralleldrive/cuid2';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
@@ -81,7 +88,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
-      textarea.style.height = `${textarea.scrollHeight}px`;
+      const maxHeightPx = 96; // 6rem, matching Tailwind max-h-24
+      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
+      textarea.style.height = `${nextHeight}px`;
     }
   }, [input]);
 
