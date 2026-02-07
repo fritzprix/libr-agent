@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.22] - 2026-02-07
+
+### 🚀 Features
+
+- **Release Management System**: Introduced comprehensive tooling for automated releases
+  - **New Release Skill**: Added `release-manager` skill to guide and automate the release process
+  - **Interactive Workflow**: Enhanced `release.sh` with interactive steps, verification checks, and safety guards
+  - **Changelog Automation**: Added tools to draft changelogs from git history
+
+- **Skill Management Engine**: Added core infrastructure for Agent Skills
+  - **New Editor Interface**: Added `SkillsEditor` component for managing agent capabilities
+  - **Backend Commands**: Implemented `skill_management` and `skill_commands` in Rust backend
+  - **Validation**: Added `skill_tests.rs` for ensuring skill integrity
+
+- **Dependency Management**:
+  - **Bun Support**: Added Bun lockfile and defined trusted dependencies (Commit `1a17ca4b`)
+
+### 🔧 Refactoring
+
+- **Project Cleanup**: Consolidating skill-related code and configuration
+
 ## [Unreleased]
 
 ### 2026-01-24
