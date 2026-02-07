@@ -103,8 +103,15 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
         Option::None => return Ok(missing_param_error("transport", ToolGroup::McpManager)),
     };
 
-    let transport: TransportConfig = serde_json::from_value(transport_val.clone())
-        .map_err(|e| format!("Invalid transport config: {}", e))?;
+    let transport: TransportConfig = match serde_json::from_value(transport_val.clone()) {
+        Ok(config) => config,
+        Err(e) => {
+            return Ok(invalid_input_error(
+                &format!("Invalid transport config: {}", e),
+                ToolGroup::McpManager,
+            ))
+        }
+    };
 
     // Extract optional description for metadata
     let metadata = args
