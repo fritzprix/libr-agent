@@ -16,7 +16,7 @@ import type { Assistant } from '../models/chat';
 import { toast } from 'sonner';
 import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
-import type { MCPTool } from '@/lib/mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import { useSettings } from '@/hooks/use-settings';
 import { AssistantService } from '@/lib/services/assistant-service';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';

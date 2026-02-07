@@ -5,7 +5,7 @@ import type {
   MCPConfig,
   SamplingOptions,
   SamplingResponse,
-} from '@/lib/mcp-types';
+} from '@/lib/mcp';
 import type { MCPResponse } from '@/lib/mcp/protocol';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 import type {

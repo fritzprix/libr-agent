@@ -5,7 +5,7 @@ import {
   TransportConfig,
   OAuthConfig,
   ServerMetadata,
-} from '../lib/mcp-types';
+} from '@/lib/mcp';
 
 // UIResource interface for MCP-UI integration
 export interface UIResource {

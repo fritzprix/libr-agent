@@ -1,5 +1,5 @@
 import { safeInvoke } from './core';
-import type { MCPTool, MCPResponse } from '@/lib/mcp-types';
+import type { MCPTool, MCPResponse } from '@/lib/mcp';
 import type { BuiltinServerInfo } from './types';
 import { createId } from '@paralleldrive/cuid2';
 

@@ -1,6 +1,42 @@
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
+fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
+    object_prop(
+        vec![
+            (
+                "type".to_string(),
+                enum_prop_required(vec!["stdio", "http"], "Transport type"),
+            ),
+            (
+                "command".to_string(),
+                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
+            ),
+            (
+                "args".to_string(),
+                array_schema(
+                    string_prop(None, None, None),
+                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
+                ),
+            ),
+            (
+                "env".to_string(),
+                object_prop(vec![], vec![], Some("Environment variables")),
+            ),
+            (
+                "url".to_string(),
+                string_prop(None, None, Some("Server URL (http only)")),
+            ),
+            (
+                "headers".to_string(),
+                object_prop(vec![], vec![], Some("HTTP headers")),
+            ),
+        ],
+        vec!["type".to_string()],
+        description,
+    )
+}
+
 /// List all registered MCP servers
 pub fn list_servers_tool() -> MCPTool {
     MCPTool {
@@ -89,39 +125,7 @@ pub fn search_server_tool() -> MCPTool {
 
 /// Register a new MCP server configuration
 pub fn register_server_tool() -> MCPTool {
-    let transport_schema = object_prop(
-        vec![
-            (
-                "type".to_string(),
-                enum_prop_required(vec!["stdio", "http"], "Transport type"),
-            ),
-            (
-                "command".to_string(),
-                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
-            ),
-            (
-                "args".to_string(),
-                array_schema(
-                    string_prop(None, None, None),
-                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
-                ),
-            ),
-            (
-                "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables")),
-            ),
-            (
-                "url".to_string(),
-                string_prop(None, None, Some("Server URL (http only)")),
-            ),
-            (
-                "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers")),
-            ),
-        ],
-        vec!["type".to_string()],
-        Some("Transport configuration"),
-    );
+    let transport_schema = transport_config_schema(Some("Transport configuration"));
 
     MCPTool {
         name: "registerServer".to_string(),
@@ -188,39 +192,7 @@ EXAMPLE:
 
 /// Update configuration for an existing MCP server
 pub fn update_server_tool() -> MCPTool {
-    let transport_schema = object_prop(
-        vec![
-            (
-                "type".to_string(),
-                enum_prop_required(vec!["stdio", "http"], "Transport type"),
-            ),
-            (
-                "command".to_string(),
-                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
-            ),
-            (
-                "args".to_string(),
-                array_schema(
-                    string_prop(None, None, None),
-                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
-                ),
-            ),
-            (
-                "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables")),
-            ),
-            (
-                "url".to_string(),
-                string_prop(None, None, Some("Server URL (http only)")),
-            ),
-            (
-                "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers")),
-            ),
-        ],
-        vec!["type".to_string()],
-        Some("New transport configuration"),
-    );
+    let transport_schema = transport_config_schema(Some("New transport configuration"));
 
     MCPTool {
         name: "updateServer".to_string(),
@@ -358,19 +330,6 @@ Results are paginated (20 tools per page) for large result sets.
         output_schema: None,
         annotations: None,
     }
-}
-
-/// List all available built-in MCP tools (DEPRECATED - use listInternalTools)
-#[deprecated(since = "0.4.0", note = "Use list_internal_tools_tool() instead")]
-pub fn list_builtin_tools_tool() -> MCPTool {
-    let mut tool = list_internal_tools_tool();
-    tool.name = "listBuiltinTools".to_string();
-    tool.title = Some("List Builtin Tools (DEPRECATED)".to_string());
-    tool.description = format!(
-        "⚠️ DEPRECATED: Use 'listInternalTools' instead. This tool will be removed in v0.6.0.\n\n{}",
-        tool.description
-    );
-    tool
 }
 
 /// List all registered external MCP servers (NEW NAME)

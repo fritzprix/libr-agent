@@ -1,7 +1,7 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { getLogger } from '../logger';
 import { Message, ToolCall } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolsToCerebrasTools } from './tool-converters';

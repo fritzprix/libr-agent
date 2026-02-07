@@ -420,7 +420,7 @@ These patterns are acceptable:
 
 ```typescript
 interface Config {
-  tools?: import('../mcp-types').MCPTool[];
+  tools?: import('@/lib/mcp').MCPTool[];
   messages: import('@/models/chat').Message[];
 }
 ```
@@ -428,7 +428,7 @@ interface Config {
 #### ✅ Good (Proper Import Statements)
 
 ```typescript
-import type { MCPTool } from '../mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
 interface Config {

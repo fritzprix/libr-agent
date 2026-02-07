@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
-import type { MCPContent, MCPToolCallContent } from '@/lib/mcp-types';
+import type { MCPContent, MCPToolCallContent } from '@/lib/mcp';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 
@@ -83,7 +83,7 @@ function AgentMessageBubbleImpl({
         >
           <div className="text-xs font-semibold mb-1 opacity-70">
             {msg.role === 'assistant'
-              ? getAssistantNameForMessage(msg) || 'ASSISTANT'
+              ? getAssistantName?.(msg) || 'ASSISTANT'
               : msg.role === 'user'
                 ? 'You'
                 : msg.role.toUpperCase()}

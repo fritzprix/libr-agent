@@ -15,7 +15,7 @@ import {
   MCPTool,
   SamplingOptions,
   SamplingResponse,
-} from '../lib/mcp-types';
+} from '@/lib/mcp';
 import { MCPConfig, ToolCall, Assistant } from '../models/chat';
 import type { MCPServerEntity } from '../models/chat';
 import { toValidJsName } from '@/lib/utils';

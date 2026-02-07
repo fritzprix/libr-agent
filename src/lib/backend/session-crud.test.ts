@@ -49,7 +49,7 @@ describe('session-crud', () => {
   });
 
   it('createSession should extract unique mcpServerIds from assistants', async () => {
-    (safeInvoke as any).mockResolvedValue({});
+    vi.mocked(safeInvoke).mockResolvedValue({});
 
     await createSession(mockSession);
 
@@ -67,7 +67,13 @@ describe('session-crud', () => {
       },
     });
 
-    const callArgs = (safeInvoke as any).mock.calls[0][1];
+    const callArgs = vi.mocked(safeInvoke).mock.calls[0][1] as {
+      request: {
+        agentConfig: {
+          mcpServerIds: string[];
+        };
+      };
+    };
     const passedIds = callArgs.request.agentConfig.mcpServerIds;
     expect(passedIds).toHaveLength(3); // Unique IDs
   });
@@ -80,7 +86,7 @@ describe('session-crud', () => {
     // First call: getSession -> agent_get_session
     // Second call: agent_update_session_config
 
-    (safeInvoke as any)
+    vi.mocked(safeInvoke)
       .mockResolvedValueOnce({
         id: 'session-1',
         createdAt: Date.now(),

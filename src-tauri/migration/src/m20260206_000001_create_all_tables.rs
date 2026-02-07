@@ -24,16 +24,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Sessions::Name).string())
                     .col(ColumnDef::new(Sessions::Status).string().not_null())
                     .col(ColumnDef::new(Sessions::AgentConfig).string())
-                    .col(
-                        ColumnDef::new(Sessions::CreatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Sessions::UpdatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Sessions::CreatedAt).big_integer().not_null())
+                    .col(ColumnDef::new(Sessions::UpdatedAt).big_integer().not_null())
                     .to_owned(),
             )
             .await?;
@@ -63,16 +55,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Messages::ToolUse).string())
                     .col(ColumnDef::new(Messages::Source).string())
                     .col(ColumnDef::new(Messages::Error).string())
-                    .col(
-                        ColumnDef::new(Messages::CreatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Messages::UpdatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Messages::CreatedAt).big_integer().not_null())
+                    .col(ColumnDef::new(Messages::UpdatedAt).big_integer().not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-messages-session_id")
@@ -128,16 +112,13 @@ impl MigrationTrait for Migration {
                 // Note: The most reliable way to check for column existence without failing
                 // is querying information schema or just trying to select it.
                 // Since this is SQLite, we can check PRAGMA table_info or select.
-                let has_id = match db
+                let has_id = db
                     .execute(Statement::from_string(
                         db.get_database_backend(),
                         "SELECT id FROM mcp_servers LIMIT 1".to_owned(),
                     ))
                     .await
-                {
-                    Ok(_) => true,
-                    Err(_) => false,
-                };
+                    .is_ok();
 
                 if !has_id {
                     log::info!("Migrating existing mcp_servers table...");
@@ -245,8 +226,9 @@ impl MigrationTrait for Migration {
                         if let Ok(mut config) =
                             serde_json::from_str::<serde_json::Value>(&config_str)
                         {
-                            if let Some(mcp_ids) =
-                                config.get_mut("mcpServerIds").and_then(|v| v.as_array_mut())
+                            if let Some(mcp_ids) = config
+                                .get_mut("mcpServerIds")
+                                .and_then(|v| v.as_array_mut())
                             {
                                 let mut migrated = false;
                                 for id_value in mcp_ids.iter_mut() {
@@ -266,9 +248,10 @@ impl MigrationTrait for Migration {
                                             .unwrap_or(false)
                                     });
 
-                                    let new_config = serde_json::to_string(&config).map_err(|e| {
-                                        DbErr::Custom(format!("Failed to serialize: {}", e))
-                                    })?;
+                                    let new_config =
+                                        serde_json::to_string(&config).map_err(|e| {
+                                            DbErr::Custom(format!("Failed to serialize: {}", e))
+                                        })?;
 
                                     db.execute_unprepared(&format!(
                                         "UPDATE assistants SET config = '{}' WHERE id = '{}'",
@@ -284,6 +267,34 @@ impl MigrationTrait for Migration {
             }
         }
 
+        // 3.1 Assistants
+        manager
+            .create_table(
+                Table::create()
+                    .table(Assistants::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Assistants::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Assistants::Name).string().not_null())
+                    .col(ColumnDef::new(Assistants::Config).string().not_null())
+                    .col(
+                        ColumnDef::new(Assistants::CreatedAt)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Assistants::UpdatedAt)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         // 4. Playbooks
         manager
             .create_table(
@@ -291,11 +302,7 @@ impl MigrationTrait for Migration {
                     .table(Playbooks::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(Playbooks::Id).string().not_null())
-                    .col(
-                        ColumnDef::new(Playbooks::AssistantId)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Playbooks::AssistantId).string().not_null())
                     .primary_key(
                         Index::create()
                             .col(Playbooks::Id)
@@ -309,7 +316,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(Playbooks::IsBookmarked)
                             .boolean()
                             .not_null()
-                            .default(false),
+                            .default(0),
                     )
                     .col(
                         ColumnDef::new(Playbooks::CreatedAt)
@@ -333,16 +340,12 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(Knowledge::Id)
-                            .big_integer()
+                            .integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(Knowledge::AssistantId)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Knowledge::AssistantId).string().not_null())
                     .col(ColumnDef::new(Knowledge::Title).string().not_null())
                     .col(ColumnDef::new(Knowledge::Content).string().not_null())
                     .col(ColumnDef::new(Knowledge::Source).string())
@@ -357,11 +360,16 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .index(
-                        Index::create()
-                            .name("idx-knowledge-assistant_id")
-                            .col(Knowledge::AssistantId),
-                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-knowledge-assistant_id")
+                    .table(Knowledge::Table)
+                    .col(Knowledge::AssistantId)
                     .to_owned(),
             )
             .await?;
@@ -379,16 +387,8 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Settings::Value).string().not_null())
-                    .col(
-                        ColumnDef::new(Settings::CreatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(Settings::UpdatedAt)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(Settings::CreatedAt).big_integer().not_null())
+                    .col(ColumnDef::new(Settings::UpdatedAt).big_integer().not_null())
                     .to_owned(),
             )
             .await?;
@@ -401,21 +401,13 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(PlanningGoals::Id)
-                            .big_integer()
+                            .integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(PlanningGoals::SessionId)
-                            .string()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(PlanningGoals::GoalText)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(PlanningGoals::SessionId).string().not_null())
+                    .col(ColumnDef::new(PlanningGoals::GoalText).string().not_null())
                     .col(ColumnDef::new(PlanningGoals::Status).string().not_null())
                     .col(
                         ColumnDef::new(PlanningGoals::CreatedAt)
@@ -434,16 +426,12 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(PlanningTodos::Id)
-                            .big_integer()
+                            .integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
                     )
-                    .col(
-                        ColumnDef::new(PlanningTodos::SessionId)
-                            .string()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(PlanningTodos::SessionId).string().not_null())
                     .col(ColumnDef::new(PlanningTodos::Content).string().not_null())
                     .col(ColumnDef::new(PlanningTodos::Description).string())
                     .col(ColumnDef::new(PlanningTodos::Priority).string().not_null())
@@ -452,7 +440,7 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(PlanningTodos::IsChecked)
                             .boolean()
                             .not_null()
-                            .default(false),
+                            .default(0),
                     )
                     .col(ColumnDef::new(PlanningTodos::Status).string().not_null())
                     .col(
@@ -483,7 +471,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(PlanningScratchpad::Id)
-                            .big_integer()
+                            .integer()
                             .not_null()
                             .auto_increment()
                             .primary_key(),
@@ -515,10 +503,98 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // 10. Stores
+        manager
+            .create_table(
+                Table::create()
+                    .table(Stores::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Stores::SessionId)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Stores::Name).string())
+                    .col(ColumnDef::new(Stores::Description).string())
+                    .col(ColumnDef::new(Stores::CreatedAt).string().not_null())
+                    .col(ColumnDef::new(Stores::UpdatedAt).string().not_null())
+                    .to_owned(),
+            )
+            .await?;
+
+        // 11. Contents
+        manager
+            .create_table(
+                Table::create()
+                    .table(Contents::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Contents::Id)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Contents::SessionId).string().not_null())
+                    .col(ColumnDef::new(Contents::Filename).string().not_null())
+                    .col(ColumnDef::new(Contents::MimeType).string().not_null())
+                    .col(ColumnDef::new(Contents::Size).integer().not_null())
+                    .col(ColumnDef::new(Contents::LineCount).integer().not_null())
+                    .col(ColumnDef::new(Contents::Preview).string().not_null())
+                    .col(ColumnDef::new(Contents::UploadedAt).string().not_null())
+                    .col(ColumnDef::new(Contents::ChunkCount).integer().not_null())
+                    .col(ColumnDef::new(Contents::LastAccessedAt).string().not_null())
+                    .col(ColumnDef::new(Contents::Content).text().not_null())
+                    .col(ColumnDef::new(Contents::SrcUrl).string())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-contents-session_id")
+                            .from(Contents::Table, Contents::SessionId)
+                            .to(Stores::Table, Stores::SessionId)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // 12. Chunks
+        manager
+            .create_table(
+                Table::create()
+                    .table(Chunks::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(Chunks::Id).string().not_null().primary_key())
+                    .col(ColumnDef::new(Chunks::ContentId).string().not_null())
+                    .col(ColumnDef::new(Chunks::ChunkIndex).integer().not_null())
+                    .col(ColumnDef::new(Chunks::Text).text().not_null())
+                    .col(ColumnDef::new(Chunks::StartLine).integer().not_null())
+                    .col(ColumnDef::new(Chunks::EndLine).integer().not_null())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-chunks-content_id")
+                            .from(Chunks::Table, Chunks::ContentId)
+                            .to(Contents::Table, Contents::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(Chunks::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Contents::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Stores::Table).to_owned())
+            .await?;
         manager
             .drop_table(Table::drop().table(PlanningScratchpad::Table).to_owned())
             .await?;
@@ -538,6 +614,9 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(Playbooks::Table).to_owned())
             .await?;
         manager
+            .drop_table(Table::drop().table(Assistants::Table).to_owned())
+            .await?;
+        manager
             .drop_table(Table::drop().table(Messages::Table).to_owned())
             .await?;
         manager
@@ -553,6 +632,7 @@ impl MigrationTrait for Migration {
 
 #[derive(DeriveIden)]
 enum Sessions {
+    #[sea_orm(iden = "sessions")]
     Table,
     Id,
     Name,
@@ -564,6 +644,7 @@ enum Sessions {
 
 #[derive(DeriveIden)]
 enum Messages {
+    #[sea_orm(iden = "messages")]
     Table,
     Id,
     SessionId,
@@ -585,6 +666,7 @@ enum Messages {
 
 #[derive(DeriveIden)]
 enum McpServers {
+    #[sea_orm(iden = "mcp_servers")]
     Table,
     #[sea_orm(iden = "mcp_servers_new")]
     TableNew,
@@ -598,6 +680,7 @@ enum McpServers {
 
 #[derive(DeriveIden)]
 enum Playbooks {
+    #[sea_orm(iden = "playbooks")]
     Table,
     Id,
     AssistantId,
@@ -612,6 +695,7 @@ enum Playbooks {
 
 #[derive(DeriveIden)]
 enum Knowledge {
+    #[sea_orm(iden = "knowledge")]
     Table,
     Id,
     AssistantId,
@@ -625,6 +709,7 @@ enum Knowledge {
 
 #[derive(DeriveIden)]
 enum Settings {
+    #[sea_orm(iden = "settings")]
     Table,
     Key,
     Value,
@@ -634,6 +719,7 @@ enum Settings {
 
 #[derive(DeriveIden)]
 enum PlanningGoals {
+    #[sea_orm(iden = "planning_goals")]
     Table,
     Id,
     SessionId,
@@ -644,6 +730,7 @@ enum PlanningGoals {
 
 #[derive(DeriveIden)]
 enum PlanningTodos {
+    #[sea_orm(iden = "planning_todos")]
     Table,
     Id,
     SessionId,
@@ -659,6 +746,7 @@ enum PlanningTodos {
 
 #[derive(DeriveIden)]
 enum PlanningScratchpad {
+    #[sea_orm(iden = "planning_scratchpad")]
     Table,
     Id,
     SessionId,
@@ -672,8 +760,52 @@ enum PlanningScratchpad {
 
 #[derive(DeriveIden)]
 enum Assistants {
+    #[sea_orm(iden = "assistants")]
     Table,
     Id,
     Name,
     Config,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Stores {
+    #[sea_orm(iden = "stores")]
+    Table,
+    SessionId,
+    Name,
+    Description,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Contents {
+    #[sea_orm(iden = "contents")]
+    Table,
+    Id,
+    SessionId,
+    Filename,
+    MimeType,
+    Size,
+    LineCount,
+    Preview,
+    UploadedAt,
+    ChunkCount,
+    LastAccessedAt,
+    Content,
+    SrcUrl,
+}
+
+#[derive(DeriveIden)]
+enum Chunks {
+    #[sea_orm(iden = "chunks")]
+    Table,
+    Id,
+    ContentId,
+    ChunkIndex,
+    Text,
+    StartLine,
+    EndLine,
 }

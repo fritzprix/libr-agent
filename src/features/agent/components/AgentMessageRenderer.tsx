@@ -12,9 +12,9 @@ import type {
   ServiceInfo,
   MCPThinkingContent,
   MCPToolCallContent,
-} from '@/lib/mcp-types';
+} from '@/lib/mcp';
 import type { Message } from '@/models/chat';
-import { extractServiceInfoFromContent } from '@/lib/mcp-types';
+import { extractServiceInfoFromContent } from '@/lib/mcp';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';

@@ -1,7 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
 import { Message } from '@/models/chat';
 import { stringToMCPContentArray } from '@/lib/utils';
-import { MCPContent } from '@/lib/mcp-types';
+import { MCPContent } from '@/lib/mcp';
 
 interface BaseMessageOptions {
   role: Message['role'];

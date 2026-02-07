@@ -5,6 +5,7 @@ use tauri::{Emitter, Listener, Manager};
 mod agent;
 mod commands;
 mod config;
+mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
@@ -143,7 +144,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
         let migration_result = Migrator::up(&db, None).await;
 
         // Handle migration result, resetting DB if necessary
-        let db = match migration_result {
+        let mut db = match migration_result {
             Ok(_) => {
                 info!("✅ Database migrations applied");
                 db
@@ -194,6 +195,56 @@ pub fn run_with_sqlite_sync(db_url: String) {
                 }
             }
         };
+
+        // Validate schema after migrations
+        use db_schema_validator::validate_schema;
+
+        if let Err(validation_err) = validate_schema(&db).await {
+            warn!("⚠️ Schema validation failed: {}", validation_err);
+            warn!("⚠️ Database schema mismatch detected. Resetting database...");
+
+            if let Some(path_str) = db_url.strip_prefix("sqlite://") {
+                let path_parts: Vec<&str> = path_str.split('?').collect();
+                let file_path = path_parts[0];
+
+                // Drop connection
+                drop(db);
+
+                // Delete database
+                if let Err(err) = std::fs::remove_file(file_path) {
+                    error!("Failed to delete database: {err}");
+                    panic!("Cannot reset database after schema validation failure");
+                } else {
+                    info!("✅ Outdated database deleted");
+                }
+
+                // Recreate
+                std::fs::File::create(file_path).expect("Failed to recreate database file");
+                info!("✅ Created fresh database file");
+
+                // Reconnect
+                let new_db = sea_orm::Database::connect(&db_url)
+                    .await
+                    .expect("Failed to reconnect after schema validation failure");
+
+                // Run migrations
+                Migrator::up(&new_db, None)
+                    .await
+                    .expect("Failed to run migrations after schema reset");
+
+                // Validate again
+                validate_schema(&new_db)
+                    .await
+                    .expect("Schema validation failed after reset");
+
+                info!("✅ Database reset and validated successfully");
+                db = new_db;
+            } else {
+                panic!("Schema validation failed and cannot reset non-file database");
+            }
+        } else {
+            info!("✅ Database schema validated");
+        }
 
         // Initialize repository instances
         use repositories::{

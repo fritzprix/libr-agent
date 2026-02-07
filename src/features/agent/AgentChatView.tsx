@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
-import { MCPContent } from '@/lib/mcp-types';
+import { MCPContent } from '@/lib/mcp';
 import { toast } from 'sonner';
 import {
   useAgentChatActions,

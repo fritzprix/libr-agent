@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAgentAvailableTools } from '@/lib/backend/agent-commands';
-import type { MCPTool } from '@/lib/mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
 import { validateMCPTools } from '@/lib/schemas/mcp-tool';
 
