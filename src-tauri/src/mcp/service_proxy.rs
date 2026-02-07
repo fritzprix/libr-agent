@@ -12,6 +12,49 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 
+#[derive(Debug, PartialEq)]
+enum ToolRouting {
+    Builtin {
+        server_id: String,
+        tool_name: String,
+    },
+    External {
+        server_name: String,
+        tool_name: String,
+    },
+}
+
+fn route_tool(tool_name: &str) -> Result<ToolRouting, String> {
+    if tool_name.starts_with("builtin_") {
+        let suffix = tool_name.strip_prefix("builtin_").unwrap();
+        let (tool_id, real_tool_name) = suffix.split_once("__").ok_or_else(|| {
+            format!(
+                "Invalid builtin tool name format (missing '__'): {}",
+                tool_name
+            )
+        })?;
+
+        if tool_id.is_empty() {
+            return Err(format!("Invalid builtin tool ID (empty): {}", tool_name));
+        }
+
+        Ok(ToolRouting::Builtin {
+            server_id: tool_id.to_string(),
+            tool_name: real_tool_name.to_string(),
+        })
+    } else if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
+        Ok(ToolRouting::External {
+            server_name: server_name.to_string(),
+            tool_name: real_tool_name.to_string(),
+        })
+    } else {
+        Err(format!(
+            "Invalid tool name format (expected server__tool): {}",
+            tool_name
+        ))
+    }
+}
+
 /// Configuration for creating an MCPServiceProxy
 #[derive(Debug)]
 pub struct ProxyConfig {
@@ -253,69 +296,65 @@ impl MCPServiceProxy {
 
         // Wrap the entire execution in a timeout
         tokio::time::timeout(timeout_duration, async {
-            if tool_name.starts_with("builtin_") {
-                // Extract tool ID from full name (builtin_content_store__addContent -> content_store)
-                let tool_id = tool_name
-                    .strip_prefix("builtin_")
-                    .and_then(|s| s.split("__").next())
-                    .ok_or_else(|| format!("Invalid builtin tool name: {}", tool_name))?;
+            match route_tool(tool_name)? {
+                ToolRouting::Builtin {
+                    server_id,
+                    tool_name: real_tool_name,
+                } => {
+                    let server = self
+                        .builtin_servers
+                        .get(&server_id)
+                        .ok_or_else(|| format!("Built-in server not found: {}", server_id))?;
 
-                let server = self
-                    .builtin_servers
-                    .get(tool_id)
-                    .ok_or_else(|| format!("Built-in server not found: {}", tool_id))?;
+                    log::debug!(
+                        "Calling builtin tool '{}' for session '{}'",
+                        tool_name,
+                        self.session_id
+                    );
 
-                log::debug!(
-                    "Calling builtin tool '{}' for session '{}'",
-                    tool_name,
-                    self.session_id
-                );
+                    let result = server
+                        .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
+                        .await?;
 
-                let result = {
-                    let prefix = format!("builtin_{}__", tool_id);
-                    let real_tool_name = tool_name.strip_prefix(&prefix).unwrap_or(tool_name);
-                    server
-                        .call_tool(real_tool_name, args, Some(self.session_id.clone()))
-                        .await?
-                };
+                    // Convert MCPResult to MCPResponse with proper type
+                    Ok(MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    })
+                }
+                ToolRouting::External {
+                    server_name,
+                    tool_name: real_tool_name,
+                } => {
+                    // Route to external MCP manager or session-isolated manager
+                    log::debug!(
+                        "Routing to external MCP: '{}' for session '{}'",
+                        tool_name,
+                        self.session_id
+                    );
 
-                // Convert MCPResult to MCPResponse with proper type
-                Ok(MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: Some(super::types::JsonRpcId::String(
-                        uuid::Uuid::new_v4().to_string(),
-                    )),
-                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                    error: None,
-                })
-            } else {
-                // Route to external MCP manager or session-isolated manager
-                // Format is typically "server_name__tool_name"
-                log::debug!(
-                    "Routing to external MCP: '{}' for session '{}'",
-                    tool_name,
-                    self.session_id
-                );
-
-                if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
                     // 1. Check if it's a session-isolated HTTP server
-                    if self.session_managers.http.has_server(server_name).await {
+                    if self.session_managers.http.has_server(&server_name).await {
                         log::debug!("Routing to session-isolated HTTP server: {}", server_name);
                         return self
                             .session_managers
                             .http
-                            .call_tool(server_name, real_tool_name, args)
+                            .call_tool(&server_name, &real_tool_name, args)
                             .await
                             .map_err(|e| e.to_string());
                     }
 
                     // 2. Check if it's a session-isolated Stdio server
-                    if self.session_managers.stdio.has_server(server_name) {
+                    if self.session_managers.stdio.has_server(&server_name) {
                         log::debug!("Routing to session-isolated Stdio server: {}", server_name);
                         return self
                             .session_managers
                             .stdio
-                            .call_tool(server_name, real_tool_name, args)
+                            .call_tool(&server_name, &real_tool_name, args)
                             .await
                             .map_err(|e| e.to_string());
                     }
@@ -323,11 +362,6 @@ impl MCPServiceProxy {
                     Err(format!(
                         "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
                         tool_name, self.session_id
-                    ))
-                } else {
-                    Err(format!(
-                        "Invalid external tool name format: {}. Expected 'server__tool'",
-                        tool_name
                     ))
                 }
             }
@@ -554,20 +588,40 @@ async fn get_assistant_id_from_session(session_id: &str) -> Result<String, Strin
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
+    use super::*;
 
-    #[tokio::test]
-    async fn test_builtin_tool_routing() {
-        // TODO: Test that builtin_ prefix routes correctly
+    #[test]
+    fn test_builtin_tool_routing() {
+        let tool_name = "builtin_content_store__addContent";
+        let routing = route_tool(tool_name).expect("Parsing failed");
+
+        assert_eq!(
+            routing,
+            ToolRouting::Builtin {
+                server_id: "content_store".to_string(),
+                tool_name: "addContent".to_string(),
+            }
+        );
     }
 
-    #[tokio::test]
-    async fn test_external_tool_routing() {
-        // TODO: Test that non-builtin tools route to external manager
+    #[test]
+    fn test_external_tool_routing() {
+        let tool_name = "weather_server__get_forecast";
+        let routing = route_tool(tool_name).expect("Parsing failed");
+
+        assert_eq!(
+            routing,
+            ToolRouting::External {
+                server_name: "weather_server".to_string(),
+                tool_name: "get_forecast".to_string(),
+            }
+        );
     }
 
-    #[tokio::test]
-    async fn test_invalid_tool_name() {
-        // TODO: Test error handling for invalid tool names
+    #[test]
+    fn test_invalid_tool_name() {
+        assert!(route_tool("builtin_").is_err());
+        assert!(route_tool("builtin_no_separator").is_err());
+        assert!(route_tool("no_separator").is_err());
     }
 }
