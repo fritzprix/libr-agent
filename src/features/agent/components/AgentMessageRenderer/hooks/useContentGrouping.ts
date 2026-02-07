@@ -14,7 +14,7 @@ export function useContentGrouping(
   content: MCPContent[] | undefined,
   message: Message | undefined,
 ) {
-  // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
+  // Determine content source: prefer explicit 'content' prop, then fall back to message.content, then empty array
   // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
   const finalContent: MCPContent[] = content || message?.content || [];
 
