@@ -203,6 +203,7 @@ impl UiServer {
             return Ok(MCPResult {
                 content: Some(vec![MCPContent::Text {
                     text: "User cancelled the prompt.".to_string(),
+                    is_error: Some(true),
                 }]),
                 structured_content: None,
                 is_error: Some(true),
@@ -222,6 +223,7 @@ impl UiServer {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("User replied: {}", answer_str),
+                is_error: None,
             }]),
             structured_content: None,
             is_error: Some(false),
@@ -284,6 +286,7 @@ impl UiServer {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: "User resumed execution.".to_string(),
+                is_error: None,
             }]),
             structured_content: None,
             is_error: Some(false),
@@ -564,7 +567,10 @@ impl UiServer {
         );
 
         Ok(MCPResult {
-            content: Some(vec![MCPContent::Text { text }]),
+            content: Some(vec![MCPContent::Text {
+                text,
+                is_error: None,
+            }]),
             structured_content: None,
             is_error: Some(false),
         })

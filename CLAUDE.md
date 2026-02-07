@@ -506,7 +506,7 @@ let result = your_tool_handler(args).await?;
 // Extract text content
 let text = result.content.iter()
     .filter_map(|c| match c {
-        MCPContent::Text { text } => Some(text),
+        MCPContent::Text { text, .. } => Some(text),
         _ => None,
     })
     .collect::<Vec<_>>()

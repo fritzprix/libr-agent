@@ -238,7 +238,10 @@ impl SessionMCPManager {
                             match type_str {
                                 "text" => {
                                     let text = json_val.get("text")?.as_str()?.to_string();
-                                    Some(crate::mcp::types::MCPContent::Text { text })
+                                    Some(crate::mcp::types::MCPContent::Text {
+                                        text,
+                                        is_error: None,
+                                    })
                                 }
                                 "image" => {
                                     let data = json_val.get("data")?.as_str()?.to_string();

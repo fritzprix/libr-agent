@@ -165,7 +165,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let text_content = match result_data {
         crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
             if let Some(content) = &result.content {
-                if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = &content[0] {
                     text
                 } else {
                     panic!("Expected Text content")
@@ -199,7 +199,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let assistant_text = match assistant {
         crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
             if let Some(content) = &result.content {
-                if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = &content[0] {
                     text
                 } else {
                     panic!("Expected Text content")
@@ -253,7 +253,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let playbook1_text = match playbook1_result {
         crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
             if let Some(content) = &result.content {
-                if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = &content[0] {
                     text
                 } else {
                     panic!("Expected Text content")
@@ -278,7 +278,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let playbook2_text = match playbook2_result {
         crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
             if let Some(content) = &result.content {
-                if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = &content[0] {
                     text
                 } else {
                     panic!("Expected Text content")
@@ -382,7 +382,7 @@ async fn test_phase3_concurrent_operations() {
         let text_content = match result_data {
             crate::mcp::types::MCPResponseResult::ToolCall(ref result) => {
                 if let Some(content) = &result.content {
-                    if let crate::mcp::types::MCPContent::Text { text } = &content[0] {
+                    if let crate::mcp::types::MCPContent::Text { text, .. } = &content[0] {
                         text
                     } else {
                         panic!("Expected Text content")

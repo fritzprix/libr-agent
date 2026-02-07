@@ -410,6 +410,32 @@ pub async fn keyword_similarity_search(
         }
     }
 
+    // Build detailed results for agent visibility FIRST (using typed structs)
+    let results_text = if filtered_results.is_empty() {
+        String::new()
+    } else {
+        let details: Vec<String> = filtered_results
+            .iter()
+            .enumerate()
+            .map(|(idx, result)| {
+                // Sanitize match text to keep indentation valid
+                let clean_match = result.matched_text.replace('\n', " ");
+                let (start, end) = result.line_range;
+
+                format!(
+                    "[{}] Content ID: {}\n    Score: {:.2}\n    Lines: {}-{}\n    Match: {}",
+                    idx + 1,
+                    result.content_id,
+                    result.score,
+                    start,
+                    end,
+                    clean_match
+                )
+            })
+            .collect();
+        format!("\n\n{}", details.join("\n\n"))
+    };
+
     let search_results: Vec<serde_json::Value> = filtered_results
         .into_iter()
         .map(|result| {
@@ -422,27 +448,6 @@ pub async fn keyword_similarity_search(
             })
         })
         .collect();
-
-    // Build detailed results for agent visibility
-    let results_text = if search_results.is_empty() {
-        String::new()
-    } else {
-        let details: Vec<String> = search_results
-            .iter()
-            .enumerate()
-            .map(|(idx, result)| {
-                format!(
-                    "[{}] Content ID: {}\n    Score: {:.2}\n    Lines: {:?}\n    Match: {}",
-                    idx + 1,
-                    result["contentId"].as_str().unwrap_or("unknown"),
-                    result["score"].as_f64().unwrap_or(0.0),
-                    result["lineRange"],
-                    result["matchedText"].as_str().unwrap_or("")
-                )
-            })
-            .collect();
-        format!("\n\n{}", details.join("\n\n"))
-    };
 
     let hint = SuccessHint::new(
         format!(

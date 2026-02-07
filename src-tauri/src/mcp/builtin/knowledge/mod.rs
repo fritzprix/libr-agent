@@ -399,7 +399,7 @@ mod tests {
 
         // Verify text response formatting
         if let Some(content_vec) = result.content {
-            if let Some(crate::mcp::types::MCPContent::Text { text }) = content_vec.first() {
+            if let Some(crate::mcp::types::MCPContent::Text { text, .. }) = content_vec.first() {
                 println!("Text response: {}", text);
                 // Note: emptiness check depends on search result, but here count is 0 so it should be "Found 0..."
                 assert!(text.contains("Found 0 knowledge entries"));

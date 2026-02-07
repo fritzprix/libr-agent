@@ -138,7 +138,10 @@ pub fn create_tool_result_message(
     content: String,
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
-    let content_array = vec![MCPContent::Text { text: content }];
+    let content_array = vec![MCPContent::Text {
+        text: content,
+        is_error: None,
+    }];
 
     Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -169,6 +172,7 @@ pub fn create_error_tool_result(
     let now = chrono::Utc::now().timestamp_millis();
     let content_array = vec![MCPContent::Text {
         text: format!("Error: {}", error_message),
+        is_error: Some(true),
     }];
 
     Message {
@@ -338,6 +342,7 @@ mod tests {
         let tool_call_id = "call-123";
         let content = vec![MCPContent::Text {
             text: "Test result".to_string(),
+            is_error: None,
         }];
 
         let message =
@@ -349,7 +354,7 @@ mod tests {
         assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
 
         match &message.content[0] {
-            MCPContent::Text { text } => {
+            MCPContent::Text { text, .. } => {
                 assert_eq!(text, "Test result");
                 // Should NOT contain JSON string with "content" field
                 assert!(!text.contains("\"content\""));
@@ -373,7 +378,7 @@ mod tests {
         assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
 
         match &message.content[0] {
-            MCPContent::Text { text } => {
+            MCPContent::Text { text, .. } => {
                 assert_eq!(text, content_str);
             }
             _ => panic!("Expected text content"),
@@ -393,7 +398,7 @@ mod tests {
         assert_eq!(message.content.len(), 1);
 
         match &message.content[0] {
-            MCPContent::Text { text } => {
+            MCPContent::Text { text, .. } => {
                 assert!(text.contains(error_msg));
             }
             _ => panic!("Expected text content"),
@@ -407,9 +412,11 @@ mod tests {
         let content = vec![
             MCPContent::Text {
                 text: "First item".to_string(),
+                is_error: None,
             },
             MCPContent::Text {
                 text: "Second item".to_string(),
+                is_error: None,
             },
         ];
 
@@ -419,14 +426,14 @@ mod tests {
         assert_eq!(message.content.len(), 2);
 
         match &message.content[0] {
-            MCPContent::Text { text } => {
+            MCPContent::Text { text, .. } => {
                 assert_eq!(text, "First item");
             }
             _ => panic!("Expected text content"),
         }
 
         match &message.content[1] {
-            MCPContent::Text { text } => {
+            MCPContent::Text { text, .. } => {
                 assert_eq!(text, "Second item");
             }
             _ => panic!("Expected text content"),

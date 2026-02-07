@@ -211,6 +211,7 @@ pub fn create_resource_response(
     if let Some(msg) = message {
         content.push(MCPContent::Text {
             text: msg.to_string(),
+            is_error: None,
         });
     }
 
