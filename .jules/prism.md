@@ -105,3 +105,5 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-28 - [AgentDraftChatView] **Visual Bug:** Inconsistent border radius **Fix:** Use standard rounded-xl
 
 ## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Inline recursive rendering **Fix:** Extracted FileTreeNode component
+
+## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Accessibility violation (div with onClick) **Fix:** Use semantic button element
