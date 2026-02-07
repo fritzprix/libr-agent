@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, type Mock } from 'vitest';
 import { AgentChatAttachedFiles } from '../AgentChatAttachedFiles';
 import * as useAgentResourceAttachmentModule from '@/features/agent/hooks/useAgentResourceAttachment';
-import React from 'react';
 
 // Mock the hook
 vi.mock('@/features/agent/hooks/useAgentResourceAttachment', () => ({
@@ -37,7 +36,6 @@ describe('AgentChatAttachedFiles', () => {
 
     render(<AgentChatAttachedFiles />);
 
-    // This should fail currently
     expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
   });
 });
