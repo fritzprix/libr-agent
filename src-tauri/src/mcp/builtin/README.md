@@ -6,19 +6,22 @@ The Rust MCP server in LibrAgent is modularized for extensibility. This guide ex
 
 ```text
 src-tauri/src/mcp/builtin/
-├── mod.rs                # Server trait definitions and registry
-├── assistant/            # Assistant role management
-├── browser/              # Headless browser automation
-├── knowledge/            # Semantic search and memory
-├── planning/             # Task planning and tracking
-├── workspace/            # Terminal, File Manager, Code Execution
-├── content_store/        # Content storage and retrieval
-├── playbook/             # Workflow automation
-├── skills/               # Reusable capabilities
-├── ui/                   # UI interaction tools
-├── mcp_manager/          # MCP server management
-├── utils.rs              # Common utilities
-└── README.md             # This guide
+├── mod.rs                    # Server trait definitions and registry
+├── bootstrap/                # Shared initialization and bootstrap helpers
+├── assistant/                # Assistant role management
+├── browser/                  # Headless browser automation
+├── knowledge/                # Semantic search and memory
+├── planning/                 # Task planning and tracking
+├── workspace/                # Terminal, File Manager, Code Execution
+├── content_store/            # Content storage and retrieval
+├── playbook/                 # Workflow automation
+├── skills/                   # Reusable capabilities
+├── ui/                       # UI interaction tools
+├── mcp_manager/              # MCP server management
+├── browser_content_store.rs  # Browser-aware content store bridge
+├── error_guidance.rs         # Error analysis and guidance utilities
+├── utils.rs                  # Common utilities
+└── README.md                 # This guide
 ```
 
 ## 🏗️ MCP Server Module Architecture
@@ -46,15 +49,24 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     ) -> Result<MCPResult, String>;
 
     // Returns the service context (optional)
-    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext { ... }
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        ServiceContext {
+            context_prompt: format!(
+                "## {}\n**Description**: {}",
+                self.display_name(),
+                self.description()
+            ),
+            structured_state: None,
+        }
+    }
 }
 ```
 
 ### Tool Naming Conventions
 
 - **Internal**: Use simple names (e.g., `"echo"`).
-- **Registry**: Automatically prefixed with `server_name__` (e.g., `"builtin.example__echo"`).
-- **Frontend**: Called as `"builtin.example__echo"`.
+- **Registry**: Tools are exposed with IDs in the form `builtin_{server_id}__{tool_name}` (e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`).
+- **Frontend**: Call tools using the same ID format, e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`.
 
 ## 🚀 Step-by-Step Guide to Adding a New MCP Server Module
 
@@ -192,7 +204,7 @@ registry.register_server(Box::new(example::ExampleServer::new()));
 ### Automatic Tool Detection
 
 The frontend automatically detects new tools:
-- `builtin.example__echo`
+- `builtin_example__echo`
 
 ### Tool Call Example
 
@@ -201,7 +213,7 @@ const toolCall = {
   id: "req-123",
   type: "function",
   function: {
-    name: "builtin.example__echo",
+    name: "builtin_example__echo",
     arguments: JSON.stringify({ text: "Hello, LibrAgent!" })
   }
 };
