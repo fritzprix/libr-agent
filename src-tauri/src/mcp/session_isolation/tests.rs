@@ -28,7 +28,12 @@ fn create_test_manager() -> SessionMCPManager {
         http_connection_pool_size: 10,
     };
 
-    SessionMCPManager::new("test-session".to_string(), configs, config)
+    SessionMCPManager::new(
+        "test-session".to_string(),
+        configs,
+        config,
+        std::env::current_dir().unwrap(),
+    )
 }
 
 #[tokio::test]
