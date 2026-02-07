@@ -5,9 +5,6 @@ use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
 /// Basic isolation: environment variables and working directory
 pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
@@ -163,14 +160,6 @@ pub async fn create_basic_isolated_command(
             format!("'{}'", arg.replace("'", "''"))
         };
 
-        let mut command_parts = Vec::new();
-        command_parts.push(config.command.clone()); // Assuming command itself is safe/quoted if needed, or just a path
-                                                    // Actually, if command path has spaces, it needs quoting too.
-                                                    // But often `config.command` is just "python" or "node".
-                                                    // If it's a path, it might need quotes.
-                                                    // Let's assume basic quoting for safety.
-                                                    // command_parts[0] = quote_arg(&config.command); // Might break if it's "python" (no quotes needed usually but safe)
-
         // Wait, if we run `python file.py`, we want `python 'file.py'`.
         // If we run `"C:\Program Files\Python\python.exe" file.py`, we want `'C:\Program Files\Python\python.exe' 'file.py'`.
         // PowerShell handles `& 'path' args` syntax.
@@ -181,22 +170,17 @@ pub async fn create_basic_isolated_command(
         // e.g. `& 'C:\Path\To\Exe' 'arg1' 'arg2'`
 
         let binary = &config.command;
-        let safe_binary = if binary.contains(' ') {
-            format!("& '{}'", binary)
-        } else {
-            binary.clone()
-        };
-
         let args_str = config
             .args
             .iter()
             .map(|a| quote_arg(a))
             .collect::<Vec<_>>()
             .join(" ");
+
         let full_command = if args_str.is_empty() {
-            safe_binary
+            binary.clone()
         } else {
-            format!("{} {}", safe_binary, args_str)
+            format!("{} {}", binary, args_str)
         };
 
         let encoded_command = general_purpose::STANDARD.encode(&full_command);

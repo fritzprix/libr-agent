@@ -13,6 +13,7 @@ pub enum ShellType {
 
 #[derive(Debug, Clone)]
 pub struct IsolationConfig {
+    #[allow(dead_code)] // Planned for future use
     pub resource_limits: ResourceLimits,
 }
 
