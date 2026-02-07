@@ -13,6 +13,7 @@ import {
 } from './AgentSessionContext';
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
+import { isValidMessage } from '@/models/validation';
 import type { Message, RustMessage } from '@/models/chat';
 
 const logger = getLogger('AgentChatContext');
@@ -203,7 +204,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // If there's a streaming message that's not yet in persisted messages
     if (
-      currentStreamingMessage?.id &&
+      isValidMessage(currentStreamingMessage) &&
       currentStreamingMessage.isStreaming !== false
     ) {
       const existsInMessages = sessionMessages.some(
@@ -211,7 +212,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       );
       if (!existsInMessages) {
         // Show streaming message alongside persisted messages
-        return [...sessionMessages, currentStreamingMessage as Message];
+        return [...sessionMessages, currentStreamingMessage];
       }
     }
 

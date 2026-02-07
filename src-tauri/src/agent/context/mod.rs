@@ -18,7 +18,10 @@ pub trait ContextProvider: Send + Sync {
 
     /// Build context section to inject into system prompt
     /// Returns XML, JSON, or plain text format
-    async fn get_context(&self) -> Result<String, String>;
+    ///
+    /// # Arguments
+    /// * `assistant_id` - Optional assistant ID for assistant-specific context
+    async fn get_context(&self, assistant_id: Option<&str>) -> Result<String, String>;
 
     /// Whether this provider is currently enabled
     /// Can check settings, feature flags, etc.

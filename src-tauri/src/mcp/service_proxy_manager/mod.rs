@@ -216,6 +216,7 @@ impl MCPServiceProxyManager {
 
         let mut stdio_configs = HashMap::new();
         let mut http_configs = HashMap::new();
+        let mut server_name_to_id = HashMap::new(); // Map server names to IDs for tool count updates
         let repo = get_mcp_server_repository();
 
         // Filter servers based on mcp_server_ids:
@@ -241,11 +242,12 @@ impl MCPServiceProxyManager {
                     );
                 } else {
                     for model in models {
-                        // Only load servers specified in mcp_server_ids
-                        if !mcp_server_ids.contains(&model.name) {
+                        // Only load servers specified in mcp_server_ids (IDs, not names)
+                        if !mcp_server_ids.contains(&model.id) {
                             log::debug!(
-                                "Skipping MCP server '{}' - not in assistant's mcp_server_ids",
-                                model.name
+                                "Skipping MCP server '{}' (ID: {}) - not in assistant's mcp_server_ids",
+                                model.name,
+                                model.id
                             );
                             continue;
                         }
@@ -258,6 +260,16 @@ impl MCPServiceProxyManager {
                                 let server_name = config.name.unwrap_or_else(|| model.name.clone());
                                 config.name = Some(server_name.clone());
 
+                                // Store name -> ID mapping for tool count updates
+                                server_name_to_id.insert(server_name.clone(), model.id.clone());
+
+                                log::debug!(
+                                    "Loading MCP server '{}' (ID: {}) into session {}",
+                                    server_name,
+                                    model.id,
+                                    session_id
+                                );
+
                                 match config.transport {
                                     crate::mcp::types::TransportConfig::Stdio { .. } => {
                                         stdio_configs.insert(server_name, config);
@@ -269,8 +281,9 @@ impl MCPServiceProxyManager {
                             }
                             Err(e) => {
                                 log::warn!(
-                                    "Failed to parse config for MCP server '{}': {}",
+                                    "Failed to parse config for MCP server '{}' (ID: {}): {}",
                                     model.name,
+                                    model.id,
                                     e
                                 );
                             }
@@ -369,23 +382,26 @@ impl MCPServiceProxyManager {
             .await
             .insert(session_id.clone(), http_manager.clone());
 
-        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated stdio servers
+        // ✅ CACHE-FIRST TOOL LOADING: Skip eager discovery if tools are already cached
         if !stdio_configs.is_empty() {
             log::info!(
-                "Starting eager tool discovery for {} session-isolated stdio servers",
+                "Loading tools for {} session-isolated stdio servers (cache-first strategy)",
                 stdio_configs.len()
             );
         }
 
         for (i, server_name) in stdio_configs.keys().enumerate() {
             let step_msg = format!(
-                "Discovering tools from {} ({}/{})",
+                "Loading tools from {} ({}/{})",
                 server_name,
                 i + 1,
                 stdio_configs.len()
             );
             emit_status(&step_msg, InitializationStatus::Running);
 
+            // Check if we have cached tool count (indicates tools were fetched before)
+            // Always fetch tools to populate proxy, regardless of cache status
+            // The server will spawn on-demand when list_tools is called
             log::debug!(
                 "Fetching tools from session stdio server '{}' for session '{}'",
                 server_name,
@@ -400,6 +416,20 @@ impl MCPServiceProxyManager {
                         server_name,
                         session_id
                     );
+
+                    // Cache tool count in database for UI display
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
+                        }
+                    }
 
                     let prefixed_tools: Vec<_> = tools
                         .into_iter()
@@ -424,20 +454,38 @@ impl MCPServiceProxyManager {
             }
         }
 
-        // ✅ EAGER TOOL DISCOVERY: Fetch tools from session-isolated HTTP servers
+        // ✅ CACHE-FIRST TOOL LOADING: Skip eager discovery for HTTP servers if cached
         if !http_configs.is_empty() {
+            log::info!(
+                "Loading tools for {} session-isolated HTTP servers (cache-first strategy)",
+                http_configs.len()
+            );
             emit_status(
-                "Discovering tools from HTTP servers",
+                "Loading tools from HTTP servers",
                 InitializationStatus::Running,
             );
         }
 
-        log::info!(
-            "Starting eager tool discovery for {} session-isolated HTTP servers",
-            http_configs.len()
-        );
-
         for server_name in http_configs.keys() {
+            // Check if tools are already cached in-memory for this session
+            // Note: We check the in-memory cache (source of truth), not DB tool_count
+            // DB tool_count persists across restarts but in-memory cache is session-specific
+            let has_cache = proxy_arc.has_http_tools_cached(server_name).await;
+
+            if has_cache {
+                log::info!(
+                    "⚡ Skipping eager discovery for HTTP server '{}' - tools already cached in session",
+                    server_name
+                );
+                continue;
+            }
+
+            log::debug!(
+                "No cache for HTTP server '{}', fetching tools for session '{}'",
+                server_name,
+                session_id
+            );
+
             match http_manager.list_tools(server_name).await {
                 Ok(tools) => {
                     log::info!(
@@ -446,6 +494,20 @@ impl MCPServiceProxyManager {
                         server_name,
                         session_id
                     );
+
+                    // Cache tool count in database for UI display
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
+                        }
+                    }
 
                     let prefixed_tools: Vec<_> = tools
                         .into_iter()
@@ -663,6 +725,96 @@ impl MCPServiceProxyManager {
             *task = Some(handle);
         }
     }
+}
+
+/// Update tool cache in background after server initialization
+///
+/// This centralized function fetches tools from a server and updates the database cache.
+/// It's called automatically when stdio or HTTP servers are spawned/connected.
+///
+/// # Arguments
+/// * `server_name` - Name of the MCP server
+/// * `session_id` - Session identifier for logging context
+/// * `server_type` - Type of server ("stdio" or "HTTP") for logging
+/// * `fetch_tools` - Async closure that fetches tools from the server
+///
+/// # Type Parameters
+/// * `F` - Function that returns a Future
+/// * `Fut` - Future that resolves to Result<Vec<MCPTool>, String>
+pub fn spawn_tool_cache_update<F, Fut>(
+    server_name: String,
+    session_id: String,
+    server_type: &'static str,
+    fetch_tools: F,
+) where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<Vec<super::types::MCPTool>, String>> + Send,
+{
+    tokio::spawn(async move {
+        log::debug!(
+            "Fetching tools to update cache for {} server '{}' (session: {})",
+            server_type,
+            server_name,
+            session_id
+        );
+
+        match fetch_tools().await {
+            Ok(tools) => {
+                let tool_count = tools.len();
+
+                // Update database cache
+                use crate::repositories::mcp_server_repository::MCPServerRepository;
+                let repo = crate::state::get_mcp_server_repository();
+
+                // Lookup server ID by name first
+                match repo.get_by_name(&server_name).await {
+                    Ok(Some(server)) => {
+                        if let Err(e) = repo.update_tool_count(&server.id, tool_count as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for {} server '{}' (ID: {}): {}",
+                                server_type,
+                                server_name,
+                                server.id,
+                                e
+                            );
+                        } else {
+                            log::debug!(
+                                "Cached {} tools for {} server '{}' (ID: {})",
+                                tool_count,
+                                server_type,
+                                server_name,
+                                server.id
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        log::warn!(
+                            "Cannot cache tool count for {} server '{}': server not found in database",
+                            server_type,
+                            server_name
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to lookup {} server '{}' for tool count caching: {}",
+                            server_type,
+                            server_name,
+                            e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to fetch tools for cache update from {} server '{}': {}",
+                    server_type,
+                    server_name,
+                    e
+                );
+            }
+        }
+    });
 }
 
 #[cfg(test)]

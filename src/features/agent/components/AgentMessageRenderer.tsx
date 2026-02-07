@@ -12,13 +12,14 @@ import type {
   ServiceInfo,
   MCPThinkingContent,
   MCPToolCallContent,
-} from '@/lib/mcp-types';
+} from '@/lib/mcp';
 import type { Message } from '@/models/chat';
-import { extractServiceInfoFromContent } from '@/lib/mcp-types';
+import { extractServiceInfoFromContent } from '@/lib/mcp';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
 import { Highlight, themes } from 'prism-react-renderer';
+import { useTheme } from 'next-themes';
 import {
   basicComponentLibrary,
   UIResourceRenderer,
@@ -46,22 +47,27 @@ const logger = getLogger('AgentMessageRenderer');
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex];
 
-// Define markdown components outside to prevent re-creation on every render
-const MARKDOWN_COMPONENTS: React.ComponentProps<
-  typeof ReactMarkdown
->['components'] = {
-  p: ({ children, ...props }) => (
-    <p className="mb-2 last:mb-0" {...props}>
-      {children}
-    </p>
-  ),
-  code: ({
+/**
+ * Custom hook to detect dark mode from centralized theme state
+ * Uses next-themes resolvedTheme to ensure consistency with app theme
+ */
+function useIsDarkMode() {
+  const { resolvedTheme } = useTheme();
+  return resolvedTheme === 'dark';
+}
+
+// Extract CodeBlock component to allow injecting isDark prop
+// Memoized to prevent expensive syntax highlighting re-runs during text streaming
+const CodeBlock = memo(
+  ({
     children,
     className,
+    isDark,
     ...props
   }: React.ComponentPropsWithoutRef<'code'> & {
     inline?: boolean;
     node?: unknown;
+    isDark?: boolean;
   }) => {
     // Distinguish inline code vs block code
     // ReactMarkdown passes className="language-xxx" for code blocks
@@ -82,14 +88,6 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<
 
     // Block code with syntax highlighting
     const code = String(children).replace(/\n$/, '');
-
-    // Detect dark mode
-    // Note: This matches the previous implementation.
-    // For better performance, this could be moved to a hook/context,
-    // but doing it here is acceptable for now.
-    const isDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
 
     return (
       <Highlight
@@ -120,7 +118,27 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<
       </Highlight>
     );
   },
-  pre: ({ children, ...props }) => (
+);
+
+CodeBlock.displayName = 'CodeBlock';
+
+// Helper type to avoid implicit any in markdown components
+type MarkdownReflessProps<T extends React.ElementType> =
+  React.ComponentPropsWithoutRef<T> & {
+    node?: unknown;
+  };
+
+// Define static markdown components outside to prevent re-creation on every render
+const STATIC_MARKDOWN_COMPONENTS: Omit<
+  React.ComponentProps<typeof ReactMarkdown>['components'],
+  'code'
+> = {
+  p: ({ children, ...props }: MarkdownReflessProps<'p'>) => (
+    <p className="mb-2 last:mb-0" {...props}>
+      {children}
+    </p>
+  ),
+  pre: ({ children, ...props }: MarkdownReflessProps<'pre'>) => (
     <pre
       className="overflow-x-auto bg-muted rounded-lg p-4 my-3 border border-border max-w-full"
       {...props}
@@ -128,24 +146,24 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<
       {children}
     </pre>
   ),
-  table: ({ children, ...props }) => (
+  table: ({ children, ...props }: MarkdownReflessProps<'table'>) => (
     <div className="overflow-x-auto w-full max-w-full my-4 border rounded-lg">
       <table className="w-full text-sm text-left" {...props}>
         {children}
       </table>
     </div>
   ),
-  thead: ({ children, ...props }) => (
+  thead: ({ children, ...props }: MarkdownReflessProps<'thead'>) => (
     <thead className="bg-muted/50 text-muted-foreground" {...props}>
       {children}
     </thead>
   ),
-  tbody: ({ children, ...props }) => (
+  tbody: ({ children, ...props }: MarkdownReflessProps<'tbody'>) => (
     <tbody className="divide-y divide-border" {...props}>
       {children}
     </tbody>
   ),
-  tr: ({ children, ...props }) => (
+  tr: ({ children, ...props }: MarkdownReflessProps<'tr'>) => (
     <tr
       className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors"
       {...props}
@@ -153,65 +171,47 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<
       {children}
     </tr>
   ),
-  th: ({ children, ...props }) => (
+  th: ({ children, ...props }: MarkdownReflessProps<'th'>) => (
     <th className="px-4 py-3 font-medium" {...props}>
       {children}
     </th>
   ),
-  td: ({ children, ...props }) => (
+  td: ({ children, ...props }: MarkdownReflessProps<'td'>) => (
     <td className="px-4 py-3" {...props}>
       {children}
     </td>
   ),
-  h1: ({ children, ...props }) => (
+  h1: ({ children, ...props }: MarkdownReflessProps<'h1'>) => (
     <h1 className="text-2xl font-bold mb-3 mt-4" {...props}>
       {children}
     </h1>
   ),
-  h2: ({ children, ...props }) => (
+  h2: ({ children, ...props }: MarkdownReflessProps<'h2'>) => (
     <h2 className="text-xl font-bold mb-2 mt-3" {...props}>
       {children}
     </h2>
   ),
-  h3: ({ children, ...props }) => (
+  h3: ({ children, ...props }: MarkdownReflessProps<'h3'>) => (
     <h3 className="text-lg font-semibold mb-2 mt-2" {...props}>
       {children}
     </h3>
   ),
-  ul: ({
-    children,
-    ...props
-  }: React.ComponentPropsWithoutRef<'ul'> & {
-    ordered?: boolean;
-    node?: unknown;
-  }) => (
+  ul: ({ children, ...props }: MarkdownReflessProps<'ul'>) => (
     <ul className="list-disc list-inside mb-2 space-y-1" {...props}>
       {children}
     </ul>
   ),
-  ol: ({
-    children,
-    ...props
-  }: React.ComponentPropsWithoutRef<'ol'> & {
-    node?: unknown;
-    ordered?: boolean;
-  }) => (
+  ol: ({ children, ...props }: MarkdownReflessProps<'ol'>) => (
     <ol className="list-decimal list-inside mb-2 space-y-1" {...props}>
       {children}
     </ol>
   ),
-  li: ({
-    children,
-    ...props
-  }: React.ComponentPropsWithoutRef<'li'> & {
-    node?: unknown;
-    ordered?: boolean;
-  }) => (
+  li: ({ children, ...props }: MarkdownReflessProps<'li'>) => (
     <li className="ml-2" {...props}>
       {children}
     </li>
   ),
-  blockquote: ({ children, ...props }) => (
+  blockquote: ({ children, ...props }: MarkdownReflessProps<'blockquote'>) => (
     <blockquote
       className="border-l-4 border-primary pl-4 italic my-2 text-muted-foreground"
       {...props}
@@ -219,20 +219,20 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<
       {children}
     </blockquote>
   ),
-  strong: ({ children, ...props }) => (
+  strong: ({ children, ...props }: MarkdownReflessProps<'strong'>) => (
     <strong className="font-bold" {...props}>
       {children}
     </strong>
   ),
-  em: ({ children, ...props }) => (
+  em: ({ children, ...props }: MarkdownReflessProps<'em'>) => (
     <em className="italic" {...props}>
       {children}
     </em>
   ),
-  a: ({ children, href, ...props }) => (
+  a: ({ children, href, ...props }: MarkdownReflessProps<'a'>) => (
     <a
       href={href}
-      className="text-primary hover:underline"
+      className="text-primary hover:text-primary/90 underline font-medium"
       target="_blank"
       rel="noopener noreferrer"
       {...props}
@@ -275,6 +275,34 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   const { submit, injectMessages } = useAgentChatActions();
   const { session } = useAgentSessionState();
   const tauriCommands = useRustBackend();
+
+  // Detect dark mode once per component mount (or change)
+  const isDark = useIsDarkMode();
+
+  // Memoize markdown components to include dynamic isDark prop
+  // This avoids window.matchMedia calls in every code block render
+  const markdownComponents = useMemo(
+    () => ({
+      ...STATIC_MARKDOWN_COMPONENTS,
+      code: ({
+        children,
+        className,
+        node, // Destructure node to exclude it from props passed to CodeBlock
+        ...props
+      }: React.ComponentPropsWithoutRef<'code'> & {
+        inline?: boolean;
+        node?: unknown;
+      }) => {
+        void node; // Explicitly mark as intentionally unused to satisfy linter
+        return (
+          <CodeBlock isDark={isDark} className={className} {...props}>
+            {children}
+          </CodeBlock>
+        );
+      },
+    }),
+    [isDark],
+  );
 
   // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
   // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
@@ -395,7 +423,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     () => ({
       style: { height: 'auto', maxHeight: 'unset' },
       iframeProps: {
-        className: 'h-auto min-h-[50vh] max-h-none',
+        className: 'h-auto min-h-96 max-h-none',
       },
     }),
     [],
@@ -760,7 +788,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                   skipHtml={false}
                   remarkPlugins={REMARK_PLUGINS}
                   rehypePlugins={REHYPE_PLUGINS}
-                  components={MARKDOWN_COMPONENTS}
+                  components={markdownComponents}
                 >
                   {textItem.text}
                 </ReactMarkdown>
@@ -798,7 +826,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                   resourceRefs.current[itemKey] = el;
                 }}
                 className={
-                  expandResources ? 'w-full overflow-visible min-h-[50vh]' : ''
+                  expandResources ? 'w-full overflow-visible min-h-96' : ''
                 }
               >
                 <UIResourceRenderer

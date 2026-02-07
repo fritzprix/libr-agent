@@ -5,6 +5,7 @@ use tauri::{Emitter, Listener, Manager};
 mod agent;
 mod commands;
 mod config;
+mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
@@ -63,7 +64,12 @@ use commands::playbook_commands::{
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
 use commands::skill_commands::{
-    get_default_skills_directory, open_skills_directory_in_explorer, scan_skills_directory,
+    get_aggregated_skills, get_default_skills_directory, open_skills_directory_in_explorer,
+    scan_skills_directory,
+};
+use commands::skill_management::{
+    copy_global_to_assistant, delete_assistant_skill, download_global_skills,
+    import_assistant_skills, reset_assistant_skills,
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
@@ -137,12 +143,113 @@ pub fn run_with_sqlite_sync(db_url: String) {
             });
         info!("✅ Database connected: {db_url}");
 
-        // Run migrations
+        // Run migrations with auto-recovery
         use migration::{Migrator, MigratorTrait};
-        Migrator::up(&db, None)
-            .await
-            .expect("Failed to run database migrations");
-        info!("✅ Database migrations applied");
+
+        let migration_result = Migrator::up(&db, None).await;
+
+        // Handle migration result, resetting DB if necessary
+        let mut db = match migration_result {
+            Ok(_) => {
+                info!("✅ Database migrations applied");
+                db
+            }
+            Err(e) => {
+                error!("❌ Database migration failed: {e}");
+
+                if let Some(path_str) = db_url.strip_prefix("sqlite://") {
+                    // Handle connection options like ?mode=rwc
+                    let path_parts: Vec<&str> = path_str.split('?').collect();
+                    let file_path = path_parts[0];
+
+                    warn!(
+                        "⚠️ Migration failed. Attempting to reset database at: {}",
+                        file_path
+                    );
+
+                    // Drop existing connection to release file lock
+                    drop(db);
+
+                    // Delete the corrupted database file
+                    if let Err(err) = std::fs::remove_file(file_path) {
+                        error!("Failed to delete corrupted database file: {err}");
+                    } else {
+                        info!("✅ Corrupted database file deleted");
+                    }
+
+                    // Create fresh file
+                    if let Err(err) = std::fs::File::create(file_path) {
+                        panic!("Failed to recreate database file: {err}");
+                    }
+                    info!("✅ Created fresh database file");
+
+                    // Reconnect
+                    let new_db = sea_orm::Database::connect(&db_url)
+                        .await
+                        .expect("Failed to reconnect to database after reset");
+
+                    // Retry migrations on fresh DB
+                    Migrator::up(&new_db, None)
+                        .await
+                        .expect("Failed to run migrations on reset database");
+
+                    info!("✅ Database reset and migrations applied successfully");
+                    new_db
+                } else {
+                    panic!("Failed to run database migrations: {e}");
+                }
+            }
+        };
+
+        // Validate schema after migrations
+        use db_schema_validator::validate_schema;
+
+        if let Err(validation_err) = validate_schema(&db).await {
+            warn!("⚠️ Schema validation failed: {}", validation_err);
+            warn!("⚠️ Database schema mismatch detected. Resetting database...");
+
+            if let Some(path_str) = db_url.strip_prefix("sqlite://") {
+                let path_parts: Vec<&str> = path_str.split('?').collect();
+                let file_path = path_parts[0];
+
+                // Drop connection
+                drop(db);
+
+                // Delete database
+                if let Err(err) = std::fs::remove_file(file_path) {
+                    error!("Failed to delete database: {err}");
+                    panic!("Cannot reset database after schema validation failure");
+                } else {
+                    info!("✅ Outdated database deleted");
+                }
+
+                // Recreate
+                std::fs::File::create(file_path).expect("Failed to recreate database file");
+                info!("✅ Created fresh database file");
+
+                // Reconnect
+                let new_db = sea_orm::Database::connect(&db_url)
+                    .await
+                    .expect("Failed to reconnect after schema validation failure");
+
+                // Run migrations
+                Migrator::up(&new_db, None)
+                    .await
+                    .expect("Failed to run migrations after schema reset");
+
+                // Validate again
+                validate_schema(&new_db)
+                    .await
+                    .expect("Schema validation failed after reset");
+
+                info!("✅ Database reset and validated successfully");
+                db = new_db;
+            } else {
+                panic!("Schema validation failed and cannot reset non-file database");
+            }
+        } else {
+            info!("✅ Database schema validated");
+        }
 
         // Initialize repository instances
         use repositories::{
@@ -434,6 +541,12 @@ pub fn run() {
                 scan_skills_directory,
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
+                get_aggregated_skills,
+                download_global_skills,
+                copy_global_to_assistant,
+                delete_assistant_skill,
+                import_assistant_skills,
+                reset_assistant_skills,
             ])
             .setup(|app| {
                 // Setup custom file logger FIRST (before any log calls)
@@ -523,6 +636,10 @@ pub fn run() {
                     session_repo_arc,
                 );
                 app.manage(agent_session_manager);
+
+                // Initialize global AppHandle for event emission from builtin tools
+                crate::state::init_app_handle(app.handle().clone());
+                info!("✅ Global AppHandle initialized for event emission");
 
                 // Spawn session recovery in background
                 let recovery_manager = app

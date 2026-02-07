@@ -2,7 +2,7 @@ import Groq from 'groq-sdk';
 import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';

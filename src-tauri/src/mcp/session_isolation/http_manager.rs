@@ -16,6 +16,9 @@ use crate::mcp::types::{MCPResponse, MCPServerConfig, MCPTool, TransportConfig};
 
 use super::error::SessionMCPError;
 
+/// Type alias for HTTP MCP service connection
+type HttpServiceConnection = Arc<RunningService<RoleClient, ()>>;
+
 /// Manages HTTP/SSE MCP server connections with session context injection.
 ///
 /// Unlike stdio servers which need isolated processes, HTTP servers are shared
@@ -29,7 +32,7 @@ pub struct HttpSessionManager {
     http_configs: Arc<RwLock<HashMap<String, MCPServerConfig>>>,
 
     /// Active session-specific connections
-    connections: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    connections: Arc<Mutex<HashMap<String, HttpServiceConnection>>>,
 }
 
 impl HttpSessionManager {
@@ -114,13 +117,56 @@ impl HttpSessionManager {
         // Store connection
         {
             let mut connections = self.connections.lock().await;
-            connections.insert(server_name.to_string(), mcp_client);
+            connections.insert(server_name.to_string(), Arc::new(mcp_client));
         }
 
         debug!(
             "Established HTTP connection for server: {} (Session: {})",
             server_name, self.session_id
         );
+
+        // Auto-update tool cache in background (non-blocking)
+        let connections = self.connections.clone();
+        let server_name_clone = server_name.to_string();
+
+        crate::mcp::service_proxy_manager::spawn_tool_cache_update(
+            server_name.to_string(),
+            self.session_id.clone(),
+            "HTTP",
+            move || async move {
+                // Get the client from connections
+                let client_opt = {
+                    let conns = connections.lock().await;
+                    conns.get(&server_name_clone).cloned()
+                };
+
+                match client_opt {
+                    Some(client) => client
+                        .list_all_tools()
+                        .await
+                        .map(|tools| {
+                            tools
+                                .into_iter()
+                                .map(|tool| crate::mcp::types::MCPTool {
+                                    name: tool.name.to_string(),
+                                    title: None,
+                                    description: tool.description.unwrap_or_default().to_string(),
+                                    input_schema: crate::mcp::server_utils::convert_input_schema(
+                                        serde_json::to_value(tool.input_schema).unwrap_or_else(
+                                            |_| serde_json::Value::Object(serde_json::Map::new()),
+                                        ),
+                                    ),
+                                    output_schema: None,
+                                    annotations: None,
+                                })
+                                .collect()
+                        })
+                        .map_err(|e| e.to_string()),
+                    None => Err("Connection not found".to_string()),
+                }
+            },
+        );
+
         Ok(())
     }
 
@@ -194,7 +240,10 @@ impl HttpSessionManager {
                         match type_str {
                             "text" => {
                                 let text = json_val.get("text")?.as_str()?.to_string();
-                                Some(crate::mcp::types::MCPContent::Text { text })
+                                Some(crate::mcp::types::MCPContent::Text {
+                                    text,
+                                    is_error: None,
+                                })
                             }
                             "image" => {
                                 let data = json_val.get("data")?.as_str()?.to_string();
@@ -310,9 +359,17 @@ impl HttpSessionManager {
 
     pub async fn shutdown_all(&self) {
         let mut connections = self.connections.lock().await;
-        for (name, client) in connections.drain() {
-            let _ = client.cancel().await;
-            debug!("Shut down session HTTP connection: {}", name);
+        for (name, client_arc) in connections.drain() {
+            // Try to unwrap Arc, if it's the only reference we can cancel
+            if let Ok(client) = Arc::try_unwrap(client_arc) {
+                let _ = client.cancel().await;
+                debug!("Shut down session HTTP connection: {}", name);
+            } else {
+                debug!(
+                    "HTTP connection {} still has active references, skipping cancel",
+                    name
+                );
+            }
         }
     }
 }

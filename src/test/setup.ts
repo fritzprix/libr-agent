@@ -7,6 +7,15 @@ import 'fake-indexeddb/auto';
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
   value: {
     invoke: vi.fn().mockResolvedValue(undefined),
+    // Mock transformCallback for event listeners
+    transformCallback: vi.fn((callback?: unknown) => callback),
+  },
+});
+
+// Mock Tauri event plugin internals
+Object.defineProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__', {
+  value: {
+    unregisterListener: vi.fn(),
   },
 });
 

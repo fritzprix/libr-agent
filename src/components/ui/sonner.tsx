@@ -3,11 +3,12 @@ import React from 'react';
 import { Toaster as Sonner, ToasterProps } from 'sonner';
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = 'system' } = useTheme();
+  // Prefer resolvedTheme so the toaster receives the actual theme being used
+  const { resolvedTheme } = useTheme();
 
   return (
     <Sonner
-      theme={theme as ToasterProps['theme']}
+      theme={(resolvedTheme ?? 'system') as ToasterProps['theme']}
       className="toaster group"
       style={
         {

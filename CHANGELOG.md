@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.22] - 2026-02-07
+
+### 🚀 Features
+
+- **Skill Management Engine**: Added core infrastructure for Agent Skills
+  - **New Editor Interface**: Added `SkillsEditor` component for managing agent capabilities
+  - **Backend Commands**: Implemented `skill_management` and `skill_commands` in Rust backend
+  - **Validation**: Added `skill_tests.rs` for ensuring skill integrity
+
+- **Dependency Management**:
+  - **Bun Support**: Added Bun lockfile and defined trusted dependencies (Commit `1a17ca4b`)
+
+### 🔧 Refactoring
+
+- **Project Cleanup**: Consolidating skill-related code and configuration
+
 ## [Unreleased]
 
 ### 2026-01-24

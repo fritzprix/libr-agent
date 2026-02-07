@@ -114,11 +114,21 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             (
                 format!("Browser session created. {}", status_msg),
                 vec![
-                    "Page loading is slow, but the session is ready and page may be usable."
+                    "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
                     "Try extractWebContent to see if content loaded despite the timeout."
                         .to_string(),
                     "If the page is blank, navigate to a different URL.".to_string(),
+                ],
+            )
+        } else if status_msg.contains("Initial Health Check Failed") {
+            (
+                format!("Browser session created but unresponsive. {}", status_msg),
+                vec![
+                    "The browser window failed to initialize the agent runtime.".to_string(),
+                    "This session is likely unusable (Zombie process).".to_string(),
+                    "Action: Close this session immediately and try creating a new one."
+                        .to_string(),
                 ],
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {

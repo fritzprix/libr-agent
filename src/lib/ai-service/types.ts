@@ -1,5 +1,5 @@
 import type { ModelInfo } from '../llm-config-manager';
-import type { MCPTool, SamplingOptions, SamplingResponse } from '../mcp-types';
+import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
 export interface SafetySetting {

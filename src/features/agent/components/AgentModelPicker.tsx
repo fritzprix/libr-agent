@@ -1,4 +1,5 @@
 import { FC, useCallback, useMemo, useState, useEffect } from 'react';
+import React from 'react';
 import { Dropdown } from '@/components/ui';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import { getLogger } from '@/lib/logger';
@@ -16,7 +17,7 @@ interface AgentModelPickerProps {
   onConfigUpdate?: (model: string, provider: string) => void;
 }
 
-export const AgentModelPicker: FC<AgentModelPickerProps> = ({
+const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   currentModel,
   currentProvider,
   className,
@@ -238,3 +239,15 @@ export const AgentModelPicker: FC<AgentModelPickerProps> = ({
     </div>
   );
 };
+
+export const AgentModelPicker = React.memo(
+  AgentModelPickerComponent,
+  (prev, next) => {
+    return (
+      prev.currentModel === next.currentModel &&
+      prev.currentProvider === next.currentProvider &&
+      prev.className === next.className &&
+      prev.onConfigUpdate === next.onConfigUpdate
+    );
+  },
+);

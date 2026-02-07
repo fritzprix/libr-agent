@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager } from '../llm-config-manager';
@@ -256,13 +256,23 @@ export class OpenAIService extends BaseAIService {
           yield JSON.stringify({ usage });
         }
 
-        if (chunk.choices[0]?.delta?.tool_calls) {
+        const delta = chunk.choices[0]
+          ?.delta as OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
+          reasoning_content?: string;
+        };
+        if (delta?.reasoning_content) {
           yield JSON.stringify({
-            tool_calls: chunk.choices[0].delta.tool_calls,
+            thinking: delta.reasoning_content || '',
           });
-        } else if (chunk.choices[0]?.delta?.content) {
+        }
+
+        if (delta?.tool_calls) {
           yield JSON.stringify({
-            content: chunk.choices[0]?.delta?.content || '',
+            tool_calls: delta.tool_calls,
+          });
+        } else if (delta?.content) {
+          yield JSON.stringify({
+            content: delta.content || '',
           });
         }
       }

@@ -2,7 +2,6 @@
 // Injects available skills documentation into system prompts
 
 use super::ContextProvider;
-use crate::commands::skill_commands::scan_skills_directory;
 use crate::state::get_settings_repository;
 use async_trait::async_trait;
 
@@ -83,28 +82,53 @@ impl ContextProvider for SkillsContextProvider {
         10 // Early in prompt - documentation reference
     }
 
-    async fn get_context(&self) -> Result<String, String> {
-        // Get skills directory from settings
-        let skills_dir = self.get_skills_directory().await?;
+    async fn get_context(&self, assistant_id: Option<&str>) -> Result<String, String> {
+        // Get global skills directory from settings
+        let global_skills_dir = self.get_skills_directory().await?;
 
-        log::debug!("Building skills context from directory: {}", &skills_dir);
+        log::debug!(
+            "Building skills context from directory: {}",
+            &global_skills_dir
+        );
 
-        // Scan skills directory
-        let skills = scan_skills_directory(skills_dir.clone())
-            .await
-            .map_err(|e| format!("Failed to scan skills directory: {}", e))?;
+        // Determine assistant skills directory if assistant_id is provided
+        let assistant_skills_dir = if let Some(id) = assistant_id {
+            match crate::session::get_session_manager() {
+                Ok(manager) => Some(
+                    manager
+                        .get_base_data_dir()
+                        .join("assistants")
+                        .join(id)
+                        .join("skills"),
+                ),
+                Err(e) => {
+                    log::warn!("Failed to get session manager for assistant skills: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Use resolve_skills to get the correct skills (override-only logic)
+        let skills = crate::commands::skill_commands::resolve_skills(
+            std::path::PathBuf::from(global_skills_dir.clone()),
+            assistant_skills_dir,
+        )
+        .await
+        .map_err(|e| format!("Failed to resolve skills: {}", e))?;
 
         let skill_count = skills.len();
 
         if skill_count == 0 {
-            log::debug!("No skills found in directory: {}", skills_dir);
+            log::debug!("No skills found");
             return Ok(String::new());
         }
 
         log::info!(
             "Building skills context with {} skills from {}",
             skill_count,
-            skills_dir
+            global_skills_dir
         );
 
         // Convert SkillMetadata to JSON values for XML building

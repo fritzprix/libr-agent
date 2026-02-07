@@ -853,7 +853,7 @@ After implementing the Rust backend, add TypeScript wrappers:
 
 ```typescript
 import { safeInvoke } from './core';
-import type { MCPResponse } from '@/lib/mcp-types';
+import type { MCPResponse } from '@/lib/mcp';
 
 export async function createYourResource(
   serverName: string,

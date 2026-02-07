@@ -6,7 +6,7 @@ import type {
   SamplingResponse,
   OAuthConfig,
   MCPServerConfig,
-} from '@/lib/mcp-types';
+} from '@/lib/mcp';
 import type { MCPConfig } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
 

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Wrench } from 'lucide-react';
+import { Wrench, X } from 'lucide-react';
+import { Button } from '@/components/ui';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 
@@ -41,18 +42,20 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-background border border-border rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-background border border-border rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80%] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <h2 className="text-lg font-bold text-foreground">
             Available Tools {totalCount}({mcpCount})
           </h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="text-muted-foreground hover:text-destructive transition-colors"
+            className="text-muted-foreground hover:text-destructive"
             aria-label="Close"
           >
-            ✕
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
 
         {builtinCount > 0 && (
@@ -77,7 +80,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
         {/* Tools List */}
         {!isLoading && !error && (
-          <div className="overflow-y-auto terminal-scrollbar max-h-[60vh]">
+          <div className="overflow-y-auto flex-1 min-h-0">
             {totalCount === 0 ? (
               <div className="text-foreground text-center py-8">
                 No tools available for this agent session.
@@ -101,8 +104,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                         <span
                           className={
                             tool.name.startsWith('builtin_')
-                              ? 'text-xs bg-emerald-600 text-emerald-foreground px-2 py-0.5 rounded-full'
-                              : 'text-xs bg-sky-600 text-sky-foreground px-2 py-0.5 rounded-full'
+                              ? 'text-xs bg-success text-success-foreground px-2 py-0.5 rounded-full'
+                              : 'text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full'
                           }
                           aria-hidden
                         >
@@ -133,12 +136,9 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
         )}
 
         <div className="mt-4 pt-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="w-full bg-accent hover:bg-accent/80 text-accent-foreground py-2 rounded transition-colors"
-          >
+          <Button variant="secondary" onClick={onClose} className="w-full">
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

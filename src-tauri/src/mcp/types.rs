@@ -196,7 +196,12 @@ pub struct ServiceInfo {
 #[serde(rename_all = "lowercase")]
 pub enum MCPContent {
     #[serde(rename = "text")]
-    Text { text: String },
+    Text {
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "isError")]
+        is_error: Option<bool>,
+    },
     #[serde(rename = "image")]
     Image {
         data: String,
@@ -247,6 +252,7 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: text.to_string(),
+                is_error: None,
             }]),
             structured_content: None,
             is_error: Some(false),
@@ -259,6 +265,7 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: text.to_string(),
+                is_error: None,
             }]),
             structured_content: Some(data),
             is_error: Some(false),
@@ -271,6 +278,7 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: message.to_string(),
+                is_error: Some(true),
             }]),
             structured_content: None,
             is_error: Some(true),
@@ -283,6 +291,7 @@ impl MCPResult {
         Self {
             content: Some(vec![MCPContent::Text {
                 text: message.to_string(),
+                is_error: Some(true),
             }]),
             structured_content: Some(serde_json::json!({
                 "error": data

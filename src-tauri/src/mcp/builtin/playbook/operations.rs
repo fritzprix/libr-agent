@@ -89,6 +89,7 @@ pub async fn create_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     Ok(MCPResult {
         content: Some(vec![MCPContent::Text {
             text: text_response,
+            is_error: None,
         }]),
         structured_content: Some(json!({
             "success": true,
@@ -227,6 +228,7 @@ pub async fn list_playbooks(
             content: Some(vec![
                 MCPContent::Text {
                     text: text_response,
+                    is_error: None,
                 },
                 MCPContent::Resource {
                     resource: json!({
@@ -260,6 +262,7 @@ pub async fn list_playbooks(
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: text_response,
+                is_error: None,
             }]),
             structured_content: Some(structured),
             is_error: Some(false),
@@ -347,6 +350,7 @@ pub async fn get_playbook(assistant_id: &str, args: Value) -> Result<MCPResult, 
             Ok(MCPResult {
                 content: Some(vec![MCPContent::Text {
                     text: text_response,
+                    is_error: None,
                 }]),
                 structured_content: Some(json!({ "playbook": playbook })),
                 is_error: Some(false),
@@ -392,7 +396,10 @@ pub async fn select_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
             );
 
             Ok(MCPResult {
-                content: Some(vec![MCPContent::Text { text: prompt }]),
+                content: Some(vec![MCPContent::Text {
+                    text: prompt,
+                    is_error: None,
+                }]),
                 structured_content: Some(json!({ "playbook": playbook })),
                 is_error: Some(false),
             })
@@ -461,11 +468,20 @@ pub async fn delete_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
         Ok(_) => Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("Playbook '{}' deleted", id),
+                is_error: None,
             }]),
             structured_content: Some(json!({ "success": true, "id": id })),
             is_error: Some(false),
         }),
-        Err(_) => Ok(not_found_error("playbook", id, ToolGroup::Playbook)),
+        Err(e) => Ok(operation_failed_error(
+            "deletePlaybook",
+            &e.to_string(),
+            vec![
+                "Verify database is accessible".to_string(),
+                "Check Playbook ID validity".to_string(),
+            ],
+            ToolGroup::Playbook,
+        )),
     }
 }
 
@@ -591,6 +607,7 @@ pub async fn update_playbook(assistant_id: &str, args: Value) -> Result<MCPResul
     Ok(MCPResult {
         content: Some(vec![MCPContent::Text {
             text: text_response,
+            is_error: None,
         }]),
         structured_content: Some(json!({
             "success": true,

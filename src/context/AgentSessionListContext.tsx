@@ -10,7 +10,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { AgentSession, CreateSessionParams } from '@/models/agent';
-import type { Assistant } from '@/models/chat';
 
 const logger = getLogger('AgentSessionListContext');
 
@@ -83,7 +82,7 @@ export function AgentSessionListProvider({
       >('agent_get_all_sessions');
 
       const sessionList: AgentSession[] = response.map((s) => {
-        let assistant: Assistant | undefined;
+        let assistant: import('@/models/agent').AgentConfig | undefined;
         if (s.agentConfig) {
           try {
             assistant = JSON.parse(s.agentConfig);
@@ -167,18 +166,11 @@ export function AgentSessionListProvider({
           },
         });
 
-        const respWithDates = response as {
-          createdAt?: number;
-          created_at?: number;
-        };
-        const createdAtMs = respWithDates.createdAt ?? respWithDates.created_at;
-
         const session: AgentSession = {
           id: response.id,
           name: response.name,
-          status:
-            (response.status as 'idle' | 'busy' | 'paused' | 'error') || 'idle',
-          createdAt: createdAtMs ? new Date(createdAtMs) : new Date(),
+          status: response.status || 'idle',
+          createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,

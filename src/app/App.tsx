@@ -1,6 +1,8 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import AppSidebar from '../components/layout/AppSidebar';
+import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
 const AgentContainer = lazy(() => import('@/features/agent'));
@@ -30,6 +32,73 @@ import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
 
 function App() {
+  const hasCheckedSkills = useRef(false);
+
+  useEffect(() => {
+    const checkGlobalSkills = async () => {
+      interface SkillMetadata {
+        name: string;
+        path: string;
+      }
+
+      let shouldPrompt = false;
+      try {
+        try {
+          const defaultPath = await invoke<string>(
+            'get_default_skills_directory',
+          );
+          try {
+            const result = await invoke<SkillMetadata[]>(
+              'scan_skills_directory',
+              { directory: defaultPath },
+            );
+            if (Array.isArray(result) && result.length === 0)
+              shouldPrompt = true;
+          } catch {
+            // specific error matching might be needed, but robustly: if we can't scan, maybe we should prompt?
+            // Or if directory doesn't exist.
+            shouldPrompt = true;
+          }
+        } catch {
+          console.error('Failed to check skills');
+        }
+
+        if (shouldPrompt) {
+          toast('Global skills not found', {
+            description: 'Would you like to download the default skill set?',
+            action: {
+              label: 'Download',
+              onClick: () => {
+                const toastId = toast.loading('Downloading global skills...');
+                invoke<string>('download_global_skills')
+                  .then(() => {
+                    toast.success('Skills downloaded successfully', {
+                      id: toastId,
+                    });
+                  })
+                  .catch((err) => {
+                    toast.error(`Download failed: ${err}`, { id: toastId });
+                  });
+              },
+            },
+            cancel: {
+              label: 'Cancel',
+              onClick: () => {},
+            },
+            duration: Infinity,
+          });
+        }
+      } catch (error) {
+        console.error('Startup check failed:', error);
+      }
+    };
+
+    if (!hasCheckedSkills.current) {
+      hasCheckedSkills.current = true;
+      checkGlobalSkills();
+    }
+  }, []);
+
   return (
     <div className="h-screen w-full">
       <SettingsProvider>

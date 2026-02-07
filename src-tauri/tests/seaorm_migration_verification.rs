@@ -268,9 +268,12 @@ async fn test_mcp_server_crud_operations() {
         .expect("Migrations should run");
 
     // Insert MCP server with config field (JSON)
+    let server_id = cuid2::create_id();
     let server = mcp_server::ActiveModel {
+        id: Set(server_id.clone()),
         name: Set("test-server".to_string()),
         config: Set(r#"{"command":"node","args":"server.js"}"#.to_string()),
+        tool_count: Set(None),
         created_at: Set(1000),
         updated_at: Set(1000),
     };
@@ -278,15 +281,17 @@ async fn test_mcp_server_crud_operations() {
     let inserted = server.insert(&db).await;
     assert!(inserted.is_ok(), "Should insert MCP server successfully");
 
-    // Read MCP server
-    let found = mcp_server::Entity::find_by_id("test-server").one(&db).await;
+    // Read MCP server (by ID, not by name)
+    let found = mcp_server::Entity::find_by_id(&server_id).one(&db).await;
     assert!(found.is_ok() && found.as_ref().unwrap().is_some());
     assert!(found.unwrap().unwrap().config.contains("node"));
 
     // Update MCP server (UPSERT test)
     let upsert = mcp_server::ActiveModel {
+        id: Set(server_id.clone()),
         name: Set("test-server".to_string()),
         config: Set(r#"{"command":"python","args":"server.py"}"#.to_string()),
+        tool_count: Set(None),
         created_at: Set(1000),
         updated_at: Set(2000),
     };
@@ -302,18 +307,16 @@ async fn test_mcp_server_crud_operations() {
 
     assert!(upsert_result.is_ok(), "UPSERT should work correctly");
 
-    // Verify update
-    let updated = mcp_server::Entity::find_by_id("test-server")
+    // Verify update (lookup by ID, not name)
+    let updated = mcp_server::Entity::find_by_id(&server_id)
         .one(&db)
         .await
         .unwrap()
         .unwrap();
     assert!(updated.config.contains("python"));
 
-    // Delete MCP server
-    let delete_result = mcp_server::Entity::delete_by_id("test-server")
-        .exec(&db)
-        .await;
+    // Delete MCP server (by ID)
+    let delete_result = mcp_server::Entity::delete_by_id(&server_id).exec(&db).await;
     assert!(
         delete_result.is_ok(),
         "Should delete MCP server successfully"

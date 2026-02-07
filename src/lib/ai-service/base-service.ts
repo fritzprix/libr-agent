@@ -4,7 +4,7 @@ import {
   MCPContent,
   SamplingOptions,
   SamplingResponse,
-} from '../mcp-types';
+} from '@/lib/mcp';
 import {
   AIServiceConfig,
   AIServiceProvider,

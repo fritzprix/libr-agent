@@ -7,7 +7,7 @@ import type {
 } from 'ollama';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';

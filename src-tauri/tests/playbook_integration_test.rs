@@ -137,7 +137,7 @@ async fn test_playbook_ui_rendering_integration() {
     assert_eq!(content.len(), 2, "Expected text and resource content");
 
     // Verify text content
-    if let MCPContent::Text { text } = &content[0] {
+    if let MCPContent::Text { text, .. } = &content[0] {
         assert!(text.contains("Data Processing Workflow"));
         assert!(text.contains("API Integration Workflow"));
     } else {

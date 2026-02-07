@@ -62,7 +62,7 @@ mod tests {
 
         let text_content = &read_res.content.unwrap()[0];
         match text_content {
-            crate::mcp::types::MCPContent::Text { text } => {
+            crate::mcp::types::MCPContent::Text { text, .. } => {
                 println!("Result text: {}", text);
                 assert!(text.contains("Hello World output line 1"));
                 assert!(text.contains("Hello World output line 2"));
@@ -121,7 +121,7 @@ mod tests {
 
         let text_content = &poll_res.content.unwrap()[0];
         match text_content {
-            crate::mcp::types::MCPContent::Text { text } => {
+            crate::mcp::types::MCPContent::Text { text, .. } => {
                 println!("Poll Result text: {}", text);
                 assert!(text.contains("Tail line 1"));
                 assert!(text.contains("Tail line 2"));

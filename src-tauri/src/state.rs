@@ -11,6 +11,7 @@ use crate::repositories::{
 };
 use sea_orm::DatabaseConnection;
 use std::sync::{Arc, OnceLock};
+use tauri::AppHandle;
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<Arc<MCPServiceProxyManager>> = OnceLock::new();
@@ -47,6 +48,23 @@ static KNOWLEDGE_REPOSITORY: OnceLock<SqliteKnowledgeRepository> = OnceLock::new
 
 /// A global, thread-safe, once-initialized planning repository.
 static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized Tauri AppHandle for event emission.
+static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+/// Initialize the global AppHandle
+/// Should be called once during application setup
+pub fn init_app_handle(handle: AppHandle) {
+    if APP_HANDLE.set(handle).is_err() {
+        log::warn!("AppHandle already initialized");
+    }
+}
+
+/// Get the global AppHandle for event emission
+/// Returns None if not initialized yet
+pub fn get_app_handle() -> Option<&'static AppHandle> {
+    APP_HANDLE.get()
+}
 
 /// Sets the global SQLite database URL.
 ///

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
 import { createToolMessagePair } from '@/lib/chat-utils';
-import { MCPContent } from '@/lib/mcp-types';
+import { MCPContent } from '@/lib/mcp';
 import { toast } from 'sonner';
 import {
   useAgentChatActions,
@@ -127,7 +127,7 @@ function AgentChatInner() {
 
   return (
     <>
-      <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl">
+      <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
         {/* Workspace side panel */}
         {showWorkspacePanel && <AgentWorkspacePanel />}
 

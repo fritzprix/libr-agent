@@ -155,8 +155,8 @@ function DraftChatInner() {
         // Setup temporary listener for initialization steps BEFORE creating session
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
           if (
-            event.payload.sessionId === newSessionId &&
-            event.payload.type === 'initializationStep'
+            event.payload.type === 'initializationStep' &&
+            event.payload.sessionId === newSessionId
           ) {
             const step = event.payload.step;
             if (toastId) {
@@ -199,21 +199,11 @@ function DraftChatInner() {
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          model:
-            overrideModel ||
-            assistant.model ||
-            settings?.preferredModel?.model ||
-            'gpt-4',
+          model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
           provider:
-            overrideProvider ||
-            assistant.provider ||
-            settings?.preferredModel?.provider ||
-            'openai',
-          temperature: assistant.temperature ?? 0.7,
-          maxTokens:
-            assistant.maxTokens ??
-            settings?.advanced?.defaultMaxOutputTokens ??
-            8192,
+            overrideProvider || settings?.preferredModel?.provider || 'openai',
+          temperature: 0.7,
+          maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
         };
 
         if (!toastId) toastId = toast.loading('Creating session...');
@@ -242,7 +232,15 @@ function DraftChatInner() {
         if (unlisten) unlisten();
       }
     },
-    [input, assistant, isSubmitting, navigate, settings],
+    [
+      input,
+      assistant,
+      isSubmitting,
+      navigate,
+      settings,
+      overrideModel,
+      overrideProvider,
+    ],
   );
 
   if (isLoadingAssistant) {
@@ -256,7 +254,7 @@ function DraftChatInner() {
   if (!assistant) return null;
 
   return (
-    <div className="h-full w-full max-h-[100vh] font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
+    <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
       {/* Header */}
       {/* We need to wrap Header or pass props. AgentChatHeader uses context. 
               Refactoring Header to accept props is best, or mock the context.
@@ -351,14 +349,8 @@ function DraftChatInner() {
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}
           <AgentModelPicker
-            currentModel={
-              assistant.model || settings?.preferredModel?.model || 'gpt-4'
-            }
-            currentProvider={
-              assistant.provider ||
-              settings?.preferredModel?.provider ||
-              'openai'
-            }
+            currentModel={settings?.preferredModel?.model || 'gpt-4'}
+            currentProvider={settings?.preferredModel?.provider || 'openai'}
             onConfigUpdate={(model, provider) => {
               setOverrideModel(model);
               setOverrideProvider(provider);

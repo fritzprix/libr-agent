@@ -135,7 +135,13 @@ impl SecureFileManager {
         // Read the file contents as string
         fs::read_to_string(&safe_path)
             .await
-            .map_err(|e| format!("Failed to read file: {e}"))
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::InvalidData {
+                    "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters".to_string()
+                } else {
+                    format!("Failed to read file: {e}")
+                }
+            })
     }
 
     /// Securely writes a string to a file.

@@ -1,6 +1,42 @@
 use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
+fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSONSchema {
+    object_prop(
+        vec![
+            (
+                "type".to_string(),
+                enum_prop_required(vec!["stdio", "http"], "Transport type"),
+            ),
+            (
+                "command".to_string(),
+                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
+            ),
+            (
+                "args".to_string(),
+                array_schema(
+                    string_prop(None, None, None),
+                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
+                ),
+            ),
+            (
+                "env".to_string(),
+                object_prop(vec![], vec![], Some("Environment variables")),
+            ),
+            (
+                "url".to_string(),
+                string_prop(None, None, Some("Server URL (http only)")),
+            ),
+            (
+                "headers".to_string(),
+                object_prop(vec![], vec![], Some("HTTP headers")),
+            ),
+        ],
+        vec!["type".to_string()],
+        description,
+    )
+}
+
 /// List all registered MCP servers
 pub fn list_servers_tool() -> MCPTool {
     MCPTool {
@@ -87,46 +123,14 @@ pub fn search_server_tool() -> MCPTool {
     }
 }
 
-/// Register and start a new MCP server
-pub fn create_server_tool() -> MCPTool {
-    let transport_schema = object_prop(
-        vec![
-            (
-                "type".to_string(),
-                enum_prop_required(vec!["stdio", "http"], "Transport type"),
-            ),
-            (
-                "command".to_string(),
-                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
-            ),
-            (
-                "args".to_string(),
-                array_schema(
-                    string_prop(None, None, None),
-                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
-                ),
-            ),
-            (
-                "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables")),
-            ),
-            (
-                "url".to_string(),
-                string_prop(None, None, Some("Server URL (http only)")),
-            ),
-            (
-                "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers")),
-            ),
-        ],
-        vec!["type".to_string()],
-        Some("Transport configuration"),
-    );
+/// Register a new MCP server configuration
+pub fn register_server_tool() -> MCPTool {
+    let transport_schema = transport_config_schema(Some("Transport configuration"));
 
     MCPTool {
-        name: "createServer".to_string(),
-        title: Some("Create Server".to_string()),
-        description: "Register and start a new MCP server.
+        name: "registerServer".to_string(),
+        title: Some("Register Server".to_string()),
+        description: "Register a new MCP server configuration.
 
 ⚠️ PREREQUISITES:
 1. Verify target command exists before registration (stdio servers)
@@ -139,8 +143,14 @@ NAMING (REQUIRED):
 • Must be unique across all servers
 • Use descriptive names for easy identification
 
+IDENTIFICATION:
+• System automatically generates a unique ID (UUID format)
+• This ID is used in assistant configurations (mcpServerIds)
+• Call listMcpServers after registration to get the auto-generated ID
+
 RETURNS:
-• Server name for subsequent management operations
+• Server name for management operations
+• Auto-generated ID for assistant configuration
 • Connection status
 
 EXAMPLE:
@@ -163,6 +173,14 @@ EXAMPLE:
                     ),
                 ),
                 ("transport".to_string(), transport_schema),
+                (
+                    "description".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional description of the server's purpose and capabilities"),
+                    ),
+                ),
             ],
             vec!["name".to_string(), "transport".to_string()],
             None,
@@ -174,39 +192,7 @@ EXAMPLE:
 
 /// Update configuration for an existing MCP server
 pub fn update_server_tool() -> MCPTool {
-    let transport_schema = object_prop(
-        vec![
-            (
-                "type".to_string(),
-                enum_prop_required(vec!["stdio", "http"], "Transport type"),
-            ),
-            (
-                "command".to_string(),
-                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
-            ),
-            (
-                "args".to_string(),
-                array_schema(
-                    string_prop(None, None, None),
-                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
-                ),
-            ),
-            (
-                "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables")),
-            ),
-            (
-                "url".to_string(),
-                string_prop(None, None, Some("Server URL (http only)")),
-            ),
-            (
-                "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers")),
-            ),
-        ],
-        vec!["type".to_string()],
-        Some("New transport configuration"),
-    );
+    let transport_schema = transport_config_schema(Some("New transport configuration"));
 
     MCPTool {
         name: "updateServer".to_string(),
@@ -230,6 +216,14 @@ Returns:
                     string_prop_required("Target name of the server to update"),
                 ),
                 ("transport".to_string(), transport_schema),
+                (
+                    "description".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional description of the server's purpose and capabilities"),
+                    ),
+                ),
             ],
             vec!["name".to_string(), "transport".to_string()],
             None,
@@ -294,23 +288,31 @@ This tool tests the server by:
     }
 }
 
-/// List all available built-in MCP tools
-pub fn list_builtin_tools_tool() -> MCPTool {
+/// List all available internal LibrAgent tools (NEW NAME)
+pub fn list_internal_tools_tool() -> MCPTool {
     MCPTool {
-        name: "listBuiltinTools".to_string(),
-        title: Some("List Builtin Tools".to_string()),
-        description: "List all available built-in MCP tool schemas across all servers.
+        name: "listInternalTools".to_string(),
+        title: Some("List Internal Tools".to_string()),
+        description: "List tool schemas from INTERNAL LibrAgent services.
 
-Returns static tool definitions including:
-- Tool names and descriptions
-- Input/output schemas
-- Usage annotations
+⚠️ IMPORTANT: This tool does NOT work with external MCP servers.
 
-Use serverName parameter to filter by specific server (e.g., 'planning', 'browser', 'workspace').
+🏠 INTERNAL SERVICES (this tool):
+• planning, knowledge, browser, workspace
+• content_store, assistant, playbook
+• bootstrap, ui, mcp_manager
+
+🌐 EXTERNAL SERVERS (not supported):
+• Use listExternalServers to see user-registered servers
+• Use verifyExternalServer to check specific server tools
+• Add to assistant via updateAssistant(mcpServerIds: [...])
+
+USAGE:
+• No parameter: List all internal tools (88+ tools)
+• serverName='workspace': Filter by specific internal service
+
+PAGINATION:
 Results are paginated (20 tools per page) for large result sets.
-
-Available servers: planning, knowledge, browser, workspace, contentstore, 
-assistant_manager, playbook, bootstrap, ui, mcp_manager
 "
         .to_string(),
         input_schema: object_prop(
@@ -319,7 +321,7 @@ assistant_manager, playbook, bootstrap, ui, mcp_manager
                 string_prop(
                     None,
                     None,
-                    Some("Optional: Filter by server name (e.g., 'workspace', 'browser', 'planning')"),
+                    Some("Optional: Internal service name to filter by. Valid: planning, knowledge, browser, workspace, content_store, assistant, playbook, bootstrap, ui, mcp_manager"),
                 ),
             )],
             vec![],
@@ -330,15 +332,36 @@ assistant_manager, playbook, bootstrap, ui, mcp_manager
     }
 }
 
+/// List all registered external MCP servers (NEW NAME)
+pub fn list_external_servers_tool() -> MCPTool {
+    let mut tool = list_servers_tool();
+    tool.name = "listExternalServers".to_string();
+    tool.title = Some("List External Servers".to_string());
+    tool.description = "List all registered EXTERNAL MCP servers.
+
+🌐 EXTERNAL SERVERS (this tool):
+• User-registered MCP servers (yahoo-finance-mcp, ddg-search, etc.)
+
+🏠 INTERNAL SERVICES (use listInternalTools):
+• LibrAgent built-in services (planning, knowledge, browser, workspace, etc.)
+
+⚠️ MANDATORY:
+1. Extract the 'name' from the list for subsequent operations.
+2. Use this tool if server status is unknown.
+"
+    .to_string();
+    tool
+}
+
 /// Returns all MCP Manager tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        list_servers_tool(),
+        list_external_servers_tool(),
+        list_internal_tools_tool(),
         search_server_tool(),
-        create_server_tool(),
+        register_server_tool(),
         update_server_tool(),
         delete_server_tool(),
         verify_server_tool(),
-        list_builtin_tools_tool(),
     ]
 }

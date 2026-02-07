@@ -169,7 +169,13 @@ pub async fn tail_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
         #[cfg(not(target_os = "windows"))]
         let content = tokio::fs::read_to_string(file_path)
             .await
-            .map_err(|e| format!("Failed to read file: {e}"))?;
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::InvalidData {
+                    "Failed to read terminal output: Content appears to be binary or contains invalid UTF-8 characters".to_string()
+                } else {
+                    format!("Failed to read file: {e}")
+                }
+            })?;
 
         let lines: Vec<String> = content
             .lines()
@@ -299,7 +305,13 @@ pub async fn head_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
     #[cfg(not(target_os = "windows"))]
     let content = tokio::fs::read_to_string(file_path)
         .await
-        .map_err(|e| format!("Failed to read file: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                "Failed to read terminal output: Content appears to be binary or contains invalid UTF-8 characters".to_string()
+            } else {
+                format!("Failed to read file: {e}")
+            }
+        })?;
 
     let lines: Vec<String> = content.lines().take(n).map(|s| s.to_string()).collect();
 

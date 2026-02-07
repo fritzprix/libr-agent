@@ -5,7 +5,7 @@ import {
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';

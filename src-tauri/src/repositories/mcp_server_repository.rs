@@ -1,26 +1,37 @@
 use super::error::DbError;
 use crate::entity::mcp_server;
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde_json::Value;
 
 /// MCP Server repository trait for abstraction and testability
 #[async_trait]
 pub trait MCPServerRepository: Send + Sync {
-    /// Create a new MCP server config
+    /// Create a new MCP server config (ID is auto-generated)
     async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError>;
 
-    /// Get an MCP server config by name
-    async fn get(&self, name: &str) -> Result<Option<mcp_server::Model>, DbError>;
+    /// Get an MCP server config by ID (primary key)
+    async fn get(&self, id: &str) -> Result<Option<mcp_server::Model>, DbError>;
 
-    /// Update an MCP server config
-    async fn update(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError>;
+    /// Get an MCP server config by name (for user lookups)
+    async fn get_by_name(&self, name: &str) -> Result<Option<mcp_server::Model>, DbError>;
 
-    /// Delete an MCP server config
-    async fn delete(&self, name: &str) -> Result<(), DbError>;
+    /// Update an MCP server config (allows name change)
+    async fn update(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        config: Option<Value>,
+    ) -> Result<mcp_server::Model, DbError>;
+
+    /// Delete an MCP server config by ID
+    async fn delete(&self, id: &str) -> Result<(), DbError>;
 
     /// List all MCP server configs
     async fn list(&self) -> Result<Vec<mcp_server::Model>, DbError>;
+
+    /// Update tool count for an MCP server after verification/connection
+    async fn update_tool_count(&self, id: &str, tool_count: i32) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -40,20 +51,21 @@ impl SqliteMCPServerRepository {
 impl MCPServerRepository for SqliteMCPServerRepository {
     async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError> {
         let now = chrono::Utc::now().timestamp_millis();
+        let id = cuid2::create_id(); // Auto-generate immutable ID
 
-        // Check if exists
-        let exists = mcp_server::Entity::find_by_id(name).one(&self.db).await?;
-
-        if exists.is_some() {
+        // Check name uniqueness
+        if self.get_by_name(name).await?.is_some() {
             return Err(DbError::DuplicateResource(format!(
-                "MCP server config with name '{}' already exists",
+                "MCP server with name '{}' already exists",
                 name
             )));
         }
 
         let active = mcp_server::ActiveModel {
+            id: Set(id.clone()),
             name: Set(name.to_string()),
             config: Set(config.to_string()),
+            tool_count: Set(None), // NULL initially - will be populated during verification/connection
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -62,35 +74,63 @@ impl MCPServerRepository for SqliteMCPServerRepository {
         Ok(model)
     }
 
-    async fn get(&self, name: &str) -> Result<Option<mcp_server::Model>, DbError> {
-        let result = mcp_server::Entity::find_by_id(name).one(&self.db).await?;
+    async fn get(&self, id: &str) -> Result<Option<mcp_server::Model>, DbError> {
+        let result = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
         Ok(result)
     }
 
-    async fn update(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError> {
+    async fn get_by_name(&self, name: &str) -> Result<Option<mcp_server::Model>, DbError> {
+        let result = mcp_server::Entity::find()
+            .filter(mcp_server::Column::Name.eq(name))
+            .one(&self.db)
+            .await?;
+        Ok(result)
+    }
+
+    async fn update(
+        &self,
+        id: &str,
+        name: Option<&str>,
+        config: Option<Value>,
+    ) -> Result<mcp_server::Model, DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
-        let existing = mcp_server::Entity::find_by_id(name).one(&self.db).await?;
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
 
         let model = if let Some(existing_model) = existing {
+            // Validate name uniqueness if changing name
+            if let Some(new_name) = name {
+                if let Ok(Some(other)) = self.get_by_name(new_name).await {
+                    if other.id != id {
+                        return Err(DbError::DuplicateResource(format!(
+                            "MCP server with name '{}' already exists",
+                            new_name
+                        )));
+                    }
+                }
+            }
+
             let mut active: mcp_server::ActiveModel = existing_model.into();
-            active.config = Set(config.to_string());
+            if let Some(new_name) = name {
+                active.name = Set(new_name.to_string());
+            }
+            if let Some(new_config) = config {
+                active.config = Set(new_config.to_string());
+            }
             active.updated_at = Set(now);
             active.update(&self.db).await?
         } else {
             return Err(DbError::ResourceNotFound(format!(
-                "MCP server config not found: {}",
-                name
+                "MCP server not found: {}",
+                id
             )));
         };
 
         Ok(model)
     }
 
-    async fn delete(&self, name: &str) -> Result<(), DbError> {
-        mcp_server::Entity::delete_by_id(name)
-            .exec(&self.db)
-            .await?;
+    async fn delete(&self, id: &str) -> Result<(), DbError> {
+        mcp_server::Entity::delete_by_id(id).exec(&self.db).await?;
         Ok(())
     }
 
@@ -101,6 +141,22 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             .all(&self.db)
             .await?;
         Ok(results)
+    }
+
+    async fn update_tool_count(&self, id: &str, tool_count: i32) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.tool_count = Set(Some(tool_count));
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
     }
 }
 
@@ -131,19 +187,26 @@ mod tests {
         let name = "test_server";
         let config = serde_json::json!({"cmd": "test"});
 
-        // Test Create
+        // Test Create (ID is auto-generated)
         let saved = repo
             .create(name, config.clone())
             .await
             .expect("Failed to create server");
         assert_eq!(saved.name, name);
         assert_eq!(saved.config, config.to_string());
+        assert!(!saved.id.is_empty()); // ID should be generated
 
-        // Test Get
-        let retrieved = repo.get(name).await.expect("Failed to get server");
+        // Test Get by ID
+        let retrieved = repo.get(&saved.id).await.expect("Failed to get server");
         assert!(retrieved.is_some());
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.name, name);
+        assert_eq!(retrieved.id, saved.id);
+
+        // Test Get by name
+        let retrieved_by_name = repo.get_by_name(name).await.expect("Failed to get by name");
+        assert!(retrieved_by_name.is_some());
+        assert_eq!(retrieved_by_name.unwrap().id, saved.id);
     }
 
     #[tokio::test]
@@ -162,18 +225,34 @@ mod tests {
         let repo = setup_test_db().await;
 
         let name = "update_server";
-        repo.create(name, serde_json::json!({"v": 1}))
+        let created = repo
+            .create(name, serde_json::json!({"v": 1}))
             .await
             .unwrap();
 
-        // Update
+        // Update config only
         let new_config = serde_json::json!({"v": 2});
         let updated = repo
-            .update(name, new_config.clone())
+            .update(&created.id, None, Some(new_config.clone()))
             .await
             .expect("Failed to update");
 
         assert_eq!(updated.config, new_config.to_string());
+        assert_eq!(updated.name, name); // Name unchanged
+
+        // Update name only
+        let new_name = "renamed_server";
+        let updated = repo
+            .update(&created.id, Some(new_name), None)
+            .await
+            .expect("Failed to update name");
+
+        assert_eq!(updated.name, new_name);
+
+        // Verify can get by new name
+        let by_name = repo.get_by_name(new_name).await.unwrap();
+        assert!(by_name.is_some());
+        assert_eq!(by_name.unwrap().id, created.id);
     }
 
     #[tokio::test]
@@ -181,10 +260,29 @@ mod tests {
         let repo = setup_test_db().await;
         let name = "delete_server";
 
-        repo.create(name, serde_json::json!({})).await.unwrap();
-        repo.delete(name).await.expect("Failed to delete");
+        let created = repo.create(name, serde_json::json!({})).await.unwrap();
+        repo.delete(&created.id).await.expect("Failed to delete");
 
-        let result = repo.get(name).await.expect("Failed to get after delete");
+        let result = repo
+            .get(&created.id)
+            .await
+            .expect("Failed to get after delete");
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_tool_count() {
+        let repo = setup_test_db().await;
+        let name = "tool_count_server";
+
+        let created = repo.create(name, serde_json::json!({})).await.unwrap();
+
+        // Update tool count
+        repo.update_tool_count(&created.id, 42)
+            .await
+            .expect("Failed to update tool count");
+
+        let result = repo.get(&created.id).await.expect("Failed to get").unwrap();
+        assert_eq!(result.tool_count, Some(42));
     }
 }

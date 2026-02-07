@@ -32,3 +32,18 @@
 
 **Learning:** The `useMessageGrouping` hook was creating a new `toolResultsMap` instance on every execution, breaking `React.memo` optimization in `AgentMessageBubble` even when the map content was identical.
 **Action:** Implement shallow equality checks for derived Maps/Sets in hooks and reuse the previous instance if content is unchanged, ensuring referential stability for consumers.
+
+## 2025-06-25 - Premature Backend Refetch on Streaming
+
+**Learning:** `AgentChatMessages` was triggering session file refetches on every streaming chunk of an assistant message if it contained tool calls, causing N+1 backend requests. However, files are only created after tool _execution_, not during the _call_.
+**Action:** Only trigger refetches when a `tool` role message (the result) appears. Use `useThrottle` to debounce these refetches when multiple tool results arrive in rapid succession (e.g. parallel tool execution).
+
+## 2025-06-25 - Layout Thrashing in Markdown Rendering
+
+**Learning:** `AgentMessageRenderer` was calling `window.matchMedia` inside the render function of every `<code>` block to check for dark mode. For long messages with many code blocks, this caused excessive DOM queries and layout invalidation risks.
+**Action:** Move global environment checks (like dark mode) to a custom hook (`useIsDarkMode`) at the parent level and inject the value into memoized components via props, preventing repeated DOM queries.
+
+## 2026-02-05 - Lazy Map Cloning and Group Reuse
+
+**Learning:** `useMessageGrouping` was performing O(N) map cloning and scanning on every streaming token update, even when the new content (text) didn't add any new tool results. It also unnecessarily re-evaluated stable "single" message groups ending at the divergence point.
+**Action:** Implement "lazy cloning" for derived maps: track the index of the last contributing item (`lastToolResultIndex`) and reuse the previous map reference if the update is strictly after that index. Also, allow reusing "single" message groups ending at the divergence point since they can't consume subsequent messages.

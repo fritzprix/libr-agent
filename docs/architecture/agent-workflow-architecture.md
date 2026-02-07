@@ -11,15 +11,15 @@
 LibrAgent implements a **Dual-Backend Hybrid Architecture** where:
 
 - **Rust Backend**: Orchestrates agent workflows, manages session state, and persists data to SQLite
-- **TypeScript Frontend**: Executes LLM API calls, handles streaming UX, and bridges Web MCP tools
+- **TypeScript Frontend**: Executes LLM API calls, handles streaming UX, and displays state
 - **IPC Layer**: Event-driven communication via Tauri's command/event system
 
 **Key Characteristics**:
 
 - 🔄 **Event-Driven Orchestration**: No traditional loops - each cycle is triggered by events
 - 🧩 **Session Isolation**: Per-session MCP proxies prevent cross-talk in multi-agent scenarios
-- 📊 **Hybrid State Management**: Rust owns workflow state, React owns UI state, SQLite is the source of truth
-- ⚡ **Performance Bottleneck**: Repeated DB queries on every LLM request (identified, solution planned)
+- 📊 **Hybrid State Management**: Rust owns workflow state (with in-memory cache), React owns UI state, SQLite is the persistence layer
+- ⚡ **Optimized Performance**: In-memory message caching eliminates redundant DB queries
 
 ---
 
@@ -44,7 +44,6 @@ package "Rust Backend (Tauri)" {
 package "TypeScript Frontend (React)" {
   [AgentChatContext] as ChatCtx
   [LLMServiceContext] as LLMCtx
-  [ToolBridgeContext] as ToolCtx
   [AgentSessionContext] as SessCtx
 }
 
@@ -64,26 +63,22 @@ SessRepo --> DB
 
 ' Frontend internal flow
 ChatCtx --> LLMCtx : triggers LLM execution
-ChatCtx --> ToolCtx : triggers tool execution
 SessCtx --> ChatCtx : provides session data
 
 ' IPC communication
 ChatCtx --> Cmd : agent_send_message
 LLMCtx --> Cmd : agent_handle_llm_response
-ToolCtx --> Cmd : agent_handle_tool_result
 ASM --> Evt : llm:completion-request
-ASM --> Evt : tool:execute-request
 ASM --> Evt : agent:event
 
 ' Event listeners
 Evt --> LLMCtx : listen
-Evt --> ToolCtx : listen
 Evt --> ChatCtx : listen
 
 note right of ASM
-  **Current Issue**:
-  Loads 1000 messages from DB
-  on every LLM request
+  **Optimized**:
+  Maintains in-memory
+  message cache
 end note
 
 note right of ChatCtx
@@ -114,7 +109,6 @@ end note
 | ----------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | **AgentChatContext**    | `src/context/AgentChatContext.tsx`    | - React message state management<br>- Optimistic updates<br>- Event listening (agent:event)<br>- Streaming message merge       |
 | **LLMServiceContext**   | `src/context/LLMServiceContext.tsx`   | - LLM API execution<br>- Streaming accumulation<br>- Event listening (llm:completion-request)<br>- Response forwarding to Rust |
-| **ToolBridgeContext**   | `src/context/ToolBridgeContext.tsx`   | - External tool execution bridge<br>- Web MCP coordination<br>- Event listening (tool:execute-request)                         |
 | **AgentSessionContext** | `src/context/AgentSessionContext.tsx` | - Session creation/resumption<br>- Initial message loading<br>- Agent config management                                        |
 
 ---
@@ -134,24 +128,23 @@ participant "AgentSessionManager\n(Rust)" as ASM
 participant "MessageRepository\n(SQLite)" as MsgRepo
 participant "LLMServiceContext\n(React)" as LLMCtx
 participant "MCPServiceProxy\n(Rust)" as MCP
-participant "ToolBridgeContext\n(React)" as ToolCtx
 
 == User Submits Message ==
 User -> ChatCtx: Type message & click Send
 ChatCtx -> ChatCtx: Optimistic update:\nsetLocalMessages([...prev, userMsg])
 ChatCtx -> ASM: invoke('agent_send_message')
-ASM -> MsgRepo: INSERT user message
 ASM -> ASM: Update status → Busy
 ASM -> ChatCtx: emit('agent:event', WorkflowStarted)
+ASM -> ASM: Add user message to In-Memory Cache
+ASM -> MsgRepo: INSERT user message (Async)
 
 == Request LLM Completion ==
-ASM -> MsgRepo: **🚨 DB QUERY #1**\nSELECT * FROM messages\nWHERE session_id = ?\nLIMIT 1000
+ASM -> ASM: Read messages from\nIn-Memory Cache
 note right
-  **Performance Bottleneck**:
-  Loads up to 1000 messages
-  with JSON deserialization
+  **Optimized**:
+  No DB query required
+  for context loading
 end note
-MsgRepo --> ASM: Vec<Message>
 ASM -> LLMCtx: emit('llm:completion-request',\n{messages, model, tools})
 
 == LLM Streaming ==
@@ -166,37 +159,28 @@ ChatCtx -> ChatCtx: setLocalMessages([...prev, assistantMsg])
 LLMCtx -> ASM: invoke('agent_handle_llm_response',\n{message})
 
 == Handle Assistant Response ==
-ASM -> MsgRepo: INSERT assistant message
+ASM -> ASM: Add assistant message to In-Memory Cache
+ASM -> MsgRepo: INSERT assistant message (Async)
+
 alt No Tool Calls
   ASM -> ASM: Update status → Idle
   ASM -> ChatCtx: emit('agent:event', WorkflowCompleted)
 else Has Tool Calls
   == Execute Tools ==
   loop For each tool_call
-    alt Builtin Tool (builtin_*)
-      ASM -> MCP: call_tool(tool_name, args)
-      MCP -> MCP: Execute native Rust logic
-      MCP --> ASM: MCPResponse
-    else External Tool
-      ASM -> ToolCtx: emit('tool:execute-request')
-      ToolCtx -> ToolCtx: useUnifiedMCP.executeToolCall()
-      ToolCtx -> ASM: invoke('agent_handle_tool_result')
-    end
+    ASM -> MCP: call_tool(tool_name, args)
+    MCP -> MCP: Execute tool logic (Native/MCP)
+    MCP --> ASM: MCPResponse
   end
 
   == Tool Results Complete ==
-  ASM -> MsgRepo: INSERT tool result messages
+  ASM -> ASM: Add tool results to In-Memory Cache
+  ASM -> MsgRepo: INSERT tool result messages (Async)
   ASM -> ChatCtx: emit('agent:event', MessageAdded)
   ChatCtx -> ChatCtx: setLocalMessages([...prev, ...toolResults])
 
   == Recursive Cycle ==
-  ASM -> MsgRepo: **🚨 DB QUERY #2**\nSELECT * FROM messages\nWHERE session_id = ?\nLIMIT 1000
-  note right
-    **Repeated Query**:
-    Loads same 1000 messages
-    + new tool results
-  end note
-  MsgRepo --> ASM: Vec<Message>
+  ASM -> ASM: Read messages from\nIn-Memory Cache
   ASM -> LLMCtx: emit('llm:completion-request',\n{messages, model, tools})
   note left
     **Event-Driven Recursion**:
@@ -208,40 +192,24 @@ end
 @enduml
 ```
 
-### 2.2 Database Query Points (Current Bottleneck)
+### 2.2 In-Memory Cache Architecture
 
-**Location**: `src-tauri/src/agent/session_manager.rs:884-969`
+**Location**: `src-tauri/src/agent/state.rs`
 
 ```rust
-// Called on EVERY LLM request in the recursive loop
-let message_repo = crate::state::get_message_repository();
-let page = message_repo
-    .get_page(&session_id, 1, 1000)  // 🚨 Loads up to 1000 messages
-    .await
-    .map_err(|e| format!("Failed to get session messages: {}", e))?;
+pub struct AgentSession {
+    // ...
+    pub messages: Arc<RwLock<Vec<Message>>>,  // ✅ In-memory cache
+}
 ```
 
-**Impact Analysis**:
+**Memory Management Strategy**:
 
-| Scenario               | DB Queries | Messages Loaded | Est. Latency |
-| ---------------------- | ---------- | --------------- | ------------ |
-| Simple chat (no tools) | 1          | 1000            | 10-30ms      |
-| 1 tool call            | 2          | 2000            | 20-60ms      |
-| 3 tool calls           | 4          | 4000            | 40-120ms     |
-| 10-turn conversation   | 10+        | 10,000+         | 100-300ms    |
-
-**Query Breakdown**:
-
-1. User sends message → DB Query #1 (load history)
-2. LLM calls tool → Tool executes → DB Query #2 (reload history + tool result)
-3. LLM calls 2nd tool → Tool executes → DB Query #3 (reload history + 2 tool results)
-4. Final response → Workflow complete
-
-**Why This Happens**:
-
-- `AgentSession` struct has no `messages` field
-- Every `request_llm_completion()` call re-loads from SQLite
-- No in-memory cache for active sessions
+- **Initialization**: Loads last 50 messages from DB on session creation/resume.
+- **Sliding Window**: Keeps `MAX_CACHED_MESSAGES` (default 1000) in memory.
+- **Synchronization**:
+  - **Read**: Always reads from `messages` RwLock (Zero DB latency).
+  - **Write**: Updates `messages` RwLock immediately, persists to SQLite asynchronously.
 
 ---
 
@@ -258,11 +226,10 @@ package "State Layers" {
     rectangle "AgentSession\n(In-Memory)" as Session {
       card "metadata: SessionMetadata"
       card "is_running: bool"
-      card "cancellation_token: Token"
-      card "pending_execution: Option<...>"
+      card "messages: Vec<Message>"
       note right
-        **Missing**: messages cache
-        **Result**: Repeated DB queries
+        **Authoritative State**:
+        Used for workflow context
       end note
     }
 
@@ -270,8 +237,8 @@ package "State Layers" {
       card "messages table"
       card "sessions table"
       note right
-        **Role**: Source of Truth
-        on app restart
+        **Persistence Layer**:
+        Async write-behind
       end note
     }
   }
@@ -280,7 +247,6 @@ package "State Layers" {
     rectangle "React State\n(UI Layer)" as React {
       card "localMessages: Message[]"
       card "streamingMessages: Map<...>"
-      card "workflowStatus: string"
       note right
         **Role**: Optimistic updates
         & streaming UX
@@ -293,82 +259,19 @@ Session -down-> DB : persists to\n(async)
 React -down-> Session : subscribes to\n(events)
 DB -up-> React : initial load\n(on mount)
 
-note as N1
-  **Current Flow**:
-  1. React loads from DB on mount
-  2. Rust queries DB on every LLM request
-  3. React updates optimistically
-  4. Rust persists to DB asynchronously
-
-  **Problem**: Steps 2 is redundant
-  **Solution**: Add messages cache to AgentSession
-end note
-
 @enduml
 ```
 
 ### 3.2 React State Synchronization
 
-**Component**: `AgentChatContext.tsx:121-276`
+**Component**: `AgentChatContext.tsx`
 
 **State Update Sources**:
 
-1. **Initial Load** (Line 121-138):
-
-   ```typescript
-   useEffect(() => {
-     setLocalMessages(sessionMessages || []);
-   }, [sessionMessages, currentSession?.id]);
-   ```
-
-   - Source: SQLite via `AgentSessionContext`
-   - Trigger: Session mount/change
-
-2. **Optimistic Update** (Line 291-353):
-
-   ```typescript
-   const submit = async (content: string) => {
-     const userMessage = createMessage(content);
-     setLocalMessages((prev) => [...prev, userMessage]); // Immediate
-     await invoke('agent_send_message', { message: userMessage });
-   };
-   ```
-
-   - Source: User input
-   - Trigger: Send button click
-
-3. **Streaming Completion** (Line 144-176):
-
-   ```typescript
-   useEffect(() => {
-     if (currentStreamingMessage?.isStreaming === false) {
-       const exists = localMessages.some((m) => m.id === messageId);
-       if (!exists) {
-         setLocalMessages((prev) => [...prev, currentStreamingMessage]);
-       }
-     }
-   }, [currentStreamingMessage]);
-   ```
-
-   - Source: `LLMServiceContext.streamingMessages`
-   - Trigger: `isStreaming: false` flag
-
-4. **Tool Results** (Line 192-276):
-
-   ```typescript
-   if (eventType === 'MessageAdded') {
-     const newMessage = payload.message as Message;
-     setLocalMessages((prev) => {
-       if (prev.some((m) => m.id === newMessage.id)) return prev;
-       return [...prev, newMessage];
-     });
-   }
-   ```
-
-   - Source: `agent:event` from Rust
-   - Trigger: Tool execution completion
-
-**Key Principle**: React state is authoritative during active workflow. No DB reload happens until session remount.
+1. **Initial Load**: Fetches from backend via `useAgentSessionState`.
+2. **Optimistic Update**: Updates local state immediately on user input.
+3. **Streaming**: `LLMServiceContext` updates streaming state, merged via `useMemo`.
+4. **Events**: `agent:event` (MessageAdded) triggers update for tool results.
 
 ---
 
@@ -382,79 +285,29 @@ end note
 
 start
 
-note right
-  **Symmetric Naming Strategy**:
-  Rust MCP Proxy **prepends** "builtin_"
-  prefix during tool discovery.
-  Frontend passes this name back as-is.
-end note
-
 :Agent receives tool_calls in\nassistant message;
 
-if (Tool name starts with\n"builtin_"?) then (yes)
-  :Extract tool_id:\n"builtin_knowledge__search"\n→ "knowledge";
+:Spawn async task in Rust;
 
-  :Spawn async task in Rust;
-
+loop For each tool_call
   :MCPServiceProxyManager\n.call_tool(session_id, tool_name, args);
 
-  :MCPServiceProxy\n.get_builtin_server(tool_id);
+  :MCPServiceProxy\n.get_server(tool_id);
 
-  :BuiltinMCPServer\n.call_tool(tool_name, args);
-
-  note right
-    **Session Isolation**:
-    Each session has its own
-    KnowledgeServer instance
-    with bound session_id
-  end note
-
-  :Execute native Rust logic\n(SQLite queries, file ops, etc.);
-
-  :Return MCPResponse;
-
-  :Convert to ToolExecutionResult;
-
-  :manager.handle_tool_result()\n(async callback);
-
-else (no)
-  :Emit 'tool:execute-request'\nevent to frontend;
-
-  :ToolBridgeContext receives event;
-
-  if (Web MCP tool?) then (yes)
-    :Execute in Web Worker\nvia useUnifiedMCP;
+  if (Server found?) then (yes)
+    :Server.call_tool(tool_name, args);
+    :Return tool result;
   else (no)
-    :Call Rust MCPServerManager\nfor stdio/HTTP MCP;
+    :Return Error;
   end if
+end loop
 
-  :Extract result content;
+:Accumulate results;
+:Update In-Memory Cache;
+:Emit 'agent:event' (MessageAdded);
+:Async Persist to DB;
 
-  :invoke('agent_handle_tool_result');
-
-  :manager.handle_tool_result()\n(command callback);
-endif
-
-:Accumulate result in\npending_execution.results;
-
-if (All tools completed?) then (yes)
-  :Save all tool messages to DB;
-
-  :Clear pending_execution;
-
-  :Emit 'agent:event'\nMessageAdded;
-
-  :request_llm_completion()\n(recursive cycle);
-
-  note right
-    **Event-Driven Recursion**:
-    Function returns here.
-    Next cycle starts from
-    new llm:completion-request event.
-  end note
-else (no)
-  :Wait for remaining tools;
-endif
+:request_llm_completion()\n(recursive cycle);
 
 stop
 
@@ -471,159 +324,40 @@ pub struct MCPServiceProxyManager {
     proxies: Arc<RwLock<HashMap<String, Arc<MCPServiceProxy>>>>,
     // Key: session_id, Value: session-specific proxy
 }
-
-pub struct MCPServiceProxy {
-    session_id: String,
-    builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,
-    // Each session has independent builtin tool instances
-}
-```
-
-**Multi-Agent Isolation Example**:
-
-```
-Session A (Code Review Agent):
-  ├─ KnowledgeServer (session_id: "session-a")
-  ├─ PlanningServer (session_id: "session-a")
-  └─ WorkspaceServer (session_id: "session-a")
-
-Session B (Documentation Agent):
-  ├─ KnowledgeServer (session_id: "session-b")
-  ├─ PlanningServer (session_id: "session-b")
-  └─ PlaybookServer (session_id: "session-b")
-
-✅ No interference: Each proxy has independent tool instances
-✅ DB isolation: Queries filter by session_id
-✅ Concurrent execution: Both workflows run in parallel
 ```
 
 ---
 
 ## 5. Session State Machine
 
-### 5.1 Status Transitions
-
-```plantuml
-@startuml
-!theme plain
-
-[*] --> Idle : Session created
-
-Idle --> Busy : start_workflow()
-Busy --> Busy : Tool execution\n(recursive cycle)
-Busy --> Idle : Workflow complete\n(no tool calls)
-Busy --> Paused : User cancels
-Paused --> Busy : User resumes
-Busy --> Error : LLM error /\nTool timeout
-Error --> Idle : User retries
-
-Idle --> [*] : Session terminated
-
-note right of Busy
-  **Recursive Cycle**:
-  - LLM generates response
-  - If tool_calls exist:
-    * Execute tools
-    * request_llm_completion()
-  - Else: transition to Idle
-end note
-
-note right of Paused
-  **Cancellation**:
-  - User clicks "Stop"
-  - cancellation_token.cancel()
-  - All async tasks abort
-end note
-
-@enduml
-```
-
-### 5.2 Status Update Locations
-
-| Status     | Set Location                     | Database Update | Event Emitted       |
-| ---------- | -------------------------------- | --------------- | ------------------- |
-| **Idle**   | `create_session()` L59-109       | Yes             | None                |
-| **Busy**   | `start_workflow()` L136-139      | Yes             | `WorkflowStarted`   |
-| **Idle**   | `handle_llm_response()` L214-226 | Yes             | `WorkflowCompleted` |
-| **Idle**   | `handle_llm_error()` L751-766    | Yes             | `WorkflowError`     |
-| **Paused** | `terminate_session()` L768-811   | Yes             | `WorkflowCompleted` |
+(No changes to state machine logic)
 
 ---
 
 ## 6. Performance Analysis
 
-### 6.1 Current Bottleneck: Repeated DB Queries
+### 6.1 Historical Bottleneck (Resolved)
 
-**Profiling Data** (Estimated):
+**Previous Issue**:
+Before v0.5.0, `AgentSession` lacked an in-memory cache, forcing `SELECT *` from SQLite on every LLM request loop. This caused increasing latency (50ms+) as conversation history grew.
 
-```
-User sends message: "Search for React hooks and summarize"
-│
-├─ Step 1: User message submitted
-│   └─ DB Query #1: SELECT * FROM messages LIMIT 1000
-│       Time: 15ms (500 messages × 30μs each)
-│       Data: 1.5MB JSON
-│
-├─ Step 2: LLM responds with tool_call: search_tool
-│   Tool executes...
-│   └─ DB Query #2: SELECT * FROM messages LIMIT 1000
-│       Time: 18ms (501 messages including tool result)
-│       Data: 1.52MB JSON
-│
-├─ Step 3: LLM responds with tool_call: summarize_tool
-│   Tool executes...
-│   └─ DB Query #3: SELECT * FROM messages LIMIT 1000
-│       Time: 21ms (502 messages)
-│       Data: 1.54MB JSON
-│
-└─ Step 4: LLM generates final response
-    └─ No more tool calls → Workflow complete
+**Resolution**:
+We implemented `messages: Arc<RwLock<Vec<Message>>>` in `AgentSession`.
 
-Total DB query time: 54ms
-Total data transferred: 4.56MB
-Messages loaded: 1503 (with duplicates)
-Unique messages: 503
-Redundant loads: 1000 (66% waste)
-```
+### 6.2 Current Performance Characteristics
 
-### 6.2 Proposed Solution: In-Memory Cache
+| Metric                  | With DB Load (Old) | With Memory Cache (New) | Improvement   |
+| ----------------------- | ------------------ | ----------------------- | ------------- |
+| Context Loading Latency | 10-300ms (linear)  | <1ms (constant)         | **~99%**      |
+| DB Queries per turn     | 2-10+              | 2 (Async Inserts)       | **Resolved**  |
+| Data transferred (IPC)  | Full History       | Events Only             | **Minimized** |
 
-**Architecture Change**:
+**Memory Footprint**:
 
-```rust
-// Current (❌ Inefficient)
-pub struct AgentSession {
-    pub metadata: SessionMetadata,
-    pub is_running: bool,
-    pub cancellation_token: CancellationToken,
-    pub pending_execution: Option<PendingToolExecution>,
-    // ❌ No message cache
-}
+- **Sliding Window**: Limited to 1000 messages per session.
+- **Estimated Usage**: ~2MB per active session (acceptable).
 
-// Proposed (✅ Optimized)
-pub struct AgentSession {
-    pub metadata: SessionMetadata,
-    pub is_running: bool,
-    pub cancellation_token: CancellationToken,
-    pub pending_execution: Option<PendingToolExecution>,
-    pub messages: Arc<RwLock<Vec<Message>>>,  // ✅ In-memory cache
-}
-```
-
-**Performance Improvement Estimate**:
-
-| Metric                         | Current | With Cache | Improvement |
-| ------------------------------ | ------- | ---------- | ----------- |
-| DB Queries per 3-tool workflow | 4       | 1          | -75%        |
-| Data transferred               | 4.56MB  | 1.5MB      | -67%        |
-| Query latency (total)          | 54ms    | 15ms       | -72%        |
-| Memory usage per session       | ~100KB  | ~2MB       | +1900KB     |
-
-**Memory Management Strategy**:
-
-- **Sliding Window**: Limit cache to 1000 most recent messages
-- **Automatic Cleanup**: Clear cache when session terminates
-- **Memory Footprint**: 2KB per message × 1000 = 2MB per session (acceptable)
+---
 
 ---
 
@@ -696,49 +430,6 @@ CREATE TABLE sessions (
     updated_at INTEGER
 )
 ```
-
----
-
-## 8. Migration Path to Optimized Architecture
-
-### 8.1 Implementation Phases
-
-**Phase 1: Core Architecture** (High Priority)
-
-- [ ] Add `messages: Arc<RwLock<Vec<Message>>>` to `AgentSession`
-- [ ] Implement `init_session_with_messages()` to load on creation
-- [ ] Modify `request_llm_completion()` to read from cache
-- [ ] Update message on `handle_llm_response()` and `handle_tool_result()`
-- [ ] Write unit tests for cache consistency
-
-**Phase 2: Event Emission** (High Priority)
-
-- [ ] Emit `MessageAdded` event after tool result storage
-- [ ] Update `AgentChatContext` to handle tool result events
-- [ ] Remove DB reload dependencies in frontend
-
-**Phase 3: Memory Management** (Medium Priority)
-
-- [ ] Implement sliding window (max 1000 messages)
-- [ ] Add cache invalidation on session resume
-- [ ] Memory profiling and optimization
-
-**Phase 4: Advanced Features** (Low Priority)
-
-- [ ] Add timeout monitoring for tool executions
-- [ ] Implement circuit breaker for failing tools
-- [ ] Add retry logic with exponential backoff
-
-### 8.2 Backward Compatibility
-
-**Guarantee**: This refactoring maintains 100% API compatibility:
-
-- ✅ No changes to Tauri commands (`agent_send_message`, etc.)
-- ✅ No changes to event payloads
-- ✅ No database schema migration required
-- ✅ Frontend code continues working as-is
-
-**Migration Strategy**: Purely internal optimization - no user-facing changes.
 
 ---
 

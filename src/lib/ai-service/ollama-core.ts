@@ -8,7 +8,7 @@
 
 import type { Tool } from 'ollama';
 import type { Message } from '@/models/chat';
-import type { MCPTool } from '../mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import type { TokenUsage } from './types';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
 

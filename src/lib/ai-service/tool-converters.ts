@@ -1,7 +1,7 @@
 import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
 import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
-import { MCPTool, JSONSchema } from '../mcp-types';
+import { MCPTool, JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../logger';
 import { AIServiceProvider, AIServiceError } from './types';
 import {

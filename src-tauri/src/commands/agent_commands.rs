@@ -101,7 +101,6 @@ pub async fn agent_create_session(
 
 /// Resume an existing agent session
 #[command]
-#[allow(dead_code)]
 pub async fn agent_resume_session(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
@@ -111,7 +110,6 @@ pub async fn agent_resume_session(
 
 /// Initialize session with messages from database
 #[command]
-#[allow(dead_code)]
 pub async fn agent_init_session_with_messages(
     manager: State<'_, AgentSessionManager>,
     session_id: String,

@@ -3,19 +3,12 @@ import { Trash2, Play, Eye, Circle, Pause, XCircle } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { getLogger } from '@/lib/logger';
 import { formatRelativeTime } from '@/lib/date-utils';
+import type { AgentSession } from '@/models/agent';
 
 const logger = getLogger('SessionCard');
 
-interface AgentSessionMetadata {
-  id: string;
-  name?: string;
-  status: 'idle' | 'busy' | 'paused' | 'error';
-  createdAt: Date;
-  updatedAt?: Date;
-}
-
 interface SessionCardProps {
-  session: AgentSessionMetadata;
+  session: AgentSession;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
 }
@@ -101,6 +94,11 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
           <h3 className="font-semibold truncate">
             {session.name || `Session ${session.id.slice(0, 8)}`}
           </h3>
+          {session.assistant?.name && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {session.assistant.name}
+            </p>
+          )}
           <div
             className={`text-xs px-2 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${statusConfig.color}`}
             role="status"
@@ -123,6 +121,14 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1">
+        {session.assistant?.model && session.assistant?.provider && (
+          <div className="flex items-center gap-1">
+            <span className="font-medium">Model:</span>
+            <span>
+              {session.assistant.provider}/{session.assistant.model}
+            </span>
+          </div>
+        )}
         <div>
           Created{' '}
           {formatRelativeTime(session.createdAt, new Date()) || 'just now'}

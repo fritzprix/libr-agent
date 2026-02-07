@@ -390,7 +390,7 @@ mod tests {
 
         let content = result.content.unwrap();
         let text = match &content[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
+            crate::mcp::types::MCPContent::Text { text, .. } => text,
             _ => panic!("Expected text content"),
         };
 
@@ -420,7 +420,7 @@ mod tests {
 
         let content = result.content.unwrap();
         let text = match &content[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
+            crate::mcp::types::MCPContent::Text { text, .. } => text,
             _ => panic!("Expected text content"),
         };
 
@@ -448,7 +448,7 @@ mod tests {
 
         let content = result.content.unwrap();
         let text = match &content[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
+            crate::mcp::types::MCPContent::Text { text, .. } => text,
             _ => panic!("Expected text content"),
         };
 
@@ -495,7 +495,7 @@ mod tests {
         // Validate text content is self-sufficient (Section 4.1)
         let content = result.content.unwrap();
         let text = match &content[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
+            crate::mcp::types::MCPContent::Text { text, .. } => text,
             _ => panic!("Expected text content"),
         };
 
@@ -535,7 +535,7 @@ mod tests {
 
         let content = result.content.unwrap();
         let text = match &content[0] {
-            crate::mcp::types::MCPContent::Text { text } => text,
+            crate::mcp::types::MCPContent::Text { text, .. } => text,
             _ => panic!("Expected text content"),
         };
 
@@ -555,7 +555,7 @@ mod tests {
             "Should only suggest Bootstrap tools"
         );
         assert!(
-            !text.contains("listServers") && !text.contains("createServer"),
+            !text.contains("listServers") && !text.contains("registerServer"),
             "Should not suggest MCP Manager tools"
         );
     }

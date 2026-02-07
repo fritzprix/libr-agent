@@ -5,7 +5,7 @@ import {
   TransportConfig,
   OAuthConfig,
   ServerMetadata,
-} from '../lib/mcp-types';
+} from '@/lib/mcp';
 
 // UIResource interface for MCP-UI integration
 export interface UIResource {
@@ -242,6 +242,9 @@ export interface MCPServerEntity {
   transport: TransportConfig;
   authentication?: OAuthConfig;
   metadata?: ServerMetadata;
+
+  // Cached tool count (from last verification/connection)
+  toolCount?: number;
 }
 
 export interface Assistant {
@@ -252,6 +255,7 @@ export interface Assistant {
   systemPrompt: string;
   mcpServerIds?: string[]; // References to MCPServerEntity IDs
   localServices?: string[];
+  disabledSkills?: string[]; // List of skill names to exclude for this assistant
   /**
    * List of allowed built-in service aliases for this assistant.
    * - Built-in tools follow the format: `builtin_<alias>__<toolname>`
@@ -262,12 +266,6 @@ export interface Assistant {
    */
   allowedBuiltInServiceAliases?: string[];
   deletionProtected: boolean;
-
-  // Model configuration
-  model?: string;
-  provider?: string;
-  temperature?: number;
-  maxTokens?: number;
 
   createdAt: Date;
   updatedAt: Date;

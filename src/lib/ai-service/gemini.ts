@@ -9,7 +9,7 @@ import {
 } from '@google/genai';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '../mcp-types';
+import { MCPTool } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';

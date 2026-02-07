@@ -25,11 +25,15 @@ dist-ssr
 .env
 prompt
 error.txt
+error_*.txt
 .claude
 .vscode
+.agent
+.serena
 # LangGraph API
 .langgraph_api
 log.txt
+log_*.txt
 .envfile
 target
 .mcp.json
@@ -65,3 +69,4 @@ Thumbs.db
 *.p12
 *.key
 .trace.json
+a42/

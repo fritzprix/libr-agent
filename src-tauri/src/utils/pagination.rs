@@ -56,3 +56,106 @@ impl Default for PaginationParams {
         }
     }
 }
+
+/// Helper function to perform in-memory pagination on a vector of items.
+/// Useful when search/filtering is done in memory (e.g. global search)
+/// rather than in the database query.
+pub fn paginate_in_memory<T: Clone>(all_items: Vec<T>, page: u64, page_size: u64) -> Page<T> {
+    let total_items = all_items.len() as u64;
+
+    // If there are no items, return an empty page while still letting Page::new
+    // compute navigation flags and total_pages consistently.
+    if all_items.is_empty() {
+        return Page::new(Vec::new(), page, page_size, total_items);
+    }
+
+    // Normalize page_size in the same way as Page::new so that slicing behavior
+    // matches the metadata reported in the returned Page.
+    let safe_page_size = if page_size == 0 { 10 } else { page_size };
+
+    // Convert to usize safely; if values do not fit in usize (e.g. on 32-bit
+    // platforms or for extremely large inputs), treat the page as out-of-range
+    // and return an empty slice while keeping metadata consistent.
+    let page_index_usize = match usize::try_from(page.saturating_sub(1)) {
+        Ok(value) => value,
+        Err(_) => {
+            return Page::new(Vec::new(), page, page_size, total_items);
+        }
+    };
+
+    let page_size_usize = match usize::try_from(safe_page_size) {
+        Ok(value) => value,
+        Err(_) => {
+            return Page::new(Vec::new(), page, page_size, total_items);
+        }
+    };
+
+    // Handle 0-based index calculation safely using the normalized, clamped values.
+    let start_idx = page_index_usize.saturating_mul(page_size_usize);
+    let end_idx = start_idx
+        .saturating_add(page_size_usize)
+        .min(all_items.len());
+
+    let items = if start_idx < all_items.len() {
+        all_items[start_idx..end_idx].to_vec()
+    } else {
+        Vec::new()
+    };
+
+    Page::new(items, page, page_size, total_items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_paginate_in_memory_basic() {
+        let items: Vec<i32> = (1..=25).collect();
+
+        // Page 1, size 10
+        let page1 = paginate_in_memory(items.clone(), 1, 10);
+        assert_eq!(page1.items.len(), 10);
+        assert_eq!(page1.items[0], 1);
+        assert_eq!(page1.items[9], 10);
+        assert_eq!(page1.total_pages, 3);
+        assert!(page1.has_next_page);
+        assert!(!page1.has_previous_page);
+
+        // Page 2, size 10
+        let page2 = paginate_in_memory(items.clone(), 2, 10);
+        assert_eq!(page2.items.len(), 10);
+        assert_eq!(page2.items[0], 11);
+        assert_eq!(page2.items[9], 20);
+        assert!(page2.has_next_page);
+        assert!(page2.has_previous_page);
+
+        // Page 3, size 10 (partial)
+        let page3 = paginate_in_memory(items.clone(), 3, 10);
+        assert_eq!(page3.items.len(), 5);
+        assert_eq!(page3.items[0], 21);
+        assert_eq!(page3.items[4], 25);
+        assert!(!page3.has_next_page);
+        assert!(page3.has_previous_page);
+    }
+
+    #[test]
+    fn test_paginate_in_memory_out_of_bounds() {
+        let items: Vec<i32> = vec![1, 2, 3];
+        let page = paginate_in_memory(items, 5, 10);
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.total_items, 3);
+        assert_eq!(page.page, 5);
+    }
+
+    #[test]
+    fn test_paginate_in_memory_empty() {
+        let items: Vec<i32> = Vec::new();
+        let page = paginate_in_memory(items, 1, 10);
+
+        assert!(page.items.is_empty());
+        assert_eq!(page.total_items, 0);
+        assert_eq!(page.total_pages, 0);
+    }
+}

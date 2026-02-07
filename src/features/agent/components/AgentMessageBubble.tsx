@@ -1,7 +1,7 @@
-import { useCallback, memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { Message, ToolCall } from '@/models/chat';
-import type { MCPContent, MCPToolCallContent } from '@/lib/mcp-types';
+import type { MCPContent, MCPToolCallContent } from '@/lib/mcp';
 import { Paperclip, FileText } from 'lucide-react';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 
@@ -20,17 +20,6 @@ function AgentMessageBubbleImpl({
   groupedToolCalls,
   groupedMessages,
 }: AgentMessageBubbleProps) {
-  const getAssistantNameForMessage = useCallback(
-    (msg: Message) => {
-      if (getAssistantName) return getAssistantName(msg);
-      if (msg.role === 'assistant') {
-        return 'Agent';
-      }
-      return '';
-    },
-    [getAssistantName],
-  );
-
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -86,7 +75,7 @@ function AgentMessageBubbleImpl({
       >
         <div
           className={cn(
-            'inline-block max-w-[70%] p-3 rounded-lg',
+            'inline-block max-w-[85%] md:max-w-2xl p-3 rounded-lg',
             msg.role === 'user'
               ? 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground',
@@ -94,8 +83,10 @@ function AgentMessageBubbleImpl({
         >
           <div className="text-xs font-semibold mb-1 opacity-70">
             {msg.role === 'assistant'
-              ? getAssistantNameForMessage(msg) || 'ASSISTANT'
-              : msg.role.toUpperCase()}
+              ? getAssistantName?.(msg) || 'ASSISTANT'
+              : msg.role === 'user'
+                ? 'You'
+                : msg.role.toUpperCase()}
           </div>
           <div className="whitespace-pre-wrap">
             {/* File Attachments Display */}
@@ -108,9 +99,9 @@ function AgentMessageBubbleImpl({
                     {msg.attachments.length > 1 ? 's' : ''} attached
                   </span>
                 </div>
-                <div className="space-y-2">
+                <ul className="space-y-2" aria-label="Attached files">
                   {msg.attachments.map((attachment) => (
-                    <div
+                    <li
                       key={attachment.contentId}
                       className="flex items-center justify-between p-2 bg-background/50 rounded border"
                     >
@@ -126,9 +117,9 @@ function AgentMessageBubbleImpl({
                       <div className="text-xs opacity-50 whitespace-nowrap ml-2">
                         {attachment.lineCount} lines
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
 

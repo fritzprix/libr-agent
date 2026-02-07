@@ -15,6 +15,7 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('AssistantList');
 
 import { listAvailableBuiltinServerDefinitions } from '@/features/mcp/api/mcp-server-registry';
+import { dbUtils } from '@/lib/db/service';
 
 export default function AssistantList() {
   const {
@@ -37,7 +38,11 @@ export default function AssistantList() {
   const [builtinToolsMap, setBuiltinToolsMap] = useState<
     Record<string, string>
   >({});
+  const [mcpServersMap, setMcpServersMap] = useState<Record<string, string>>(
+    {},
+  );
 
+  // Load builtin tool display names
   useEffect(() => {
     async function loadDefinitions() {
       try {
@@ -53,6 +58,61 @@ export default function AssistantList() {
     }
     loadDefinitions();
   }, []);
+
+  // Load MCP server names for all assistants
+  useEffect(() => {
+    async function loadMcpServers() {
+      try {
+        logger.info('🔍 Loading MCP servers for assistants', {
+          assistantCount: assistants.length,
+        });
+
+        // Collect all unique MCP server IDs from all assistants
+        const allMcpServerIds = new Set<string>();
+        assistants.forEach((assistant) => {
+          logger.info('📋 Assistant MCP servers', {
+            assistantId: assistant.id,
+            assistantName: assistant.name,
+            mcpServerIds: assistant.mcpServerIds,
+          });
+          assistant.mcpServerIds?.forEach((id) => allMcpServerIds.add(id));
+        });
+
+        logger.info('🎯 Collected unique MCP server IDs', {
+          count: allMcpServerIds.size,
+          ids: Array.from(allMcpServerIds),
+        });
+
+        if (allMcpServerIds.size === 0) {
+          logger.warn('⚠️ No MCP server IDs found in assistants');
+          return;
+        }
+
+        // Fetch server entities from database
+        const serverIds = Array.from(allMcpServerIds);
+        logger.info('📡 Fetching MCP servers from database', { serverIds });
+
+        const entities = await dbUtils.getMCPServersByIds(serverIds);
+
+        logger.info('✅ Received MCP server entities', {
+          count: entities.length,
+          entities: entities.map((e) => ({ id: e.id, name: e.name })),
+        });
+
+        // Build ID -> Name mapping
+        const map: Record<string, string> = {};
+        entities.forEach((entity) => {
+          map[entity.id] = entity.name;
+        });
+
+        logger.info('🗺️ Built MCP servers map', { map });
+        setMcpServersMap(map);
+      } catch (err) {
+        logger.error('❌ Failed to load MCP servers', err);
+      }
+    }
+    loadMcpServers();
+  }, [assistants]);
 
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -167,6 +227,7 @@ export default function AssistantList() {
                 isExpanded={expandedId === assistant.id}
                 onToggle={() => handleToggleExpand(assistant.id!)}
                 builtinToolsMap={builtinToolsMap}
+                mcpServersMap={mcpServersMap}
               />
             ))}
           </div>

@@ -157,14 +157,14 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 30"
+              placeholder="e.g., 60"
               min={10}
               max={120}
               value={localSystemSettings.mcpServerStartupTimeoutSeconds}
               onChange={(e) =>
                 onChange(
                   'mcpServerStartupTimeoutSeconds',
-                  parseInt(e.target.value, 10) || 30,
+                  parseInt(e.target.value, 10) || 60,
                 )
               }
               className="bg-background border text-foreground w-full max-w-xs"
@@ -173,6 +173,36 @@ export function SystemPerformanceSettings({
               {t(
                 'settings.system.mcpServerStartupTimeoutDescription',
                 'How long to wait for MCP tool servers to initialize. Increase if servers fail to start.',
+              )}
+            </p>
+          </div>
+
+          {/* MCP Tool Execution Timeout */}
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-2 font-medium">
+              {t(
+                'settings.system.mcpToolTimeout',
+                'MCP Tool Execution Timeout (Sec)',
+              )}
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g., 60"
+              min={1}
+              max={600}
+              value={localSystemSettings.mcpToolTimeoutSeconds ?? 60}
+              onChange={(e) =>
+                onChange(
+                  'mcpToolTimeoutSeconds',
+                  parseInt(e.target.value, 10) || 60,
+                )
+              }
+              className="bg-background border text-foreground w-full max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.system.mcpToolTimeoutDescription',
+                'How long to wait for a tool to finish execution execution before timing out.',
               )}
             </p>
           </div>

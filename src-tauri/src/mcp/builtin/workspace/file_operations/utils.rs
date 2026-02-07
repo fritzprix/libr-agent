@@ -76,7 +76,13 @@ pub fn validate_path_with_error(
 pub async fn read_file_as_string(path: &std::path::Path) -> Result<String, String> {
     tokio::fs::read_to_string(path)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+            } else {
+                e.to_string()
+            }
+        })
 }
 
 /// Calculate text similarity (Levenshtein-based) for fuzzy matching

@@ -14,7 +14,7 @@ interface SessionDto {
 
 interface AgentConfig {
   systemPrompt?: string;
-  mcpServers?: string[];
+  mcpServerIds?: string[];
   assistants?: string[]; // Assistant IDs
 }
 
@@ -86,13 +86,17 @@ export async function createSession(session: Session): Promise<Session> {
     }
     */
 
+  const mcpServerIds = Array.from(
+    new Set(session.assistants.flatMap((a) => a.mcpServerIds || [])),
+  );
+
   await safeInvoke('agent_create_session', {
     request: {
       sessionId: session.id,
       name: session.name,
       agentConfig: {
         systemPrompt: session.assistants[0]?.systemPrompt, // Legacy simplifiction?
-        mcpServers: [], // TODO: extract from assistants
+        mcpServerIds,
         env: {},
         assistants: assistantIds,
       },
@@ -168,12 +172,16 @@ export async function upsertSession(session: Session): Promise<void> {
     // Or implement update session command.
     // `agent_update_session_config` exists.
     const assistantIds = session.assistants.map((a) => a.id!);
+    const mcpServerIds = Array.from(
+      new Set(session.assistants.flatMap((a) => a.mcpServerIds || [])),
+    );
+
     await safeInvoke('agent_update_session_config', {
       request: {
         sessionId: session.id,
         agentConfig: {
           systemPrompt: session.assistants[0]?.systemPrompt,
-          mcpServers: [],
+          mcpServerIds,
           env: {},
           assistants: assistantIds,
         },

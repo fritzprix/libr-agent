@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -183,12 +184,11 @@ impl SessionIsolationManager {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // Unix: Safe to clear environment for better isolation
-            cmd.env_clear();
+            // Unix: Inherit environment variables (do not clear)
             cmd.env("HOME", &config.workspace_path);
             cmd.env("PWD", &config.workspace_path);
             cmd.env("TMPDIR", config.workspace_path.join("tmp"));
-            cmd.env("PATH", self.get_restricted_path());
+            // PATH is inherited from parent process (agent)
         }
 
         // Add user-specified environment variables (applies to all platforms)
@@ -259,11 +259,12 @@ impl SessionIsolationManager {
                 // This ensures that when commands like Remove-Item fail, the error message
                 // is captured in stderr, not lost in the void.
                 //
-                // IMPORTANT: Do NOT escape double quotes in full_command
-                // PowerShell -Command already handles quotes correctly
-                // Escaping breaks nested quotes in commands like: python -c "print('test')"
+                // SECURITY: Base64 encode the command to prevent injection attacks
+                // Malicious commands could otherwise escape the try/catch block
+                let encoded_command = general_purpose::STANDARD.encode(&full_command);
                 let wrapped_command = format!(
-                    "$ErrorActionPreference = 'Stop'; try {{ {full_command} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}"
+                    "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+                    encoded_command
                 );
 
                 cmd.args([
@@ -274,8 +275,7 @@ impl SessionIsolationManager {
                 ]);
 
                 info!(
-                    "Windows PowerShell execution with error redirection: powershell -Command \"{}\"",
-                    wrapped_command
+                    "Windows PowerShell execution with error redirection and Base64 encapsulation"
                 );
 
                 // Log environment snapshot to help debugging commands that behave differently
@@ -415,10 +415,9 @@ impl SessionIsolationManager {
 
         // Set environment and working directory
         cmd.current_dir(&config.workspace_path);
-        cmd.env_clear();
         cmd.env("HOME", &config.workspace_path);
         cmd.env("PWD", &config.workspace_path);
-        cmd.env("PATH", self.get_restricted_path());
+        // PATH and other envs inherited (if unshare allows, though user namespaces might be tricky)
 
         for (key, value) in config.env_vars {
             cmd.env(key, value);
@@ -463,10 +462,9 @@ impl SessionIsolationManager {
 
         // Set environment and working directory
         cmd.current_dir(&config.workspace_path);
-        cmd.env_clear();
         cmd.env("HOME", &config.workspace_path);
         cmd.env("PWD", &config.workspace_path);
-        cmd.env("PATH", self.get_restricted_path());
+        // PATH and other envs inherited
 
         for (key, value) in config.env_vars {
             cmd.env(key, value);
@@ -748,42 +746,57 @@ impl SessionIsolationManager {
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "windows")]
     #[test]
     fn test_powershell_error_wrapping() {
-        // Test that the wrapped command includes error handling
+        // Test that the wrapped command includes error handling and base64 encoding
         let test_command = "Remove-Item -Path \"C:\\test\" -Recurse -Force";
-        let escaped_command = test_command.replace("\"", "`\"");
+        let encoded = general_purpose::STANDARD.encode(test_command);
         let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-            escaped_command
+            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            encoded
         );
 
         // Verify the wrapped command contains key elements
         assert!(wrapped.contains("$ErrorActionPreference = 'Stop'"));
-        assert!(wrapped.contains("try {"));
-        assert!(wrapped.contains("} catch {"));
-        assert!(wrapped.contains("[Console]::Error.WriteLine($_.Exception.Message)"));
+        assert!(wrapped.contains("FromBase64String"));
+        assert!(wrapped.contains("Invoke-Expression $cmd"));
         assert!(wrapped.contains("exit 1"));
-        assert!(wrapped.contains("Remove-Item -Path `\"C:\\test`\" -Recurse -Force"));
+
+        // Extract Base64 and verify
+        let start_marker = "FromBase64String('";
+        let end_marker = "'));";
+        let start = wrapped.find(start_marker).unwrap() + start_marker.len();
+        let end = wrapped.find(end_marker).unwrap();
+        let extracted_b64 = &wrapped[start..end];
+
+        let decoded_bytes = general_purpose::STANDARD.decode(extracted_b64).unwrap();
+        let decoded_str = String::from_utf8(decoded_bytes).unwrap();
+
+        assert_eq!(decoded_str, test_command);
     }
 
-    #[cfg(target_os = "windows")]
     #[test]
-    fn test_powershell_quote_escaping() {
-        // Test that double quotes are properly escaped for PowerShell
+    fn test_powershell_quote_preservation() {
+        // Test that double quotes are preserved correctly through Base64 roundtrip
         let test_command = "Write-Host \"Hello World\"";
-        let escaped = test_command.replace("\"", "`\"");
+        let encoded = general_purpose::STANDARD.encode(test_command);
 
-        assert_eq!(escaped, "Write-Host `\"Hello World`\"");
-
-        // Verify it works in the full wrapper
         let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; try {{ {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
-            escaped
+            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            encoded
         );
 
-        assert!(wrapped.contains("Write-Host `\"Hello World`\""));
+        // Verify Base64 contains the command with quotes intact
+        let start_marker = "FromBase64String('";
+        let end_marker = "'));";
+        let start = wrapped.find(start_marker).unwrap() + start_marker.len();
+        let end = wrapped.find(end_marker).unwrap();
+        let extracted_b64 = &wrapped[start..end];
+
+        let decoded_bytes = general_purpose::STANDARD.decode(extracted_b64).unwrap();
+        let decoded_str = String::from_utf8(decoded_bytes).unwrap();
+
+        assert_eq!(decoded_str, test_command);
     }
 
     #[test]

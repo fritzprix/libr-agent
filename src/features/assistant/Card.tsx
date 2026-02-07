@@ -1,5 +1,4 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { useMCPServer } from '@/hooks/use-mcp-server';
 import { useCallback, useState } from 'react';
 import { Assistant } from '../../models/chat';
 import { Badge, Button } from '@/components/ui';
@@ -15,6 +14,7 @@ interface AssistantCardProps {
   isExpanded: boolean;
   onToggle: () => void;
   builtinToolsMap?: Record<string, string>;
+  mcpServersMap?: Record<string, string>;
 }
 
 export default function AssistantCard({
@@ -22,15 +22,24 @@ export default function AssistantCard({
   isExpanded,
   onToggle,
   builtinToolsMap,
+  mcpServersMap,
 }: AssistantCardProps) {
   const { deleteAssistant, saveAssistant: upsertAssistant } =
     useAssistantContext();
-  const { serversById } = useMCPServer();
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [edit, setEdit] = useState<boolean>(false);
   const { t } = useTranslation('common');
   const logger = getLogger('AssistantCard');
+
+  // Debug: Log MCP server mapping
+  logger.debug('🎴 Card rendered', {
+    assistantId: assistant.id,
+    assistantName: assistant.name,
+    mcpServerIds: assistant.mcpServerIds,
+    mcpServersMap,
+    builtinToolsMap,
+  });
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -137,8 +146,12 @@ export default function AssistantCard({
         <div className="flex flex-wrap gap-1 mb-2">
           {/* External MCP Servers - Blue Badges */}
           {assistant.mcpServerIds?.map((serverId) => {
-            const serverMeta = serversById?.[serverId];
-            const serverName = serverMeta?.name ?? serverId;
+            const serverName = mcpServersMap?.[serverId] ?? serverId;
+            logger.debug('🏷️ Rendering MCP server badge', {
+              serverId,
+              serverName,
+              foundInMap: !!mcpServersMap?.[serverId],
+            });
             return (
               <Badge
                 key={serverId}

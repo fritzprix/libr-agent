@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
-import type { MCPTool } from '@/lib/mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import { createId } from '@paralleldrive/cuid2';
 
 /**

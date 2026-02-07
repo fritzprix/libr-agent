@@ -236,7 +236,7 @@ fn copy_dir_contents(&self, src: &Path, dst: &Path) -> Result<(), String> {
 
 ```typescript
 interface Config {
-  tools?: import('../mcp-types').MCPTool[];
+  tools?: import('@/lib/mcp').MCPTool[];
   messages: import('@/models/chat').Message[];
 }
 ```
@@ -244,7 +244,7 @@ interface Config {
 #### ✅ Good (Proper Import Statements)
 
 ```typescript
-import type { MCPTool } from '../mcp-types';
+import type { MCPTool } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
 interface Config {
@@ -506,7 +506,7 @@ let result = your_tool_handler(args).await?;
 // Extract text content
 let text = result.content.iter()
     .filter_map(|c| match c {
-        MCPContent::Text { text } => Some(text),
+        MCPContent::Text { text, .. } => Some(text),
         _ => None,
     })
     .collect::<Vec<_>>()

@@ -21,28 +21,28 @@ use tokio_util::sync::CancellationToken;
 #[derive(Debug, Clone)]
 pub struct SessionMCPManager {
     /// Unique session identifier.
-    session_id: String,
+    pub(crate) session_id: String,
 
     /// Map of server names to running processes.
-    active_processes: Arc<RwLock<HashMap<String, MCPProcess>>>,
+    pub(crate) active_processes: Arc<RwLock<HashMap<String, MCPProcess>>>,
 
     /// Map of server names to last activity timestamps.
-    last_activity: Arc<RwLock<HashMap<String, Instant>>>,
+    pub(crate) last_activity: Arc<RwLock<HashMap<String, Instant>>>,
 
     /// Per-server spawn locks to prevent race conditions.
-    spawn_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
+    pub(crate) spawn_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
 
     /// Idle timeout duration.
-    idle_timeout: Duration,
+    pub(crate) idle_timeout: Duration,
 
     /// Server configurations for this session.
-    server_configs: HashMap<String, MCPServerConfig>,
+    pub(crate) server_configs: HashMap<String, MCPServerConfig>,
 
     /// Session isolation configuration.
-    config: SessionIsolationConfig,
+    pub(crate) config: SessionIsolationConfig,
 
     /// Cancellation tokens for active calls.
-    active_call_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
+    pub(crate) active_call_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
 }
 
 impl SessionMCPManager {
@@ -75,7 +75,10 @@ impl SessionMCPManager {
     ///
     /// This is race-safe: if multiple tasks try to spawn the same server,
     /// only one will succeed and the others will wait and reuse it.
-    async fn ensure_process_running(&self, server_name: &str) -> Result<(), SessionMCPError> {
+    pub(crate) async fn ensure_process_running(
+        &self,
+        server_name: &str,
+    ) -> Result<(), SessionMCPError> {
         // 1. Fast path: check if already running
         {
             let processes = self.active_processes.read().await;
@@ -235,7 +238,10 @@ impl SessionMCPManager {
                             match type_str {
                                 "text" => {
                                     let text = json_val.get("text")?.as_str()?.to_string();
-                                    Some(crate::mcp::types::MCPContent::Text { text })
+                                    Some(crate::mcp::types::MCPContent::Text {
+                                        text,
+                                        is_error: None,
+                                    })
                                 }
                                 "image" => {
                                     let data = json_val.get("data")?.as_str()?.to_string();

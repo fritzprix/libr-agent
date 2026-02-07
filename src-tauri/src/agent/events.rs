@@ -65,6 +65,18 @@ pub enum AgentEvent {
         step: String,
         status: InitializationStatus,
     },
+
+    /// Resource updated (assistants, MCP servers, playbooks, etc.)
+    /// Emitted when builtin tools modify global resources
+    #[serde(rename_all = "camelCase")]
+    ResourceUpdated {
+        /// Type of resource: "assistant" | "mcpServer" | "playbook"
+        resource_type: String,
+        /// Action performed: "create" | "update" | "delete"
+        action: String,
+        /// Optional resource identifier
+        resource_id: Option<String>,
+    },
 }
 
 /// Emit an agent event to the frontend
@@ -75,4 +87,28 @@ pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(),
     app_handle
         .emit_to(tauri::EventTarget::app(), "agent:event", event)
         .map_err(|e| format!("Failed to emit agent event: {}", e))
+}
+
+/// Emit a resource update event (convenience wrapper)
+///
+/// This is a shorthand for emitting ResourceUpdated events from builtin tools.
+/// Falls back silently if AppHandle is not available (e.g., during tests).
+pub fn emit_resource_updated(resource_type: &str, action: &str, resource_id: Option<String>) {
+    if let Some(app_handle) = crate::state::get_app_handle() {
+        let event = AgentEvent::ResourceUpdated {
+            resource_type: resource_type.to_string(),
+            action: action.to_string(),
+            resource_id,
+        };
+
+        if let Err(e) = emit_agent_event(app_handle, event) {
+            log::warn!("Failed to emit resource update event: {}", e);
+        }
+    } else {
+        log::debug!(
+            "AppHandle not available, skipping resource update event (resource_type: {}, action: {})",
+            resource_type,
+            action
+        );
+    }
 }

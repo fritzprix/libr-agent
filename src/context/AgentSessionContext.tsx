@@ -9,7 +9,7 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Message, RustMessage, Assistant } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
@@ -56,6 +56,12 @@ export type AgentEventPayload =
       sessionId: string;
       step: string;
       status: 'running' | 'complete' | 'error';
+    }
+  | {
+      type: 'resourceUpdated';
+      resourceType: string;
+      action: string;
+      resourceId?: string;
     };
 
 // Workflow phase within 'busy' status for fine-grained UI feedback
@@ -187,7 +193,12 @@ export function AgentSessionProvider({
           const payload = event.payload;
 
           // Strict Session Isolation: Only process events for THIS session
-          if (payload.sessionId !== sessionId) {
+          // (except for global events like resourceUpdated that don't have a sessionId)
+          if (
+            payload.type !== 'resourceUpdated' &&
+            'sessionId' in payload &&
+            payload.sessionId !== sessionId
+          ) {
             return;
           }
 
@@ -378,7 +389,7 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
-        let assistant: Assistant | undefined;
+        let assistant: import('@/models/agent').AgentConfig | undefined;
         if (response.agentConfig) {
           try {
             assistant = JSON.parse(response.agentConfig);

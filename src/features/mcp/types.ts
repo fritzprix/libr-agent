@@ -29,10 +29,10 @@ export interface BuiltInService<T = unknown> {
   metadata: ServiceMetadata;
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
-  listTools: () => import('../../lib/mcp-types').MCPTool[]; // Lazy import to avoid cycle if needed, or import at top
+  listTools: () => import('@/lib/mcp').MCPTool[]; // Lazy import to avoid cycle if needed, or import at top
   executeTool: (
     toolCall: import('../../models/chat').ToolCall,
-  ) => Promise<import('../../lib/mcp-types').MCPResponse<unknown>>;
+  ) => Promise<import('@/lib/mcp').MCPResponse<unknown>>;
   getServiceContext: (
     options?: ServiceContextOptions,
   ) => Promise<ServiceContext<T>>;

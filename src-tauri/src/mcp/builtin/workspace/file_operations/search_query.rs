@@ -351,9 +351,15 @@ impl WorkspaceServer {
                 Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
                     Ok(s) => s,
                     Err(e) => {
+                        let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
+                            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+                        } else {
+                            e.to_string()
+                        };
+
                         return Ok(operation_failed_error(
                             "Read file for search",
-                            &e.to_string(),
+                            &error_msg,
                             vec![
                                 "Verify the file exists with listDirectory".to_string(),
                                 "Check file permissions".to_string(),

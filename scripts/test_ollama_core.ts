@@ -31,7 +31,7 @@ import {
   noopLogger,
 } from '../src/lib/ai-service/ollama-core';
 import type { Message } from '../src/models/chat';
-import type { MCPTool } from '../src/lib/mcp-types';
+import type { MCPTool } from '../src/lib/mcp';
 
 const DEFAULT_HOST = 'http://127.0.0.1:11434';
 

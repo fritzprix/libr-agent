@@ -1,3 +1,4 @@
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdvancedSettings, SystemSettings } from '@/context/SettingsContext';
 import { IsolationLevel } from '@/lib/services/settings-service';
@@ -20,7 +21,7 @@ interface AdvancedTabProps {
   };
 }
 
-export function AdvancedTab({
+function AdvancedTabComponent({
   localAdvancedSettings,
   onChange,
   systemSettingsProps,
@@ -163,3 +164,22 @@ export function AdvancedTab({
     </div>
   );
 }
+
+export default React.memo(AdvancedTabComponent, (prev, next) => {
+  return (
+    prev.localAdvancedSettings.maxRetries ===
+      next.localAdvancedSettings.maxRetries &&
+    prev.localAdvancedSettings.retryDelay ===
+      next.localAdvancedSettings.retryDelay &&
+    prev.localAdvancedSettings.circuitBreakerThreshold ===
+      next.localAdvancedSettings.circuitBreakerThreshold &&
+    prev.localAdvancedSettings.defaultMaxOutputTokens ===
+      next.localAdvancedSettings.defaultMaxOutputTokens &&
+    prev.onChange === next.onChange &&
+    prev.systemSettingsProps.localSystemSettings ===
+      next.systemSettingsProps.localSystemSettings &&
+    prev.systemSettingsProps.onChange === next.systemSettingsProps.onChange &&
+    prev.dangerZoneProps.isDeleting === next.dangerZoneProps.isDeleting &&
+    prev.dangerZoneProps.isResetting === next.dangerZoneProps.isResetting
+  );
+});

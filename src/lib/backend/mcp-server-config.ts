@@ -6,9 +6,10 @@ import type { Page } from '@/lib/db/types';
  * Backend DTO for MCP Server Config
  */
 interface MCPServerDto {
-  id: string; // Likely name
-  name: string;
+  id: string; // Database ID (CUID2 format)
+  name: string; // Human-readable name
   config: unknown; // JSON
+  toolCount: number | null; // Cached tool count from last verification/connection
   createdAt: number;
   updatedAt: number;
 }
@@ -18,12 +19,13 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
   const config = dto.config as Partial<MCPServerEntity>;
   return {
     ...config,
-    id: dto.name, // Force ID to be name as backend uses name as PK
+    id: dto.id, // Use actual database ID (CUID2)
     name: dto.name,
     // ensure transport/auth are present if they were in config
     transport: (config as Record<string, unknown>).transport,
     authentication: (config as Record<string, unknown>).authentication,
     metadata: (config as Record<string, unknown>).metadata,
+    toolCount: dto.toolCount !== null ? dto.toolCount : undefined, // Convert null to undefined
     isActive: true, // Backend stored configs are generally considered "available". Activity state is runtime.
     // But wait, frontend has isActive toggle.
     // Where is isActive stored? Likely inside 'config' JSON in backend.
