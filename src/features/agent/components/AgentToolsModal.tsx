@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Wrench } from 'lucide-react';
+import { Wrench, X } from 'lucide-react';
+import { Button } from '@/components/ui';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 
@@ -46,13 +47,15 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
           <h2 className="text-lg font-bold text-foreground">
             Available Tools {totalCount}({mcpCount})
           </h2>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onClose}
-            className="text-muted-foreground hover:text-destructive transition-colors"
+            className="text-muted-foreground hover:text-destructive"
             aria-label="Close"
           >
-            ✕
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
 
         {builtinCount > 0 && (
@@ -133,12 +136,9 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
         )}
 
         <div className="mt-4 pt-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="w-full bg-accent hover:bg-accent/80 text-accent-foreground py-2 rounded transition-colors"
-          >
+          <Button variant="secondary" onClick={onClose} className="w-full">
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>
