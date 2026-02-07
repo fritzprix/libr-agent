@@ -164,6 +164,18 @@ impl InteractiveBrowserServer {
         }
     }
 
+    /// Checks if a session is responsive by executing a trivial script.
+    /// This helps distinguish between "slow network/loading" and "broken browser/bridge".
+    async fn check_session_health(&self, session_id: &str) -> bool {
+        match self.execute_script(session_id, "true").await {
+            Ok(_) => true,
+            Err(e) => {
+                warn!("Health check failed for session {session_id}: {e}");
+                false
+            }
+        }
+    }
+
     /// Helper to apply platform-specific window settings (Linux focus fixes)
     fn apply_platform_window_settings(&self, _window: &tauri::WebviewWindow) {
         // No platform-specific settings needed anymore
@@ -184,7 +196,13 @@ impl InteractiveBrowserServer {
             Ok(parsed) => {
                 // Determine if we should allow based on scheme
                 match parsed.scheme() {
-                    "http" | "https" | "about" => Ok(url.to_string()),
+                    "http" | "https" => Ok(url.to_string()),
+                    "about" => {
+                        // Replace 'about:blank' with a minimal data URI to ensure webview lifecycle triggers correctly
+                        // about:blank specifically can fail to trigger 'PageLoad' events on some WebKit/WebView2 backends
+                        Ok("data:text/html,<html><body><h1>Agent Ready</h1></body></html>"
+                            .to_string())
+                    }
                     scheme => Err(format!(
                         "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",
                         scheme
@@ -357,8 +375,14 @@ impl InteractiveBrowserServer {
                         format!("Session created for {url} - ready to extract content")
                     }
                     Err(_) => {
-                        info!("Initial page load timed out for session {session_id}");
-                        format!("Session created for {url} (load wait timed out)")
+                        info!("Initial page load timed out for session {session_id}, checking health...");
+                        if self.check_session_health(&session_id).await {
+                            info!("Session {session_id} is healthy despite timeout");
+                            format!("Session created for {url} (load wait timed out)")
+                        } else {
+                            error!("Session {session_id} is unresponsive after creation timeout");
+                            format!("Session created for {url} (Initial Health Check Failed - Browser Unresponsive)")
+                        }
                     }
                 }
             }
@@ -685,9 +709,22 @@ impl InteractiveBrowserServer {
                 Err(_) => {
                     // Timeout
                     info!(
-                        "Navigation timed out waiting for page load event in session {session_id}"
+                        "Navigation timed out waiting for page load event in session {session_id}, checking health..."
                     );
-                    Ok(format!("Navigated to {target_url} (load wait timed out)"))
+                    
+                    if self.check_session_health(session_id).await {
+                        info!("Session {session_id} is healthy despite navigation timeout");
+                        Ok(format!(
+                            "Navigation initiated to {target_url} (load wait timed out)"
+                        ))
+                    } else {
+                        error!("Session {session_id} is unresponsive after navigation timeout");
+                        // Return this as a hard error so the specific tool operation fails, 
+                        // forcing the agent to realize the session is broken.
+                        Err(format!(
+                            "Navigation failed and browser is unresponsive (Zombie Session). Recommendation: Close session and create new one."
+                        ))
+                    }
                 }
             }
         } else {

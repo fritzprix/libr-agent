@@ -75,7 +75,7 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
 
     let suggestions = if result.contains("load wait timed out") {
         vec![
-            "Navigation succeeded, but page loading is slow. The page may still be usable."
+            "Navigation timed out waiting for page load. The page may still be usable."
                 .to_string(),
             "Try extractWebContent to see if content is available despite the timeout.".to_string(),
             "If the page is blank or broken, create a new session and try a different URL."
