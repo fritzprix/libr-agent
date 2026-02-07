@@ -36,6 +36,7 @@ describe('FileAttachment', () => {
       />
     );
 
+    // Remove buttons should have specific, file-related accessible names for screen readers.
     expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove image.png' })).toBeInTheDocument();
   });
