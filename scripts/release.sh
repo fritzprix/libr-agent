@@ -8,23 +8,9 @@ fi
 
 # Check for clean git state
 if [ -n "$(git status --porcelain)" ]; then
-  echo "Error: Git working directory is not clean. Please commit or stash changes."
+  echo "Error: Git working directory is not clean. Please commit your changes (including CHANGELOG.md) before releasing."
   exit 1
 fi
-
-echo ">>> Generating Changelog Draft..."
-node scripts/generate-changelog.cjs
-
-echo ""
-echo ">>> Review the draft above."
-echo ">>> Please open CHANGELOG.md and update it with the new version notes."
-echo ">>> Do NOT commit the changes yet (save the file)."
-read -p ">>> Press Enter when you have updated CHANGELOG.md (or Ctrl+C to abort)..."
-
-echo ">>> Cleaning up artifacts (logs, temp files)..."
-rm -f *.log *.txt
-rm -rf temp/ test-results/
-echo "Cleanup complete."
 
 echo ">>> Running pre-release checks..."
 # 1. Frontend Tests
