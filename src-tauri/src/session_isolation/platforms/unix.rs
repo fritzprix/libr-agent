@@ -27,14 +27,36 @@ pub async fn create_basic_isolated_command(
         cmd.env(key, value);
     }
 
-    // Unix shells (bash, sh) use -c flag
-    let full_command = if config.args.is_empty() {
-        config.command.clone()
-    } else {
-        format!("{} {}", config.command, config.args.join(" "))
-    };
-    info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
-    cmd.args(["-c", &full_command]);
+    // Unix shells (bash, sh) use -c flag.
+    // Instead of string concatenation which is vulnerable to injection if args contain metacharacters,
+    // we use the `sh -c "$@"` pattern to pass arguments safely.
+    // Syntax: sh -c 'command "$@"' -- arg0 arg1 arg2...
+    // where arg0 becomes $0 (typically script name), arg1 becomes $1, etc.
+
+    // We set $0 to the command name itself for better `ps` output visibility if supported,
+    // or just a placeholder. Let's use config.command as $0.
+
+    // Command string: simply execute "$@" which expands to all positional parameters preserving quoting.
+    // Wait, "$@" expands to $1 $2... it does NOT include $0.
+    // So if we run `sh -c '"$@"' -- cmd arg1`, it runs `arg1`!
+
+    // Correct pattern: `sh -c '"$0" "$@"' command arg1 arg2`
+    // Then $0 = command, $1 = arg1, $2 = arg2.
+    // Expansion `"$0" "$@"` becomes `command arg1 arg2`.
+
+    let shell_script = "\"$0\" \"$@\"";
+
+    let mut shell_args = Vec::new();
+    shell_args.push("-c");
+    shell_args.push(shell_script);
+    shell_args.push("--"); // Delimiter (optional but good practice)
+    shell_args.push(&config.command); // This becomes $0
+    for arg in &config.args {
+        shell_args.push(arg); // These become $1, $2...
+    }
+
+    info!("Unix shell execution: {} -c '{}' -- {} {:?}", shell_cmd, shell_script, config.command, config.args);
+    cmd.args(shell_args);
 
     info!(
         "Isolated command created for session {} with isolation level {:?}",

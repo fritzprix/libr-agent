@@ -80,5 +80,4 @@ pub fn get_restricted_path() -> String {
 
         paths.join(":")
     }
-    .to_string()
 }
