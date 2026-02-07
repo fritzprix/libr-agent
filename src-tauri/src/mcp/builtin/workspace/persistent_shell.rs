@@ -15,13 +15,16 @@ use base64::engine::general_purpose;
 #[cfg(windows)]
 use base64::Engine;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel, SessionIsolationManager};
+
 use super::ShellType;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tracing::{debug, warn};
 
 /// Read a line from BufReader with lossy UTF-8 conversion
@@ -89,49 +92,28 @@ impl PersistentShell {
         session_id: String,
         workspace_path: PathBuf,
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
+        isolation_manager: &SessionIsolationManager,
     ) -> Result<Self> {
         #[cfg(unix)]
-        let mut cmd = Command::new("bash");
-        #[cfg(unix)]
-        {
-            cmd.arg("--norc");
-            cmd.arg("--noprofile");
-
-            // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
-            // This is critical for pip installed binaries
-            if let Ok(home) = std::env::var("HOME") {
-                let local_bin = format!("{}/.local/bin", home);
-                if let Ok(path) = std::env::var("PATH") {
-                    if !path.contains(&local_bin) {
-                        // Prepend to prioritize local binaries
-                        let new_path = format!("{}:{}", local_bin, path);
-                        cmd.env("PATH", new_path);
-                    }
-                } else {
-                    cmd.env("PATH", local_bin);
-                }
-            }
-
-            debug!("Creating persistent bash shell for session: {}", session_id);
-        }
+        let (shell_command, shell_args) = (
+            "bash".to_string(),
+            vec!["--norc".to_string(), "--noprofile".to_string()],
+        );
 
         #[cfg(windows)]
-        let mut cmd = match shell_type {
-            ShellType::PowerShell => {
-                let mut c = Command::new("powershell.exe");
-                c.arg("-NoProfile");
-                c.arg("-NoLogo");
-                c.arg("-NonInteractive"); // Critical: removes prompts and echo
-                debug!("Creating persistent PowerShell session for: {}", session_id);
-                c
-            }
-            ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
-                c.arg("/Q"); // Echo off
-                c.arg("/K"); // Keep running (don't exit after first command)
-                debug!("Creating persistent Cmd shell for: {}", session_id);
-                c
-            }
+        let (shell_command, shell_args) = match shell_type {
+            ShellType::PowerShell => (
+                "powershell.exe".to_string(),
+                vec![
+                    "-NoProfile".to_string(),
+                    "-NoLogo".to_string(),
+                    "-NonInteractive".to_string(),
+                ],
+            ),
+            ShellType::Cmd => (
+                "cmd.exe".to_string(),
+                vec!["/Q".to_string(), "/K".to_string()],
+            ),
             ShellType::Bash => {
                 return Err(anyhow::anyhow!(
                     "Bash shell type is not supported on Windows"
@@ -139,8 +121,37 @@ impl PersistentShell {
             }
         };
 
-        // Set working directory to workspace
-        cmd.current_dir(&workspace_path);
+        // Configure isolation
+        let mut env_vars = HashMap::new();
+
+        #[cfg(unix)]
+        {
+            // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
+            // This is critical for pip installed binaries
+            // Note: SessionIsolationManager handles basic PATH, but we might want to augment it here
+            // if SessionIsolationManager doesn't cover ~/.local/bin adequately.
+            // However, SessionIsolationManager::get_restricted_path includes ~/.local/bin.
+            // But let's check if we need to explicitly set it in env_vars to force it.
+            // SessionIsolationManager sets HOME, but PATH logic is complex.
+            // To be safe, we rely on SessionIsolationManager's PATH handling which is robust.
+            debug!("Creating persistent bash shell for session: {}", session_id);
+        }
+
+        #[cfg(windows)]
+        debug!("Creating persistent Windows shell for session: {}", session_id);
+
+        let config = IsolatedProcessConfig {
+            session_id: session_id.clone(),
+            workspace_path: workspace_path.clone(),
+            command: shell_command,
+            args: shell_args,
+            env_vars,
+            isolation_level: IsolationLevel::Medium, // Enforce medium isolation
+            shell_type: Some(shell_type),
+            interactive: true,
+        };
+
+        let mut cmd = isolation_manager.create_isolated_command(config).await?;
 
         let initial_cwd = workspace_path.to_string_lossy().to_string();
         debug!(
@@ -570,16 +581,22 @@ mod tests {
     async fn test_basic_command() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_basic_command");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
-        let mut shell =
-            PersistentShell::new("test-basic".to_string(), temp_dir.clone(), ShellType::Bash)
-                .await?;
+        let mut shell = PersistentShell::new(
+            "test-basic".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+            &isolation_manager,
+        )
+        .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-basic".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -600,15 +617,22 @@ mod tests {
     async fn test_working_directory_persistence() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_working_dir");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
-        let mut shell =
-            PersistentShell::new("test-cd".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+        let mut shell = PersistentShell::new(
+            "test-cd".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+            &isolation_manager,
+        )
+        .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-cd".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -639,15 +663,22 @@ mod tests {
     async fn test_environment_variable_persistence() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_env_vars");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
-        let mut shell =
-            PersistentShell::new("test-env".to_string(), temp_dir.clone(), ShellType::Bash).await?;
+        let mut shell = PersistentShell::new(
+            "test-env".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+            &isolation_manager,
+        )
+        .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-env".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -675,16 +706,22 @@ mod tests {
     async fn test_input_injection_safety() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_input_safety");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
-        let mut shell =
-            PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash)
-                .await?;
+        let mut shell = PersistentShell::new(
+            "test-safety".to_string(),
+            temp_dir.clone(),
+            ShellType::Bash,
+            &isolation_manager,
+        )
+        .await?;
         #[cfg(windows)]
         let mut shell = PersistentShell::new(
             "test-safety".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -717,12 +754,14 @@ mod tests {
     async fn test_stdin_isolation() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_stdin_isolation");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-isolation".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            &isolation_manager,
         )
         .await?;
         #[cfg(windows)]
@@ -730,6 +769,7 @@ mod tests {
             "test-isolation".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -756,12 +796,14 @@ mod tests {
     async fn test_command_without_newline() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_no_newline");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-no-newline".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            &isolation_manager,
         )
         .await?;
         #[cfg(windows)]
@@ -769,6 +811,7 @@ mod tests {
             "test-no-newline".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 
@@ -797,12 +840,14 @@ mod tests {
     async fn test_unicode_handling() -> Result<()> {
         let temp_dir = std::env::temp_dir().join("test_unicode");
         std::fs::create_dir_all(&temp_dir)?;
+        let isolation_manager = SessionIsolationManager::new();
 
         #[cfg(unix)]
         let mut shell = PersistentShell::new(
             "test-unicode".to_string(),
             temp_dir.clone(),
             ShellType::Bash,
+            &isolation_manager,
         )
         .await?;
         #[cfg(windows)]
@@ -810,6 +855,7 @@ mod tests {
             "test-unicode".to_string(),
             temp_dir.clone(),
             ShellType::PowerShell,
+            &isolation_manager,
         )
         .await?;
 

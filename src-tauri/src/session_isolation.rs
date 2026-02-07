@@ -44,6 +44,9 @@ pub struct IsolatedProcessConfig {
     pub env_vars: HashMap<String, String>,
     pub isolation_level: IsolationLevel,
     pub shell_type: Option<ShellType>,
+    /// If true, the command is executed directly without shell wrapping.
+    /// Used for interactive shells like PersistentShell.
+    pub interactive: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,24 +105,32 @@ impl SessionIsolationManager {
     ) -> Result<AsyncCommand, String> {
         // Detect if this is a direct PowerShell/executable command (Windows-specific)
         let (shell_cmd, use_shell_wrapper) = if cfg!(target_os = "windows") {
-            let cmd_lower = config.command.to_lowercase();
-            if cmd_lower.starts_with("powershell") || cmd_lower.starts_with("pwsh") {
-                // Direct PowerShell execution - don't wrap with cmd.exe
-                info!("Detected PowerShell command, executing directly without cmd.exe wrapper");
-                (
-                    config
-                        .command
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("powershell")
-                        .to_string(),
-                    false,
-                )
+            if config.interactive {
+                (config.command.clone(), false)
             } else {
-                (self.get_shell_command(config.shell_type).to_string(), true)
+                let cmd_lower = config.command.to_lowercase();
+                if cmd_lower.starts_with("powershell") || cmd_lower.starts_with("pwsh") {
+                    // Direct PowerShell execution - don't wrap with cmd.exe
+                    info!("Detected PowerShell command, executing directly without cmd.exe wrapper");
+                    (
+                        config
+                            .command
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("powershell")
+                            .to_string(),
+                        false,
+                    )
+                } else {
+                    (self.get_shell_command(config.shell_type).to_string(), true)
+                }
             }
         } else {
-            (self.get_shell_command(None).to_string(), true)
+            if config.interactive {
+                (config.command.clone(), false)
+            } else {
+                (self.get_shell_command(None).to_string(), true)
+            }
         };
 
         let mut cmd = AsyncCommand::new(&shell_cmd);
@@ -199,29 +210,33 @@ impl SessionIsolationManager {
         // Set command arguments based on platform and shell type
         if cfg!(target_os = "windows") {
             if !use_shell_wrapper {
-                // Direct PowerShell execution: parse and pass arguments directly
-                // Extract PowerShell args from the command string
-                let parts: Vec<&str> = config.command.split_whitespace().collect();
-                if parts.len() > 1 {
-                    // Pass all arguments after "powershell"/"pwsh"
-                    cmd.args(&parts[1..]);
-                }
-                // Add any additional args
-                if !config.args.is_empty() {
+                if config.interactive {
                     cmd.args(&config.args);
+                } else {
+                    // Direct PowerShell execution: parse and pass arguments directly
+                    // Extract PowerShell args from the command string
+                    let parts: Vec<&str> = config.command.split_whitespace().collect();
+                    if parts.len() > 1 {
+                        // Pass all arguments after "powershell"/"pwsh"
+                        cmd.args(&parts[1..]);
+                    }
+                    // Add any additional args
+                    if !config.args.is_empty() {
+                        cmd.args(&config.args);
+                    }
+                    info!(
+                        "PowerShell direct execution configured: {} with args: {:?}",
+                        shell_cmd,
+                        parts.get(1..).unwrap_or(&[])
+                    );
+                    // Log selected parts of environment for debug: sometimes missing PATH or SystemRoot
+                    info!(
+                        "PowerShell direct exec: command='{}' args={:?} workspace_dir={}",
+                        shell_cmd,
+                        parts.get(1..).unwrap_or(&[]),
+                        config.workspace_path.display()
+                    );
                 }
-                info!(
-                    "PowerShell direct execution configured: {} with args: {:?}",
-                    shell_cmd,
-                    parts.get(1..).unwrap_or(&[])
-                );
-                // Log selected parts of environment for debug: sometimes missing PATH or SystemRoot
-                info!(
-                    "PowerShell direct exec: command='{}' args={:?} workspace_dir={}",
-                    shell_cmd,
-                    parts.get(1..).unwrap_or(&[]),
-                    config.workspace_path.display()
-                );
             } else {
                 // Windows: Use PowerShell instead of cmd.exe for better quote handling
                 // PowerShell handles double quotes correctly without complex escaping
@@ -289,14 +304,18 @@ impl SessionIsolationManager {
                 );
             }
         } else {
-            // Unix shells (bash, sh) use -c flag
-            let full_command = if config.args.is_empty() {
-                config.command.clone()
+            if config.interactive {
+                cmd.args(&config.args);
             } else {
-                format!("{} {}", config.command, config.args.join(" "))
-            };
-            info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
-            cmd.args(["-c", &full_command]);
+                // Unix shells (bash, sh) use -c flag
+                let full_command = if config.args.is_empty() {
+                    config.command.clone()
+                } else {
+                    format!("{} {}", config.command, config.args.join(" "))
+                };
+                info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
+                cmd.args(["-c", &full_command]);
+            }
         }
 
         info!(

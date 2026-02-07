@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
+use crate::session_isolation::SessionIsolationManager;
+
 use super::persistent_shell::PersistentShell;
 use super::ShellType;
 
@@ -23,14 +25,18 @@ pub struct PersistentShellManager {
     /// Maximum shells per session (resource limit)
     #[allow(dead_code)]
     max_shells_per_session: usize,
+
+    /// Session isolation manager for spawning shells
+    isolation_manager: SessionIsolationManager,
 }
 
 impl PersistentShellManager {
     /// Create a new persistent shell manager
-    pub fn new() -> Self {
+    pub fn new(isolation_manager: SessionIsolationManager) -> Self {
         Self {
             shells: Arc::new(Mutex::new(HashMap::new())),
             max_shells_per_session: 3,
+            isolation_manager,
         }
     }
 
@@ -67,9 +73,14 @@ impl PersistentShellManager {
         #[cfg(windows)]
         let shell_type = ShellType::PowerShell; // Default to PowerShell on Windows
 
-        let shell = PersistentShell::new(session_id.clone(), workspace_path, shell_type)
-            .await
-            .map_err(|e| format!("Failed to create shell: {e}"))?;
+        let shell = PersistentShell::new(
+            session_id.clone(),
+            workspace_path,
+            shell_type,
+            &self.isolation_manager,
+        )
+        .await
+        .map_err(|e| format!("Failed to create shell: {e}"))?;
 
         let shell_arc = Arc::new(Mutex::new(shell));
         shells.insert(session_id.clone(), shell_arc.clone());
@@ -234,7 +245,7 @@ impl PersistentShellManager {
 
 impl Default for PersistentShellManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(SessionIsolationManager::new())
     }
 }
 
@@ -244,7 +255,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_creation_and_reuse() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(SessionIsolationManager::new());
         let session_id = "test-session".to_string();
         let workspace_path = std::env::temp_dir().join("test_shell_reuse");
         std::fs::create_dir_all(&workspace_path)?;
@@ -275,7 +286,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_basic_command() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(SessionIsolationManager::new());
         let session_id = "test-exec".to_string();
         let workspace_path = std::env::temp_dir().join("test_execute_basic");
         std::fs::create_dir_all(&workspace_path)?;
@@ -313,7 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_persistence_across_commands() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(SessionIsolationManager::new());
         let session_id = "test-state".to_string();
         let workspace_path = std::env::temp_dir().join("test_state_persistence");
         std::fs::create_dir_all(&workspace_path)?;
@@ -376,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_all() -> Result<()> {
-        let manager = PersistentShellManager::new();
+        let manager = PersistentShellManager::new(SessionIsolationManager::new());
         let ws1 = std::env::temp_dir().join("test_cleanup_1");
         let ws2 = std::env::temp_dir().join("test_cleanup_2");
         let ws3 = std::env::temp_dir().join("test_cleanup_3");

@@ -69,6 +69,7 @@ impl WorkspaceServer {
             env_vars,
             isolation_level,
             shell_type: None, // Default to platform default shell
+            interactive: false,
         };
 
         // Create isolated command

@@ -117,13 +117,17 @@ impl WorkspaceServer {
         // Start cleanup task for old processes
         Self::start_cleanup_task(process_registry.clone());
 
+        let isolation_manager = crate::session_isolation::SessionIsolationManager::new();
+
         Self {
             session_id,
             session_manager,
-            isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
             pending_executions: Arc::new(PendingExecutions::new()),
-            shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
+            shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new(
+                isolation_manager.clone(),
+            )),
+            isolation_manager,
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }

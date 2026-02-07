@@ -107,6 +107,7 @@ impl WorkspaceServer {
                 .unwrap_or_default(),
             isolation_level,
             shell_type: None, // Default to platform default shell
+            interactive: false,
         };
 
         // Create isolated command
