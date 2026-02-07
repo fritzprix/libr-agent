@@ -6,22 +6,22 @@ The Rust MCP server in LibrAgent is modularized for extensibility. This guide ex
 
 ```text
 src-tauri/src/mcp/builtin/
-├── mod.rs                    # Server trait definitions and registry
-├── bootstrap/                # Shared initialization and bootstrap helpers
-├── assistant/                # Assistant role management
-├── browser/                  # Headless browser automation
-├── knowledge/                # Semantic search and memory
-├── planning/                 # Task planning and tracking
-├── workspace/                # Terminal, File Manager, Code Execution
-├── content_store/            # Content storage and retrieval
-├── playbook/                 # Workflow automation
-├── skills/                   # Reusable capabilities
-├── ui/                       # UI interaction tools
-├── mcp_manager/              # MCP server management
-├── browser_content_store.rs  # Browser-aware content store bridge
-├── error_guidance.rs         # Error analysis and guidance utilities
-├── utils.rs                  # Common utilities
-└── README.md                 # This guide
+├── mod.rs                # Server trait definitions and registry
+├── assistant/            # Assistant role management
+├── bootstrap/            # Shared initialization and bootstrap helpers
+├── browser/              # Headless browser automation
+├── browser_content_store.rs # Browser-aware content store bridge
+├── content_store/        # Content storage and retrieval
+├── error_guidance.rs     # Error analysis and guidance utilities
+├── knowledge/            # Semantic search and memory
+├── mcp_manager/          # MCP server management
+├── planning/             # Task planning and tracking
+├── playbook/             # Workflow automation
+├── skills/               # Reusable capabilities
+├── ui/                   # UI interaction tools
+├── workspace/            # Terminal, File Manager, Code Execution
+├── utils.rs              # Common utilities
+└── README.md             # This guide
 ```
 
 ## 🏗️ MCP Server Module Architecture
@@ -50,12 +50,9 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 
     // Returns the service context (optional)
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        // Default implementation
         ServiceContext {
-            context_prompt: format!(
-                "## {}\n**Description**: {}",
-                self.display_name(),
-                self.description()
-            ),
+            context_prompt: String::new(),
             structured_state: None,
         }
     }

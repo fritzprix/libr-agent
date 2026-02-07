@@ -132,7 +132,7 @@ OpenAI, Anthropic (Claude), Google (Gemini).
 
 Uses standard APIs. Add your API key in settings.
 
-## Built-in Tools
+## Key Built-in Tools
 
 Primary user-facing tools:
 
@@ -144,7 +144,7 @@ Primary user-facing tools:
 - **Playbook**: Workflow automation and process templates
 - **Assistant**: Role management and system prompt configuration
 
-Additional built-in servers (bootstrap, content_store, ui, mcp_manager) provide supporting infrastructure.
+> Note: Additional internal modules (Bootstrap, Content Store, UI, MCP Manager) handle infrastructure and state.
 
 ## Architecture
 
@@ -157,6 +157,7 @@ Additional built-in servers (bootstrap, content_store, ui, mcp_manager) provide 
 
 ### React + TypeScript Frontend
 
+- Uses Rust backend for robust local state storage (SQLite via SeaORM)
 - No server needed, everything runs locally
 
 ### Built-in vs MCP
