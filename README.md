@@ -132,13 +132,19 @@ OpenAI, Anthropic (Claude), Google (Gemini).
 
 Uses standard APIs. Add your API key in settings.
 
-## Built-in Tools
+## Key Built-in Tools
+
+Primary user-facing tools:
 
 - **Browser**: Headless Chrome automation, session persistence
-- **Terminal**: Shell command execution, history tracking
-- **File Manager**: Sandboxed file operations
-- **Code Execution**: Python and Node.js runtime
+- **Workspace**: Unified Terminal, File Manager, and Shell Execution (supports Python/Node.js via CLI) with sandboxing
 - **Planner**: Task tracking and goal management
+- **Knowledge**: Semantic search and memory retrieval
+- **Skills**: Reusable capabilities and tool definitions
+- **Playbook**: Workflow automation and process templates
+- **Assistant**: Role management and system prompt configuration
+
+> Note: Additional internal modules (Bootstrap, Content Store, UI, MCP Manager) handle infrastructure and state.
 
 ## Architecture
 
@@ -147,10 +153,11 @@ Uses standard APIs. Add your API key in settings.
 - Smaller binaries than Electron (~50MB vs ~150MB)
 - Better sandboxing for tool execution
 - Native performance
+- Uses Rust backend for robust local state storage (SQLite via SeaORM)
 
 ### React + TypeScript Frontend
 
-- IndexedDB for local state storage
+- Uses Rust backend for robust local state storage (SQLite via SeaORM)
 - No server needed, everything runs locally
 
 ### Built-in vs MCP
