@@ -304,7 +304,7 @@ pub async fn continue_workflow_after_tool(
     session_id: String,
     tool_call_id: String,
     result: crate::commands::agent_commands::ToolExecutionResult,
-) {
+) -> Result<(), String> {
     use crate::mcp::types::MCPContent;
 
     match crate::agent::tools::handle_tool_result(
@@ -351,7 +351,9 @@ pub async fn continue_workflow_after_tool(
             tokio::spawn(async move {
                 let repo = crate::state::get_message_repository();
                 for msg in msgs_for_db {
-                    let _ = repo.insert(&msg).await;
+                    if let Err(e) = repo.insert(&msg).await {
+                        log::error!("Failed to persist tool result message: {}", e);
+                    }
                 }
             });
 
@@ -391,6 +393,7 @@ pub async fn continue_workflow_after_tool(
                 .await
                 {
                     log::error!("Failed to request LLM completion: {}", e);
+                    return Err(format!("Failed to request LLM completion: {}", e));
                 }
             }
         }
@@ -398,12 +401,29 @@ pub async fn continue_workflow_after_tool(
             // Still waiting for other tools
         }
         Err(e) => {
+            // Handle cancellation gracefully without emitting error event
+            if e == "Workflow was cancelled" {
+                log::info!(
+                    "Ignoring tool result for session {} because the workflow was cancelled",
+                    session_id
+                );
+                return Err(e);
+            }
+
             log::error!("Error handling tool result: {}", e);
-            if let Err(err) =
-                crate::agent::llm::handle_llm_error(session_repo, active_sessions, app_handle, session_id, e).await
+            if let Err(err) = crate::agent::llm::handle_llm_error(
+                session_repo,
+                active_sessions,
+                app_handle,
+                session_id,
+                e.clone(),
+            )
+            .await
             {
                 log::error!("Failed to handle LLM error: {}", err);
             }
+            return Err(e);
         }
     }
+    Ok(())
 }

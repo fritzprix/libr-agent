@@ -335,9 +335,7 @@ impl AgentSessionManager {
             tool_call_id,
             result,
         )
-        .await;
-
-        Ok(())
+        .await
     }
 
     /// Handle LLM error from frontend

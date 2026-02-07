@@ -482,7 +482,7 @@ pub async fn handle_llm_response(
                             mcp_content: None,
                         };
                         // Handle result (error case)
-                        crate::agent::workflow::continue_workflow_after_tool(
+                        if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
                             &session_repo_clone,
                             &active_sessions_clone,
                             &proxy_manager_clone,
@@ -491,7 +491,10 @@ pub async fn handle_llm_response(
                             tool_call_id,
                             result,
                         )
-                        .await;
+                        .await
+                        {
+                            log::error!("Error continuing workflow after failed tool parse: {}", e);
+                        }
                         continue; // Proceed to next tool
                     }
                 };
@@ -534,7 +537,7 @@ pub async fn handle_llm_response(
                 };
 
                 // Handle result and potentially continue workflow
-                crate::agent::workflow::continue_workflow_after_tool(
+                if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
                     &session_repo_clone,
                     &active_sessions_clone,
                     &proxy_manager_clone,
@@ -543,7 +546,10 @@ pub async fn handle_llm_response(
                     tool_call_id,
                     result,
                 )
-                .await;
+                .await
+                {
+                    log::error!("Error continuing workflow after tool execution: {}", e);
+                }
             }
         });
     }
