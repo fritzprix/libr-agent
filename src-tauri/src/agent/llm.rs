@@ -446,32 +446,29 @@ pub async fn handle_llm_response(
         }
 
         // Execute tool calls
-        for tool_call in tool_calls {
-            let tool_name = tool_call.function.name.clone();
+        // 🔥 CRITICAL CHANGE: Execute tools SEQUENTIALLY to prevent race conditions
+        // (e.g., writeFile followed by editFile on the same file)
+        let session_repo_clone = session_repo.clone();
+        let active_sessions_clone = active_sessions.clone();
+        let app_handle_clone = app_handle.clone();
+        let proxy_manager_clone = proxy_manager.clone();
+        let session_id_clone = session_id.clone();
+        let tool_calls_clone = tool_calls.clone();
 
-            let effective_tool_name = tool_name.clone();
-            let effective_tool_call = tool_call.clone();
+        tokio::spawn(async move {
+            for tool_call in tool_calls_clone {
+                let tool_name = tool_call.function.name.clone();
+                let tool_call_id = tool_call.id.clone();
+                let args_str = tool_call.function.arguments.clone();
 
-            // Emit ToolExecutionStarted
-            let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
-                session_id: session_id.clone(),
-                tool_name: effective_tool_name.clone(),
-            };
-            crate::agent::events::emit_agent_event(app_handle, event)
-                .map_err(|e| format!("Failed to emit tool execution started event: {}", e))?;
-
-            // Spawn async task for execution
-            let session_repo_clone = session_repo.clone();
-            let active_sessions_clone = active_sessions.clone();
-            let app_handle_clone = app_handle.clone();
-            let proxy_manager_clone = proxy_manager.clone();
-            let session_id_clone = session_id.clone();
-            let tool_call_clone = effective_tool_call;
-            let tool_name_owned = effective_tool_name;
-
-            tokio::spawn(async move {
-                let tool_call_id = tool_call_clone.id;
-                let args_str = tool_call_clone.function.arguments;
+                // Emit ToolExecutionStarted
+                let event = crate::agent::events::AgentEvent::ToolExecutionStarted {
+                    session_id: session_id_clone.clone(),
+                    tool_name: tool_name.clone(),
+                };
+                if let Err(e) = crate::agent::events::emit_agent_event(&app_handle_clone, event) {
+                    log::error!("Failed to emit tool execution started event: {}", e);
+                }
 
                 // Parse arguments
                 let args = match serde_json::from_str::<serde_json::Value>(&args_str) {
@@ -491,18 +488,18 @@ pub async fn handle_llm_response(
                             &active_sessions_clone,
                             &proxy_manager_clone,
                             &app_handle_clone,
-                            session_id_clone,
+                            session_id_clone.clone(),
                             tool_call_id,
                             result,
                         )
                         .await;
-                        return;
+                        continue; // Proceed to next tool
                     }
                 };
 
                 // Call tool
                 let result = match proxy_manager_clone
-                    .call_tool(&session_id_clone, &tool_name_owned, args)
+                    .call_tool(&session_id_clone, &tool_name, args)
                     .await
                 {
                     Ok(response) => {
@@ -543,13 +540,13 @@ pub async fn handle_llm_response(
                     &active_sessions_clone,
                     &proxy_manager_clone,
                     &app_handle_clone,
-                    session_id_clone,
+                    session_id_clone.clone(),
                     tool_call_id,
                     result,
                 )
                 .await;
-            });
-        }
+            }
+        });
     }
 
     Ok(())

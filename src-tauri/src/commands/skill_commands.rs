@@ -83,7 +83,13 @@ pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadat
 }
 
 fn parse_skill_metadata(path: &Path) -> Result<SkillMetadata, String> {
-    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::InvalidData {
+            "Content appears to be binary or contains invalid UTF-8 characters".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
 
     // Simple frontmatter parsing
     if let Some(stripped) = content.strip_prefix("---") {

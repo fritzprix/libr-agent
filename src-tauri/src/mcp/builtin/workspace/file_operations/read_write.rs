@@ -340,9 +340,15 @@ impl WorkspaceServer {
                 match tokio::fs::read_to_string(&safe_path).await {
                     Ok(c) => old_content = c,
                     Err(e) => {
+                        let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
+                            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+                        } else {
+                            e.to_string()
+                        };
+
                         return Ok(operation_failed_error(
                             "Read existing file for diff",
-                            &e.to_string(),
+                            &error_msg,
                             vec![
                                 "File exists but could not be read".to_string(),
                                 "Check file permissions".to_string(),
@@ -708,7 +714,13 @@ async fn read_file_lines_range(
 
             use std::io::BufRead;
             for line_result in reader.lines() {
-                let line = line_result.map_err(|e| e.to_string())?;
+                let line = line_result.map_err(|e| {
+                    if e.kind() == std::io::ErrorKind::InvalidData {
+                        "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+                    } else {
+                        format!("Failed to read file: {}", e)
+                    }
+                })?;
                 total_lines += 1;
 
                 if current_line >= start && current_line <= end {
@@ -755,17 +767,28 @@ async fn read_file_lines_range(
     let mut current_line = 1;
     let mut total_lines = 0;
 
-    while let Ok(Some(line)) = lines.next_line().await {
-        total_lines += 1;
-        if current_line >= start && current_line <= end {
-            result_lines.push((current_line, line));
-        }
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                total_lines += 1;
+                if current_line >= start && current_line <= end {
+                    result_lines.push((current_line, line));
+                }
 
-        if current_line > end {
-            break;
-        }
+                if current_line > end {
+                    break;
+                }
 
-        current_line += 1;
+                current_line += 1;
+            }
+            Ok(None) => break,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::InvalidData {
+                    return Err("Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string());
+                }
+                return Err(format!("Failed to read file: {}", e));
+            }
+        }
     }
 
     // Check if start line was out of bounds

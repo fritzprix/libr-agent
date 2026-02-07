@@ -462,7 +462,13 @@ impl DocumentParser {
                     ParseResult::Text(content)
                 }
             }
-            Err(e) => ParseResult::Error(format!("Failed to read text file: {e}")),
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::InvalidData {
+                    ParseResult::Error("Failed to read text file: Content appears to be binary or contains invalid UTF-8 characters".to_string())
+                } else {
+                    ParseResult::Error(format!("Failed to read text file: {e}"))
+                }
+            }
         }
     }
 

@@ -506,7 +506,7 @@ mod tests {
         assert!(result.is_error == Some(true));
 
         if let Some(content) = result.content {
-            if let Some(crate::mcp::types::MCPContent::Text { text }) = content.first() {
+            if let Some(crate::mcp::types::MCPContent::Text { text, .. }) = content.first() {
                 assert!(text.contains("✗"));
                 assert!(text.contains("💡 Next Steps:"));
                 assert!(text.contains("Session 'abc123' not found"));
@@ -530,7 +530,7 @@ mod tests {
         assert!(result.is_error == Some(false));
 
         if let Some(content) = result.content {
-            if let Some(crate::mcp::types::MCPContent::Text { text }) = content.first() {
+            if let Some(crate::mcp::types::MCPContent::Text { text, .. }) = content.first() {
                 assert!(text.contains("✓"));
                 assert!(text.contains("💡 Next:"));
                 assert!(text.contains("Todo created successfully"));
