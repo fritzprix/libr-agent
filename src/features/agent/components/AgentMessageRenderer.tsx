@@ -57,65 +57,70 @@ function useIsDarkMode() {
 }
 
 // Extract CodeBlock component to allow injecting isDark prop
-const CodeBlock = ({
-  children,
-  className,
-  isDark,
-  ...props
-}: React.ComponentPropsWithoutRef<'code'> & {
-  inline?: boolean;
-  node?: unknown;
-  isDark?: boolean;
-}) => {
-  // Distinguish inline code vs block code
-  // ReactMarkdown passes className="language-xxx" for code blocks
-  const match = /language-(\w+)/.exec(className || '');
-  const language = match ? match[1] : '';
+// Memoized to prevent expensive syntax highlighting re-runs during text streaming
+const CodeBlock = memo(
+  ({
+    children,
+    className,
+    isDark,
+    ...props
+  }: React.ComponentPropsWithoutRef<'code'> & {
+    inline?: boolean;
+    node?: unknown;
+    isDark?: boolean;
+  }) => {
+    // Distinguish inline code vs block code
+    // ReactMarkdown passes className="language-xxx" for code blocks
+    const match = /language-(\w+)/.exec(className || '');
+    const language = match ? match[1] : '';
 
-  if (!language) {
-    // Inline code
-    return (
-      <code
-        className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  }
-
-  // Block code with syntax highlighting
-  const code = String(children).replace(/\n$/, '');
-
-  return (
-    <Highlight
-      theme={isDark ? themes.oneDark : themes.oneLight}
-      code={code}
-      language={language}
-    >
-      {({
-        className: highlightClassName,
-        style,
-        tokens,
-        getLineProps,
-        getTokenProps,
-      }) => (
+    if (!language) {
+      // Inline code
+      return (
         <code
-          className={`${highlightClassName} block font-mono text-sm`}
-          style={style}
+          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
+          {...props}
         >
-          {tokens.map((line, i) => (
-            <div key={i} {...getLineProps({ line })}>
-              {line.map((token, key) => (
-                <span key={key} {...getTokenProps({ token })} />
-              ))}
-            </div>
-          ))}
+          {children}
         </code>
-      )}
-    </Highlight>
-  );
-};
+      );
+    }
+
+    // Block code with syntax highlighting
+    const code = String(children).replace(/\n$/, '');
+
+    return (
+      <Highlight
+        theme={isDark ? themes.oneDark : themes.oneLight}
+        code={code}
+        language={language}
+      >
+        {({
+          className: highlightClassName,
+          style,
+          tokens,
+          getLineProps,
+          getTokenProps,
+        }) => (
+          <code
+            className={`${highlightClassName} block font-mono text-sm`}
+            style={style}
+          >
+            {tokens.map((line, i) => (
+              <div key={i} {...getLineProps({ line })}>
+                {line.map((token, key) => (
+                  <span key={key} {...getTokenProps({ token })} />
+                ))}
+              </div>
+            ))}
+          </code>
+        )}
+      </Highlight>
+    );
+  },
+);
+
+CodeBlock.displayName = 'CodeBlock';
 
 // Helper type to avoid implicit any in markdown components
 type MarkdownReflessProps<T extends React.ElementType> =
@@ -282,15 +287,19 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
       code: ({
         children,
         className,
+        node, // Destructure node to exclude it from props passed to CodeBlock
         ...props
       }: React.ComponentPropsWithoutRef<'code'> & {
         inline?: boolean;
         node?: unknown;
-      }) => (
-        <CodeBlock isDark={isDark} className={className} {...props}>
-          {children}
-        </CodeBlock>
-      ),
+      }) => {
+        void node; // Explicitly mark as intentionally unused to satisfy linter
+        return (
+          <CodeBlock isDark={isDark} className={className} {...props}>
+            {children}
+          </CodeBlock>
+        );
+      },
     }),
     [isDark],
   );
