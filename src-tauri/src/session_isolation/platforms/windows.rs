@@ -1,9 +1,9 @@
+use crate::session_isolation::common::get_shell_command;
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 use base64::{engine::general_purpose, Engine as _};
+use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
-use std::path::PathBuf;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
-use crate::session_isolation::common::get_shell_command;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -62,18 +62,19 @@ pub async fn create_basic_isolated_command(
             );
 
             cmd.env("PATH", new_path);
-            info!("Smart Discovery: Preended Python at {} to PATH", python_str);
+            info!(
+                "Smart Discovery: Prepended Python at {} to PATH",
+                python_str
+            );
         }
     }
 
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
     // Additional env diagnostic info to help diagnose missing output on Windows
     let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
-    let system_root =
-        std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
-    let psmodulepath =
-        std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
+    let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
     info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
 
     // Add user-specified environment variables (applies to all platforms)
@@ -106,47 +107,94 @@ pub async fn create_basic_isolated_command(
             config.workspace_path.display()
         );
     } else {
-        // Windows: Use PowerShell instead of cmd.exe for better quote handling
-        let full_command = if config.args.is_empty() {
-            config.command.clone()
+        // Windows: Use PowerShell with proper argument escaping
+        // Build arguments array: each argument is single-quote escaped for PowerShell
+        let mut ps_args: Vec<String> = Vec::new();
+
+        if !config.args.is_empty() {
+            // Construct a PowerShell expression that preserves argument boundaries
+            // Each argument is escaped with single quotes
+            ps_args.push("-NoProfile".to_string());
+            ps_args.push("-NonInteractive".to_string());
+            ps_args.push("-Command".to_string());
+
+            // Build the PowerShell command with proper escaping
+            let escaped_args: Vec<String> = config
+                .args
+                .iter()
+                .map(|arg| {
+                    // Escape single quotes in arguments by doubling them
+                    let escaped = arg.replace('\'', "''");
+                    format!("'{}'", escaped)
+                })
+                .collect();
+
+            let ps_command = format!(
+                "$ErrorActionPreference = 'Stop'; try {{ & '{}' {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+                config.command.replace('\'', "''"),
+                escaped_args.join(" ")
+            );
+
+            ps_args.push(ps_command);
         } else {
-            format!("{} {}", config.command, config.args.join(" "))
-        };
+            // No arguments: use Base64 encoding for command-only execution
+            let encoded_command = general_purpose::STANDARD.encode(&config.command);
+            let wrapped_command = format!(
+                "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+                encoded_command
+            );
+
+            ps_args.push("-NoProfile".to_string());
+            ps_args.push("-NonInteractive".to_string());
+            ps_args.push("-Command".to_string());
+            ps_args.push(wrapped_command);
+        }
 
         // Override to use PowerShell
         cmd = AsyncCommand::new("powershell");
         cmd.current_dir(&config.workspace_path);
 
-        // Reapply environment variables for PowerShell
+        // Reapply environment variables for PowerShell (after cmd reconstruction)
         cmd.env("USERPROFILE", &config.workspace_path);
         cmd.env("HOME", &config.workspace_path);
         cmd.env("TEMP", config.workspace_path.join("tmp"));
         cmd.env("TMP", config.workspace_path.join("tmp"));
+
+        // Reapply PATH with Python detection (after cmd reconstruction)
+        if let Some(python_dir) = detect_python_path().await {
+            let python_str = python_dir.to_string_lossy();
+            if !current_path.contains(python_str.as_ref()) {
+                let scripts_dir = python_dir.join("Scripts");
+                let lib_bin_dir = python_dir.join("Library").join("bin");
+
+                let new_path = format!(
+                    "{};{};{};{}",
+                    python_str,
+                    scripts_dir.to_string_lossy(),
+                    lib_bin_dir.to_string_lossy(),
+                    current_path
+                );
+
+                cmd.env("PATH", new_path);
+                info!(
+                    "Smart Discovery: Prepended Python at {} to PATH (after cmd reconstruction)",
+                    python_str
+                );
+            }
+        }
+
+        // Reapply user-specified environment variables
         for (key, value) in &config.env_vars {
             cmd.env(key, value);
         }
 
-        let encoded_command = general_purpose::STANDARD.encode(&full_command);
-        let wrapped_command = format!(
-            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-            encoded_command
-        );
+        cmd.args(ps_args);
 
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &wrapped_command,
-        ]);
-
-        info!(
-            "Windows PowerShell execution with error redirection and Base64 encapsulation"
-        );
+        info!("Windows PowerShell execution with proper argument escaping and error redirection");
 
         // Log environment snapshot
         let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
-        let system_root =
-            std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
         let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
         info!(
             "PowerShell wrapper env snapshot: PATH.len={}, SystemRoot={}, COMSPEC={}",
@@ -248,16 +296,28 @@ async fn detect_python_path() -> Option<PathBuf> {
 
         // Check subdirectories for standard Python installs
         if path.exists() && path.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&path) {
-                for entry in entries.flatten() {
-                    let subpath = entry.path();
-                    if subpath.join("python.exe").exists() {
-                        info!(
-                            "Detected Python via standard path subdirectory: {:?}",
-                            subpath
-                        );
-                        return Some(subpath);
+            if let Ok(subdir) = tokio::task::spawn_blocking({
+                let path = path.clone();
+                move || {
+                    if let Ok(entries) = std::fs::read_dir(&path) {
+                        for entry in entries.flatten() {
+                            let subpath = entry.path();
+                            if subpath.join("python.exe").exists() {
+                                return Some(subpath);
+                            }
+                        }
                     }
+                    None::<PathBuf>
+                }
+            })
+            .await
+            {
+                if let Ok(Some(subdir)) = subdir {
+                    info!(
+                        "Detected Python via standard path subdirectory: {:?}",
+                        subdir
+                    );
+                    return Some(subdir);
                 }
             }
         }

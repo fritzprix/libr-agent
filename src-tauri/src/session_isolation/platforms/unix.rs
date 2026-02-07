@@ -1,9 +1,9 @@
-use tokio::process::Command as AsyncCommand;
-use tracing::{info, warn};
+use crate::session_isolation::common::get_shell_command;
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
-use crate::session_isolation::common::get_shell_command;
+use tokio::process::Command as AsyncCommand;
+use tracing::{info, warn};
 
 /// Basic isolation: environment variables and working directory
 pub async fn create_basic_isolated_command(
@@ -28,13 +28,31 @@ pub async fn create_basic_isolated_command(
     }
 
     // Unix shells (bash, sh) use -c flag
-    let full_command = if config.args.is_empty() {
-        config.command.clone()
+    if config.args.is_empty() {
+        // No arguments: we can safely run the command string directly with -c
+        let script = config.command.clone();
+        info!(
+            "Unix shell execution (no args): {} -c {}",
+            shell_cmd, script
+        );
+        cmd.args(["-c", &script]);
     } else {
-        format!("{} {}", config.command, config.args.join(" "))
-    };
-    info!("Unix shell execution: {} -c {}", shell_cmd, full_command);
-    cmd.args(["-c", &full_command]);
+        // Arguments present: use `sh -c 'cmd "$@"' cmd arg1 arg2...` pattern to preserve boundaries
+        let script = format!("{} \"$@\"", config.command);
+        let mut shell_args: Vec<String> = Vec::new();
+        shell_args.push("-c".to_string());
+        shell_args.push(script);
+        // First argument after the script becomes $0 inside the shell
+        shell_args.push(config.command.clone());
+        // Remaining arguments become $1, $2, ...; they are expanded via "$@" without word splitting
+        shell_args.extend(config.args.clone());
+
+        info!(
+            "Unix shell execution with args: {} {:?}",
+            shell_cmd, shell_args
+        );
+        cmd.args(shell_args);
+    }
 
     info!(
         "Isolated command created for session {} with isolation level {:?}",

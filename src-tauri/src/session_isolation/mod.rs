@@ -6,7 +6,6 @@ pub mod platforms;
 pub mod types;
 
 pub use types::*;
-use platforms::*;
 
 /// Cross-platform session isolation manager
 #[derive(Debug, Clone)]
