@@ -134,6 +134,8 @@ Uses standard APIs. Add your API key in settings.
 
 ## Key Built-in Tools
 
+Primary user-facing tools:
+
 - **Browser**: Headless Chrome automation, session persistence
 - **Workspace**: Unified Terminal, File Manager, and Shell Execution (supports Python/Node.js via CLI) with sandboxing
 - **Planner**: Task tracking and goal management
@@ -151,6 +153,7 @@ Uses standard APIs. Add your API key in settings.
 - Smaller binaries than Electron (~50MB vs ~150MB)
 - Better sandboxing for tool execution
 - Native performance
+- Uses Rust backend for robust local state storage (SQLite via SeaORM)
 
 ### React + TypeScript Frontend
 
