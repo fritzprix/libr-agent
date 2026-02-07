@@ -9,5 +9,6 @@
 **Action:** Always implement auto-resize for chat inputs using `scrollHeight` and `useLayoutEffect`.
 
 ## 2025-06-25 - [Accessible Lists]
+
 **Learning:** File lists rendered as `div`s with icon-only buttons create poor screen reader experience. Using `ul`/`li` provides structure, and dynamic `aria-label` (e.g., "Remove [filename]") on buttons is critical for context.
 **Action:** Always use semantic list elements for collections and ensure action buttons in lists have context-specific labels.
