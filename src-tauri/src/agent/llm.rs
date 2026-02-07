@@ -2,7 +2,6 @@ use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::commands::messages_commands::Message;
 use crate::mcp::service_proxy::MCPServiceProxy;
-use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
@@ -483,7 +482,7 @@ pub async fn handle_llm_response(
                             mcp_content: None,
                         };
                         // Handle result (error case)
-                        handle_tool_result_and_continue(
+                        if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
                             &session_repo_clone,
                             &active_sessions_clone,
                             &proxy_manager_clone,
@@ -492,7 +491,10 @@ pub async fn handle_llm_response(
                             tool_call_id,
                             result,
                         )
-                        .await;
+                        .await
+                        {
+                            log::error!("Error continuing workflow after failed tool parse: {}", e);
+                        }
                         continue; // Proceed to next tool
                     }
                 };
@@ -535,7 +537,7 @@ pub async fn handle_llm_response(
                 };
 
                 // Handle result and potentially continue workflow
-                handle_tool_result_and_continue(
+                if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
                     &session_repo_clone,
                     &active_sessions_clone,
                     &proxy_manager_clone,
@@ -544,123 +546,15 @@ pub async fn handle_llm_response(
                     tool_call_id,
                     result,
                 )
-                .await;
+                .await
+                {
+                    log::error!("Error continuing workflow after tool execution: {}", e);
+                }
             }
         });
     }
 
     Ok(())
-}
-
-/// Helper to handle tool result and trigger next steps if valid
-async fn handle_tool_result_and_continue(
-    session_repo: &Arc<dyn SessionRepository>,
-    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
-    proxy_manager: &Arc<MCPServiceProxyManager>,
-    app_handle: &AppHandle,
-    session_id: String,
-    tool_call_id: String,
-    result: crate::commands::agent_commands::ToolExecutionResult,
-) {
-    match crate::agent::tools::handle_tool_result(
-        active_sessions,
-        app_handle,
-        session_id.clone(),
-        tool_call_id,
-        result,
-    )
-    .await
-    {
-        Ok(Some(accumulated_messages)) => {
-            log::info!(
-                "All tool results received for session {}. Proceeding.",
-                session_id
-            );
-
-            // Add to cache
-            {
-                let sessions = active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    let mut messages = session.messages.write().await;
-                    for msg in &accumulated_messages {
-                        messages.push(msg.clone());
-                        if messages.len() > MAX_CACHED_MESSAGES {
-                            messages.remove(0);
-                        }
-                    }
-                }
-            }
-
-            // Emit MessageAdded for each
-            for msg in &accumulated_messages {
-                let event = crate::agent::events::AgentEvent::MessageAdded {
-                    session_id: session_id.clone(),
-                    message: Box::new(msg.clone()),
-                };
-                let _ = crate::agent::events::emit_agent_event(app_handle, event);
-            }
-
-            // Persist to DB
-            let msgs_for_db = accumulated_messages.clone();
-
-            tokio::spawn(async move {
-                let repo = crate::state::get_message_repository();
-                for msg in msgs_for_db {
-                    let _ = repo.insert(&msg).await;
-                }
-            });
-
-            // Check for UI interaction (stop condition)
-            let has_ui_interaction = accumulated_messages.iter().any(|msg| {
-                msg.content
-                    .iter()
-                    .any(|c| matches!(c, MCPContent::Resource { .. }))
-            });
-
-            if has_ui_interaction {
-                log::info!(
-                    "UI interaction detected for session {}. Stopping loop.",
-                    session_id
-                );
-                let _ = crate::agent::lifecycle::update_session_status(
-                    session_repo,
-                    active_sessions,
-                    app_handle,
-                    &session_id,
-                    SessionStatus::Idle,
-                )
-                .await;
-                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
-                    session_id: session_id.clone(),
-                };
-                let _ = crate::agent::events::emit_agent_event(app_handle, event);
-            } else {
-                // Request next LLM completion
-                if let Err(e) = request_llm_completion(
-                    session_repo,
-                    active_sessions,
-                    proxy_manager,
-                    app_handle,
-                    session_id,
-                )
-                .await
-                {
-                    log::error!("Failed to request LLM completion: {}", e);
-                }
-            }
-        }
-        Ok(Option::None) => {
-            // Still waiting for other tools
-        }
-        Err(e) => {
-            log::error!("Error handling tool result: {}", e);
-            if let Err(err) =
-                handle_llm_error(session_repo, active_sessions, app_handle, session_id, e).await
-            {
-                log::error!("Failed to handle LLM error: {}", err);
-            }
-        }
-    }
 }
 
 /// Handle LLM error from frontend

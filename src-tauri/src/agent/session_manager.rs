@@ -325,96 +325,17 @@ impl AgentSessionManager {
         tool_call_id: String,
         result: crate::commands::agent_commands::ToolExecutionResult,
     ) -> Result<(), String> {
-        // NOTE: This main entry point is for results coming from FRONTEND (if any)
-        // or internal calls. However, for internal execution loop (in llm.rs), the logic
-        // is handled by llm::handle_tool_result_and_continue.
-
-        // If this is called from outside the loop (legacy path?), we might need to know if
-        // we should continue.
-        // For now, let's implement it by calling tools::handle_tool_result and LOGGING if logic stopped.
-        // BUT, if it returns accumulated messages, we probably need to process them like llm.rs does.
-        // Since all tool execution is now internal via `llm.rs` spawned tasks, this method
-        // might only be used by `agent_commands.rs`.
-
-        // Let's replicate the logic from `llm.rs` for completeness,
-        // but assuming it's triggered externally.
-
-        // We'll trust `llm.rs` to handle its own flow. If this is called externally,
-        // we should probably use the same logic flow.
-        // However, extracting `handle_tool_result_and_continue` from `llm.rs` into `workflow.rs` or `tools.rs`
-        // would be cleaner to avoid duplication.
-        // For now, to keep it simple and compile-safe, I will reference `tools::handle_tool_result`
-        // and add a TODO or duplicate the continuation logic if needed.
-
-        // Actually, `agent_commands.rs` calls this when frontend sends tool result.
-        // But in our architecture, tool execution is internal (mostly).
-        // If we support frontend-side tools, we need this.
-
-        match crate::agent::tools::handle_tool_result(
+        // Use shared workflow logic for consistency between internal and external tool execution
+        crate::agent::workflow::continue_workflow_after_tool(
+            &self.session_repo,
             &self.active_sessions,
+            &self.proxy_manager,
             &self.app_handle,
-            session_id.clone(),
+            session_id,
             tool_call_id,
             result,
         )
         .await
-        {
-            Ok(Some(accumulated_messages)) => {
-                log::info!(
-                    "External/Manual tool result completed turn for session {}. Proceeding.",
-                    session_id
-                );
-
-                // Duplicate continuation logic (or move to shared func in pending refactor)
-                // 1. Add to cache
-                {
-                    let sessions = self.active_sessions.read().await;
-                    if let Some(session) = sessions.get(&session_id) {
-                        let mut messages = session.messages.write().await;
-                        for msg in &accumulated_messages {
-                            messages.push(msg.clone());
-                            if messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                                messages.remove(0);
-                            }
-                        }
-                    }
-                }
-
-                // 2. Emit MessageAdded
-                for msg in &accumulated_messages {
-                    let event = crate::agent::events::AgentEvent::MessageAdded {
-                        session_id: session_id.clone(),
-                        message: Box::new(msg.clone()),
-                    };
-                    let _ = crate::agent::events::emit_agent_event(&self.app_handle, event);
-                }
-
-                // 3. Persist to DB
-                let msgs_clone = accumulated_messages.clone();
-
-                tokio::spawn(async move {
-                    let repo = crate::state::get_message_repository();
-                    for msg in msgs_clone {
-                        let _ = repo.insert(&msg).await;
-                    }
-                });
-
-                // 4. Request LLM
-                // (Skip UI detection for now or duplicate it)
-                crate::agent::llm::request_llm_completion(
-                    &self.session_repo,
-                    &self.active_sessions,
-                    &self.proxy_manager,
-                    &self.app_handle,
-                    session_id,
-                )
-                .await?;
-            }
-            Ok(None) => {}
-            Err(e) => return Err(e),
-        }
-
-        Ok(())
     }
 
     /// Handle LLM error from frontend
