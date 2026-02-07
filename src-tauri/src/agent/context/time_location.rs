@@ -86,7 +86,7 @@ impl ContextProvider for TimeLocationContextProvider {
         5 // High priority - critical context information
     }
 
-    async fn get_context(&self) -> Result<String, String> {
+    async fn get_context(&self, _assistant_id: Option<&str>) -> Result<String, String> {
         Ok(self.build_context())
     }
 
@@ -126,7 +126,7 @@ mod tests {
         assert_eq!(provider.priority(), 5);
         assert!(provider.is_enabled().await);
 
-        let context = provider.get_context().await;
+        let context = provider.get_context(None).await;
         assert!(context.is_ok());
         assert!(!context.unwrap().is_empty());
     }

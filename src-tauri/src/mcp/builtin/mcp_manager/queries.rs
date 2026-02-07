@@ -21,24 +21,6 @@ pub async fn get_server_config(name: &str) -> Result<Option<MCPServerConfig>, St
     }
 }
 
-/// List all server configurations
-pub async fn list_all_configs() -> Result<Vec<MCPServerConfig>, String> {
-    let repo = get_mcp_server_repository();
-
-    let models = repo
-        .list()
-        .await
-        .map_err(|e| format!("DB List Error: {}", e))?;
-
-    let mut configs = Vec::new();
-    for model in models {
-        if let Ok(config) = serde_json::from_str::<MCPServerConfig>(&model.config) {
-            configs.push(config);
-        }
-    }
-    Ok(configs)
-}
-
 /// List servers with pagination
 pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
     let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
@@ -155,17 +137,37 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
         Option::None => return Ok(missing_param_error("query", ToolGroup::McpManager)),
     };
 
-    let configs = list_all_configs().await?;
-    let filtered: Vec<Value> = configs
+    // Use repository to get full models including ID and name
+    let repo = get_mcp_server_repository();
+    let models = repo
+        .list()
+        .await
+        .map_err(|e| format!("DB List Error: {}", e))?;
+
+    let filtered: Vec<Value> = models
         .into_iter()
-        .filter_map(|c| {
-            c.name.as_ref().and_then(|name| {
-                if name.to_lowercase().contains(&query) {
-                    Some(json!({ "name": name, "transport": c.transport }))
-                } else {
-                    None
-                }
-            })
+        .filter_map(|model| {
+            if model.name.to_lowercase().contains(&query) {
+                // Parse config for transport and description
+                let config: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
+                let transport = config
+                    .as_ref()
+                    .map(|c| json!(c.transport))
+                    .unwrap_or(json!({ "type": "unknown" }));
+                let description = config
+                    .as_ref()
+                    .and_then(|c| c.metadata.as_ref())
+                    .and_then(|m| m.description.clone());
+
+                Some(json!({
+                    "id": model.id,
+                    "name": model.name,
+                    "transport": transport,
+                    "description": description
+                }))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -189,14 +191,19 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
     let servers_text = sliced_results
         .iter()
         .map(|s| {
-            format!(
-                "• {} ({})",
-                s["name"].as_str().unwrap_or("?"),
-                s["transport"]["type"].as_str().unwrap_or("?")
-            )
+            let name = s["name"].as_str().unwrap_or("?");
+            let id = s["id"].as_str().unwrap_or("?");
+            let transport_type = s["transport"]["type"].as_str().unwrap_or("?");
+            let description = s["description"].as_str().unwrap_or("");
+
+            let mut text = format!("• {} ({})\n  ID: {}", name, transport_type, id);
+            if !description.is_empty() {
+                text.push_str(&format!("\n  {}", description));
+            }
+            text
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n\n");
 
     let total_pages = (total as f64 / page_size as f64).ceil() as u64;
 

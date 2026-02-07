@@ -1,5 +1,6 @@
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
+use crate::repositories::assistant_repository::AssistantRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
 use async_trait::async_trait;
@@ -77,9 +78,9 @@ impl BuiltinMCPServer for SkillsServer {
         Err("Skills server provides context only, no tools".to_string())
     }
 
-    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        let skills_dir = match Self::get_skills_directory().await {
-            Ok(dir) => dir,
+    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
+        let global_skills_dir = match Self::get_skills_directory().await {
+            Ok(dir) => std::path::PathBuf::from(dir),
             Err(e) => {
                 warn!("Failed to get skills directory: {}", e);
                 return ServiceContext {
@@ -89,7 +90,47 @@ impl BuiltinMCPServer for SkillsServer {
             }
         };
 
-        let skills = match crate::commands::skill_commands::scan_skills_directory(skills_dir).await
+        // Determine assistant skills directory if assistant_id is provided
+        let assistant_skills_dir = if let Some(opts_value) = options {
+            if let Ok(opts) = serde_json::from_value::<crate::mcp::types::ServiceContextOptions>(
+                opts_value.clone(),
+            ) {
+                if let Some(assistant_id) = opts.assistant_id {
+                    match crate::session::get_session_manager() {
+                        Ok(manager) => Some(
+                            manager
+                                .get_base_data_dir()
+                                .join("assistants")
+                                .join(assistant_id)
+                                .join("skills"),
+                        ),
+                        Err(e) => {
+                            warn!(
+                                "Failed to get session manager for assistant resolving: {}",
+                                e
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(ref dir) = assistant_skills_dir {
+            debug!("Using assistant skills directory: {:?}", dir);
+        }
+
+        let mut skills = match crate::commands::skill_commands::resolve_skills(
+            global_skills_dir,
+            assistant_skills_dir,
+        )
+        .await
         {
             Ok(skills) => skills,
             Err(e) => {
@@ -100,6 +141,31 @@ impl BuiltinMCPServer for SkillsServer {
                 };
             }
         };
+
+        // Filter disabled skills
+        if let Some(opts_value) = options {
+            if let Ok(opts) = serde_json::from_value::<crate::mcp::types::ServiceContextOptions>(
+                opts_value.clone(),
+            ) {
+                if let Some(assistant_id) = opts.assistant_id {
+                    let repo = crate::state::get_assistant_repository();
+                    if let Ok(Some(assistant)) = repo.get_assistant(&assistant_id).await {
+                        if let Ok(config) = serde_json::from_str::<Value>(&assistant.config) {
+                            if let Some(disabled) =
+                                config.get("disabledSkills").and_then(|v| v.as_array())
+                            {
+                                let disabled_set: std::collections::HashSet<String> = disabled
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect();
+
+                                skills.retain(|s| !disabled_set.contains(&s.name));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if skills.is_empty() {
             debug!("No skills found, returning empty context");
@@ -114,9 +180,10 @@ impl BuiltinMCPServer for SkillsServer {
         let skills_xml = skills
             .iter()
             .map(|s| {
+                let source_attr = s.source.as_ref().map(|src| format!(" source=\"{}\"", src)).unwrap_or_default();
                 format!(
-                    "  <skill>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>\n  </skill>",
-                    s.name, s.description, s.path
+                    "  <skill{}>\n    <name>{}</name>\n    <description>{}</description>\n    <location>{}</location>\n  </skill>",
+                    source_attr, s.name, s.description, s.path
                 )
             })
             .collect::<Vec<_>>()

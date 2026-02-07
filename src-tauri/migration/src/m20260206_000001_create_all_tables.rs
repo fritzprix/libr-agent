@@ -582,10 +582,46 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        // 13. Message Index Meta
+        manager
+            .create_table(
+                Table::create()
+                    .table(MessageIndexMeta::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(MessageIndexMeta::SessionId)
+                            .string()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(MessageIndexMeta::IndexPath).string())
+                    .col(
+                        ColumnDef::new(MessageIndexMeta::LastIndexedAt)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MessageIndexMeta::DocCount)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(MessageIndexMeta::IndexVersion)
+                            .integer()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(MessageIndexMeta::LastRebuildDurationMs).big_integer())
+                    .to_owned(),
+            )
+            .await?;
+
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(MessageIndexMeta::Table).to_owned())
+            .await?;
         manager
             .drop_table(Table::drop().table(Chunks::Table).to_owned())
             .await?;
@@ -796,6 +832,18 @@ enum Contents {
     LastAccessedAt,
     Content,
     SrcUrl,
+}
+
+#[derive(DeriveIden)]
+enum MessageIndexMeta {
+    #[sea_orm(iden = "message_index_meta")]
+    Table,
+    SessionId,
+    IndexPath,
+    LastIndexedAt,
+    DocCount,
+    IndexVersion,
+    LastRebuildDurationMs,
 }
 
 #[derive(DeriveIden)]

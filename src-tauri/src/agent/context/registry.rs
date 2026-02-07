@@ -34,7 +34,10 @@ impl ContextRegistry {
 
     /// Build combined context from all enabled providers
     /// Providers are sorted by priority (lower first)
-    pub async fn build_context(&self) -> String {
+    ///
+    /// # Arguments
+    /// * `assistant_id` - Optional assistant ID to pass to context providers
+    pub async fn build_context(&self, assistant_id: Option<&str>) -> String {
         let mut sections = Vec::new();
 
         // Collect provider references with priorities
@@ -47,7 +50,7 @@ impl ContextRegistry {
         // Build context from enabled providers
         for (_priority, provider) in providers_with_priority {
             if provider.is_enabled().await {
-                match provider.get_context().await {
+                match provider.get_context(assistant_id).await {
                     Ok(context) => {
                         if !context.is_empty() {
                             log::debug!(

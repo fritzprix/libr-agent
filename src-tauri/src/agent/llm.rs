@@ -763,7 +763,8 @@ pub async fn build_system_prompt(
 
     // 3. Read-only Context Providers (time, skills, documentation, etc.)
     if let Some(registry) = context_registry {
-        let context = registry.build_context().await;
+        let assistant_id = agent_config.id.as_deref();
+        let context = registry.build_context(assistant_id).await;
         if !context.trim().is_empty() {
             parts.push(context);
         }

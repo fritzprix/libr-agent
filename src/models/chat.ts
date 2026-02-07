@@ -255,6 +255,7 @@ export interface Assistant {
   systemPrompt: string;
   mcpServerIds?: string[]; // References to MCPServerEntity IDs
   localServices?: string[];
+  disabledSkills?: string[]; // List of skill names to exclude for this assistant
   /**
    * List of allowed built-in service aliases for this assistant.
    * - Built-in tools follow the format: `builtin_<alias>__<toolname>`

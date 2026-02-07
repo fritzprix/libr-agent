@@ -64,7 +64,12 @@ use commands::playbook_commands::{
 use commands::session_commands::{remove_session, switch_session};
 use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
 use commands::skill_commands::{
-    get_default_skills_directory, open_skills_directory_in_explorer, scan_skills_directory,
+    get_aggregated_skills, get_default_skills_directory, open_skills_directory_in_explorer,
+    scan_skills_directory,
+};
+use commands::skill_management::{
+    copy_global_to_assistant, delete_assistant_skill, download_global_skills,
+    import_assistant_skills, reset_assistant_skills,
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
@@ -536,6 +541,12 @@ pub fn run() {
                 scan_skills_directory,
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
+                get_aggregated_skills,
+                download_global_skills,
+                copy_global_to_assistant,
+                delete_assistant_skill,
+                import_assistant_skills,
+                reset_assistant_skills,
             ])
             .setup(|app| {
                 // Setup custom file logger FIRST (before any log calls)
