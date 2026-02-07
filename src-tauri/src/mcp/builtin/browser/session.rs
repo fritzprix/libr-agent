@@ -127,7 +127,8 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                 vec![
                     "The browser window failed to initialize the agent runtime.".to_string(),
                     "This session is likely unusable (Zombie process).".to_string(),
-                    "Action: Close this session immediately and try creating a new one.".to_string(),
+                    "Action: Close this session immediately and try creating a new one."
+                        .to_string(),
                 ],
             )
         } else if status_msg.contains("(HTTP 403)") || status_msg.contains("(HTTP 401)") {

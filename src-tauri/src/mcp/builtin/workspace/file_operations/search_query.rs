@@ -356,7 +356,7 @@ impl WorkspaceServer {
                         } else {
                             e.to_string()
                         };
-                        
+
                         return Ok(operation_failed_error(
                             "Read file for search",
                             &error_msg,

@@ -200,8 +200,10 @@ impl InteractiveBrowserServer {
                     "about" => {
                         // Replace 'about:blank' with a minimal data URI to ensure webview lifecycle triggers correctly
                         // about:blank specifically can fail to trigger 'PageLoad' events on some WebKit/WebView2 backends
-                        Ok("data:text/html,<html><body><h1>Agent Ready</h1></body></html>"
-                            .to_string())
+                        Ok(
+                            "data:text/html,<html><body><h1>Agent Ready</h1></body></html>"
+                                .to_string(),
+                        )
                     }
                     scheme => Err(format!(
                         "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",
@@ -711,7 +713,7 @@ impl InteractiveBrowserServer {
                     info!(
                         "Navigation timed out waiting for page load event in session {session_id}, checking health..."
                     );
-                    
+
                     if self.check_session_health(session_id).await {
                         info!("Session {session_id} is healthy despite navigation timeout");
                         Ok(format!(
@@ -719,11 +721,9 @@ impl InteractiveBrowserServer {
                         ))
                     } else {
                         error!("Session {session_id} is unresponsive after navigation timeout");
-                        // Return this as a hard error so the specific tool operation fails, 
+                        // Return this as a hard error so the specific tool operation fails,
                         // forcing the agent to realize the session is broken.
-                        Err(format!(
-                            "Navigation failed and browser is unresponsive (Zombie Session). Recommendation: Close session and create new one."
-                        ))
+                        Err("Navigation failed and browser is unresponsive (Zombie Session). Recommendation: Close session and create new one.".to_string())
                     }
                 }
             }
