@@ -135,10 +135,12 @@ Uses standard APIs. Add your API key in settings.
 ## Built-in Tools
 
 - **Browser**: Headless Chrome automation, session persistence
-- **Terminal**: Shell command execution, history tracking
-- **File Manager**: Sandboxed file operations
-- **Code Execution**: Python and Node.js runtime
+- **Workspace**: Unified Terminal, File Manager, and Shell Execution (supports Python/Node.js via CLI) with sandboxing
 - **Planner**: Task tracking and goal management
+- **Knowledge**: Semantic search and memory retrieval
+- **Skills**: Reusable capabilities and tool definitions
+- **Playbook**: Workflow automation and process templates
+- **Assistant**: Role management and system prompt configuration
 
 ## Architecture
 
@@ -150,7 +152,7 @@ Uses standard APIs. Add your API key in settings.
 
 ### React + TypeScript Frontend
 
-- IndexedDB for local state storage
+- SQLite via SeaORM for robust local state storage
 - No server needed, everything runs locally
 
 ### Built-in vs MCP
