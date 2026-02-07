@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import FileAttachment from '../FileAttachment';
-import React from 'react';
 
 // Mock Button to avoid shadcn complexity if needed, but integration test is better
 // However, Button uses Radix Slot, which might be complex.
@@ -37,10 +36,7 @@ describe('FileAttachment', () => {
       />
     );
 
-    // Current behavior: they have title="Remove file", so name is "Remove file"
-    // We want them to have specific names like "Remove test.txt"
-
-    // This expects the FUTURE behavior, so it should FAIL now
+    // Remove buttons should have specific, file-related accessible names for screen readers.
     expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove image.png' })).toBeInTheDocument();
   });

@@ -109,9 +109,9 @@ export default function FileAttachment({
             <Paperclip className="w-3 h-3" />
             <span>Attached Files:</span>
           </div>
-          <div className="space-y-1">
+          <ul className="space-y-1" aria-label="Attached files">
             {files.map((file, index) => (
-              <div
+              <li
                 key={index}
                 className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
               >
@@ -129,9 +129,9 @@ export default function FileAttachment({
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
     </div>
