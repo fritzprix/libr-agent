@@ -9,3 +9,8 @@
 
 **Drift:** Contains Python code inside `js` code blocks. Contains typos ("OpneAI"). References potentially non-existent models (`gpt-4.1`, `o4-mini`).
 **Reality:** Documentation should use correct language tags and verified model names (e.g., `gpt-4o`, `gpt-4o-mini`).
+
+## 2026-02-06 - src/README.md
+
+**Drift:** Groq section contained Python code labeled as JavaScript. Hallucinated model names found: `claude-sonnet-4-20250514`, `qwen/qwen3-32b`.
+**Reality:** Replaced with functional JavaScript examples using `groq-sdk`. Updated models to `claude-3-5-sonnet-20241022`, `deepseek-r1-distill-llama-70b`, `llama-3.3-70b-versatile`.
