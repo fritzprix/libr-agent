@@ -22,7 +22,7 @@ pub mod utils;
 pub use migration;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,
+    agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,
     agent_get_all_sessions, agent_get_available_tools, agent_get_service_contexts,
     agent_get_session, agent_get_tools, agent_handle_llm_error, agent_handle_llm_response,
@@ -511,6 +511,7 @@ pub fn run() {
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,
+                agent_cancel_workflow,
                 agent_call_builtin_tool,
                 agent_call_builtin_tool,
                 agent_get_service_contexts,

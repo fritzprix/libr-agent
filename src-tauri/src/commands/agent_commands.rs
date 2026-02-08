@@ -342,6 +342,21 @@ pub async fn agent_terminate_workflow(
     })
 }
 
+/// Cancel a running workflow
+#[command]
+pub async fn agent_cancel_workflow(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.cancel_workflow(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Workflow cancelled for session: {}", session_id),
+        data: None,
+    })
+}
+
 /// Tool execution result from frontend
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

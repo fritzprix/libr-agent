@@ -255,6 +255,18 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Cancel a running workflow
+    pub async fn cancel_workflow(&self, session_id: String) -> Result<(), String> {
+        crate::agent::workflow::cancel_workflow(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
     /// Inject messages into the session and optionally trigger the workflow
     pub async fn inject_messages(
         &self,

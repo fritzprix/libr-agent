@@ -295,6 +295,56 @@ pub async fn terminate_session(
     Ok(())
 }
 
+/// Cancel a running workflow
+/// This triggers the cancellation token to abort any running operations
+pub async fn cancel_workflow(
+    session_repo: &Arc<dyn SessionRepository>,
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    _proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    log::info!("Cancelling workflow for session: {}", session_id);
+
+    // Trigger cancellation token to abort running loops
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancellation_token.cancel();
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
+    // Update status to idle (workflow stopped)
+    crate::agent::lifecycle::update_session_status(
+        session_repo,
+        active_sessions,
+        app_handle,
+        &session_id,
+        SessionStatus::Idle,
+    )
+    .await?;
+
+    // Remove from active sessions and create a new cancellation token for future use
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(&session_id) {
+        session.is_running = false;
+        // Reset cancellation token for potential future workflows
+        session.cancellation_token = CancellationToken::new();
+    }
+
+    // Emit workflow stopped event
+    let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+        session_id: session_id.clone(),
+    };
+    crate::agent::events::emit_agent_event(app_handle, event)
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    log::info!("Cancelled workflow for session: {}", session_id);
+    Ok(())
+}
+
 /// Helper to handle tool result and trigger next steps if valid
 pub async fn continue_workflow_after_tool(
     session_repo: &Arc<dyn SessionRepository>,

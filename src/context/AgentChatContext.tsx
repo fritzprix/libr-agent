@@ -446,7 +446,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     setPendingMessages([]);
 
     try {
-      await invoke('agent_terminate_workflow', {
+      await invoke('agent_cancel_workflow', {
         sessionId: session.id,
       });
       // Status update will come via event
