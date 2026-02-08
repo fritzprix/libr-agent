@@ -61,18 +61,21 @@ pub async fn create_basic_isolated_command(
         // Simple check to avoid duplicate appending if it's already in PATH
         if !current_path.contains(python_str.as_ref()) {
             if let Some(python_path) = &detected_python {
-                 let scripts_dir = python_path.join("Scripts");
-                 let lib_bin_dir = python_path.join("Library").join("bin");
+                let scripts_dir = python_path.join("Scripts");
+                let lib_bin_dir = python_path.join("Library").join("bin");
 
-                 // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
-                 new_path = format!(
+                // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
+                new_path = format!(
                     "{};{};{};{}",
                     python_str,
                     scripts_dir.to_string_lossy(),
                     lib_bin_dir.to_string_lossy(),
                     current_path
                 );
-                info!("Smart Discovery: Prepended Python at {} to PATH", python_str);
+                info!(
+                    "Smart Discovery: Prepended Python at {} to PATH",
+                    python_str
+                );
             }
         }
     }
@@ -162,11 +165,11 @@ pub async fn create_basic_isolated_command(
 
         let mut command_parts = Vec::new();
         command_parts.push(config.command.clone()); // Assuming command itself is safe/quoted if needed, or just a path
-        // Actually, if command path has spaces, it needs quoting too.
-        // But often `config.command` is just "python" or "node".
-        // If it's a path, it might need quotes.
-        // Let's assume basic quoting for safety.
-        // command_parts[0] = quote_arg(&config.command); // Might break if it's "python" (no quotes needed usually but safe)
+                                                    // Actually, if command path has spaces, it needs quoting too.
+                                                    // But often `config.command` is just "python" or "node".
+                                                    // If it's a path, it might need quotes.
+                                                    // Let's assume basic quoting for safety.
+                                                    // command_parts[0] = quote_arg(&config.command); // Might break if it's "python" (no quotes needed usually but safe)
 
         // Wait, if we run `python file.py`, we want `python 'file.py'`.
         // If we run `"C:\Program Files\Python\python.exe" file.py`, we want `'C:\Program Files\Python\python.exe' 'file.py'`.
@@ -184,11 +187,16 @@ pub async fn create_basic_isolated_command(
             binary.clone()
         };
 
-        let args_str = config.args.iter().map(|a| quote_arg(a)).collect::<Vec<_>>().join(" ");
+        let args_str = config
+            .args
+            .iter()
+            .map(|a| quote_arg(a))
+            .collect::<Vec<_>>()
+            .join(" ");
         let full_command = if args_str.is_empty() {
-             safe_binary
+            safe_binary
         } else {
-             format!("{} {}", safe_binary, args_str)
+            format!("{} {}", safe_binary, args_str)
         };
 
         let encoded_command = general_purpose::STANDARD.encode(&full_command);
@@ -321,22 +329,13 @@ async fn detect_python_path() -> Option<PathBuf> {
                             return Some(subpath);
                         }
                     }
-                    None::<PathBuf>
-                }
-            })
-            .await
-            {
-                if let Ok(Some(subdir)) = subdir {
-                    info!(
-                        "Detected Python via standard path subdirectory: {:?}",
-                        subdir
-                    );
-                    return Some(subdir);
                 }
             }
         }
         None
-    }).await.unwrap_or(None);
+    })
+    .await
+    .unwrap_or(None);
 
     if let Some(path) = &found_path {
         info!("Detected Python via standard path search: {:?}", path);

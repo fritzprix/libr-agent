@@ -1,7 +1,5 @@
 use crate::session_isolation::common::get_shell_command;
 use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
@@ -46,16 +44,15 @@ pub async fn create_basic_isolated_command(
 
     let shell_script = "\"$0\" \"$@\"";
 
-    let mut shell_args = Vec::new();
-    shell_args.push("-c");
-    shell_args.push(shell_script);
-    shell_args.push("--"); // Delimiter (optional but good practice)
-    shell_args.push(&config.command); // This becomes $0
+    let mut shell_args = vec!["-c", shell_script, "--", &config.command];
     for arg in &config.args {
         shell_args.push(arg); // These become $1, $2...
     }
 
-    info!("Unix shell execution: {} -c '{}' -- {} {:?}", shell_cmd, shell_script, config.command, config.args);
+    info!(
+        "Unix shell execution: {} -c '{}' -- {} {:?}",
+        shell_cmd, shell_script, config.command, config.args
+    );
     cmd.args(shell_args);
 
     info!(

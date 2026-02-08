@@ -611,7 +611,6 @@ export function AgentWorkspacePanel() {
     [openWorkspaceFileWithDefaultApp, session?.id],
   );
 
-
   if (!session) return null;
 
   return (
