@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, type Mock } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { AgentChatAttachedFiles } from '../AgentChatAttachedFiles';
 import * as useAgentResourceAttachmentModule from '@/features/agent/hooks/useAgentResourceAttachment';
 

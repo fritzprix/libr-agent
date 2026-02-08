@@ -222,13 +222,16 @@ describe('LLMServiceContext', () => {
         },
       ];
 
-      const resultMessage = await result.current.executeCompletionRequest(
-        'test-session',
-        messages,
-        'gpt-4',
-        'openai',
-        'test-key',
-      );
+      let resultMessage;
+      await act(async () => {
+        resultMessage = await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
 
       expect(resultMessage).toMatchObject({
         sessionId: 'test-session',
@@ -273,13 +276,16 @@ describe('LLMServiceContext', () => {
         },
       ];
 
-      const resultMessage = await result.current.executeCompletionRequest(
-        'test-session',
-        messages,
-        'gpt-4',
-        'openai',
-        'test-key',
-      );
+      let resultMessage!: Message;
+      await act(async () => {
+        resultMessage = (await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        )) as Message;
+      });
 
       expect(resultMessage.tool_calls).toHaveLength(1);
       expect(resultMessage.tool_calls?.[0]).toMatchObject({
@@ -311,13 +317,16 @@ describe('LLMServiceContext', () => {
         },
       ];
 
-      const resultMessage = await result.current.executeCompletionRequest(
-        'test-session',
-        messages,
-        'gpt-4',
-        'openai',
-        'test-key',
-      );
+      let resultMessage!: Message;
+      await act(async () => {
+        resultMessage = (await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        )) as Message;
+      });
 
       expect(resultMessage.thinking).toBe('Let me think...');
       expect(resultMessage.content).toEqual([

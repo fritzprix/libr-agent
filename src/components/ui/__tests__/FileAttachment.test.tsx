@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import FileAttachment from '../FileAttachment';
 
 // Mock Button to avoid shadcn complexity if needed, but integration test is better
