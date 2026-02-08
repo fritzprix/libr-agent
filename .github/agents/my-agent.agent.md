@@ -47,7 +47,6 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 - Tailwind CSS 4.x (Latest utility-first styling)
 - Radix UI (Accessible component primitives)
-- Dexie (TypeScript-friendly IndexedDB wrapper)
 - Zustand (Lightweight state management)
 - Vite (Fast development and build tool)
 
@@ -298,7 +297,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 - Business logic and data transformation.
 - Tauri command invocations and API integrations.
-- IndexedDB operations and local data management.
+- SQLite operations via SeaORM and local data management.
 - MCP client communication protocols.
 
 #### Backend Layer (`src-tauri/src/`)
@@ -329,8 +328,8 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 - `react`: Version 18.x - UI library
 - `react-dom`: Version 18.x - React DOM renderer
 - `typescript`: Version 5.x - Type safety
-- `vite`: Version 4.x - Build tool and dev server
-- `tailwindcss`: Version 3.x - Utility-first CSS framework
+- `vite`: Version 6.x - Build tool and dev server
+- `tailwindcss`: Version 4.x - Utility-first CSS framework
 
 ### Backend Dependencies (Rust)
 
@@ -473,7 +472,7 @@ These steps must be completed successfully before considering any refactoring ta
 - Use React.memo for expensive components
 - Implement proper dependency arrays in useEffect
 - Lazy load components when appropriate
-- Optimize IndexedDB queries
+- Optimize database queries
 
 ### Backend Optimization
 
