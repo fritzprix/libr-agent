@@ -81,12 +81,35 @@ impl AgentSessionManager {
         }
     }
 
+    /// Create a new session (wrapper around create_session_with_repo using internal repo)
+    pub async fn create_session(
+        &self,
+        session_id: String,
+        name: Option<String>,
+        model: Option<String>,
+        provider: Option<String>,
+        agent_config: crate::agent::AgentConfig,
+    ) -> Result<SessionMetadata, String> {
+        // Use the internal persistent repository
+        self.create_session_with_repo(
+            self.session_repo.clone(),
+            session_id,
+            name,
+            model,
+            provider,
+            agent_config,
+        )
+        .await
+    }
+
     /// Create or update a session with a specific repository (for ephemeral vs persistent)
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
         session_id: String,
         name: Option<String>,
+        model: Option<String>,
+        provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
@@ -97,6 +120,8 @@ impl AgentSessionManager {
             context_registry: self.context_registry.clone(),
             session_id,
             name,
+            model,
+            provider,
             agent_config,
         })
         .await
@@ -106,6 +131,8 @@ impl AgentSessionManager {
     pub async fn update_session_config(
         &self,
         session_id: String,
+        model: Option<String>,
+        provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
@@ -113,6 +140,8 @@ impl AgentSessionManager {
             &self.active_sessions,
             &self.app_handle,
             &session_id,
+            model,
+            provider,
             agent_config,
         )
         .await

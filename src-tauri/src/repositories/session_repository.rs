@@ -51,6 +51,8 @@ pub struct SessionMetadata {
     pub id: String,
     pub name: Option<String>,
     pub status: SessionStatus,
+    pub model: String,
+    pub provider: String,
     pub agent_config: Option<String>, // JSON string of agent configuration
     pub created_at: i64,
     pub updated_at: i64,
@@ -64,6 +66,8 @@ impl TryFrom<session::Model> for SessionMetadata {
             id: model.id,
             name: model.name,
             status: SessionStatus::from_str(&model.status)?,
+            model: model.model,
+            provider: model.provider,
             agent_config: model.agent_config,
             created_at: model.created_at,
             updated_at: model.updated_at,
@@ -83,11 +87,13 @@ pub trait SessionRepository: Send + Sync {
     /// Update session status
     async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError>;
 
-    /// Update agent configuration
-    async fn update_agent_config(
+    /// Update session configuration (model, provider, and/or agent_config)
+    async fn update_session_config(
         &self,
         session_id: &str,
-        agent_config: String,
+        model: Option<String>,
+        provider: Option<String>,
+        agent_config: Option<String>,
     ) -> Result<(), DbError>;
 
     /// Get all sessions
@@ -119,6 +125,8 @@ impl SessionRepository for SqliteSessionRepository {
             id: Set(session.id.clone()),
             name: Set(session.name.clone()),
             status: Set(session.status.as_str().to_string()),
+            model: Set(session.model.clone()),
+            provider: Set(session.provider.clone()),
             agent_config: Set(session.agent_config.clone()),
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
@@ -130,6 +138,8 @@ impl SessionRepository for SqliteSessionRepository {
                     .update_columns([
                         session::Column::Name,
                         session::Column::Status,
+                        session::Column::Model,
+                        session::Column::Provider,
                         session::Column::AgentConfig,
                         session::Column::UpdatedAt,
                     ])
@@ -166,21 +176,32 @@ impl SessionRepository for SqliteSessionRepository {
         Ok(())
     }
 
-    async fn update_agent_config(
+    async fn update_session_config(
         &self,
         session_id: &str,
-        agent_config: String,
+        model: Option<String>,
+        provider: Option<String>,
+        agent_config: Option<String>,
     ) -> Result<(), DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
-        session::ActiveModel {
+        let mut active_model = session::ActiveModel {
             id: Set(session_id.to_string()),
-            agent_config: Set(Some(agent_config)),
             updated_at: Set(now),
             ..Default::default()
+        };
+
+        if let Some(m) = model {
+            active_model.model = Set(m);
         }
-        .update(&self.db)
-        .await?;
+        if let Some(p) = provider {
+            active_model.provider = Set(p);
+        }
+        if let Some(ac) = agent_config {
+            active_model.agent_config = Set(Some(ac));
+        }
+
+        active_model.update(&self.db).await?;
 
         Ok(())
     }
@@ -232,6 +253,8 @@ mod tests {
             id: "test-session-1".to_string(),
             name: Some("Test Session".to_string()),
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: Some(r#"{"model": "gpt-4"}"#.to_string()),
             created_at: now,
             updated_at: now,

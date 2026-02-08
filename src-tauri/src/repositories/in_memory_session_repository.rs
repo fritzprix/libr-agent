@@ -118,16 +118,26 @@ impl SessionRepository for InMemorySessionRepository {
     /// Update agent configuration
     ///
     /// Idempotent operation - silently succeeds if session doesn't exist.
-    async fn update_agent_config(
+    async fn update_session_config(
         &self,
         session_id: &str,
-        agent_config: String,
+        model: Option<String>,
+        provider: Option<String>,
+        agent_config: Option<String>,
     ) -> Result<(), DbError> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(session_id) {
-            session.agent_config = Some(agent_config);
+            if let Some(m) = model {
+                session.model = m;
+            }
+            if let Some(p) = provider {
+                session.provider = p;
+            }
+            if let Some(ac) = agent_config {
+                session.agent_config = Some(ac);
+            }
             session.updated_at = chrono::Utc::now().timestamp_millis();
-            log::debug!("InMemory: Updated agent config for {}", session_id);
+            log::debug!("InMemory: Updated session config for {}", session_id);
         } else {
             log::debug!(
                 "InMemory: Config update for non-existent session {} (idempotent skip)",
@@ -185,6 +195,8 @@ mod tests {
             id: "test-session".to_string(),
             name: Some("Test Session".to_string()),
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: Some("{}".to_string()),
             created_at: 1234567890,
             updated_at: 1234567890,
@@ -207,6 +219,8 @@ mod tests {
             id: "test-session".to_string(),
             name: Some("Test".to_string()),
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: None,
             created_at: 100,
             updated_at: 100,
@@ -241,6 +255,8 @@ mod tests {
             id: "test-session".to_string(),
             name: None,
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: None,
             created_at: 100,
             updated_at: 100,
@@ -268,6 +284,8 @@ mod tests {
                 id: format!("session-{}", i),
                 name: Some(format!("Session {}", i)),
                 status: SessionStatus::Idle,
+                model: "gpt-4".to_string(),
+                provider: "openai".to_string(),
                 agent_config: None,
                 created_at: 100,
                 updated_at: 100,
@@ -290,6 +308,8 @@ mod tests {
                 id: format!("session-{}", i),
                 name: None,
                 status: SessionStatus::Idle,
+                model: "gpt-4".to_string(),
+                provider: "openai".to_string(),
                 agent_config: None,
                 created_at: 100,
                 updated_at: 100,
@@ -320,6 +340,8 @@ mod tests {
                     id: format!("session-{}", i),
                     name: None,
                     status: SessionStatus::Idle,
+                    model: "gpt-4".to_string(),
+                    provider: "openai".to_string(),
                     agent_config: None,
                     created_at: 100,
                     updated_at: 100,

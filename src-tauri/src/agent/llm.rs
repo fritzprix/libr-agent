@@ -52,9 +52,9 @@ pub async fn request_llm_completion(
         .ok_or_else(|| "Agent configuration is required but not found".to_string())
         .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
 
-    let agent_config_clone = agent_config.clone();
-    let model = agent_config.model;
-    let provider = agent_config.provider;
+    let model = session.metadata.model.clone();
+    let provider = session.metadata.provider.clone();
+
     let temperature = Some(agent_config.temperature);
     let max_tokens = agent_config.max_tokens;
 
@@ -65,13 +65,10 @@ pub async fn request_llm_completion(
         Some(build_session_system_prompt(active_sessions, proxy_manager, &session_id).await?);
 
     // Collect available tools
-    let available_tools = crate::agent::tools::collect_available_tools(
-        &session_id,
-        &agent_config_clone,
-        proxy_manager,
-    )
-    .await
-    .ok();
+    let available_tools =
+        crate::agent::tools::collect_available_tools(&session_id, &agent_config, proxy_manager)
+            .await
+            .ok();
 
     // Emit event
     #[derive(Clone, serde::Serialize)]

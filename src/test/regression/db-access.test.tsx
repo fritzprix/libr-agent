@@ -44,6 +44,11 @@ vi.mock('@tauri-apps/api/core', async () => {
     };
 });
 
+// Mock GlobalEventContext
+vi.mock('@/context/GlobalEventContext', () => ({
+    useBackendResource: vi.fn(),
+}));
+
 // Clear mock store before each test
 beforeEach(() => {
     mockServerStore.clear();

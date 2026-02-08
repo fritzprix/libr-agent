@@ -11,6 +11,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
+pub mod server;
 mod services;
 pub mod session;
 mod session_isolation;
@@ -640,6 +641,21 @@ pub fn run() {
                 // Initialize global AppHandle for event emission from builtin tools
                 crate::state::init_app_handle(app.handle().clone());
                 info!("✅ Global AppHandle initialized for event emission");
+
+                // Spawn HTTP Server for External Features
+                let server_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    // TODO: Make port configurable via settings
+                    if let Err(e) =
+                        crate::server::init(std::sync::Arc::new(server_manager), 3030).await
+                    {
+                        log::error!("Failed to start HTTP server: {}", e);
+                    }
+                });
+                info!("✅ HTTP Server spawned on port 3030");
 
                 // Spawn session recovery in background
                 let recovery_manager = app

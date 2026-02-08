@@ -57,6 +57,8 @@ async fn test_playbook_ui_rendering_integration() {
     let new_session = session::ActiveModel {
         id: Set("integration-test".to_string()),
         name: Set(Some("Integration Test".to_string())),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
         agent_config: Set(Some(
             r#"{"assistant_id":"assistant-rendering-test"}"#.to_string(),
         )),
@@ -200,6 +202,8 @@ async fn test_playbook_ui_interaction_flow() {
     let new_session = session::ActiveModel {
         id: Set("flow-test".to_string()),
         name: Set(Some("Flow Test".to_string())),
+        model: Set("gpt-4".to_string()),
+        provider: Set("openai".to_string()),
         agent_config: Set(Some(
             r#"{"assistant_id":"assistant-flow-test"}"#.to_string(),
         )),

@@ -9,6 +9,7 @@ import React, {
 import { invoke } from '@tauri-apps/api/core';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
+import { useBackendResource } from './GlobalEventContext';
 import { AgentSession, CreateSessionParams } from '@/models/agent';
 
 const logger = getLogger('AgentSessionListContext');
@@ -75,6 +76,8 @@ export function AgentSessionListProvider({
           id: string;
           name?: string;
           status: 'idle' | 'busy' | 'paused' | 'error';
+          model: string;
+          provider: string;
           agentConfig?: string;
           createdAt: number;
           updatedAt?: number;
@@ -95,6 +98,8 @@ export function AgentSessionListProvider({
           id: s.id,
           name: s.name,
           status: s.status,
+          model: s.model,
+          provider: s.provider,
           assistant,
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
@@ -132,17 +137,8 @@ export function AgentSessionListProvider({
 
       try {
         // Build agent config from assistant
-        const agentConfig = {
-          id: assistant.id,
-          name: assistant.name,
-          description: assistant.description,
-          systemPrompt: assistant.systemPrompt,
-          mcpServerIds: assistant.mcpServerIds || [],
-          localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          // Use selected model from ModelProvider
-          model: modelId,
-          provider: provider,
+        const agentConfig: import('@/models/agent').AgentConfig = {
+          ...assistant,
           temperature: 1.0,
           maxTokens: 8192,
         };
@@ -156,6 +152,8 @@ export function AgentSessionListProvider({
           id: string;
           name?: string;
           status: 'idle' | 'busy' | 'paused' | 'error';
+          model: string;
+          provider: string;
           createdAt: number;
           updatedAt?: number;
         }>('agent_create_session', {
@@ -169,7 +167,10 @@ export function AgentSessionListProvider({
         const session: AgentSession = {
           id: response.id,
           name: response.name,
-          status: response.status || 'idle',
+          status: response.status,
+          model: response.model,
+          provider: response.provider,
+          assistant: agentConfig,
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
@@ -215,6 +216,12 @@ export function AgentSessionListProvider({
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
+
+  // Subscribe to agent:event for session resource updates via centralized hook
+  useBackendResource('session', () => {
+    logger.debug('Agent updated session resource, refreshing session list...');
+    loadSessions();
+  });
 
   const stateValue = useMemo(
     () => ({

@@ -15,9 +15,12 @@ use std::fs;
 pub struct CreateAgentSessionRequest {
     pub session_id: String,
     pub name: Option<String>,
+    pub model: Option<String>,
+    pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
     #[serde(default)]
     pub is_ephemeral: bool,
+    pub workspace_path: Option<String>,
 }
 
 /// Request to create a new session and send the first message in one go
@@ -26,6 +29,8 @@ pub struct CreateAgentSessionRequest {
 pub struct CreateAgentSessionWithMessageRequest {
     pub session_id: String,
     pub name: Option<String>,
+    pub model: Option<String>,
+    pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
     pub message: AgentMessageDto,
 }
@@ -52,6 +57,8 @@ pub struct InjectMessagesRequest {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateAgentConfigRequest {
     pub session_id: String,
+    pub model: Option<String>,
+    pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
 }
 
@@ -74,6 +81,23 @@ pub async fn agent_create_session(
     use crate::repositories::SessionRepository;
     use std::sync::Arc;
 
+    // Handle workspace override if path is provided
+    if let Some(path_str) = &request.workspace_path {
+        if let Ok(session_manager) = crate::session::get_session_manager() {
+            let path = std::path::PathBuf::from(path_str);
+            // Ensure path is absolute and valid
+            if path.is_absolute() {
+                session_manager
+                    .register_session_override(&request.session_id, path)
+                    .await?;
+            } else {
+                return Err("Workspace path must be absolute".to_string());
+            }
+        } else {
+            log::warn!("Failed to get session manager for workspace override");
+        }
+    }
+
     // Select repository based on is_ephemeral flag
     let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
         log::info!(
@@ -94,6 +118,8 @@ pub async fn agent_create_session(
             session_repo,
             request.session_id,
             request.name,
+            request.model,
+            request.provider,
             request.agent_config,
         )
         .await
@@ -139,6 +165,8 @@ pub async fn agent_create_session_with_initial_message(
             session_repo,
             request.session_id.clone(),
             request.name,
+            request.model,
+            request.provider,
             request.agent_config,
         )
         .await?;
@@ -180,7 +208,12 @@ pub async fn agent_update_session_config(
     request: UpdateAgentConfigRequest,
 ) -> Result<AgentResponse, String> {
     manager
-        .update_session_config(request.session_id.clone(), request.agent_config)
+        .update_session_config(
+            request.session_id.clone(),
+            request.model,
+            request.provider,
+            request.agent_config,
+        )
         .await?;
 
     Ok(AgentResponse {

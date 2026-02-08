@@ -3,6 +3,7 @@ use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -21,6 +22,8 @@ pub struct CreateSessionParams {
     pub context_registry: Arc<ContextRegistry>,
     pub session_id: String,
     pub name: Option<String>,
+    pub model: Option<String>,
+    pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
 }
 
@@ -34,6 +37,8 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         context_registry,
         session_id,
         name,
+        model,
+        provider,
         agent_config,
     } = params;
 
@@ -45,10 +50,32 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     // Serialize config for storage
     let config_json = agent_config.to_json()?;
 
+    // Resolve mandatory model/provider
+    let (resolved_model, resolved_provider) = if let (Some(m), Some(p)) = (model, provider) {
+        (m, p)
+    } else {
+        // Fallback to global settings
+        let settings_repo = crate::state::get_settings_repository();
+        match settings_repo.get("preferredModel").await {
+            Ok(Some(setting)) => {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&setting.value) {
+                    let m = val["model"].as_str().unwrap_or("gpt-4").to_string();
+                    let p = val["provider"].as_str().unwrap_or("openai").to_string();
+                    (m, p)
+                } else {
+                    ("gpt-4".to_string(), "openai".to_string())
+                }
+            }
+            _ => ("gpt-4".to_string(), "openai".to_string()),
+        }
+    };
+
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
         status: SessionStatus::Idle,
+        model: resolved_model,
+        provider: resolved_provider,
         agent_config: Some(config_json),
         created_at: now,
         updated_at: now,
@@ -100,6 +127,10 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
     );
 
     log::info!("Created agent session: {}", session_id);
+
+    // Emit resource updated event for frontend cache revalidation
+    crate::agent::events::emit_resource_updated("session", "create", Some(session_id.clone()));
+
     Ok(session)
 }
 
@@ -173,6 +204,8 @@ pub async fn update_session_config(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     _app_handle: &AppHandle,
     session_id: &str,
+    model: Option<String>,
+    provider: Option<String>,
     agent_config: crate::agent::AgentConfig,
 ) -> Result<(), String> {
     // 1. Validate new config
@@ -183,23 +216,29 @@ pub async fn update_session_config(
 
     // 3. Update in database using injected repository
     session_repo
-        .update_agent_config(session_id, config_json.clone())
+        .update_session_config(
+            session_id,
+            model.clone(),
+            provider.clone(),
+            Some(config_json.clone()),
+        )
         .await
         .map_err(|e| format!("Failed to update session config: {}", e))?;
 
     // 4. Update active session in memory
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(session_id) {
+        if let Some(m) = model {
+            session.metadata.model = m;
+        }
+        if let Some(p) = provider {
+            session.metadata.provider = p;
+        }
         session.metadata.agent_config = Some(config_json);
         session.metadata.updated_at = chrono::Utc::now().timestamp_millis();
     }
 
-    log::info!(
-        "Updated agent config for session: {} (model: {}, provider: {})",
-        session_id,
-        agent_config.model,
-        agent_config.provider
-    );
+    log::info!("Updated agent config for session: {}", session_id);
 
     // 5. Emit event to notify frontend of config change
     // We reuse StatusChanged or create a new event.

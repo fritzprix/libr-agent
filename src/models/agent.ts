@@ -6,8 +6,6 @@ import { Assistant } from './chat';
  * model/provider/temperature that are NOT part of the persistent Assistant entity.
  */
 export interface AgentConfig extends Assistant {
-  model: string;
-  provider: string;
   temperature: number;
   maxTokens?: number;
 }
@@ -19,6 +17,8 @@ export interface AgentSession {
   id: string;
   name?: string;
   status: 'idle' | 'busy' | 'paused' | 'error';
+  model: string;
+  provider: string;
   createdAt: Date;
   updatedAt?: Date;
   assistant?: AgentConfig; // Runtime config, not persistent Assistant

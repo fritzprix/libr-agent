@@ -9,6 +9,7 @@ pub struct AgentConfig {
     pub id: Option<String>,
 
     /// Assistant name
+    #[serde(default = "default_name")]
     pub name: String,
 
     /// Assistant description
@@ -31,14 +32,9 @@ pub struct AgentConfig {
     /// - Some([...]) = specific services allowed
     pub allowed_built_in_service_aliases: Option<Vec<String>>,
 
-    /// LLM model to use (from ModelChoice)
-    #[serde(default = "default_model")]
-    pub model: String,
-
-    /// LLM provider (from ModelChoice)
-    #[serde(default = "default_provider")]
-    pub provider: String,
-
+    // NOTE: Model and Provider have been moved to the session level or global settings.
+    // Assistants focus on identity (system prompt) and capabilities (MCP servers).
+    // The actual LLM configuration follows global settings or session overrides.
     /// Temperature for LLM (0.0-2.0, default 1.0)
     #[serde(default = "default_temperature")]
     pub temperature: f32,
@@ -51,12 +47,8 @@ fn default_temperature() -> f32 {
     1.0
 }
 
-fn default_model() -> String {
-    "gpt-4".to_string()
-}
-
-fn default_provider() -> String {
-    "openai".to_string()
+fn default_name() -> String {
+    "Unknown Assistant".to_string()
 }
 
 impl Default for AgentConfig {
@@ -69,8 +61,6 @@ impl Default for AgentConfig {
             mcp_server_ids: Vec::new(),
             local_services: Vec::new(),
             allowed_built_in_service_aliases: None, // Allow all by default
-            model: "gpt-4".to_string(),
-            provider: "openai".to_string(),
             temperature: 1.0,
             max_tokens: None,
         }
@@ -99,14 +89,6 @@ impl AgentConfig {
             return Err("System prompt cannot be empty".to_string());
         }
 
-        if self.model.is_empty() {
-            return Err("Model name cannot be empty".to_string());
-        }
-
-        if self.provider.is_empty() {
-            return Err("Provider name cannot be empty".to_string());
-        }
-
         if self.temperature < 0.0 || self.temperature > 2.0 {
             return Err("Temperature must be between 0.0 and 2.0".to_string());
         }
@@ -122,8 +104,6 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AgentConfig::default();
-        assert_eq!(config.model, "gpt-4");
-        assert_eq!(config.provider, "openai");
         assert_eq!(config.temperature, 1.0);
         assert!(config.validate().is_ok());
     }
@@ -138,8 +118,6 @@ mod tests {
             mcp_server_ids: vec!["server1".to_string()],
             local_services: vec![],
             allowed_built_in_service_aliases: Some(vec!["browser".to_string()]),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            provider: "anthropic".to_string(),
             temperature: 0.7,
             max_tokens: Some(4096),
         };
@@ -147,8 +125,6 @@ mod tests {
         let json = config.to_json().unwrap();
         let parsed = AgentConfig::from_json(&json).unwrap();
 
-        assert_eq!(parsed.model, config.model);
-        assert_eq!(parsed.provider, config.provider);
         assert_eq!(parsed.temperature, config.temperature);
         assert_eq!(parsed.name, config.name);
     }
@@ -167,13 +143,8 @@ mod tests {
         config.temperature = -0.5;
         assert!(config.validate().is_err());
 
-        // Invalid model
-        config.temperature = 1.0;
-        config.model = String::new();
-        assert!(config.validate().is_err());
-
         // Invalid name
-        config.model = "gpt-4".to_string();
+        config.temperature = 1.0;
         config.name = String::new();
         assert!(config.validate().is_err());
     }

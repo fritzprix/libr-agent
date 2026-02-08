@@ -121,11 +121,11 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1">
-        {session.assistant?.model && session.assistant?.provider && (
+        {session.model && session.provider && (
           <div className="flex items-center gap-1">
             <span className="font-medium">Model:</span>
             <span>
-              {session.assistant.provider}/{session.assistant.model}
+              {session.provider}/{session.model}
             </span>
           </div>
         )}

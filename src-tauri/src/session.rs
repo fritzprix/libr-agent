@@ -481,6 +481,40 @@ echo "Available tools: python3, typescript/deno, shell commands"
         }
     }
 
+    /// Register a workspace override path for a session before it is created
+    pub async fn register_session_override(
+        &self,
+        session_id: &str,
+        override_path: PathBuf,
+    ) -> Result<(), String> {
+        let mut pool = self
+            .workspace_pool
+            .write()
+            .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
+
+        // Check if session already exists
+        if let Some(session_info) = pool.get_mut(session_id) {
+            // Update existing override
+            session_info.workspace_override = Some(override_path);
+            session_info.last_accessed = Instant::now();
+        } else {
+            // Register new override for future session
+            let workspace_info = SessionWorkspaceInfo {
+                session_id: session_id.to_string(),
+                // Use override path as base path too, though get_session_workspace_dir_by_id checks override first
+                workspace_path: override_path.clone(),
+                workspace_override: Some(override_path),
+                created_at: Instant::now(),
+                last_accessed: Instant::now(),
+                is_template: false,
+            };
+            pool.insert(session_id.to_string(), workspace_info);
+        }
+
+        info!("Registered workspace override for session '{}'", session_id);
+        Ok(())
+    }
+
     /// Clean up old or unused sessions
     pub async fn cleanup_old_sessions(
         &self,

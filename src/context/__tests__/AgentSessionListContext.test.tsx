@@ -41,6 +41,11 @@ vi.mock('../ModelProvider', () => ({
     }),
 }));
 
+// Mock GlobalEventContext
+vi.mock('../GlobalEventContext', () => ({
+    useBackendResource: vi.fn(),
+}));
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
     return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
 }
