@@ -7,3 +7,8 @@
 
 **Split:** `types.rs`, `common.rs`, `platforms/mod.rs`, `platforms/windows.rs`, `platforms/linux.rs`, `platforms/macos.rs`, `platforms/unix.rs`, `mod.rs`
 **Improvement:** Decoupled platform-specific isolation logic (Linux `unshare`, macOS `sandbox-exec`, Windows job objects) into dedicated modules. Separated types and common utilities. Reduced monolithic file size from ~811 lines to focused modules, improving maintainability and readability.
+
+## 2026-02-12 - src-tauri/src/mcp/builtin/workspace/code_execution/interactive.rs
+
+**Split:** `mod.rs` (Entry), `handlers.rs` (MCP Logic), `security.rs` (Obfuscation), `ui.rs` (HTML Templates)
+**Improvement:** Decoupled HTML generation and security logic from core execution handlers. Reduced monolithic file size from ~950 lines to modular components, isolating UI rendering and crypto logic.
