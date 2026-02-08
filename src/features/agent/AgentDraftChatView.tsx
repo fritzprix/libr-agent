@@ -274,7 +274,7 @@ function DraftChatInner() {
       <div className="flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar">
         {/* Identity Section */}
         <div className="flex flex-col items-center space-y-4">
-          <div className="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center shadow-sm">
+          <div className="w-20 h-20 bg-primary/10 rounded-xl flex items-center justify-center shadow-sm">
             <Bot className="w-10 h-10 text-primary" />
           </div>
           <div className="space-y-2 max-w-lg">
