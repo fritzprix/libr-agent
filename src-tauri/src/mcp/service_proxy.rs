@@ -304,7 +304,19 @@ impl MCPServiceProxy {
                     let server = self
                         .builtin_servers
                         .get(&server_id)
-                        .ok_or_else(|| format!("Built-in server not found: {}", server_id))?;
+                        .ok_or_else(|| {
+                            let available = self.builtin_servers.keys()
+                                .map(|k| format!("'{}'", k))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "Built-in server '{}' not enabled in this session.\n\n\
+                                Available servers: [{}]\n\n\
+                                💡 To fix: Update the assistant's 'allowedBuiltInServiceAliases' \
+                                configuration to include \"{}\"",
+                                server_id, available, server_id
+                            )
+                        })?;
 
                     log::debug!(
                         "Calling builtin tool '{}' for session '{}'",

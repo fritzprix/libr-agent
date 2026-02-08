@@ -88,6 +88,8 @@ export function useLLMExecution({
         messageCount: messages.length,
         provider,
         model,
+        temperature,
+        maxTokens,
         firstMessageId: messages[0]?.id ?? 'none',
         lastMessageId: messages[messages.length - 1]?.id ?? 'none',
       });
@@ -183,11 +185,11 @@ export function useLLMExecution({
 
         // Build config
         const config: AIServiceConfig = {
-          temperature,
           maxTokens:
             maxTokens ||
             settingsRef.current.advanced?.defaultMaxOutputTokens ||
             8192,
+          temperature: temperature,
         };
 
         // Calculate safe input token limit
@@ -216,9 +218,7 @@ export function useLLMExecution({
         if (modelInfo) {
           // Use resolved max tokens or fallback
           const effectiveMaxTokens =
-            maxTokens ||
-            settingsRef.current.advanced?.defaultMaxOutputTokens ||
-            8192;
+            settingsRef.current.advanced?.defaultMaxOutputTokens || 8192;
 
           // Reserve maxTokens + 100 safety buffer
           const reserved = effectiveMaxTokens + 100;

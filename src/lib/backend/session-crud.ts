@@ -1,7 +1,6 @@
 import { safeInvoke } from './core';
 import type { Session, Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
-import { safeParseAgentConfig } from '@/lib/schemas/agent-config';
 
 interface SessionDto {
   id: string;
@@ -12,46 +11,54 @@ interface SessionDto {
   activeThreadId: string | null;
 }
 
-interface AgentConfig {
-  systemPrompt?: string;
-  mcpServerIds?: string[];
-  assistants?: string[]; // Assistant IDs
-}
-
 function deserializeSession(dto: SessionDto): Session {
-  // We need to reconstruct Session object.
-  // Requires resolving assistants if possible, or keeping them as IDs?
-  // Frontend Session has `assistants: Assistant[]`.
-  // Backend stores IDs in config.
-  // Note: List/Get often acts as metadata retrieval. Resolving assistants might require extra calls.
-  // For basic listing, we might return empty assistants or use a separate "HydratedSession" type?
-  // But strictly adhering to `Session` interface requires `assistants` array.
+  let assistants: Assistant[] = [];
 
-  // Simulation: We assume the caller might need to hydrate assistants separately
-  // or we return minimal Assistant objects (just with IDs).
-  let config: AgentConfig = {};
-  if (typeof dto.config === 'string') {
-    config = safeParseAgentConfig(dto.config);
-  } else if (dto.config && typeof dto.config === 'object') {
-    const result = safeParseAgentConfig(JSON.stringify(dto.config));
-    config = result || {};
+  if (dto.config) {
+    try {
+      const configObj =
+        typeof dto.config === 'string' ? JSON.parse(dto.config) : dto.config;
+
+      // Case 1: V2 style (direct Assistant object)
+      if (configObj.systemPrompt && !configObj.assistants) {
+        assistants = [configObj as Assistant];
+      }
+      // Case 2: Legacy/Group style (object with assistants IDs)
+      else if (
+        configObj.assistants &&
+        Array.isArray(configObj.assistants) &&
+        configObj.assistants.length > 0
+      ) {
+        assistants = configObj.assistants.map((id: string) => ({
+          id,
+          name: 'Loading...',
+          systemPrompt: configObj.systemPrompt || '',
+          createdAt: new Date(dto.createdAt),
+          updatedAt: new Date(dto.updatedAt),
+          deletionProtected: false,
+        }));
+      }
+    } catch {
+      // Ignore parse errors
+    }
   }
 
-  const assistantIds = config.assistants || [];
-
-  // Minimal assistants stub
-  const assistants: Assistant[] = assistantIds.map((id) => ({
-    id,
-    name: 'Loading...',
-    systemPrompt: '',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    deletionProtected: false,
-  }));
+  // Fallback if no assistants found
+  if (assistants.length === 0) {
+    assistants = [
+      {
+        name: 'Unknown Assistant',
+        systemPrompt: 'You are a helpful assistant.',
+        createdAt: new Date(dto.createdAt),
+        updatedAt: new Date(dto.updatedAt),
+        deletionProtected: false,
+      },
+    ];
+  }
 
   return {
     id: dto.id,
-    type: helpers.determineType(assistantIds), // helper needed
+    type: assistants.length > 1 ? 'group' : 'single',
     assistants,
     name: dto.name || undefined,
     createdAt: new Date(dto.createdAt),
@@ -64,43 +71,21 @@ function deserializeSession(dto: SessionDto): Session {
   };
 }
 
-const helpers = {
-  determineType: (ids: string[]): 'single' | 'group' =>
-    ids.length > 1 ? 'group' : 'single',
-};
-
 export async function createSession(session: Session): Promise<Session> {
-  // This calls agent_create_session which expects AgentConfig
-  // We map frontend Session to CreateAgentSessionRequest
-  const assistantIds = session.assistants.map((a) => a.id!);
-
-  // We need to invoke 'agent_create_session'
-  // But `agent_commands.rs` implementation takes `CreateAgentSessionRequest`
-  /*
-    pub struct CreateAgentSessionRequest {
-        pub session_id: String,
-        pub name: Option<String>,
-        pub agent_config: AgentConfig,
-        #[serde(default)]
-        pub is_ephemeral: bool,
-    }
-    */
-
-  const mcpServerIds = Array.from(
-    new Set(session.assistants.flatMap((a) => a.mcpServerIds || [])),
-  );
+  // Use the first assistant as the primary agent config
+  const assistant = session.assistants[0];
+  if (!assistant) {
+    throw new Error('Cannot create session without an assistant');
+  }
 
   await safeInvoke('agent_create_session', {
     request: {
       sessionId: session.id,
       name: session.name,
       agentConfig: {
-        systemPrompt: session.assistants[0]?.systemPrompt, // Legacy simplifiction?
-        mcpServerIds,
-        env: {},
-        assistants: assistantIds,
+        ...assistant,
       },
-      isEphemeral: false, // Default to persistent (DB-backed)
+      isEphemeral: false,
     },
   });
 
@@ -166,24 +151,14 @@ export async function upsertSession(session: Session): Promise<void> {
   if (!exists) {
     await createSession(session);
   } else {
-    // Update?? agent_update_session_config
-    // This splits update logic.
-    // For metadata (name), maybe just ignore?
-    // Or implement update session command.
-    // `agent_update_session_config` exists.
-    const assistantIds = session.assistants.map((a) => a.id!);
-    const mcpServerIds = Array.from(
-      new Set(session.assistants.flatMap((a) => a.mcpServerIds || [])),
-    );
+    const assistant = session.assistants[0];
+    if (!assistant) return;
 
     await safeInvoke('agent_update_session_config', {
       request: {
         sessionId: session.id,
         agentConfig: {
-          systemPrompt: session.assistants[0]?.systemPrompt,
-          mcpServerIds,
-          env: {},
-          assistants: assistantIds,
+          ...assistant,
         },
       },
     });

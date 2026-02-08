@@ -12,7 +12,6 @@ pub struct Model {
     pub content: String,
     pub description: Option<String>,
     pub priority: String,
-    pub parent_id: Option<i64>,
     pub is_checked: bool,
     pub status: String,
     pub created_at: i64,
@@ -20,15 +19,6 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {
-    #[sea_orm(belongs_to = "Entity", from = "Column::ParentId", to = "Column::Id")]
-    SelfRef,
-}
-
-impl Related<Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SelfRef.def()
-    }
-}
+pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}

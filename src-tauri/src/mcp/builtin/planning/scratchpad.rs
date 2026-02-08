@@ -190,7 +190,12 @@ pub async fn update_scratchpad(
                         "Use getCurrentState to see updated context".to_string(),
                     ],
                 );
-                Ok(hint.to_mcp_result())
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": cuid2::create_id(),
+                    "success": true,
+                    "scratchpadId": id_val,
+                    "note": note_val
+                }))))
             } else {
                 Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::ResourceNotFound,
@@ -482,13 +487,17 @@ pub async fn clear_scratchpad(
         Ok(found) => {
             if found {
                 let hint = SuccessHint::new(
-                    "✓ Scratchpad item cleared",
+                    format!("✓ Scratchpad item {} cleared", target_id),
                     vec![
                         "Use addScratchpad to add new items".to_string(),
                         "Use listScratchpad to see remaining items".to_string(),
                     ],
                 );
-                Ok(hint.to_mcp_result())
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "id": cuid2::create_id(),
+                    "success": true,
+                    "scratchpadId": target_id
+                }))))
             } else {
                 Ok(ErrorGuidance::with_guidance(
                     ErrorCategory::ResourceNotFound,

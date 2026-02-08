@@ -53,15 +53,18 @@ describe('session-crud', () => {
 
     await createSession(mockSession);
 
+    // The new implementation passes the first assistant as agentConfig
     expect(safeInvoke).toHaveBeenCalledWith('agent_create_session', {
       request: {
         sessionId: mockSession.id,
         name: mockSession.name,
         agentConfig: expect.objectContaining({
-          // The fix should populate this field.
-          // Currently it's expecting mcpServers: [], but we will change it to mcpServerIds: [...]
-          // For now, let's verify what we expect AFTER the fix.
-          mcpServerIds: expect.arrayContaining(['server-1', 'server-2', 'server-3']),
+          // agentConfig is the first assistant from the session
+          id: mockAssistant1.id,
+          name: mockAssistant1.name,
+          systemPrompt: mockAssistant1.systemPrompt,
+          mcpServerIds: expect.arrayContaining(['server-1', 'server-2']),
+          deletionProtected: mockAssistant1.deletionProtected,
         }),
         isEphemeral: false,
       },
@@ -69,20 +72,16 @@ describe('session-crud', () => {
 
     const callArgs = vi.mocked(safeInvoke).mock.calls[0][1] as {
       request: {
-        agentConfig: {
-          mcpServerIds: string[];
-        };
+        agentConfig: Assistant;
       };
     };
-    const passedIds = callArgs.request.agentConfig.mcpServerIds;
-    expect(passedIds).toHaveLength(3); // Unique IDs
+    const passedConfig = callArgs.request.agentConfig as Assistant;
+    expect(passedConfig.id).toBe(mockAssistant1.id);
+    expect(passedConfig.mcpServerIds).toHaveLength(2); // From first assistant only
   });
 
   it('upsertSession should extract unique mcpServerIds from assistants', async () => {
     // Mock getSession to return existing session so upsert path is taken
-    // BUT getSession calls safeInvoke('agent_get_session').
-    // We need to handle sequential calls to safeInvoke.
-
     // First call: getSession -> agent_get_session
     // Second call: agent_update_session_config
 
@@ -98,11 +97,17 @@ describe('session-crud', () => {
 
     await upsertSession(mockSession);
 
+    // The new implementation passes the first assistant as agentConfig
     expect(safeInvoke).toHaveBeenLastCalledWith('agent_update_session_config', {
       request: {
         sessionId: mockSession.id,
         agentConfig: expect.objectContaining({
-          mcpServerIds: expect.arrayContaining(['server-1', 'server-2', 'server-3']),
+          // agentConfig is the first assistant from the session
+          id: mockAssistant1.id,
+          name: mockAssistant1.name,
+          systemPrompt: mockAssistant1.systemPrompt,
+          mcpServerIds: expect.arrayContaining(['server-1', 'server-2']),
+          deletionProtected: mockAssistant1.deletionProtected,
         }),
       },
     });

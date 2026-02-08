@@ -11,6 +11,8 @@ import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
 import { AgentSession, CreateSessionParams } from '@/models/agent';
+import { getAssistant } from '@/lib/backend/assistants';
+import { Assistant } from '@/models/chat';
 
 const logger = getLogger('AgentSessionListContext');
 
@@ -85,7 +87,7 @@ export function AgentSessionListProvider({
       >('agent_get_all_sessions');
 
       const sessionList: AgentSession[] = response.map((s) => {
-        let assistant: import('@/models/agent').AgentConfig | undefined;
+        let assistant: Assistant | undefined;
         if (s.agentConfig) {
           try {
             assistant = JSON.parse(s.agentConfig);
@@ -136,11 +138,28 @@ export function AgentSessionListProvider({
       });
 
       try {
-        // Build agent config from assistant
-        const agentConfig: import('@/models/agent').AgentConfig = {
-          ...assistant,
-          temperature: 1.0,
-          maxTokens: 8192,
+        // ✅ CRITICAL FIX: Reload assistant from DB to get latest configuration
+        // This ensures that any recent changes (e.g., built-in tool updates)
+        // are included in the session config
+        if (!assistant.id) {
+          throw new Error('Assistant ID is required to create session');
+        }
+
+        const freshAssistant = await getAssistant(assistant.id);
+
+        if (!freshAssistant) {
+          throw new Error(`Assistant ${assistant.id} not found in database`);
+        }
+
+        logger.debug('Reloaded assistant from DB', {
+          assistantId: freshAssistant.id,
+          allowedBuiltInServiceAliases:
+            freshAssistant.allowedBuiltInServiceAliases,
+        });
+
+        // Build agent config from fresh assistant data
+        const agentConfig: Assistant = {
+          ...freshAssistant,
         };
 
         // Generate session ID

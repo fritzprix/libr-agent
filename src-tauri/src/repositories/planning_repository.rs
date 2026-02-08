@@ -24,7 +24,6 @@ pub trait PlanningRepository: Send + Sync {
         content: &str,
         description: Option<String>,
         priority: &str,
-        parent_id: Option<i64>,
     ) -> Result<i64, DbError>;
 
     async fn check_todo(
@@ -45,9 +44,6 @@ pub trait PlanningRepository: Send + Sync {
     async fn delete_todos(&self, session_id: &str, ids: Vec<i64>) -> Result<u64, DbError>;
 
     async fn check_todo_duplicate(&self, session_id: &str, content: &str) -> Result<bool, DbError>;
-
-    async fn get_parent_todo(&self, id: i64) -> Result<Option<planning_todo::Model>, DbError>;
-    async fn get_child_todos(&self, parent_id: i64) -> Result<Vec<planning_todo::Model>, DbError>;
 
     // --- Scratchpad ---
     async fn add_scratchpad(
@@ -225,7 +221,6 @@ impl PlanningRepository for SqlitePlanningRepository {
         content: &str,
         description: Option<String>,
         priority: &str,
-        parent_id: Option<i64>,
     ) -> Result<i64, DbError> {
         let now = chrono::Utc::now().timestamp_millis();
 
@@ -234,7 +229,6 @@ impl PlanningRepository for SqlitePlanningRepository {
             content: Set(content.to_string()),
             description: Set(description),
             priority: Set(priority.to_string()),
-            parent_id: Set(parent_id),
             status: Set("pending".to_string()),
             is_checked: Set(false),
             created_at: Set(now),
@@ -348,37 +342,6 @@ impl PlanningRepository for SqlitePlanningRepository {
             .map_err(DbError::SeaOrmQueryFailed)?;
 
         Ok(count > 0)
-    }
-
-    async fn get_parent_todo(&self, id: i64) -> Result<Option<planning_todo::Model>, DbError> {
-        // This is a bit tricky: 'id' here is presumably the child's ID, need to find its parent?
-        // Or is 'id' the parent ID? Based on name, it suggests fetching THE parent of a todo.
-        // Let's implement getting the parent of a given todo ID.
-        let child = planning_todo::Entity::find_by_id(id)
-            .one(&self.db)
-            .await
-            .map_err(DbError::SeaOrmQueryFailed)?;
-
-        if let Some(c) = child {
-            if let Some(pid) = c.parent_id {
-                planning_todo::Entity::find_by_id(pid)
-                    .one(&self.db)
-                    .await
-                    .map_err(DbError::SeaOrmQueryFailed)
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn get_child_todos(&self, parent_id: i64) -> Result<Vec<planning_todo::Model>, DbError> {
-        planning_todo::Entity::find()
-            .filter(planning_todo::Column::ParentId.eq(parent_id))
-            .all(&self.db)
-            .await
-            .map_err(DbError::SeaOrmQueryFailed)
     }
 
     // --- Scratchpad ---

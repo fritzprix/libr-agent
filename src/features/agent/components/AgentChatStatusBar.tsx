@@ -223,7 +223,6 @@ export function AgentChatStatusBar() {
                   const updatedConfig = {
                     ...session.assistant,
                     // Note: We keep these for completeness but the backend will prioritze top-level model/provider
-                    temperature: 0.7,
                     name: session.assistant.name || 'Assistant',
                     systemPrompt:
                       session.assistant.systemPrompt ||

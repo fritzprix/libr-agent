@@ -96,6 +96,18 @@ describe('AgentSessionListContext', () => {
         // Mock create response
         (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
             if (cmd === 'agent_get_all_sessions') return Promise.resolve([]);
+            if (cmd === 'get_assistant') {
+                return Promise.resolve({
+                    id: args.id,
+                    name: 'Test Assistant',
+                    config: {
+                        systemPrompt: 'You are a test assistant.',
+                        allowedBuiltInServiceAliases: ['planning', 'knowledge']
+                    },
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                });
+            }
             if (cmd === 'agent_create_session') {
                 return Promise.resolve({
                     id: args.request.sessionId,

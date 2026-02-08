@@ -8,7 +8,7 @@ use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
-use super::queries::get_server_config;
+use super::queries::{get_server_config, get_server_details};
 
 use super::MCPManagerServer;
 
@@ -39,15 +39,19 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
     Ok(())
 }
 
-async fn delete_server_config_db(name: String) -> Result<(), String> {
+async fn delete_server_config_db(id_or_name: String) -> Result<(), String> {
     let repo = get_mcp_server_repository();
 
-    // Lookup by name first, then delete by ID
-    let server = repo
-        .get_by_name(&name)
-        .await
-        .map_err(|e| format!("DB Query Error: {}", e))?
-        .ok_or_else(|| format!("MCP server '{}' not found", name))?;
+    // Try ID first, then name
+    let mut server = repo.get(&id_or_name).await.map_err(|e| e.to_string())?;
+    if server.is_none() {
+        server = repo
+            .get_by_name(&id_or_name)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let server = server.ok_or_else(|| format!("MCP server '{}' not found", id_or_name))?;
 
     repo.delete(&server.id)
         .await
@@ -309,8 +313,8 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     };
 
     // Get server config
-    let config = match get_server_config(name).await? {
-        Some(c) => c,
+    let (id, config) = match get_server_details(name).await? {
+        Some(details) => details,
         Option::None => {
             return Ok(ErrorGuidance::with_guidance(
                 ErrorCategory::ResourceNotFound,
@@ -355,8 +359,13 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         Ok(tool_count) => {
             // Persist tool count to database for UI display
             let repo = get_mcp_server_repository();
-            if let Err(e) = repo.update_tool_count(name, tool_count as i32).await {
-                log::warn!("Failed to cache tool count for '{}': {}", name, e);
+            if let Err(e) = repo.update_tool_count(&id, tool_count as i32).await {
+                log::warn!(
+                    "Failed to cache tool count for '{}' (ID: {}): {}",
+                    name,
+                    id,
+                    e
+                );
                 // Continue - don't fail verification if cache update fails
             }
 
