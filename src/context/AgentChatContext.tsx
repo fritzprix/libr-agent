@@ -253,8 +253,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         logger.error('Failed to submit merged message', err);
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(errorMessage);
-        // Note: We lost the pending messages here if we don't restore them.
-        // For simplicity in this iteration, we rely on user to retry.
+        throw err;
       }
     },
     [session?.id, addMessage, setError],
@@ -373,12 +372,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         messageId: message.id,
       });
 
-      try {
-        // Use the common internal submit logic
-        await submitMergedMessage(message);
-      } catch {
-        // Error handling is inside submitMergedMessage
-      }
+      // Delegate to internal logic which handles error state and re-throws
+      await submitMergedMessage(message);
     },
     [session?.id, workflowStatus, isSessionLoading, submitMergedMessage],
   );

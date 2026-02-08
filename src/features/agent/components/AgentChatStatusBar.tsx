@@ -21,6 +21,7 @@ import AgentToolsModal from './AgentToolsModal';
 import { useTokenMetrics } from '@/hooks/use-token-metrics';
 import { TokenMetricsBadge } from './TokenMetricsBadge';
 import { TokenUsage } from '@/lib/ai-service/types';
+import { toast } from 'sonner';
 
 const logger = getLogger('AgentChatStatusBar');
 
@@ -78,6 +79,7 @@ export function AgentChatStatusBar() {
       await retryMessage();
     } catch (err) {
       logger.error('Failed to retry message:', err);
+      toast.error('Failed to retry message');
     }
   };
 
@@ -86,6 +88,7 @@ export function AgentChatStatusBar() {
       await resume();
     } catch (err) {
       logger.error('Failed to resume session:', err);
+      toast.error('Failed to resume session');
     }
   };
 

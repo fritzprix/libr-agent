@@ -13,6 +13,7 @@ import { Button, FileAttachment } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import type { Message, AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import {
   useDnDContext,
@@ -148,6 +149,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           });
         } catch (err) {
           logger.error('Error uploading pending files:', err);
+          toast.error('Failed to upload files. Please try again.');
           return;
         }
       }

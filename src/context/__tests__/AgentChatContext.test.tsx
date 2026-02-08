@@ -91,6 +91,7 @@ describe('AgentChatContext', () => {
     // Setup AgentSessionActions mock
     (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
       setError: mockSetError,
+      addMessage: vi.fn(),
       resumeSession: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -223,7 +224,7 @@ describe('AgentChatContext', () => {
       };
 
       await act(async () => {
-        await result.current.submit(newMessage);
+        await expect(result.current.submit(newMessage)).rejects.toThrow('Submit failed');
       });
 
       expect(mockSetError).toHaveBeenCalledWith('Submit failed');

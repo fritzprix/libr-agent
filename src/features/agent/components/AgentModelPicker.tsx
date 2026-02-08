@@ -7,6 +7,7 @@ import { RefreshCw } from 'lucide-react';
 import { useSettings } from '@/hooks/use-settings';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import useSWR from 'swr';
+import { toast } from 'sonner';
 
 const logger = getLogger('AgentModelPicker');
 
@@ -86,6 +87,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         );
       } catch (error) {
         logger.error('Failed to fetch models locally:', error);
+        toast.error(`Failed to fetch models for ${provider}`);
         return {};
       }
     },

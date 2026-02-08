@@ -18,6 +18,7 @@ import { extractServiceInfoFromContent } from '@/lib/mcp';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
 import { Highlight, themes } from 'prism-react-renderer';
 import { useTheme } from 'next-themes';
 import {
@@ -138,6 +139,7 @@ const MarkdownText = memo(
         await copyToClipboard(content);
       } catch (err) {
         logger.error('Failed to copy text content', err);
+        toast.error('Failed to copy content to clipboard');
       }
     }, [content, copyToClipboard]);
 
