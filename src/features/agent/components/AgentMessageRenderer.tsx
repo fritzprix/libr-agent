@@ -119,6 +119,25 @@ const CodeBlock = memo(
       </Highlight>
     );
   },
+  (prevProps, nextProps) => {
+    // Custom comparison function for React.memo
+    // ReactMarkdown passes a new array for `children` on every render, which breaks
+    // standard shallow comparison. We manually compare the stringified content.
+
+    // 1. Compare isDark (theme change)
+    if (prevProps.isDark !== nextProps.isDark) return false;
+
+    // 2. Compare className (language change)
+    if (prevProps.className !== nextProps.className) return false;
+
+    // 3. Compare inline prop
+    if (prevProps.inline !== nextProps.inline) return false;
+
+    // 4. Compare content (children)
+    // Code content is usually a string or array of strings.
+    // String() handles both cases appropriately for equality check.
+    return String(prevProps.children) === String(nextProps.children);
+  },
 );
 
 CodeBlock.displayName = 'CodeBlock';
