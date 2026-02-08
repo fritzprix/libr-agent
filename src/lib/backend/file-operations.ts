@@ -5,15 +5,6 @@ import { safeInvoke } from './core';
 // ========================================
 
 /**
- * Reads the content of a file from the filesystem.
- * @param filePath The path to the file to read.
- * @returns A promise that resolves to an array of numbers representing the file's byte content.
- */
-export async function readFile(filePath: string): Promise<number[]> {
-  return safeInvoke<number[]>('read_file', { filePath });
-}
-
-/**
  * Reads the content of a file that was dropped onto the application window.
  * @param filePath The path of the dropped file.
  * @returns A promise that resolves to an array of numbers representing the file's byte content.

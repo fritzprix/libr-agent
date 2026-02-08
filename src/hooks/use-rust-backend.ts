@@ -83,7 +83,6 @@ export interface RustBackendAPI {
   ) => Promise<MCPResponse<unknown>>;
 
   // File System Operations (returns number[] representing bytes)
-  readFile: (filePath: string) => Promise<number[]>;
   readDroppedFile: (filePath: string) => Promise<number[]>;
   writeFile: (filePath: string, content: number[]) => Promise<void>;
 
@@ -166,7 +165,6 @@ const backendAPI: RustBackendAPI = {
   callToolUnified: client.callToolUnified,
 
   // File System Operations
-  readFile: client.readFile,
   readDroppedFile: client.readDroppedFile,
   writeFile: client.writeFile,
 

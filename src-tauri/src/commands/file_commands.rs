@@ -7,15 +7,6 @@ use crate::session::get_session_manager;
 use std::path::Path;
 use tokio::fs;
 
-/// Reads a file from the workspace using the `SecureFileManager`.
-#[tauri::command]
-pub async fn read_file(
-    file_path: String,
-    manager: tauri::State<'_, SecureFileManager>,
-) -> Result<Vec<u8>, String> {
-    manager.read_file(&file_path).await
-}
-
 /// Reads a file that was dropped onto the application window.
 ///
 /// This function performs several security checks:
@@ -39,6 +30,15 @@ pub async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
 
     if !path.is_file() {
         return Err(format!("Path is not a file: {file_path}"));
+    }
+
+    // Security check: reject hidden files/directories (starting with .)
+    // This mitigates access to sensitive hidden configurations like ~/.ssh, ~/.aws, ~/.config
+    // Also implicitly blocks traversal (..) and current dir (.) components
+    if path.components().any(|c| {
+        c.as_os_str().to_string_lossy().starts_with('.')
+    }) {
+        return Err("Access denied: Hidden files and directories are not allowed".to_string());
     }
 
     // Check file size
@@ -111,4 +111,44 @@ pub async fn workspace_write_file(
     }
 
     Err("Session ID is required for workspace write operations".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_read_dropped_file_rejects_hidden() {
+        let dir = tempdir().unwrap();
+
+        // Create a hidden file
+        let hidden_file = dir.path().join(".secret.txt");
+        File::create(&hidden_file).unwrap();
+
+        // Create a file in hidden directory
+        let hidden_dir = dir.path().join(".hidden");
+        std::fs::create_dir(&hidden_dir).unwrap();
+        let file_in_hidden = hidden_dir.join("normal.txt");
+        File::create(&file_in_hidden).unwrap();
+
+        // Create a normal file
+        let normal_file = dir.path().join("normal.txt");
+        File::create(&normal_file).unwrap();
+
+        // Test hidden file
+        let result = read_dropped_file(hidden_file.to_string_lossy().to_string()).await;
+        assert!(result.is_err(), "Hidden file should be rejected");
+        assert!(result.unwrap_err().contains("Access denied"), "Error should mention access denied");
+
+        // Test file in hidden directory
+        let result = read_dropped_file(file_in_hidden.to_string_lossy().to_string()).await;
+        assert!(result.is_err(), "File in hidden directory should be rejected");
+        assert!(result.unwrap_err().contains("Access denied"), "Error should mention access denied");
+
+        // Test normal file
+        let result = read_dropped_file(normal_file.to_string_lossy().to_string()).await;
+        assert!(result.is_ok(), "Normal file should be accepted");
+    }
 }
