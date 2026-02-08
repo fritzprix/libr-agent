@@ -38,20 +38,23 @@ pub async fn create_basic_isolated_command(
     // Wait, "$@" expands to $1 $2... it does NOT include $0.
     // So if we run `sh -c '"$@"' -- cmd arg1`, it runs `arg1`!
 
-    // Correct pattern: `sh -c '"$0" "$@"' command arg1 arg2`
-    // Then $0 = command, $1 = arg1, $2 = arg2.
-    // Expansion `"$0" "$@"` becomes `command arg1 arg2`.
+    let mut shell_args = vec!["-c"];
 
-    let shell_script = "\"$0\" \"$@\"";
-
-    let mut shell_args = vec!["-c", shell_script, "--", &config.command];
-    for arg in &config.args {
-        shell_args.push(arg); // These become $1, $2...
+    if config.args.is_empty() {
+        // Run as a script: sh -c "ls -l"
+        shell_args.push(&config.command);
+    } else {
+        // Run as executable + args safely: sh -c '"$0" "$@"' exe arg1 arg2
+        shell_args.push("\"$0\" \"$@\"");
+        shell_args.push(&config.command); // $0
+        for arg in &config.args {
+            shell_args.push(arg); // $1, $2...
+        }
     }
 
     info!(
-        "Unix shell execution: {} -c '{}' -- {} {:?}",
-        shell_cmd, shell_script, config.command, config.args
+        "Unix shell execution: {} {:?} (original: '{}' args: {:?})",
+        shell_cmd, shell_args, config.command, config.args
     );
     cmd.args(shell_args);
 

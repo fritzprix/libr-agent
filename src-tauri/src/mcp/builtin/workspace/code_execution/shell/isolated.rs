@@ -98,6 +98,7 @@ impl WorkspaceServer {
         // Register process in registry
         let entry = terminal_manager::ProcessEntry {
             id: process_id.clone(),
+            name: None,
             session_id: session_id.clone(),
             command: command.to_string(),
             status: terminal_manager::ProcessStatus::Starting,

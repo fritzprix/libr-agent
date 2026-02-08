@@ -23,6 +23,12 @@ impl WorkspaceServer {
         // Get session info
         let session_id = session_id.to_string();
 
+        // Extract optional name
+        let process_name = _args
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let workspace_path = self
             .session_manager
             .get_session_workspace_dir_by_id(&session_id);
@@ -135,6 +141,7 @@ impl WorkspaceServer {
 
         let entry = terminal_manager::ProcessEntry {
             id: process_id.clone(),
+            name: process_name.clone(),
             session_id: session_id.clone(),
             command: command.to_string(),
             status: terminal_manager::ProcessStatus::Starting,

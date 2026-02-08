@@ -528,6 +528,7 @@ impl WorkspaceServer {
             let cancel_token = tokio_util::sync::CancellationToken::new();
             let entry = terminal_manager::ProcessEntry {
                 id: process_id.clone(),
+                name: None,
                 session_id: session_id.clone(),
                 command: sanitize_command_for_logging(&pending.display_command), // Sanitized version
                 status: terminal_manager::ProcessStatus::Running,
