@@ -28,9 +28,10 @@ git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"%h %s"
 ```
 
 **Task**: Read the commit messages. Group them mentally into:
-*   **Features**: New capabilities, UI improvements (User facing).
-*   **Fixes**: Bug fixes (User facing).
-*   **Refactoring/Internal**: Code cleanup, testing, dev scripts (Developer facing).
+
+- **Features**: New capabilities, UI improvements (User facing).
+- **Fixes**: Bug fixes (User facing).
+- **Refactoring/Internal**: Code cleanup, testing, dev scripts (Developer facing).
 
 ### 2. Update Changelog
 
@@ -41,12 +42,13 @@ read_file CHANGELOG.md
 ```
 
 **Task**: Edit `CHANGELOG.md` to insert a new section for the upcoming version.
-*   **Format**: Follow the existing style (`## [Version] - YYYY-MM-DD`).
-*   **Content**: Summarize the changes identified in Step 1.
-    *   *Do not* just copy-paste commit messages.
-    *   *Do* consolidate related small commits into one meaningful bullet point.
-    *   *Do* filter out trivial internal changes (like "fix typo", "update script") unless significant.
-    *   *Do* use emojis (🚀, 🐛, 🔧) consistent with the file style.
+
+- **Format**: Follow the existing style (`## [Version] - YYYY-MM-DD`).
+- **Content**: Summarize the changes identified in Step 1.
+  - _Do not_ just copy-paste commit messages.
+  - _Do_ consolidate related small commits into one meaningful bullet point.
+  - _Do_ filter out trivial internal changes (like "fix typo", "update script") unless significant.
+  - _Do_ use emojis (🚀, 🐛, 🔧) consistent with the file style.
 
 ### 3. Commit Documentation
 
@@ -65,5 +67,5 @@ Finally, use the provided script to handle the mechanical parts: running tests, 
 ./scripts/release.sh <patch|minor|major|version>
 ```
 
-*   **Checks**: The script will abort if tests fail.
-*   **Automation**: The script updates `package.json`, `Cargo.toml`, etc., creates the git tag, and pushes to GitHub.
+- **Checks**: The script will abort if tests fail.
+- **Automation**: The script updates `package.json`, `Cargo.toml`, etc., creates the git tag, and pushes to GitHub.

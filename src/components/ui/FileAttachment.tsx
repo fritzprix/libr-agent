@@ -64,6 +64,7 @@ export default function FileAttachment({
           onClick={handleFileSelect}
           className="h-8 w-8 text-muted-foreground hover:text-success"
           title="Attach files"
+          aria-label="Attach files"
         >
           <Paperclip className="h-4 w-4" />
         </Button>
@@ -96,6 +97,7 @@ export default function FileAttachment({
         onClick={handleFileSelect}
         className="text-muted-foreground hover:text-success border border-muted"
         title="Attach files"
+        aria-label="Attach files"
       >
         <Paperclip className="h-4 w-4" />
       </Button>
@@ -107,9 +109,9 @@ export default function FileAttachment({
             <Paperclip className="w-3 h-3" />
             <span>Attached Files:</span>
           </div>
-          <div className="space-y-1">
+          <ul className="space-y-1" aria-label="Attached files">
             {files.map((file, index) => (
-              <div
+              <li
                 key={index}
                 className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
               >
@@ -122,13 +124,14 @@ export default function FileAttachment({
                   size="icon"
                   onClick={() => onRemove(index)}
                   className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
-                  title="Remove file"
+                  title={`Remove ${file.name}`}
+                  aria-label={`Remove ${file.name}`}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
     </div>

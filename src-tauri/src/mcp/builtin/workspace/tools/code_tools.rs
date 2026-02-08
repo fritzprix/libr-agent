@@ -112,29 +112,18 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "runInPersistentShell".to_string(),
         title: Some("Execute Shell Command (Persistent Session)".to_string()),
-        description: "Execute a shell command using a PERSISTENT bash/sh session.\n\n\
-                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
-                      For most commands (ls, cat, grep), use runShell instead.\n\n\
-                      STATE PRESERVATION:\n\
-                      - Variables (export VAR=value) persist between calls\n\
-                      - Working directory (cd) persists between calls\n\
-                      - Shell history and environment are maintained\n\
-                      - NOT fully sandboxed - inherits host environment\n\n\
-                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
-                      - Persistent shell tracks its own CWD (use 'pwd' to check)\n\
-                      - 'cd' commands change the shell's CWD for future commands\n\
-                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory always use workspace root\n\
-                      - To list files in shell's CWD, use shell commands: 'ls' or 'find'\n\n\
-                      INTERACTIVE INPUT:\n\
-                      - Set 'requireUserInput: true' for sudo/interactive commands\n\
-                      - Auto-detects privilege escalation (sudo, su, doas, pkexec)\n\
-                      - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
-                      USE CASES:\n\
-                      - Navigating directories: cd, pushd, popd\n\
-                      - Setting up environment: source, export\n\
-                      - Running quick commands: ls, cat, grep\n\
-                      - For long-running tasks (>30s), use spawnProcess\n\n\
-                      PLATFORM: Unix (Linux, macOS) - uses bash or sh shell."
+        description: "Execute a shell command in a PERSISTENT bash session.\n\
+                      \n\
+                      KEY FEATURES:\n\
+                      - State Management: Preserves variables ('export X=1') and directory changes ('cd src') between calls.\n\
+                      - Interactive: Supports commands needing user input (e.g., sudo) via 'requireUserInput'.\n\
+                      \n\
+                      WHEN TO USE:\n\
+                      1. You need to change directory and stay there ('cd src').\n\
+                      2. You need to set environment variables for subsequent commands.\n\
+                      3. You need to run 'sudo' or other interactive commands.\n\
+                      \n\
+                      For simple independent commands (ls, cat, grep), use 'runShell' instead."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -160,6 +149,15 @@ pub fn create_spawn_process_tool() -> MCPTool {
         ),
     );
 
+    props.insert(
+        "name".to_string(),
+        string_prop(
+            None,
+            Some(100),
+            Some("Optional name for the process for easier identification"),
+        ),
+    );
+
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
@@ -175,7 +173,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
                       - No persistent directory - each call starts fresh at workspace root\n\
                       - Example: \"cd src && ls\" lists files in src/ directory\n\n\
                       PROCESS MANAGEMENT:\n\
-                      - Use pollProcess(process_id) to check status\n\
+                      - Use waitForProcess(process_id, 0) to check status (replaces pollProcess)\n\
                       - Use readProcessOutput(process_id) to get output\n\
                       - Use stopProcess(process_id) to cancel\n\
                       - Use listProcesses() to see all running processes\n\n\
@@ -305,36 +303,18 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
-        description: "Execute a command using a PERSISTENT PowerShell session.\n\n\
-                      ⚠️ ADVANCED TOOL: Only use when you need state preservation.\n\
-                      For most commands (Get-ChildItem, Get-Content), use runPowerShell instead.\n\n\
-                      STATE PRESERVATION:\n\
-                      - Variables ($VAR=value) persist between calls\n\
-                      - Working directory (Set-Location) persists between calls\n\
-                      - PowerShell environment is maintained\n\
-                      - NOT fully sandboxed - inherits host environment\n\n\
-                      ⚠️ POWERSHELL SYNTAX (WINDOWS):\n\
-                      - Use semicolons ';' to chain commands on one line\n\
-                      - NEVER use '&&' (bash syntax). Windows PowerShell 5.1 (default) will throw a ParserError\n\
-                      - Example: 'Set-Location src; Get-ChildItem'\n\n\
-                      🔍 WORKING DIRECTORY BEHAVIOR:\n\
-                      - Persistent shell tracks its own CWD (use Get-Location)\n\
-                      - Set-Location (cd) changes CWD for future commands\n\
-                      - ⚠️ FILE TOOLS IGNORE THIS: readFile/listDirectory use workspace root\n\
-                      - To list files in shell's CWD, use: Get-ChildItem\n\n\
-                      INTERACTIVE INPUT:\n\
-                      - Set 'requireUserInput: true' for interactive commands\n\
-                      - No auto-detection on Windows (must be explicit)\n\
-                      - ⚠️ LIMITATION: Only ONE input prompt supported\n\n\
-                      WINDOWS TIPS:\n\
-                      - Use double quotes for paths with spaces\n\
-                      - 'python' not found? Try 'py' or 'where.exe python'\n\
-                      - 'where' failed? Use 'where.exe' (PowerShell alias conflict)\n\n\
-                      USE CASES:\n\
-                      - Navigating directories: Set-Location, Push-Location\n\
-                      - Setting variables: $env:VAR=value\n\
-                      - Quick commands: Get-ChildItem, Get-Content\n\
-                      - For long tasks (>30s), use spawnProcess"
+        description: "Execute a PowerShell command in a PERSISTENT session.\n\
+                      \n\
+                      KEY FEATURES:\n\
+                      - State Management: Preserves variables ($env:X=1) and location changes ('Set-Location') between calls.\n\
+                      - Interactive: Supports commands needing user input via 'requireUserInput'.\n\
+                      \n\
+                      WHEN TO USE:\n\
+                      1. You need to change location and stay there ('Set-Location src').\n\
+                      2. You need to set environment variables for subsequent commands.\n\
+                      3. You need to run interactive commands.\n\
+                      \n\
+                      For simple independent commands, use 'runPowerShell' instead."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -360,6 +340,15 @@ pub fn create_spawn_process_tool() -> MCPTool {
         ),
     );
 
+    props.insert(
+        "name".to_string(),
+        string_prop(
+            None,
+            Some(100),
+            Some("Optional name for the process for easier identification"),
+        ),
+    );
+
     MCPTool {
         name: "spawnProcess".to_string(),
         title: Some("Spawn Background Process".to_string()),
@@ -375,7 +364,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
                       - No persistent directory - each call starts fresh at workspace root\n\
                       - Example: \"Set-Location src; Get-ChildItem\" lists files in src/ directory\n\n\
                       PROCESS MANAGEMENT:\n\
-                      - Use pollProcess(process_id) to check status\n\
+                      - Use waitForProcess(process_id, 0) to check status (replaces pollProcess)\n\
                       - Use readProcessOutput(process_id) to get output\n\
                       - Use stopProcess(process_id) to cancel\n\
                       - Use listProcesses() to see all running processes\n\n\

@@ -20,6 +20,8 @@ pub enum ProcessStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessEntry {
     pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     pub session_id: String,
     pub command: String,
     pub status: ProcessStatus,
@@ -314,6 +316,59 @@ pub async fn head_lines(file_path: &PathBuf, n: usize) -> Result<Vec<String>, St
         })?;
 
     let lines: Vec<String> = content.lines().take(n).map(|s| s.to_string()).collect();
+
+    Ok(lines)
+}
+
+/// Read lines in range (1-based, inclusive, max 100 lines)
+pub async fn read_lines_range(
+    file_path: &PathBuf,
+    start_line: usize,
+    end_line: usize,
+) -> Result<Vec<String>, String> {
+    if !file_path.exists() {
+        return Ok(Vec::new());
+    }
+    if start_line > end_line {
+        return Ok(Vec::new());
+    }
+
+    // Safety clamp (max 100 lines to read)
+    let count = end_line - start_line + 1;
+    if count > 100 {
+        return Err("Range too large (max 100 lines)".to_string());
+    }
+
+    // Windows: Use lossy UTF-8 conversion to handle non-UTF-8 console output
+    #[cfg(target_os = "windows")]
+    let content = {
+        let bytes = tokio::fs::read(file_path)
+            .await
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+        String::from_utf8_lossy(&bytes).to_string()
+    };
+
+    // Unix: Use strict UTF-8 (works fine on Unix systems)
+    #[cfg(not(target_os = "windows"))]
+    let content = tokio::fs::read_to_string(file_path)
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::InvalidData {
+                "Failed to read terminal output: Content appears to be binary or contains invalid UTF-8 characters".to_string()
+            } else {
+                format!("Failed to read file: {e}")
+            }
+        })?;
+
+    // 0-based indexing for stream iter
+    let skip = start_line.saturating_sub(1);
+
+    let lines: Vec<String> = content
+        .lines()
+        .skip(skip)
+        .take(count)
+        .map(|s| s.to_string())
+        .collect();
 
     Ok(lines)
 }

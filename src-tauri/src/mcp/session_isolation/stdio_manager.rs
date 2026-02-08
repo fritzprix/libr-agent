@@ -43,6 +43,9 @@ pub struct SessionMCPManager {
 
     /// Cancellation tokens for active calls.
     pub(crate) active_call_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
+
+    /// Workspace directory for the session (CWD for child processes)
+    pub(crate) workspace_dir: std::path::PathBuf,
 }
 
 impl SessionMCPManager {
@@ -56,6 +59,7 @@ impl SessionMCPManager {
         session_id: String,
         server_configs: HashMap<String, MCPServerConfig>,
         config: SessionIsolationConfig,
+        workspace_dir: std::path::PathBuf,
     ) -> Self {
         let idle_timeout = Duration::from_secs(config.idle_timeout_minutes * 60);
 
@@ -68,6 +72,7 @@ impl SessionMCPManager {
             server_configs,
             config,
             active_call_tokens: Arc::new(RwLock::new(HashMap::new())),
+            workspace_dir,
         }
     }
 
@@ -128,7 +133,12 @@ impl SessionMCPManager {
 
         debug!("Final spawn command: {} {:?}", final_command, final_args);
 
+        // Determine working directory: use the session workspace directory
+        let working_dir = &self.workspace_dir;
+        debug!("Spawning MCP server with CWD: {:?}", working_dir);
+
         let cmd = Command::new(&final_command).configure(|cmd| {
+            cmd.current_dir(working_dir);
             for arg in &final_args {
                 cmd.arg(arg);
             }
@@ -518,7 +528,12 @@ mod tests {
             http_connection_pool_size: 10,
         };
 
-        SessionMCPManager::new("test-session".to_string(), configs, config)
+        SessionMCPManager::new(
+            "test-session".to_string(),
+            configs,
+            config,
+            std::env::current_dir().unwrap(),
+        )
     }
 
     #[test]
@@ -662,7 +677,12 @@ mod tests {
             http_connection_pool_size: 10,
         };
 
-        let manager = SessionMCPManager::new("test".to_string(), configs, config);
+        let manager = SessionMCPManager::new(
+            "test".to_string(),
+            configs,
+            config,
+            std::env::current_dir().unwrap(),
+        );
         let server_config = manager.server_configs.get("npx-server").unwrap();
 
         match &server_config.transport {

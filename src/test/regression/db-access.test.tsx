@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { useMCPServerRegistry, MCPServerRegistryProvider } from '@/context/MCPServerRegistryContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { ReactNode } from 'react';
@@ -78,7 +78,9 @@ describe('DB Access Regression Tests', () => {
         };
 
         // Save the server - this should trigger refreshAll via revalidation event
-        await result.current.saveServer(newServer);
+        await act(async () => {
+            await result.current.saveServer(newServer);
+        });
 
         // After save, the context should have emitted a revalidation event
         // and called refreshAll, which should populate allServers
@@ -113,7 +115,9 @@ describe('DB Access Regression Tests', () => {
             updatedAt: new Date(),
         };
 
-        await result.current.saveServer(newServer);
+        await act(async () => {
+            await result.current.saveServer(newServer);
+        });
 
         await waitFor(
             () => {
@@ -125,7 +129,9 @@ describe('DB Access Regression Tests', () => {
         );
 
         // Now delete it - use the name since backend uses name as ID
-        await result.current.deleteServer('Test Server');
+        await act(async () => {
+            await result.current.deleteServer('Test Server');
+        });
 
         await waitFor(
             () => {

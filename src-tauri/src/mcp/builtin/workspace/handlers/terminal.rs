@@ -1,8 +1,7 @@
 use super::super::terminal_manager;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, not_found_error, operation_failed_error, ErrorGuidance, SuccessHint,
-    ToolGroup,
+    missing_param_error, operation_failed_error, ErrorGuidance, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -10,243 +9,6 @@ use serde_json::Value;
 /// Terminal/Process management handlers
 /// Extracted from mod.rs for better code organization
 impl WorkspaceServer {
-    /// Handle poll_process tool call
-    pub async fn handle_poll_process(
-        &self,
-        args: Value,
-        session_id: &str,
-    ) -> Result<MCPResult, String> {
-        // Parse processId
-        let process_id = match args.get("processId").and_then(|v| v.as_str()) {
-            Some(id) => id,
-            None => {
-                return Ok(missing_param_error("processId", ToolGroup::Workspace));
-            }
-        };
-
-        // Verify session access BEFORE write lock (optimization)
-        {
-            let registry = self.process_registry.read().await;
-            match registry.entries.get(process_id) {
-                Some(entry) if entry.session_id == session_id => {
-                    // Access granted, continue
-                }
-                _ => {
-                    // ✅ ENHANCED: Process-specific error with available process IDs for recovery
-                    let available: Vec<String> = registry
-                        .entries
-                        .values()
-                        .filter(|e| e.session_id == session_id)
-                        .take(5)
-                        .map(|e| format!("{} [{}]", e.id, e.command))
-                        .collect();
-
-                    let available_text = if available.is_empty() {
-                        "No processes found in this session".to_string()
-                    } else {
-                        format!("Available processes: {}", available.join(", "))
-                    };
-
-                    return Ok(operation_failed_error(
-                        "Poll Process",
-                        &format!("Process '{}' not found in session", process_id),
-                        vec![
-                            available_text,
-                            "Use listProcesses() to see all active processes".to_string(),
-                            "Process IDs are case-sensitive and must match exactly".to_string(),
-                        ],
-                        ToolGroup::Workspace,
-                    ));
-                }
-            }
-        }
-
-        // Update poll tracking and get entry + streaming handle (write lock)
-        let threshold = crate::config::poll_threshold();
-        let (should_show_guidance, entry_for_response, streaming_handle) = {
-            let mut registry = self.process_registry.write().await;
-            let entry_clone = if let Some(entry) = registry.entries.get_mut(process_id) {
-                let now = chrono::Utc::now();
-
-                // Update poll metadata
-                entry.last_poll_at = Some(now);
-                entry.poll_count += 1;
-
-                // Track consecutive running polls
-                let is_running = matches!(entry.status, terminal_manager::ProcessStatus::Running);
-                if is_running {
-                    if entry.first_running_poll_at.is_none() {
-                        entry.first_running_poll_at = Some(now);
-                    }
-                    entry.consecutive_running_polls += 1;
-                } else {
-                    // Reset counters when status changes from running
-                    entry.consecutive_running_polls = 0;
-                    entry.first_running_poll_at = None;
-                }
-
-                let should_guide = is_running && entry.consecutive_running_polls >= threshold;
-                (should_guide, entry.clone())
-            } else {
-                return Ok(not_found_error("Process", process_id, ToolGroup::Workspace));
-            };
-
-            // Get streaming handle after releasing entry borrow
-            let handle = registry.streaming_handles.get(process_id).cloned();
-            (entry_clone.0, entry_clone.1, handle)
-        };
-
-        // Build response
-        let mut response = serde_json::json!({
-            "process_id": entry_for_response.id,
-            "status": format!("{:?}", entry_for_response.status).to_lowercase(),
-            "command": entry_for_response.command,
-            "pid": entry_for_response.pid,
-            "exit_code": entry_for_response.exit_code,
-            "started_at": entry_for_response.started_at.to_rfc3339(),
-            "finished_at": entry_for_response.finished_at.map(|t| t.to_rfc3339()),
-            "stdout_size": entry_for_response.stdout_size,
-            "stderr_size": entry_for_response.stderr_size,
-            "streaming_available": streaming_handle.is_some(),
-        });
-
-        // Optional tail - check in-memory buffer first, fallback to file
-        let mut tail_output_display = String::new();
-
-        if let Some(tail_obj) = args.get("tail").and_then(|v| v.as_object()) {
-            let src = tail_obj
-                .get("src")
-                .and_then(|v| v.as_str())
-                .unwrap_or("stdout");
-            let n = tail_obj.get("n").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
-
-            let (lines, source) = if let Some(handle) = &streaming_handle {
-                // Fast path: get from in-memory buffer
-                let stream_type = if src == "stdout" {
-                    terminal_manager::StreamType::Stdout
-                } else {
-                    terminal_manager::StreamType::Stderr
-                };
-                (handle.get_tail(stream_type, n).await, "buffer")
-            } else {
-                // Fallback: read from file (process finished or old entry)
-                let file_path = if src == "stdout" {
-                    std::path::PathBuf::from(&entry_for_response.stdout_path)
-                } else {
-                    std::path::PathBuf::from(&entry_for_response.stderr_path)
-                };
-                match terminal_manager::tail_lines(&file_path, n).await {
-                    Ok(lines) => (lines, "file"),
-                    Err(e) => {
-                        tracing::warn!("Failed to read tail from file: {}", e);
-                        (Vec::new(), "error")
-                    }
-                }
-            };
-
-            if !lines.is_empty() {
-                tail_output_display = format!(
-                    "\n\n--- Output (last {} lines) ---\n{}",
-                    lines.len(),
-                    lines.join("\n")
-                );
-            }
-
-            response["tail"] = serde_json::json!({
-                "src": src,
-                "lines": lines,
-                "source": source,
-            });
-        }
-
-        // Add success hint based on process status
-        let status_str = format!("{:?}", entry_for_response.status).to_lowercase();
-
-        // ✅ FIXED: Include ALL critical details in text content for AI visibility
-        let status_details = format!(
-            "Process Status for {}:
-
-- Process ID: {}
-- Status: {}
-- Command: {}
-- PID: {}
-- Exit Code: {}
-- Started: {}
-- Finished: {}
-{}",
-            process_id,
-            entry_for_response.id,
-            status_str,
-            entry_for_response.command,
-            entry_for_response
-                .pid
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| "N/A".to_string()),
-            entry_for_response
-                .exit_code
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "N/A".to_string()),
-            entry_for_response.started_at.format("%Y-%m-%d %H:%M:%S"),
-            entry_for_response
-                .finished_at
-                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-                .unwrap_or_else(|| "Still running".to_string()),
-            if tail_output_display.is_empty() {
-                String::new()
-            } else {
-                format!("\n{}", tail_output_display)
-            }
-        );
-
-        let hint = SuccessHint::new(
-            status_details,
-            match entry_for_response.status {
-                terminal_manager::ProcessStatus::Running => vec![
-                    "Wait for process to complete before polling again".to_string(),
-                    format!(
-                        "Use readProcessOutput('{}', 'stdout') to view full output",
-                        process_id
-                    ),
-                ],
-                terminal_manager::ProcessStatus::Failed => vec![
-                    format!(
-                        "Use readProcessOutput('{}', 'stderr') to view error details",
-                        process_id
-                    ),
-                    "Process has completed - no need to poll again".to_string(),
-                ],
-                terminal_manager::ProcessStatus::Finished => vec![
-                    format!(
-                        "Use readProcessOutput('{}', 'stdout') to view full output",
-                        process_id
-                    ),
-                    "Process has completed - no need to poll again".to_string(),
-                ],
-                _ => vec!["Use listProcesses to see all processes".to_string()],
-            },
-        );
-
-        // Add warning if excessive polling detected
-        if should_show_guidance {
-            let warning = ErrorGuidance::with_guidance(
-                crate::mcp::builtin::error_guidance::ErrorCategory::InvalidState,
-                format!(
-                    "Excessive polling detected ({}/{} consecutive polls exceeds threshold)",
-                    entry_for_response.consecutive_running_polls, threshold
-                ),
-                vec![
-                    "Wait at least 10 seconds before next poll".to_string(),
-                    "Process will continue running in background".to_string(),
-                    "Status updates automatically when complete".to_string(),
-                ],
-                ToolGroup::Workspace,
-            );
-            Ok(warning.to_mcp_result())
-        } else {
-            Ok(hint.to_mcp_result_with_data(Some(response)))
-        }
-    }
-
     /// Handle read_process_output tool call
     pub async fn handle_read_process_output(
         &self,
@@ -271,6 +33,15 @@ impl WorkspaceServer {
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("tail");
 
         let lines = args.get("lines").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+
+        let start_line = args
+            .get("start_line")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let end_line = args
+            .get("end_line")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
 
         // Get process entry
         let registry = self.process_registry.read().await;
@@ -328,10 +99,14 @@ impl WorkspaceServer {
             std::path::PathBuf::from(&entry.stderr_path)
         };
 
-        // Read lines based on mode
-        let content = match mode {
-            "head" => terminal_manager::head_lines(&file_path, lines).await,
-            _ => terminal_manager::tail_lines(&file_path, lines).await,
+        // Read lines based on mode or range
+        let content = if let (Some(start), Some(end)) = (start_line, end_line) {
+            terminal_manager::read_lines_range(&file_path, start, end).await
+        } else {
+            match mode {
+                "head" => terminal_manager::head_lines(&file_path, lines).await,
+                _ => terminal_manager::tail_lines(&file_path, lines).await,
+            }
         };
 
         match content {
@@ -759,5 +534,174 @@ impl WorkspaceServer {
         });
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
+    }
+
+    /// Handle wait_for_process tool call (Merged pollProcess functionality)
+    /// timeout=0: Non-blocking check (equivalent to pollProcess)
+    /// timeout>0: Blocking wait usually until completion or timeout
+    pub async fn handle_wait_for_process(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<MCPResult, String> {
+        let process_id = match args.get("processId").and_then(|v| v.as_str()) {
+            Some(id) => id,
+            None => {
+                return Ok(missing_param_error("processId", ToolGroup::Workspace));
+            }
+        };
+
+        let timeout_secs = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        let start_time = std::time::Instant::now();
+        let is_polling_mode = timeout_secs == 0;
+
+        // Loop for blocking wait (or single iteration for polling)
+        loop {
+            // Check process status and update usage statistics if polling
+            let (status, entry_data, should_show_guidance) = {
+                let mut registry = self.process_registry.write().await;
+
+                if let Some(entry) = registry.entries.get_mut(process_id) {
+                    if entry.session_id != session_id {
+                        return Ok(operation_failed_error(
+                            "Wait For Process",
+                            &format!("Process '{}' not found in current session", process_id),
+                            vec!["Process belongs to another session".to_string()],
+                            ToolGroup::Workspace,
+                        ));
+                    }
+
+                    // Poll tracking logic (migrated from pollProcess)
+                    // We interpret every check as a "poll" for statistical purposes
+                    let now = chrono::Utc::now();
+                    entry.last_poll_at = Some(now);
+                    entry.poll_count += 1;
+
+                    let is_running =
+                        matches!(entry.status, terminal_manager::ProcessStatus::Running);
+                    if is_running {
+                        if entry.first_running_poll_at.is_none() {
+                            entry.first_running_poll_at = Some(now);
+                        }
+                        entry.consecutive_running_polls += 1;
+                    } else {
+                        entry.consecutive_running_polls = 0;
+                        entry.first_running_poll_at = None;
+                    }
+
+                    // Strict polling guidance only for 0-timeout calls to avoid blocking long-waits
+                    let threshold = crate::config::poll_threshold();
+                    let guidance = is_polling_mode
+                        && is_running
+                        && entry.consecutive_running_polls >= threshold;
+
+                    (entry.status.clone(), entry.clone(), guidance)
+                } else {
+                    // Check available processes for error recovery
+                    let available: Vec<String> = registry
+                        .entries
+                        .values()
+                        .filter(|e| e.session_id == session_id)
+                        .take(5)
+                        .map(|e| format!("{} [{}]", e.id, e.command))
+                        .collect();
+
+                    let available_text = if available.is_empty() {
+                        "No processes found in this session".to_string()
+                    } else {
+                        format!("Available processes: {}", available.join(", "))
+                    };
+
+                    return Ok(operation_failed_error(
+                        "Wait For Process",
+                        &format!("Process '{}' not found in session", process_id),
+                        vec![
+                            available_text,
+                            "Use listProcesses() to see all active processes".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    ));
+                }
+            };
+
+            // 1. Success Condition: Process Finished (Always return immediately)
+            if matches!(
+                status,
+                terminal_manager::ProcessStatus::Finished
+                    | terminal_manager::ProcessStatus::Failed
+                    | terminal_manager::ProcessStatus::Killed
+            ) {
+                let response = serde_json::json!({
+                    "process_id": process_id,
+                    "status": format!("{:?}", status).to_lowercase(),
+                    "command": entry_data.command,
+                    "exit_code": entry_data.exit_code,
+                    "pid": entry_data.pid,
+                    "started_at": entry_data.started_at.to_rfc3339(),
+                    "finished_at": entry_data.finished_at.map(|t| t.to_rfc3339()),
+                });
+
+                return Ok(SuccessHint::new(
+                    format!("Process {} finished with status: {:?}", process_id, status),
+                    vec!["Use readProcessOutput to see results".to_string()],
+                )
+                .to_mcp_result_with_data(Some(response)));
+            }
+
+            // 2. Polling Mode: Return current status immediately (even if Running)
+            if is_polling_mode {
+                let response = serde_json::json!({
+                    "process_id": process_id,
+                    "status": format!("{:?}", status).to_lowercase(),
+                    "command": entry_data.command,
+                    "exit_code": entry_data.exit_code,
+                    "pid": entry_data.pid,
+                    "started_at": entry_data.started_at.to_rfc3339(),
+                    // finished_at is None if running
+                    "finished_at": entry_data.finished_at.map(|t| t.to_rfc3339()),
+                });
+
+                if should_show_guidance {
+                    return Ok(ErrorGuidance::with_guidance(
+                        crate::mcp::builtin::error_guidance::ErrorCategory::InvalidState,
+                        "Excessive polling detected".to_string(),
+                        vec![
+                            "Wait a few seconds before checking again".to_string(),
+                            "Or use waitForProcess with a non-zero timeout".to_string(),
+                        ],
+                        ToolGroup::Workspace,
+                    )
+                    .to_mcp_result());
+                }
+
+                return Ok(SuccessHint::new(
+                    format!("Process {} is currently {:?}", process_id, status),
+                    vec!["Process is still running".to_string()],
+                )
+                .to_mcp_result_with_data(Some(response)));
+            }
+
+            // 3. Timeout Check (Blocking Mode only)
+            if start_time.elapsed() >= timeout {
+                return Ok(ErrorGuidance::with_guidance(
+                    crate::mcp::builtin::error_guidance::ErrorCategory::Timeout,
+                    format!(
+                        "Timeout waiting for process {} ({}s)",
+                        process_id, timeout_secs
+                    ),
+                    vec![
+                        "Process is still running in background".to_string(),
+                        "Use waitForProcess(timeout=0) to check status without waiting".to_string(),
+                        "Increase timeout parameter if needed".to_string(),
+                    ],
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+
+            // 4. Wait before next loop iteration
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
 }

@@ -41,8 +41,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-background border border-border rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80%] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-background border border-border rounded-lg shadow-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <h2 className="text-lg font-bold text-foreground">
             Available Tools {totalCount}({mcpCount})

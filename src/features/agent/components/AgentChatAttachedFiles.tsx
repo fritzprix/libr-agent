@@ -24,9 +24,9 @@ export function AgentChatAttachedFiles() {
         <Paperclip className="w-4 h-4" />
         <span>Attached Files:</span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <ul className="flex flex-wrap gap-2" aria-label="Attached files">
         {attachedFiles.map((file) => (
-          <div
+          <li
             key={file.contentId}
             className="flex items-center px-2 py-1 rounded-md border border-border bg-muted/20"
           >
@@ -37,12 +37,14 @@ export function AgentChatAttachedFiles() {
               size="icon"
               onClick={() => removeAttachedFile(file)}
               className="ml-1 h-6 w-6"
+              title={`Remove ${file.filename}`}
+              aria-label={`Remove ${file.filename}`}
             >
               <X className="w-4 h-4" />
             </Button>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

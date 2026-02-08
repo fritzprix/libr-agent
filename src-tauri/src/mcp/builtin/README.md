@@ -1,46 +1,75 @@
-# MCP Built-in Server Module 개발 가이드
+# MCP Built-in Server Module Development Guide
 
-LibrAgent의 Rust MCP 서버는 확장성을 위해 모듈화되어 있습니다. 이 가이드는 새로운 MCP 서버 모듈을 추가하는 방법을 구체적인 예시와 함께 설명합니다.
+The Rust MCP server in LibrAgent is modularized for extensibility. This guide explains how to add new MCP server modules with concrete examples.
 
-## 📁 현재 모듈 구조
+## 📁 Current Module Structure
 
 ```text
 src-tauri/src/mcp/builtin/
-├── mod.rs           # 서버 트레이트 정의 및 레지스트리
-├── filesystem.rs    # 파일시스템 MCP 서버
-├── sandbox.rs       # 코드 실행 MCP 서버
-├── utils.rs         # 공통 유틸리티 (보안, 상수 등)
-└── README.md        # 이 가이드
+├── mod.rs                # Server trait definitions and registry
+├── assistant/            # Assistant role management
+├── bootstrap/            # Shared initialization and bootstrap helpers
+├── browser/              # Headless browser automation
+├── browser_content_store.rs # Browser-aware content store bridge
+├── content_store/        # Content storage and retrieval
+├── error_guidance.rs     # Error analysis and guidance utilities
+├── knowledge/            # Semantic search and memory
+├── mcp_manager/          # MCP server management
+├── planning/             # Task planning and tracking
+├── playbook/             # Workflow automation
+├── skills/               # Reusable capabilities
+├── ui/                   # UI interaction tools
+├── workspace/            # Terminal, File Manager, Code Execution
+├── utils.rs              # Common utilities
+└── README.md             # This guide
 ```
 
-## 🏗️ MCP 서버 모듈 아키텍처
+## 🏗️ MCP Server Module Architecture
 
-### 핵심 트레이트: `BuiltinMCPServer`
+### Core Trait: `BuiltinMCPServer`
 
-모든 MCP 서버는 다음 트레이트를 구현해야 합니다:
+All MCP servers must implement the following trait:
 
 ```rust
 #[async_trait]
-pub trait BuiltinMCPServer: Send + Sync {
-    fn name(&self) -> &str;                          // 서버 이름 (예: "builtin.example")
-    fn description(&self) -> &str;                   // 서버 설명
-    fn version(&self) -> &str { "1.0.0" }           // 버전 (기본값 제공)
-    fn tools(&self) -> Vec<MCPTool>;                 // 제공하는 도구 목록
-    async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse; // 도구 실행
+pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
+    fn name(&self) -> &str;                          // Server name (e.g., "workspace")
+    fn description(&self) -> &str;                   // Server description
+    fn version(&self) -> &str { "1.0.0" }           // Version (default provided)
+
+    // Returns a list of tools provided by this server
+    fn tools(&self) -> Vec<MCPTool>;
+
+    // Executes a tool
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        session_id: Option<String>
+    ) -> Result<MCPResult, String>;
+
+    // Returns the service context (optional)
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        // Default implementation
+        ServiceContext {
+            context_prompt: String::new(),
+            structured_state: None,
+        }
+    }
 }
 ```
 
-### 도구 네이밍 규칙
+### Tool Naming Conventions
 
-- **서버 내부**: 도구명만 사용 (예: `"echo"`)
-- **레지스트리**: 자동으로 `서버명__도구명` 형태로 변환 (예: `"builtin.example__echo"`)
-- **프론트엔드**: `"builtin.example__echo"` 형태로 호출
+- **Internal**: Use simple names (e.g., `"echo"`).
+- **Registry**: Tools are exposed with IDs in the form `builtin_{server_id}__{tool_name}` (e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`).
+- **Frontend**: Call tools using the same ID format, e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`.
 
-## 🚀 새 MCP 서버 모듈 추가 단계별 가이드
+## 🚀 Step-by-Step Guide to Adding a New MCP Server Module
 
-### 1단계: 새 서버 파일 생성
+### Step 1: Create a New Server File
 
-예시: `example.rs` 파일을 생성합니다.
+Example: Create `example.rs`.
 
 ```rust
 // src-tauri/src/mcp/builtin/example.rs
@@ -48,27 +77,22 @@ pub trait BuiltinMCPServer: Send + Sync {
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tracing::{error, info};
+use tracing::{info, error};
 
-use super::{
-    utils::{constants::MAX_FILE_SIZE, SecurityValidator},
-    BuiltinMCPServer,
-};
-use crate::mcp::{JSONSchema, JSONSchemaType, MCPError, MCPResponse, MCPTool};
+use super::BuiltinMCPServer;
+use crate::mcp::types::{MCPResult, ServiceContext, MCPContent};
+use crate::mcp::{JSONSchema, JSONSchemaType, MCPTool};
 
-/// 예시 MCP 서버 - 문자열 처리 도구들을 제공
-pub struct ExampleServer {
-    security: SecurityValidator,
-}
+/// Example MCP Server providing text processing tools
+#[derive(Debug)]
+pub struct ExampleServer;
 
 impl ExampleServer {
     pub fn new() -> Self {
-        Self {
-            security: SecurityValidator::default(),
-        }
+        Self
     }
 
-    /// Echo 도구 정의 - 입력된 텍스트를 그대로 반환
+    /// Define the Echo tool
     fn create_echo_tool() -> MCPTool {
         MCPTool {
             name: "echo".to_string(),
@@ -114,128 +138,29 @@ impl ExampleServer {
         }
     }
 
-    /// 대문자 변환 도구 정의
-    fn create_uppercase_tool() -> MCPTool {
-        MCPTool {
-            name: "uppercase".to_string(),
-            title: Some("Convert to Uppercase".to_string()),
-            description: "Convert input text to uppercase".to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some({
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "text".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(1000),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some("Text to convert to uppercase".to_string()),
-                                default: None,
-                                examples: Some(vec![json!("hello world")]),
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props
-                    }),
-                    required: Some(vec!["text".to_string()]),
-                    additional_properties: Some(false),
-                    min_properties: None,
-                    max_properties: None,
-                },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
-            output_schema: None,
-            annotations: None,
-        }
-    }
-
-    /// Echo 도구 실행 함수
-    async fn handle_echo(&self, args: Value) -> MCPResponse {
-        let request_id = Some(Value::String(uuid::Uuid::new_v4().to_string()));
-
-        let text = match args.get("text").and_then(|v| v.as_str()) {
-            Some(text) => text,
-            None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: request_id,
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter 'text'".to_string(),
-                        data: Some(json!({"parameter": "text"})),
-                    }),
-                };
-            }
-        };
+    /// Handle Echo tool execution
+    async fn handle_echo(&self, args: Value) -> Result<MCPResult, String> {
+        let text = args.get("text")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing required parameter 'text'".to_string())?;
 
         info!("Echo tool called with text: {}", text);
 
-        MCPResponse {
-            jsonrpc: "2.0".to_string(),
-            id: request_id,
-            result: Some(json!({
-                "content": [{
-                    "type": "text",
-                    "text": text
-                }]
-            })),
-            error: None,
-        }
-    }
-
-    /// 대문자 변환 도구 실행 함수
-    async fn handle_uppercase(&self, args: Value) -> MCPResponse {
-        let request_id = Some(Value::String(uuid::Uuid::new_v4().to_string()));
-
-        let text = match args.get("text").and_then(|v| v.as_str()) {
-            Some(text) => text,
-            None => {
-                return MCPResponse {
-                    jsonrpc: "2.0".to_string(),
-                    id: request_id,
-                    result: None,
-                    error: Some(MCPError {
-                        code: -32602,
-                        message: "Missing required parameter 'text'".to_string(),
-                        data: Some(json!({"parameter": "text"})),
-                    }),
-                };
-            }
-        };
-
-        let uppercase_text = text.to_uppercase();
-        info!("Uppercase tool called, converted '{}' to '{}'", text, uppercase_text);
-
-        MCPResponse {
-            jsonrpc: "2.0".to_string(),
-            id: request_id,
-            result: Some(json!({
-                "content": [{
-                    "type": "text",
-                    "text": uppercase_text
-                }]
-            })),
-            error: None,
-        }
+        Ok(MCPResult {
+            content: Some(vec![MCPContent::Text {
+                text: text.to_string(),
+                is_error: None,
+            }]),
+            is_error: Some(false),
+            structured_content: None,
+        })
     }
 }
 
 #[async_trait]
 impl BuiltinMCPServer for ExampleServer {
     fn name(&self) -> &str {
-        "builtin.example"
+        "example"
     }
 
     fn description(&self) -> &str {
@@ -243,103 +168,49 @@ impl BuiltinMCPServer for ExampleServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        vec![
-            Self::create_echo_tool(),
-            Self::create_uppercase_tool(),
-        ]
+        vec![Self::create_echo_tool()]
     }
 
-    async fn call_tool(&self, tool_name: &str, args: Value) -> MCPResponse {
+    async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+        _session_id: Option<String>,
+    ) -> Result<MCPResult, String> {
         match tool_name {
             "echo" => self.handle_echo(args).await,
-            "uppercase" => self.handle_uppercase(args).await,
-            _ => MCPResponse {
-                jsonrpc: "2.0".to_string(),
-                id: Some(Value::String(uuid::Uuid::new_v4().to_string())),
-                result: None,
-                error: Some(MCPError {
-                    code: -32601,
-                    message: format!("Tool '{}' not found", tool_name),
-                    data: Some(json!({"available_tools": ["echo", "uppercase"]})),
-                }),
-            },
+            _ => Err(format!("Tool '{}' not found", tool_name)),
         }
-    }
-}
-
-impl Default for ExampleServer {
-    fn default() -> Self {
-        Self::new()
     }
 }
 ```
 
-### 2단계: `mod.rs`에 모듈 등록
+### Step 2: Register in `mod.rs`
 
 ```rust
 // src-tauri/src/mcp/builtin/mod.rs
 
-use crate::mcp::{MCPResponse, MCPTool};
-use async_trait::async_trait;
-use serde_json::Value;
+pub mod example; // Add module
 
-pub mod filesystem;
-pub mod sandbox;
-pub mod utils;
-pub mod example; // 새 모듈 추가
-
-// ... 트레이트 정의 ...
-
-impl BuiltinServerRegistry {
-    pub fn new() -> Self {
-        let mut registry = Self {
-            servers: std::collections::HashMap::new(),
-        };
-
-        // Register built-in servers
-        registry.register_server(Box::new(filesystem::FilesystemServer::new()));
-        registry.register_server(Box::new(sandbox::SandboxServer::new()));
-        registry.register_server(Box::new(example::ExampleServer::new())); // 새 서버 등록
-
-        registry
-    }
-    
-    // ... 나머지 코드 ...
-}
+// In BuiltinServerRegistry::new_with_session_manager (or similar)
+registry.register_server(Box::new(example::ExampleServer::new()));
 ```
 
-### 3단계: 빌드 및 테스트
+## 🔧 Frontend Integration
 
-```bash
-# Rust 코드 포맷팅
-cd src-tauri
-cargo fmt
+### Automatic Tool Detection
 
-# 린팅 확인
-cargo clippy
+The frontend automatically detects new tools:
+- `builtin_example__echo`
 
-# 빌드 테스트
-cargo build
-```
-
-## 🔧 프론트엔드 연동
-
-### 자동 도구 감지
-
-프론트엔드는 자동으로 새 도구들을 감지합니다:
-
-- `builtin.example__echo`
-- `builtin.example__uppercase`
-
-### 도구 호출 예시
+### Tool Call Example
 
 ```typescript
-// 프론트엔드에서 도구 호출
 const toolCall = {
   id: "req-123",
   type: "function",
   function: {
-    name: "builtin.example__echo",
+    name: "builtin_example__echo",
     arguments: JSON.stringify({ text: "Hello, LibrAgent!" })
   }
 };
@@ -347,118 +218,12 @@ const toolCall = {
 const response = await executeToolCall(toolCall);
 ```
 
-## 📋 개발 체크리스트
+## 🛡️ Security Considerations
 
-### ✅ 필수 구현 사항
-
-- [ ] `BuiltinMCPServer` 트레이트 구현
-- [ ] 고유한 서버 이름 설정 (`builtin.` prefix 사용)
-- [ ] 각 도구별 `MCPTool` 정의 (스키마 포함)
-- [ ] 도구 실행 함수 구현
-- [ ] 에러 처리 및 로깅
-- [ ] `mod.rs`에 서버 등록
-
-### ✅ 권장 사항
-
-- [ ] 입력 검증 및 보안 처리
-- [ ] 명확한 에러 메시지
-- [ ] 상세한 도구 설명 및 예시
-- [ ] 단위 테스트 작성
-- [ ] 문서화
-
-## 🛡️ 보안 고려사항
-
-### SecurityValidator 사용
-
-파일 시스템 접근이 필요한 경우 `SecurityValidator`를 사용하세요:
-
-```rust
-use super::utils::SecurityValidator;
-
-impl YourServer {
-    pub fn new() -> Self {
-        Self {
-            security: SecurityValidator::default(),
-        }
-    }
-    
-    async fn handle_file_operation(&self, path: &str) -> MCPResponse {
-        match self.security.validate_path(path) {
-            Ok(safe_path) => {
-                // 안전한 경로로 파일 작업 수행
-            }
-            Err(e) => {
-                // 보안 에러 처리
-            }
-        }
-    }
-}
-```
-
-### 입력 크기 제한
-
-```rust
-use super::utils::constants::MAX_FILE_SIZE;
-
-// 문자열 길이 제한
-schema_type: JSONSchemaType::String {
-    max_length: Some(MAX_FILE_SIZE as u32),
-    // ...
-}
-```
-
-## 🔍 디버깅 팁
-
-### 로깅 활용
-
-```rust
-use tracing::{debug, info, warn, error};
-
-async fn handle_tool(&self, args: Value) -> MCPResponse {
-    info!("Tool called with args: {:?}", args);
-    debug!("Processing tool logic...");
-    
-    match result {
-        Ok(data) => {
-            info!("Tool execution successful");
-            // 성공 응답
-        }
-        Err(e) => {
-            error!("Tool execution failed: {}", e);
-            // 에러 응답
-        }
-    }
-}
-```
-
-### 일반적인 문제 해결
-
-1. **도구가 프론트엔드에 나타나지 않는 경우**
-   - `mod.rs`에 모듈이 등록되었는지 확인
-   - 서버 이름이 고유한지 확인
-   - 빌드 에러가 없는지 확인
-
-2. **도구 호출이 실패하는 경우**
-   - 입력 스키마와 실제 파라미터가 일치하는지 확인
-   - 에러 로그 확인
-   - JSON 직렬화/역직렬화 문제 확인
-
-## 📚 추가 참고 자료
-
-- **기존 구현 참고**: `filesystem.rs`, `sandbox.rs`
-- **유틸리티 함수**: `utils.rs`
-- **MCP 타입 정의**: `src-tauri/src/mcp/mod.rs`
-- **프론트엔드 연동**: `src/context/BuiltInToolContext.tsx`
-
-## 🤝 기여 가이드
-
-새로운 MCP 서버 모듈을 개발했다면:
-
-1. 코드 품질 확인 (`cargo fmt`, `cargo clippy`)
-2. 테스트 작성 및 실행
-3. 문서화 업데이트
-4. Pull Request 제출
+- Validate all inputs.
+- Use `SecurityValidator` (if available) for file system operations.
+- Ensure proper error handling and logging using `tracing`.
 
 ---
 
-**참고**: 이 가이드는 LibrAgent 프로젝트의 현재 아키텍처를 기반으로 작성되었습니다. 프로젝트 구조 변경 시 가이드도 함께 업데이트해야 합니다.
+**Note**: This guide is based on the current architecture of LibrAgent.

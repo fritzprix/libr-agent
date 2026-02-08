@@ -14,7 +14,7 @@ import {
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, RustMessage, AttachmentReference } from '@/models/chat';
 
 const logger = getLogger('AgentChatContext');
 
@@ -130,6 +130,9 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   // Agent Mode state (local UI state, synced to LLMService)
   const [agentModeEnabled, setAgentModeEnabled] = useState(false);
 
+  // Pending messages queue for busy state
+  const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
+
   // Sync agent mode to LLMServiceContext when session or toggle changes
   useEffect(() => {
     if (session?.id) {
@@ -141,6 +144,120 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   useEffect(() => {
     setAgentModeEnabled(false);
   }, [session?.id]);
+
+  // Process pending messages when workflow becomes idle
+  useEffect(() => {
+    // Only process if idle, we have pending messages, and session is loaded
+    if (
+      workflowStatus === 'idle' &&
+      pendingMessages.length > 0 &&
+      !isSessionLoading &&
+      session?.id
+    ) {
+      logger.info('Processing pending messages queue', {
+        count: pendingMessages.length,
+      });
+
+      // 1. Concatenate text content
+      const textParts: string[] = [];
+      const allAttachments: AttachmentReference[] = []; // Use explicit type for attachment merging if needed
+
+      pendingMessages.forEach((msg) => {
+        // Extract text
+        if (msg.content) {
+          msg.content.forEach((c) => {
+            if (c.type === 'text') {
+              textParts.push(c.text);
+            }
+          });
+        }
+        // Extract attachments (if any)
+        if (msg.attachments) {
+          allAttachments.push(...msg.attachments);
+        }
+      });
+
+      const combinedText = textParts.join('\n');
+
+      if (!combinedText.trim() && allAttachments.length === 0) {
+        setPendingMessages([]); // Nothing to send
+        return;
+      }
+
+      // 2. Create merged message
+      // We use the ID of the first message to maintain some continuity, or a new one
+      const mergedMessage: Message = {
+        ...pendingMessages[0], // Base on first message
+        id: `msg_${Date.now()}`,
+        content: [{ type: 'text', text: combinedText }],
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // 3. Clear queue first to prevent double processing during async submit
+      setPendingMessages([]);
+
+      // 4. Submit merged message
+      // We call the internal submit logic directly to avoid re-queueing
+      submitMergedMessage(mergedMessage).catch((err) => {
+        logger.error('Failed to submit merged pending messages', err);
+        // On error, restore queue? Or just error out.
+        // For now, we assume global error handling.
+      });
+    }
+  }, [workflowStatus, pendingMessages, isSessionLoading, session?.id]);
+
+  /**
+   * Internal submit handler for merged messages
+   * (Separated to avoid circular dependency in 'submit' which uses the queue)
+   */
+  const submitMergedMessage = useCallback(
+    async (message: Message) => {
+      if (!session?.id) return;
+
+      logger.info('Submitting merged message', {
+        sessionId: session.id,
+        messageId: message.id,
+      });
+
+      try {
+        const now = Date.now();
+        const messageForRust: RustMessage = {
+          ...message,
+          toolCalls: message.tool_calls,
+          toolCallId: message.tool_call_id,
+          createdAt:
+            message.createdAt instanceof Date
+              ? message.createdAt.getTime()
+              : message.createdAt || now,
+          updatedAt:
+            message.updatedAt instanceof Date
+              ? message.updatedAt.getTime()
+              : message.updatedAt ||
+                (message.createdAt instanceof Date
+                  ? message.createdAt.getTime()
+                  : message.createdAt) ||
+                now,
+        };
+
+        await invoke('agent_send_message', {
+          request: {
+            sessionId: session.id,
+            message: messageForRust,
+          },
+        });
+
+        addMessage(message);
+      } catch (err) {
+        logger.error('Failed to submit merged message', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        setError(errorMessage);
+        throw err;
+      }
+    },
+    [session?.id, addMessage, setError],
+  );
 
   // Fetch service contexts from backend
   const updateServiceContexts = useCallback(async () => {
@@ -196,29 +313,34 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   }, [session?.id, streamingMessages]);
 
   /**
-   * Merge persisted messages with streaming messages from LLMServiceContext
-   * We use sessionMessages directly now, merging only the streaming tail.
+   * Merge persisted messages with streaming messages AND pending messages
    */
   const displayMessages = useMemo(() => {
     if (!session?.id) return [];
+
+    let displayed = [...sessionMessages];
+
+    // Append pending messages (optimistic UI)
+    if (pendingMessages.length > 0) {
+      displayed = [...displayed, ...pendingMessages];
+    }
 
     // If there's a streaming message that's not yet in persisted messages
     if (
       isValidMessage(currentStreamingMessage) &&
       currentStreamingMessage.isStreaming !== false
     ) {
-      const existsInMessages = sessionMessages.some(
+      const existsInMessages = displayed.some(
         (m) => m.id === currentStreamingMessage.id,
       );
       if (!existsInMessages) {
         // Show streaming message alongside persisted messages
-        return [...sessionMessages, currentStreamingMessage];
+        displayed.push(currentStreamingMessage);
       }
     }
 
-    // Return persisted messages only
-    return sessionMessages;
-  }, [sessionMessages, currentStreamingMessage, session?.id]);
+    return displayed;
+  }, [sessionMessages, pendingMessages, currentStreamingMessage, session?.id]);
 
   /**
    * Submit a user message to the agent workflow
@@ -231,60 +353,29 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         return;
       }
 
+      // Check if we should queue
+      if (
+        workflowStatus === 'busy' ||
+        workflowStatus === 'paused' ||
+        isSessionLoading
+      ) {
+        logger.info('Agent busy/paused, queueing message', {
+          status: workflowStatus,
+          messageId: message.id,
+        });
+        setPendingMessages((prev) => [...prev, message]);
+        return;
+      }
+
       logger.info('Submitting message to agent workflow', {
         sessionId: session.id,
         messageId: message.id,
       });
 
-      try {
-        /*
-         * Note: We don't need to manually update local state or isLoading here.
-         * The 'agent:event' listener in AgentSessionContext will pick up 'statusChanged'
-         * (busy) and 'messageAdded' events from the backend and update the shared state.
-         *
-         * However, for optimistic UI, we could technically append to messages in SessionContext
-         * but sticking to "event driven" is cleaner.
-         * To keep UI responsive, we rely on the backend sending events immediately.
-         */
-
-        // Convert Date objects to Unix timestamps for Rust backend
-        const now = Date.now();
-        const messageForRust: RustMessage = {
-          ...message,
-          toolCalls: message.tool_calls,
-          toolCallId: message.tool_call_id,
-          createdAt:
-            message.createdAt instanceof Date
-              ? message.createdAt.getTime()
-              : message.createdAt || now,
-          updatedAt:
-            message.updatedAt instanceof Date
-              ? message.updatedAt.getTime()
-              : message.updatedAt ||
-                (message.createdAt instanceof Date
-                  ? message.createdAt.getTime()
-                  : message.createdAt) ||
-                now,
-        };
-
-        // Delegate to Rust backend (Rust will save the message to DB)
-        await invoke('agent_send_message', {
-          request: {
-            sessionId: session.id,
-            message: messageForRust,
-          },
-        });
-
-        addMessage(message);
-      } catch (err) {
-        logger.error('Failed to submit message', err);
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        setError(errorMessage);
-        // Error state handled by AgentSessionContext via workflowError event or we could set it locally if needed,
-        // but typically we let the global error handler work.
-      }
+      // Delegate to internal logic which handles error state and re-throws
+      await submitMergedMessage(message);
     },
-    [session?.id],
+    [session?.id, workflowStatus, isSessionLoading, submitMergedMessage],
   );
 
   /**
@@ -350,6 +441,9 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     logger.info('Cancelling workflow', { sessionId: session.id });
+
+    // Also clear pending messages
+    setPendingMessages([]);
 
     try {
       await invoke('agent_terminate_workflow', {

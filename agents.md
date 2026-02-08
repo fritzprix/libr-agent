@@ -12,7 +12,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 - System Prompt: Define custom AI personalities for each role.
 - Real-time MCP Connection: Run local MCP servers via stdio protocol.
 - Tool Calling System: Call tools from the MCP server in real-time.
-- IndexedDB Storage: Store roles/conversations in a browser local database.
+- SQLite Storage: Store roles/conversations in a local SQLite database via SeaORM.
 - Tauri Backend: High-performance native desktop app framework.
 - UI Components: Modern terminal-style interface.
 - Centralized Configuration Management: All settings, including API keys, models, and message window sizes, are managed and permanently stored within the app.
@@ -26,7 +26,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 - TypeScript
 - RMCP (Rust-based Model Context Protocol client)
 - Tailwind CSS
-- IndexedDB
+- SQLite (SeaORM)
 - Vite
 
 ## Development Scripts & Workflow
@@ -404,10 +404,10 @@ pub struct MCPResult {
 
 ### Frontend Dependencies
 
-- `react`: Version 18.x - UI library
-- `react-dom`: Version 18.x - React DOM renderer
-- `typescript`: Version 5.x - Type safety
-- `vite`: Version 4.x - Build tool and dev server
+- `react`: Version 18.3.1 - UI library
+- `react-dom`: Version 18.3.1 - React DOM renderer
+- `typescript`: Version 5.6.x - Type safety
+- `vite`: Version 6.x - Build tool and dev server
 - `tailwindcss`: Version 4.x - Utility-first CSS framework
 
 ### Backend Dependencies (Rust)
@@ -570,5 +570,5 @@ These steps must be completed successfully before considering any refactoring ta
 ## References
 
 - [Chat Feature Architecture & Implementation Manual](docs/architecture/chat-feature-architecture.md)
-- [Built-in Tools Documentation](docs/builtin-tools.md)
+- [Built-in Tools Documentation](src-tauri/src/mcp/builtin/README.md)
 - [UI Resource Implementation Guide](docs/guides/ui-resource-implementation.md)

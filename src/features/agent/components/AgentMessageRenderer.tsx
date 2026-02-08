@@ -18,6 +18,7 @@ import { extractServiceInfoFromContent } from '@/lib/mcp';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { useClipboard } from '@/hooks/useClipboard';
 import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
 import { Highlight, themes } from 'prism-react-renderer';
 import { useTheme } from 'next-themes';
 import {
@@ -121,6 +122,53 @@ const CodeBlock = memo(
 );
 
 CodeBlock.displayName = 'CodeBlock';
+
+// Memoized markdown text component to prevent re-renders when parent updates
+const MarkdownText = memo(
+  ({
+    content,
+    components,
+  }: {
+    content: string;
+    components: React.ComponentProps<typeof ReactMarkdown>['components'];
+  }) => {
+    const { copied, copyToClipboard } = useClipboard();
+
+    const handleCopy = useCallback(async () => {
+      try {
+        await copyToClipboard(content);
+      } catch (err) {
+        logger.error('Failed to copy text content', err);
+        toast.error('Failed to copy content to clipboard');
+      }
+    }, [content, copyToClipboard]);
+
+    return (
+      <div className="group relative text-sm leading-relaxed break-words">
+        {/* Copy button for individual text */}
+        <button
+          onClick={handleCopy}
+          className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 z-10"
+          aria-label="Copy text content"
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+
+        <ReactMarkdown
+          skipHtml={false}
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={components}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    );
+  },
+);
+
+MarkdownText.displayName = 'MarkdownText';
 
 // Helper type to avoid implicit any in markdown components
 type MarkdownReflessProps<T extends React.ElementType> =
@@ -270,7 +318,6 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   expandResources = false,
   toolResultsMap,
 }) => {
-  const { copied, copyToClipboard } = useClipboard();
   const { openExternalUrl } = useRustBackend(); // Removed callToolUnified
   const { submit, injectMessages } = useAgentChatActions();
   const { session } = useAgentSessionState();
@@ -764,35 +811,11 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             const textItem = contentItem as { text: string };
 
             return (
-              <div
+              <MarkdownText
                 key={itemKey}
-                className="group relative text-sm leading-relaxed break-words"
-              >
-                {/* Copy button for individual text */}
-                <button
-                  onClick={async () => {
-                    try {
-                      await copyToClipboard(textItem.text);
-                    } catch (err) {
-                      logger.error('Failed to copy text content', err);
-                    }
-                  }}
-                  className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 z-10"
-                  aria-label="Copy text content"
-                >
-                  {copied ? <Check size={12} /> : <Copy size={12} />}
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-
-                <ReactMarkdown
-                  skipHtml={false}
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
-                  components={markdownComponents}
-                >
-                  {textItem.text}
-                </ReactMarkdown>
-              </div>
+                content={textItem.text}
+                components={markdownComponents}
+              />
             );
           }
           case 'resource': {

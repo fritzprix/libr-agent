@@ -587,13 +587,13 @@ impl BuiltinMCPServer for WorkspaceServer {
             "exportFile" => self.handle_export_file(args, session_id).await,
             "exportZip" => self.handle_export_zip(args, session_id).await,
             // Terminal/Process management tools
-            "pollProcess" => self.handle_poll_process(args, &target_session_id).await,
             "readProcessOutput" => {
                 self.handle_read_process_output(args, &target_session_id)
                     .await
             }
             "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
             "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
+            "waitForProcess" => self.handle_wait_for_process(args, &target_session_id).await,
 
             _ => Err(format!("Tool '{tool_name}' not found")),
         }

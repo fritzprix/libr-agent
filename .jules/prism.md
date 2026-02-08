@@ -99,3 +99,11 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-28 - [AgentMessageRenderer] **Visual Bug:** Hardcoded link color (text-blue-600) **Fix:** Use semantic token (text-primary)
 
 ## 2026-01-28 - [TextareaWithLabel] **Visual Bug:** Hardcoded error border color (border-red-400) **Fix:** Use semantic token (border-destructive)
+
+## 2026-01-28 - [AgentToolsModal] **Visual Bug:** Hardcoded overlay/height **Fix:** Use standard overlay and viewport units
+
+## 2026-01-28 - [AgentDraftChatView] **Visual Bug:** Inconsistent border radius **Fix:** Use standard rounded-xl
+
+## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Inline recursive rendering **Fix:** Extracted FileTreeNode component
+
+## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Accessibility violation (div with onClick) **Fix:** Use semantic button element

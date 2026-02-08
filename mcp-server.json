@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mcp-hn": {
+      "command": "uvx",
+      "args": ["mcp-hn"]
+    },
+    "yfinance": {
+      "command": "uvx",
+      "args": ["yfin-mcp"]
+    },
+    "ddg-search": {
+      "command": "uvx",
+      "args": ["duckduckgo-mcp-server"]
+    }
+  }
+}

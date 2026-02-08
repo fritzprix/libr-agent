@@ -14,3 +14,18 @@
 
 **Drift:** Groq section contained Python code labeled as JavaScript. Hallucinated model names found: `claude-sonnet-4-20250514`, `qwen/qwen3-32b`.
 **Reality:** Replaced with functional JavaScript examples using `groq-sdk`. Updated models to `claude-3-5-sonnet-20241022`, `deepseek-r1-distill-llama-70b`, `llama-3.3-70b-versatile`.
+
+## 2026-03-01 - README.md
+
+**Drift:** Claims "IndexedDB for local state storage". Lists incomplete built-in tools (missing Knowledge, Skills, etc.).
+**Reality:** Local state storage now uses SQLite via SeaORM. Built-in tools include Browser, Workspace (Terminal/Files/Code), Planning, Knowledge, Skills, Playbook, Assistant.
+
+## 2026-03-01 - agents.md
+
+**Drift:** Claims "IndexedDB Storage", "Vite 4.x". References `rmcp` (correct, but clarify version/context). References missing `docs/builtin-tools.md`.
+**Reality:** Storage is SQLite via SeaORM. Vite is version 6.x. Documentation for built-in tools is scattered or outdated.
+
+## 2026-03-01 - src-tauri/src/mcp/builtin/README.md
+
+**Drift:** Lists outdated modules (`filesystem.rs`, `sandbox.rs`). Uses incorrect `BuiltinMCPServer` trait signature in examples. Written in Korean (violates project language policy).
+**Reality:** Modules are `browser`, `workspace`, etc. Trait signature includes `session_id` and returns `Result<MCPResult, String>`. Documentation must be in English.

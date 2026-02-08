@@ -327,8 +327,15 @@ impl MCPServiceProxyManager {
         }
 
         // Create session stdio manager
-        let stdio_manager =
-            SessionMCPManager::new(session_id.clone(), stdio_configs.clone(), config);
+        let workspace_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(&session_id);
+        let stdio_manager = SessionMCPManager::new(
+            session_id.clone(),
+            stdio_configs.clone(),
+            config,
+            workspace_dir,
+        );
 
         // Create session HTTP manager
         let http_manager = HttpSessionManager::new(session_id.clone(), http_configs.clone());

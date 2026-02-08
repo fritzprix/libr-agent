@@ -51,6 +51,121 @@ interface FileNode {
   parent?: string;
 }
 
+interface FileTreeNodeProps {
+  node: FileNode;
+  depth?: number;
+  onToggle: (node: FileNode) => void;
+  onOpen: (node: FileNode) => void;
+}
+
+const FileTreeNode = ({
+  node,
+  depth = 0,
+  onToggle,
+  onOpen,
+}: FileTreeNodeProps) => {
+  const Icon = node.isDirectory
+    ? node.isExpanded
+      ? FolderOpen
+      : Folder
+    : File;
+
+  return (
+    <div className="select-none">
+      <div
+        className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 group"
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+        onClick={() => {
+          // Keep mouse click behavior for padding area
+          if (node.isDirectory) {
+            onToggle(node);
+          } else {
+            onOpen(node);
+          }
+        }}
+      >
+        {node.isDirectory ? (
+          <button
+            type="button"
+            className="w-4 h-4 flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(node);
+            }}
+            aria-label={node.isExpanded ? 'Collapse' : 'Expand'}
+            aria-expanded={node.isExpanded}
+          >
+            {node.isLoading ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : node.isExpanded ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+          </button>
+        ) : (
+          <div className="w-4 h-4" /> // Spacer
+        )}
+
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex-1 flex items-center gap-1 min-w-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring rounded-sm px-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (node.isDirectory) {
+              onToggle(node);
+            } else {
+              onOpen(node);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              if (node.isDirectory) {
+                onToggle(node);
+              } else {
+                onOpen(node);
+              }
+            }
+          }}
+          aria-expanded={node.isDirectory ? node.isExpanded : undefined}
+        >
+          <Icon className="w-4 h-4 flex-shrink-0" />
+
+          <span className="text-xs truncate flex-1" title={node.name}>
+            {node.name}
+          </span>
+
+          {node.isDirectory && (
+            <Badge
+              variant="secondary"
+              className="text-xs px-1 opacity-0 group-hover:opacity-100"
+            >
+              {node.children?.length || 0}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {node.isExpanded && node.children && (
+        <div>
+          {node.children.map((child) => (
+            <FileTreeNode
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function AgentWorkspacePanel() {
   const {
     listWorkspaceFiles,
@@ -496,78 +611,6 @@ export function AgentWorkspacePanel() {
     [openWorkspaceFileWithDefaultApp, session?.id],
   );
 
-  // Render file tree node
-  const renderNode = (node: FileNode, depth: number = 0) => {
-    const Icon = node.isDirectory
-      ? node.isExpanded
-        ? FolderOpen
-        : Folder
-      : File;
-
-    return (
-      <div key={node.id} className="select-none">
-        <div
-          className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 cursor-pointer group"
-          style={{ paddingLeft: `${8 + depth * 16}px` }}
-          onClick={() => {
-            logger.info('FILE/DIRECTORY CLICK', {
-              path: node.path,
-              name: node.name,
-              isDirectory: node.isDirectory,
-            });
-
-            if (node.isDirectory) {
-              logger.info('Toggling directory', { path: node.path });
-              toggleDirectory(node);
-            } else {
-              logger.info('Opening file with default app', { path: node.path });
-              handleOpenFile(node);
-            }
-          }}
-        >
-          {node.isDirectory && (
-            <div
-              className="w-4 h-4 flex items-center justify-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleDirectory(node);
-              }}
-            >
-              {node.isLoading ? (
-                <RefreshCw className="w-3 h-3 animate-spin" />
-              ) : node.isExpanded ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-            </div>
-          )}
-
-          <Icon className="w-4 h-4 flex-shrink-0" />
-
-          <span className="text-xs truncate flex-1" title={node.name}>
-            {node.name}
-          </span>
-
-          {node.isDirectory && (
-            <Badge
-              variant="secondary"
-              className="text-xs px-1 opacity-0 group-hover:opacity-100"
-            >
-              {node.children?.length || 0}
-            </Badge>
-          )}
-        </div>
-
-        {node.isExpanded && node.children && (
-          <div>
-            {node.children.map((child) => renderNode(child, depth + 1))}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   if (!session) return null;
 
   return (
@@ -690,7 +733,14 @@ export function AgentWorkspacePanel() {
             </div>
           ) : (
             <div className="space-y-0">
-              {fileTree.map((node) => renderNode(node))}
+              {fileTree.map((node) => (
+                <FileTreeNode
+                  key={node.id}
+                  node={node}
+                  onToggle={toggleDirectory}
+                  onOpen={handleOpenFile}
+                />
+              ))}
 
               {fileTree.length === 0 && !loading && (
                 <div className="text-xs text-muted-foreground text-center py-8">
