@@ -1,8 +1,8 @@
-use tokio::process::Command as AsyncCommand;
-use tracing::{info, warn};
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 use crate::session_isolation::common::is_command_available;
 use crate::session_isolation::platforms::unix::create_medium_isolated_command;
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use tokio::process::Command as AsyncCommand;
+use tracing::{info, warn};
 
 /// macOS high isolation using sandbox-exec
 pub async fn create_high_isolated_command(
@@ -51,9 +51,7 @@ pub async fn create_high_isolated_command(
 }
 
 /// Create macOS sandbox profile
-fn create_macos_sandbox_profile(
-    config: &IsolatedProcessConfig,
-) -> Result<String, String> {
+fn create_macos_sandbox_profile(config: &IsolatedProcessConfig) -> Result<String, String> {
     let workspace_path_str = config
         .workspace_path
         .to_str()

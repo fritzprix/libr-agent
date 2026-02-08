@@ -1,7 +1,7 @@
+use crate::session_isolation::types::ShellType;
 use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::warn;
-use crate::session_isolation::types::ShellType;
 
 /// Check if a command is available on the system
 #[allow(dead_code)] // Used by platform-specific high isolation

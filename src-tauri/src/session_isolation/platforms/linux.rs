@@ -1,8 +1,8 @@
-use tokio::process::Command as AsyncCommand;
-use tracing::{info, warn};
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 use crate::session_isolation::common::is_command_available;
 use crate::session_isolation::platforms::unix::create_medium_isolated_command;
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use tokio::process::Command as AsyncCommand;
+use tracing::{info, warn};
 
 /// Linux high isolation using unshare (user namespaces)
 pub async fn create_high_isolated_command(

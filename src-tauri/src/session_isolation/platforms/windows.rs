@@ -1,9 +1,9 @@
+use crate::session_isolation::common::get_shell_command;
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 use base64::{engine::general_purpose, Engine as _};
+use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
-use std::path::PathBuf;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
-use crate::session_isolation::common::get_shell_command;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -83,11 +83,9 @@ pub async fn create_basic_isolated_command(
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
     // Additional env diagnostic info to help diagnose missing output on Windows
     let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
-    let system_root =
-        std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
-    let psmodulepath =
-        std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
+    let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
     info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
 
     // Set command arguments based on platform and shell type
@@ -206,17 +204,14 @@ pub async fn create_basic_isolated_command(
             &wrapped_command,
         ]);
 
-        info!(
-            "Windows PowerShell execution with error redirection and Base64 encapsulation"
-        );
+        info!("Windows PowerShell execution with proper argument escaping and error redirection");
 
         // Replace `cmd` with `wrapped_cmd`
         cmd = wrapped_cmd;
 
         // Log environment snapshot
         let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
-        let system_root =
-            std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
+        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
         let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
         info!(
             "PowerShell wrapper env snapshot: PATH.len={}, SystemRoot={}, COMSPEC={}",
@@ -326,6 +321,17 @@ async fn detect_python_path() -> Option<PathBuf> {
                             return Some(subpath);
                         }
                     }
+                    None::<PathBuf>
+                }
+            })
+            .await
+            {
+                if let Ok(Some(subdir)) = subdir {
+                    info!(
+                        "Detected Python via standard path subdirectory: {:?}",
+                        subdir
+                    );
+                    return Some(subdir);
                 }
             }
         }
