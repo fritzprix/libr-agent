@@ -235,6 +235,33 @@ export function SystemPerformanceSettings({
               )}
             </p>
           </div>
+
+          {/* HTTP Server Port */}
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-2 font-medium">
+              {t('settings.system.httpServerPort', 'HTTP Server Port')}
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g., 3030"
+              min={1024}
+              max={65535}
+              value={localSystemSettings.httpServerPort}
+              onChange={(e) =>
+                onChange(
+                  'httpServerPort',
+                  parseInt(e.target.value, 10) || 3030,
+                )
+              }
+              className="bg-background border text-foreground w-full max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.system.httpServerPortDescription',
+                'Port for the internal HTTP server (requires restart).',
+              )}
+            </p>
+          </div>
         </div>
       </div>
     </div>

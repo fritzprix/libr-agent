@@ -46,6 +46,7 @@ export interface SystemSettings {
   activeSessionRetentionHours: number;
   shellIsolationLevel: IsolationLevel;
   skillsDirectory?: string;
+  httpServerPort: number;
 }
 
 export interface Settings {
@@ -101,6 +102,7 @@ export const DEFAULT_SETTING: Settings = {
     activeSessionRetentionHours: 24,
     shellIsolationLevel: 'medium',
     skillsDirectory: '',
+    httpServerPort: 3030,
   },
 };
 
