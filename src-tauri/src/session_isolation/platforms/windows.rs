@@ -37,37 +37,48 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
+    // Smart Discovery: Auto-detect Python path to be used later
+    let detected_python = detect_python_path().await;
+    let python_path_str = detected_python.as_ref().map(|p| p.to_string_lossy());
+
+    // Configure base environment (applied to both wrapper and direct execution)
     // Windows: DO NOT use env_clear() as it breaks process execution
     cmd.env("USERPROFILE", &config.workspace_path);
     cmd.env("HOME", &config.workspace_path);
     cmd.env("TEMP", config.workspace_path.join("tmp"));
     cmd.env("TMP", config.workspace_path.join("tmp"));
 
-    // Smart Discovery: Auto-detect and prepend valid Python to PATH
+    // Add user-specified environment variables (applies to all platforms)
+    for (key, value) in &config.env_vars {
+        cmd.env(key, value);
+    }
+
+    // Construct PATH environment variable carefully
     let current_path = std::env::var("PATH").unwrap_or_default();
-    if let Some(python_dir) = detect_python_path().await {
-        let python_str = python_dir.to_string_lossy();
+    let mut new_path = current_path.clone();
+
+    if let Some(python_str) = &python_path_str {
         // Simple check to avoid duplicate appending if it's already in PATH
         if !current_path.contains(python_str.as_ref()) {
-            let scripts_dir = python_dir.join("Scripts");
-            let lib_bin_dir = python_dir.join("Library").join("bin");
+            if let Some(python_path) = &detected_python {
+                 let scripts_dir = python_path.join("Scripts");
+                 let lib_bin_dir = python_path.join("Library").join("bin");
 
-            // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
-            let new_path = format!(
-                "{};{};{};{}",
-                python_str,
-                scripts_dir.to_string_lossy(),
-                lib_bin_dir.to_string_lossy(),
-                current_path
-            );
-
-            cmd.env("PATH", new_path);
-            info!(
-                "Smart Discovery: Prepended Python at {} to PATH",
-                python_str
-            );
+                 // PREPEND to PATH to ensure this Python takes precedence over WindowsApps shim
+                 new_path = format!(
+                    "{};{};{};{}",
+                    python_str,
+                    scripts_dir.to_string_lossy(),
+                    lib_bin_dir.to_string_lossy(),
+                    current_path
+                );
+                info!("Smart Discovery: Prepended Python at {} to PATH", python_str);
+            }
         }
     }
+
+    // Set PATH on the command
+    cmd.env("PATH", &new_path);
 
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
     // Additional env diagnostic info to help diagnose missing output on Windows
@@ -76,11 +87,6 @@ pub async fn create_basic_isolated_command(
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
     let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
     info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
-
-    // Add user-specified environment variables (applies to all platforms)
-    for (key, value) in &config.env_vars {
-        cmd.env(key, value);
-    }
 
     // Set command arguments based on platform and shell type
     if !use_shell_wrapper {
@@ -107,90 +113,101 @@ pub async fn create_basic_isolated_command(
             config.workspace_path.display()
         );
     } else {
-        // Windows: Use PowerShell with proper argument escaping
-        // Build arguments array: each argument is single-quote escaped for PowerShell
-        let mut ps_args: Vec<String> = Vec::new();
+        // Windows: Use PowerShell instead of cmd.exe for better quote handling
+        // We override cmd to be "powershell" here, which REPLACES the previous AsyncCommand::new(&shell_cmd)
+        // So we must re-apply environment variables!
 
-        if !config.args.is_empty() {
-            // Construct a PowerShell expression that preserves argument boundaries
-            // Each argument is escaped with single quotes
-            ps_args.push("-NoProfile".to_string());
-            ps_args.push("-NonInteractive".to_string());
-            ps_args.push("-Command".to_string());
+        // However, instead of recreating `cmd`, we can just ensure `shell_cmd` was "powershell" to begin with.
+        // `get_shell_command` returns "powershell" or "cmd".
+        // If we are here, `use_shell_wrapper` is true.
+        // The original code re-created `cmd` which wiped out envs.
+        // Let's modify logic to NOT recreate `cmd` if possible, or re-apply envs.
 
-            // Build the PowerShell command with proper escaping
-            let escaped_args: Vec<String> = config
-                .args
-                .iter()
-                .map(|arg| {
-                    // Escape single quotes in arguments by doubling them
-                    let escaped = arg.replace('\'', "''");
-                    format!("'{}'", escaped)
-                })
-                .collect();
+        // But `cmd` struct doesn't allow changing the program once created.
+        // So we MUST create a new command if we switch to PowerShell wrapper logic.
 
-            let ps_command = format!(
-                "$ErrorActionPreference = 'Stop'; try {{ & '{}' {} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-                config.command.replace('\'', "''"),
-                escaped_args.join(" ")
-            );
+        // Refactor: We create the correct command initially.
+        // But wait, `get_shell_command` returns "powershell" by default on Windows.
+        // So `shell_cmd` is likely already "powershell".
+        // The only case where it might be "cmd" is if ShellType::Cmd was requested explicitly.
+        // But the wrapper logic forces "powershell" usage anyway: `cmd = AsyncCommand::new("powershell")`.
+        // So effectively, `shell_cmd` is ignored in this branch!
 
-            ps_args.push(ps_command);
-        } else {
-            // No arguments: use Base64 encoding for command-only execution
-            let encoded_command = general_purpose::STANDARD.encode(&config.command);
-            let wrapped_command = format!(
-                "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-                encoded_command
-            );
+        // So, let's fix the initial creation to use "powershell" directly if wrapper is needed.
+        // Actually, let's just create a NEW command here and re-apply envs properly.
 
-            ps_args.push("-NoProfile".to_string());
-            ps_args.push("-NonInteractive".to_string());
-            ps_args.push("-Command".to_string());
-            ps_args.push(wrapped_command);
-        }
+        let mut wrapped_cmd = AsyncCommand::new("powershell");
+        wrapped_cmd.current_dir(&config.workspace_path);
 
-        // Override to use PowerShell
-        cmd = AsyncCommand::new("powershell");
-        cmd.current_dir(&config.workspace_path);
-
-        // Reapply environment variables for PowerShell (after cmd reconstruction)
-        cmd.env("USERPROFILE", &config.workspace_path);
-        cmd.env("HOME", &config.workspace_path);
-        cmd.env("TEMP", config.workspace_path.join("tmp"));
-        cmd.env("TMP", config.workspace_path.join("tmp"));
-
-        // Reapply PATH with Python detection (after cmd reconstruction)
-        if let Some(python_dir) = detect_python_path().await {
-            let python_str = python_dir.to_string_lossy();
-            if !current_path.contains(python_str.as_ref()) {
-                let scripts_dir = python_dir.join("Scripts");
-                let lib_bin_dir = python_dir.join("Library").join("bin");
-
-                let new_path = format!(
-                    "{};{};{};{}",
-                    python_str,
-                    scripts_dir.to_string_lossy(),
-                    lib_bin_dir.to_string_lossy(),
-                    current_path
-                );
-
-                cmd.env("PATH", new_path);
-                info!(
-                    "Smart Discovery: Prepended Python at {} to PATH (after cmd reconstruction)",
-                    python_str
-                );
-            }
-        }
-
-        // Reapply user-specified environment variables
+        // Re-apply envs
+        wrapped_cmd.env("USERPROFILE", &config.workspace_path);
+        wrapped_cmd.env("HOME", &config.workspace_path);
+        wrapped_cmd.env("TEMP", config.workspace_path.join("tmp"));
+        wrapped_cmd.env("TMP", config.workspace_path.join("tmp"));
         for (key, value) in &config.env_vars {
-            cmd.env(key, value);
+            wrapped_cmd.env(key, value);
         }
+        wrapped_cmd.env("PATH", &new_path); // Use the computed PATH with Python
 
-        cmd.args(ps_args);
+        // Now handle the command wrapping
+        // We need to construct the command string carefully.
+        // Joining with spaces is risky if args contain spaces.
+        // We should quote arguments.
+
+        // Helper to quote arguments for PowerShell
+        let quote_arg = |arg: &str| -> String {
+            // Simple quoting: wrap in single quotes, escape single quotes inside
+            format!("'{}'", arg.replace("'", "''"))
+        };
+
+        let mut command_parts = Vec::new();
+        command_parts.push(config.command.clone()); // Assuming command itself is safe/quoted if needed, or just a path
+        // Actually, if command path has spaces, it needs quoting too.
+        // But often `config.command` is just "python" or "node".
+        // If it's a path, it might need quotes.
+        // Let's assume basic quoting for safety.
+        // command_parts[0] = quote_arg(&config.command); // Might break if it's "python" (no quotes needed usually but safe)
+
+        // Wait, if we run `python file.py`, we want `python 'file.py'`.
+        // If we run `"C:\Program Files\Python\python.exe" file.py`, we want `'C:\Program Files\Python\python.exe' 'file.py'`.
+        // PowerShell handles `& 'path' args` syntax.
+        // Invoke-Expression expects a string.
+
+        // Let's use simple space joining for the binary (assuming it's simple) and quoted args.
+        // Ideally we should use `&` operator in PowerShell if the command is quoted.
+        // e.g. `& 'C:\Path\To\Exe' 'arg1' 'arg2'`
+
+        let binary = &config.command;
+        let safe_binary = if binary.contains(' ') {
+            format!("& '{}'", binary)
+        } else {
+            binary.clone()
+        };
+
+        let args_str = config.args.iter().map(|a| quote_arg(a)).collect::<Vec<_>>().join(" ");
+        let full_command = if args_str.is_empty() {
+             safe_binary
+        } else {
+             format!("{} {}", safe_binary, args_str)
+        };
+
+        let encoded_command = general_purpose::STANDARD.encode(&full_command);
+        let wrapped_command = format!(
+            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            encoded_command
+        );
+
+        wrapped_cmd.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            &wrapped_command,
+        ]);
 
         info!("Windows PowerShell execution with proper argument escaping and error redirection");
+
+        // Replace `cmd` with `wrapped_cmd`
+        cmd = wrapped_cmd;
 
         // Log environment snapshot
         let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
@@ -287,24 +304,21 @@ async fn detect_python_path() -> Option<PathBuf> {
             .map(|p| PathBuf::from(p).join("Programs").join("Python")),
     ];
 
-    for path in common_paths.into_iter().flatten() {
-        // For standard Python, we might need to look deeper (e.g. Python39, Python310)
-        if path.join("python.exe").exists() {
-            info!("Detected Python via standard path: {:?}", path);
-            return Some(path);
-        }
+    // Use spawn_blocking to avoid blocking async runtime with fs operations
+    let found_path = tokio::task::spawn_blocking(move || {
+        for path in common_paths.into_iter().flatten() {
+            // For standard Python, we might need to look deeper (e.g. Python39, Python310)
+            if path.join("python.exe").exists() {
+                return Some(path);
+            }
 
-        // Check subdirectories for standard Python installs
-        if path.exists() && path.is_dir() {
-            if let Ok(subdir) = tokio::task::spawn_blocking({
-                let path = path.clone();
-                move || {
-                    if let Ok(entries) = std::fs::read_dir(&path) {
-                        for entry in entries.flatten() {
-                            let subpath = entry.path();
-                            if subpath.join("python.exe").exists() {
-                                return Some(subpath);
-                            }
+            // Check subdirectories for standard Python installs
+            if path.exists() && path.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&path) {
+                    for entry in entries.flatten() {
+                        let subpath = entry.path();
+                        if subpath.join("python.exe").exists() {
+                            return Some(subpath);
                         }
                     }
                     None::<PathBuf>
@@ -321,9 +335,14 @@ async fn detect_python_path() -> Option<PathBuf> {
                 }
             }
         }
+        None
+    }).await.unwrap_or(None);
+
+    if let Some(path) = &found_path {
+        info!("Detected Python via standard path search: {:?}", path);
     }
 
-    None
+    found_path
 }
 
 #[cfg(test)]
