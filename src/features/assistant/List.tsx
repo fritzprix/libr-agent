@@ -183,7 +183,7 @@ export default function AssistantList() {
       {/* Search bar */}
       <div className="p-4 border-b border-muted flex-shrink-0">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
           <Input
             type="text"
             placeholder="Search assistants..."
@@ -194,6 +194,7 @@ export default function AssistantList() {
           />
           {searchQuery && (
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
