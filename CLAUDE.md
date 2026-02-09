@@ -307,7 +307,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 - Business logic and data transformation.
 - Tauri command invocations and API integrations.
-- SQLite operations via SeaORM and local data management.
+- Tauri command wrappers for SQLite/SeaORM-backed persistence and local data management.
 - MCP client communication protocols.
 
 #### Backend Layer (`src-tauri/src/`)
@@ -668,7 +668,7 @@ These steps must be completed successfully before considering any refactoring ta
 - Use React.memo for expensive components
 - Implement proper dependency arrays in useEffect
 - Lazy load components when appropriate
-- Optimize database queries
+- Minimize database round-trips
 
 ### Backend Optimization
 
