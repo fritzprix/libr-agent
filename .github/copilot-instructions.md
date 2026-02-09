@@ -1079,12 +1079,13 @@ When refactoring or implementing new features, adhere to these fundamental softw
 - Use React.memo for expensive components
 - Implement proper dependency arrays in useEffect
 - Lazy load components when appropriate
-- Optimize database queries
+- Minimize database round-trips from the UI (batch and cache requests when possible)
 
 ### Backend Optimization
 
 - Use async/await for non-blocking operations
 - Implement proper error handling to prevent crashes
+- Optimize database queries
 - Cache frequently accessed data
 - Optimize MCP server communication protocols
 
