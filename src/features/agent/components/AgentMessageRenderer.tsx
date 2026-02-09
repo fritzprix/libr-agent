@@ -136,7 +136,13 @@ const CodeBlock = memo(
     // 4. Compare content (children)
     // Code content is usually a string or array of strings.
     // String() handles both cases appropriately for equality check.
-    return String(prevProps.children) === String(nextProps.children);
+    if (prevProps.children === nextProps.children) return true;
+
+    // Normalize in the same way as the rendered `code` value used by Highlight
+    // to prevent re-renders when only trailing whitespace/newlines differ.
+    const prevCode = String(prevProps.children).replace(/\n$/, '');
+    const nextCode = String(nextProps.children).replace(/\n$/, '');
+    return prevCode === nextCode;
   },
 );
 

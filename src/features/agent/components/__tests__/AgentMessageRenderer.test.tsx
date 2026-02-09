@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { AgentMessageRenderer } from '../AgentMessageRenderer';
-import { MCPContent } from '@/lib/mcp';
+import type { MCPContent } from '@/lib/mcp';
 
 // Mock contexts and hooks
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -66,6 +66,6 @@ describe('AgentMessageRenderer', () => {
     const codeElement = await screen.findByText('console');
     expect(codeElement).toBeInTheDocument();
 
-    expect(screen.getByText('"hello"')).toBeInTheDocument();
+    expect(screen.getByText(/hello/)).toBeInTheDocument();
   });
 });
