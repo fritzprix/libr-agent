@@ -250,9 +250,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // Early exit: check if ANY pending message exists in sessionMessages
     const sessionMessageIds = new Set(sessionMessages.map((m) => m.id));
-    const hasOverlap = pendingMessages.some((p) =>
-      sessionMessageIds.has(p.id),
-    );
+    const hasOverlap = pendingMessages.some((p) => sessionMessageIds.has(p.id));
 
     if (!hasOverlap) return; // No cleanup needed
 

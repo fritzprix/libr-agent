@@ -18,15 +18,74 @@ pub async fn start_workflow(
     session_id: String,
     user_message: Message,
 ) -> Result<(), String> {
-    // Check if workflow is cancelled before starting
-    {
+    // Check status, deduplicate, and queue if busy (Atomic Check-and-Act)
+    let should_queue = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
+            // Check for cancellation
             if session.cancellation_token.is_cancelled() {
                 return Err("Workflow was cancelled before starting".to_string());
             }
+
+            // Deduplicate: Check if message ID already exists
+            {
+                let messages = session.messages.read().await;
+                if messages.iter().any(|m| m.id == user_message.id) {
+                    log::warn!(
+                        "Ignoring duplicate message start_workflow: {}",
+                        user_message.id
+                    );
+                    return Ok(());
+                }
+            }
+
+            // Check Status
+            if session.metadata.status == SessionStatus::Busy {
+                log::info!(
+                    "Session {} is busy. Queueing message: {} for next cycle.",
+                    session_id,
+                    user_message.id
+                );
+
+                // 1. Add to in-memory cache (while holding session lock)
+                {
+                    let mut messages = session.messages.write().await;
+                    messages.push(user_message.clone());
+                    if messages.len() > MAX_CACHED_MESSAGES {
+                        messages.remove(0);
+                    }
+                }
+
+                // 2. Add to Pending Events (while holding session lock)
+                {
+                    let mut pending = session.pending_events.write().await;
+                    pending.add(crate::agent::state::PendingEvent::Message(
+                        user_message.id.clone(),
+                    ));
+                }
+
+                true // Signal that we queued it
+            } else {
+                false // Not busy, proceed to start workflow
+            }
+        } else {
+            false // Session not found, will be handled by standard flow (or fail there)
         }
+    }; // Lock released here
+
+    if should_queue {
+        // 3. Persist to DB (Async I/O outside lock)
+        let repo = crate::state::get_message_repository();
+        if let Err(e) = repo.insert(&user_message).await {
+            log::error!("Failed to save queued user message to DB: {}", e);
+        }
+
+        // Do NOT call request_llm_completion. The existing busy workflow will pick it up.
+        // Do NOT emit MessageAdded (it will be emitted when drained).
+        return Ok(());
     }
+
+    // --- STANDARD START WORKFLOW (Idle/Paused) ---
 
     // Update status to Busy
     crate::agent::lifecycle::update_session_status(
@@ -57,6 +116,7 @@ pub async fn start_workflow(
     // 1. Add user message to in-memory cache FIRST (immediate, non-blocking)
     {
         let sessions = active_sessions.read().await;
+        // Logic duplicated for Idle path but that's fine for clarity vs refactoring whole function
         let session = sessions
             .get(&session_id)
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
@@ -67,11 +127,7 @@ pub async fn start_workflow(
         // Apply sliding window policy
         if messages.len() > MAX_CACHED_MESSAGES {
             let removed = messages.remove(0);
-            log::debug!(
-                "Sliding window: evicted oldest message {} from session {}",
-                removed.id,
-                session_id
-            );
+            log::debug!("Sliding window evicted: {}", removed.id);
         }
 
         log::info!(
@@ -91,7 +147,6 @@ pub async fn start_workflow(
         .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
 
     // 3. Persist to DB synchronously to ensure data integrity
-    // We await this to prevent "ghost messages" where memory has state but DB doesn't (causing data loss on reload)
     let repo = crate::state::get_message_repository();
     if let Err(e) = repo.insert(&user_message).await {
         log::error!(
@@ -110,8 +165,6 @@ pub async fn start_workflow(
     );
 
     // 4. Ensure Proxy Exists (Critical for System Prompt)
-    // If the session was previously terminated, the proxy might have been destroyed.
-    // We must recreate it to ensure the LLM gets the full context (tools, etc).
     if proxy_manager.get_proxy(&session_id).await.is_none() {
         log::warn!(
             "MCP proxy missing for session {} during workflow start. Recreating...",
@@ -332,6 +385,15 @@ pub async fn cancel_workflow(
         session.is_running = false;
         // Reset cancellation token for potential future workflows
         session.cancellation_token = CancellationToken::new();
+        // Clear pending events to prevent resurrection
+        let mut pending_events = session.pending_events.write().await;
+        let count = pending_events.count();
+        pending_events.clear();
+        log::info!(
+            "Cleared {} pending events for session {}",
+            count,
+            session_id
+        );
     }
 
     // Emit workflow stopped event
@@ -432,6 +494,21 @@ pub async fn continue_workflow_after_tool(
                 };
                 let _ = crate::agent::events::emit_agent_event(app_handle, event);
             } else {
+                // Check status before requesting LLM completion (Defense in depth against race condition)
+                {
+                    let sessions = active_sessions.read().await;
+                    if let Some(session) = sessions.get(&session_id) {
+                        if session.metadata.status != crate::repositories::SessionStatus::Busy {
+                            log::info!(
+                                "Skipping workflow restart for session {} (status: {:?})",
+                                session_id,
+                                session.metadata.status
+                            );
+                            return Ok(());
+                        }
+                    }
+                }
+
                 // Request next LLM completion
                 if let Err(e) = crate::agent::llm::request_llm_completion(
                     session_repo,
