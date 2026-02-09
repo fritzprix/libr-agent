@@ -1,8 +1,8 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
-use tracing::{info, warn};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::{error, info, warn};
 
 use crate::mcp::builtin::error_guidance::{
     missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint,
@@ -43,6 +43,13 @@ pub(crate) async fn handle_interactive_shell(
         .unwrap_or("sync")
         .to_string();
 
+    // Validate timeout (clamp to valid range)
+    let timeout = args
+        .get("timeout")
+        .and_then(|v| v.as_u64())
+        .map(|t| t.clamp(1, 3600)) // Min 1s, Max 1h
+        .unwrap_or(30);
+
     // Generate nonce for client-side obfuscation
     let encryption_nonce = uuid::Uuid::new_v4().to_string();
 
@@ -53,7 +60,7 @@ pub(crate) async fn handle_interactive_shell(
         executable_command: command.to_string(), // Will be executed (may get -S flag)
         display_command: sanitized_command.clone(), // For logs/UI
         run_mode,                                // Store for 2nd call
-        timeout: args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30), // Command execution timeout
+        timeout,
         encryption_nonce: encryption_nonce.clone(),
         created_at: chrono::Utc::now(),
     };
@@ -98,17 +105,27 @@ pub async fn handle_execute_pending_shell(
 ) -> Result<MCPResult, String> {
     use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 
-    let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+    // Extract execution_id (checking snake_case and camelCase)
+    let execution_id = match args
+        .get("execution_id")
+        .or_else(|| args.get("executionId"))
+        .and_then(|v| v.as_str())
+    {
         Some(id) => id,
         None => {
-            return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+            return Ok(missing_param_error("executionId", ToolGroup::Workspace));
         }
     };
 
-    let obfuscated_input = match args.get("user_input").and_then(|v| v.as_str()) {
+    // Extract user_input (checking snake_case and camelCase)
+    let obfuscated_input = match args
+        .get("user_input")
+        .or_else(|| args.get("userInput"))
+        .and_then(|v| v.as_str())
+    {
         Some(input) => input,
         None => {
-            return Ok(missing_param_error("user_input", ToolGroup::Workspace));
+            return Ok(missing_param_error("userInput", ToolGroup::Workspace));
         }
     };
 
@@ -403,7 +420,7 @@ pub async fn handle_execute_pending_shell(
                     format!("Command execution timeout after {} seconds", timeout_secs),
                     vec![
                         format!("Increase timeout parameter (current: {}s)", timeout_secs),
-                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
+                        "Use \"run_mode\": \"async\" for long-running commands".to_string(),
                         "Verify the command isn't hanging waiting for additional input"
                             .to_string(),
                     ],
@@ -503,18 +520,64 @@ pub async fn handle_execute_pending_shell(
         // Spawn monitoring task
         let registry = server.process_registry.clone();
         let pid_copy = process_id.clone();
+        let stdout_path_clone = stdout_path.clone();
+        let stderr_path_clone = stderr_path.clone();
 
         tokio::spawn(async move {
-            // Execute using common spawn+stream logic would go here
-            // For now, simplified version
-            let result = child.wait_with_output().await;
+            // Stream output to files since this is async
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+
+            let mut stdout_handle = None;
+            let mut stderr_handle = None;
+
+            if let Some(mut reader) = stdout {
+                let path = stdout_path_clone.clone();
+                stdout_handle = Some(tokio::spawn(async move {
+                    if let Ok(file) = tokio::fs::File::create(&path).await {
+                        let mut writer = tokio::io::BufWriter::new(file);
+                        let mut buffer = [0u8; 8192];
+                        while let Ok(n) = reader.read(&mut buffer).await {
+                            if n == 0 { break; }
+                            if writer.write_all(&buffer[..n]).await.is_err() { break; }
+                        }
+                        let _ = writer.flush().await;
+                    } else {
+                        error!("Failed to create stdout file: {:?}", path);
+                    }
+                }));
+            }
+
+            if let Some(mut reader) = stderr {
+                let path = stderr_path_clone.clone();
+                stderr_handle = Some(tokio::spawn(async move {
+                    if let Ok(file) = tokio::fs::File::create(&path).await {
+                        let mut writer = tokio::io::BufWriter::new(file);
+                        let mut buffer = [0u8; 8192];
+                        while let Ok(n) = reader.read(&mut buffer).await {
+                            if n == 0 { break; }
+                            if writer.write_all(&buffer[..n]).await.is_err() { break; }
+                        }
+                        let _ = writer.flush().await;
+                    } else {
+                        error!("Failed to create stderr file: {:?}", path);
+                    }
+                }));
+            }
+
+            // Wait for process completion
+            let result = child.wait().await;
+
+            // Wait for streaming to finish
+            if let Some(h) = stdout_handle { let _ = h.await; }
+            if let Some(h) = stderr_handle { let _ = h.await; }
 
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
-                    Ok(output) => {
-                        entry.exit_code = output.status.code();
-                        entry.status = if output.status.code().unwrap_or(-1) == 0 {
+                    Ok(status) => {
+                        entry.exit_code = status.code();
+                        entry.status = if status.code().unwrap_or(-1) == 0 {
                             terminal_manager::ProcessStatus::Finished
                         } else {
                             terminal_manager::ProcessStatus::Failed
@@ -525,6 +588,10 @@ pub async fn handle_execute_pending_shell(
                     }
                 }
                 entry.finished_at = Some(chrono::Utc::now());
+
+                // Update file sizes
+                entry.stdout_size = tokio::fs::metadata(&stdout_path_clone).await.map(|m| m.len()).unwrap_or(0);
+                entry.stderr_size = tokio::fs::metadata(&stderr_path_clone).await.map(|m| m.len()).unwrap_or(0);
             }
             reg.cancellation_tokens.remove(&pid_copy);
         });
@@ -563,11 +630,15 @@ pub async fn handle_cancel_pending_execution(
     args: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
-    // Extract execution_id
-    let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+    // Extract execution_id (checking snake_case and camelCase)
+    let execution_id = match args
+        .get("execution_id")
+        .or_else(|| args.get("executionId"))
+        .and_then(|v| v.as_str())
+    {
         Some(id) => id,
         None => {
-            return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+            return Ok(missing_param_error("executionId", ToolGroup::Workspace));
         }
     };
 

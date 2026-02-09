@@ -34,6 +34,12 @@ pub fn build_shell_input_ui(
     input_type: &str,
     nonce: &str,
 ) -> String {
+    // Whitelist allowed input types to prevent XSS
+    let safe_input_type = match input_type {
+        "password" => "password",
+        _ => "text",
+    };
+
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -149,7 +155,9 @@ pub fn build_shell_input_ui(
                 toolName: '{}',
                 params: {{
                   execution_id: executionId,
+                  executionId: executionId,
                   user_input: obfuscatedInput,
+                  userInput: obfuscatedInput,
                 }},
               }},
             }},
@@ -173,6 +181,7 @@ pub fn build_shell_input_ui(
               toolName: '{}',
               params: {{
                 execution_id: executionId,
+                executionId: executionId,
               }},
             }},
           }},
@@ -186,8 +195,8 @@ pub fn build_shell_input_ui(
   </body>
 </html>"#,
         html_escape::encode_safe(prompt),
-        input_type,
-        input_type,
+        safe_input_type,
+        safe_input_type,
         execution_id,
         nonce,
         EXECUTE_PENDING_SHELL,
