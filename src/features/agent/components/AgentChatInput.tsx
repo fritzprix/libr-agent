@@ -286,7 +286,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
 
   const inputClassName = cn(
-    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto'
+    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto',
   );
 
   const formClassName = cn(

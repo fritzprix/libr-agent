@@ -130,7 +130,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
                     String::new()
                 } else if info.chars().count() > 50 {
                     let s: String = info.chars().take(47).collect();
-                    format!(" ({})", format!("{}...", s))
+                    format!(" ({}...)", s)
                 } else {
                     format!(" ({})", info)
                 };

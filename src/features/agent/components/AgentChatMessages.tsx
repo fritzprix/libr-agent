@@ -121,10 +121,7 @@ export function AgentChatMessages() {
           // Handle message-level errors
           if (groupedMessage.message.error) {
             return (
-              <div
-                className="self-start my-2"
-                key={groupedMessage.message.id}
-              >
+              <div className="self-start my-2" key={groupedMessage.message.id}>
                 <ErrorBubble
                   error={groupedMessage.message.error}
                   onRetry={handleRetry}
