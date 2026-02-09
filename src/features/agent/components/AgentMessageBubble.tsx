@@ -11,7 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  pendingMessageIds?: Set<string>; // Changed from array to Set for O(1) lookups
+  pendingMessageIds?: ReadonlySet<string>; // Changed from array to Set for O(1) lookups
 }
 
 function AgentMessageBubbleImpl({
