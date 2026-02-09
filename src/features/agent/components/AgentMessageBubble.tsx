@@ -11,6 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
+  pendingMessages?: Message[]; // NEW: Pending queue for set-based detection
 }
 
 function AgentMessageBubbleImpl({
@@ -19,7 +20,14 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
+  pendingMessages = [], // NEW: Default to empty array
 }: AgentMessageBubbleProps) {
+  // Check if message is pending (set-based detection)
+  const isPending = useMemo(
+    () => pendingMessages.some((pm) => pm.id === msg.id),
+    [pendingMessages, msg.id],
+  );
+
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -66,7 +74,7 @@ function AgentMessageBubbleImpl({
   }, [groupedMessages, groupedToolCalls, msg.content]);
 
   return (
-    <div key={msg.id} className="px-4 py-2">
+    <div className="px-4 py-2">
       <div
         className={cn(
           'flex',
@@ -75,9 +83,11 @@ function AgentMessageBubbleImpl({
       >
         <div
           className={cn(
-            'inline-block max-w-[85%] md:max-w-2xl p-3 rounded-lg',
+            'relative max-w-[85%] md:max-w-2xl p-3 rounded-lg flex flex-col',
             msg.role === 'user'
-              ? 'bg-primary text-primary-foreground'
+              ? isPending
+                ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
+                : 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground',
           )}
         >
@@ -85,14 +95,16 @@ function AgentMessageBubbleImpl({
             {msg.role === 'assistant'
               ? getAssistantName?.(msg) || 'ASSISTANT'
               : msg.role === 'user'
-                ? 'You'
+                ? isPending
+                  ? 'You (queued)'
+                  : 'You'
                 : msg.role.toUpperCase()}
           </div>
-          <div className="whitespace-pre-wrap">
+          <div className="whitespace-pre-wrap min-w-0">
             {/* File Attachments Display */}
             {msg.attachments && msg.attachments.length > 0 && (
-              <div className="mb-3 p-3 bg-muted/30 rounded-lg border border-muted/20">
-                <div className="text-sm mb-2 font-medium flex items-center gap-2">
+              <div className="mb-3 p-3 bg-background/10 rounded-lg border border-current/10">
+                <div className="text-sm mb-2 font-medium flex items-center gap-2 opacity-90">
                   <Paperclip className="w-4 h-4" />
                   <span>
                     {msg.attachments.length} file
@@ -103,10 +115,10 @@ function AgentMessageBubbleImpl({
                   {msg.attachments.map((attachment) => (
                     <li
                       key={attachment.contentId}
-                      className="flex items-center justify-between p-2 bg-background/50 rounded border"
+                      className="flex items-center justify-between p-2 bg-background/20 rounded border border-current/10"
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                        <FileText className="w-3 h-3 opacity-70 flex-shrink-0" />
                         <span className="text-xs font-medium truncate">
                           {attachment.filename}
                         </span>

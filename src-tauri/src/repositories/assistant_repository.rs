@@ -77,7 +77,7 @@ impl AssistantRepository for SqliteAssistantRepository {
         name: String,
         config: String,
     ) -> Result<assistant::Model, DbError> {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
 
         let active_model = assistant::ActiveModel {
             id: Set(id),
@@ -142,7 +142,7 @@ impl AssistantRepository for SqliteAssistantRepository {
         if let Some(c) = config {
             active_model.config = Set(c);
         }
-        active_model.updated_at = Set(chrono::Utc::now().timestamp());
+        active_model.updated_at = Set(chrono::Utc::now().timestamp_millis());
 
         active_model
             .update(&self.db)

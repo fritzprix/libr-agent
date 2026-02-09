@@ -495,7 +495,7 @@ impl BuiltinMCPServer for WorkspaceServer {
 - Running: {}{}
 - Total: {}
 
-💡 Use pollProcess(processId) to check status or listProcesses() to see all (including full commands).",
+💡 Use waitForProcess(processId, 0) to check status or listProcesses() to see all (including full commands).",
             workspace_dir, shell_cwd, os, arch, shell, running_count, running_processes_text, total_count
         );
 

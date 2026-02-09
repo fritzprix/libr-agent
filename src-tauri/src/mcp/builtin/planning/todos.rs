@@ -50,18 +50,29 @@ pub async fn add_todo(
         .await
     {
         Ok(id) => {
+            // Find index of the newly created todo
+            let all_todos = repo.list_todos(session_id, true).await.unwrap_or_default();
+            let index = all_todos
+                .iter()
+                .position(|t| t.id == id)
+                .unwrap_or(all_todos.len().saturating_sub(1));
+
             let summary_text = repo
                 .get_planning_summary(session_id)
                 .await
                 .unwrap_or_default();
             let hint = SuccessHint::new(
-                format!("Added todo #{}: {}{}", id, title, summary_text),
-                vec!["Use checkTodo(index=N) to mark as done".to_string()],
+                format!(
+                    "Added todo #{} (index {}): {}{}",
+                    id, index, title, summary_text
+                ),
+                vec![format!("Use checkTodo(index={}) to mark as done", index)],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": cuid2::create_id(),
                 "success": true,
                 "todoId": id,
+                "index": index,
                 "todo": title
             }))))
         }
@@ -98,6 +109,11 @@ pub async fn check_todo(
         .get("checked")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
+
+    let summary = args
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     if index < 0 {
         return Ok(invalid_input_error(
@@ -141,8 +157,8 @@ pub async fn check_todo(
     let todo_id = todo.id;
     let todo_content = todo.content.clone();
 
-    // 4. Update (no summary, no parent auto-completion logic)
-    if let Err(e) = repo.check_todo(todo_id, checked, None).await {
+    // 4. Update (no parent auto-completion logic)
+    if let Err(e) = repo.check_todo(todo_id, checked, summary).await {
         return Ok(ErrorGuidance::with_guidance(
             ErrorCategory::DatabaseError,
             format!("Failed to update todo: {}", e),
