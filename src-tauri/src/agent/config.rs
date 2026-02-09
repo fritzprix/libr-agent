@@ -125,6 +125,7 @@ mod tests {
         let json = config.to_json().unwrap();
         let parsed = AgentConfig::from_json(&json).unwrap();
 
+        assert_eq!(parsed.id, config.id);
         assert_eq!(parsed.temperature, config.temperature);
         assert_eq!(parsed.name, config.name);
     }

@@ -89,6 +89,7 @@ pub async fn create_session(
     // Ensure ID and Name match the assistant (critical for tracking)
     agent_config.id = Some(assistant.id.clone());
     agent_config.name = assistant.name.clone();
+    let assistant_id = agent_config.id.clone();
 
     // 3. Create Session
     let session_id = format!("session-{}", Uuid::new_v4());
@@ -147,7 +148,7 @@ pub async fn create_session(
                 is_streaming: None,
                 thinking: None,
                 thinking_signature: None,
-                assistant_id: None,
+                assistant_id,
                 attachments: None,
                 tool_use: None,
                 created_at: now,
@@ -257,6 +258,12 @@ pub async fn send_message(
     let session = session_opt.unwrap();
     let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
 
+    let assistant_id = session.agent_config.as_ref().and_then(|config_str| {
+        crate::agent::AgentConfig::from_json(config_str)
+            .ok()
+            .and_then(|c| c.id)
+    });
+
     // 2. Create Message object
     let message_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
@@ -274,7 +281,7 @@ pub async fn send_message(
         is_streaming: None,
         thinking: None,
         thinking_signature: None,
-        assistant_id: None, // TODO: might need to fetch assistant ID from config
+        assistant_id,
         attachments: None,
         tool_use: None,
         created_at: now,
