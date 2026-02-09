@@ -45,6 +45,10 @@ pub struct AgentSession {
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
 
+    /// Message IDs that were injected without MessageAdded events (pending in frontend)
+    /// These will emit MessageAdded events when actually used in LLM request
+    pub pending_message_ids: Arc<RwLock<Vec<String>>>,
+
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,
 }

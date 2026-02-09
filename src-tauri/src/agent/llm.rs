@@ -20,6 +20,49 @@ pub async fn request_llm_completion(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // Emit MessageAdded events for any pending user messages before LLM request
+    // This makes them visible in the frontend (removed from pendingMessages queue)
+    // Optimization: Collect all data first, then release locks before I/O
+    let pending_messages: Vec<Message> = {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let mut pending_ids = session.pending_message_ids.write().await;
+            
+            if pending_ids.is_empty() {
+                Vec::new()
+            } else {
+                let messages = session.messages.read().await;
+                
+                // Build HashMap for O(1) lookup instead of O(n) iter().find()
+                let msg_map: std::collections::HashMap<&str, &Message> = messages
+                    .iter()
+                    .map(|m| (m.id.as_str(), m))
+                    .collect();
+                
+                // Collect messages matching pending IDs
+                pending_ids
+                    .drain(..)
+                    .filter_map(|id| msg_map.get(id.as_str()).map(|&m| m.clone()))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        }
+    }; // All locks released here
+
+    // Now emit events without holding any locks
+    for msg in pending_messages {
+        let event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.clone(),
+            message: Box::new(msg.clone()),
+        };
+        let _ = crate::agent::events::emit_agent_event(app_handle, event);
+        log::info!(
+            "Emitted MessageAdded for previously pending message: {}",
+            msg.id
+        );
+    }
+
     // Read messages from in-memory cache
     let messages = {
         let sessions = active_sessions.read().await;

@@ -14,7 +14,7 @@ import {
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';
-import type { Message, RustMessage, AttachmentReference } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 
 const logger = getLogger('AgentChatContext');
 
@@ -146,69 +146,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     setAgentModeEnabled(false);
   }, [session?.id]);
 
-  // Process pending messages when workflow becomes idle
-  useEffect(() => {
-    // Only process if idle, we have pending messages, and session is loaded
-    if (
-      workflowStatus === 'idle' &&
-      pendingMessages.length > 0 &&
-      !isSessionLoading &&
-      session?.id
-    ) {
-      logger.info('Processing pending messages queue', {
-        count: pendingMessages.length,
-      });
-
-      // 1. Concatenate text content
-      const textParts: string[] = [];
-      const allAttachments: AttachmentReference[] = []; // Use explicit type for attachment merging if needed
-
-      pendingMessages.forEach((msg) => {
-        // Extract text
-        if (msg.content) {
-          msg.content.forEach((c) => {
-            if (c.type === 'text') {
-              textParts.push(c.text);
-            }
-          });
-        }
-        // Extract attachments (if any)
-        if (msg.attachments) {
-          allAttachments.push(...msg.attachments);
-        }
-      });
-
-      const combinedText = textParts.join('\n');
-
-      if (!combinedText.trim() && allAttachments.length === 0) {
-        setPendingMessages([]); // Nothing to send
-        return;
-      }
-
-      // 2. Create merged message
-      // We use the ID of the first message to maintain some continuity, or a new one
-      const mergedMessage: Message = {
-        ...pendingMessages[0], // Base on first message
-        id: `msg_${Date.now()}`,
-        content: [{ type: 'text', text: combinedText }],
-        attachments: allAttachments.length > 0 ? allAttachments : undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      // 3. Clear queue first to prevent double processing during async submit
-      setPendingMessages([]);
-
-      // 4. Submit merged message
-      // We call the internal submit logic directly to avoid re-queueing
-      submitMergedMessage(mergedMessage).catch((err) => {
-        logger.error('Failed to submit merged pending messages', err);
-        // On error, restore queue? Or just error out.
-        // For now, we assume global error handling.
-      });
-    }
-  }, [workflowStatus, pendingMessages, isSessionLoading, session?.id]);
-
   /**
    * Internal submit handler for merged messages
    * (Separated to avoid circular dependency in 'submit' which uses the queue)
@@ -305,6 +242,44 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   }, [sessionMessages, updateServiceContexts]);
 
   /**
+   * Clean up pending messages when they appear in sessionMessages
+   * This happens after Rust workflow processes them and emits MessageAdded events
+   */
+  useEffect(() => {
+    if (pendingMessages.length === 0 || sessionMessages.length === 0) return;
+
+    // Early exit: check if ANY pending message exists in sessionMessages
+    const sessionMessageIds = new Set(sessionMessages.map((m) => m.id));
+    const hasOverlap = pendingMessages.some((p) =>
+      sessionMessageIds.has(p.id),
+    );
+
+    if (!hasOverlap) return; // No cleanup needed
+
+    // Only log and process if we actually need to clean up
+    logger.debug('Pending messages cleanup triggered', {
+      pendingCount: pendingMessages.length,
+      sessionMessagesCount: sessionMessages.length,
+    });
+
+    setPendingMessages((prev) => {
+      const filtered = prev.filter(
+        (pending) => !sessionMessageIds.has(pending.id),
+      );
+
+      if (filtered.length !== prev.length) {
+        const removed = prev.filter((p) => sessionMessageIds.has(p.id));
+        logger.info('Removed messages from pending queue', {
+          removedCount: prev.length - filtered.length,
+          removedIds: removed.map((p) => p.id),
+        });
+      }
+
+      return filtered;
+    });
+  }, [sessionMessages, pendingMessages]);
+
+  /**
    * Extract streaming message for current session
    * Memoized to prevent unnecessary effect re-runs
    */
@@ -354,17 +329,65 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         return;
       }
 
-      // Check if we should queue
+      // Check if we should inject directly to backend cache (for next recursion)
       if (
         workflowStatus === 'busy' ||
         workflowStatus === 'paused' ||
         isSessionLoading
       ) {
-        logger.info('Agent busy/paused, queueing message', {
+        logger.info('Agent busy/paused, injecting message to backend cache', {
           status: workflowStatus,
           messageId: message.id,
         });
-        setPendingMessages((prev) => [...prev, message]);
+
+        // Inject immediately into backend cache (no workflow trigger)
+        // This makes the message available for the next LLM recursion
+        // The workflow will pick this up after tool execution completes
+        try {
+          const now = Date.now();
+          const messageForRust: RustMessage = {
+            ...message,
+            toolCalls: message.tool_calls,
+            toolCallId: message.tool_call_id,
+            createdAt:
+              message.createdAt instanceof Date
+                ? message.createdAt.getTime()
+                : message.createdAt || now,
+            updatedAt:
+              message.updatedAt instanceof Date
+                ? message.updatedAt.getTime()
+                : message.updatedAt ||
+                  (message.createdAt instanceof Date
+                    ? message.createdAt.getTime()
+                    : message.createdAt) ||
+                  now,
+          };
+
+          await invoke('agent_inject_messages', {
+            request: {
+              sessionId: session.id,
+              messages: [messageForRust],
+              triggerWorkflow: false, // Backend will include in next automatic LLM call
+            },
+          });
+
+          // Keep in pending queue for UI display purposes
+          // Will be removed when backend processes and emits MessageAdded event
+          setPendingMessages((prev) => {
+            logger.info('Adding message to pending queue', {
+              messageId: message.id,
+              currentPendingCount: prev.length,
+              newPendingCount: prev.length + 1,
+            });
+            return [...prev, message];
+          });
+        } catch (err) {
+          logger.error('Failed to inject message to backend', err);
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          setError(errorMessage);
+          return;
+        }
+
         return;
       }
 
@@ -376,7 +399,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       // Delegate to internal logic which handles error state and re-throws
       await submitMergedMessage(message);
     },
-    [session?.id, workflowStatus, isSessionLoading, submitMergedMessage],
+    [
+      session?.id,
+      workflowStatus,
+      isSessionLoading,
+      submitMergedMessage,
+      setError,
+    ],
   );
 
   /**
