@@ -29,3 +29,8 @@
 
 **Drift:** Lists outdated modules (`filesystem.rs`, `sandbox.rs`). Uses incorrect `BuiltinMCPServer` trait signature in examples. Written in Korean (violates project language policy).
 **Reality:** Modules are `browser`, `workspace`, etc. Trait signature includes `session_id` and returns `Result<MCPResult, String>`. Documentation must be in English.
+
+## 2026-03-01 - Multiple Files (agents.md, CLAUDE.md, etc.)
+
+**Drift:** References "IndexedDB" and "Dexie" for local storage. Claims "Vite 4.x".
+**Reality:** Local storage uses SQLite via SeaORM. Vite is version 6.x.

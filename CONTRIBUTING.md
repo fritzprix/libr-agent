@@ -29,7 +29,7 @@ Before contributing, understand our core design:
 - **Built-in Tools**: Persistent state, always in context (Browser, Terminal,
   File Manager, Code Execution)
 - **Tauri Backend**: Rust for security and performance, stdio-based MCP protocol
-- **React Frontend**: IndexedDB for local state, no server required
+- **React Frontend**: Local state managed via Tauri commands (backed by SQLite), no remote server required
 - **MCP Support**: External servers for specialized workflows
 
 See [docs/architecture/overview.md](docs/architecture/overview.md) for detailed architecture.
