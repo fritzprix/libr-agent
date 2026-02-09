@@ -29,6 +29,13 @@ export function AgentChatMessages() {
   // Group messages for display
   const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
 
+  // Convert pendingMessages to a Set of IDs for O(1) lookups
+  // This prevents O(n*m) performance issues when checking if each message is pending
+  const pendingMessageIds = useMemo(
+    () => new Set(pendingMessages.map((msg) => msg.id)),
+    [pendingMessages],
+  );
+
   // Only auto-scroll if enabled
   useEffect(() => {
     if (autoScrollEnabled) {
@@ -112,7 +119,7 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
-                pendingMessages={pendingMessages}
+                pendingMessageIds={pendingMessageIds}
               />
             );
           }
@@ -152,7 +159,7 @@ export function AgentChatMessages() {
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
-              pendingMessages={pendingMessages}
+              pendingMessageIds={pendingMessageIds}
             />
           );
         })}
