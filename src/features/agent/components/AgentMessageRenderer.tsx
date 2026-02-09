@@ -134,9 +134,35 @@ const CodeBlock = memo(
     if (prevProps.inline !== nextProps.inline) return false;
 
     // 4. Compare content (children)
-    // Code content is usually a string or array of strings.
-    // String() handles both cases appropriately for equality check.
-    return String(prevProps.children) === String(nextProps.children);
+    // Fast-path: if both children are strings, compare directly
+    if (
+      typeof prevProps.children === 'string' &&
+      typeof nextProps.children === 'string'
+    ) {
+      // Normalize in the same way as the rendered `code` value used by Highlight
+      const prevCode = prevProps.children.replace(/\n$/, '');
+      const nextCode = nextProps.children.replace(/\n$/, '');
+      return prevCode === nextCode;
+    }
+
+    // Fast-path: if both children are single-element string arrays, compare index 0
+    if (
+      Array.isArray(prevProps.children) &&
+      Array.isArray(nextProps.children) &&
+      prevProps.children.length === 1 &&
+      nextProps.children.length === 1 &&
+      typeof prevProps.children[0] === 'string' &&
+      typeof nextProps.children[0] === 'string'
+    ) {
+      const prevCode = prevProps.children[0].replace(/\n$/, '');
+      const nextCode = nextProps.children[0].replace(/\n$/, '');
+      return prevCode === nextCode;
+    }
+
+    // Fallback: stringify and compare (with normalization)
+    const prevCode = String(prevProps.children).replace(/\n$/, '');
+    const nextCode = String(nextProps.children).replace(/\n$/, '');
+    return prevCode === nextCode;
   },
 );
 
