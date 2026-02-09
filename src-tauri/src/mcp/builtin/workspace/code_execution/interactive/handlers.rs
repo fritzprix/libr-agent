@@ -43,6 +43,9 @@ pub(crate) async fn handle_interactive_shell(
         .unwrap_or("sync")
         .to_string();
 
+    // Validate and enforce timeout limits
+    let timeout = utils::validate_timeout(args.get("timeout").and_then(|v| v.as_u64()));
+
     // Generate nonce for client-side obfuscation
     let encryption_nonce = uuid::Uuid::new_v4().to_string();
 
@@ -53,7 +56,7 @@ pub(crate) async fn handle_interactive_shell(
         executable_command: command.to_string(), // Will be executed (may get -S flag)
         display_command: sanitized_command.clone(), // For logs/UI
         run_mode,                                // Store for 2nd call
-        timeout: args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30), // Command execution timeout
+        timeout,                                 // Validated timeout with enforced max
         encryption_nonce: encryption_nonce.clone(),
         created_at: chrono::Utc::now(),
     };
@@ -98,17 +101,28 @@ pub async fn handle_execute_pending_shell(
 ) -> Result<MCPResult, String> {
     use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 
-    let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+    // Accept both camelCase (schema) and snake_case (legacy) for backward compatibility
+    let execution_id = match args
+        .get("executionId")
+        .or_else(|| args.get("execution_id"))
+        .and_then(|v| v.as_str())
+    {
         Some(id) => id,
         None => {
-            return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+            // Use the schema/documented name in the error
+            return Ok(missing_param_error("executionId", ToolGroup::Workspace));
         }
     };
 
-    let obfuscated_input = match args.get("user_input").and_then(|v| v.as_str()) {
+    let obfuscated_input = match args
+        .get("userInput")
+        .or_else(|| args.get("user_input"))
+        .and_then(|v| v.as_str())
+    {
         Some(input) => input,
         None => {
-            return Ok(missing_param_error("user_input", ToolGroup::Workspace));
+            // Use the schema/documented name in the error
+            return Ok(missing_param_error("userInput", ToolGroup::Workspace));
         }
     };
 
@@ -403,7 +417,7 @@ pub async fn handle_execute_pending_shell(
                     format!("Command execution timeout after {} seconds", timeout_secs),
                     vec![
                         format!("Increase timeout parameter (current: {}s)", timeout_secs),
-                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
+                        "Use \"run_mode\": \"async\" for long-running commands".to_string(),
                         "Verify the command isn't hanging waiting for additional input"
                             .to_string(),
                     ],
@@ -500,31 +514,132 @@ pub async fn handle_execute_pending_shell(
                 .insert(process_id.clone(), cancel_token.clone());
         }
 
-        // Spawn monitoring task
+        // Spawn monitoring task with proper output streaming
         let registry = server.process_registry.clone();
         let pid_copy = process_id.clone();
+        let stdout_path_copy = stdout_path.clone();
+        let stderr_path_copy = stderr_path.clone();
+        let user_input_copy = user_input.to_string();
+        let display_command = pending.display_command.clone();
 
         tokio::spawn(async move {
-            // Execute using common spawn+stream logic would go here
-            // For now, simplified version
-            let result = child.wait_with_output().await;
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            
+            // Take stdout and stderr pipes from child
+            let stdout_pipe = child.stdout.take();
+            let stderr_pipe = child.stderr.take();
 
+            // Spawn tasks to stream stdout and stderr to files
+            let stdout_task = if let Some(stdout) = stdout_pipe {
+                let path = stdout_path_copy.clone();
+                let input = user_input_copy.clone();
+                Some(tokio::spawn(async move {
+                    let reader = BufReader::new(stdout);
+                    let mut lines = reader.lines();
+                    let mut output_lines = Vec::new();
+
+                    match tokio::fs::File::create(&path).await {
+                        Ok(file) => {
+                            let mut writer = tokio::io::BufWriter::new(file);
+                            
+                            while let Ok(Some(line)) = lines.next_line().await {
+                                // Redact sensitive input from output
+                                let redacted = super::security::redact_sensitive_input(&line, &input);
+                                output_lines.push(redacted.clone());
+                                
+                                // Write to file
+                                let _ = writer.write_all(redacted.as_bytes()).await;
+                                let _ = writer.write_all(b"\n").await;
+                            }
+                            
+                            let _ = writer.flush().await;
+                            output_lines
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to create stdout file: {}", e);
+                            Vec::new()
+                        }
+                    }
+                }))
+            } else {
+                None
+            };
+
+            let stderr_task = if let Some(stderr) = stderr_pipe {
+                let path = stderr_path_copy.clone();
+                let input = user_input_copy.clone();
+                Some(tokio::spawn(async move {
+                    let reader = BufReader::new(stderr);
+                    let mut lines = reader.lines();
+                    let mut output_lines = Vec::new();
+
+                    match tokio::fs::File::create(&path).await {
+                        Ok(file) => {
+                            let mut writer = tokio::io::BufWriter::new(file);
+                            
+                            while let Ok(Some(line)) = lines.next_line().await {
+                                // Redact sensitive input from output
+                                let redacted = super::security::redact_sensitive_input(&line, &input);
+                                output_lines.push(redacted.clone());
+                                
+                                // Write to file
+                                let _ = writer.write_all(redacted.as_bytes()).await;
+                                let _ = writer.write_all(b"\n").await;
+                            }
+                            
+                            let _ = writer.flush().await;
+                            output_lines
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to create stderr file: {}", e);
+                            Vec::new()
+                        }
+                    }
+                }))
+            } else {
+                None
+            };
+
+            // Wait for process to complete
+            let result = child.wait().await;
+
+            // Wait for streaming tasks to complete
+            if let Some(task) = stdout_task {
+                let _ = task.await;
+            }
+            if let Some(task) = stderr_task {
+                let _ = task.await;
+            }
+
+            // Update registry with final status
             let mut reg = registry.write().await;
             if let Some(entry) = reg.entries.get_mut(&pid_copy) {
                 match result {
-                    Ok(output) => {
-                        entry.exit_code = output.status.code();
-                        entry.status = if output.status.code().unwrap_or(-1) == 0 {
+                    Ok(status) => {
+                        entry.exit_code = status.code();
+                        entry.status = if status.code().unwrap_or(-1) == 0 {
                             terminal_manager::ProcessStatus::Finished
                         } else {
                             terminal_manager::ProcessStatus::Failed
                         };
+                        
+                        // Update file sizes
+                        entry.stdout_size = terminal_manager::get_file_size(&stdout_path_copy).await;
+                        entry.stderr_size = terminal_manager::get_file_size(&stderr_path_copy).await;
                     }
                     Err(_) => {
                         entry.status = terminal_manager::ProcessStatus::Failed;
                     }
                 }
                 entry.finished_at = Some(chrono::Utc::now());
+                
+                // Log completion
+                info!(
+                    "Interactive shell async executed: {} (session: {}, status: {:?})",
+                    display_command,
+                    entry.session_id,
+                    entry.status
+                );
             }
             reg.cancellation_tokens.remove(&pid_copy);
         });
@@ -563,11 +678,16 @@ pub async fn handle_cancel_pending_execution(
     args: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
-    // Extract execution_id
-    let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+    // Accept both camelCase (schema) and snake_case (legacy) for backward compatibility
+    let execution_id = match args
+        .get("executionId")
+        .or_else(|| args.get("execution_id"))
+        .and_then(|v| v.as_str())
+    {
         Some(id) => id,
         None => {
-            return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+            // Use the schema/documented name in the error
+            return Ok(missing_param_error("executionId", ToolGroup::Workspace));
         }
     };
 

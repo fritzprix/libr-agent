@@ -5,7 +5,7 @@ use crate::mcp::builtin::workspace::tools::code_tools::{
 use super::super::validation;
 
 /// Get platform-aware prompt configuration for user input
-/// Returns (prompt, input_type) tuple
+/// Returns (prompt, input_type) tuple with validated input type
 pub fn get_prompt_config<'a>(command: &str, args: &'a Value) -> (&'a str, &'a str) {
     // Check if privilege escalation detected (Unix only)
     let is_privilege_cmd = validation::detect_privilege_escalation(command);
@@ -18,10 +18,17 @@ pub fn get_prompt_config<'a>(command: &str, args: &'a Value) -> (&'a str, &'a st
             .get("input_prompt")
             .and_then(|v| v.as_str())
             .unwrap_or("Enter input:");
+        
+        // SECURITY: Whitelist allowed input types to prevent HTML attribute injection
         let input_type = args
             .get("input_type")
             .and_then(|v| v.as_str())
+            .and_then(|v| match v {
+                "text" | "password" => Some(v),
+                _ => None, // Reject any other type
+            })
             .unwrap_or("text");
+        
         (prompt, input_type)
     }
 }
@@ -148,8 +155,8 @@ pub fn build_shell_input_ui(
               payload: {{
                 toolName: '{}',
                 params: {{
-                  execution_id: executionId,
-                  user_input: obfuscatedInput,
+                  executionId: executionId,
+                  userInput: obfuscatedInput,
                 }},
               }},
             }},
@@ -172,7 +179,7 @@ pub fn build_shell_input_ui(
             payload: {{
               toolName: '{}',
               params: {{
-                execution_id: executionId,
+                executionId: executionId,
               }},
             }},
           }},
