@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::WorkspaceServer;
+    use crate::mcp::builtin::BuiltinMCPServer;
     use crate::session::SessionManager;
     use serde_json::json;
     use std::sync::Arc;
@@ -37,7 +38,7 @@ mod tests {
         for _ in 0..20 {
             let poll_args = json!({ "processId": process_id });
             let poll_res = server
-                .handle_poll_process(poll_args, "test-session")
+                .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -56,7 +57,7 @@ mod tests {
             "stream": "stdout"
         });
         let read_res = server
-            .handle_read_process_output(read_args, "test-session")
+            .call_tool("readProcessOutput", read_args, Some("test-session".to_string()))
             .await
             .expect("Read failed");
 
@@ -94,7 +95,7 @@ mod tests {
         for _ in 0..20 {
             let poll_args = json!({ "processId": process_id });
             let poll_res = server
-                .handle_poll_process(poll_args, "test-session")
+                .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -115,7 +116,7 @@ mod tests {
         });
 
         let poll_res = server
-            .handle_poll_process(poll_args, "test-session")
+            .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
             .await
             .expect("Poll failed");
 

@@ -286,6 +286,8 @@ mod tests {
             id: "test-session-2".to_string(),
             name: None,
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: None,
             created_at: now,
             updated_at: now,
@@ -318,13 +320,14 @@ mod tests {
     async fn test_get_all_sessions() {
         let repo = setup_test_db().await;
         let now = chrono::Utc::now().timestamp_millis();
-
         // Create multiple sessions
         for i in 1..=3 {
             let session = SessionMetadata {
                 id: format!("test-session-{}", i),
                 name: Some(format!("Session {}", i)),
                 status: SessionStatus::Idle,
+                model: "gpt-4".to_string(),
+                provider: "openai".to_string(),
                 agent_config: None,
                 created_at: now,
                 updated_at: now + i,
@@ -384,6 +387,8 @@ mod tests {
             id: "test-session-update".to_string(),
             name: Some("Original Name".to_string()),
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: None,
             created_at: now,
             updated_at: now,
@@ -391,13 +396,15 @@ mod tests {
 
         repo.upsert_session(&session)
             .await
-            .expect("Failed to insert session");
+            .expect("Failed to upsert session");
 
         // Update the session
         let updated_session = SessionMetadata {
             id: "test-session-update".to_string(),
             name: Some("Updated Name".to_string()),
             status: SessionStatus::Busy,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: Some(r#"{"updated": true}"#.to_string()),
             created_at: now,
             updated_at: now + 1000,
@@ -431,6 +438,8 @@ mod tests {
             id: "test-session-delete".to_string(),
             name: Some("To Be Deleted".to_string()),
             status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
             agent_config: None,
             created_at: now,
             updated_at: now,
