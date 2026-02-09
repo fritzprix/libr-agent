@@ -1,4 +1,4 @@
-use crate::commands::skill_commands::{resolve_skills};
+use crate::commands::skill_commands::resolve_skills;
 use std::fs;
 use std::io::Write;
 use tempfile::TempDir;

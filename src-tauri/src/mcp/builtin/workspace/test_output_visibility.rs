@@ -57,7 +57,11 @@ mod tests {
             "stream": "stdout"
         });
         let read_res = server
-            .call_tool("readProcessOutput", read_args, Some("test-session".to_string()))
+            .call_tool(
+                "readProcessOutput",
+                read_args,
+                Some("test-session".to_string()),
+            )
             .await
             .expect("Read failed");
 
