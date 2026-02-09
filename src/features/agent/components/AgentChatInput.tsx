@@ -13,6 +13,7 @@ import { Button, FileAttachment } from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import type { Message, AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import {
@@ -284,25 +285,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     [attachedFiles, removeAttachedFile],
   );
 
-  const inputClassName = useMemo(() => {
-    return `flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${
-      dragState === 'valid'
-        ? 'border-success bg-success/10'
-        : dragState === 'invalid'
-          ? 'border-destructive bg-destructive/10'
-          : ''
-    }`;
-  }, [dragState]);
+  const inputClassName = cn(
+    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto'
+  );
 
-  const formClassName = useMemo(() => {
-    return `px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-      dragState === 'valid'
-        ? 'bg-success/10 border-success'
-        : dragState === 'invalid'
-          ? 'bg-destructive/10 border-destructive'
-          : ''
-    }`;
-  }, [dragState]);
+  const formClassName = cn(
+    'px-4 py-4 border-t flex items-center gap-2 transition-colors',
+    dragState === 'valid' && 'bg-success/10 border-success',
+    dragState === 'invalid' && 'bg-destructive/10 border-destructive',
+  );
 
   return (
     <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
