@@ -107,3 +107,9 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Inline recursive rendering **Fix:** Extracted FileTreeNode component
 
 ## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Accessibility violation (div with onClick) **Fix:** Use semantic button element
+
+## 2026-02-05 - [AssistantSelectionCard] **Visual Bug:** Missing component, hardcoded button styles **Fix:** Created new component with consistent styling
+
+## 2026-02-05 - [SessionCard] **Visual Bug:** Custom status indicator, inconsistent icons **Fix:** Used Badge component, standardized icons to 12px
+
+## 2026-02-05 - [AgentChatStartView] **Visual Bug:** Arbitrary flex splits, magic numbers **Fix:** Used CSS Grid layout, standard spacing
