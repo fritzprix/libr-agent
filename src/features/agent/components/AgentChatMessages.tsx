@@ -102,7 +102,7 @@ export function AgentChatMessages() {
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
         ref={scrollContainerRef}
-        className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6 terminal-scrollbar"
+        className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6"
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
@@ -122,7 +122,7 @@ export function AgentChatMessages() {
           if (groupedMessage.message.error) {
             return (
               <div
-                className="self-start mt-2 mb-2"
+                className="self-start my-2"
                 key={groupedMessage.message.id}
               >
                 <ErrorBubble
