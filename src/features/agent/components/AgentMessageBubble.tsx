@@ -11,6 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
+  pendingMessages?: Message[]; // NEW: Pending queue for set-based detection
 }
 
 function AgentMessageBubbleImpl({
@@ -19,7 +20,14 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
+  pendingMessages = [], // NEW: Default to empty array
 }: AgentMessageBubbleProps) {
+  // Check if message is pending (set-based detection)
+  const isPending = useMemo(
+    () => pendingMessages.some((pm) => pm.id === msg.id),
+    [pendingMessages, msg.id],
+  );
+
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -77,7 +85,9 @@ function AgentMessageBubbleImpl({
           className={cn(
             'relative max-w-[85%] md:max-w-2xl p-3 rounded-lg flex flex-col',
             msg.role === 'user'
-              ? 'bg-primary text-primary-foreground'
+              ? isPending
+                ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
+                : 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground',
           )}
         >
@@ -85,7 +95,9 @@ function AgentMessageBubbleImpl({
             {msg.role === 'assistant'
               ? getAssistantName?.(msg) || 'ASSISTANT'
               : msg.role === 'user'
-                ? 'You'
+                ? isPending
+                  ? 'You (queued)'
+                  : 'You'
                 : msg.role.toUpperCase()}
           </div>
           <div className="whitespace-pre-wrap min-w-0">

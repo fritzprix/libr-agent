@@ -11,8 +11,14 @@ import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 
 export function AgentChatMessages() {
-  const { messages, error, llmError, retryMessage, workflowStatus } =
-    useAgentChat();
+  const {
+    messages,
+    pendingMessages,
+    error,
+    llmError,
+    retryMessage,
+    workflowStatus,
+  } = useAgentChat();
   const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
@@ -106,6 +112,7 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
+                pendingMessages={pendingMessages}
               />
             );
           }
@@ -145,6 +152,7 @@ export function AgentChatMessages() {
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
+              pendingMessages={pendingMessages}
             />
           );
         })}

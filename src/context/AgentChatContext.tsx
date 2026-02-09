@@ -39,6 +39,7 @@ export interface ServiceContext {
 interface AgentChatStateContextValue {
   isSessionLoading: boolean;
   messages: Message[];
+  pendingMessages: Message[]; // NEW: Export pending queue for set-based detection
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
@@ -498,6 +499,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     () => ({
       isSessionLoading,
       messages: displayMessages,
+      pendingMessages, // NEW: Expose pending queue for set-based detection
       error,
       llmError,
       workflowStatus,
@@ -507,6 +509,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     [
       isSessionLoading,
       displayMessages,
+      pendingMessages, // NEW: Add to dependencies
       error,
       llmError,
       workflowStatus,
