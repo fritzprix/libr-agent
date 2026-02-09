@@ -104,6 +104,9 @@ export function AgentChatMessages() {
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
+            const isPending = pendingMessages.some(
+              (pm) => pm.id === groupedMessage.message.id,
+            );
             return (
               <AgentMessageBubble
                 key={groupedMessage.message.id}
@@ -112,7 +115,7 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
-                pendingMessages={pendingMessages}
+                isPending={isPending}
               />
             );
           }
@@ -147,12 +150,14 @@ export function AgentChatMessages() {
             return null;
           }
 
+          const isPending = pendingMessages.some((pm) => pm.id === msg.id);
+
           return (
             <AgentMessageBubble
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
-              pendingMessages={pendingMessages}
+              isPending={isPending}
             />
           );
         })}

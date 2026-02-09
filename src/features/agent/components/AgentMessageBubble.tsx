@@ -11,7 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  pendingMessages?: Message[]; // NEW: Pending queue for set-based detection
+  isPending?: boolean;
 }
 
 function AgentMessageBubbleImpl({
@@ -20,14 +20,8 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
-  pendingMessages = [], // NEW: Default to empty array
+  isPending = false,
 }: AgentMessageBubbleProps) {
-  // Check if message is pending (set-based detection)
-  const isPending = useMemo(
-    () => pendingMessages.some((pm) => pm.id === msg.id),
-    [pendingMessages, msg.id],
-  );
-
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
