@@ -93,7 +93,7 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         goal: String,
         workflow: String,
     ) -> Result<playbook::Model, DbError> {
-        let now = chrono::Utc::now().timestamp();
+        let now = chrono::Utc::now().timestamp_millis();
 
         let active_model = playbook::ActiveModel {
             id: Set(id),
@@ -187,7 +187,7 @@ impl PlaybookRepository for SqlitePlaybookRepository {
         if let Some(b) = is_bookmarked {
             active_model.is_bookmarked = Set(b);
         }
-        active_model.updated_at = Set(chrono::Utc::now().timestamp());
+        active_model.updated_at = Set(chrono::Utc::now().timestamp_millis());
 
         active_model
             .update(&self.db)
