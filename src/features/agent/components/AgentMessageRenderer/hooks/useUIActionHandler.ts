@@ -27,9 +27,9 @@ export function useUIActionHandler(
    * Handle UI Action from UIResourceRenderer
    *
    * V2 Simplified Logic:
-   * - Tool execution만 수행, message pair 생성은 Rust가 담당
-   * - UI Resource 감지는 Rust가 수행 (hasToolCall && !hasUIResource)
-   * - Frontend는 agent:event로 결과 수신만 함
+   * - Only executes tool calls; Rust backend handles message pair creation
+   * - Rust backend detects UI Resources (hasToolCall && !hasUIResource)
+   * - Frontend only receives results via agent:event
    */
   return useCallback(
     async (result: UIActionResult) => {
@@ -49,11 +49,11 @@ export function useUIActionHandler(
               result,
             });
 
-            // prefix 기반 라우팅: tauri: 접두사가 있으면 내부 Tauri 명령어로 처리
+            // Prefix-based routing: if 'tauri:' prefix exists, handle as internal Tauri command
             if (toolName.startsWith('tauri:')) {
               const [, strippedCommand] = toolName.split('tauri:');
 
-              // tauriCommands 객체에서 해당 메서드가 존재하는지 확인
+              // Check if the method exists in tauriCommands object
               if (
                 strippedCommand &&
                 typeof tauriCommands[
@@ -63,7 +63,7 @@ export function useUIActionHandler(
                 try {
                   let resultText: string;
 
-                  // 각 Tauri 명령어별로 명시적 처리
+                  // Explicit handling for each Tauri command
                   switch (strippedCommand) {
                     case 'downloadWorkspaceFile': {
                       resultText = await tauriCommands.downloadWorkspaceFile(
@@ -152,7 +152,7 @@ export function useUIActionHandler(
               }
               return { status: 'tauri-processed' };
             } else {
-              // MCP 도구 호출: latest content에서 service info 추출
+              // MCP tool call: extract service info from latest content
               const serviceInfo = extractServiceInfoFromContent(
                 contentRef.current,
               );
@@ -170,7 +170,7 @@ export function useUIActionHandler(
                 });
 
                 if (isBaseName) {
-                  // Web MCP (BuiltInWeb) & Native (BuiltInRust) 도구는 builtin_ prefix 필요
+                  // Web MCP (BuiltInWeb) & Native (BuiltInRust) tools require builtin_ prefix
                   if (
                     serviceInfo.backendType === 'BuiltInWeb' ||
                     serviceInfo.backendType === 'BuiltInRust'
@@ -189,7 +189,7 @@ export function useUIActionHandler(
                 );
               }
 
-              // 통합된 MCP 도구 호출 (V2: Rust Single Backend)
+              // Unified MCP tool call (V2: Rust Single Backend)
               logger.info(
                 'Injecting Tool Call via Rust Backend (Assistant Role)',
                 {

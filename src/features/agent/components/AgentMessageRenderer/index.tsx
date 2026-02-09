@@ -37,13 +37,13 @@ import { STATIC_MARKDOWN_COMPONENTS } from './components/MarkdownComponents';
 const logger = getLogger('AgentMessageRenderer');
 
 /**
- * AgentMessageRenderer - Agent V2용 메시지 렌더러
+ * AgentMessageRenderer - Message renderer for Agent V2
  *
- * Legacy MessageRenderer와의 주요 차이점:
- * 1. Context 의존성: ChatContext → AgentChatContext, AgentSessionContext
- * 2. Tool execution: createToolMessagePair 제거, Rust가 메시지 생성 담당
- * 3. UI Action: Tool call만 실행, Rust가 자동으로 re-submit 조건 체크
- * 4. Submit: submit([messages]) → submit(message) 단일 메시지
+ * Key differences from the legacy MessageRenderer:
+ * 1. Context dependencies: ChatContext → AgentChatContext, AgentSessionContext
+ * 2. Tool execution: remove createToolMessagePair; Rust backend is responsible for creating messages
+ * 3. UI actions: only executes tool calls; Rust automatically checks re-submit conditions
+ * 4. Submit behavior: submit([messages]) → submit(message) with a single message
  *
  * Reference: elaborated_idea.md - UI Resource Auto-Pause/Resume Mechanism
  */
@@ -84,7 +84,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     [isDark],
   );
 
-  // content 결정: message가 있으면 message.content 사용, 없으면 props.content 사용
+  // Content determination: use message.content if message exists, otherwise use props.content
   // V2 Fix: Prioritize explicit 'content' prop if provided (e.g. for grouped tool calls)
   const finalContent: MCPContent[] = content || message?.content || [];
 
@@ -194,17 +194,18 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             <div key={key} className="my-2">
               <AgentToolCallGroup
                 message={
-                  message ||
-                  ({
-                    id: 'dummy',
-                    role: 'assistant',
+                  message || {
+                    id: 'placeholder',
+                    role: 'assistant' as const,
                     content: [],
-                  } as unknown as Message)
-                } // dummy message if missing, mostly for ID
+                    sessionId: 'placeholder',
+                    threadId: 'placeholder',
+                  }
+                }
                 toolGroup={{ calls: toolGroupCalls }}
                 toolResults={toolGroupResults}
-                isLast={index === renderItems.length - 1} // flawed if text follows, but acceptable for visibility logic
-                visibleCount={999} // Expand by default for interleaved? Or keep default 3? Let's default.
+                isLast={index === renderItems.length - 1}
+                visibleCount={999}
               />
             </div>
           );
@@ -259,14 +260,19 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               return null;
             }
 
-            // Prefer a stable, unique key to ensure proper mount/unmount semantics
-            // Use message.id + resource.uri to avoid index-based reordering issues
-            // Also, pass stable props to avoid unnecessary teardown in the renderer
+            // Prefer a stable, unique key to ensure proper mount/unmount semantics.
+            // When possible, use message.id + resource.uri to avoid index-based reordering issues;
+            // fall back to itemKey only if either identifier is unavailable.
+            const resourceKey =
+              message?.id && resourceItem.resource.uri
+                ? `${message.id}:${resourceItem.resource.uri}`
+                : itemKey;
+
             return (
               <div
-                key={itemKey}
+                key={resourceKey}
                 ref={(el) => {
-                  resourceRefs.current[itemKey] = el;
+                  resourceRefs.current[resourceKey] = el;
                 }}
                 className={
                   expandResources ? 'w-full overflow-visible min-h-96' : ''
