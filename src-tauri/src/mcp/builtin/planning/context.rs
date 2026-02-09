@@ -120,7 +120,22 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         if !checked_todos.is_empty() {
             parts.push("\n**Completed Recently:**".to_string());
             for (idx, t) in checked_todos.iter().rev().take(3) {
-                parts.push(format!("- [✓] (Index {}) {}", idx, t.content));
+                let info = t
+                    .description
+                    .as_deref()
+                    .unwrap_or("")
+                    .replace(['\n', '\r'], " ");
+
+                let summary = if info.is_empty() {
+                    String::new()
+                } else if info.chars().count() > 50 {
+                    let s: String = info.chars().take(47).collect();
+                    format!(" ({})", format!("{}...", s))
+                } else {
+                    format!(" ({})", info)
+                };
+
+                parts.push(format!("- [✓] (Index {}) {}{}", idx, t.content, summary));
             }
         }
 

@@ -132,7 +132,7 @@ impl WorkspaceServer {
                         content_display
                     ),
                     vec![
-                        "Use pollProcess(processId) to check running status".to_string(),
+                        "Use waitForProcess(processId, 0) to check running status".to_string(),
                         format!(
                             "Try mode=\"{}\" to read the {} of output instead",
                             if mode == "head" { "tail" } else { "head" },
@@ -156,7 +156,7 @@ impl WorkspaceServer {
                         format!("No {} output file found", stream),
                         vec![
                             "The process may not have started yet".to_string(),
-                            format!("Use pollProcess(\"{}\") to verify process status", process_id),
+                            format!("Use waitForProcess(\"{}\", 0) to verify process status", process_id),
                             "Wait a moment and try again - the process may not have generated output".to_string(),
                             "Check if the process ran with output redirected elsewhere".to_string(),
                         ],
@@ -342,7 +342,10 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let mut lines = vec![format!("- Use pollProcess('{}') to check status", first_id)];
+            let mut lines = vec![format!(
+                "- Use waitForProcess('{}', 0) to check status",
+                first_id
+            )];
 
             // Add appropriate readProcessOutput guidance based on status
             match first_status {

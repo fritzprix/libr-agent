@@ -111,7 +111,7 @@ impl WorkspaceServer {
                     ⚠️ This operation is permanent - the file cannot be recovered through this tool.\n\n\
                     **Next Steps:**\n\
                     - 📋 Use `listDirectory(\"{}\")` to verify deletion\n\
-                    - 📝 Use `createFile(\"{}\", content)` to create a new file at this path",
+                    - 📝 Use `writeFile(\"{}\", content)` to create a new file at this path",
                     path_str,
                     size_str,
                     std::path::Path::new(path_str)

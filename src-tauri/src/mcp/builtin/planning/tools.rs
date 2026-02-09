@@ -121,6 +121,10 @@ fn check_todo_tool() -> MCPTool {
                     "checked".to_string(),
                     boolean_prop(Some("Whether to mark as done (true) or undone (false). Defaults to true.")),
                 ),
+                (
+                    "summary".to_string(),
+                    string_prop(None, None, Some("Optional completion summary (e.g., 'Fixed with PR #42', 'Resolved in commit abc123').")),
+                ),
             ],
             vec!["index".to_string()],
             None,
