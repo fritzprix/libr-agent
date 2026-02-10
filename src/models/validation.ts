@@ -31,9 +31,19 @@ const AssistantDtoSchema = z.object({
 export const parseAssistant = (data: unknown): Assistant => {
   const dto = AssistantDtoSchema.parse(data);
 
-  const configParsed = AssistantConfigSchema.safeParse(dto.config);
+  let configRaw = dto.config;
+  if (typeof configRaw === 'string') {
+    try {
+      configRaw = JSON.parse(configRaw);
+    } catch (e) {
+      logger.error('Failed to parse stringified assistant config', e);
+      configRaw = {};
+    }
+  }
 
-  if (!configParsed.success && dto.config) {
+  const configParsed = AssistantConfigSchema.safeParse(configRaw);
+
+  if (!configParsed.success && configRaw) {
     logger.warn('Assistant config validation failed', configParsed.error);
   }
 

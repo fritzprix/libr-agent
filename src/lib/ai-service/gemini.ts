@@ -9,7 +9,7 @@ import {
 } from '@google/genai';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, MCPContent } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
@@ -252,10 +252,13 @@ export class GeminiService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     const { config, tools } = this.prepareStreamChat(messages, options);
 
-    const validatedMessages = this.validateGeminiMessageStack(messages);
-
     try {
-      const geminiMessages = this.convertToGeminiMessages(validatedMessages);
+      const geminiMessages = this.convertToGeminiMessages(messages);
+      if (geminiMessages.length === 0) {
+        throw new Error(
+          'No valid messages to send to Gemini (must start with user/tool role)',
+        );
+      }
       const geminiTools = tools
         ? [
             {
@@ -561,7 +564,7 @@ export class GeminiService extends BaseAIService {
       }
 
       this.handleStreamingError(error, {
-        messages: validatedMessages,
+        messages,
         options,
         config,
       });
@@ -577,76 +580,76 @@ export class GeminiService extends BaseAIService {
    * @returns A new array of validated and sanitized messages.
    * @private
    */
-  private validateGeminiMessageStack(messages: Message[]): Message[] {
-    if (messages.length === 0) {
-      return messages;
-    }
-
-    const convertedMessages = messages.map((m) => {
-      if (m.role === 'tool') {
-        return { ...m, role: 'user' as const };
-      }
-      return m;
-    });
-
-    const firstUserIndex = convertedMessages.findIndex(
-      (msg) => msg.role === 'user',
-    );
-    if (firstUserIndex === -1) {
-      logger.warn('No user message found after role conversion');
-      return [];
-    }
-
-    const validMessages = convertedMessages.slice(firstUserIndex);
-
-    logger.info(
-      `Role conversion and validation: ${messages.length} → ${validMessages.length} messages`,
-      {
-        originalRoles: messages.map((m) => m.role),
-        convertedRoles: validMessages.map((m) => m.role),
-      },
-    );
-
-    return validMessages;
-  }
-
   /**
    * Converts an array of standard `Message` objects into the `Content` format
    * required by the Gemini API.
+   *
+   * Performance Optimizations:
+   * 1. Uses a Map for O(1) tool name lookups.
+   * 2. Single-pass pre-scan for tool names.
+   * 3. Trims conversation to start with a 'user' or 'tool' role as required by Gemini.
+   *
    * @param messages The array of messages to convert.
    * @returns An array of `Content` objects.
    * @private
    */
   private convertToGeminiMessages(messages: Message[]): Content[] {
-    const geminiMessages: Content[] = [];
+    if (messages.length === 0) return [];
 
-    for (const m of messages) {
-      if (m.role === 'system') {
-        continue;
+    const toolCallNames = new Map<string, string>();
+    let firstValidIndex = -1;
+
+    // Phase 1: Pre-scan for tool names and identify the first valid message (Gemini requires starting with User)
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+
+      // Collect tool names for O(1) lookup
+      if (m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          if (tc.id) toolCallNames.set(tc.id, tc.function.name);
+        }
       }
 
-      if (m.role === 'user') {
-        // If this user message actually represents a tool response (the
-        // code earlier converts tool -> user), prefer to convert any
-        // structured tool_calls into FunctionResponse parts so Gemini
-        // receives the structured data rather than raw text.
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts = m.tool_calls.map((tc) => {
-            const parsed =
-              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id =
-              tc.id && typeof tc.id === 'string'
-                ? tc.id
-                : this.generateToolCallId();
-            return createPartFromFunctionResponse(id, tc.function.name, parsed);
-          });
-          geminiMessages.push({ role: 'user', parts });
-        } else if (m.content) {
-          geminiMessages.push({
-            role: 'user',
-            parts: [{ text: this.processMessageContent(m.content) }],
-          });
+      // Mark first valid start point (Must be User turn)
+      if (firstValidIndex === -1 && (m.role === 'user' || m.role === 'tool')) {
+        firstValidIndex = i;
+      }
+    }
+
+    if (firstValidIndex === -1) {
+      logger.warn('No user or tool message found to start Gemini conversation');
+      return [];
+    }
+
+    const geminiMessages: Content[] = [];
+
+    // Phase 2: Convert messages starting from the first valid index
+    for (let i = firstValidIndex; i < messages.length; i++) {
+      const m = messages[i];
+
+      if (m.role === 'system') continue;
+
+      if (m.role === 'user' || m.role === 'tool') {
+        // Handle tool results (either role: 'tool' or role: 'user' with tool_call_id)
+        if (m.tool_call_id) {
+          const name = toolCallNames.get(m.tool_call_id);
+          if (name) {
+            const parsed = this.tryParseResult(m.content);
+            geminiMessages.push({
+              role: 'user',
+              parts: [
+                createPartFromFunctionResponse(m.tool_call_id, name, parsed),
+              ],
+            });
+            continue;
+          }
         }
+
+        // Standard user message
+        geminiMessages.push({
+          role: 'user',
+          parts: [{ text: this.processMessageContent(m.content) }],
+        });
       } else if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
           geminiMessages.push({
@@ -668,31 +671,33 @@ export class GeminiService extends BaseAIService {
             parts: [{ text: this.processMessageContent(m.content) }],
           });
         }
-      } else if (m.role === 'tool') {
-        // If for some reason a tool role remains, handle similarly by
-        // converting tool_calls to FunctionResponse parts.
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts = m.tool_calls.map((tc) => {
-            const parsed =
-              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id =
-              tc.id && typeof tc.id === 'string'
-                ? tc.id
-                : this.generateToolCallId();
-            return createPartFromFunctionResponse(id, tc.function.name, parsed);
-          });
-          geminiMessages.push({ role: 'user', parts });
-        } else if (m.content) {
-          geminiMessages.push({
-            role: 'user',
-            parts: [{ text: this.processMessageContent(m.content) }],
-          });
-        }
-        continue;
       }
     }
 
+    logger.info(
+      `Gemini conversion: ${messages.length} -> ${geminiMessages.length} messages`,
+      {
+        toolMappings: toolCallNames.size,
+      },
+    );
+
     return geminiMessages;
+  }
+
+  /**
+   * Attempts to parse tool result content into a structured object.
+   * If parsing fails or content is not text, wraps it in a standard response object.
+   * @param content The MCPContent array from a tool message.
+   * @returns A structured record for FunctionResponse.
+   * @private
+   */
+  private tryParseResult(content: MCPContent[]): Record<string, unknown> {
+    const text = this.processMessageContent(content);
+    const parsed = tryParse<Record<string, unknown>>(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return { result: text };
   }
   /**
    * @inheritdoc

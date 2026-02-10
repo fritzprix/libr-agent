@@ -105,11 +105,9 @@ export const mcpServersCRUD: CRUD<MCPServerEntity> = {
     }
   },
   read: async (id: string) => {
-    // ID = Name
     return mcpBackent.getMCPServer(id);
   },
   delete: async (id: string) => {
-    // ID = Name
     // Check references
     const assistants = await assistantsBackend.listAssistants();
     const referencingAssistants = assistants.filter((a) =>
