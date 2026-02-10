@@ -38,11 +38,7 @@ export function groupContent(
   // Fallback: If no thinking content found but message.thinking exists (e.g. from backend persistence normalization),
   // inject it at the start to ensure it is displayed.
   const hasThinkingContent = finalContent.some((c) => c.type === 'thinking');
-  if (
-    !hasThinkingContent &&
-    message?.thinking &&
-    message.thinking.length > 0
-  ) {
+  if (!hasThinkingContent && message?.thinking && message.thinking.length > 0) {
     items.unshift({
       type: 'thinking',
       thinking: message.thinking,

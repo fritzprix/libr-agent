@@ -1,7 +1,11 @@
 import React, { useMemo, useRef, useEffect, memo } from 'react';
 import { AgentToolCallGroup } from '../AgentToolCallGroup';
 import { ThinkingBubble } from '../shared';
-import type { MCPContent, MCPToolCallContent, MCPThinkingContent } from '@/lib/mcp';
+import type {
+  MCPContent,
+  MCPToolCallContent,
+  MCPThinkingContent,
+} from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { getLogger } from '@/lib/logger';

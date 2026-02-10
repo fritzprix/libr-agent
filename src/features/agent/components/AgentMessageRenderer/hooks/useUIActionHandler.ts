@@ -277,6 +277,14 @@ export function useUIActionHandler(
         };
       }
     },
-    [session?.id, session?.assistant?.id, submit, openExternalUrl, tauriCommands, injectMessages, contentRef],
+    [
+      session?.id,
+      session?.assistant?.id,
+      submit,
+      openExternalUrl,
+      tauriCommands,
+      injectMessages,
+      contentRef,
+    ],
   );
 }
