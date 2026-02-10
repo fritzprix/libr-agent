@@ -26,9 +26,9 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
     authentication: (config as Record<string, unknown>).authentication,
     metadata: (config as Record<string, unknown>).metadata,
     toolCount: dto.toolCount !== null ? dto.toolCount : undefined, // Convert null to undefined
-    isActive: true, // Backend stored configs are generally considered "available". Activity state is runtime.
-    // But wait, frontend has isActive toggle.
-    // Where is isActive stored? Likely inside 'config' JSON in backend.
+    isActive: config.isActive !== undefined ? config.isActive : true,
+    // isActive is stored inside 'config' JSON in backend.
+
     createdAt: new Date(dto.createdAt),
     updatedAt: new Date(dto.updatedAt),
   } as MCPServerEntity;
@@ -63,19 +63,16 @@ export async function updateMCPServer(
   server: MCPServerEntity,
 ): Promise<MCPServerEntity> {
   const params = serializeMCPServer(server);
-  // Backend relies on Name as ID.
-  // If name changed, we might need delete/create or handle rename.
-  // Assuming ID=Name, update expects original name.
-  // But update command in backend takes (name, config).
   const dto = await safeInvoke<MCPServerDto>('update_mcp_server_config', {
+    id: server.id,
     name: params.name,
     config: JSON.parse(params.config),
   });
   return deserializeMCPServer(dto);
 }
 
-export async function deleteMCPServer(name: string): Promise<void> {
-  await safeInvoke<void>('delete_mcp_server_config', { name });
+export async function deleteMCPServer(id: string): Promise<void> {
+  await safeInvoke<void>('delete_mcp_server_config', { id });
 }
 
 export async function listMCPServers(): Promise<MCPServerEntity[]> {

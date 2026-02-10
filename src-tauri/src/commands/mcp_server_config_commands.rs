@@ -40,33 +40,14 @@ pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCP
 
 #[command]
 pub async fn update_mcp_server_config(
-    name: String,
+    id: String,
+    name: Option<String>,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
     let repo = get_mcp_server_repository();
 
-    // Since repository update expects a config value, we need to fetch existing config if only partial update logic is needed.
-    // However, the repository `update` method currently takes `config: Value`.
-    // The command receives `Option<Value>`. If `None`, what should happen?
-    // The previous implementation updated *if* present.
-    // We should probably first GET the existing model to merge, or update the repository signature.
-    // Let's reuse the logic from previous implementation: fetch, patch, update.
-    // The repository `update` method takes a FULL `config` value.
-    // So we need to fetch, then if `config` is None, we keep existing. If `config` is Some, we use it.
-
-    let existing = repo
-        .get_by_name(&name)
-        .await
-        .map_err(|e| format!("Failed to find MCP server config: {}", e))?
-        .ok_or_else(|| "MCP server config not found".to_string())?;
-
-    let new_config = match config {
-        Some(c) => c,
-        None => serde_json::from_str(&existing.config).unwrap_or(Value::Null),
-    };
-
     let updated = repo
-        .update(&existing.id, None, Some(new_config))
+        .update(&id, name.as_deref(), config)
         .await
         .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
@@ -74,16 +55,9 @@ pub async fn update_mcp_server_config(
 }
 
 #[command]
-pub async fn delete_mcp_server_config(name: String) -> Result<(), String> {
+pub async fn delete_mcp_server_config(id: String) -> Result<(), String> {
     let repo = get_mcp_server_repository();
-    // Lookup by name first, then delete by ID
-    let existing = repo
-        .get_by_name(&name)
-        .await
-        .map_err(|e| format!("Failed to find MCP server config: {}", e))?
-        .ok_or_else(|| "MCP server config not found".to_string())?;
-
-    repo.delete(&existing.id)
+    repo.delete(&id)
         .await
         .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
     Ok(())

@@ -111,30 +111,21 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
 
     // Add to active sessions with cancellation token and empty cache
     let mut active = active_sessions.write().await;
-    if let Some(existing_session) = active.get_mut(&session_id) {
-        log::info!(
-            "Session {} already active during creation/update, updating metadata only",
-            session_id
-        );
-        existing_session.metadata = session.clone();
-    } else {
-        log::info!("Initializing new active state for session: {}", session_id);
-        active.insert(
-            session_id.clone(),
-            AgentSession {
-                metadata: session.clone(),
-                is_running: false,
-                cancellation_token: CancellationToken::new(),
-                pending_execution: None,
-                messages: Arc::new(RwLock::new(Vec::new())),
-                cache_initialized: Arc::new(AtomicBool::new(false)),
-                last_synced_at: Arc::new(RwLock::new(None)),
-                thinking_only_count: Arc::new(RwLock::new(0)),
-                pending_message_ids: Arc::new(RwLock::new(Vec::new())),
-                context_registry,
-            },
-        );
-    }
+    active.insert(
+        session_id.clone(),
+        AgentSession {
+            metadata: session.clone(),
+            is_running: false,
+            cancellation_token: CancellationToken::new(),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            thinking_only_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
+            context_registry,
+        },
+    );
 
     log::info!("Created agent session: {}", session_id);
 
@@ -189,34 +180,21 @@ pub async fn resume_session(
 
     // Add to active sessions with cancellation token and empty cache
     let mut active = active_sessions.write().await;
-    if let Some(existing_session) = active.get_mut(session_id) {
-        log::info!(
-            "Session {} already active in memory, updating metadata only",
-            session_id
-        );
-        existing_session.metadata = session.clone();
-        // Transient states (pending_execution, messages, cancellation_token, etc.) are preserved
-    } else {
-        log::info!(
-            "Session {} not in memory, initializing new active session state",
-            session_id
-        );
-        active.insert(
-            session_id.to_string(),
-            AgentSession {
-                metadata: session.clone(),
-                is_running: false,
-                cancellation_token: CancellationToken::new(),
-                pending_execution: None,
-                messages: Arc::new(RwLock::new(Vec::new())),
-                cache_initialized: Arc::new(AtomicBool::new(false)),
-                last_synced_at: Arc::new(RwLock::new(None)),
-                thinking_only_count: Arc::new(RwLock::new(0)),
-                pending_message_ids: Arc::new(RwLock::new(Vec::new())),
-                context_registry,
-            },
-        );
-    }
+    active.insert(
+        session_id.to_string(),
+        AgentSession {
+            metadata: session.clone(),
+            is_running: false,
+            cancellation_token: CancellationToken::new(),
+            pending_execution: None,
+            messages: Arc::new(RwLock::new(Vec::new())),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            last_synced_at: Arc::new(RwLock::new(None)),
+            thinking_only_count: Arc::new(RwLock::new(0)),
+            pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
+            context_registry,
+        },
+    );
 
     log::info!("Resumed agent session: {}", session_id);
     Ok(session)
@@ -344,33 +322,23 @@ pub async fn recover_sessions(
 
             // Initialize session in active_sessions map with fresh state
             let mut active = active_sessions.write().await;
-            if let Some(existing_session) = active.get_mut(&session.id) {
-                log::info!(
-                    "Session {} already active during recovery, updating metadata only",
-                    session.id
-                );
-                existing_session.metadata = session.clone();
-            } else {
-                log::info!(
-                    "Initializing new active state for recovered session: {}",
-                    session.id
-                );
-                active.insert(
-                    session.id.clone(),
-                    AgentSession {
-                        metadata: session.clone(),
-                        is_running: false,
-                        cancellation_token: CancellationToken::new(),
-                        pending_execution: None,
-                        messages: Arc::new(RwLock::new(Vec::new())),
-                        cache_initialized: Arc::new(AtomicBool::new(false)),
-                        last_synced_at: Arc::new(RwLock::new(None)),
-                        thinking_only_count: Arc::new(RwLock::new(0)),
-                        pending_message_ids: Arc::new(RwLock::new(Vec::new())),
-                        context_registry: context_registry.clone(),
-                    },
-                );
-            }
+            active.insert(
+                session.id.clone(),
+                AgentSession {
+                    metadata: session.clone(),
+                    is_running: false,
+                    cancellation_token: CancellationToken::new(),
+                    pending_execution: None,
+                    messages: Arc::new(RwLock::new(Vec::new())),
+                    cache_initialized: Arc::new(AtomicBool::new(false)),
+                    last_synced_at: Arc::new(RwLock::new(None)),
+                    thinking_only_count: Arc::new(RwLock::new(0)),
+                    pending_events: Arc::new(RwLock::new(
+                        crate::agent::state::PendingEventManager::new(),
+                    )),
+                    context_registry: context_registry.clone(),
+                },
+            );
             drop(active); // Release lock early
 
             recovered_count += 1;
