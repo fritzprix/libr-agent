@@ -11,7 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  pendingMessageIds?: ReadonlySet<string>; // Changed from array to Set for O(1) lookups
+  pendingMessageIds?: ReadonlySet<string>;
 }
 
 function AgentMessageBubbleImpl({
@@ -20,13 +20,9 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
-  pendingMessageIds, // Changed from pendingMessages array to Set
+  pendingMessageIds,
 }: AgentMessageBubbleProps) {
-  // Check if message is pending using O(1) Set lookup instead of O(n) array search
-  const isPending = useMemo(
-    () => pendingMessageIds?.has(msg.id) ?? false,
-    [pendingMessageIds, msg.id],
-  );
+  const isPending = pendingMessageIds?.has(msg.id) ?? false;
 
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
@@ -89,6 +85,10 @@ function AgentMessageBubbleImpl({
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
                 : 'bg-primary text-primary-foreground'
               : 'bg-secondary text-secondary-foreground',
+            // Add custom utility to ensure links inside are visible
+            msg.role === 'user'
+              ? '[&_a]:text-primary-foreground'
+              : '[&_a]:text-primary',
           )}
         >
           <div className="text-xs font-semibold mb-1 opacity-70">

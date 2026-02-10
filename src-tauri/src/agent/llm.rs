@@ -27,18 +27,16 @@ pub async fn request_llm_completion(
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
             let mut pending_ids = session.pending_message_ids.write().await;
-            
+
             if pending_ids.is_empty() {
                 Vec::new()
             } else {
                 let messages = session.messages.read().await;
-                
+
                 // Build HashMap for O(1) lookup instead of O(n) iter().find()
-                let msg_map: std::collections::HashMap<&str, &Message> = messages
-                    .iter()
-                    .map(|m| (m.id.as_str(), m))
-                    .collect();
-                
+                let msg_map: std::collections::HashMap<&str, &Message> =
+                    messages.iter().map(|m| (m.id.as_str(), m)).collect();
+
                 // Collect messages matching pending IDs
                 pending_ids
                     .drain(..)

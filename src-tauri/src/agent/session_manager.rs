@@ -301,7 +301,7 @@ impl AgentSessionManager {
         if trigger_workflow {
             // Drop session lock before I/O operations
             drop(sessions);
-            
+
             for msg in &messages {
                 let event = crate::agent::events::AgentEvent::MessageAdded {
                     session_id: session_id.clone(),

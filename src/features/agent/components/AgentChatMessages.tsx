@@ -74,10 +74,7 @@ export function AgentChatMessages() {
     setAutoScrollEnabled(atBottom);
   }, 100);
 
-  const lastMessageWho = useMemo(
-    () => messages[messages.length - 1]?.role,
-    [messages],
-  );
+  const lastMessageWho = messages[messages.length - 1]?.role;
 
   useEffect(() => {
     const container = scrollContainerRef.current;
