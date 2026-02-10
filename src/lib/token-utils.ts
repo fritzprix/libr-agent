@@ -167,6 +167,10 @@ export function batchToolCallsInMessages(
                     text: `[Continuing tool calls - Batch ${batchIndex + 1}/${batches.length}]`,
                   },
                 ],
+          // CRITICAL FIX: Only preserve thinkingSignature on the FIRST batch
+          // Gemini's thought signature protocol requires signature only on the first function call
+          // Duplicating it across batches causes "position 2" validation errors
+          thinkingSignature: batchIndex === 0 ? msg.thinkingSignature : undefined,
         };
         result.push(batchMsg);
 
