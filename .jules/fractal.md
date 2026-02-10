@@ -13,3 +13,9 @@
 **Split:** `types/index.ts`, `hooks/useIsDarkMode.ts`, `hooks/useUIActionHandler.ts`, `components/CodeBlock.tsx`, `components/MarkdownText.tsx`, `config/markdown.tsx`, `utils/contentGrouping.ts`
 **Result:** Reduced from ~960 lines to ~280 lines in the main component.
 **Improvement:** Decoupled Markdown rendering, UI action handling, and content grouping logic. Extracted large memoized components (`CodeBlock`, `MarkdownText`) and hooks.
+
+## 2026-02-10 - src-tauri/src/mcp/builtin/workspace/code_execution/interactive.rs
+
+**Split:** `handlers.rs`, `security.rs`, `ui.rs`, `mod.rs`
+**Result:** Reduced from 948 lines to ~400 lines in the largest handler file, with clear separation of concerns.
+**Improvement:** Decoupled security logic (redaction/obfuscation), UI generation (HTML), and MCP request handling. Tests are now co-located with the logic they test.

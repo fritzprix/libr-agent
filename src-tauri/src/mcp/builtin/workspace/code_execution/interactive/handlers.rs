@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -11,62 +10,14 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
-
-use super::super::{
+use crate::mcp::builtin::workspace::{
     terminal_manager, utils, PendingShellExecution, WorkspaceServer, PERSISTENT_SHELL_TOOL,
 };
-use super::{normalization, validation};
+
+use super::super::normalization;
+use super::{security, ui};
 
 impl WorkspaceServer {
-    /// Redact sensitive input from output string
-    ///
-    /// Note: This uses simple string replacement which may result in over-redaction
-    /// (e.g. "pass" will be redacted in "compass"). This is intentional for security
-    /// as over-redaction is safer than under-redaction in this context.
-    fn redact_sensitive_input(output: &str, sensitive: &str) -> String {
-        if sensitive.is_empty() {
-            return output.to_string();
-        }
-        output.replace(sensitive, "********")
-    }
-
-    /// De-obfuscate input using XOR and Base64
-    fn deobfuscate_input(input_base64: &str, nonce: &str) -> Result<String, String> {
-        // If input doesn't look like base64 (e.g. plain text fallback), return as is
-        // But for security, we should expect base64 if nonce was provided.
-        // For backward compatibility or direct tool calls, we might need to handle plain text.
-        // However, since this is a security feature, we assume the UI sends obfuscated data.
-
-        let input_bytes = match general_purpose::STANDARD.decode(input_base64) {
-            Ok(b) => b,
-            Err(e) => {
-                if !nonce.is_empty() {
-                    // Security: fail if nonce is present and decoding fails
-                    return Err(format!(
-                        "Input must be base64-obfuscated when nonce is provided. Decode error: {e}"
-                    ));
-                } else {
-                    // For legacy/plain text, allow fallback but log a warning
-                    warn!("Base64 decode failed, falling back to plain text input: {e}");
-                    return Ok(input_base64.to_string());
-                }
-            }
-        };
-
-        let nonce_bytes = nonce.as_bytes();
-        if nonce_bytes.is_empty() {
-            return Ok(input_base64.to_string());
-        }
-
-        let xored: Vec<u8> = input_bytes
-            .iter()
-            .enumerate()
-            .map(|(i, &b)| b ^ nonce_bytes[i % nonce_bytes.len()])
-            .collect();
-
-        String::from_utf8(xored).map_err(|e| format!("UTF-8 decode failed: {e}"))
-    }
-
     /// Handle interactive shell execution (1st tool call)
     /// Returns UIResource with execution_id for user input
     pub(crate) async fn handle_interactive_shell(
@@ -75,7 +26,7 @@ impl WorkspaceServer {
         args: &Value,
         session_id: &str,
     ) -> Result<MCPResult, String> {
-        use super::super::utils::sanitize_command_for_logging;
+        use utils::sanitize_command_for_logging;
 
         let execution_id = uuid::Uuid::new_v4().to_string();
         let session_id = session_id.to_string();
@@ -91,13 +42,6 @@ impl WorkspaceServer {
             .to_string();
 
         // Generate nonce for client-side obfuscation
-        // SECURITY WARNING:
-        // XOR-based obfuscation with a UUID nonce provides only limited security.
-        // Since the nonce is transmitted in the HTML, an attacker who can intercept or observe
-        // the HTML content can easily reverse the obfuscation by applying the same XOR operation.
-        // This approach protects against casual logging but NOT against determined attackers.
-        // If the threat model requires protection against active attackers who can observe the UI content,
-        // consider using a stronger encryption method (e.g., AES with secure key exchange via Web Crypto API).
         let encryption_nonce = uuid::Uuid::new_v4().to_string();
 
         // Store pending execution
@@ -115,8 +59,8 @@ impl WorkspaceServer {
         self.pending_executions.insert(pending);
 
         // Build UIResource with platform-aware prompt
-        let (prompt, input_type) = self.get_prompt_config(command, args);
-        let html = self.build_shell_input_ui(&execution_id, prompt, input_type, &encryption_nonce);
+        let (prompt, input_type) = ui::get_prompt_config(command, args);
+        let html = ui::build_shell_input_ui(&execution_id, prompt, input_type, &encryption_nonce);
 
         // Create UI resource JSON
         let _ui_resource = serde_json::json!({
@@ -150,7 +94,7 @@ impl WorkspaceServer {
         args: Value,
         session_id: &str,
     ) -> Result<MCPResult, String> {
-        use super::super::utils::sanitize_command_for_logging;
+        use utils::sanitize_command_for_logging;
 
         let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
             Some(id) => id,
@@ -202,7 +146,7 @@ impl WorkspaceServer {
         }
 
         // De-obfuscate user input
-        let user_input = match Self::deobfuscate_input(obfuscated_input, &pending.encryption_nonce)
+        let user_input = match security::deobfuscate_input(obfuscated_input, &pending.encryption_nonce)
         {
             Ok(s) => s,
             Err(e) => {
@@ -296,8 +240,8 @@ impl WorkspaceServer {
                     );
 
                     // Redact sensitive user input from output
-                    let redacted_stdout = Self::redact_sensitive_input(stdout.trim(), user_input);
-                    let redacted_stderr = Self::redact_sensitive_input(stderr.trim(), user_input);
+                    let redacted_stdout = security::redact_sensitive_input(stdout.trim(), user_input);
+                    let redacted_stderr = security::redact_sensitive_input(stderr.trim(), user_input);
 
                     let result_text = if exit_code == 0 {
                         if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
@@ -481,8 +425,8 @@ impl WorkspaceServer {
             let exit_code = output.status.code().unwrap_or(-1);
 
             // Redact sensitive user input from output
-            let redacted_stdout = Self::redact_sensitive_input(stdout_str.trim(), user_input);
-            let redacted_stderr = Self::redact_sensitive_input(stderr_str.trim(), user_input);
+            let redacted_stdout = security::redact_sensitive_input(stdout_str.trim(), user_input);
+            let redacted_stderr = security::redact_sensitive_input(stderr_str.trim(), user_input);
 
             let success = exit_code == 0;
 
@@ -630,13 +574,7 @@ impl WorkspaceServer {
             Some(pending) => {
                 // Validate session ownership
                 if pending.session_id != session_id {
-                    // Restore it if session mismatch (although it's already removed... wait.
-                    // remove() takes it out. Ideally we check first.
-                    // But HashMap only supports remove or get (ref).
-                    // We should use entries or re-insert if invalid.
-                    // Or, simpler: just error out and don't care about restoring it for invalid requester?
-                    // Actually, if an attacker tries to cancel someone else's, implementation details matter.
-                    // Since we already removed it, let's just re-insert it if validation fails.
+                    // Restore it if session mismatch
                     self.pending_executions.insert(pending);
 
                     return Ok(ErrorGuidance::with_guidance(
@@ -680,269 +618,5 @@ impl WorkspaceServer {
             )
             .to_mcp_result()),
         }
-    }
-
-    /// Get platform-aware prompt configuration for user input
-    /// Returns (prompt, input_type) tuple
-    fn get_prompt_config<'a>(&self, command: &str, args: &'a Value) -> (&'a str, &'a str) {
-        // Check if privilege escalation detected (Unix only)
-        let is_privilege_cmd = validation::detect_privilege_escalation(command);
-
-        if is_privilege_cmd {
-            ("Enter your sudo password:", "password")
-        } else {
-            // Use custom prompt from args
-            let prompt = args
-                .get("input_prompt")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Enter input:");
-            let input_type = args
-                .get("input_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("text");
-            (prompt, input_type)
-        }
-    }
-
-    /// Build UIResource HTML for shell input form
-    /// Returns HTML string with embedded execution_id, prompt, and input type
-    fn build_shell_input_ui(
-        &self,
-        execution_id: &str,
-        prompt: &str,
-        input_type: &str,
-        nonce: &str,
-    ) -> String {
-        // Use constants to ensure tool names match definition
-        use crate::mcp::builtin::workspace::tools::code_tools::{
-            CANCEL_PENDING_EXECUTION, EXECUTE_PENDING_SHELL,
-        };
-
-        format!(
-            r#"<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
-      body {{
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        padding: 20px;
-        background: #1e1e1e;
-        color: #d4d4d4;
-        margin: 0;
-      }}
-      .container {{
-        max-width: 500px;
-        margin: 0 auto;
-      }}
-      h3 {{
-        margin-top: 0;
-        color: #e0e0e0;
-      }}
-      input {{
-        width: 100%;
-        padding: 10px;
-        margin: 10px 0;
-        background: #2d2d2d;
-        color: #d4d4d4;
-        border: 1px solid #444;
-        border-radius: 4px;
-        box-sizing: border-box;
-        font-size: 14px;
-      }}
-      input:focus {{
-        outline: none;
-        border-color: #0e639c;
-      }}
-      button {{
-        padding: 10px 20px;
-        margin: 5px 5px 5px 0;
-        background: #0e639c;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-      }}
-      button:hover {{
-        background: #1177bb;
-      }}
-      .cancel {{
-        background: #6c757d;
-      }}
-      .cancel:hover {{
-        background: #5a6268;
-      }}
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h3>{}</h3>
-      <form id="inputForm">
-        <input
-          type="{}"
-          id="userInput"
-          placeholder="Enter {}..."
-          required
-          autofocus
-        />
-        <div>
-          <button type="submit">Submit</button>
-          <button type="button" class="cancel" onclick="handleCancel()">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-
-    <script>
-      const executionId = '{}';
-      const nonce = '{}';
-
-      function obfuscate(input, nonce) {{
-        const textEncoder = new TextEncoder();
-        const inputBytes = textEncoder.encode(input);
-        const nonceBytes = textEncoder.encode(nonce);
-        const xored = new Uint8Array(inputBytes.length);
-        for (let i = 0; i < inputBytes.length; i++) {{
-          xored[i] = inputBytes[i] ^ nonceBytes[i % nonceBytes.length];
-        }}
-        // Convert to Base64 more safely (avoid stack overflow)
-        let binary = '';
-        for (let i = 0; i < xored.length; i++) {{
-          binary += String.fromCharCode(xored[i]);
-        }}
-        return btoa(binary);
-      }}
-
-      document
-        .getElementById('inputForm')
-        .addEventListener('submit', async (e) => {{
-          e.preventDefault();
-          const userInput = document.getElementById('userInput').value;
-          const obfuscatedInput = obfuscate(userInput, nonce);
-
-          // Send to parent window (MCP Worker) - triggers 2nd tool call
-          // IMPORTANT: Use window.parent.postMessage to send to parent frame
-          // Using MCP-UI protocol format: type='tool' with payload wrapper
-          window.parent.postMessage(
-            {{
-              type: 'tool',
-              payload: {{
-                toolName: '{}',
-                params: {{
-                  execution_id: executionId,
-                  user_input: obfuscatedInput,
-                }},
-              }},
-            }},
-            '*',
-          );
-
-          // Clear input immediately
-          document.getElementById('userInput').value = '';
-          document.body.innerHTML =
-            '<p style="text-align:center; color:#d4d4d4;">⏳ Executing command...</p>';
-        }});
-
-      function handleCancel() {{
-        // Send to parent window (MCP Worker) - triggers cancel tool call
-        // IMPORTANT: Use window.parent.postMessage to send to parent frame
-        // Using MCP-UI protocol format: type='tool' with payload wrapper
-        window.parent.postMessage(
-          {{
-            type: 'tool',
-            payload: {{
-              toolName: '{}',
-              params: {{
-                execution_id: executionId,
-              }},
-            }},
-          }},
-          '*',
-        );
-
-        document.body.innerHTML =
-          '<p style="text-align:center; color:#d4d4d4;">❌ Cancelled</p>';
-      }}
-    </script>
-  </body>
-</html>"#,
-            html_escape::encode_safe(prompt),
-            input_type,
-            input_type,
-            execution_id,
-            nonce,
-            EXECUTE_PENDING_SHELL,
-            CANCEL_PENDING_EXECUTION
-        )
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_redact_sensitive_input() {
-        let input = "password123";
-        let output = "Enter password: password123\nAccess granted";
-        let redacted = WorkspaceServer::redact_sensitive_input(output, input);
-        assert_eq!(redacted, "Enter password: ********\nAccess granted");
-
-        // Test multiple occurrences
-        let output2 = "password123 is the password123";
-        let redacted2 = WorkspaceServer::redact_sensitive_input(output2, input);
-        assert_eq!(redacted2, "******** is the ********");
-
-        // Test empty input (should not change output)
-        let output3 = "normal output";
-        let redacted3 = WorkspaceServer::redact_sensitive_input(output3, "");
-        assert_eq!(redacted3, "normal output");
-    }
-    #[test]
-    fn test_deobfuscate_input() {
-        // "password123" XOR "nonce" -> base64
-        // nonce = "nonce" (5 bytes)
-        // p (112) ^ n (110) = 2
-        // a (97) ^ o (111) = 14
-        // s (115) ^ n (110) = 29
-        // s (115) ^ c (99) = 16
-        // w (119) ^ e (101) = 22
-        // o (111) ^ n (110) = 1
-        // r (114) ^ o (111) = 29
-        // d (100) ^ n (110) = 10
-        // 1 (49) ^ c (99) = 82
-        // 2 (50) ^ e (101) = 87
-        // 3 (51) ^ n (110) = 93
-
-        let nonce = "nonce";
-        let original = "password123";
-
-        // Manual XOR for verification
-        let original_bytes = original.as_bytes();
-        let nonce_bytes = nonce.as_bytes();
-        let xored: Vec<u8> = original_bytes
-            .iter()
-            .enumerate()
-            .map(|(i, &b)| b ^ nonce_bytes[i % nonce_bytes.len()])
-            .collect();
-        let encoded = general_purpose::STANDARD.encode(&xored);
-
-        // Test deobfuscation
-        let decoded = WorkspaceServer::deobfuscate_input(&encoded, nonce).unwrap();
-        assert_eq!(decoded, original);
-
-        // Test with empty nonce (should return input as is)
-        let decoded_empty = WorkspaceServer::deobfuscate_input(original, "").unwrap();
-        assert_eq!(decoded_empty, original);
-
-        // Test with invalid base64 (should return error when nonce is provided)
-        let result_invalid = WorkspaceServer::deobfuscate_input("not base64", nonce);
-        assert!(result_invalid.is_err());
-        assert!(result_invalid
-            .unwrap_err()
-            .contains("Input must be base64-obfuscated"));
     }
 }
