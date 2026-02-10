@@ -40,10 +40,10 @@ pub async fn download_workspace_file(
         .unwrap_or("download");
 
     // Read file content
-    let file_content = match tokio::fs::read(&full_path).await {
-        Ok(content) => content,
-        Err(e) => return Err(format!("Failed to read file: {e}")),
-    };
+    let max_size = crate::config::max_file_size() as u64;
+    let file_content = crate::utils::fs::read_file_with_limit(&full_path, max_size)
+        .await
+        .map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Show save file dialog and save (using a callback)
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
@@ -172,7 +172,8 @@ pub async fn export_and_download_zip(
                 continue;
             }
 
-            match std::fs::read(&abs_canon) {
+            let max_size = crate::config::max_file_size() as u64;
+            match crate::utils::fs::read_file_with_limit(&abs_canon, max_size).await {
                 Ok(content) => {
                     if zip.write_all(&content).is_err() {
                         continue;
@@ -196,7 +197,8 @@ pub async fn export_and_download_zip(
     }
 
     // Read ZIP content to be used in the callback
-    let zip_content = tokio::fs::read(&temp_zip_path)
+    let max_size = crate::config::max_file_size() as u64;
+    let zip_content = crate::utils::fs::read_file_with_limit(&temp_zip_path, max_size)
         .await
         .map_err(|e| format!("Failed to read ZIP file: {e}"))?;
 
