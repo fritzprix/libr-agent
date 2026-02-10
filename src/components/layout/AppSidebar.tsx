@@ -6,7 +6,6 @@ import {
   Users,
   BookOpen,
 } from 'lucide-react';
-import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -21,12 +20,9 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '../ui/sidebar';
-import { useNavigate } from 'react-router-dom';
-// Remove modal import; we'll navigate to a dedicated settings route
 
 export default function AppSidebar() {
   const { state } = useSidebar();
-  const navigate = useNavigate();
   const location = useLocation();
   // modal state removed; settings is now a routed page
 
@@ -38,11 +34,6 @@ export default function AppSidebar() {
     <Sidebar
       className="backdrop-blur-sm border-r shadow-xl"
       collapsible="icon"
-      style={
-        {
-          '--sidebar-width-icon': '3.5rem',
-        } as React.CSSProperties
-      }
     >
       <SidebarHeader className="border-b">
         <div className="flex flex-row items-center justify-center gap-2 p-4">
@@ -137,14 +128,16 @@ export default function AppSidebar() {
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => navigate('/settings')}
-              tooltip="Settings"
-              className={`transition-all duration-200`}
-            >
-              <Settings size={16} />
-              {!isCollapsed && <span>Settings</span>}
-            </SidebarMenuButton>
+            <Link to="/settings">
+              <SidebarMenuButton
+                tooltip="Settings"
+                className={`transition-all duration-200`}
+                isActive={location.pathname === '/settings'}
+              >
+                <Settings size={16} />
+                {!isCollapsed && <span>Settings</span>}
+              </SidebarMenuButton>
+            </Link>
           </SidebarMenuItem>
         </SidebarMenu>
         {!isCollapsed && (
