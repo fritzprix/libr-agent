@@ -128,7 +128,7 @@ pnpm tauri dev
 
 ## Supported LLMs
 
-OpenAI, Anthropic (Claude), Google (Gemini).
+OpenAI, Anthropic (Claude), Google (Gemini), Groq, Ollama, Cerebras, Fireworks, Empty.
 
 Uses standard APIs. Add your API key in settings.
 
