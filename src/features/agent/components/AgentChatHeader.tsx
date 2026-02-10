@@ -6,6 +6,11 @@ import { useAgentWorkspace } from '@/context/AgentWorkspaceContext';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { SessionFilesPopover } from '@/components/shared/SessionFilesPopover';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { PanelRight, FolderOpen, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -61,39 +66,54 @@ export function AgentChatHeader({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopyMessages}
-            title="Copy conversation as JSON"
-            className="h-6 px-2"
-          >
-            <Copy className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopyMessages}
+                aria-label="Copy conversation as JSON"
+                className="h-6 px-2"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy conversation as JSON</TooltipContent>
+          </Tooltip>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleToggleWorkspace}
-            title="Toggle Workspace Files Panel"
-            className="h-6 px-2"
-          >
-            <FolderOpen
-              className={`h-4 w-4 ${showWorkspacePanel ? 'text-primary' : ''}`}
-            />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleToggleWorkspace}
+                aria-label="Toggle Workspace Files Panel"
+                className="h-6 px-2"
+              >
+                <FolderOpen
+                  className={`h-4 w-4 ${showWorkspacePanel ? 'text-primary' : ''}`}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Toggle Workspace Files Panel</TooltipContent>
+          </Tooltip>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleTogglePlanning}
-            title="Toggle AI Planning Panel"
-            className="h-6 px-2"
-          >
-            <PanelRight
-              className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
-            />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleTogglePlanning}
+                aria-label="Toggle AI Planning Panel"
+                className="h-6 px-2"
+              >
+                <PanelRight
+                  className={`h-4 w-4 ${showPlanningPanel ? 'text-primary' : ''}`}
+                />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Toggle AI Planning Panel</TooltipContent>
+          </Tooltip>
 
           {session?.id && <SessionFilesPopover sessionId={session.id} />}
         </div>
