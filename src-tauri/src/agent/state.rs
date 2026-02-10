@@ -20,6 +20,56 @@ pub struct PendingToolExecution {
     pub tool_names: HashMap<String, String>,
 }
 
+/// Pending events waiting to be processed by the workflow
+#[derive(Debug, Clone)]
+pub enum PendingEvent {
+    Message(String), // Stores Message ID
+                     // Future extensions: ToolApproval, etc.
+}
+
+/// Manages pending events for a session
+#[derive(Debug, Default)]
+pub struct PendingEventManager {
+    events: Vec<PendingEvent>,
+}
+
+impl PendingEventManager {
+    pub fn new() -> Self {
+        Self { events: Vec::new() }
+    }
+
+    pub fn add(&mut self, event: PendingEvent) {
+        self.events.push(event);
+    }
+
+    pub fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    /// Drain all pending messages and return their IDs
+    pub fn drain_messages(&mut self) -> Vec<String> {
+        // Currently only Message variant exists.
+        // We drain all events and extract IDs.
+        // If future variants are added, this logic must be updated to filter/preserve them.
+        self.events
+            .drain(..)
+            .map(|event| {
+                let PendingEvent::Message(id) = event;
+                id
+            })
+            .collect()
+    }
+
+    pub fn count(&self) -> usize {
+        self.events.len()
+    }
+
+    #[allow(dead_code)]
+    pub fn has_pending(&self) -> bool {
+        !self.events.is_empty()
+    }
+}
+
 /// Represents an active agent session with its runtime state
 #[derive(Debug)]
 pub struct AgentSession {
@@ -45,10 +95,42 @@ pub struct AgentSession {
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
 
-    /// Message IDs that were injected without MessageAdded events (pending in frontend)
-    /// These will emit MessageAdded events when actually used in LLM request
-    pub pending_message_ids: Arc<RwLock<Vec<String>>>,
+    /// Pending events (messages, approvals, etc.) waiting for workflow processing
+    pub pending_events: Arc<RwLock<PendingEventManager>>,
 
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pending_event_manager_flow() {
+        let mut manager = PendingEventManager::new();
+        assert!(!manager.has_pending());
+
+        manager.add(PendingEvent::Message("msg1".into()));
+        manager.add(PendingEvent::Message("msg2".into()));
+        assert!(manager.has_pending());
+        assert_eq!(manager.count(), 2);
+
+        let messages = manager.drain_messages();
+        assert_eq!(messages, vec!["msg1", "msg2"]);
+
+        assert!(!manager.has_pending());
+        assert_eq!(manager.count(), 0);
+    }
+
+    #[test]
+    fn test_clear_events() {
+        let mut manager = PendingEventManager::new();
+        manager.add(PendingEvent::Message("msg1".into()));
+
+        manager.clear();
+        assert!(!manager.has_pending());
+        assert_eq!(manager.count(), 0);
+        assert!(manager.drain_messages().is_empty());
+    }
 }

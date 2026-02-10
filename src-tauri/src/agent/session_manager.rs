@@ -301,7 +301,7 @@ impl AgentSessionManager {
         if trigger_workflow {
             // Drop session lock before I/O operations
             drop(sessions);
-            
+
             for msg in &messages {
                 let event = crate::agent::events::AgentEvent::MessageAdded {
                     session_id: session_id.clone(),
@@ -312,9 +312,9 @@ impl AgentSessionManager {
             }
         } else {
             // Track these message IDs as pending (will emit when workflow picks them up)
-            let mut pending_ids = session.pending_message_ids.write().await;
+            let mut pending_events = session.pending_events.write().await;
             for msg in &messages {
-                pending_ids.push(msg.id.clone());
+                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
             }
             log::info!(
                 "Marked {} messages as pending for session: {} (IDs: {:?})",

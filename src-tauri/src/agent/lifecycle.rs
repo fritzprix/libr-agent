@@ -122,7 +122,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
             cache_initialized: Arc::new(AtomicBool::new(false)),
             last_synced_at: Arc::new(RwLock::new(None)),
             thinking_only_count: Arc::new(RwLock::new(0)),
-            pending_message_ids: Arc::new(RwLock::new(Vec::new())),
+            pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
             context_registry,
         },
     );
@@ -191,7 +191,7 @@ pub async fn resume_session(
             cache_initialized: Arc::new(AtomicBool::new(false)),
             last_synced_at: Arc::new(RwLock::new(None)),
             thinking_only_count: Arc::new(RwLock::new(0)),
-            pending_message_ids: Arc::new(RwLock::new(Vec::new())),
+            pending_events: Arc::new(RwLock::new(crate::agent::state::PendingEventManager::new())),
             context_registry,
         },
     );
@@ -333,7 +333,9 @@ pub async fn recover_sessions(
                     cache_initialized: Arc::new(AtomicBool::new(false)),
                     last_synced_at: Arc::new(RwLock::new(None)),
                     thinking_only_count: Arc::new(RwLock::new(0)),
-                    pending_message_ids: Arc::new(RwLock::new(Vec::new())),
+                    pending_events: Arc::new(RwLock::new(
+                        crate::agent::state::PendingEventManager::new(),
+                    )),
                     context_registry: context_registry.clone(),
                 },
             );

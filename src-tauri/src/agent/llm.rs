@@ -20,28 +20,47 @@ pub async fn request_llm_completion(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // 1. Validate session status before proceeding (Race Condition Fix)
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            if session.metadata.status != SessionStatus::Busy {
+                log::info!(
+                    "Rejecting LLM request for session {} (status: {:?})",
+                    session_id,
+                    session.metadata.status
+                );
+                return Err(format!(
+                    "Cannot request LLM completion: session status is {:?}",
+                    session.metadata.status
+                ));
+            }
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
     // Emit MessageAdded events for any pending user messages before LLM request
     // This makes them visible in the frontend (removed from pendingMessages queue)
     // Optimization: Collect all data first, then release locks before I/O
     let pending_messages: Vec<Message> = {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
-            let mut pending_ids = session.pending_message_ids.write().await;
-            
+            let mut pending_events = session.pending_events.write().await;
+            let pending_ids = pending_events.drain_messages();
+
             if pending_ids.is_empty() {
                 Vec::new()
             } else {
                 let messages = session.messages.read().await;
-                
+
                 // Build HashMap for O(1) lookup instead of O(n) iter().find()
-                let msg_map: std::collections::HashMap<&str, &Message> = messages
-                    .iter()
-                    .map(|m| (m.id.as_str(), m))
-                    .collect();
-                
+                let msg_map: std::collections::HashMap<&str, &Message> =
+                    messages.iter().map(|m| (m.id.as_str(), m)).collect();
+
                 // Collect messages matching pending IDs
                 pending_ids
-                    .drain(..)
+                    .iter()
                     .filter_map(|id| msg_map.get(id.as_str()).map(|&m| m.clone()))
                     .collect()
             }
@@ -160,8 +179,17 @@ pub async fn handle_llm_response(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!("Workflow cancelled for session: {}", session_id);
+            // Check both token and status.
+            // verifying status is critical because cancel_workflow resets the token immediately.
+            if session.cancellation_token.is_cancelled()
+                || session.metadata.status != SessionStatus::Busy
+            {
+                log::info!(
+                    "Workflow cancelled for session: {} (token_cancelled={}, status={:?})",
+                    session_id,
+                    session.cancellation_token.is_cancelled(),
+                    session.metadata.status
+                );
                 return Err("Workflow was cancelled".to_string());
             }
         }
@@ -419,7 +447,7 @@ pub async fn handle_llm_response(
             .await;
         }
 
-        // ✅ Content present: reset thinking_only_count and complete workflow
+        // ✅ Content present: reset thinking_only_count
         {
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
@@ -427,6 +455,33 @@ pub async fn handle_llm_response(
             }
         }
 
+        // Check for pending messages before finishing
+        let has_pending = {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                session.pending_events.read().await.count() > 0
+            } else {
+                false
+            }
+        };
+
+        if has_pending {
+            log::info!(
+                "🔄 Pending messages detected for session {}. Continuing workflow.",
+                session_id
+            );
+            // Recursively trigger next turn
+            return request_llm_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+            .await;
+        }
+
+        // No pending messages, finish workflow
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
