@@ -13,3 +13,8 @@
 **Split:** `types/index.ts`, `hooks/useIsDarkMode.ts`, `hooks/useUIActionHandler.ts`, `components/CodeBlock.tsx`, `components/MarkdownText.tsx`, `config/markdown.tsx`, `utils/contentGrouping.ts`
 **Result:** Reduced from ~960 lines to ~280 lines in the main component.
 **Improvement:** Decoupled Markdown rendering, UI action handling, and content grouping logic. Extracted large memoized components (`CodeBlock`, `MarkdownText`) and hooks.
+
+## 2026-02-12 - src-tauri/src/lib.rs
+
+**Split:** `lifecycle/mod.rs`, `lifecycle/database.rs`, `lifecycle/repositories.rs`, `lifecycle/app_setup.rs`
+**Improvement:** Decoupled application startup logic (DB connection, migrations, repository initialization, app setup) from the core library file. Reduced `lib.rs` complexity and size by extracting large setup blocks into focused modules.
