@@ -37,16 +37,12 @@ export class MessageNormalizer {
     const validMessages = this.filterSystemErrors(messages);
 
     // First pass: handle tool call relationships (Common for all providers)
-    let processedMessages = this.validateToolCallPairing(validMessages);
+    const processedMessages = this.validateToolCallPairing(validMessages);
 
-    // Third pass: sanitize individual messages (may filter out some messages)
-    const sanitizedMessages = processedMessages
+    // Second pass: sanitize individual messages
+    return processedMessages
       .map((msg) => this.sanitizeSingleMessage(msg, targetProvider))
       .filter((msg) => msg !== null) as Message[];
-
-    // Final step: Ensure role alternation (merge consecutive messages of same role)
-    // This must be last to handle sequence violations created by sanitization/filtering.
-    return this.ensureRoleAlternation(sanitizedMessages);
   }
 
   /**
@@ -209,79 +205,6 @@ export class MessageNormalizer {
       validToolCalls: validToolCallIds.size,
       completedToolCalls: completedToolCallIds.size,
     });
-
-    return result;
-  }
-
-  /**
-   * Ensures that the message list follows a strict role alternation pattern (User -> Assistant).
-   * Consecutive messages with the same role are merged.
-   * This is critical after filtering steps which might create role sequence violations.
-   *
-   * @param messages The array of messages to normalize.
-   * @returns A new array of messages with strict role alternation.
-   * @private
-   */
-  private static ensureRoleAlternation(messages: Message[]): Message[] {
-    if (messages.length < 2) {
-      return messages;
-    }
-
-    const result: Message[] = [];
-    let currentMsg: Message | null = null;
-
-    for (const msg of messages) {
-      if (!currentMsg) {
-        currentMsg = { ...msg };
-        continue;
-      }
-
-      // If roles match and it's 'user' or 'assistant', merge them
-      // Note: 'tool' and 'system' messages are usually handled specifically by providers
-      // but we primarily care about the User <-> Assistant alternation.
-      if (
-        (msg.role === 'user' && currentMsg.role === 'user') ||
-        (msg.role === 'assistant' && currentMsg.role === 'assistant')
-      ) {
-        logger.info('🔗 Merging consecutive messages of same role', {
-          role: msg.role,
-          id1: currentMsg.id,
-          id2: msg.id,
-        });
-
-        // Merge content
-        if (Array.isArray(currentMsg.content) && Array.isArray(msg.content)) {
-          // Add a small separator if both have text
-          currentMsg.content = [...currentMsg.content, ...msg.content];
-        }
-
-        // Merge tool_calls for assistant
-        if (msg.role === 'assistant' && msg.tool_calls) {
-          currentMsg.tool_calls = [
-            ...(currentMsg.tool_calls || []),
-            ...msg.tool_calls,
-          ];
-        }
-
-        // Merge thinking for assistant
-        if (msg.role === 'assistant' && msg.thinking) {
-          currentMsg.thinking = currentMsg.thinking
-            ? `${currentMsg.thinking}\n\n${msg.thinking}`
-            : msg.thinking;
-        }
-
-        // Update ID and metadata
-        currentMsg.id = `${currentMsg.id}_merge_${msg.id}`;
-        currentMsg.updatedAt = new Date();
-      } else {
-        result.push(currentMsg);
-        currentMsg = { ...msg };
-      }
-    }
-
-    if (currentMsg) {
-      result.push(currentMsg);
-    }
 
     return result;
   }
