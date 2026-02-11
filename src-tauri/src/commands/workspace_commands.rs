@@ -224,20 +224,11 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
 
     #[cfg(target_os = "macos")]
     {
+        // Use 'open' command to launch Terminal at the directory.
+        // This avoids complex and error-prone shell/AppleScript escaping.
         let path_str = workspace_path.to_string_lossy();
-        // Quote for shell
-        let shell_quoted = format!("'{}'", path_str.replace("'", "'\\''"));
-        // Escape for AppleScript string
-        let script_cmd = format!("cd {}", shell_quoted);
-        let applescript_escaped = script_cmd.replace("\\", "\\\\").replace("\"", "\\\"");
-
-        let script = format!(
-            "tell application \"Terminal\" to do script \"{}\"",
-            applescript_escaped
-        );
-
-        Command::new("osascript")
-            .args(["-e", &script])
+        Command::new("open")
+            .args(["-a", "Terminal", &path_str])
             .spawn()
             .map_err(|e| format!("Failed to open Terminal: {}", e))?;
     }
