@@ -34,3 +34,13 @@
 
 **Drift:** References "IndexedDB" and "Dexie" for local storage. Claims "Vite 4.x".
 **Reality:** Local storage uses SQLite via SeaORM. Vite is version 6.x.
+
+## 2024-05-22 - CONTRIBUTING.md
+
+**Drift:** References `docs/architecture/overview.md` which does not exist.
+**Reality:** The architecture documentation is split. The most comprehensive overview is `docs/architecture/agent-workflow-architecture.md`.
+
+## 2024-05-22 - agents.md
+
+**Drift:** References `docs/architecture/chat-feature-architecture.md` which does not exist.
+**Reality:** The file `docs/architecture/agent-workflow-architecture.md` exists and covers the agent workflow and architecture.
