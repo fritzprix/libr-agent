@@ -13,3 +13,9 @@
 **Split:** `types/index.ts`, `hooks/useIsDarkMode.ts`, `hooks/useUIActionHandler.ts`, `components/CodeBlock.tsx`, `components/MarkdownText.tsx`, `config/markdown.tsx`, `utils/contentGrouping.ts`
 **Result:** Reduced from ~960 lines to ~280 lines in the main component.
 **Improvement:** Decoupled Markdown rendering, UI action handling, and content grouping logic. Extracted large memoized components (`CodeBlock`, `MarkdownText`) and hooks.
+
+## 2026-02-11 - src/lib/ai-service/gemini.ts
+
+**Split:** `config.ts`, `mapper.ts`, `models.ts`, `service.ts`, `stream.ts`, `types.ts`, `index.ts`
+**Result:** Reduced from ~1120 lines to ~250 lines in the main service class.
+**Improvement:** Decoupled message conversion (Gemini format), stream processing (chunk parsing, tool calls), and model management logic from the main service class. Centralized configuration and types.
