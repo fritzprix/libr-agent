@@ -241,9 +241,25 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
           };
         }
 
-        const toolArguments: Record<string, unknown> = JSON.parse(
-          toolCall.function.arguments,
-        );
+        // Parse arguments with error type classification
+        let toolArguments: Record<string, unknown>;
+        try {
+          toolArguments = JSON.parse(toolCall.function.arguments);
+        } catch (parseError) {
+          // This is a JSON_PARSING_ERROR - malformed JSON
+          const errorMsg = `Invalid JSON in tool arguments: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+          logger.error(errorMsg, { parseError });
+          return {
+            jsonrpc: '2.0',
+            id: aiProvidedToolName,
+            error: {
+              code: -32700, // JSON-RPC parse error code
+              message: errorMsg,
+              // Add metadata to identify this as JSON_PARSING_ERROR
+              data: { errorType: 'JSON_PARSING_ERROR' },
+            },
+          };
+        }
 
         try {
           const rawResponse = await callMCPTool(

@@ -1,5 +1,6 @@
 import { get_encoding } from '@dqbd/tiktoken';
 import type { Message } from '@/models/chat';
+import { MCPTextContent } from '@/lib/mcp';
 import { llmConfigManager } from './llm-config-manager';
 import { getLogger } from './logger';
 import { AIServiceProvider } from './ai-service/types';
@@ -127,10 +128,15 @@ export function batchToolCallsInMessages(
     }
 
     // Only process assistant messages with tool calls exceeding threshold
+    // CRITICAL: Do NOT batch if the message has a thinkingSignature.
+    // A thinkingSignature implies an atomic reasoning turn where all tool calls
+    // are authorized by that single signature. Splitting them would orphan
+    // subsequent batches from the signature, causing API validation errors (e.g., Gemini).
     if (
       msg.role === 'assistant' &&
       msg.tool_calls &&
-      msg.tool_calls.length > maxToolCallsPerMessage
+      msg.tool_calls.length > maxToolCallsPerMessage &&
+      !msg.thinkingSignature
     ) {
       logger.info('Batching tool calls for assistant message', {
         messageId: msg.id,
@@ -170,7 +176,8 @@ export function batchToolCallsInMessages(
           // CRITICAL FIX: Only preserve thinkingSignature on the FIRST batch
           // Gemini's thought signature protocol requires signature only on the first function call
           // Duplicating it across batches causes "position 2" validation errors
-          thinkingSignature: batchIndex === 0 ? msg.thinkingSignature : undefined,
+          thinkingSignature:
+            batchIndex === 0 ? msg.thinkingSignature : undefined,
         };
         result.push(batchMsg);
 
@@ -249,43 +256,10 @@ export function selectMessagesWithinContext(
     options?.maxToolCallsPerMessage || 4,
   );
 
+  // STEP 2: Calculate Token Budget & Pin First Message
   const modelInfo = llmConfigManager.getModel(providerId, modelId);
-
-  // If model info not found, apply message count limit only (no token-based truncation)
-  if (!modelInfo) {
-    logger.warn(
-      `Could not find model info for provider: ${providerId}, model: ${modelId}. Applying message count limit only.`,
-    );
-
-    // If no maxMessages specified, return all messages
-    if (!options?.maxMessages) {
-      logger.info('No message count limit specified, returning all messages', {
-        inputMessageCount: batchedMessages.length,
-      });
-      return batchedMessages;
-    }
-
-    // Apply simple message count-based truncation
-    logger.info('📊 Starting message selection (count-based only)', {
-      inputMessageCount: batchedMessages.length,
-      maxMessages: options.maxMessages,
-      provider: providerId,
-      model: modelId,
-    });
-
-    const selected = batchedMessages.slice(-options.maxMessages);
-
-    logger.info('✅ Message selection complete (count-based)', {
-      inputCount: batchedMessages.length,
-      selectedCount: selected.length,
-      trimmedCount: batchedMessages.length - selected.length,
-      maxMessages: options.maxMessages,
-    });
-
-    return selected;
-  }
-
-  const baseTokenLimit = maxTokens ?? Math.floor(modelInfo.contextWindow * 0.9);
+  const baseTokenLimit =
+    maxTokens ?? Math.floor((modelInfo?.contextWindow ?? 128000) * 0.9);
 
   // Reserve tokens for system prompt and tools
   const systemPromptTokens = options?.systemPrompt
@@ -295,30 +269,43 @@ export function selectMessagesWithinContext(
     ? estimateTextTokens(options.toolsJson)
     : 0;
 
-  const reservedTokens = systemPromptTokens + toolsTokens;
+  // Check if we should pin the first message (Crucial context)
+  let pinnedMessage: Message | null = null;
+  let pinnedMessageTokens = 0;
 
-  const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens); // Keep at least 1K for messages
+  if (batchedMessages.length > 0 && batchedMessages[0].role === 'user') {
+    pinnedMessage = batchedMessages[0];
+    pinnedMessageTokens = estimateTokensBPE(pinnedMessage);
+    logger.info('📌 Pinning first message to context', {
+      messageId: pinnedMessage.id,
+      tokens: pinnedMessageTokens,
+    });
+  }
+
+  const reservedTokens = systemPromptTokens + toolsTokens + pinnedMessageTokens;
+  const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens);
 
   logger.info('📊 Starting message selection', {
     inputMessageCount: batchedMessages.length,
     maxMessages: options?.maxMessages || 'unlimited',
-    provider: providerId,
-    model: modelId,
+    tokenLimit,
+    reservedTokens,
+    pinnedMessageId: pinnedMessage?.id,
   });
 
-  logger.debug('Token budget allocation', {
-    contextWindow: modelInfo.contextWindow,
-    baseLimit: baseTokenLimit,
-    systemPromptTokens,
-    toolsTokens,
-    reservedTokens,
-    availableForMessages: tokenLimit,
-  });
   let totalTokens = 0;
   const selected: Message[] = [];
 
+  // Iterate backwards from the most recent message
   for (let i = batchedMessages.length - 1; i >= 0; i--) {
     const msg = batchedMessages[i];
+
+    // Skip the pinned message if we encounter it during backward iteration
+    // (We will add it explicitly at the end)
+    if (pinnedMessage && msg.id === pinnedMessage.id) {
+      continue;
+    }
+
     const tokens = estimateTokensBPE(msg);
 
     logger.info(
@@ -334,52 +321,23 @@ export function selectMessagesWithinContext(
         providerId === AIServiceProvider.OpenAI ||
         providerId === AIServiceProvider.Groq
       ) {
-        const hasIncompleteToolChain = checkIncompleteToolChain(selected, msg);
-        if (hasIncompleteToolChain) {
-          logger.info('Skipping message that would break tool chain boundary', {
-            messageId: msg.id,
-          });
-          // Remove incomplete tool chains to maintain integrity
-          const adjustedSelected = removeIncompleteToolChains(selected);
-          return adjustedSelected;
-        }
-      }
+        // Check tool chain integrity before stopping
+        const adjustedSelected = removeIncompleteToolChains(selected);
 
-      logger.info(
-        `Context window limit reached. Total tokens: ${totalTokens}, Token limit: ${tokenLimit}`,
-      );
+        // Add pinned message before returning
+        if (pinnedMessage) {
+          return prependPinnedMessage(pinnedMessage, adjustedSelected);
+        }
+        return adjustedSelected;
+      }
       break;
     }
 
     // Check message count limit
-    if (options?.maxMessages && selected.length >= options.maxMessages) {
-      // Don't break tool chains even when hitting message count limit
-      // If adding this message would complete a tool chain, allow it?
-      // Or strictly cut off?
-      // Strict cut off might break tool chains.
-      // Let's apply the same checkIncompleteToolChain logic if we are about to stop.
-      // But we iterate backwards. We are adding messages.
-      // If we stop here, 'selected' contains the most recent N messages.
-      // We are *omitting* 'msg' and everything before it.
-      // If 'msg' is a Tool Call and the *next* message in 'selected' (which was 'i+1') is a Tool Result, we have an issue?
-      // No, if 'msg' is Tool Call, and we omit it, then the Tool Result in 'selected' becomes orphaned.
-      // So if we break due to Max Messages, we must perform the same tool chain integrity check/cleanup on 'selected'.
-
-      if (
-        providerId === AIServiceProvider.Anthropic ||
-        providerId === AIServiceProvider.Gemini ||
-        providerId === AIServiceProvider.OpenAI ||
-        providerId === AIServiceProvider.Groq
-      ) {
-        // We are about to exclude 'msg'.
-        // Check if the current 'selected' needs cleanup.
-        // Actually, we should check if omitting 'msg' leaves 'selected' in a bad state?
-        // No, 'selected' is accumulated. The danger is that 'selected[0]' (the oldest included message) is a Tool Result,
-        // and its corresponding Tool Call is 'msg' (which we are excluding).
-        // In that case, 'selected[0]' is an orphaned Tool Result.
-        // So we should run removeIncompleteToolChains on 'selected'.
-      }
-
+    if (
+      options?.maxMessages &&
+      selected.length >= options.maxMessages - (pinnedMessage ? 1 : 0)
+    ) {
       logger.info(
         `✂️ Message count limit reached - applying windowSize constraint`,
         {
@@ -390,18 +348,16 @@ export function selectMessagesWithinContext(
         },
       );
 
-      // Verify integrity of selected messages before returning
       if (
         providerId === AIServiceProvider.Anthropic ||
         providerId === AIServiceProvider.Gemini ||
         providerId === AIServiceProvider.OpenAI ||
         providerId === AIServiceProvider.Groq
       ) {
-        // Check if the *first* message in selected (oldest) is a broken tool chain/result
-        // Easier to just run the cleanup
         const adjustedSelected = removeIncompleteToolChains(selected);
-        // If cleanup reduced count, maybe we could have added more?
-        // But simplicity first.
+        if (pinnedMessage) {
+          return prependPinnedMessage(pinnedMessage, adjustedSelected);
+        }
         return adjustedSelected;
       }
       break;
@@ -420,72 +376,67 @@ export function selectMessagesWithinContext(
     maxMessages: options?.maxMessages || 'unlimited',
   });
 
+  // Add the pinned message to the start
+  if (pinnedMessage) {
+    return prependPinnedMessage(pinnedMessage, selected);
+  }
+
   return selected;
 }
 
 /**
- * Checks if a set of selected messages, plus a candidate message, would result
- * in an incomplete tool chain (i.e., a `tool_calls` message without a corresponding
- * `tool` result message).
- *
- * @param selected The array of messages already selected for the context.
- * @param candidateMsg The next message being considered for inclusion.
- * @returns True if an incomplete tool chain is detected, false otherwise.
- * @private
+ * Prepends a pinned message to the selected messages, handling adjacency.
+ * If pinned message is User and next message is also User, they are merged.
  */
-function checkIncompleteToolChain(
-  selected: Message[],
-  candidateMsg: Message,
-): boolean {
-  // Collect tool_use IDs from currently selected messages
-  const toolUseIds = new Set<string>();
-  for (const msg of selected) {
-    if (msg.role === 'assistant' && msg.tool_calls) {
-      msg.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
-    }
+function prependPinnedMessage(
+  pinnedMsg: Message,
+  selectedMsgs: Message[],
+): Message[] {
+  if (selectedMsgs.length === 0) {
+    return [pinnedMsg];
   }
 
-  // Also include candidate message in the check
-  if (candidateMsg.role === 'assistant' && candidateMsg.tool_calls) {
-    candidateMsg.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
-  }
+  const firstSelected = selectedMsgs[0];
 
-  // Identify completed tool_use with tool_result
-  const completedToolUseIds = new Set<string>();
-  for (const msg of selected) {
-    if (
-      msg.role === 'tool' &&
-      msg.tool_call_id &&
-      toolUseIds.has(msg.tool_call_id)
-    ) {
-      completedToolUseIds.add(msg.tool_call_id);
-    }
-  }
+  // Check for User -> User adjacency
+  if (pinnedMsg.role === 'user' && firstSelected.role === 'user') {
+    // Merge them to avoid "User must be followed by Model" error
+    // Explicitly cast to MCPTextContent to avoid type errors with Union types
+    const separator: MCPTextContent = {
+      type: 'text',
+      text: '\n\n---\n\n(Merging context...)\n\n',
+    };
 
-  // Also include candidate message in the check
-  if (
-    candidateMsg.role === 'tool' &&
-    candidateMsg.tool_call_id &&
-    toolUseIds.has(candidateMsg.tool_call_id)
-  ) {
-    completedToolUseIds.add(candidateMsg.tool_call_id);
-  }
+    const content1 = Array.isArray(pinnedMsg.content)
+      ? pinnedMsg.content
+      : [{ type: 'text', text: String(pinnedMsg.content) } as MCPTextContent];
 
-  // Check for incomplete tool_use
-  const incompleteToolUses = Array.from(toolUseIds).filter(
-    (id) => !completedToolUseIds.has(id),
-  );
+    const content2 = Array.isArray(firstSelected.content)
+      ? firstSelected.content
+      : [
+          {
+            type: 'text',
+            text: String(firstSelected.content),
+          } as MCPTextContent,
+        ];
 
-  if (incompleteToolUses.length > 0) {
-    logger.debug('Incomplete tool chain detected', {
-      totalToolUses: toolUseIds.size,
-      completedToolUses: completedToolUseIds.size,
-      incompleteToolUses: incompleteToolUses.length,
+    const mergedContent = [...content1, separator, ...content2];
+
+    const mergedMsg: Message = {
+      ...pinnedMsg,
+      id: `merged_${pinnedMsg.id}_${firstSelected.id}`,
+      content: mergedContent,
+    };
+
+    logger.info('🔗 Merging pinned user message with adjacent user message', {
+      pinnedId: pinnedMsg.id,
+      adjacentId: firstSelected.id,
     });
-    return true;
+
+    return [mergedMsg, ...selectedMsgs.slice(1)];
   }
 
-  return false;
+  return [pinnedMsg, ...selectedMsgs];
 }
 
 /**
