@@ -1,6 +1,11 @@
 import React from 'react';
 import { Paperclip, X } from 'lucide-react';
-import { Button } from '@/components/ui';
+import {
+  Button,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { AttachmentReference } from '@/models/chat';
 
@@ -31,17 +36,21 @@ export function AgentChatAttachedFiles() {
             className="flex items-center px-2 py-1 rounded-md border border-border bg-muted/20"
           >
             <span className="text-xs truncate max-w-36">{file.filename}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => removeAttachedFile(file)}
-              className="ml-1 h-6 w-6"
-              title={`Remove ${file.filename}`}
-              aria-label={`Remove ${file.filename}`}
-            >
-              <X className="w-4 h-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeAttachedFile(file)}
+                  className="ml-1 h-6 w-6"
+                  aria-label={`Remove ${file.filename}`}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove {file.filename}</TooltipContent>
+            </Tooltip>
           </li>
         ))}
       </ul>

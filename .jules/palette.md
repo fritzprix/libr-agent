@@ -12,3 +12,8 @@
 
 **Learning:** File lists rendered as `div`s with icon-only buttons create poor screen reader experience. Using `ul`/`li` provides structure, and dynamic `aria-label` (e.g., "Remove [filename]") on buttons is critical for context.
 **Action:** Always use semantic list elements for collections and ensure action buttons in lists have context-specific labels.
+
+## 2025-06-25 - [Radix Tooltip Composition]
+
+**Learning:** Wrapping a functional component (like `Button`) inside `TooltipTrigger` without `asChild` creates invalid nesting and breaks accessibility/event propagation in Radix UI.
+**Action:** Always use `<TooltipTrigger asChild>` when the trigger content is a custom component that forwards refs.

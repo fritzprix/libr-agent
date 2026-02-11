@@ -9,7 +9,13 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { Button, FileAttachment } from '@/components/ui';
+import {
+  Button,
+  FileAttachment,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import type { Message, AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
@@ -324,34 +330,45 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button
-          type="submit"
-          disabled={
-            (!input.trim() && attachedFiles.length === 0) || isAttachmentLoading
-          }
-          variant="ghost"
-          size="icon"
-          title="Send message"
-          aria-label="Send message"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="submit"
+              disabled={
+                (!input.trim() && attachedFiles.length === 0) ||
+                isAttachmentLoading
+              }
+              variant="ghost"
+              size="icon"
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Send message</TooltipContent>
+        </Tooltip>
 
         {isBusy && (
-          <Button
-            onClick={handleCancel}
-            variant="destructive"
-            size="icon"
-            disabled={pendingCancel}
-            title={pendingCancel ? 'Cancelling...' : 'Cancel request'}
-            aria-label="Cancel request"
-          >
-            {pendingCancel ? (
-              <Loader2 className="h-4 w-4 animate-spin text-warning" />
-            ) : (
-              <Square className="h-4 w-4" />
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={handleCancel}
+                variant="destructive"
+                size="icon"
+                disabled={pendingCancel}
+                aria-label="Cancel request"
+              >
+                {pendingCancel ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-warning" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {pendingCancel ? 'Cancelling...' : 'Cancel request'}
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     </form>

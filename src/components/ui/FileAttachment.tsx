@@ -1,6 +1,11 @@
 import React from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip';
 
 interface FileAttachmentProps {
   files: { name: string; content: string }[];
@@ -57,17 +62,21 @@ export default function FileAttachment({
         />
 
         {/* Attach Files Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          type="button"
-          onClick={handleFileSelect}
-          className="h-8 w-8 text-muted-foreground hover:text-success"
-          title="Attach files"
-          aria-label="Attach files"
-        >
-          <Paperclip className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              onClick={handleFileSelect}
+              className="h-8 w-8 text-muted-foreground hover:text-success"
+              aria-label="Attach files"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Attach files</TooltipContent>
+        </Tooltip>
 
         {/* File Count Indicator */}
         {files.length > 0 && (
@@ -90,17 +99,21 @@ export default function FileAttachment({
       />
 
       {/* Attach Files Button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        type="button"
-        onClick={handleFileSelect}
-        className="text-muted-foreground hover:text-success border border-muted"
-        title="Attach files"
-        aria-label="Attach files"
-      >
-        <Paperclip className="h-4 w-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={handleFileSelect}
+            className="text-muted-foreground hover:text-success border border-muted"
+            aria-label="Attach files"
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Attach files</TooltipContent>
+      </Tooltip>
 
       {/* Attached Files Display */}
       {files.length > 0 && (
@@ -118,17 +131,21 @@ export default function FileAttachment({
                 <span className="text-xs text-success truncate flex-1">
                   {file.name}
                 </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onRemove(index)}
-                  className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
-                  title={`Remove ${file.name}`}
-                  aria-label={`Remove ${file.name}`}
-                >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onRemove(index)}
+                      className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove {file.name}</TooltipContent>
+                </Tooltip>
               </li>
             ))}
           </ul>
