@@ -6,8 +6,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint,
-    ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
@@ -170,34 +169,34 @@ impl WorkspaceServer {
         let pending = match self.pending_executions.remove(execution_id) {
             Some(p) => p,
             None => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
                     format!("Execution '{}' not found or expired", execution_id),
-                    vec![
-                        "Execute the original command again to get a new execution_id".to_string(),
-                        format!("Execution requests expire after {} minutes", 5),
-                        "Ensure you're using the execution_id from the UI resource".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Execute the original command again to get a new execution_id".to_string(),
+                    format!("Execution requests expire after {} minutes", 5),
+                    "Ensure you're using the execution_id from the UI resource".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
 
         // Validate session ownership
         if pending.session_id != session_id {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::PermissionDenied,
                 format!(
                     "Pending execution '{}' belongs to a different session",
                     execution_id
                 ),
-                vec![
-                    "Ensure you are executing the command in the correct session".to_string(),
-                    "Executions are isolated per session".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Ensure you are executing the command in the correct session".to_string(),
+                "Executions are isolated per session".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -206,16 +205,18 @@ impl WorkspaceServer {
         {
             Ok(s) => s,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "De-obfuscate user input",
-                    &e,
-                    vec![
-                        "This is an internal error - the UI should handle obfuscation".to_string(),
-                        "Try executing the command again".to_string(),
-                        "Contact support if this persists".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "De-obfuscate user input failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "This is an internal error - the UI should handle obfuscation".to_string(),
+                    "Try executing the command again".to_string(),
+                    "Contact support if this persists".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
         let user_input = user_input.as_str();
@@ -226,19 +227,19 @@ impl WorkspaceServer {
             .signed_duration_since(pending.created_at)
             .num_seconds();
         if elapsed > USER_INPUT_TIMEOUT_SECS {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::Timeout,
                 format!("Execution request expired after {} seconds", elapsed),
-                vec![
-                    "Execute the original command again to get a new execution_id".to_string(),
-                    format!(
-                        "User input must be submitted within {} minutes",
-                        USER_INPUT_TIMEOUT_SECS / 60
-                    ),
-                    "Respond more quickly to interactive prompts".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Execute the original command again to get a new execution_id".to_string(),
+                format!(
+                    "User input must be submitted within {} minutes",
+                    USER_INPUT_TIMEOUT_SECS / 60
+                ),
+                "Respond more quickly to interactive prompts".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -361,16 +362,18 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create isolated command",
-                    &e.to_string(),
-                    vec![
-                        "Verify shell environment is properly configured".to_string(),
-                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
-                        "Ensure workspace isolation level is valid".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Create isolated command failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Verify shell environment is properly configured".to_string(),
+                    "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                    "Ensure workspace isolation level is valid".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -383,16 +386,18 @@ impl WorkspaceServer {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Spawn process",
-                    &e.to_string(),
-                    vec![
-                        "Verify the command syntax is correct".to_string(),
-                        "Check if required programs are installed".to_string(),
-                        "Ensure the command has execute permissions".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Spawn process failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Verify the command syntax is correct".to_string(),
+                    "Check if required programs are installed".to_string(),
+                    "Ensure the command has execute permissions".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -400,28 +405,32 @@ impl WorkspaceServer {
         if let Some(mut stdin) = child.stdin.take() {
             // CRITICAL: Write password and close stdin
             if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
-                return Ok(operation_failed_error(
-                    "Write to stdin",
-                    &e.to_string(),
-                    vec![
-                        "The process may have crashed before accepting input".to_string(),
-                        "Try executing the command again".to_string(),
-                        "Check if the command expects input in a different format".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Write to stdin failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "The process may have crashed before accepting input".to_string(),
+                    "Try executing the command again".to_string(),
+                    "Check if the command expects input in a different format".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
             if let Err(e) = stdin.write_all(b"\n").await {
-                return Ok(operation_failed_error(
-                    "Write newline to stdin",
-                    &e.to_string(),
-                    vec![
-                        "The process may have closed stdin unexpectedly".to_string(),
-                        "Try executing the command again".to_string(),
-                        "Verify the command is still running".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Write newline to stdin failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "The process may have closed stdin unexpectedly".to_string(),
+                    "Try executing the command again".to_string(),
+                    "Verify the command is still running".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
             drop(stdin); // Close stdin to signal EOF
         }
@@ -439,30 +448,31 @@ impl WorkspaceServer {
             {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    return Ok(operation_failed_error(
-                        "Execute command with user input",
-                        &e.to_string(),
-                        vec![
-                            "The command may have invalid syntax or crashed".to_string(),
-                            "Verify the command works without user input first".to_string(),
-                            "Check system logs for more details".to_string(),
-                        ],
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidState,
+                        "Execute command with user input failed".to_string(),
                         ToolGroup::Workspace,
-                    ));
+                    )
+                    .guidance(vec![
+                        "The command may have invalid syntax or crashed".to_string(),
+                        "Verify the command works without user input first".to_string(),
+                        "Check system logs for more details".to_string(),
+                        format!("Error: {}", e),
+                    ])
+                    .to_mcp_result());
                 }
                 Err(_) => {
                     let timeout_secs = pending.timeout;
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::Timeout,
                         format!("Command execution timeout after {} seconds", timeout_secs),
-                        vec![
-                            format!("Increase timeout parameter (current: {}s)", timeout_secs),
-                            "Use \"runMode\": \"async\" for long-running commands".to_string(),
-                            "Verify the command isn't hanging waiting for additional input"
-                                .to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        format!("Increase timeout parameter (current: {}s)", timeout_secs),
+                        "Use \"runMode\": \"async\" for long-running commands".to_string(),
+                        "Verify the command isn't hanging waiting for additional input".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
@@ -509,16 +519,18 @@ impl WorkspaceServer {
                 .join(format!("process_{process_id}"));
 
             if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-                return Ok(operation_failed_error(
-                    "Create process directory",
-                    &e.to_string(),
-                    vec![
-                        "Check workspace directory permissions".to_string(),
-                        "Ensure sufficient disk space is available".to_string(),
-                        "Verify tmp directory is writable".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create process directory failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Check workspace directory permissions".to_string(),
+                    "Ensure sufficient disk space is available".to_string(),
+                    "Verify tmp directory is writable".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
 
             let stdout_path = process_tmp_dir.join("stdout");
@@ -639,19 +651,18 @@ impl WorkspaceServer {
                     // Since we already removed it, let's just re-insert it if validation fails.
                     self.pending_executions.insert(pending);
 
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::PermissionDenied,
                         format!(
                             "Pending execution '{}' belongs to a different session",
                             execution_id
                         ),
-                        vec![
-                            "Ensure you are executing the command in the correct session"
-                                .to_string(),
-                            "Executions are isolated per session".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Ensure you are executing the command in the correct session".to_string(),
+                        "Executions are isolated per session".to_string(),
+                    ])
                     .to_mcp_result());
                 }
 
@@ -668,16 +679,16 @@ impl WorkspaceServer {
 
                 Ok(hint.to_mcp_result_with_data(Some(response_data)))
             }
-            None => Ok(ErrorGuidance::with_guidance(
+            None => Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 format!("Pending execution '{}' not found", execution_id),
-                vec![
-                    "The execution may have already been completed or cancelled".to_string(),
-                    "Verify the execution_id is correct".to_string(),
-                    format!("Executions expire after {} minutes", 5),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "The execution may have already been completed or cancelled".to_string(),
+                "Verify the execution_id is correct".to_string(),
+                format!("Executions expire after {} minutes", 5),
+            ])
             .to_mcp_result()),
         }
     }

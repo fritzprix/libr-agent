@@ -2,7 +2,7 @@ use sea_orm::*;
 use serde_json::{json, Value};
 
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::KnowledgeRepository;
@@ -63,16 +63,17 @@ pub async fn read_knowledge(
             &id.to_string(),
             ToolGroup::Knowledge,
         )),
-        Err(e) => Ok(operation_failed_error(
-            "Read knowledge",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify the ID is correct".to_string(),
-                "Use listKnowledge to see available entries".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Read knowledge error: {}", e),
             ToolGroup::Knowledge,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify the ID is correct".to_string(),
+            "Use listKnowledge to see available entries".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -240,16 +241,17 @@ pub async fn search_knowledge(
                 "count": results.len()
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Search knowledge",
-            &e.to_string(),
-            vec![
-                "Check search query format".to_string(),
-                "Verify database connectivity".to_string(),
-                "Use listKnowledge to see all entries".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Search knowledge error: {}", e),
             ToolGroup::Knowledge,
-        )),
+        )
+        .with_guidance(vec![
+            "Check search query format".to_string(),
+            "Verify database connectivity".to_string(),
+            "Use listKnowledge to see all entries".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -315,30 +317,23 @@ pub async fn list_knowledge(
             let hint = SuccessHint::new(
                 message,
                 if items.is_empty() {
-                    vec!["Use saveKnowledge to create entries".to_string()]
-                } else if items.len() as i64 == limit as i64 {
-                    vec![format!("Use offset={} to see more entries", offset + limit)]
+                    vec!["Use saveKnowledge to add entries".to_string()]
                 } else {
                     vec!["Use readKnowledge to view full content".to_string()]
                 },
             );
 
-            Ok(hint.to_mcp_result_with_data(Some(json!({
-                "items": items,
-                "count": items.len(),
-                "limit": limit,
-                "offset": offset
-            }))))
+            Ok(hint.to_mcp_result_with_data(Some(json!({ "items": items }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "List knowledge",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify pagination parameters".to_string(),
-                "Retry the operation".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("List knowledge error: {}", e),
             ToolGroup::Knowledge,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Retry the operation".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }

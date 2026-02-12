@@ -117,6 +117,19 @@ export function AgentChatMessages() {
             );
           }
 
+          if (groupedMessage.type === 'tool_error_group') {
+            return (
+              <AgentMessageBubble
+                key={groupedMessage.message.id}
+                message={groupedMessage.message}
+                getAssistantName={getAssistantNameForMessage}
+                groupedMessages={groupedMessage.messages}
+                pendingMessages={pendingMessages}
+                toolErrorGroup={true}
+              />
+            );
+          }
+
           // Handle message-level errors
           if (groupedMessage.message.error) {
             return (

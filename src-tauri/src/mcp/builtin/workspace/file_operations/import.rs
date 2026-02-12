@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use crate::mcp::builtin::error_guidance::{ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use tokio::fs;
@@ -11,7 +11,7 @@ impl WorkspaceServer {
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        // ✅ ENHANCED: Replace legacy MCPResult::error() with ErrorGuidance for better context
+        // ✅ ENHANCED: Replace legacy MCPResult::error() with guided_error for better context
 
         // Parameter validation 1: srcAbsPath
         let src_path_str = match args
@@ -21,15 +21,15 @@ impl WorkspaceServer {
         {
             Some(path) => path,
             None => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Missing required parameter: srcAbsPath",
-                    vec![
-                        "Provide the absolute path to the file you want to import".to_string(),
-                        "Example: {\"srcAbsPath\": \"/home/user/file.txt\", \"destRelPath\": \"imports/file.txt\"}".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide the absolute path to the file you want to import".to_string(),
+                    "Example: {\"srcAbsPath\": \"/home/user/file.txt\", \"destRelPath\": \"imports/file.txt\"}".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
@@ -42,15 +42,15 @@ impl WorkspaceServer {
         {
             Some(path) => path,
             None => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Missing required parameter: destRelPath",
-                    vec![
-                        "Provide the destination path relative to workspace root".to_string(),
-                        "Example: \"imports/filename.ext\" or \"src/data/file.txt\"".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide the destination path relative to workspace root".to_string(),
+                    "Example: \"imports/filename.ext\" or \"src/data/file.txt\"".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
@@ -69,33 +69,33 @@ impl WorkspaceServer {
                     "Failed to canonicalize source path '{}': {}",
                     src_path_str, e
                 );
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
                     format!("Source file not found or cannot be accessed: {}", src_path_str),
-                    vec![
-                        "Verify the file path is correct and the file exists".to_string(),
-                        "Check file permissions and ensure you have read access".to_string(),
-                        format!("On Windows, use absolute paths like 'C:\\Users\\...', on Unix like '/home/user/...'"),
-                        "Use an absolute path, not a relative path".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Verify the file path is correct and the file exists".to_string(),
+                    "Check file permissions and ensure you have read access".to_string(),
+                    format!("On Windows, use absolute paths like 'C:\\Users\\...', on Unix like '/home/user/...'"),
+                    "Use an absolute path, not a relative path".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
 
         // Ensure source is a file, not a directory
         if !src_path.is_file() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Source path is a directory, not a file: {}", src_path_str),
-                vec![
-                    "Provide the path to a specific file, not a directory".to_string(),
-                    "To import multiple files, call importFile multiple times".to_string(),
-                    "To import directory contents, use shell commands (e.g., runShell('cp -r src dest'))".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Provide the path to a specific file, not a directory".to_string(),
+                "To import multiple files, call importFile multiple times".to_string(),
+                "To import directory contents, use shell commands (e.g., runShell('cp -r src dest'))".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -186,12 +186,12 @@ impl WorkspaceServer {
                     )
                 };
 
-                Ok(ErrorGuidance::with_guidance(
+                Ok(guided_error(
                     category,
                     format!("Failed to import file: {}", e),
-                    guidance,
                     ToolGroup::Workspace,
                 )
+                .guidance(guidance)
                 .to_mcp_result())
             }
         }

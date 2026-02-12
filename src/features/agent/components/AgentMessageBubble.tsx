@@ -12,6 +12,12 @@ interface AgentMessageBubbleProps {
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   pendingMessages?: Message[]; // NEW: Pending queue for set-based detection
+  /**
+   * When true, this bubble represents a group of failed tool results.
+   * Render it like normal tool output, but with subtle warning/error semantics
+   * (iconography/colors) for clear visual distinction.
+   */
+  toolErrorGroup?: boolean;
 }
 
 function AgentMessageBubbleImpl({
@@ -21,6 +27,7 @@ function AgentMessageBubbleImpl({
   groupedToolCalls,
   groupedMessages,
   pendingMessages = [], // NEW: Default to empty array
+  toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
   // Check if message is pending (set-based detection)
   const isPending = useMemo(
@@ -88,7 +95,9 @@ function AgentMessageBubbleImpl({
               ? isPending
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
                 : 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground',
+              : toolErrorGroup
+                ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
+                : 'bg-secondary text-secondary-foreground',
           )}
         >
           <div className="text-xs font-semibold mb-1 opacity-70">

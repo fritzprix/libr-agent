@@ -155,6 +155,7 @@ pub async fn create_session(
                 updated_at: now,
                 source: Some("api".to_string()),
                 error: None,
+                metadata: None,
             };
 
             log::info!(
@@ -288,6 +289,7 @@ pub async fn send_message(
         updated_at: now,
         source: Some("api".to_string()),
         error: None,
+        metadata: None,
     };
 
     // 3. Handle based on status

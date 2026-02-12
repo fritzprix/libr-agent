@@ -1,5 +1,5 @@
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::planning_repository::PlanningRepository;
@@ -17,10 +17,10 @@ pub async fn add_todo(
     args: Value,
 ) -> Result<MCPResult, String> {
     // 1. Extract required parameters
-    let description = args
-        .get("description")
-        .and_then(|v| v.as_str())
-        .ok_or("Missing required parameter: description")?;
+    let description = match args.get("description").and_then(|v| v.as_str()) {
+        Some(d) => d,
+        None => return Ok(missing_param_error("description", ToolGroup::Planning)),
+    };
 
     let priority = args
         .get("priority")
@@ -76,15 +76,15 @@ pub async fn add_todo(
                 "todo": title
             }))))
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to add todo: {}", e),
-            vec![
-                "Try again - this may be a transient database error".to_string(),
-                "Use getCurrentState to verify if the todo was created".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again - this may be a transient database error".to_string(),
+            "Use getCurrentState to verify if the todo was created".to_string(),
+        ])
         .to_mcp_result()),
     }
 }
@@ -100,10 +100,10 @@ pub async fn check_todo(
     args: Value,
 ) -> Result<MCPResult, String> {
     // 1. Extract required parameters (index only)
-    let index = args
-        .get("index")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing required parameter: index (0-based position)")?;
+    let index = match args.get("index").and_then(|v| v.as_i64()) {
+        Some(i) => i,
+        None => return Ok(missing_param_error("index", ToolGroup::Planning)),
+    };
 
     let checked = args
         .get("checked")
@@ -127,12 +127,12 @@ pub async fn check_todo(
     let todos = match repo.list_todos(session_id, true).await {
         Ok(t) => t,
         Err(e) => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Failed to fetch todos: {}", e),
-                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
@@ -141,15 +141,15 @@ pub async fn check_todo(
     let todo = match todos.get(index as usize) {
         Some(t) => t,
         None => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 format!("No todo found at position {}", index),
-                vec![
-                    "Use getCurrentState to see current todos and their positions".to_string(),
-                    "The index must be within range (0 to count-1)".to_string(),
-                ],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec![
+                "Use getCurrentState to see current todos and their positions".to_string(),
+                "The index must be within range (0 to count-1)".to_string(),
+            ])
             .to_mcp_result());
         }
     };
@@ -159,15 +159,15 @@ pub async fn check_todo(
 
     // 4. Update (no parent auto-completion logic)
     if let Err(e) = repo.check_todo(todo_id, checked, summary).await {
-        return Ok(ErrorGuidance::with_guidance(
+        return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to update todo: {}", e),
-            vec![
-                "Try again".to_string(),
-                "Use getCurrentState to verify the final status".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again".to_string(),
+            "Use getCurrentState to verify the final status".to_string(),
+        ])
         .to_mcp_result());
     }
 
@@ -203,10 +203,10 @@ pub async fn cancel_todo(
     args: Value,
 ) -> Result<MCPResult, String> {
     // 1. Extract required parameter (single index only)
-    let index = args
-        .get("index")
-        .and_then(|v| v.as_i64())
-        .ok_or("Missing required parameter: index (0-based position)")?;
+    let index = match args.get("index").and_then(|v| v.as_i64()) {
+        Some(i) => i,
+        None => return Ok(missing_param_error("index", ToolGroup::Planning)),
+    };
 
     if index < 0 {
         return Ok(invalid_input_error(
@@ -220,12 +220,12 @@ pub async fn cancel_todo(
     let todos = match repo.list_todos(session_id, true).await {
         Ok(t) => t,
         Err(e) => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Failed to fetch todos: {}", e),
-                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
@@ -234,15 +234,15 @@ pub async fn cancel_todo(
     let todo = match todos.get(index as usize) {
         Some(t) => t,
         None => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 format!("No todo found at position {}", index),
-                vec![
-                    "Use getCurrentState to see current todos and their positions".to_string(),
-                    "The index must be within range (0 to count-1)".to_string(),
-                ],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec![
+                "Use getCurrentState to see current todos and their positions".to_string(),
+                "The index must be within range (0 to count-1)".to_string(),
+            ])
             .to_mcp_result());
         }
     };
@@ -252,15 +252,15 @@ pub async fn cancel_todo(
 
     // 4. Delete single todo (no batch, no "delete all")
     if let Err(e) = repo.delete_todos(session_id, vec![todo_id]).await {
-        return Ok(ErrorGuidance::with_guidance(
+        return Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to delete todo: {}", e),
-            vec![
-                "Try again".to_string(),
-                "Use getCurrentState to verify if it was removed".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again".to_string(),
+            "Use getCurrentState to verify if it was removed".to_string(),
+        ])
         .to_mcp_result());
     }
 

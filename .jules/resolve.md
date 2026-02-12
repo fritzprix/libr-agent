@@ -8,5 +8,6 @@
 **Solution:** Extracted `handle_tool_result_and_continue` from `llm.rs` into a shared function `continue_workflow_after_tool` in `workflow.rs` and updated both `llm.rs` and `session_manager.rs` to use it, eliminating code duplication and the TODO.
 
 ## 2026-02-09 - src-tauri/src/server/handlers.rs
+
 **Debt Cleared:** `// TODO: might need to fetch assistant ID from config`
 **Solution:** Extracted `assistant_id` from `agent_config` in `create_session` and `send_message` functions and populated the `Message` struct to ensure proper assistant tracking.

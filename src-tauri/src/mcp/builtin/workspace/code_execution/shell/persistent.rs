@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::mcp::builtin::error_guidance::{ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 
 use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
@@ -136,16 +136,16 @@ impl WorkspaceServer {
                         header
                     };
 
-                    Ok(ErrorGuidance::with_guidance(
+                    Ok(guided_error(
                         ErrorCategory::OperationFailed,
                         error_message,
-                        vec![
-                            "Review the error message in stderr for details".to_string(),
-                            "Check command syntax and file paths".to_string(),
-                            "Use listDirectory to verify paths exist".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Review the error message in stderr for details".to_string(),
+                        "Check command syntax and file paths".to_string(),
+                        "Use listDirectory to verify paths exist".to_string(),
+                    ])
                     .to_mcp_result())
                 }
             }
@@ -183,16 +183,17 @@ impl WorkspaceServer {
                 }
 
                 // Return ErrorGuidance for timeout
-                Ok(ErrorGuidance::with_guidance(
+                Ok(guided_error(
                     ErrorCategory::Timeout,
                     format!("Command execution timeout after {} seconds. The shell session has been reset.", timeout_secs),
-                    vec![
-                        "Increase timeout value if the command needs more time".to_string(),
-                        "Check if the command is stuck or waiting for input".to_string(),
-                        "The shell session has been reset - execute the command again".to_string(),
-                    ],
                     ToolGroup::Workspace,
-                ).to_mcp_result())
+                )
+                .guidance(vec![
+                    "Increase timeout value if the command needs more time".to_string(),
+                    "Check if the command is stuck or waiting for input".to_string(),
+                    "The shell session has been reset - execute the command again".to_string(),
+                ])
+                .to_mcp_result())
             }
         }
     }
