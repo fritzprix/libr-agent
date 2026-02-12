@@ -1,7 +1,7 @@
 use super::super::terminal_manager;
 use super::super::WorkspaceServer;
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, operation_failed_error, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -63,32 +63,34 @@ impl WorkspaceServer {
                     format!("Available processes: {}", available.join(", "))
                 };
 
-                return Ok(operation_failed_error(
-                    "Read Process Output",
-                    &format!("Process '{}' not found", process_id),
-                    vec![
-                        available_text,
-                        "Use listProcesses() to see all processes with IDs".to_string(),
-                        "Check if process has finished - finished processes are kept for 24 hours"
-                            .to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::ResourceNotFound,
+                    format!("Process '{}' not found", process_id),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    available_text,
+                    "Use listProcesses() to see all processes with IDs".to_string(),
+                    "Check if process has finished - finished processes are kept for 24 hours"
+                        .to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 
         // Verify session access
         if entry.session_id != session_id {
             // ✅ ENHANCED: Better error message for session mismatch
-            return Ok(operation_failed_error(
-                "Read Process Output",
-                &format!("Process '{}' not found in current session", process_id),
-                vec![
-                    "Process may belong to a different session".to_string(),
-                    "Use listProcesses() to see processes in your session".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::PermissionDenied,
+                format!("Process '{}' not found in current session", process_id),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                "Process may belong to a different session".to_string(),
+                "Use listProcesses() to see processes in your session".to_string(),
+            ])
+            .to_mcp_result());
         }
         drop(registry);
 
@@ -210,12 +212,13 @@ impl WorkspaceServer {
                     )
                 };
 
-                Ok(operation_failed_error(
-                    &error_title,
-                    &e,
-                    guidance,
+                Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    error_title,
                     ToolGroup::Workspace,
-                ))
+                )
+                .guidance(guidance)
+                .to_mcp_result())
             }
         }
     }
@@ -418,15 +421,16 @@ impl WorkspaceServer {
         if let Some(entry) = registry.entries.get(process_id) {
             if entry.session_id != session_id {
                 // ✅ ENHANCED: Process-specific error for session mismatch
-                return Ok(operation_failed_error(
-                    "Stop Process",
-                    &format!("Process '{}' not found in current session", process_id),
-                    vec![
-                        "Process may belong to a different session".to_string(),
-                        "Use listProcesses() to see processes in your session".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    format!("Process '{}' not found in current session", process_id),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Process may belong to a different session".to_string(),
+                    "Use listProcesses() to see processes in your session".to_string(),
+                ])
+                .to_mcp_result());
             }
         } else {
             // ✅ ENHANCED: Process-specific error with running process IDs
@@ -445,16 +449,17 @@ impl WorkspaceServer {
                 format!("Running processes: {}", running.join(", "))
             };
 
-            return Ok(operation_failed_error(
-                "Stop Process",
-                &format!("Process '{}' not found", process_id),
-                vec![
-                    running_text,
-                    "Use listProcesses() to see all processes".to_string(),
-                    "Only running processes can be stopped".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                format!("Process '{}' not found", process_id),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                running_text,
+                "Use listProcesses() to see all processes".to_string(),
+                "Only running processes can be stopped".to_string(),
+            ])
+            .to_mcp_result());
         }
 
         // Cancel process via token
@@ -471,18 +476,19 @@ impl WorkspaceServer {
                     | terminal_manager::ProcessStatus::Failed
                     | terminal_manager::ProcessStatus::Killed
             ) {
-                return Ok(operation_failed_error(
-                    "Stop process",
-                    &format!(
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    format!(
                         "Process {} has already terminated with status: {:?}",
                         process_id, entry.status
                     ),
-                    vec![
-                        "Use listProcesses to see running processes".to_string(),
-                        "Only running processes can be stopped".to_string(),
-                    ],
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Use listProcesses to see running processes".to_string(),
+                    "Only running processes can be stopped".to_string(),
+                ])
+                .to_mcp_result());
             }
 
             // Kill process if running
@@ -567,12 +573,13 @@ impl WorkspaceServer {
 
                 if let Some(entry) = registry.entries.get_mut(process_id) {
                     if entry.session_id != session_id {
-                        return Ok(operation_failed_error(
-                            "Wait For Process",
-                            &format!("Process '{}' not found in current session", process_id),
-                            vec!["Process belongs to another session".to_string()],
+                        return Ok(guided_error(
+                            ErrorCategory::PermissionDenied,
+                            format!("Process '{}' not found in current session", process_id),
                             ToolGroup::Workspace,
-                        ));
+                        )
+                        .guidance(vec!["Process belongs to another session".to_string()])
+                        .to_mcp_result());
                     }
 
                     // Poll tracking logic (migrated from pollProcess)
@@ -616,15 +623,16 @@ impl WorkspaceServer {
                         format!("Available processes: {}", available.join(", "))
                     };
 
-                    return Ok(operation_failed_error(
-                        "Wait For Process",
-                        &format!("Process '{}' not found in session", process_id),
-                        vec![
-                            available_text,
-                            "Use listProcesses() to see all active processes".to_string(),
-                        ],
+                    return Ok(guided_error(
+                        ErrorCategory::ResourceNotFound,
+                        format!("Process '{}' not found in session", process_id),
                         ToolGroup::Workspace,
-                    ));
+                    )
+                    .guidance(vec![
+                        available_text,
+                        "Use listProcesses() to see all active processes".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             };
 
@@ -666,15 +674,15 @@ impl WorkspaceServer {
                 });
 
                 if should_show_guidance {
-                    return Ok(ErrorGuidance::with_guidance(
-                        crate::mcp::builtin::error_guidance::ErrorCategory::InvalidState,
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidState,
                         "Excessive polling detected".to_string(),
-                        vec![
-                            "Wait a few seconds before checking again".to_string(),
-                            "Or use waitForProcess with a non-zero timeout".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Wait a few seconds before checking again".to_string(),
+                        "Or use waitForProcess with a non-zero timeout".to_string(),
+                    ])
                     .to_mcp_result());
                 }
 
@@ -687,19 +695,19 @@ impl WorkspaceServer {
 
             // 3. Timeout Check (Blocking Mode only)
             if start_time.elapsed() >= timeout {
-                return Ok(ErrorGuidance::with_guidance(
-                    crate::mcp::builtin::error_guidance::ErrorCategory::Timeout,
+                return Ok(guided_error(
+                    ErrorCategory::Timeout,
                     format!(
                         "Timeout waiting for process {} ({}s)",
                         process_id, timeout_secs
                     ),
-                    vec![
-                        "Process is still running in background".to_string(),
-                        "Use waitForProcess(timeout=0) to check status without waiting".to_string(),
-                        "Increase timeout parameter if needed".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Process is still running in background".to_string(),
+                    "Use waitForProcess(timeout=0) to check status without waiting".to_string(),
+                    "Increase timeout parameter if needed".to_string(),
+                ])
                 .to_mcp_result());
             }
 

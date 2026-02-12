@@ -4,6 +4,7 @@ mod scratchpad;
 mod todos;
 mod tools;
 
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -97,10 +98,16 @@ impl BuiltinMCPServer for PlanningServer {
             }
             "clearSession" | "builtin_planning__clearSession" => {
                 let repo = crate::state::get_planning_repository();
-                repo.clear_session(&target_session_id)
-                    .await
-                    .map(|_| MCPResult::success("✓ Session planning state cleared"))
-                    .map_err(|e| format!("Failed to clear session: {}", e))
+                match repo.clear_session(&target_session_id).await {
+                    Ok(_) => Ok(MCPResult::success("✓ Session planning state cleared")),
+                    Err(e) => Ok(guided_error(
+                        ErrorCategory::DatabaseError,
+                        format!("Failed to clear session: {}", e),
+                        ToolGroup::Planning,
+                    )
+                    .with_guidance(vec!["Try again".to_string()])
+                    .to_mcp_result()),
+                }
             }
             "addScratchpad" | "builtin_planning__addScratchpad" => {
                 scratchpad::add_scratchpad(self.db.as_ref(), &target_session_id, args).await

@@ -15,6 +15,19 @@ export type GroupedMessage =
         calls: ToolCall[];
         results: (Message | undefined)[];
       };
+    }
+  | {
+      /**
+       * A group of consecutive failed tool result messages.
+       *
+       * These are rendered similarly to normal tool results, but with warning/error
+       * semantics for quick visual distinction.
+       */
+      type: 'tool_error_group';
+      /** The first tool message in the error group (used as a stable key anchor). */
+      message: Message;
+      /** All consecutive tool error messages in the group. */
+      messages: Message[];
     };
 
 export interface MessageGroupingResult {
@@ -38,6 +51,10 @@ const hasTextContent = (msg: Message): boolean => {
   }
 
   return !!msg.content && msg.content.length > 0 && msg.content.some(validText);
+};
+
+const isToolErrorMessage = (msg: Message): boolean => {
+  return msg.role === 'tool' && msg.metadata?.toolError === true;
 };
 
 // Helper: Check if two maps are identical (shallow equality of keys and values)
@@ -171,6 +188,29 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
 
     while (i < messages.length) {
       const msg = messages[i];
+
+      // Group consecutive failed tool results into a dedicated error group.
+      // This must happen BEFORE the generic "skip standalone tool results" behavior.
+      if (isToolErrorMessage(msg)) {
+        const errorMessages: Message[] = [];
+        let j = i;
+        while (j < messages.length && isToolErrorMessage(messages[j])) {
+          const toolMsg = messages[j];
+          // Ensure tool error results are still captured in the toolResultsMap.
+          captureToolResult(toolMsg, j);
+          errorMessages.push(toolMsg);
+          j++;
+        }
+
+        groupedMessages.push({
+          type: 'tool_error_group',
+          message: errorMessages[0],
+          messages: errorMessages,
+        });
+        groupEndIndices.push(j);
+        i = j;
+        continue;
+      }
 
       // Capture tool result in map (even if skipped later)
       if (msg.role === 'tool' && msg.tool_call_id) {

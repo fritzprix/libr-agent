@@ -49,6 +49,8 @@ pub struct Message {
     pub source: Option<String>,
     /// Error information as structured value
     pub error: Option<serde_json::Value>,
+    /// Optional metadata for tool execution tracking (mirrors frontend Message.metadata)
+    pub metadata: Option<serde_json::Value>,
 }
 
 // The database layer has been migrated to repositories/message_repository.rs

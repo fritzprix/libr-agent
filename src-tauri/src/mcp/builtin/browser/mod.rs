@@ -1,4 +1,4 @@
-use crate::mcp::builtin::error_guidance::{operation_failed_error, ToolGroup};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::mcp::MCPTool;
 use crate::services::InteractiveBrowserServer;
@@ -53,6 +53,12 @@ pub(crate) fn handle_browser_op_error(
     let error_lower = error.to_lowercase();
     let is_timeout = error_lower.contains("timeout") || error_lower.contains("timed out");
 
+    let category = if is_timeout {
+        ErrorCategory::Timeout
+    } else {
+        ErrorCategory::OperationFailed
+    };
+
     let guidance_strs = if is_timeout {
         vec![
             "The page load timed out. This often happens with complex sites.",
@@ -65,7 +71,13 @@ pub(crate) fn handle_browser_op_error(
 
     let guidance: Vec<String> = guidance_strs.iter().map(|s| s.to_string()).collect();
 
-    operation_failed_error(operation, &error, guidance, ToolGroup::Browser)
+    guided_error(
+        category,
+        format!("{} failed: {}", operation, error),
+        ToolGroup::Browser,
+    )
+    .guidance(guidance)
+    .to_mcp_result()
 }
 
 impl BrowserServer {
