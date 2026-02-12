@@ -31,10 +31,7 @@ export default function AppSidebar() {
   // Keyboard shortcuts are handled by SidebarProvider's wrapper onKeyDown
 
   return (
-    <Sidebar
-      className="backdrop-blur-sm border-r shadow-xl"
-      collapsible="icon"
-    >
+    <Sidebar className="backdrop-blur-sm border-r shadow-xl" collapsible="icon">
       <SidebarHeader className="border-b">
         <div className="flex flex-row items-center justify-center gap-2 p-4">
           <BrainCircuit size={32} className="flex-shrink-0" />
@@ -56,15 +53,16 @@ export default function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/agent">
-                  <SidebarMenuButton
-                    isActive={location.pathname.startsWith('/agent')}
-                    tooltip="Chat"
-                  >
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname.startsWith('/agent')}
+                  tooltip="Chat"
+                >
+                  <Link to="/agent">
                     <Bot size={16} />
                     <span>Chat</span>
-                  </SidebarMenuButton>
-                </Link>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -78,26 +76,28 @@ export default function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/assistants">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/assistants'}
-                    tooltip="Assistants"
-                  >
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname === '/assistants'}
+                  tooltip="Assistants"
+                >
+                  <Link to="/assistants">
                     <Users size={16} />
                     <span>Assistants</span>
-                  </SidebarMenuButton>
-                </Link>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <Link to="/playbooks">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/playbooks'}
-                    tooltip="Playbooks"
-                  >
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname === '/playbooks'}
+                  tooltip="Playbooks"
+                >
+                  <Link to="/playbooks">
                     <BookOpen size={16} />
                     <span>Playbooks</span>
-                  </SidebarMenuButton>
-                </Link>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -111,15 +111,16 @@ export default function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <Link to="/history">
-                  <SidebarMenuButton
-                    isActive={location.pathname === '/history'}
-                    tooltip="History"
-                  >
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname === '/history'}
+                  tooltip="History"
+                >
+                  <Link to="/history">
                     <History size={16} />
                     <span>History</span>
-                  </SidebarMenuButton>
-                </Link>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -128,16 +129,17 @@ export default function AppSidebar() {
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <Link to="/settings">
-              <SidebarMenuButton
-                tooltip="Settings"
-                className={`transition-all duration-200`}
-                isActive={location.pathname === '/settings'}
-              >
+            <SidebarMenuButton
+              asChild
+              tooltip="Settings"
+              className={`transition-all duration-200`}
+              isActive={location.pathname === '/settings'}
+            >
+              <Link to="/settings">
                 <Settings size={16} />
                 {!isCollapsed && <span>Settings</span>}
-              </SidebarMenuButton>
-            </Link>
+              </Link>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
         {!isCollapsed && (
