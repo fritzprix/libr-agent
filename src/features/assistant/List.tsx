@@ -229,7 +229,7 @@ export default function AssistantList() {
                 key={assistant.id}
                 assistant={assistant}
                 isExpanded={expandedId === assistant.id}
-                onToggle={() => handleToggleExpand(assistant.id!)}
+                onToggle={() => handleToggleExpand(assistant.id)}
                 builtinToolsMap={builtinToolsMap}
                 mcpServersMap={mcpServersMap}
               />

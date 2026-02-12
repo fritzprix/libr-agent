@@ -71,10 +71,6 @@ export default function AgentChatStartView() {
           let targetAssistant = null;
 
           for (const assistant of allAssistants) {
-            if (!assistant.id) {
-              continue;
-            }
-
             try {
               playbook = await getPlaybook(playbookId, assistant.id);
               if (playbook) {
@@ -178,7 +174,7 @@ export default function AgentChatStartView() {
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
       // Show loading state
-      setStartingAssistantId(assistant.id || null);
+      setStartingAssistantId(assistant.id);
 
       // Navigate to simplified draft view
       navigate(`/agent/draft?assistantId=${assistant.id}`);
