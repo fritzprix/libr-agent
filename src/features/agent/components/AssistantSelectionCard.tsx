@@ -21,7 +21,6 @@ export function AssistantSelectionCard({
       aria-label={`Start session with ${assistant.name}`}
       aria-busy={isStarting}
       aria-disabled={disabled}
-      role="listitem"
       className={cn(
         'w-full p-4 text-left border rounded-xl transition-all',
         'hover:shadow-md hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-primary',
