@@ -6,6 +6,7 @@ use crate::services::SecureFileManager;
 use crate::session::get_session_manager;
 use std::path::Path;
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 
 /// Reads a file from the workspace using the `SecureFileManager`.
 #[tauri::command]
@@ -73,10 +74,29 @@ pub async fn read_dropped_file(file_path: String) -> Result<Vec<u8>, String> {
         }
     }
 
-    // Read the file
-    fs::read(path)
+    // Read the file with a size limit to prevent TOCTOU/DoS
+    let file = fs::File::open(path)
         .await
-        .map_err(|e| format!("Failed to read file: {e}"))
+        .map_err(|e| format!("Failed to open file: {e}"))?;
+
+    let max_size = crate::config::max_file_size() as u64;
+    let read_limit = max_size.saturating_add(1);
+    let mut content = Vec::new();
+
+    let bytes_read = file
+        .take(read_limit)
+        .read_to_end(&mut content)
+        .await
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+
+    if bytes_read as u64 > max_size {
+        return Err(format!(
+            "File exceeds the maximum allowed size of {} bytes",
+            max_size
+        ));
+    }
+
+    Ok(content)
 }
 
 /// Writes content to a file in the workspace using the `SecureFileManager`.
