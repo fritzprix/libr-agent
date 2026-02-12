@@ -37,8 +37,8 @@
 
 ## 2026-02-10 - README.md
 
-**Drift:** Supported LLMs list missing Groq, Ollama, Cerebras, Fireworks, Empty.
-**Reality:** Updated list to match `src/lib/ai-service/types.ts`.
+**Drift:** Supported LLMs list missing Groq, Ollama, Cerebras, Fireworks.
+**Reality:** Updated list to match `src/lib/ai-service/types.ts`, excluding the internal placeholder `Empty` provider from user-facing documentation.
 
 ## 2026-02-10 - agents.md / CONTRIBUTING.md / docs/README.md
 
