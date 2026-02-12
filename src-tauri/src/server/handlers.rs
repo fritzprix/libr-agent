@@ -304,13 +304,6 @@ pub async fn send_message(
     let message_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 
-    // Resolve assistant ID from session config
-    let assistant_id = session
-        .agent_config
-        .as_ref()
-        .and_then(|json| crate::agent::AgentConfig::from_json(json).ok())
-        .and_then(|config| config.id);
-
     let message = Message {
         id: message_id.clone(),
         session_id: id.clone(),

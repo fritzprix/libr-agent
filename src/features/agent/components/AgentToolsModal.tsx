@@ -45,7 +45,12 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Available Tools {totalCount > 0 && <span className="text-muted-foreground font-normal text-sm ml-1">({totalCount})</span>}
+            Available Tools{' '}
+            {totalCount > 0 && (
+              <span className="text-muted-foreground font-normal text-sm ml-1">
+                ({totalCount})
+              </span>
+            )}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground mt-1 text-left font-normal">
             {builtinCount > 0
@@ -86,7 +91,10 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Wrench size={16} className="flex-shrink-0 text-muted-foreground" />
+                        <Wrench
+                          size={16}
+                          className="flex-shrink-0 text-muted-foreground"
+                        />
                         <span
                           className="font-mono text-sm text-foreground break-words font-medium"
                           title={tool.name}
