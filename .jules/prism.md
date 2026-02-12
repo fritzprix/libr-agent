@@ -108,6 +108,9 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 
 ## 2026-01-28 - [AgentWorkspacePanel] **Visual Bug:** Accessibility violation (div with onClick) **Fix:** Use semantic button element
 
+## 2026-02-11 - [AgentPlanningPanel] **Visual Bug:** Magic number (text-[10px]) **Fix:** Use standard token (text-xs)
+
+## 2026-02-11 - [AssistantEditor] **Visual Bug:** Magic numbers (min-h-[200px], max-h-[400px]) **Fix:** Use standard spacing tokens (min-h-52, max-h-96)
 ## 2026-02-05 - [AssistantSelectionCard] **Visual Bug:** Missing component, hardcoded button styles **Fix:** Created new component with consistent styling
 
 ## 2026-02-05 - [SessionCard] **Visual Bug:** Custom status indicator, inconsistent icons **Fix:** Used Badge component, standardized icons to 12px
