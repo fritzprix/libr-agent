@@ -1,8 +1,4 @@
-import {
-  Content,
-  Part,
-  createPartFromFunctionResponse,
-} from '@google/genai';
+import { Content, Part, createPartFromFunctionResponse } from '@google/genai';
 import { Message } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
 import { getLogger } from '../../logger';
@@ -300,9 +296,7 @@ export function convertSingleMessage(message: Message): unknown {
   if (message.role === 'user' && message.content) {
     return {
       role: 'user',
-      parts: [
-        { text: processMessageContent(message.content as MCPContent[]) },
-      ],
+      parts: [{ text: processMessageContent(message.content as MCPContent[]) }],
     };
   } else if (message.role === 'assistant') {
     if (message.tool_calls && message.tool_calls.length > 0) {
@@ -357,9 +351,7 @@ export function convertSingleMessage(message: Message): unknown {
         const parsed =
           tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
         const id =
-          tc.id && typeof tc.id === 'string'
-            ? tc.id
-            : generateToolCallId();
+          tc.id && typeof tc.id === 'string' ? tc.id : generateToolCallId();
         return createPartFromFunctionResponse(id, tc.function.name, parsed);
       });
       return {

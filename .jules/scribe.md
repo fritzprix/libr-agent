@@ -44,6 +44,7 @@
 
 **Drift:** References `docs/architecture/chat-feature-architecture.md` which does not exist.
 **Reality:** The file `docs/architecture/agent-workflow-architecture.md` exists and covers the agent workflow and architecture.
+
 ## 2026-02-10 - README.md
 
 **Drift:** Supported LLMs list missing Groq, Ollama, Cerebras, Fireworks.

@@ -8,7 +8,6 @@
 **Split:** `types.rs`, `common.rs`, `platforms/mod.rs`, `platforms/windows.rs`, `platforms/linux.rs`, `platforms/macos.rs`, `platforms/unix.rs`, `mod.rs`
 **Improvement:** Decoupled platform-specific isolation logic (Linux `unshare`, macOS `sandbox-exec`, Windows job objects) into dedicated modules. Separated types and common utilities. Reduced monolithic file size from ~811 lines to focused modules, improving maintainability and readability.
 
-
 ## 2026-02-09 - src-tauri/src/session.rs
 
 **Split:** `types.rs`, `manager.rs`, `mod.rs`
@@ -25,4 +24,5 @@
 **Split:** `config.ts`, `mapper.ts`, `models.ts`, `service.ts`, `stream.ts`, `types.ts`, `index.ts`
 **Result:** Reduced from ~1120 lines to ~250 lines in the main service class.
 **Improvement:** Decoupled message conversion (Gemini format), stream processing (chunk parsing, tool calls), and model management logic from the main service class. Centralized configuration and types.
+
 > > > > > > > dev/0.4.0
