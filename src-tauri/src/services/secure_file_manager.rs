@@ -57,16 +57,16 @@ impl SecureFileManager {
             .map_err(|e| format!("Failed to open file: {e}"))?;
 
         let mut content = Vec::new();
+        let read_limit = (max_size as u64).saturating_add(1);
         let bytes_read = file
-            .take((max_size + 1) as u64)
+            .take(read_limit)
             .read_to_end(&mut content)
             .await
             .map_err(|e| format!("Failed to read file: {e}"))?;
 
         if bytes_read > max_size {
             return Err(format!(
-                "File too large: {} bytes (max: {} bytes)",
-                bytes_read,
+                "File exceeds the maximum allowed size of {} bytes",
                 max_size
             ));
         }
@@ -152,16 +152,16 @@ impl SecureFileManager {
             .map_err(|e| format!("Failed to open file: {e}"))?;
 
         let mut buffer = Vec::new();
+        let read_limit = (max_size as u64).saturating_add(1);
         let bytes_read = file
-            .take((max_size + 1) as u64)
+            .take(read_limit)
             .read_to_end(&mut buffer)
             .await
             .map_err(|e| format!("Failed to read file: {e}"))?;
 
         if bytes_read > max_size {
             return Err(format!(
-                "File too large: {} bytes (max: {} bytes)",
-                bytes_read,
+                "File exceeds the maximum allowed size of {} bytes",
                 max_size
             ));
         }
