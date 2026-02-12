@@ -141,10 +141,6 @@ export function AgentSessionListProvider({
         // ✅ CRITICAL FIX: Reload assistant from DB to get latest configuration
         // This ensures that any recent changes (e.g., built-in tool updates)
         // are included in the session config
-        if (!assistant.id) {
-          throw new Error('Assistant ID is required to create session');
-        }
-
         const freshAssistant = await getAssistant(assistant.id);
 
         if (!freshAssistant) {

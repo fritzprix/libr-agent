@@ -92,9 +92,6 @@ export async function listAssistants(): Promise<Assistant[]> {
  * NOTE: For high concurrency this might be race-prone, but fine for local app.
  */
 export async function upsertAssistant(assistant: Assistant): Promise<void> {
-  if (!assistant.id) {
-    throw new Error('Assistant ID is required for upsert');
-  }
   const exists = await getAssistant(assistant.id);
   if (exists) {
     await updateAssistant(assistant);

@@ -47,6 +47,7 @@ function deserializeSession(dto: SessionDto): Session {
   if (assistants.length === 0) {
     assistants = [
       {
+        id: 'unknown-assistant',
         name: 'Unknown Assistant',
         systemPrompt: 'You are a helpful assistant.',
         createdAt: new Date(dto.createdAt),

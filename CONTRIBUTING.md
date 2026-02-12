@@ -32,7 +32,7 @@ Before contributing, understand our core design:
 - **React Frontend**: Local state managed via Tauri commands (backed by SQLite), no remote server required
 - **MCP Support**: External servers for specialized workflows
 
-See [docs/architecture/overview.md](docs/architecture/overview.md) for detailed architecture.
+See [agents.md](agents.md) for detailed architecture.
 
 ### Code Style
 

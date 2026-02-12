@@ -1,5 +1,5 @@
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::AssistantRepository;
@@ -129,15 +129,16 @@ pub async fn list_assistants(
                 "has_more": has_more
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "List assistants",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify pagination parameters are valid integers".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to list assistants: {}", e),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify pagination parameters are valid integers".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -214,15 +215,16 @@ pub async fn search_assistant(
                 "count": assistants.len()
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Search assistants",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify query parameter is a valid string".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to search assistants for '{}': {}", query, e),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify query parameter is a valid string".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -271,16 +273,24 @@ pub async fn get_assistant(
                 "updated_at": model.updated_at
             }))))
         }
-        Ok(None) => Ok(not_found_error("Assistant", id, ToolGroup::Assistant)),
-        Err(e) => Ok(operation_failed_error(
-            "Get assistant",
-            &e.to_string(),
-            vec![
-                "Verify the assistant ID is correct".to_string(),
-                "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
-                "Check database connectivity".to_string(),
-            ],
+        Ok(None) => Ok(guided_error(
+            ErrorCategory::ResourceNotFound,
+            format!("Assistant '{}' not found", id),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec![
+            "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
+        ])
+        .to_mcp_result()),
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to get assistant '{}': {}", id, e),
+            ToolGroup::Assistant,
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify the assistant ID format".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }

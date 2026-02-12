@@ -1,4 +1,6 @@
-use crate::mcp::builtin::error_guidance::{missing_param_error, SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::{MCPResult, MCPServerConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -53,7 +55,18 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
 
     // Use repository to get full models (includes tool_count from DB)
     let repo = get_mcp_server_repository();
-    let models = repo.list().await.map_err(|e| format!("DB error: {}", e))?;
+    let models = match repo.list().await {
+        Ok(m) => m,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("Failed to target MCP server list: {}", e),
+                ToolGroup::McpManager,
+            )
+            .with_guidance(vec!["Check database connectivity".to_string()])
+            .to_mcp_result())
+        }
+    };
 
     // Pagination
     let total = models.len();
@@ -159,10 +172,18 @@ pub async fn search_server(args: Value) -> Result<MCPResult, String> {
 
     // Use repository to get full models including ID and name
     let repo = get_mcp_server_repository();
-    let models = repo
-        .list()
-        .await
-        .map_err(|e| format!("DB List Error: {}", e))?;
+    let models = match repo.list().await {
+        Ok(m) => m,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("Failed to execute server search: {}", e),
+                ToolGroup::McpManager,
+            )
+            .with_guidance(vec!["Check database connectivity".to_string()])
+            .to_mcp_result())
+        }
+    };
 
     let filtered: Vec<Value> = models
         .into_iter()
