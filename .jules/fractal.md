@@ -25,4 +25,7 @@
 **Result:** Reduced from ~1120 lines to ~250 lines in the main service class.
 **Improvement:** Decoupled message conversion (Gemini format), stream processing (chunk parsing, tool calls), and model management logic from the main service class. Centralized configuration and types.
 
-> > > > > > > dev/0.4.0
+## 2026-02-12 - src-tauri/src/lib.rs
+
+**Split:** `src-tauri/src/lifecycle/` (`database.rs`, `repositories.rs`, `app_setup.rs`, `settings.rs`, `mod.rs`)
+**Improvement:** Decoupled application startup logic (database initialization, repository setup, app configuration) from the main library entry point. Reduced `lib.rs` from ~800 lines to ~250 lines, improving readability and separation of concerns.
