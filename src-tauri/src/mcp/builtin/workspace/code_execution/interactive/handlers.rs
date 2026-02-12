@@ -159,24 +159,24 @@ impl WorkspaceServer {
         }
 
         // De-obfuscate user input
-        let user_input = match security::deobfuscate_input(obfuscated_input, &pending.encryption_nonce)
-        {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidState,
-                    "De-obfuscate user input failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "This is an internal error - the UI should handle obfuscation".to_string(),
-                    "Try executing the command again".to_string(),
-                    "Contact support if this persists".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
+        let user_input =
+            match security::deobfuscate_input(obfuscated_input, &pending.encryption_nonce) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidState,
+                        "De-obfuscate user input failed".to_string(),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "This is an internal error - the UI should handle obfuscation".to_string(),
+                        "Try executing the command again".to_string(),
+                        "Contact support if this persists".to_string(),
+                        format!("Error: {}", e),
+                    ])
+                    .to_mcp_result());
+                }
+            };
         let user_input = user_input.as_str();
 
         // Validate timeout (5 minutes for user input)
@@ -255,8 +255,10 @@ impl WorkspaceServer {
                     );
 
                     // Redact sensitive user input from output
-                    let redacted_stdout = security::redact_sensitive_input(stdout.trim(), user_input);
-                    let redacted_stderr = security::redact_sensitive_input(stderr.trim(), user_input);
+                    let redacted_stdout =
+                        security::redact_sensitive_input(stdout.trim(), user_input);
+                    let redacted_stderr =
+                        security::redact_sensitive_input(stderr.trim(), user_input);
 
                     let result_text = if exit_code == 0 {
                         if redacted_stdout.is_empty() && redacted_stderr.is_empty() {
@@ -301,7 +303,8 @@ impl WorkspaceServer {
 
         // Create isolation config
         let normalized_command = normalization::normalize_shell_command(&final_command);
-        let isolation_level = crate::mcp::builtin::workspace::utils::get_shell_isolation_level().await;
+        let isolation_level =
+            crate::mcp::builtin::workspace::utils::get_shell_isolation_level().await;
         let isolation_config = IsolatedProcessConfig {
             session_id: session_id.clone(),
             workspace_path: workspace_path.clone(),

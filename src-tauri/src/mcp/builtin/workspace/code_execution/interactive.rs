@@ -1,3 +1,3 @@
-pub mod security;
-pub mod ui;
-pub mod handlers;
+pub(crate) mod handlers;
+pub(crate) mod security;
+pub(crate) mod ui;
