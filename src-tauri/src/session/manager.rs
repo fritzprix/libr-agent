@@ -2,56 +2,17 @@ use log::{error, info, warn};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 use tokio::fs as async_fs;
 use tokio::time::{Duration, Instant};
 
-static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
-
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct SessionWorkspaceInfo {
-    pub session_id: String,
-    #[serde(serialize_with = "serialize_pathbuf")]
-    pub workspace_path: PathBuf,
-    #[serde(serialize_with = "serialize_option_pathbuf")]
-    pub workspace_override: Option<PathBuf>,
-    #[serde(serialize_with = "serialize_instant")]
-    pub created_at: Instant,
-    #[serde(serialize_with = "serialize_instant")]
-    pub last_accessed: Instant,
-    pub is_template: bool,
-}
-
-fn serialize_pathbuf<S>(path: &Path, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(&path.to_string_lossy())
-}
-
-fn serialize_option_pathbuf<S>(path: &Option<PathBuf>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    match path {
-        Some(p) => serializer.serialize_str(&p.to_string_lossy()),
-        None => serializer.serialize_none(),
-    }
-}
-
-fn serialize_instant<S>(instant: &Instant, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let duration_since_start = instant.elapsed();
-    serializer.serialize_u64(duration_since_start.as_secs())
-}
+use super::types::{SessionStats, SessionWorkspaceInfo};
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {
-    base_data_dir: PathBuf,
-    workspace_pool: Arc<RwLock<HashMap<String, SessionWorkspaceInfo>>>,
-    template_workspace: Arc<RwLock<Option<PathBuf>>>,
+    pub(crate) base_data_dir: PathBuf,
+    pub(crate) workspace_pool: Arc<RwLock<HashMap<String, SessionWorkspaceInfo>>>,
+    pub(crate) template_workspace: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl SessionManager {
@@ -604,96 +565,5 @@ echo "Available tools: python3, typescript/deno, shell commands"
             active_sessions,
             pool_sessions,
         })
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SessionStats {
-    pub total_sessions: usize,
-    pub active_sessions: usize,
-    pub pool_sessions: usize,
-}
-
-pub fn get_session_manager() -> Result<&'static SessionManager, String> {
-    SESSION_MANAGER.get_or_init(|| {
-        SessionManager::new().unwrap_or_else(|e| {
-            error!("Failed to initialize SessionManager: {e}");
-            // Create fallback session manager with temp directory
-            let temp_base = std::env::temp_dir().join("com.fritzprix.libragent");
-            let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("default"));
-            let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("templates"));
-            let _ = std::fs::create_dir_all(temp_base.join("logs"));
-            let _ = std::fs::create_dir_all(temp_base.join("config"));
-
-            SessionManager {
-                base_data_dir: temp_base,
-                workspace_pool: Arc::new(RwLock::new(HashMap::new())),
-                template_workspace: Arc::new(RwLock::new(None)),
-            }
-        })
-    });
-    Ok(SESSION_MANAGER.get().unwrap())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_session_isolation() {
-        // Setup temp dir for base
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let base_path = temp_dir.path().to_path_buf();
-
-        // Initialize SessionManager manually
-        // Initialize SessionManager manually
-        let session_manager =
-            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
-
-        // Get two distinct session paths
-        let session_id_a = "session_a";
-        let session_id_b = "session_b";
-        let path_a = session_manager.get_session_workspace_dir_by_id(session_id_a);
-        let path_b = session_manager.get_session_workspace_dir_by_id(session_id_b);
-
-        // Verify paths are different and correctly structured
-        assert_ne!(path_a, path_b);
-        // Note: Canonical paths might differ on some OS, but structure is what matters
-        assert!(path_a.to_string_lossy().contains("workspaces/session_a"));
-        assert!(path_b.to_string_lossy().contains("workspaces/session_b"));
-
-        // Create a file in Session A
-        let file_a = path_a.join("test.txt");
-        fs::write(&file_a, "Hello A").expect("Failed to write file A");
-
-        // Verify it exists in A but NOT in B path
-        assert!(file_a.exists());
-        let file_b_location = path_b.join("test.txt");
-        assert!(!file_b_location.exists());
-
-        // Create file in Session B
-        let file_b = path_b.join("other.txt");
-        fs::write(&file_b, "Hello B").expect("Failed to write file B");
-
-        assert!(file_b.exists());
-        let file_a_location = path_a.join("other.txt");
-        assert!(!file_a_location.exists());
-    }
-
-    #[test]
-    fn test_default_fallback_session_path() {
-        let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let base_path = temp_dir.path().to_path_buf();
-
-        let session_manager =
-            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
-
-        // If something requests "default" explicitly
-        let path_default = session_manager.get_session_workspace_dir_by_id("default");
-        assert!(path_default
-            .to_string_lossy()
-            .contains("workspaces/default"));
-        assert!(path_default.exists());
     }
 }
