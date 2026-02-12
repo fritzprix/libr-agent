@@ -128,7 +128,7 @@ export function AgentChatMessages() {
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
                 groupedMessages={groupedMessage.messages}
-                pendingMessages={pendingMessages}
+                pendingMessageIds={pendingMessageIds}
                 toolErrorGroup={true}
               />
             );
