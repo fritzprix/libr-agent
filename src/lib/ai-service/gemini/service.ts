@@ -1,7 +1,4 @@
-import {
-  FunctionDeclaration,
-  GoogleGenAI,
-} from '@google/genai';
+import { FunctionDeclaration, GoogleGenAI } from '@google/genai';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool } from '@/lib/mcp';
@@ -9,10 +6,7 @@ import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
-import {
-  convertToGeminiMessages,
-  convertSingleMessage,
-} from './mapper';
+import { convertToGeminiMessages, convertSingleMessage } from './mapper';
 import {
   mapReasoningEffortToBudget,
   checkThinkingSupport,
@@ -187,11 +181,7 @@ export class GeminiService extends BaseAIService {
       }
 
       // Use the stream processing logic from stream.ts
-      yield* processGeminiStream(
-        result,
-        this.getAbortSignal(),
-        this.logger,
-      );
+      yield* processGeminiStream(result, this.getAbortSignal(), this.logger);
     } catch (error) {
       if (
         error instanceof Error &&

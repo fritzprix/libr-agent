@@ -11,3 +11,5 @@
 
 **Debt Cleared:** `// TODO: might need to fetch assistant ID from config`
 **Solution:** Extracted `assistant_id` from `agent_config` in `create_session` and `send_message` functions and populated the `Message` struct to ensure proper assistant tracking.
+
+## 2026-02-10 - [src-tauri/src/mcp/service_proxy_manager/mod.rs] **Debt Cleared:** `/// - External HTTP tools -> shared HTTP manager (TODO: Phase 3)` **Solution:** Verified that `HttpSessionManager` correctly implements session-isolated HTTP connections with `Mcp-Session-Id` header injection. Removed the stale TODO comment as the implementation is complete.

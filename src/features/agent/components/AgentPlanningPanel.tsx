@@ -78,7 +78,7 @@ export function AgentPlanningPanel() {
                       {todo.checked ? '✓' : '○'}
                     </Badge>
                     {/* Index Badge for AI interaction */}
-                    <span className="mt-1 text-[10px] font-mono text-muted-foreground w-3 text-center shrink-0">
+                    <span className="mt-1 inline-flex items-center justify-center text-xs font-mono text-muted-foreground w-6 shrink-0">
                       {index}
                     </span>
                     <div className="flex-1 min-w-0">

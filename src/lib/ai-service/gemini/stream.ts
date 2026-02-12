@@ -25,11 +25,51 @@ interface GeminiThoughtChunk {
   }>;
 }
 
+interface GeminiFunctionCall {
+  id?: string;
+  name?: string;
+  args?: unknown;
+}
+
+interface GeminiChunkPart {
+  functionCall?: GeminiFunctionCall;
+  thoughtSignature?: string;
+}
+
+interface GeminiChunkCandidate {
+  content?: {
+    parts?: GeminiChunkPart[];
+  };
+  finishReason?: string;
+  safetyRatings?: unknown;
+}
+
+interface GeminiUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
+}
+
+interface GeminiStreamChunk {
+  usageMetadata?: GeminiUsageMetadata;
+  candidates?: GeminiChunkCandidate[];
+  text?: string;
+}
+
+type FormattedToolCall = ReturnType<typeof formatToolCall>;
+
+function isFunctionCallPart(part: GeminiChunkPart): part is GeminiChunkPart & {
+  functionCall: GeminiFunctionCall;
+} {
+  return typeof part.functionCall === 'object' && part.functionCall !== null;
+}
+
 /**
  * Processes the Gemini stream result and yields formatted JSON strings.
  */
 export async function* processGeminiStream(
-  result: any,
+  result: AsyncIterable<GeminiStreamChunk>,
   signal: AbortSignal,
   logger: ReturnType<typeof getLogger>,
 ): AsyncGenerator<string, void, void> {
@@ -149,14 +189,13 @@ export async function* processGeminiStream(
     });
 
     if (candidate?.content?.parts) {
-      const functionCallParts = candidate.content.parts.filter(
-        (part: any) => 'functionCall' in part && part.functionCall,
-      );
+      const functionCallParts =
+        candidate.content.parts.filter(isFunctionCallPart);
 
       if (functionCallParts.length > 0) {
         logger.debug('🔍 Found function call parts', {
           count: functionCallParts.length,
-          parts: functionCallParts.map((p: any, i: number) => ({
+          parts: functionCallParts.map((p, i: number) => ({
             index: i,
             hasSignature: 'thoughtSignature' in p,
             signatureValue:
@@ -168,7 +207,7 @@ export async function* processGeminiStream(
         });
 
         const toolCalls = functionCallParts
-          .map((part: any, index: number) => {
+          .map((part, index: number): FormattedToolCall | null => {
             const fc = part.functionCall;
             if (!fc || !fc.name) return null;
 
@@ -192,7 +231,7 @@ export async function* processGeminiStream(
 
             return formatToolCall(callId, fc.name, fc.args ?? {});
           })
-          .filter((tc: any): tc is NonNullable<typeof tc> => tc !== null);
+          .filter((tc): tc is FormattedToolCall => tc !== null);
 
         if (toolCalls.length > 0) {
           logger.debug('📤 Emitting tool calls', {

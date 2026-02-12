@@ -104,8 +104,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                         <span
                           className={
                             tool.name.startsWith('builtin_')
-                              ? 'text-[10px] uppercase font-bold bg-success/20 text-success px-2 py-0.5 rounded-full'
-                              : 'text-[10px] uppercase font-bold bg-primary/20 text-primary px-2 py-0.5 rounded-full'
+                              ? 'text-xs uppercase font-bold bg-success/20 text-success px-1.5 py-0.5 rounded-full'
+                              : 'text-xs uppercase font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full'
                           }
                           aria-hidden
                         >
