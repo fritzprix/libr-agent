@@ -8,7 +8,7 @@ use zip::write::FileOptions;
 
 use super::{ui_resources, WorkspaceServer};
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 
@@ -41,32 +41,34 @@ impl WorkspaceServer {
             .get_session_workspace_dir_by_id(&target_session_id)
             .join(path);
         if !source_path.exists() || !source_path.is_file() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 "File not found or is not a regular file".to_string(),
-                vec![
-                    "Use listDirectory to verify the file exists".to_string(),
-                    "Ensure the path points to a file, not a directory".to_string(),
-                    "Check the file path is correct".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use listDirectory to verify the file exists".to_string(),
+                "Ensure the path points to a file, not a directory".to_string(),
+                "Check the file path is correct".to_string(),
+            ])
             .to_mcp_result());
         }
 
         let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create exports directory",
-                    &e,
-                    vec![
-                        "Check workspace directory permissions".to_string(),
-                        "Ensure sufficient disk space".to_string(),
-                        "Verify workspace path is accessible".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create exports directory failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Check workspace directory permissions".to_string(),
+                    "Ensure sufficient disk space".to_string(),
+                    "Verify workspace path is accessible".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -87,16 +89,18 @@ impl WorkspaceServer {
 
         let export_path = exports_dir.join("files").join(&export_filename);
         if let Err(e) = std::fs::copy(&source_path, &export_path) {
-            return Ok(operation_failed_error(
-                "Export file",
-                &e.to_string(),
-                vec![
-                    "Check source file permissions".to_string(),
-                    "Ensure sufficient disk space in exports directory".to_string(),
-                    "Verify the file is not locked by another process".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::InvalidState,
+                "Export file failed".to_string(),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                "Check source file permissions".to_string(),
+                "Ensure sufficient disk space in exports directory".to_string(),
+                "Verify the file is not locked by another process".to_string(),
+                format!("Error: {}", e),
+            ])
+            .to_mcp_result());
         }
 
         let relative_path = format!("exports/files/{export_filename}");
@@ -159,16 +163,16 @@ impl WorkspaceServer {
 
         // Layer 2: Value constraints validation
         if files_array.is_empty() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                "Files array cannot be empty".to_string(),
-                vec![
-                    "Include at least one file path in the files array".to_string(),
-                    "Use listDirectory to find files to export".to_string(),
-                    "Example: {\"files\": [\"file1.txt\", \"folder/file2.txt\"]}".to_string(),
-                ],
+                "Files array cannot be empty",
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Include at least one file path in the files array".to_string(),
+                "Use listDirectory to find files to export".to_string(),
+                "Example: {\"files\": [\"file1.txt\", \"folder/file2.txt\"]}".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -195,36 +199,38 @@ impl WorkspaceServer {
         }
 
         if !missing_files.is_empty() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 format!(
                     "The following {} file(s) were not found: {}",
                     missing_files.len(),
                     missing_files.join(", ")
                 ),
-                vec![
-                    "Use listDirectory to verify file paths".to_string(),
-                    "Check for typos in filenames".to_string(),
-                    "Ensure files are within the workspace".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use listDirectory to verify file paths".to_string(),
+                "Check for typos in filenames".to_string(),
+                "Ensure files are within the workspace".to_string(),
+            ])
             .to_mcp_result());
         }
 
         let exports_dir = match self.ensure_exports_directory(&target_session_id) {
             Ok(dir) => dir,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create exports directory",
-                    &e,
-                    vec![
-                        "Check workspace directory permissions".to_string(),
-                        "Ensure sufficient disk space".to_string(),
-                        "Verify workspace path is accessible".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create exports directory failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Check workspace directory permissions".to_string(),
+                    "Ensure sufficient disk space".to_string(),
+                    "Verify workspace path is accessible".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -235,16 +241,18 @@ impl WorkspaceServer {
         let zip_file = match std::fs::File::create(&zip_path) {
             Ok(file) => file,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create ZIP file",
-                    &e.to_string(),
-                    vec![
-                        "Check exports directory permissions".to_string(),
-                        "Ensure sufficient disk space".to_string(),
-                        "Verify the path is accessible".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create ZIP file failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Check exports directory permissions".to_string(),
+                    "Ensure sufficient disk space".to_string(),
+                    "Verify the path is accessible".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -319,29 +327,31 @@ impl WorkspaceServer {
         }
 
         if let Err(e) = zip.finish() {
-            return Ok(operation_failed_error(
-                "Finalize ZIP file",
-                &e.to_string(),
-                vec![
-                    "Check if the ZIP writer encountered an error".to_string(),
-                    "Verify disk space is sufficient".to_string(),
-                    "Try exporting fewer files".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::InvalidState,
+                "Finalize ZIP file failed".to_string(),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                "Check if the ZIP writer encountered an error".to_string(),
+                "Verify disk space is sufficient".to_string(),
+                "Try exporting fewer files".to_string(),
+                format!("Error: {}", e),
+            ])
+            .to_mcp_result());
         }
 
         if processed_files.is_empty() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::OperationFailed,
                 "No files were successfully added to ZIP".to_string(),
-                vec![
-                    "Verify the file paths are correct with listDirectory".to_string(),
-                    "Check that the files exist and are readable".to_string(),
-                    "If you provided a directory, ensure it contains readable files".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Verify the file paths are correct with listDirectory".to_string(),
+                "Check that the files exist and are readable".to_string(),
+                "If you provided a directory, ensure it contains readable files".to_string(),
+            ])
             .to_mcp_result());
         }
 

@@ -12,6 +12,12 @@ interface AgentMessageBubbleProps {
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   pendingMessageIds?: ReadonlySet<string>;
+  /**
+   * When true, this bubble represents a group of failed tool results.
+   * Render it like normal tool output, but with subtle warning/error semantics
+   * (iconography/colors) for clear visual distinction.
+   */
+  toolErrorGroup?: boolean;
 }
 
 function AgentMessageBubbleImpl({
@@ -21,6 +27,7 @@ function AgentMessageBubbleImpl({
   groupedToolCalls,
   groupedMessages,
   pendingMessageIds,
+  toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
   const isPending = pendingMessageIds?.has(msg.id) ?? false;
 
@@ -84,7 +91,9 @@ function AgentMessageBubbleImpl({
               ? isPending
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
                 : 'bg-primary text-primary-foreground'
-              : 'bg-secondary text-secondary-foreground',
+              : toolErrorGroup
+                ? 'bg-destructive/5 text-secondary-foreground border border-destructive/20'
+                : 'bg-secondary text-secondary-foreground',
             // Add custom utility to ensure links inside are visible
             msg.role === 'user'
               ? '[&_a]:text-primary-foreground'

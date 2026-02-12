@@ -1,8 +1,16 @@
 import React, { useMemo } from 'react';
-import { Wrench, X } from 'lucide-react';
-import { Button } from '@/components/ui';
+import { Wrench } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { Button } from '@/components/ui/button';
 
 interface AgentToolsModalProps {
   isOpen: boolean;
@@ -12,11 +20,7 @@ interface AgentToolsModalProps {
 /**
  * AgentToolsModal - Tools list modal for Agent V2
  *
- * Differences from Legacy ToolsModal:
- * 1. Data source: useAgentTools(sessionId) - Filtered tools from Rust backend
- * 2. Context: AssistantContext → AgentSessionContext
- * 3. Disabled state: No disabled tools since backend filters
- * 4. Single source: UI and LLM display same tool list
+ * Refactored to use accessible Dialog component and semantic list structure.
  */
 export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   isOpen,
@@ -24,10 +28,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 }) => {
   const { session } = useAgentSessionState();
 
-  // ✅ Single Source of Truth: Filtered tools from Rust backend
   const { availableTools, isLoading, error } = useAgentTools(session?.id);
 
-  // Categorize by type (builtin vs external MCP)
   const { builtinTools, mcpTools } = useMemo(() => {
     const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
     const mcp = availableTools.filter((t) => !t.name.startsWith('builtin_'));
@@ -35,68 +37,66 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   }, [availableTools]);
 
   const totalCount = availableTools.length;
-  const builtinCount = builtinTools.length;
   const mcpCount = mcpTools.length;
-
-  if (!isOpen) return null;
+  const builtinCount = builtinTools.length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-background border border-border rounded-lg shadow-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between mb-4 flex-shrink-0">
-          <h2 className="text-lg font-bold text-foreground">
-            Available Tools {totalCount}({mcpCount})
-          </h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="text-muted-foreground hover:text-destructive"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {builtinCount > 0 && (
-          <div className="text-sm text-muted-foreground mb-4">
-            Built-in tools enabled: {builtinCount}
-          </div>
-        )}
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            Available Tools{' '}
+            {totalCount > 0 && (
+              <span className="text-muted-foreground font-normal text-sm ml-1">
+                ({totalCount})
+              </span>
+            )}
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground mt-1 text-left font-normal">
+            {builtinCount > 0
+              ? `Built-in tools: ${builtinCount} • MCP tools: ${mcpCount}`
+              : 'List of tools available to this agent session.'}
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Loading State */}
         {isLoading && (
-          <div className="text-center py-8 text-muted-foreground">
-            Loading tools...
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
+            <LoadingSpinner />
+            <span>Loading tools...</span>
           </div>
         )}
 
         {/* Error State */}
         {error && (
-          <div className="text-center py-8 text-destructive">
-            Error loading tools: {error}
+          <div className="text-center py-8 text-destructive flex flex-col items-center gap-2">
+            <span className="font-semibold">Error loading tools</span>
+            <span className="text-sm opacity-90">{error}</span>
           </div>
         )}
 
         {/* Tools List */}
         {!isLoading && !error && (
-          <div className="overflow-y-auto flex-1 min-h-0">
+          <div className="overflow-y-auto flex-1 min-h-0 pr-2">
             {totalCount === 0 ? (
               <div className="text-foreground text-center py-8">
                 No tools available for this agent session.
               </div>
             ) : (
-              <div className="space-y-3">
+              <ul className="space-y-3" aria-label="Available tools list">
                 {availableTools.map((tool) => (
-                  <div
+                  <li
                     key={tool.name}
                     className="bg-muted border border-border rounded p-3"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Wrench size={16} className="flex-shrink-0" />
+                        <Wrench
+                          size={16}
+                          className="flex-shrink-0 text-muted-foreground"
+                        />
                         <span
-                          className="font-mono text-sm text-foreground break-words"
+                          className="font-mono text-sm text-foreground break-words font-medium"
                           title={tool.name}
                         >
                           {tool.name}
@@ -104,8 +104,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                         <span
                           className={
                             tool.name.startsWith('builtin_')
-                              ? 'text-xs bg-success text-success-foreground px-2 py-0.5 rounded-full'
-                              : 'text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full'
+                              ? 'text-[10px] uppercase font-bold bg-success/20 text-success px-2 py-0.5 rounded-full'
+                              : 'text-[10px] uppercase font-bold bg-primary/20 text-primary px-2 py-0.5 rounded-full'
                           }
                           aria-hidden
                         >
@@ -114,34 +114,34 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                       </div>
                     </div>
                     {tool.description && (
-                      <p className="text-foreground text-sm">
+                      <p className="text-muted-foreground text-sm mb-2">
                         {tool.description}
                       </p>
                     )}
                     {tool.inputSchema && (
-                      <details className="mt-2">
-                        <summary className="text-xs text-foreground/80 cursor-pointer hover:text-foreground">
-                          Input Schema
+                      <details className="group">
+                        <summary className="text-xs text-primary cursor-pointer hover:underline focus-visible:ring-2 rounded px-1 -ml-1 inline-flex items-center select-none">
+                          View Input Schema
                         </summary>
-                        <pre className="text-xs text-foreground mt-1 bg-background p-2 rounded overflow-x-auto">
+                        <pre className="text-xs text-foreground mt-2 bg-background p-3 rounded border border-border overflow-x-auto">
                           {JSON.stringify(tool.inputSchema, null, 2)}
                         </pre>
                       </details>
                     )}
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
         )}
 
-        <div className="mt-4 pt-4 border-t border-border">
-          <Button variant="secondary" onClick={onClose} className="w-full">
+        <div className="mt-4 pt-4 border-t border-border flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 };
 

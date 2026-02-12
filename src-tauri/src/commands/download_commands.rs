@@ -40,10 +40,10 @@ pub async fn download_workspace_file(
         .unwrap_or("download");
 
     // Read file content
-    let file_content = match tokio::fs::read(&full_path).await {
-        Ok(content) => content,
-        Err(e) => return Err(format!("Failed to read file: {e}")),
-    };
+    let max_size = crate::config::max_file_size() as u64;
+    let file_content = crate::utils::fs::read_file_with_limit(&full_path, max_size)
+        .await
+        .map_err(|e| format!("Failed to read file: {e}"))?;
 
     // Show save file dialog and save (using a callback)
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
@@ -121,6 +121,9 @@ pub async fn export_and_download_zip(
     let mut zip = ZipWriter::new(zip_file);
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
+    // Compute max size once for all file operations
+    let max_size = crate::config::max_file_size() as u64;
+
     // Add files to the ZIP
     let mut processed_files = Vec::new();
     let mut added_archive_paths = HashSet::<String>::new();
@@ -168,22 +171,24 @@ pub async fn export_and_download_zip(
                 continue;
             }
 
-            if zip.start_file(&archive_path, options).is_err() {
-                continue;
-            }
-
-            match std::fs::read(&abs_canon) {
-                Ok(content) => {
-                    if zip.write_all(&content).is_err() {
-                        continue;
-                    }
-                    processed_files.push(archive_path);
-                }
+            // Read file content first, before adding to ZIP
+            let content = match crate::utils::fs::read_file_with_limit(&abs_canon, max_size).await {
+                Ok(c) => c,
                 Err(e) => {
                     log::error!("Failed to read file {}: {e}", abs_canon.display());
                     continue;
                 }
+            };
+
+            // Only add to ZIP after successful read
+            if zip.start_file(&archive_path, options).is_err() {
+                continue;
             }
+
+            if zip.write_all(&content).is_err() {
+                continue;
+            }
+            processed_files.push(archive_path);
         }
     }
 
@@ -195,8 +200,8 @@ pub async fn export_and_download_zip(
         return Err("No files were successfully added to ZIP".to_string());
     }
 
-    // Read ZIP content to be used in the callback
-    let zip_content = tokio::fs::read(&temp_zip_path)
+    // Read ZIP content to be used in the callback (reuse max_size from above)
+    let zip_content = crate::utils::fs::read_file_with_limit(&temp_zip_path, max_size)
         .await
         .map_err(|e| format!("Failed to read ZIP file: {e}"))?;
 

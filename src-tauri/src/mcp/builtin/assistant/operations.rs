@@ -1,7 +1,7 @@
 use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
-    duplicate_error, invalid_input_error, not_found_error, operation_failed_error, SuccessHint,
-    ToolGroup,
+    duplicate_error, guided_error, invalid_input_error, not_found_error, ErrorCategory,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::{AssistantRepository, MCPServerRepository};
@@ -197,14 +197,24 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
     }
 
     // Validate config is a valid JSON object
-    let config_str =
-        serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
+    let config_str = match serde_json::to_string(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Failed to serialize assistant config: {}", e),
+                ToolGroup::Assistant,
+            )
+            .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
+            .to_mcp_result());
+        }
+    };
 
-    let result = repo
+    // Use common logic for creation (using repo)
+    match repo
         .create_assistant(id.clone(), request.name.clone(), config_str)
-        .await;
-
-    match result {
+        .await
+    {
         Ok(_) => {
             let hint = SuccessHint::new(
                 format!(
@@ -225,15 +235,16 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "success": true,
                 "id": id,
-                "name": request.name
+                "name": &request.name
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Create assistant",
-            &e.to_string(),
-            vec!["Check database connection".to_string()],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to create assistant: {}", e),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec!["Try again".to_string()])
+        .to_mcp_result()),
     }
 }
 
@@ -300,13 +311,32 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .collect();
 
             if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
-                return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    err_msg,
+                    ToolGroup::Assistant,
+                )
+                .with_guidance(vec![
+                    "Use builtin_mcp_manager__listServers to see available servers".to_string(),
+                ])
+                .to_mcp_result());
             }
         }
     }
 
-    let config_str =
-        serde_json::to_string(&config).map_err(|e| format!("Invalid config JSON: {}", e))?;
+    // Validate config is a valid JSON object
+    let config_str = match serde_json::to_string(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Failed to serialize assistant config: {}", e),
+                ToolGroup::Assistant,
+            )
+            .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
+            .to_mcp_result());
+        }
+    };
 
     let result = repo
         .update_assistant(&request.id, Some(name.clone()), Some(config_str))
@@ -331,16 +361,16 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
                 "config": config
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Update assistant",
-            &e.to_string(),
-            vec![
-                "Verify the config JSON is valid".to_string(),
-                "Check database connectivity".to_string(),
-                "Use builtin_assistant__getAssistant to verify the assistant exists".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to update assistant {}: {}", request.id, e),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Use builtin_assistant__listAssistants to verify the assistant exists".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -363,11 +393,15 @@ pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<M
         .is_some();
 
     if !exists {
-        return Ok(not_found_error(
-            "Assistant",
-            &request.id,
+        return Ok(guided_error(
+            ErrorCategory::ResourceNotFound,
+            format!("Assistant '{}' not found", request.id),
             ToolGroup::Assistant,
-        ));
+        )
+        .with_guidance(vec![
+            "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     let result = repo.delete_assistant(&request.id).await;
@@ -391,15 +425,15 @@ pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<M
                 "id": request.id
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Delete assistant",
-            &e.to_string(),
-            vec![
-                "Verify the assistant ID is correct".to_string(),
-                "Use builtin_assistant__listAssistants to see existing assistants".to_string(),
-                "Check database connectivity".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to delete assistant {}: {}", request.id, e),
             ToolGroup::Assistant,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Ensure the assistant is not in use".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }

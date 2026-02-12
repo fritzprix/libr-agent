@@ -1,5 +1,5 @@
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::PlanningRepository;
@@ -51,15 +51,15 @@ pub async fn create_goal(
                 "goalId": id
             }))))
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to create goal: {}", e),
-            vec![
-                "Try again - this may be a transient error".to_string(),
-                "Use getCurrentState to check if a goal is already active".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again - this may be a transient error".to_string(),
+            "Use getCurrentState to check if a goal is already active".to_string(),
+        ])
         .to_mcp_result()),
     }
 }
@@ -112,15 +112,15 @@ pub async fn update_goal(
                 create_goal(db, session_id, args).await
             }
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to update goal: {}", e),
-            vec![
-                "Try again - database might be busy".to_string(),
-                "Use createGoal if no goal exists yet".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again - database might be busy".to_string(),
+            "Use createGoal if no goal exists yet".to_string(),
+        ])
         .to_mcp_result()),
     }
 }
@@ -141,15 +141,15 @@ pub async fn clear_goal(
             );
             Ok(hint.to_mcp_result())
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to clear goal: {}", e),
-            vec![
-                "Try again".to_string(),
-                "Use getCurrentState to see if it was already cleared".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again".to_string(),
+            "Use getCurrentState to see if it was already cleared".to_string(),
+        ])
         .to_mcp_result()),
     }
 }
