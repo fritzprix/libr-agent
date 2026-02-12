@@ -20,6 +20,68 @@ pub async fn request_llm_completion(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // 1. Validate session status before proceeding (Race Condition Fix)
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            if session.metadata.status != SessionStatus::Busy {
+                log::info!(
+                    "Rejecting LLM request for session {} (status: {:?})",
+                    session_id,
+                    session.metadata.status
+                );
+                return Err(format!(
+                    "Cannot request LLM completion: session status is {:?}",
+                    session.metadata.status
+                ));
+            }
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
+    // Emit MessageAdded events for any pending user messages before LLM request
+    // This makes them visible in the frontend (removed from pendingMessages queue)
+    // Optimization: Collect all data first, then release locks before I/O
+    let pending_messages: Vec<Message> = {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let mut pending_events = session.pending_events.write().await;
+            let pending_ids = pending_events.drain_messages();
+
+            if pending_ids.is_empty() {
+                Vec::new()
+            } else {
+                let messages = session.messages.read().await;
+
+                // Build HashMap for O(1) lookup instead of O(n) iter().find()
+                let msg_map: std::collections::HashMap<&str, &Message> =
+                    messages.iter().map(|m| (m.id.as_str(), m)).collect();
+
+                // Collect messages matching pending IDs
+                pending_ids
+                    .iter()
+                    .filter_map(|id| msg_map.get(id.as_str()).map(|&m| m.clone()))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        }
+    }; // All locks released here
+
+    // Now emit events without holding any locks
+    for msg in pending_messages {
+        let event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.clone(),
+            message: Box::new(msg.clone()),
+        };
+        let _ = crate::agent::events::emit_agent_event(app_handle, event);
+        log::info!(
+            "Emitted MessageAdded for previously pending message: {}",
+            msg.id
+        );
+    }
+
     // Read messages from in-memory cache
     let messages = {
         let sessions = active_sessions.read().await;
@@ -52,9 +114,9 @@ pub async fn request_llm_completion(
         .ok_or_else(|| "Agent configuration is required but not found".to_string())
         .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
 
-    let agent_config_clone = agent_config.clone();
-    let model = agent_config.model;
-    let provider = agent_config.provider;
+    let model = session.metadata.model.clone();
+    let provider = session.metadata.provider.clone();
+
     let temperature = Some(agent_config.temperature);
     let max_tokens = agent_config.max_tokens;
 
@@ -65,13 +127,10 @@ pub async fn request_llm_completion(
         Some(build_session_system_prompt(active_sessions, proxy_manager, &session_id).await?);
 
     // Collect available tools
-    let available_tools = crate::agent::tools::collect_available_tools(
-        &session_id,
-        &agent_config_clone,
-        proxy_manager,
-    )
-    .await
-    .ok();
+    let available_tools =
+        crate::agent::tools::collect_available_tools(&session_id, &agent_config, proxy_manager)
+            .await
+            .ok();
 
     // Emit event
     #[derive(Clone, serde::Serialize)]
@@ -120,8 +179,17 @@ pub async fn handle_llm_response(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!("Workflow cancelled for session: {}", session_id);
+            // Check both token and status.
+            // verifying status is critical because cancel_workflow resets the token immediately.
+            if session.cancellation_token.is_cancelled()
+                || session.metadata.status != SessionStatus::Busy
+            {
+                log::info!(
+                    "Workflow cancelled for session: {} (token_cancelled={}, status={:?})",
+                    session_id,
+                    session.cancellation_token.is_cancelled(),
+                    session.metadata.status
+                );
                 return Err("Workflow was cancelled".to_string());
             }
         }
@@ -379,7 +447,7 @@ pub async fn handle_llm_response(
             .await;
         }
 
-        // ✅ Content present: reset thinking_only_count and complete workflow
+        // ✅ Content present: reset thinking_only_count
         {
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
@@ -387,6 +455,33 @@ pub async fn handle_llm_response(
             }
         }
 
+        // Check for pending messages before finishing
+        let has_pending = {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                session.pending_events.read().await.count() > 0
+            } else {
+                false
+            }
+        };
+
+        if has_pending {
+            log::info!(
+                "🔄 Pending messages detected for session {}. Continuing workflow.",
+                session_id
+            );
+            // Recursively trigger next turn
+            return request_llm_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+            .await;
+        }
+
+        // No pending messages, finish workflow
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,

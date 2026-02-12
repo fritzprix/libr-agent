@@ -399,7 +399,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
 };
 
 // Custom comparison for React.memo
-function arePropsEqual(
+export function arePropsEqual(
   prev: AgentToolCallGroupProps,
   next: AgentToolCallGroupProps,
 ) {
@@ -410,11 +410,18 @@ function arePropsEqual(
   if (prev.isLast !== next.isLast) return false;
   if (prev.visibleCount !== next.visibleCount) return false;
 
-  // Check calls array content (length and reference of items)
-  // We assume ToolCall objects inside are stable if unchanged.
+  // Check calls array content (length and content of items)
+  // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
   if (prev.toolGroup.calls.length !== next.toolGroup.calls.length) return false;
   for (let i = 0; i < prev.toolGroup.calls.length; i++) {
-    if (prev.toolGroup.calls[i] !== next.toolGroup.calls[i]) return false;
+    const prevCall = prev.toolGroup.calls[i];
+    const nextCall = next.toolGroup.calls[i];
+
+    if (prevCall.id !== nextCall.id) return false;
+    if (prevCall.type !== nextCall.type) return false;
+    if (prevCall.function.name !== nextCall.function.name) return false;
+    if (prevCall.function.arguments !== nextCall.function.arguments)
+      return false;
   }
 
   // Check toolResults array content (shallow comparison of Message objects)

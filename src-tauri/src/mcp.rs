@@ -10,6 +10,7 @@ pub use session_isolation::SessionMCPManager;
 pub use session_isolation_config::SessionIsolationConfig;
 
 pub mod builtin;
+pub mod error_normalization;
 pub mod keychain;
 pub mod oauth;
 pub mod schema;

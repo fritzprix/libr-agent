@@ -376,6 +376,8 @@ export function AgentSessionProvider({
           id: string;
           name?: string;
           status: 'idle' | 'busy' | 'paused' | 'error';
+          model: string;
+          provider: string;
           agentConfig?: string;
           createdAt: number;
           updatedAt?: number;
@@ -389,7 +391,7 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
-        let assistant: import('@/models/agent').AgentConfig | undefined;
+        let assistant: import('@/models/chat').Assistant | undefined;
         if (response.agentConfig) {
           try {
             assistant = JSON.parse(response.agentConfig);
@@ -402,6 +404,8 @@ export function AgentSessionProvider({
           id: response.id,
           name: response.name,
           status: response.status,
+          model: response.model,
+          provider: response.provider,
           assistant,
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt

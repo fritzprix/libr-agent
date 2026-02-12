@@ -30,7 +30,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
   - **Tailwind CSS:** 4.1.11
   - **shadcn/ui:** Component library
 - **Database:**
-  - **IndexedDB:** For local storage of roles and conversations.
+  - **SQLite:** For local storage of roles and conversations via SeaORM.
 
 ## 4. Architecture
 

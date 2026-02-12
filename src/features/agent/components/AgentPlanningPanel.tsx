@@ -70,7 +70,6 @@ export function AgentPlanningPanel() {
             {planningState?.todos && planningState.todos.length > 0 ? (
               planningState.todos.map((todo, index) => (
                 <div key={index} className="space-y-1">
-                  {/* Parent Todo */}
                   <div className="flex items-start gap-2 text-sm">
                     <Badge
                       variant={todo.checked ? 'default' : 'secondary'}
@@ -78,6 +77,10 @@ export function AgentPlanningPanel() {
                     >
                       {todo.checked ? '✓' : '○'}
                     </Badge>
+                    {/* Index Badge for AI interaction */}
+                    <span className="mt-1 inline-flex items-center justify-center text-xs font-mono text-muted-foreground w-6 shrink-0">
+                      {index}
+                    </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span
@@ -112,44 +115,8 @@ export function AgentPlanningPanel() {
                           </Badge>
                         )}
                       </div>
-                      {/* Subtasks Progress */}
-                      {todo.subtasks && todo.subtasks.length > 0 && (
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {todo.subtasks.filter((st) => st.checked).length}/
-                          {todo.subtasks.length} subtasks
-                        </div>
-                      )}
                     </div>
                   </div>
-
-                  {/* Subtasks */}
-                  {todo.subtasks && todo.subtasks.length > 0 && (
-                    <div className="ml-6 space-y-1 border-l-2 border-muted pl-2">
-                      {todo.subtasks.map((subtask) => (
-                        <div
-                          key={subtask.id}
-                          className="flex items-start gap-2 text-xs"
-                        >
-                          <Badge
-                            variant={subtask.checked ? 'default' : 'outline'}
-                            className="mt-0.5 shrink-0 h-4 px-1"
-                          >
-                            {subtask.checked ? '✓' : '○'}
-                          </Badge>
-                          <span
-                            className={
-                              subtask.checked
-                                ? 'line-through text-muted-foreground'
-                                : ''
-                            }
-                            title={subtask.description}
-                          >
-                            {subtask.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))
             ) : (

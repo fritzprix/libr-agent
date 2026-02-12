@@ -18,6 +18,9 @@ pub async fn create_basic_isolated_command(
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
+    // Force English output for consistent AI reasoning
+    cmd.env("LC_ALL", "en_US.UTF-8");
+    cmd.env("LANG", "en_US.UTF-8");
     // PATH is inherited from parent process (agent)
 
     // Add user-specified environment variables (applies to all platforms)

@@ -482,6 +482,7 @@ mod tests {
     fn test_process_entry_initialization_with_poll_tracking() {
         let entry = ProcessEntry {
             id: "test-123".to_string(),
+            name: None,
             session_id: "session-1".to_string(),
             command: "test command".to_string(),
             status: ProcessStatus::Starting,
@@ -506,9 +507,10 @@ mod tests {
     }
 
     #[test]
-    fn test_process_entry_serialization_with_poll_fields() {
+    fn test_process_entry_serialization_deserialization() {
         let entry = ProcessEntry {
             id: "test-456".to_string(),
+            name: None,
             session_id: "session-2".to_string(),
             command: "echo hello".to_string(),
             status: ProcessStatus::Running,

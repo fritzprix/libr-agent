@@ -211,8 +211,8 @@ export function AgentChatStatusBar() {
         <div>
           {session && (
             <AgentModelPicker
-              currentModel={session.assistant?.model}
-              currentProvider={session.assistant?.provider}
+              currentModel={session.model}
+              currentProvider={session.provider}
               onConfigUpdate={async (model, provider) => {
                 if (!session.id || !session.assistant) return;
 
@@ -222,10 +222,7 @@ export function AgentChatStatusBar() {
                 try {
                   const updatedConfig = {
                     ...session.assistant,
-                    provider,
-                    model,
-                    // Ensure required fields
-                    temperature: 0.7,
+                    // Note: We keep these for completeness but the backend will prioritize top-level model/provider
                     name: session.assistant.name || 'Assistant',
                     systemPrompt:
                       session.assistant.systemPrompt ||
@@ -238,6 +235,8 @@ export function AgentChatStatusBar() {
                   await invoke('agent_update_session_config', {
                     request: {
                       sessionId: session.id,
+                      model,
+                      provider,
                       agentConfig: updatedConfig,
                     },
                   });

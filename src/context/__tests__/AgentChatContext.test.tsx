@@ -273,7 +273,7 @@ describe('AgentChatContext', () => {
         await result.current.cancel();
       });
 
-      expect(invoke).toHaveBeenCalledWith('agent_terminate_workflow', {
+      expect(invoke).toHaveBeenCalledWith('agent_cancel_workflow', {
         sessionId: 'test-session',
       });
       expect(result.current.isSessionLoading).toBe(false);

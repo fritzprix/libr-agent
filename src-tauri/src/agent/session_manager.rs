@@ -81,12 +81,35 @@ impl AgentSessionManager {
         }
     }
 
+    /// Create a new session (wrapper around create_session_with_repo using internal repo)
+    pub async fn create_session(
+        &self,
+        session_id: String,
+        name: Option<String>,
+        model: Option<String>,
+        provider: Option<String>,
+        agent_config: crate::agent::AgentConfig,
+    ) -> Result<SessionMetadata, String> {
+        // Use the internal persistent repository
+        self.create_session_with_repo(
+            self.session_repo.clone(),
+            session_id,
+            name,
+            model,
+            provider,
+            agent_config,
+        )
+        .await
+    }
+
     /// Create or update a session with a specific repository (for ephemeral vs persistent)
     pub async fn create_session_with_repo(
         &self,
         session_repo: Arc<dyn crate::repositories::SessionRepository>,
         session_id: String,
         name: Option<String>,
+        model: Option<String>,
+        provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<SessionMetadata, String> {
         crate::agent::lifecycle::create_session(crate::agent::lifecycle::CreateSessionParams {
@@ -97,6 +120,8 @@ impl AgentSessionManager {
             context_registry: self.context_registry.clone(),
             session_id,
             name,
+            model,
+            provider,
             agent_config,
         })
         .await
@@ -106,6 +131,8 @@ impl AgentSessionManager {
     pub async fn update_session_config(
         &self,
         session_id: String,
+        model: Option<String>,
+        provider: Option<String>,
         agent_config: crate::agent::AgentConfig,
     ) -> Result<(), String> {
         crate::agent::lifecycle::update_session_config(
@@ -113,6 +140,8 @@ impl AgentSessionManager {
             &self.active_sessions,
             &self.app_handle,
             &session_id,
+            model,
+            provider,
             agent_config,
         )
         .await
@@ -226,6 +255,18 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Cancel a running workflow
+    pub async fn cancel_workflow(&self, session_id: String) -> Result<(), String> {
+        crate::agent::workflow::cancel_workflow(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
     /// Inject messages into the session and optionally trigger the workflow
     pub async fn inject_messages(
         &self,
@@ -237,33 +278,53 @@ impl AgentSessionManager {
         crate::agent::lifecycle::ensure_cache_initialized(&self.active_sessions, &session_id)
             .await?;
 
-        // 2. Add messages to in-memory cache
+        // 2. Get session reference (single lock acquisition)
+        let sessions = self.active_sessions.read().await;
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        // 3. Add messages to in-memory cache
         {
-            let sessions = self.active_sessions.read().await;
-            if let Some(session) = sessions.get(&session_id) {
-                let mut session_messages = session.messages.write().await;
-                for msg in &messages {
-                    session_messages.push(msg.clone());
-                    if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                        session_messages.remove(0);
-                    }
+            let mut session_messages = session.messages.write().await;
+            for msg in &messages {
+                session_messages.push(msg.clone());
+                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                    session_messages.remove(0);
                 }
-            } else {
-                return Err(format!("Session not found: {}", session_id));
             }
         }
 
-        // 3. Emit MessageAdded events
-        for msg in &messages {
-            let event = crate::agent::events::AgentEvent::MessageAdded {
-                session_id: session_id.clone(),
-                message: Box::new(msg.clone()),
-            };
-            crate::agent::events::emit_agent_event(&self.app_handle, event)
-                .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+        // 4. Emit MessageAdded events ONLY when triggering workflow
+        // When triggerWorkflow=false, messages stay in backend cache without UI update
+        // Frontend will add to pendingMessages queue and display with pending state
+        if trigger_workflow {
+            // Drop session lock before I/O operations
+            drop(sessions);
+
+            for msg in &messages {
+                let event = crate::agent::events::AgentEvent::MessageAdded {
+                    session_id: session_id.clone(),
+                    message: Box::new(msg.clone()),
+                };
+                crate::agent::events::emit_agent_event(&self.app_handle, event)
+                    .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+            }
+        } else {
+            // Track these message IDs as pending (will emit when workflow picks them up)
+            let mut pending_events = session.pending_events.write().await;
+            for msg in &messages {
+                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
+            }
+            log::info!(
+                "Marked {} messages as pending for session: {} (IDs: {:?})",
+                messages.len(),
+                session_id,
+                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
+            );
         }
 
-        // 4. Persist to DB asynchronously
+        // 5. Persist to DB asynchronously
         let msgs_for_db = messages.clone();
         tokio::spawn(async move {
             let repo = crate::state::get_message_repository();

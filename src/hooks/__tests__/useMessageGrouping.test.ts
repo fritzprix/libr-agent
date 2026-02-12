@@ -8,7 +8,8 @@ const createMessage = (
   role: 'user' | 'assistant' | 'tool',
   content: string = '',
   toolCalls?: ToolCall[],
-  toolCallId?: string
+  toolCallId?: string,
+  metadata?: Message['metadata']
 ): Message => ({
   id,
   sessionId: 'session-1',
@@ -17,6 +18,7 @@ const createMessage = (
   content: [{ type: 'text', text: content }],
   tool_calls: toolCalls,
   tool_call_id: toolCallId,
+  metadata,
 });
 
 describe('useMessageGrouping', () => {
@@ -193,6 +195,82 @@ describe('useMessageGrouping', () => {
       expect(group.messages).toHaveLength(2);
       expect(group.messages[0].id).toBe('2');
       expect(group.messages[1].id).toBe('3');
+    }
+  });
+
+  it('starts a new tool_error_group when a tool result is marked as toolError', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tool'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+      ]),
+      // A normal tool result is consumed by the tool_group (assistant tool_calls + results)
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+      // A failed tool result that is NOT immediately after its triggering assistant tool_call.
+      // This represents an orphan/standalone tool failure that should start a tool_error_group.
+      createMessage('4', 'tool', 'Error: bad args', undefined, 'call_orphan', {
+        toolError: true,
+      }),
+      // Next assistant message should not be consumed by tool_error_group
+      createMessage('5', 'assistant', 'I will try again'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+  // Expected:
+  // 1) user single
+  // 2) tool_group (assistant tool_calls + tool result)
+  // 3) tool_error_group (orphan failed tool result)
+  // 4) assistant single
+  expect(result.current.groupedMessages).toHaveLength(4);
+    expect(result.current.groupedMessages[0].type).toBe('single');
+    expect(result.current.groupedMessages[1].type).toBe('tool_group');
+    expect(result.current.groupedMessages[2].type).toBe('tool_error_group');
+    expect(result.current.groupedMessages[3].type).toBe('single');
+
+    const errorGroup = result.current.groupedMessages[2];
+    if (errorGroup.type === 'tool_error_group') {
+      expect(errorGroup.messages).toHaveLength(1);
+      expect(errorGroup.messages[0].id).toBe('4');
+    }
+  });
+
+  it('groups consecutive toolError tool results into a single tool_error_group', () => {
+    const messages: Message[] = [
+      createMessage('1', 'user', 'Run tool'),
+      createMessage('2', 'assistant', '', [
+        {
+          id: 'call_1',
+          type: 'function',
+          function: { name: 'tool1', arguments: '{}' },
+        },
+      ]),
+      // Normal tool result consumed by the tool_group
+      createMessage('3', 'tool', 'Result 1', undefined, 'call_1'),
+      // Two consecutive orphan tool failures should form ONE tool_error_group
+      createMessage('4', 'tool', 'Error: bad args', undefined, 'call_orphan', {
+        toolError: true,
+      }),
+      createMessage('5', 'tool', 'Error: still bad args', undefined, 'call_orphan', {
+        toolError: true,
+      }),
+      createMessage('6', 'assistant', 'Ok, changing approach'),
+    ];
+
+    const { result } = renderHook(() => useMessageGrouping(messages));
+
+  expect(result.current.groupedMessages).toHaveLength(4);
+    expect(result.current.groupedMessages[2].type).toBe('tool_error_group');
+
+    const errorGroup = result.current.groupedMessages[2];
+    if (errorGroup.type === 'tool_error_group') {
+      expect(errorGroup.messages).toHaveLength(2);
+      expect(errorGroup.messages[0].id).toBe('4');
+      expect(errorGroup.messages[1].id).toBe('5');
     }
   });
 

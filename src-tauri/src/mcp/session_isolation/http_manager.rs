@@ -177,6 +177,78 @@ impl HttpSessionManager {
         tool_name: &str,
         args: serde_json::Value,
     ) -> Result<MCPResponse, SessionMCPError> {
+        // Bounded retry policy for "session expired" style failures.
+        //
+        // For streamable HTTP MCP, servers may invalidate sessions and return 404.
+        // When that happens, we reconnect once (recreate the transport/client) and
+        // retry the original tool call once.
+        const MAX_SESSION_RETRIES: usize = 1;
+
+        for attempt in 0..=MAX_SESSION_RETRIES {
+            let result = self
+                .call_tool_inner(server_name, tool_name, args.clone())
+                .await;
+
+            match result {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    let looks_like_session_expired =
+                        Self::looks_like_session_expired_error(&e.to_string());
+
+                    if looks_like_session_expired && attempt < MAX_SESSION_RETRIES {
+                        warn!(
+                            "HTTP MCP tool call failed with possible session expiration (attempt {}/{}). Reconnecting and retrying. Server: {}, Tool: {}. Error: {}",
+                            attempt + 1,
+                            MAX_SESSION_RETRIES + 1,
+                            server_name,
+                            tool_name,
+                            e
+                        );
+
+                        // Drop existing connection and reconnect.
+                        {
+                            let mut connections = self.connections.lock().await;
+                            connections.remove(server_name);
+                        }
+
+                        let config_opt =
+                            { self.http_configs.read().await.get(server_name).cloned() };
+                        if let Some(config) = config_opt {
+                            if let Err(start_err) = self.start_server(server_name, config).await {
+                                return Err(SessionMCPError::ExecutionError(format!(
+                                    "Failed to reconnect HTTP server after session expiration: {start_err}"
+                                )));
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    // No retry remaining, or not a session-expired failure.
+                    return Err(e);
+                }
+            }
+        }
+
+        Err(SessionMCPError::ExecutionError(
+            "HTTP MCP tool call failed after retry".to_string(),
+        ))
+    }
+
+    fn looks_like_session_expired_error(message: &str) -> bool {
+        let msg = message.to_lowercase();
+        msg.contains("404")
+            || msg.contains("session expired")
+            || msg.contains("invalid session")
+            || (msg.contains("not found") && msg.contains("session"))
+    }
+
+    async fn call_tool_inner(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: serde_json::Value,
+    ) -> Result<MCPResponse, SessionMCPError> {
         let mut client_exists = false;
         {
             let connections = self.connections.lock().await;
@@ -371,5 +443,30 @@ impl HttpSessionManager {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HttpSessionManager;
+
+    #[test]
+    fn test_looks_like_session_expired_error() {
+        assert!(HttpSessionManager::looks_like_session_expired_error(
+            "HTTP 404: Session not found"
+        ));
+        assert!(HttpSessionManager::looks_like_session_expired_error(
+            "Invalid session id"
+        ));
+        assert!(HttpSessionManager::looks_like_session_expired_error(
+            "session expired"
+        ));
+
+        assert!(!HttpSessionManager::looks_like_session_expired_error(
+            "Tool call failed: connection refused"
+        ));
+        assert!(!HttpSessionManager::looks_like_session_expired_error(
+            "Unauthorized"
+        ));
     }
 }

@@ -11,6 +11,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
+pub mod server;
 mod services;
 pub mod session;
 mod session_isolation;
@@ -21,7 +22,7 @@ pub mod utils;
 pub use migration;
 
 use commands::agent_commands::{
-    agent_call_builtin_tool, agent_clear_all_sessions, agent_create_session,
+    agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,
     agent_get_all_sessions, agent_get_available_tools, agent_get_service_contexts,
     agent_get_session, agent_get_tools, agent_handle_llm_error, agent_handle_llm_response,
@@ -510,6 +511,7 @@ pub fn run() {
                 agent_pause_workflow,
                 agent_resume_workflow,
                 agent_terminate_workflow,
+                agent_cancel_workflow,
                 agent_call_builtin_tool,
                 agent_call_builtin_tool,
                 agent_get_service_contexts,
@@ -579,7 +581,7 @@ pub fn run() {
                 // Or just fetch from DB again in setup. Since we have connection.
                 // But `get_database_connection` relies on global state which IS set.
 
-                let web_action_timeout = {
+                let (web_action_timeout, http_port) = {
                     // We can try to fetch from DB using the global connection which should be set by now
                     // But strictly speaking, `setup` runs on main thread.
                     // DB connection is async. We can't easily block on async DB call in sync setup unless we use a runtime.
@@ -592,6 +594,7 @@ pub fn run() {
                         #[serde(rename_all = "camelCase")]
                         struct SystemSettings {
                             web_action_timeout_seconds: Option<u64>,
+                            http_server_port: Option<u16>,
                         }
 
                         use crate::repositories::settings_repository::SettingsRepository;
@@ -602,11 +605,14 @@ pub fn run() {
                             Ok(Some(model)) => {
                                 let s: SystemSettings =
                                     serde_json::from_str(&model.value).unwrap_or_default();
-                                std::time::Duration::from_secs(
-                                    s.web_action_timeout_seconds.unwrap_or(30),
+                                (
+                                    std::time::Duration::from_secs(
+                                        s.web_action_timeout_seconds.unwrap_or(30),
+                                    ),
+                                    s.http_server_port.unwrap_or(3030),
                                 )
                             }
-                            _ => std::time::Duration::from_secs(30),
+                            _ => (std::time::Duration::from_secs(30), 3030),
                         }
                     })
                 };
@@ -640,6 +646,20 @@ pub fn run() {
                 // Initialize global AppHandle for event emission from builtin tools
                 crate::state::init_app_handle(app.handle().clone());
                 info!("✅ Global AppHandle initialized for event emission");
+
+                // Spawn HTTP Server for External Features
+                let server_manager = app
+                    .state::<agent::AgentSessionManager>()
+                    .inner()
+                    .clone_for_task();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) =
+                        crate::server::init(std::sync::Arc::new(server_manager), http_port).await
+                    {
+                        log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
+                    }
+                });
+                info!("✅ HTTP Server spawned on port {}", http_port);
 
                 // Spawn session recovery in background
                 let recovery_manager = app

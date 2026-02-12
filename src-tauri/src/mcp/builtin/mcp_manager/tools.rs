@@ -141,20 +141,21 @@ pub fn register_server_tool() -> MCPTool {
 NAMING (REQUIRED):
 • Provide human-readable 'name' (e.g., 'filesystem-workspace', 'github-api')
 • Must be unique across all servers
-• Use descriptive names for easy identification
+• This 'name' is used for management operations (update/delete/verify)
 
-IDENTIFICATION:
+IDENTIFICATION (SYSTEM):
 • System automatically generates a unique ID (UUID format)
-• This ID is used in assistant configurations (mcpServerIds)
-• Call listMcpServers after registration to get the auto-generated ID
+• This ID is required for assistant configurations (mcpServerIds)
+• The ID is returned in the tool response upon successful registration
 
 RETURNS:
-• Server name for management operations
-• Auto-generated ID for assistant configuration
+• Server Name: For future management tool calls
+• Server ID: Immutable UUID for assistant configurations
 • Connection status
 
 EXAMPLE:
   name: 'filesystem-workspace'
+  description: 'Local filesystem access for reading and writing project files'
   transport:
     type: 'stdio'
     command: 'npx'
@@ -168,21 +169,17 @@ EXAMPLE:
                     string_prop_with_examples(
                         Some(1),
                         Some(63),
-                        Some("Human-readable server name (e.g., 'filesystem-workspace', 'github-api'). Must be unique."),
+                        Some("Human-readable unique name (slug) for identification. Used in update/delete/verify tool calls."),
                         vec![],
                     ),
                 ),
-                ("transport".to_string(), transport_schema),
                 (
                     "description".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Optional description of the server's purpose and capabilities"),
-                    ),
+                    string_prop_required("Detailed description of the server's purpose and capabilities. This helps the AI assistant understand when to use this server's tools."),
                 ),
+                ("transport".to_string(), transport_schema),
             ],
-            vec!["name".to_string(), "transport".to_string()],
+            vec!["name".to_string(), "description".to_string(), "transport".to_string()],
             None,
         ),
         output_schema: None,
@@ -200,20 +197,19 @@ pub fn update_server_tool() -> MCPTool {
         description: "Update configuration for an existing MCP server.
 
 ⚠️ PREREQUISITES:
-1. Use listServers or searchServer to extract the target server 'name' (ID)
+1. Use listExternalServers to find the target server 'name'
 2. Server will restart automatically if currently running
-3. For NPM packages: Use 'npx -y <package>' pattern
 
 Returns:
 • Update status
-• Restart result if applicable
+• Server ID
 "
         .to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "name".to_string(),
-                    string_prop_required("Target name of the server to update"),
+                    string_prop_required("Target name (slug) of the server to update"),
                 ),
                 ("transport".to_string(), transport_schema),
                 (
@@ -221,7 +217,7 @@ Returns:
                     string_prop(
                         None,
                         None,
-                        Some("Optional description of the server's purpose and capabilities"),
+                        Some("Optional new description of the server's purpose"),
                     ),
                 ),
             ],

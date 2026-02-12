@@ -29,3 +29,28 @@
 
 **Drift:** Lists outdated modules (`filesystem.rs`, `sandbox.rs`). Uses incorrect `BuiltinMCPServer` trait signature in examples. Written in Korean (violates project language policy).
 **Reality:** Modules are `browser`, `workspace`, etc. Trait signature includes `session_id` and returns `Result<MCPResult, String>`. Documentation must be in English.
+
+## 2026-03-01 - Multiple Files (agents.md, CLAUDE.md, etc.)
+
+**Drift:** References "IndexedDB" and "Dexie" for local storage. Claims "Vite 4.x".
+**Reality:** Local storage uses SQLite via SeaORM. Vite is version 6.x.
+
+## 2024-05-22 - CONTRIBUTING.md
+
+**Drift:** References `docs/architecture/overview.md` which does not exist.
+**Reality:** The architecture documentation is split. The most comprehensive overview is `docs/architecture/agent-workflow-architecture.md`.
+
+## 2024-05-22 - agents.md
+
+**Drift:** References `docs/architecture/chat-feature-architecture.md` which does not exist.
+**Reality:** The file `docs/architecture/agent-workflow-architecture.md` exists and covers the agent workflow and architecture.
+
+## 2026-02-10 - README.md
+
+**Drift:** Supported LLMs list missing Groq, Ollama, Cerebras, Fireworks.
+**Reality:** Updated list to match `src/lib/ai-service/types.ts`, excluding the internal placeholder `Empty` provider from user-facing documentation.
+
+## 2026-02-10 - agents.md / CONTRIBUTING.md / docs/README.md
+
+**Drift:** Links to missing files `docs/builtin-tools.md`, `docs/architecture/chat-feature-architecture.md`, `docs/architecture/overview.md`.
+**Reality:** Updated links to point to `src-tauri/src/mcp/builtin/README.md`, `agents.md`, or removed if missing.

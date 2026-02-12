@@ -7,6 +7,8 @@ pub struct Model {
     pub id: String,
     pub name: Option<String>,
     pub status: String,
+    pub model: String,
+    pub provider: String,
     pub agent_config: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
