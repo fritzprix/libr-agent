@@ -34,13 +34,18 @@ pub async fn read_file_with_limit(path: &Path, max_size: u64) -> Result<Vec<u8>,
         ));
     }
 
-    // Allocate buffer based on file size, but capped at max_size + 1 (for overflow check)
-    let capacity = (metadata.len() as usize).min((max_size + 1) as usize);
+    // Compute max_size + 1 with overflow checking to avoid panic/wrap on u64::MAX
+    let max_size_plus_one = max_size
+        .checked_add(1)
+        .ok_or_else(|| "Configured maximum file size is too large to handle safely".to_string())?;
+
+    // Allocate buffer based on file size, but capped at max_size_plus_one (for overflow check)
+    let capacity = (metadata.len() as usize).min(max_size_plus_one as usize);
     let mut buffer = Vec::with_capacity(capacity);
 
-    // Read up to max_size + 1 bytes to detect if file is larger
+    // Read up to max_size_plus_one bytes to detect if file is larger
     let bytes_read = file
-        .take(max_size + 1)
+        .take(max_size_plus_one)
         .read_to_end(&mut buffer)
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
