@@ -13,24 +13,25 @@ vi.mock('@tauri-apps/api/core', async () => {
     const mockInvoke = vi.fn().mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
         // Return proper DTOs for MCP server operations
         if (cmd === 'create_mcp_server_config' || cmd === 'update_mcp_server_config') {
-            const name = (args?.name as string) || 'test-server';
+            const id = (args?.id as string) || (args?.name as string) || 'test-server';
+            const name = (args?.name as string) || id;
             const config = args?.config || {};
             const dto = {
-                id: name,
+                id,
                 name,
                 config,
                 createdAt: Date.now(),
                 updatedAt: Date.now(),
             };
-            mockServerStore.set(name, dto);
+            mockServerStore.set(id, dto);
             return dto;
         }
         if (cmd === 'list_mcp_server_configs') {
             return Array.from(mockServerStore.values());
         }
         if (cmd === 'delete_mcp_server_config') {
-            const name = (args?.name as string) || 'test-server';
-            mockServerStore.delete(name);
+            const id = (args?.id as string) || (args?.name as string) || 'test-server';
+            mockServerStore.delete(id);
             return undefined;
         }
         if (cmd === 'list_assistants') {

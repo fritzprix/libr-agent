@@ -100,10 +100,10 @@ describe('AgentSessionListContext', () => {
                 return Promise.resolve({
                     id: args.id,
                     name: 'Test Assistant',
-                    config: {
+                    config: JSON.stringify({
                         systemPrompt: 'You are a test assistant.',
                         allowedBuiltInServiceAliases: ['planning', 'knowledge']
-                    },
+                    }),
                     createdAt: Date.now(),
                     updatedAt: Date.now(),
                 });

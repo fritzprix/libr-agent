@@ -2,14 +2,14 @@ import {
   FunctionDeclaration,
   GoogleGenAI,
   Content,
-  FunctionCall,
+  Part,
   createPartFromFunctionResponse,
   HarmCategory,
   HarmBlockThreshold,
 } from '@google/genai';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, MCPContent } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { tryParse, formatToolCall, generateToolCallId } from './utils';
@@ -252,10 +252,13 @@ export class GeminiService extends BaseAIService {
   ): AsyncGenerator<string, void, void> {
     const { config, tools } = this.prepareStreamChat(messages, options);
 
-    const validatedMessages = this.validateGeminiMessageStack(messages);
-
     try {
-      const geminiMessages = this.convertToGeminiMessages(validatedMessages);
+      const geminiMessages = this.convertToGeminiMessages(messages);
+      if (geminiMessages.length === 0) {
+        throw new Error(
+          'No valid messages to send to Gemini (must start with user/tool role)',
+        );
+      }
       const geminiTools = tools
         ? [
             {
@@ -502,45 +505,103 @@ export class GeminiService extends BaseAIService {
           yield JSON.stringify({ thinking: thoughtContent });
         }
 
-        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          const validFunctionCalls = chunk.functionCalls.filter(
-            (fc) => fc.name && typeof fc.name === 'string',
+        // Extract function calls from raw parts to preserve thoughtSignature
+        // The SDK's chunk.functionCalls loses the signature which is a sibling property
+        const candidates = chunk.candidates || [];
+        const candidate = candidates[0];
+        let extractedSignature: string | undefined;
+
+        logger.debug('🔍 Processing chunk for function calls', {
+          hasCandidates: !!candidate,
+          hasParts: !!candidate?.content?.parts,
+          partsCount: candidate?.content?.parts?.length,
+        });
+
+        if (candidate?.content?.parts) {
+          const functionCallParts = candidate.content.parts.filter(
+            (part) => 'functionCall' in part && part.functionCall,
           );
 
-          if (validFunctionCalls.length > 0) {
-            yield JSON.stringify({
-              tool_calls: validFunctionCalls.map((fc: FunctionCall) => {
+          if (functionCallParts.length > 0) {
+            logger.debug('🔍 Found function call parts', {
+              count: functionCallParts.length,
+              parts: functionCallParts.map((p, i) => ({
+                index: i,
+                hasSignature: 'thoughtSignature' in p,
+                signatureValue:
+                  'thoughtSignature' in p
+                    ? (p as { thoughtSignature?: string }).thoughtSignature
+                    : undefined,
+                functionName: p.functionCall?.name,
+              })),
+            });
+
+            const toolCalls = functionCallParts
+              .map((part, index) => {
+                const fc = part.functionCall;
+                if (!fc || !fc.name) return null;
+
+                // Capture thoughtSignature from the FIRST function call part only
+                // Per Gemini docs: parallel calls have signature only on first part
+                if (
+                  index === 0 &&
+                  'thoughtSignature' in part &&
+                  typeof part.thoughtSignature === 'string'
+                ) {
+                  extractedSignature = part.thoughtSignature;
+                  logger.debug('✅ Captured thought signature from first FC', {
+                    signature: extractedSignature.substring(0, 20) + '...',
+                  });
+                }
+
                 const callId =
-                  fc.id && typeof fc.id === 'string' && fc.id.length
+                  fc.id && typeof fc.id === 'string' && fc.id.length > 0
                     ? fc.id
                     : this.generateToolCallId();
-                return formatToolCall(callId, fc.name!, fc.args ?? {});
-              }),
-            });
+
+                return formatToolCall(callId, fc.name, fc.args ?? {});
+              })
+              .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
+
+            if (toolCalls.length > 0) {
+              logger.debug('📤 Emitting tool calls', {
+                count: toolCalls.length,
+                hasSignature: !!extractedSignature,
+              });
+              yield JSON.stringify({ tool_calls: toolCalls });
+
+              // Emit the captured signature separately
+              if (extractedSignature) {
+                logger.debug('📤 Emitting thought signature', {
+                  signature: extractedSignature.substring(0, 20) + '...',
+                });
+                yield JSON.stringify({ thinkingSignature: extractedSignature });
+              }
+            }
+          } else if (chunk.text) {
+            yield JSON.stringify({ content: chunk.text });
+          } else {
+            const finishReason = candidate?.finishReason;
+
+            if (finishReason === 'UNEXPECTED_TOOL_CALL') {
+              logger.warn(
+                'Gemini stream ended with UNEXPECTED_TOOL_CALL. The model attempted to call a tool that was not properly defined or permitted in this context.',
+                { chunk, finishReason },
+              );
+            } else if (finishReason === 'STOP') {
+              logger.debug('Gemini stream stopped normally with empty chunk', {
+                chunk,
+              });
+            } else {
+              logger.warn('Gemini chunk has no text or functionCalls', {
+                chunk,
+                finishReason,
+                safetyRatings: candidate?.safetyRatings,
+              });
+            }
           }
         } else if (chunk.text) {
           yield JSON.stringify({ content: chunk.text });
-        } else {
-          const candidates = chunk.candidates || [];
-          const candidate = candidates[0];
-          const finishReason = candidate ? candidate.finishReason : undefined;
-
-          if (finishReason === 'UNEXPECTED_TOOL_CALL') {
-            logger.warn(
-              'Gemini stream ended with UNEXPECTED_TOOL_CALL. The model attempted to call a tool that was not properly defined or permitted in this context.',
-              { chunk, finishReason },
-            );
-          } else if (finishReason === 'STOP') {
-            logger.debug('Gemini stream stopped normally with empty chunk', {
-              chunk,
-            });
-          } else {
-            logger.warn('Gemini chunk has no text or functionCalls', {
-              chunk,
-              finishReason: candidate?.finishReason, // ✅ Safe access
-              safetyRatings: candidate?.safetyRatings, // ✅ Safe access
-            });
-          }
         }
       }
     } catch (error) {
@@ -561,7 +622,7 @@ export class GeminiService extends BaseAIService {
       }
 
       this.handleStreamingError(error, {
-        messages: validatedMessages,
+        messages,
         options,
         config,
       });
@@ -577,122 +638,309 @@ export class GeminiService extends BaseAIService {
    * @returns A new array of validated and sanitized messages.
    * @private
    */
-  private validateGeminiMessageStack(messages: Message[]): Message[] {
-    if (messages.length === 0) {
-      return messages;
-    }
-
-    const convertedMessages = messages.map((m) => {
-      if (m.role === 'tool') {
-        return { ...m, role: 'user' as const };
-      }
-      return m;
-    });
-
-    const firstUserIndex = convertedMessages.findIndex(
-      (msg) => msg.role === 'user',
-    );
-    if (firstUserIndex === -1) {
-      logger.warn('No user message found after role conversion');
-      return [];
-    }
-
-    const validMessages = convertedMessages.slice(firstUserIndex);
-
-    logger.info(
-      `Role conversion and validation: ${messages.length} → ${validMessages.length} messages`,
-      {
-        originalRoles: messages.map((m) => m.role),
-        convertedRoles: validMessages.map((m) => m.role),
-      },
-    );
-
-    return validMessages;
-  }
-
   /**
    * Converts an array of standard `Message` objects into the `Content` format
    * required by the Gemini API.
+   *
+   * Performance Optimizations:
+   * 1. Uses a Map for O(1) tool name lookups.
+   * 2. Single-pass pre-scan for tool names.
+   * 3. Trims conversation to start with a 'user' or 'tool' role as required by Gemini.
+   *
    * @param messages The array of messages to convert.
    * @returns An array of `Content` objects.
    * @private
    */
   private convertToGeminiMessages(messages: Message[]): Content[] {
+    if (messages.length === 0) return [];
+
+    const toolCallNames = new Map<string, string>();
+    let firstValidIndex = -1;
+
+    // Phase 1: Identify start index (skip system messages, but allow Assistant start)
+    // We no longer skip 'assistant' messages because they might contain essential tool_calls
+    // that precede the first tool response.
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+
+      // Collect tool names for O(1) lookup
+      if (m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          if (tc.id) toolCallNames.set(tc.id, tc.function.name);
+        }
+      }
+
+      if (firstValidIndex === -1 && m.role !== 'system') {
+        firstValidIndex = i;
+      }
+    }
+
+    if (firstValidIndex === -1) {
+      logger.warn('No valid messages found to start Gemini conversation');
+      return [];
+    }
+
     const geminiMessages: Content[] = [];
 
-    for (const m of messages) {
-      if (m.role === 'system') {
+    // Phase 2: Convert messages starting from the first valid index
+    for (let i = firstValidIndex; i < messages.length; i++) {
+      const m = messages[i];
+
+      logger.debug('🔄 Converting message to Gemini format', {
+        index: i,
+        role: m.role,
+        hasToolCalls: !!m.tool_calls,
+        toolCallsCount: m.tool_calls?.length,
+        hasThinkingSignature: !!m.thinkingSignature,
+        signaturePreview: m.thinkingSignature?.substring(0, 20),
+      });
+
+      if (m.role === 'system') continue;
+
+      // Helper to identify a tool response message
+      const isToolResponse = (msg: Message) =>
+        msg.role === 'tool' || (msg.role === 'user' && !!msg.tool_call_id);
+
+      if (isToolResponse(m)) {
+        // Start of a tool response sequence - Look ahead and group ALL consecutive tool responses
+        // Gemini strict requirement: Model (Calls) -> User (All Responses)
+        // We must batch all responses into a SINGLE user message with multiple parts
+        const responseParts: Part[] = [];
+        let j = i;
+
+        logger.info('🔧 Starting tool response batch sequence', {
+          startIndex: i,
+          firstMessageId: messages[i].id,
+          firstMessageRole: messages[i].role,
+          toolCallId: messages[i].tool_call_id,
+        });
+
+        // Consume all consecutive tool responses
+        while (j < messages.length && isToolResponse(messages[j])) {
+          const toolMsg = messages[j];
+          if (toolMsg.tool_call_id) {
+            const name = toolCallNames.get(toolMsg.tool_call_id);
+            if (name) {
+              const parsed = this.tryParseResult(toolMsg.content);
+              responseParts.push(
+                createPartFromFunctionResponse(
+                  toolMsg.tool_call_id,
+                  name, // Gemini relies on function name matching
+                  parsed,
+                ),
+              );
+              logger.info('  - Added component to batch', {
+                index: j,
+                toolCallId: toolMsg.tool_call_id,
+                name,
+                parsedContentPreview: JSON.stringify(parsed).substring(0, 50),
+              });
+            } else {
+              logger.warn(
+                '⚠️ Skipping tool response with unknown ID, falling back to text part',
+                {
+                  toolCallId: toolMsg.tool_call_id,
+                  availableIds: Array.from(toolCallNames.keys()),
+                },
+              );
+              // Fallback: Add as a text part to salvage the message content
+              const text = this.processMessageContent(toolMsg.content);
+              responseParts.push({
+                text,
+              } as Part);
+            }
+          } else {
+            logger.warn('⚠️ Skipping tool response with missing tool_call_id', {
+              messageId: toolMsg.id,
+              role: toolMsg.role,
+            });
+          }
+          j++;
+        }
+
+        logger.info('✅ Finished batching tool responses', {
+          totalParts: responseParts.length,
+          consumedCount: j - i,
+          nextIndex: j,
+        });
+
+        // Push the consolidated user message with all response parts
+        if (responseParts.length > 0) {
+          // Check if we can merge into previous user message (e.g. text + tool results)
+          // But usually tool executions are distinct turns.
+          // For safety, we keep it as a distinct message unless the last message was also User.
+          const lastMsg = geminiMessages[geminiMessages.length - 1];
+          // Determine if we should merge: only if last message was USER role.
+          // If last message was MODEL (calls), this must be a NEW USER message.
+          if (lastMsg && lastMsg.role === 'user') {
+            if (!lastMsg.parts) lastMsg.parts = [];
+            lastMsg.parts.push(...responseParts);
+            logger.info(
+              '➕ Merged tool response batch into previous user message',
+              {
+                batchSize: responseParts.length,
+                totalParts: lastMsg.parts.length,
+              },
+            );
+          } else {
+            geminiMessages.push({
+              role: 'user',
+              parts: responseParts,
+            });
+            logger.info('📦 Created new user message for tool response batch', {
+              batchSize: responseParts.length,
+            });
+          }
+        } else {
+          logger.error(
+            '❌ Tool response batch resulted in NO parts! This WILL cause turn order errors.',
+            {
+              startIndex: i,
+              endIndex: j,
+            },
+          );
+          // If we have no parts, we might be creating a gap.
+          // Better to push an error part than nothing if we want to salvage the turn?
+          // But usually this means data corruption (missing names).
+        }
+
+        // Advance the outer loop index to skip processed messages
+        // j points to the first NON-tool-response message (or end of array)
+        // The loop increments i, so set i to j - 1
+        i = j - 1;
         continue;
       }
 
       if (m.role === 'user') {
-        // If this user message actually represents a tool response (the
-        // code earlier converts tool -> user), prefer to convert any
-        // structured tool_calls into FunctionResponse parts so Gemini
-        // receives the structured data rather than raw text.
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts = m.tool_calls.map((tc) => {
-            const parsed =
-              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id =
-              tc.id && typeof tc.id === 'string'
-                ? tc.id
-                : this.generateToolCallId();
-            return createPartFromFunctionResponse(id, tc.function.name, parsed);
-          });
-          geminiMessages.push({ role: 'user', parts });
-        } else if (m.content) {
+        // Standard user text message (already handled tool responses above)
+        // Merge with previous user message if possible to reduce turns
+        const lastMsg = geminiMessages[geminiMessages.length - 1];
+        const textPart = { text: this.processMessageContent(m.content) };
+
+        if (lastMsg && lastMsg.role === 'user') {
+          if (!lastMsg.parts) lastMsg.parts = [];
+          lastMsg.parts.push(textPart);
+        } else {
           geminiMessages.push({
             role: 'user',
-            parts: [{ text: this.processMessageContent(m.content) }],
+            parts: [textPart],
           });
         }
-      } else if (m.role === 'assistant') {
+      }
+      if (m.role === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
+          // Gemini 3 thought signature requirement:
+          // - Sequential function calls: each step must include signature on first FC part
+          // - Parallel function calls: only the first FC part needs the signature
+          // See: docs/3rd_party/gemini.md#signatures-in-function-calling-parts
+          logger.debug('🔧 Converting tool calls with signature', {
+            toolCallsCount: m.tool_calls.length,
+            hasSignature: !!m.thinkingSignature,
+            signature: m.thinkingSignature?.substring(0, 20),
+          });
+
           geminiMessages.push({
             role: 'model',
-            parts: m.tool_calls.map((tc) => {
+            parts: m.tool_calls.map((tc, index) => {
               const args =
                 tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-              return {
+              const functionCallPart: {
+                functionCall: {
+                  name: string;
+                  args: Record<string, unknown>;
+                };
+                thoughtSignature?: string;
+              } = {
                 functionCall: {
                   name: tc.function.name,
                   args,
                 },
               };
+
+              // Attach thought signature to the first function call part only
+              if (index === 0) {
+                if (m.thinkingSignature) {
+                  functionCallPart.thoughtSignature = m.thinkingSignature;
+                  logger.debug('✅ Attached signature to first FC', {
+                    toolName: tc.function.name,
+                    signature: m.thinkingSignature.substring(0, 20) + '...',
+                  });
+                }
+              }
+
+              return functionCallPart;
             }),
           });
         } else if (m.content) {
+          // Thought signatures in text responses (optional but recommended):
+          // Helps maintain reasoning quality across multi-turn conversations
+          const textPart: { text: string; thoughtSignature?: string } = {
+            text: this.processMessageContent(m.content),
+          };
+
+          if (m.thinkingSignature) {
+            textPart.thoughtSignature = m.thinkingSignature;
+          }
+
           geminiMessages.push({
             role: 'model',
-            parts: [{ text: this.processMessageContent(m.content) }],
+            parts: [textPart],
           });
         }
-      } else if (m.role === 'tool') {
-        // If for some reason a tool role remains, handle similarly by
-        // converting tool_calls to FunctionResponse parts.
-        if (m.tool_calls && m.tool_calls.length > 0) {
-          const parts = m.tool_calls.map((tc) => {
-            const parsed =
-              tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            const id =
-              tc.id && typeof tc.id === 'string'
-                ? tc.id
-                : this.generateToolCallId();
-            return createPartFromFunctionResponse(id, tc.function.name, parsed);
-          });
-          geminiMessages.push({ role: 'user', parts });
-        } else if (m.content) {
-          geminiMessages.push({
-            role: 'user',
-            parts: [{ text: this.processMessageContent(m.content) }],
-          });
-        }
-        continue;
       }
     }
 
+    logger.info(
+      `Gemini conversion: ${messages.length} -> ${geminiMessages.length} messages`,
+      {
+        toolMappings: toolCallNames.size,
+      },
+    );
+
+    // Debug: Log final conversion result
+    logger.debug('📋 Final Gemini messages structure', {
+      count: geminiMessages.length,
+      messages: geminiMessages.map((gm, i) => ({
+        index: i,
+        role: gm.role,
+        partsCount: gm.parts?.length ?? 0,
+        hasFunctionCalls: gm.parts?.some((p) => 'functionCall' in p) ?? false,
+        hasSignatures: gm.parts?.some((p) => 'thoughtSignature' in p) ?? false,
+        parts:
+          gm.parts?.map((p, pi) => ({
+            partIndex: pi,
+            type:
+              'functionCall' in p
+                ? 'functionCall'
+                : 'text' in p
+                  ? 'text'
+                  : 'other',
+            hasSignature: 'thoughtSignature' in p,
+            functionName:
+              'functionCall' in p
+                ? (p as { functionCall?: { name?: string } }).functionCall?.name
+                : undefined,
+          })) ?? [],
+      })),
+    });
+
     return geminiMessages;
+  }
+
+  /**
+   * Attempts to parse tool result content into a structured object.
+   * If parsing fails or content is not text, wraps it in a standard response object.
+   * @param content The MCPContent array from a tool message.
+   * @returns A structured record for FunctionResponse.
+   * @private
+   */
+  private tryParseResult(content: MCPContent[]): Record<string, unknown> {
+    const text = this.processMessageContent(content);
+    const parsed = tryParse<Record<string, unknown>>(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return { result: text };
   }
   /**
    * @inheritdoc
@@ -712,6 +960,12 @@ export class GeminiService extends BaseAIService {
    * @protected
    */
   protected convertSingleMessage(message: Message): unknown {
+    logger.debug('🔄 convertSingleMessage called', {
+      role: message.role,
+      hasToolCalls: !!message.tool_calls,
+      hasSignature: !!message.thinkingSignature,
+    });
+
     if (message.role === 'system') {
       // System messages are handled separately in the API call
       return null;
@@ -724,23 +978,50 @@ export class GeminiService extends BaseAIService {
       };
     } else if (message.role === 'assistant') {
       if (message.tool_calls && message.tool_calls.length > 0) {
+        // Gemini 3 requires thought signatures on the first function call part
+        logger.debug('🔧 convertSingleMessage: processing tool calls', {
+          count: message.tool_calls.length,
+          hasSignature: !!message.thinkingSignature,
+        });
+
         return {
           role: 'model',
-          parts: message.tool_calls.map((tc) => {
+          parts: message.tool_calls.map((tc, index) => {
             const args =
               tryParse<Record<string, unknown>>(tc.function.arguments) ?? {};
-            return {
+            const functionCallPart: {
+              functionCall: {
+                name: string;
+                args: Record<string, unknown>;
+              };
+              thoughtSignature?: string;
+            } = {
               functionCall: {
                 name: tc.function.name,
                 args,
               },
             };
+
+            if (index === 0 && message.thinkingSignature) {
+              functionCallPart.thoughtSignature = message.thinkingSignature;
+            }
+
+            return functionCallPart;
           }),
         };
       } else if (message.content) {
+        // Thought signatures help maintain reasoning quality (optional for non-function-call responses)
+        const textPart: { text: string; thoughtSignature?: string } = {
+          text: this.processMessageContent(message.content),
+        };
+
+        if (message.thinkingSignature) {
+          textPart.thoughtSignature = message.thinkingSignature;
+        }
+
         return {
           role: 'model',
-          parts: [{ text: this.processMessageContent(message.content) }],
+          parts: [textPart],
         };
       }
     } else if (message.role === 'tool') {
