@@ -52,3 +52,8 @@
 
 **Learning:** `ReactMarkdown` re-renders custom components like `code` on every text update (e.g., streaming) by passing a new `children` array reference, even if the content is identical. This breaks standard `React.memo` (shallow comparison) for heavy components like syntax-highlighted code blocks.
 **Action:** Implement a custom comparison function for `React.memo` on components used in `ReactMarkdown` that compares `String(prevProps.children) === String(nextProps.children)` to ensure stability during updates.
+
+## 2026-02-07 - Deep Comparison for Unstable Prop References
+
+**Learning:** `AgentMessageRenderer` maps `MCPToolCallContent` to new `ToolCall` objects on every render, creating new references even when data is identical. This breaks `React.memo` on `AgentToolCallGroup` which relied on reference equality check for array items, causing unnecessary re-renders during high-frequency streaming updates.
+**Action:** Update the custom `arePropsEqual` comparator in the child component (`AgentToolCallGroup`) to perform a deep equality check on the properties of the objects (`id`, `type`, `function`) instead of relying on reference equality for array items.
