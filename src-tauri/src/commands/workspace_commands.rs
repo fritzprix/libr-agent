@@ -226,9 +226,11 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
     {
         // Use 'open' command to launch Terminal at the directory.
         // This avoids complex and error-prone shell/AppleScript escaping.
-        let path_str = workspace_path.to_string_lossy();
         Command::new("open")
-            .args(["-a", "Terminal", &path_str])
+            .arg("-a")
+            .arg("Terminal")
+            .arg("--")
+            .arg(&workspace_path)
             .spawn()
             .map_err(|e| format!("Failed to open Terminal: {}", e))?;
     }
