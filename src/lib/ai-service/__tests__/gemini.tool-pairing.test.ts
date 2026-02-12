@@ -1,15 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GeminiService } from '../gemini';
+import { describe, it, expect, vi } from 'vitest';
+import { convertToGeminiMessages } from '../gemini/mapper';
 import { Message } from '@/models/chat';
-import { Content } from '@google/genai';
 
 // Mock the Google AI SDK
 vi.mock('@google/genai', () => ({
-    GoogleGenAI: vi.fn().mockImplementation(() => ({
-        getGenerativeModel: vi.fn().mockReturnValue({
-            generateContentStream: vi.fn(),
-        }),
-    })),
     createPartFromFunctionResponse: vi.fn((id, name, response) => ({
         functionResponse: { id, name, response },
     })),
@@ -28,13 +22,6 @@ vi.mock('../../logger', () => ({
 }));
 
 describe('GeminiService Tool Result Handling', () => {
-    let service: GeminiService;
-
-    beforeEach(() => {
-        service = new GeminiService('test-api-key', {
-            defaultModel: 'gemini-1.5-flash',
-        });
-    });
 
     it('should correctly convert tool result to FunctionResponse part using history', () => {
         const toolCallId = 'call_123';
@@ -75,9 +62,7 @@ describe('GeminiService Tool Result Handling', () => {
             },
         ];
 
-        const result = (service as unknown as {
-            convertToGeminiMessages: (messages: Message[]) => Content[];
-        }).convertToGeminiMessages(messages);
+        const result = convertToGeminiMessages(messages);
 
         // Expecting 3 messages
         // 1. user: What is the weather?
@@ -124,9 +109,7 @@ describe('GeminiService Tool Result Handling', () => {
             },
         ];
 
-        const result = (service as unknown as {
-            convertToGeminiMessages: (messages: Message[]) => Content[];
-        }).convertToGeminiMessages(messages);
+        const result = convertToGeminiMessages(messages);
 
         expect(result.length).toBe(1);
         const firstMsg = result[0];
