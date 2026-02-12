@@ -1,4 +1,5 @@
 use tokio::fs;
+use tokio::io::AsyncReadExt;
 use tracing::{error, info};
 
 use crate::mcp::builtin::utils::SecurityValidator;
@@ -44,18 +45,33 @@ impl SecureFileManager {
             return Err(format!("Path is not a file: {path}"));
         }
 
-        // Check file size
-        if let Err(e) = self
-            .security
-            .validate_file_size(&safe_path, crate::config::max_file_size())
-        {
+        // Check file size (metadata check)
+        let max_size = crate::config::max_file_size();
+        if let Err(e) = self.security.validate_file_size(&safe_path, max_size) {
             return Err(format!("File size error: {e}"));
         }
 
-        // Read the file contents
-        fs::read(&safe_path)
+        // Read the file contents with a size limit to prevent TOCTOU/DoS
+        let file = fs::File::open(&safe_path)
             .await
-            .map_err(|e| format!("Failed to read file: {e}"))
+            .map_err(|e| format!("Failed to open file: {e}"))?;
+
+        let mut content = Vec::new();
+        let bytes_read = file
+            .take((max_size + 1) as u64)
+            .read_to_end(&mut content)
+            .await
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+
+        if bytes_read > max_size {
+            return Err(format!(
+                "File too large: {} bytes (max: {} bytes)",
+                bytes_read,
+                max_size
+            ));
+        }
+
+        Ok(content)
     }
 
     /// Securely writes a byte slice to a file.
@@ -124,24 +140,36 @@ impl SecureFileManager {
             return Err(format!("Path is not a file: {path}"));
         }
 
-        // Check file size
-        if let Err(e) = self
-            .security
-            .validate_file_size(&safe_path, crate::config::max_file_size())
-        {
+        // Check file size (metadata check)
+        let max_size = crate::config::max_file_size();
+        if let Err(e) = self.security.validate_file_size(&safe_path, max_size) {
             return Err(format!("File size error: {e}"));
         }
 
-        // Read the file contents as string
-        fs::read_to_string(&safe_path)
+        // Read the file contents with a size limit to prevent TOCTOU/DoS
+        let file = fs::File::open(&safe_path)
             .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::InvalidData {
-                    "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters".to_string()
-                } else {
-                    format!("Failed to read file: {e}")
-                }
-            })
+            .map_err(|e| format!("Failed to open file: {e}"))?;
+
+        let mut buffer = Vec::new();
+        let bytes_read = file
+            .take((max_size + 1) as u64)
+            .read_to_end(&mut buffer)
+            .await
+            .map_err(|e| format!("Failed to read file: {e}"))?;
+
+        if bytes_read > max_size {
+            return Err(format!(
+                "File too large: {} bytes (max: {} bytes)",
+                bytes_read,
+                max_size
+            ));
+        }
+
+        String::from_utf8(buffer).map_err(|_| {
+            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters"
+                .to_string()
+        })
     }
 
     /// Securely writes a string to a file.
