@@ -5,6 +5,7 @@ import {
   type RustMessage,
   rustMessageToMessage,
 } from '@/models/chat';
+import { MCPContent } from '@/lib/mcp';
 
 /**
  * Type guard for AIServiceProvider
@@ -108,4 +109,53 @@ export function formatUsageMetrics(usage: import('./types').TokenUsage): {
       ? `${((usage.completionTokens / usage.details.evalDuration) * 1000).toFixed(1)} t/s`
       : undefined,
   };
+}
+
+/**
+ * Processes an array of `MCPContent` parts into a single string,
+ * extracting only the text content.
+ */
+export function processMessageContent(content: string | MCPContent[]): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  // Extracts only the text from the MCPContent array
+  return content
+    .filter((item) => item.type === 'text')
+    .map((item) => (item as { text: string }).text)
+    .join('\n');
+}
+
+/**
+ * Processes an array of `MCPContent` parts for a multimodal LLM,
+ * handling both text and image content.
+ */
+export function processMultiModalContent(
+  content: MCPContent[],
+): Array<{ type: string; text?: string; image?: string }> {
+  return content.map((item) => {
+    switch (item.type) {
+      case 'text':
+        return { type: 'text', text: (item as { text: string }).text };
+      case 'image':
+        return {
+          type: 'image',
+          image:
+            (
+              item as {
+                data?: string;
+                source?: { data?: string; uri?: string };
+              }
+            ).data ||
+            (item as { source?: { data?: string; uri?: string } }).source
+              ?.data ||
+            (item as { source?: { data?: string; uri?: string } }).source?.uri,
+        };
+      default:
+        return { type: 'text', text: `[${item.type}]` };
+    }
+  });
 }

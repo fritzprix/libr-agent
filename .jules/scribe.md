@@ -44,3 +44,12 @@
 
 **Drift:** References `docs/architecture/chat-feature-architecture.md` which does not exist.
 **Reality:** The file `docs/architecture/agent-workflow-architecture.md` exists and covers the agent workflow and architecture.
+## 2026-02-10 - README.md
+
+**Drift:** Supported LLMs list missing Groq, Ollama, Cerebras, Fireworks.
+**Reality:** Updated list to match `src/lib/ai-service/types.ts`, excluding the internal placeholder `Empty` provider from user-facing documentation.
+
+## 2026-02-10 - agents.md / CONTRIBUTING.md / docs/README.md
+
+**Drift:** Links to missing files `docs/builtin-tools.md`, `docs/architecture/chat-feature-architecture.md`, `docs/architecture/overview.md`.
+**Reality:** Updated links to point to `src-tauri/src/mcp/builtin/README.md`, `agents.md`, or removed if missing.

@@ -571,4 +571,5 @@ These steps must be completed successfully before considering any refactoring ta
 
 - [Agent Workflow Architecture](docs/architecture/agent-workflow-architecture.md)
 - [Built-in Tools Documentation](src-tauri/src/mcp/builtin/README.md)
+- [External MCP Server Integration](docs/architecture/external-mcp-integration.md)
 - [UI Resource Implementation Guide](docs/guides/ui-resource-implementation.md)

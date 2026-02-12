@@ -1,6 +1,6 @@
 use crate::entity::planning_scratchpad;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::PlanningRepository;
@@ -44,25 +44,25 @@ pub async fn add_scratchpad(
     match repo.check_scratchpad_limit(&session_id_owned).await {
         Ok(count) => {
             if count >= 10 {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidState,
                     "Scratchpad limit reached (10 items)",
-                    vec![
-                        "Use updateScratchpad to modify existing notes".to_string(),
-                        "Use clearScratchpad to remove old items".to_string(),
-                    ],
                     ToolGroup::Planning,
                 )
+                .with_guidance(vec![
+                    "Use updateScratchpad to modify existing notes".to_string(),
+                    "Use clearScratchpad to remove old items".to_string(),
+                ])
                 .to_mcp_result());
             }
         }
         Err(e) => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Database error: {}", e),
-                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     }
@@ -72,25 +72,25 @@ pub async fn add_scratchpad(
         match repo.check_scratchpad_duplicate(&session_id_owned, t).await {
             Ok(is_dup) => {
                 if is_dup {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::DuplicateResource,
                         format!("Scratchpad item with title '{}' already exists", t),
-                        vec![
-                            "Use updateScratchpad to modify the existing note".to_string(),
-                            "Choose a different title for the new note".to_string(),
-                        ],
                         ToolGroup::Planning,
                     )
+                    .with_guidance(vec![
+                        "Use updateScratchpad to modify the existing note".to_string(),
+                        "Choose a different title for the new note".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             }
             Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::DatabaseError,
                     format!("Database error: {}", e),
-                    vec!["Try again".to_string()],
                     ToolGroup::Planning,
                 )
+                .with_guidance(vec!["Try again".to_string()])
                 .to_mcp_result())
             }
         }
@@ -128,18 +128,15 @@ pub async fn add_scratchpad(
                 "scratchpadId": id
             }))))
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Database error: {}", e),
-            vec!["Try again".to_string()],
             ToolGroup::Planning,
         )
+        .with_guidance(vec!["Try again".to_string()])
         .to_mcp_result()),
     }
 }
-
-// Update scratchpad (Already refactored in previous step, but we are replacing lines 1-400 so we need to include everything up to list_scratchpad being refactored? No, replace_file_content target is lines 1-137 for add_scratchpad/imports.
-// I will just perform a small replacement for imports first, then list_scratchpad separately to avoid huge context replacement issues.)
 
 /// Update scratchpad item
 pub async fn update_scratchpad(
@@ -197,24 +194,24 @@ pub async fn update_scratchpad(
                     "note": note_val
                 }))))
             } else {
-                Ok(ErrorGuidance::with_guidance(
+                Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
                     format!("Scratchpad note with ID {} not found", id_val),
-                    vec![
-                        "Use listScratchpad or getCurrentState to see available notes".to_string(),
-                        "Verify the ID is correct".to_string(),
-                    ],
                     ToolGroup::Planning,
                 )
+                .with_guidance(vec![
+                    "Use listScratchpad or getCurrentState to see available notes".to_string(),
+                    "Verify the ID is correct".to_string(),
+                ])
                 .to_mcp_result())
             }
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Database error: {}", e),
-            vec!["Try again".to_string()],
             ToolGroup::Planning,
         )
+        .with_guidance(vec!["Try again".to_string()])
         .to_mcp_result()),
     }
 }
@@ -251,12 +248,12 @@ pub async fn list_scratchpad(
     let all_items = match repo.list_scratchpad(session_id).await {
         Ok(items) => items,
         Err(e) => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Failed to list scratchpad: {}", e),
-                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
@@ -411,12 +408,12 @@ pub async fn read_scratchpad(
     let retrieved_items = match repo.get_scratchpad_by_ids(target_ids).await {
         Ok(items) => items,
         Err(e) => {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Failed to read items: {}", e),
-                vec!["Try again".to_string()],
                 ToolGroup::Planning,
             )
+            .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
         }
     };
@@ -499,24 +496,24 @@ pub async fn clear_scratchpad(
                     "scratchpadId": target_id
                 }))))
             } else {
-                Ok(ErrorGuidance::with_guidance(
+                Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
                     format!("Scratchpad item {} not found in this session", target_id),
-                    vec!["Use listScratchpad to verify item exists".to_string()],
                     ToolGroup::Planning,
                 )
+                .with_guidance(vec!["Use listScratchpad to verify item exists".to_string()])
                 .to_mcp_result())
             }
         }
-        Err(e) => Ok(ErrorGuidance::with_guidance(
+        Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to clear item: {}", e),
-            vec![
-                "Try again".to_string(),
-                "Use listScratchpad to verify item exists".to_string(),
-            ],
             ToolGroup::Planning,
         )
+        .with_guidance(vec![
+            "Try again".to_string(),
+            "Use listScratchpad to verify item exists".to_string(),
+        ])
         .to_mcp_result()),
     }
 }

@@ -70,7 +70,7 @@ export default function AssistantEditor() {
               })
             }
             placeholder={t('assistant.systemPromptPlaceholder')}
-            className="min-h-[200px]"
+            className="min-h-52"
           />
         </TabsContent>
 
@@ -154,7 +154,7 @@ function MCPServersTab() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <div className="border rounded-lg divide-y max-h-[400px] overflow-y-auto">
+          <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
                 {t('assistant.mcp.noMatch', 'No servers match your search')}

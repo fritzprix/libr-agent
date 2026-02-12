@@ -122,9 +122,20 @@ pub async fn list_mcp_tools(server_name: String) -> Result<Vec<MCPTool>, String>
 pub async fn list_tools_from_config(
     _config: serde_json::Value,
 ) -> Result<HashMap<String, Vec<MCPTool>>, String> {
-    println!("⚠️ [TAURI] list_tools_from_config called (DEPRECATED) - returning empty list");
-    // Return empty map to satisfy frontend contract until fully migrated
-    Ok(HashMap::new())
+    log::warn!(
+        "list_tools_from_config called (DEPRECATED). This command is incompatible with session-isolated MCP servers."
+    );
+
+    Err(
+        "list_tools_from_config is deprecated and no longer supported.\n\n\
+This command previously started servers globally and returned a merged tool list, but LibrAgent now enforces per-session MCP isolation.\n\n\
+Recovery:\n\
+- Configure external MCP servers on the agent/session (Agent V2) instead of using global discovery\n\
+- Use session-scoped tool discovery via the Agent V2 workflow (tools are collected from MCPServiceProxy per session)\n\
+\n\
+If you're calling this from legacy frontend code, migrate to the Agent V2 session tool listing flow."
+            .to_string(),
+    )
 }
 
 /// Returns a list of names for all currently connected external MCP servers.
@@ -132,9 +143,15 @@ pub async fn list_tools_from_config(
 /// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
 /// Session Isolation architecture.
 #[tauri::command]
-pub async fn get_connected_servers() -> Vec<String> {
+pub async fn get_connected_servers() -> Result<Vec<String>, String> {
     log::warn!("get_connected_servers: Using deprecated global MCP manager.");
-    Vec::new()
+    Err(
+        "get_connected_servers is deprecated and incompatible with session-isolated MCP servers.\n\n\
+Recovery:\n\
+- Use Agent V2 session tool discovery instead (tools are collected from MCPServiceProxy per session)\n\
+- If you need to check external server connectivity, do it within the session-scoped MCP managers"
+            .to_string(),
+    )
 }
 
 /// Checks if a specific external MCP server is currently alive and responsive.
@@ -142,12 +159,18 @@ pub async fn get_connected_servers() -> Vec<String> {
 /// ⚠️ DEPRECATED: This uses the global MCPServerManager which is incompatible with
 /// Session Isolation architecture.
 #[tauri::command]
-pub async fn check_server_status(server_name: String) -> bool {
+pub async fn check_server_status(server_name: String) -> Result<bool, String> {
     log::warn!(
         "check_server_status: Using deprecated global MCP manager. Server: {}",
         server_name
     );
-    false
+    Err(
+        "check_server_status is deprecated and incompatible with session-isolated MCP servers.\n\n\
+Recovery:\n\
+- Manage external servers per-session via Agent V2 configuration\n\
+- Use session-scoped tool calls (through MCPServiceProxy) to validate connectivity"
+            .to_string(),
+    )
 }
 
 /// Checks the status of all managed external MCP servers.
@@ -159,9 +182,15 @@ pub async fn check_server_status(server_name: String) -> bool {
 /// A `HashMap` where keys are server names and values are booleans indicating if the
 /// server is alive.
 #[tauri::command]
-pub async fn check_all_servers_status() -> HashMap<String, bool> {
+pub async fn check_all_servers_status() -> Result<HashMap<String, bool>, String> {
     log::warn!("check_all_servers_status: Using deprecated global MCP manager.");
-    HashMap::new()
+    Err(
+        "check_all_servers_status is deprecated and incompatible with session-isolated MCP servers.\n\n\
+Recovery:\n\
+- Manage external servers per-session via Agent V2 configuration\n\
+- Use session-scoped tool discovery and tool calls (through MCPServiceProxy) instead of global polling"
+            .to_string(),
+    )
 }
 
 /// Lists all available tools from all connected external MCP servers.

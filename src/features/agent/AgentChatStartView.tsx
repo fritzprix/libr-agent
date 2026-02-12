@@ -8,6 +8,7 @@ import {
   useAgentSessionListActions,
 } from '@/context/AgentSessionListContext';
 import { SessionCard } from './components/SessionCard';
+import { AssistantSelectionCard } from './components/AssistantSelectionCard';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -70,10 +71,6 @@ export default function AgentChatStartView() {
           let targetAssistant = null;
 
           for (const assistant of allAssistants) {
-            if (!assistant.id) {
-              continue;
-            }
-
             try {
               playbook = await getPlaybook(playbookId, assistant.id);
               if (playbook) {
@@ -177,7 +174,7 @@ export default function AgentChatStartView() {
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
       // Show loading state
-      setStartingAssistantId(assistant.id || null);
+      setStartingAssistantId(assistant.id);
 
       // Navigate to simplified draft view
       navigate(`/agent/draft?assistantId=${assistant.id}`);
@@ -210,14 +207,14 @@ export default function AgentChatStartView() {
   }, [loadSessions]);
 
   return (
-    <div className="h-full w-full flex font-mono" role="main">
+    <main className="h-full w-full grid grid-cols-1 md:grid-cols-12 font-mono divide-y md:divide-y-0 md:divide-x">
       {/* Left Column - Assistant Selection */}
       <div
-        className="flex-[2] border-r flex flex-col"
+        className="md:col-span-5 lg:col-span-4 flex flex-col h-full overflow-hidden"
         role="region"
         aria-label="Assistant Selection"
       >
-        <div className="p-6 border-b">
+        <div className="p-6 border-b shrink-0">
           <h2 className="text-xl font-bold" id="assistant-heading">
             Select Assistant
           </h2>
@@ -227,57 +224,27 @@ export default function AgentChatStartView() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div
-            className="grid grid-cols-1 gap-4 max-w-2xl"
-            role="list"
+          <ul
+            className="flex flex-col gap-4 max-w-2xl mx-auto list-none"
             aria-labelledby="assistant-heading"
           >
             {assistants.map((assistant) => {
               const isThisStarting = startingAssistantId === assistant.id;
               return (
-                <button
-                  key={assistant.id}
-                  onClick={() => {
-                    setIsCreating(true);
-                    handleAssistantSelect(assistant);
-                  }}
-                  disabled={isCreating}
-                  aria-label={`Start session with ${assistant.name}`}
-                  aria-busy={isThisStarting}
-                  aria-disabled={isCreating}
-                  role="listitem"
-                  className={cn(
-                    'w-full p-4 text-left border rounded-lg transition-all',
-                    'hover:shadow-md hover:scale-[1.01] focus:outline-none focus:ring-2 focus:ring-primary',
-                    isCreating &&
-                      !isThisStarting &&
-                      'opacity-50 cursor-not-allowed',
-                    isThisStarting &&
-                      'border-primary bg-primary/10 animate-pulse',
-                    !isCreating && 'hover:border-muted-foreground',
-                  )}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="font-semibold text-lg flex items-center gap-2">
-                        {assistant.name}
-                        {isThisStarting && (
-                          <span className="text-sm text-primary font-normal">
-                            Starting...
-                          </span>
-                        )}
-                      </div>
-                      {assistant.systemPrompt && (
-                        <p className="text-sm text-muted-foreground mt-2 line-clamp-3">
-                          {assistant.systemPrompt}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </button>
+                <li key={assistant.id}>
+                  <AssistantSelectionCard
+                    assistant={assistant}
+                    isStarting={isThisStarting}
+                    disabled={isCreating}
+                    onSelect={(a) => {
+                      setIsCreating(true);
+                      handleAssistantSelect(a);
+                    }}
+                  />
+                </li>
               );
             })}
-          </div>
+          </ul>
 
           {assistants.length === 0 && (
             <div className="text-center text-muted-foreground py-12">
@@ -289,7 +256,7 @@ export default function AgentChatStartView() {
           )}
         </div>
 
-        <div className="p-6 border-t">
+        <div className="p-6 border-t shrink-0">
           <Link to="/assistants">
             <Button variant="outline" disabled={isCreating} className="w-full">
               Manage Assistants
@@ -300,7 +267,7 @@ export default function AgentChatStartView() {
 
       {/* Right Column - Session History */}
       <div
-        className="flex-[3] flex flex-col"
+        className="md:col-span-7 lg:col-span-8 flex flex-col h-full overflow-hidden"
         role="region"
         aria-label="Session History"
       >
@@ -405,19 +372,23 @@ export default function AgentChatStartView() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 max-w-2xl">
+            <ul
+              className="grid grid-cols-1 gap-4 max-w-2xl list-none"
+              aria-labelledby="session-heading"
+            >
               {filteredAndSortedSessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  onResume={handleResumeSession}
-                  onDelete={handleDeleteSession}
-                />
+                <li key={session.id}>
+                  <SessionCard
+                    session={session}
+                    onResume={handleResumeSession}
+                    onDelete={handleDeleteSession}
+                  />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
