@@ -35,6 +35,7 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::Path;
     use tempfile::TempDir;
 
     #[test]
@@ -55,9 +56,9 @@ mod tests {
 
         // Verify paths are different and correctly structured
         assert_ne!(path_a, path_b);
-        // Note: Canonical paths might differ on some OS, but structure is what matters
-        assert!(path_a.to_string_lossy().contains("workspaces/session_a"));
-        assert!(path_b.to_string_lossy().contains("workspaces/session_b"));
+        // Use path-aware checks that work across Windows/Unix
+        assert!(path_a.ends_with(Path::new("workspaces").join("session_a")));
+        assert!(path_b.ends_with(Path::new("workspaces").join("session_b")));
 
         // Create a file in Session A
         let file_a = path_a.join("test.txt");

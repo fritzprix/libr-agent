@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use tokio::fs as async_fs;
 use tokio::time::{Duration, Instant};
 
-use super::types::{SessionWorkspaceInfo, SessionStats};
+use super::types::{SessionStats, SessionWorkspaceInfo};
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {

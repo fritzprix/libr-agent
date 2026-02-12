@@ -9,14 +9,17 @@
 **Improvement:** Decoupled platform-specific isolation logic (Linux `unshare`, macOS `sandbox-exec`, Windows job objects) into dedicated modules. Separated types and common utilities. Reduced monolithic file size from ~811 lines to focused modules, improving maintainability and readability.
 
 <<<<<<< fractal/refactor-session-module-5831965985525513069
+
 ## 2026-02-09 - src-tauri/src/session.rs
 
 **Split:** `types.rs`, `manager.rs`, `mod.rs`
 **Improvement:** Decoupled data types (`SessionWorkspaceInfo`, `SessionStats`) from core logic (`SessionManager`). Separated global initialization and re-exports into `mod.rs`. Improved maintainability by creating a dedicated module directory structure for session management.
 =======
+
 ## 2026-02-09 - src/features/agent/components/AgentMessageRenderer.tsx
 
 **Split:** `types/index.ts`, `hooks/useIsDarkMode.ts`, `hooks/useUIActionHandler.ts`, `components/CodeBlock.tsx`, `components/MarkdownText.tsx`, `config/markdown.tsx`, `utils/contentGrouping.ts`
 **Result:** Reduced from ~960 lines to ~280 lines in the main component.
 **Improvement:** Decoupled Markdown rendering, UI action handling, and content grouping logic. Extracted large memoized components (`CodeBlock`, `MarkdownText`) and hooks.
->>>>>>> dev/0.4.0
+
+> > > > > > > dev/0.4.0
