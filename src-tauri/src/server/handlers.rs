@@ -259,10 +259,45 @@ pub async fn send_message(
     let session = session_opt.unwrap();
     let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
 
+    // NOTE: Session.agent_config may contain partial/legacy JSON in some code paths (e.g., tests).
+    // Avoid strict AgentConfig deserialization here; extract the assistant ID from common fields.
     let assistant_id = session.agent_config.as_ref().and_then(|config_str| {
-        crate::agent::AgentConfig::from_json(config_str)
-            .ok()
-            .and_then(|c| c.id)
+        let config: serde_json::Value = match serde_json::from_str(config_str) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!(
+                    "Invalid session.agent_config JSON for session {} (assistant_id will be None): {}",
+                    id,
+                    e
+                );
+                return None;
+            }
+        };
+
+        let assistant_id_value = config
+            .get("assistant_id")
+            .or_else(|| config.get("assistantId"))
+            .or_else(|| config.get("id"));
+
+        match assistant_id_value {
+            Some(v) => match v.as_str() {
+                Some(s) => Some(s.to_string()),
+                None => {
+                    log::warn!(
+                        "session.agent_config assistant id field is not a string for session {} (assistant_id will be None)",
+                        id
+                    );
+                    None
+                }
+            },
+            None => {
+                log::warn!(
+                    "No assistant id field found in session.agent_config for session {} (expected one of: assistant_id, assistantId, id)",
+                    id
+                );
+                None
+            }
+        }
     });
 
     // 2. Create Message object
