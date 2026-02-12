@@ -211,10 +211,7 @@ export default function AgentChatStartView() {
   }, [loadSessions]);
 
   return (
-    <div
-      className="h-full w-full grid grid-cols-1 md:grid-cols-12 font-mono divide-y md:divide-y-0 md:divide-x"
-      role="main"
-    >
+    <main className="h-full w-full grid grid-cols-1 md:grid-cols-12 font-mono divide-y md:divide-y-0 md:divide-x">
       {/* Left Column - Assistant Selection */}
       <div
         className="md:col-span-5 lg:col-span-4 flex flex-col h-full overflow-hidden"
@@ -231,27 +228,27 @@ export default function AgentChatStartView() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
-          <div
-            className="flex flex-col gap-4 max-w-2xl mx-auto"
-            role="list"
+          <ul
+            className="flex flex-col gap-4 max-w-2xl mx-auto list-none"
             aria-labelledby="assistant-heading"
           >
             {assistants.map((assistant) => {
               const isThisStarting = startingAssistantId === assistant.id;
               return (
-                <AssistantSelectionCard
-                  key={assistant.id}
-                  assistant={assistant}
-                  isStarting={isThisStarting}
-                  disabled={isCreating}
-                  onSelect={(a) => {
-                    setIsCreating(true);
-                    handleAssistantSelect(a);
-                  }}
-                />
+                <li key={assistant.id}>
+                  <AssistantSelectionCard
+                    assistant={assistant}
+                    isStarting={isThisStarting}
+                    disabled={isCreating}
+                    onSelect={(a) => {
+                      setIsCreating(true);
+                      handleAssistantSelect(a);
+                    }}
+                  />
+                </li>
               );
             })}
-          </div>
+          </ul>
 
           {assistants.length === 0 && (
             <div className="text-center text-muted-foreground py-12">
@@ -379,19 +376,23 @@ export default function AgentChatStartView() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 max-w-2xl">
+            <ul
+              className="grid grid-cols-1 gap-4 max-w-2xl list-none"
+              aria-labelledby="session-heading"
+            >
               {filteredAndSortedSessions.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  onResume={handleResumeSession}
-                  onDelete={handleDeleteSession}
-                />
+                <li key={session.id}>
+                  <SessionCard
+                    session={session}
+                    onResume={handleResumeSession}
+                    onDelete={handleDeleteSession}
+                  />
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </div>
-    </div>
+    </main>
   );
 }
