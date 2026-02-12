@@ -1,6 +1,8 @@
 use super::super::WorkspaceServer;
 use super::utils::{calculate_similarity, format_string_diff, read_file_as_string};
-use crate::mcp::builtin::error_guidance::*;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use tracing::{error, info};
@@ -17,12 +19,12 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) if !path.trim().is_empty() => path.trim(),
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'path' cannot be empty",
-                    vec!["Provide a valid file path".to_string()],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec!["Provide a valid file path".to_string()])
                 .to_mcp_result());
             }
             None => {
@@ -33,15 +35,15 @@ impl WorkspaceServer {
         let old_string = match args.get("oldString").and_then(|v| v.as_str()) {
             Some(s) if !s.is_empty() => s,
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'oldString' cannot be empty",
-                    vec![
-                        "Extract exact text from readFile response".to_string(),
-                        "Include surrounding context for uniqueness".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Extract exact text from readFile response".to_string(),
+                    "Include surrounding context for uniqueness".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => return Ok(missing_param_error("oldString", ToolGroup::Workspace)),
@@ -57,15 +59,14 @@ impl WorkspaceServer {
         let original_content = match read_file_as_string(&safe_path).await {
             Ok(content) => content,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Read file for preview",
-                    &e,
-                    vec![
-                        "Verify file exists with listDirectory".to_string(),
-                        format!("Use readFile('{}') to check content", path_str),
-                    ],
-                    ToolGroup::Workspace,
-                ));
+                return Ok(
+                    guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Verify file exists with listDirectory".to_string(),
+                            format!("Use readFile('{}') to check content", path_str),
+                        ])
+                        .to_mcp_result(),
+                );
             }
         };
 
@@ -87,43 +88,57 @@ impl WorkspaceServer {
                 }
             }
 
-            let suggestion = if let Some((line_num, similarity)) = best_match {
-                format!(
-                    "❌ Pattern NOT FOUND (but {}% similar at line {})\n\n\
-                    💡 NEXT: Use readFile('{}', {}, {}) to see actual content",
-                    (similarity * 100.0) as u32,
-                    line_num,
-                    path_str,
-                    line_num,
-                    line_num + search_size.saturating_sub(1)
+            let (error_msg, guidance) = if let Some((line_num, similarity)) = best_match {
+                (
+                    format!(
+                        "Pattern NOT FOUND (but {}% similar at line {})",
+                        (similarity * 100.0) as u32,
+                        line_num
+                    ),
+                    vec![
+                        format!(
+                            "Use readFile('{}', {}, {}) to see actual content on these lines",
+                            path_str,
+                            line_num,
+                            line_num + search_size.saturating_sub(1)
+                        ),
+                        "Extract the EXACT text from readFile response including ALL whitespace"
+                            .to_string(),
+                    ],
                 )
             } else {
-                format!(
-                    "❌ Pattern NOT FOUND in file\n\n\
-                    💡 NEXT: Use readFile('{}') to see full content",
-                    path_str
+                (
+                    "Pattern NOT FOUND in file".to_string(),
+                    vec![
+                        format!("Use readFile('{}') to see full current content", path_str),
+                        "Verify the string you are trying to replace is exactly as it appears in the file".to_string(),
+                    ],
                 )
             };
 
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                "Pattern not found in preview",
-                vec![suggestion],
+                &error_msg,
                 ToolGroup::Workspace,
             )
+            .guidance(guidance)
             .to_mcp_result());
         }
 
         if occurrences > 1 {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Pattern found {} times (not unique)", occurrences),
-                vec![
-                    "Include more surrounding context to make the pattern unique".to_string(),
-                    format!("Use readFile('{}') to see full content", path_str),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Include more surrounding context (3-5 more lines) to make the pattern unique"
+                    .to_string(),
+                format!(
+                    "Use readFile('{}') to see full content and find unique context",
+                    path_str
+                ),
+            ])
             .to_mcp_result());
         }
 
@@ -137,21 +152,23 @@ impl WorkspaceServer {
             **Changes Preview:**\n\
             ```diff\n\
             {}\n\
-            ```\n\n\
-            **Next Steps:**\n\
-            - ✅ Preview looks correct? Call editFile with SAME parameters\n\
-            - 📖 Use readFile to see full file context",
+            ```",
             path_str, preview_diff
         );
 
-        Ok(MCPResult::success_with_data(
-            &output,
-            json!({
-                "path": path_str,
-                "occurrences": 1,
-                "status": "ready"
-            }),
-        ))
+        let hint = SuccessHint::new(
+            output,
+            vec![
+                "Preview looks correct? Call editFile with SAME parameters to apply".to_string(),
+                "Use readFile to see full file context if needed".to_string(),
+            ],
+        );
+
+        Ok(hint.to_mcp_result_with_data(Some(json!({
+            "path": path_str,
+            "occurrences": 1,
+            "status": "ready"
+        }))))
     }
 
     pub async fn handle_edit_file(
@@ -163,16 +180,15 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) if !path.trim().is_empty() => path.trim(),
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'path' cannot be empty",
-                    vec![
-                        "Provide a valid file path: editFile({path, oldString, newString})"
-                            .to_string(),
-                        "Use listDirectory('.') to find files".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide a valid file path: editFile({path, oldString, newString})".to_string(),
+                    "Use listDirectory('.') to find files".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => {
@@ -184,16 +200,16 @@ impl WorkspaceServer {
         let old_string = match args.get("oldString").and_then(|v| v.as_str()) {
             Some(s) if !s.is_empty() => s,
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'oldString' cannot be empty",
-                    vec![
-                        "⚠️ CRITICAL: Call readFile FIRST to get exact content".to_string(),
-                        "Extract text exactly as shown in readFile response".to_string(),
-                        "Include surrounding context (3-5 lines) for uniqueness".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "⚠️ CRITICAL: Call readFile FIRST to get exact content".to_string(),
+                    "Extract text exactly as shown in readFile response".to_string(),
+                    "Include surrounding context (3-5 lines) for uniqueness".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => return Ok(missing_param_error("oldString", ToolGroup::Workspace)),
@@ -207,16 +223,16 @@ impl WorkspaceServer {
 
         // Validate: Reject identical strings early (before file I/O)
         if old_string == new_string {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "oldString and newString are identical - no changes needed",
-                vec![
-                    "The replacement would result in no changes to the file".to_string(),
-                    "Verify that newString contains the intended modifications".to_string(),
-                    "If no changes are needed, consider skipping this operation".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "The replacement would result in no changes to the file".to_string(),
+                "Verify that newString contains the intended modifications".to_string(),
+                "If no changes are needed, consider skipping this operation".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -226,16 +242,15 @@ impl WorkspaceServer {
         let original_content = match read_file_as_string(&safe_path).await {
             Ok(content) => content,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Read file for replacement",
-                    &e,
-                    vec![
-                        "Verify the file exists with listDirectory".to_string(),
-                        "Check file permissions".to_string(),
-                        "Use readFile to see the current content".to_string(),
-                    ],
-                    ToolGroup::Workspace,
-                ));
+                return Ok(
+                    guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Verify the file exists with listDirectory".to_string(),
+                            "Check file permissions".to_string(),
+                            "Use readFile to see the current content".to_string(),
+                        ])
+                        .to_mcp_result(),
+                );
             }
         };
 
@@ -249,91 +264,71 @@ impl WorkspaceServer {
             let search_size = old_lines.len();
 
             let mut best_match: Option<(usize, f32)> = None; // (line_num, similarity)
-
-            // Search for similar content
-            for (idx, window) in lines.windows(search_size.max(1)).enumerate() {
+            for (line_idx, window) in lines.windows(search_size.max(1)).enumerate() {
                 let window_text = window.join("\n");
                 let similarity = calculate_similarity(&window_text, old_string);
-
-                if similarity > 0.3 {
-                    // 30% threshold
-                    if best_match.is_none_or(|m| similarity > m.1) {
-                        best_match = Some((idx + 1, similarity));
-                    }
+                if similarity > 0.3 && best_match.as_ref().is_none_or(|m| similarity > m.1) {
+                    best_match = Some((line_idx + 1, similarity));
                 }
             }
 
-            let suggestion = if let Some((line_num, similarity)) = best_match {
-                format!(
-                    "Similar content found at line {} ({}% match).
-
-⚠️ MANDATORY STEPS:
-1. Call readFile('{}', {}, {}) to see the ACTUAL content
-2. Extract the exact text from readFile response (including whitespace)
-3. Use the extracted text as oldString in your next attempt
-
-💡 RECOMMENDED: Use previewReplacement BEFORE editFile
-   → previewReplacement(path, oldString, newString) shows exact diffs
-   → Catches mismatches early and shows line numbers
-
-❌ DO NOT retry with the same oldString
-❌ DO NOT reconstruct the text from previous attempts",
-                    line_num,
-                    (similarity * 100.0) as u32,
-                    path_str,
-                    line_num,
-                    line_num + search_size.saturating_sub(1)
+            let (error_msg, guidance) = if let Some((line_num, similarity)) = best_match {
+                (
+                    format!(
+                        "Pattern NOT FOUND (but {}% similar at line {})",
+                        (similarity * 100.0) as u32,
+                        line_num
+                    ),
+                    vec![
+                        format!("Use readFile('{}', {}, {}) to see actual content", path_str, line_num, line_num + search_size.saturating_sub(1)),
+                        "Extract the EXACT text from readFile response including ALL whitespace (newlines, indentation)".to_string(),
+                        "Include 3-5 lines of surrounding context for uniqueness".to_string(),
+                    ],
                 )
             } else {
-                format!(
-                    "Pattern not found in file.
-
-⚠️ MANDATORY STEPS:
-1. Call readFile('{}') to see current file content
-2. Extract the exact text you want to replace from readFile response
-3. Use the extracted text as oldString (must match EXACTLY including whitespace)
-
-💡 RECOMMENDED: Use previewReplacement BEFORE editFile
-   → previewReplacement(path, oldString, newString) verifies without modification
-   → Shows exact line numbers and context for better accuracy
-
-❌ DO NOT retry without reading the file first
-❌ DO NOT use oldString reconstructed from previous attempts or assumptions",
-                    path_str
+                (
+                    "Pattern NOT FOUND in file".to_string(),
+                    vec![
+                        format!("Use readFile('{}') to see current file content", path_str),
+                        "Verify you are copying the text exactly as it appears in the latest readFile output".to_string(),
+                    ],
                 )
             };
 
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                "Pattern not found",
-                vec![suggestion],
+                &error_msg,
                 ToolGroup::Workspace,
             )
+            .guidance(guidance)
             .to_mcp_result());
         }
 
         if occurrences > 1 {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Pattern found {} times (must be unique)", occurrences),
-                vec![
-                    "Include more surrounding context (5-10 lines) to make the pattern unique"
-                        .to_string(),
-                    format!("Use readFile('{}') to see the full content", path_str),
-                    "Use previewReplacement to verify before actual replacement".to_string(),
-                ],
+                format!("Pattern found {} times (not unique)", occurrences),
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Include more surrounding context (3-5 more lines) to make the pattern unique"
+                    .to_string(),
+                format!(
+                    "Use readFile('{}') to see full content and find unique context",
+                    path_str
+                ),
+            ])
             .to_mcp_result());
         }
 
-        // Perform replacement (exactly one match)
+        // Apply replacement
         let new_content = original_content.replacen(old_string, new_string, 1);
+        let write_result = tokio::fs::write(&safe_path, &new_content).await;
 
-        // Write the modified content
-        let file_manager = self.get_file_manager(session_id);
-        match file_manager.write_file_string(path_str, &new_content).await {
+        match write_result {
             Ok(_) => {
+                info!("Successfully edited file: {}", path_str);
+
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
@@ -343,46 +338,56 @@ impl WorkspaceServer {
                     path_str,
                 );
 
-                let message = format!(
-                    "**✅ String Replacement Successful**\n\n\
+                let output = format!(
+                    "**✅ File Edited Successfully**\n\n\
                     **File:** `{}`\n\n\
-                    {}\n\n\
-                    **Next Steps:**\n\
-                    - Use readFile to verify the changes\n\
-                    - For multiple changes, call editFile again\n\
-                    - Each replacement is atomic and independent",
+                    **Changes:**\n\
+                    {}",
                     path_str, diff_output
                 );
 
-                Ok(MCPResult::success_with_data(
-                    &message,
-                    json!({
-                        "path": path_str,
-                        "old_string_length": old_string.len(),
-                        "new_string_length": new_string.len(),
-                        "diff": diff_output,
-                    }),
-                ))
+                let hint = SuccessHint::new(
+                    output,
+                    vec![
+                        "Use readFile to verify the changes".to_string(),
+                        "For multiple changes, call editFile again or use editFileMulti"
+                            .to_string(),
+                        "Each replacement is atomic and independent".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "path": path_str,
+                    "old_string_length": old_string.len(),
+                    "new_string_length": new_string.len(),
+                    "diff": diff_output,
+                }))))
             }
-            Err(e) if e.contains("Permission denied") => Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::PermissionDenied,
-                format!("Permission denied writing to '{}'", path_str),
-                vec![
+            Err(e)
+                if e.kind() == std::io::ErrorKind::PermissionDenied
+                    || e.to_string().contains("Permission denied") =>
+            {
+                Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    format!("Permission denied writing to '{}'", path_str),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
                     "File may be read-only or locked by another process".to_string(),
                     "Use listDirectory to check file permissions".to_string(),
-                ],
+                ])
+                .to_mcp_result())
+            }
+            Err(e) => Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "File may be locked or inaccessible".to_string(),
+                format!("Use readFile('{}') to verify file still exists", path_str),
+            ])
             .to_mcp_result()),
-            Err(e) => Ok(operation_failed_error(
-                "Write file",
-                &e,
-                vec![
-                    "File may be locked or inaccessible".to_string(),
-                    format!("Use readFile('{}') to verify file still exists", path_str),
-                ],
-                ToolGroup::Workspace,
-            )),
         }
     }
 }
@@ -442,16 +447,15 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) if !path.trim().is_empty() => path.trim(),
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'path' cannot be empty",
-                    vec![
-                        "Provide a valid file path: editFileMulti({path, replacements})"
-                            .to_string(),
-                        "Use listDirectory('.') to find files".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide a valid file path: editFileMulti({path, replacements})".to_string(),
+                    "Use listDirectory('.') to find files".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => {
@@ -463,15 +467,15 @@ impl WorkspaceServer {
         let replacements = match args.get("replacements").and_then(|v| v.as_array()) {
             Some(arr) if !arr.is_empty() => arr,
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Parameter 'replacements' cannot be empty",
-                    vec![
-                        "Provide at least one replacement: [{oldString, newString}]".to_string(),
-                        "Use editFile for single replacements".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide at least one replacement: [{oldString, newString}]".to_string(),
+                    "Use editFile for single replacements".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => return Ok(missing_param_error("replacements", ToolGroup::Workspace)),
@@ -481,16 +485,15 @@ impl WorkspaceServer {
         let normalized_replacements = match normalize_replacements(replacements) {
             Ok(normalized) => normalized,
             Err((msg, idx)) => {
-                return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::InvalidInput,
-                    msg,
-                    vec![
-                        "Each replacement must be an object: {oldString, newString}".to_string(),
-                        format!("Found invalid type at index {}", idx),
-                    ],
-                    ToolGroup::Workspace,
-                )
-                .to_mcp_result());
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, msg, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Each replacement must be an object: {oldString, newString}"
+                                .to_string(),
+                            format!("Found invalid type at index {}", idx),
+                        ])
+                        .to_mcp_result(),
+                );
             }
         };
 
@@ -502,27 +505,26 @@ impl WorkspaceServer {
             let old_string = match obj.get("oldString").and_then(|v| v.as_str()) {
                 Some(s) if !s.is_empty() => s,
                 Some(_) => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("oldString at index {} cannot be empty", idx),
-                        vec![
-                            "⚠️ CRITICAL: Call readFile FIRST to get exact content".to_string(),
-                            "Extract text exactly as shown in readFile response".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "⚠️ CRITICAL: Call readFile FIRST to get exact content".to_string(),
+                        "Extract text exactly as shown in readFile response".to_string(),
+                    ])
                     .to_mcp_result());
                 }
                 None => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Missing 'oldString' at index {}", idx),
-                        vec![
-                            "Each replacement must have 'oldString' and 'newString' fields"
-                                .to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Each replacement must have 'oldString' and 'newString' fields".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
@@ -530,33 +532,32 @@ impl WorkspaceServer {
             let new_string = match obj.get("newString").and_then(|v| v.as_str()) {
                 Some(s) => s,
                 None => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Missing 'newString' at index {}", idx),
-                        vec![
-                            "Each replacement must have 'oldString' and 'newString' fields"
-                                .to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Each replacement must have 'oldString' and 'newString' fields".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
 
             // Check for identical strings
             if old_string == new_string {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
                         "Replacement at index {}: oldString and newString are identical",
                         idx
                     ),
-                    vec![
-                        "No changes would be made with this replacement".to_string(),
-                        "Remove this replacement from the array or modify newString".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "No changes would be made with this replacement".to_string(),
+                    "Remove this replacement from the array or modify newString".to_string(),
+                ])
                 .to_mcp_result());
             }
 
@@ -565,18 +566,18 @@ impl WorkspaceServer {
 
         // Limit number of replacements
         if replacement_pairs.len() > 50 {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
                     "Too many replacements: {} (maximum 50)",
                     replacement_pairs.len()
                 ),
-                vec![
-                    "Split into multiple editFileMulti calls if needed".to_string(),
-                    "Or use multiple editFile calls for independent changes".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Split into multiple editFileMulti calls if needed".to_string(),
+                "Or use multiple editFile calls for independent changes".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -585,15 +586,14 @@ impl WorkspaceServer {
         let original_content = match read_file_as_string(&safe_path).await {
             Ok(content) => content,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Read file for multi-replacement",
-                    &e,
-                    vec![
-                        "Verify the file exists with listDirectory".to_string(),
-                        format!("Use readFile('{}') to check content", path_str),
-                    ],
-                    ToolGroup::Workspace,
-                ));
+                return Ok(
+                    guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Verify the file exists with listDirectory".to_string(),
+                            format!("Use readFile('{}') to check content", path_str),
+                        ])
+                        .to_mcp_result(),
+                );
             }
         };
 
@@ -643,19 +643,19 @@ impl WorkspaceServer {
 
         // If any validation errors, return them all
         if !validation_errors.is_empty() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Some patterns failed validation - NO changes applied",
-                vec![
-                    "❌ VALIDATION ERRORS:".to_string(),
-                    validation_errors.join("\n"),
-                    "".to_string(),
-                    "⚠️ ALL patterns must be valid for atomic operation".to_string(),
-                    format!("💡 Use readFile('{}') to see current content", path_str),
-                    "💡 Fix all patterns and try again".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "❌ VALIDATION ERRORS:".to_string(),
+                validation_errors.join("\n"),
+                "".to_string(),
+                "⚠️ ALL patterns must be valid for atomic operation".to_string(),
+                format!("💡 Use readFile('{}') to see current content", path_str),
+                "💡 Fix all patterns and try again".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -681,10 +681,28 @@ impl WorkspaceServer {
                 // Invalidate service context cache
                 self.invalidate_context_cache().await;
 
-                // Generate diff preview
                 let original_lines = original_content.lines().count();
                 let modified_lines = modified_content.lines().count();
                 let size_change = (modified_content.len() as i64) - (original_content.len() as i64);
+
+                let summary_text = replacement_pairs
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, (old, new))| {
+                        let old_preview = if old.len() > 50 {
+                            format!("{}...", &old[..47])
+                        } else {
+                            old.to_string()
+                        };
+                        let new_preview = if new.len() > 50 {
+                            format!("{}...", &new[..47])
+                        } else {
+                            new.to_string()
+                        };
+                        format!("{}. \"{}\" → \"{}\"", idx + 1, old_preview, new_preview)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
                 let output = format!(
                     "**✅ Applied {} Replacements Successfully**\n\n\
@@ -692,10 +710,7 @@ impl WorkspaceServer {
                     **Original:** {} lines, {} bytes\n\
                     **Modified:** {} lines, {} bytes ({}{})\n\n\
                     **Changes Summary:**\n\
-                    {}\n\n\
-                    **Next Steps:**\n\
-                    - 📖 Use `readFile(\"{}\")` to verify changes\n\
-                    - 🔄 Use `editFile` to make further adjustments if needed",
+                    {}",
                     replacement_pairs.len(),
                     path_str,
                     original_lines,
@@ -704,52 +719,38 @@ impl WorkspaceServer {
                     modified_content.len(),
                     if size_change >= 0 { "+" } else { "" },
                     size_change,
-                    replacement_pairs
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, (old, new))| {
-                            let old_preview = if old.len() > 50 {
-                                format!("{}...", &old[..47])
-                            } else {
-                                old.to_string()
-                            };
-                            let new_preview = if new.len() > 50 {
-                                format!("{}...", &new[..47])
-                            } else {
-                                new.to_string()
-                            };
-                            format!("{}. \"{}\" → \"{}\"", idx + 1, old_preview, new_preview)
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    path_str
+                    summary_text
                 );
 
-                Ok(MCPResult::success_with_data(
-                    &output,
-                    json!({
-                        "path": path_str,
-                        "replacements_applied": replacement_pairs.len(),
-                        "original_size": original_content.len(),
-                        "modified_size": modified_content.len(),
-                        "size_change": size_change,
-                        "original_lines": original_lines,
-                        "modified_lines": modified_lines
-                    }),
-                ))
+                let hint = SuccessHint::new(
+                    output,
+                    vec![
+                        format!("Use readFile(\"{}\") to verify changes", path_str),
+                        "Use editFile to make further adjustments if needed".to_string(),
+                    ],
+                );
+
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "path": path_str,
+                    "replacements_applied": replacement_pairs.len(),
+                    "original_size": original_content.len(),
+                    "modified_size": modified_content.len(),
+                    "size_change": size_change,
+                    "original_lines": original_lines,
+                    "modified_lines": modified_lines
+                }))))
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
-                Ok(operation_failed_error(
-                    "Write multi-replacement changes",
-                    &e,
-                    vec![
-                        "Check file permissions".to_string(),
-                        "Ensure file is not locked by another process".to_string(),
-                        "Original file was NOT modified".to_string(),
-                    ],
-                    ToolGroup::Workspace,
-                ))
+                Ok(
+                    guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                        .guidance(vec![
+                            "Check file permissions".to_string(),
+                            "Ensure file is not locked by another process".to_string(),
+                            "Original file was NOT modified".to_string(),
+                        ])
+                        .to_mcp_result(),
+                )
             }
         }
     }

@@ -1,8 +1,8 @@
 use super::super::WorkspaceServer;
 use super::utils::{detect_language, format_file_size};
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, operation_failed_error, permission_denied_error, ErrorCategory,
-    ErrorGuidance, ToolGroup,
+    guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
+    ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
@@ -20,16 +20,16 @@ impl WorkspaceServer {
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(path) if !path.trim().is_empty() => path.trim(),
             Some(_) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     "Path parameter cannot be empty",
-                    vec![
-                        "Provide a file path relative to workspace root".to_string(),
-                        "Example: {\"path\": \"src/main.rs\"}".to_string(),
-                        "Use listDirectory('.') to explore available paths".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide a file path relative to workspace root".to_string(),
+                    "Example: {\"path\": \"src/main.rs\"}".to_string(),
+                    "Use listDirectory('.') to explore available paths".to_string(),
+                ])
                 .to_mcp_result());
             }
             None => {
@@ -39,16 +39,16 @@ impl WorkspaceServer {
 
         // 2. Path traversal validation
         if path_str.contains("..") {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Path traversal patterns (..) are not allowed",
-                vec![
-                    "Use relative paths from workspace root".to_string(),
-                    "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
-                    "Use listDirectory to explore available paths".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use relative paths from workspace root".to_string(),
+                "Example: 'src/main.rs' instead of '../src/main.rs'".to_string(),
+                "Use listDirectory to explore available paths".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -70,15 +70,15 @@ impl WorkspaceServer {
         let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
             Ok(path) => path,
             Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
-                    vec![
-                        "Verify the file path is within workspace boundaries".to_string(),
-                        "Use listDirectory to see available paths".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Verify the file path is within workspace boundaries".to_string(),
+                    "Use listDirectory to see available paths".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
@@ -90,25 +90,25 @@ impl WorkspaceServer {
         if file_exists {
             if !overwrite {
                 // Return error if file exists and overwrite is false
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
                         "File '{}' already exists and overwrite is set to false",
                         path_str
                     ),
-                    vec![
-                        "✅ To overwrite: Set \"overwrite\": true in your request".to_string(),
-                        format!(
-                            "   → first: readFile(\"{}\") into memory (if needed)",
-                            path_str
-                        ),
-                        "   → then: writeFile(path, content, overwrite=true)".to_string(),
-                        "".to_string(),
-                        "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
-                        format!("   → editFile(\"{}\", oldText, newText)", path_str),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "✅ To overwrite: Set \"overwrite\": true in your request".to_string(),
+                    format!(
+                        "   → first: readFile(\"{}\") into memory (if needed)",
+                        path_str
+                    ),
+                    "   → then: writeFile(path, content, overwrite=true)".to_string(),
+                    "".to_string(),
+                    "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
+                    format!("   → editFile(\"{}\", oldText, newText)", path_str),
+                ])
                 .to_mcp_result());
             } else {
                 // File exists and overwrite is true - read old content for diff
@@ -121,15 +121,16 @@ impl WorkspaceServer {
                             e.to_string()
                         };
 
-                        return Ok(operation_failed_error(
-                            "Read existing file for diff",
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
                             &error_msg,
-                            vec![
-                                "File exists but could not be read".to_string(),
-                                "Check file permissions".to_string(),
-                            ],
                             ToolGroup::Workspace,
-                        ));
+                        )
+                        .guidance(vec![
+                            "File exists but could not be read".to_string(),
+                            "Check file permissions".to_string(),
+                        ])
+                        .to_mcp_result());
                     }
                 }
             }
@@ -210,10 +211,9 @@ impl WorkspaceServer {
                 let mut next_steps = Vec::new();
 
                 if file_exists {
-                    next_steps.push("- 🔍 Verify changes with `readFile` if unsure".to_string());
+                    next_steps.push("Verify changes with readFile if unsure".to_string());
                 } else {
-                    next_steps
-                        .push("- 📖 Use `readFile` to see full content (if truncated)".to_string());
+                    next_steps.push("Use readFile to see full content (if truncated)".to_string());
                 }
 
                 // File type specific suggestions
@@ -224,27 +224,24 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "- ✏️ Use `editFile(\"{}\", oldText, newText)` for targeted edits",
+                        "Use editFile(\"{}\", oldText, newText) for targeted edits",
                         path_str
                     ));
                 }
 
                 next_steps.push(format!(
-                    "- 🗑️ Use `deleteFile(\"{}\")` to remove if needed",
+                    "Use deleteFile(\"{}\") to remove if needed",
                     path_str
                 ));
 
-                message.push_str(&format!("\n\n**Next Steps:**\n{}", next_steps.join("\n")));
+                let hint = SuccessHint::new(message, next_steps);
 
-                Ok(MCPResult::success_with_data(
-                    &message,
-                    json!({
-                        "path": path_str,
-                        "bytes_written": content.len(),
-                        "lines": lines,
-                        "overwritten": file_exists
-                    }),
-                ))
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "path": path_str,
+                    "bytes_written": content.len(),
+                    "lines": lines,
+                    "overwritten": file_exists
+                }))))
             }
             Err(e) => {
                 error!("Failed to write file {}: {}", path_str, e);
@@ -253,16 +250,17 @@ impl WorkspaceServer {
                 if is_permission {
                     Ok(permission_denied_error(path_str, ToolGroup::Workspace))
                 } else {
-                    Ok(operation_failed_error(
-                        "Write file",
-                        &e.to_string(),
-                        vec![
-                            "Check that the directory exists with listDirectory".to_string(),
-                            "Verify you have write permissions".to_string(),
-                            "Ensure the path is valid and within allowed directories".to_string(),
-                        ],
+                    Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        e.to_string(),
                         ToolGroup::Workspace,
-                    ))
+                    )
+                    .guidance(vec![
+                        "Check that the directory exists with listDirectory".to_string(),
+                        "Verify you have write permissions".to_string(),
+                        "Ensure the path is valid and within allowed directories".to_string(),
+                    ])
+                    .to_mcp_result())
                 }
             }
         }

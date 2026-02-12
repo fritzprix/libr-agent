@@ -1,7 +1,8 @@
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::browser_content_store::BrowserContentStore;
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, not_found_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, not_found_error, ErrorCategory, ErrorGuidance, SuccessHint,
+    ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::services::InteractiveBrowserServer;
@@ -27,8 +28,22 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before extracting content"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let save_raw_html = args
         .get("saveRawHtml")

@@ -581,7 +581,7 @@ pub fn run() {
                 // Or just fetch from DB again in setup. Since we have connection.
                 // But `get_database_connection` relies on global state which IS set.
 
-                let web_action_timeout = {
+                let (web_action_timeout, http_port) = {
                     // We can try to fetch from DB using the global connection which should be set by now
                     // But strictly speaking, `setup` runs on main thread.
                     // DB connection is async. We can't easily block on async DB call in sync setup unless we use a runtime.
@@ -594,6 +594,7 @@ pub fn run() {
                         #[serde(rename_all = "camelCase")]
                         struct SystemSettings {
                             web_action_timeout_seconds: Option<u64>,
+                            http_server_port: Option<u16>,
                         }
 
                         use crate::repositories::settings_repository::SettingsRepository;
@@ -604,11 +605,14 @@ pub fn run() {
                             Ok(Some(model)) => {
                                 let s: SystemSettings =
                                     serde_json::from_str(&model.value).unwrap_or_default();
-                                std::time::Duration::from_secs(
-                                    s.web_action_timeout_seconds.unwrap_or(30),
+                                (
+                                    std::time::Duration::from_secs(
+                                        s.web_action_timeout_seconds.unwrap_or(30),
+                                    ),
+                                    s.http_server_port.unwrap_or(3030),
                                 )
                             }
-                            _ => std::time::Duration::from_secs(30),
+                            _ => (std::time::Duration::from_secs(30), 3030),
                         }
                     })
                 };
@@ -649,14 +653,13 @@ pub fn run() {
                     .inner()
                     .clone_for_task();
                 tauri::async_runtime::spawn(async move {
-                    // TODO: Make port configurable via settings
                     if let Err(e) =
-                        crate::server::init(std::sync::Arc::new(server_manager), 3030).await
+                        crate::server::init(std::sync::Arc::new(server_manager), http_port).await
                     {
-                        log::error!("Failed to start HTTP server: {}", e);
+                        log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
                     }
                 });
-                info!("✅ HTTP Server spawned on port 3030");
+                info!("✅ HTTP Server spawned on port {}", http_port);
 
                 // Spawn session recovery in background
                 let recovery_manager = app

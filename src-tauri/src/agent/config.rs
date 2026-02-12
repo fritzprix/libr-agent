@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfig {
     /// Assistant ID (optional, generated if not provided)
+    #[serde(alias = "assistantId", alias = "assistant_id")]
     pub id: Option<String>,
 
     /// Assistant name
@@ -125,6 +126,7 @@ mod tests {
         let json = config.to_json().unwrap();
         let parsed = AgentConfig::from_json(&json).unwrap();
 
+        assert_eq!(parsed.id, config.id);
         assert_eq!(parsed.temperature, config.temperature);
         assert_eq!(parsed.name, config.name);
     }
@@ -147,5 +149,26 @@ mod tests {
         config.temperature = 1.0;
         config.name = String::new();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_id_alias_deserialization() {
+        let camel_case_json = r#"{
+            "assistantId": "assistant-camel",
+            "name": "Alias Test",
+            "systemPrompt": "You are helpful"
+        }"#;
+
+        let snake_case_json = r#"{
+            "assistant_id": "assistant-snake",
+            "name": "Alias Test",
+            "systemPrompt": "You are helpful"
+        }"#;
+
+        let parsed_camel = AgentConfig::from_json(camel_case_json).unwrap();
+        let parsed_snake = AgentConfig::from_json(snake_case_json).unwrap();
+
+        assert_eq!(parsed_camel.id.as_deref(), Some("assistant-camel"));
+        assert_eq!(parsed_snake.id.as_deref(), Some("assistant-snake"));
     }
 }

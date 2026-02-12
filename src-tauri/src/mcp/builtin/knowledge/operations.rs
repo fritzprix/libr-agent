@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, not_found_error, operation_failed_error, SuccessHint,
-    ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, not_found_error, ErrorCategory,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use crate::repositories::KnowledgeRepository;
@@ -60,12 +60,13 @@ pub async fn save_knowledge(
         match serde_json::to_string(val) {
             Ok(s) => Some(s),
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Serialize tags",
-                    &e.to_string(),
-                    vec!["Ensure tags are valid JSON".to_string()],
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Serialize tags error: {}", e),
                     ToolGroup::Knowledge,
-                ))
+                )
+                .with_guidance(vec!["Ensure tags are valid JSON".to_string()])
+                .to_mcp_result())
             }
         }
     } else {
@@ -114,16 +115,17 @@ pub async fn save_knowledge(
                 "knowledge": knowledge
             }))))
         }
-        Err(e) => Ok(operation_failed_error(
-            "Save knowledge",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify title and content are valid".to_string(),
-                "Retry the operation".to_string(),
-            ],
+        Err(e) => Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Save knowledge error: {}", e),
             ToolGroup::Knowledge,
-        )),
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify title and content are valid".to_string(),
+            "Retry the operation".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 

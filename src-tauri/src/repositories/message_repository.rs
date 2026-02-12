@@ -118,6 +118,7 @@ impl SqliteMessageRepository {
             updated_at: model.updated_at,
             source: model.source,
             error,
+            metadata: None,
         }
     }
 
@@ -448,6 +449,7 @@ mod tests {
             updated_at: 1000,
             source: None,
             error: None,
+            metadata: None,
         }
     }
 
