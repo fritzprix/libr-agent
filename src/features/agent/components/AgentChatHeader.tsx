@@ -69,6 +69,7 @@ export function AgentChatHeader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleCopyMessages}
@@ -84,6 +85,7 @@ export function AgentChatHeader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleToggleWorkspace}
@@ -101,6 +103,7 @@ export function AgentChatHeader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleTogglePlanning}
