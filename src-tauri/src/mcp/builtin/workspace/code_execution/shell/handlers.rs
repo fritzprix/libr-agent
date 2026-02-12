@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::mcp::builtin::error_guidance::{
-    missing_param_error, ErrorCategory, ErrorGuidance, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 
@@ -24,18 +24,17 @@ impl WorkspaceServer {
         #[cfg(windows)]
         {
             if validation::contains_unquoted_andand(raw_command) {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
-                        .to_string(),
-                    vec![
-                        "Use ';' to chain commands in PowerShell".to_string(),
-                        "Example: cd src; pnpm test".to_string(),
-                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
-                            .to_string(),
-                    ],
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1",
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Use ';' to chain commands in PowerShell".to_string(),
+                    "Example: cd src; pnpm test".to_string(),
+                    "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                        .to_string(),
+                ])
                 .to_mcp_result());
             }
         }
@@ -60,25 +59,25 @@ impl WorkspaceServer {
         // Enforce maximum sync timeout
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
                     "Timeout ({} seconds) exceeds maximum ({} seconds)",
                     timeout_secs, sync_max
                 ),
-                vec![
-                    format!(
-                        "Use spawnProcess for commands longer than {} seconds",
-                        sync_max
-                    ),
-                    "spawnProcess runs in background and returns process_id".to_string(),
-                    format!(
-                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
-                        sync_max
-                    ),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                format!(
+                    "Use spawnProcess for commands longer than {} seconds",
+                    sync_max
+                ),
+                "spawnProcess runs in background and returns process_id".to_string(),
+                format!(
+                    "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                    sync_max
+                ),
+            ])
             .to_mcp_result());
         }
 
@@ -103,18 +102,17 @@ impl WorkspaceServer {
         #[cfg(windows)]
         {
             if validation::contains_unquoted_andand(raw_command) {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
-                        .to_string(),
-                    vec![
-                        "Use ';' to chain commands in PowerShell".to_string(),
-                        "Example: cd src; pnpm test".to_string(),
-                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
-                            .to_string(),
-                    ],
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1",
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Use ';' to chain commands in PowerShell".to_string(),
+                    "Example: cd src; pnpm test".to_string(),
+                    "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                        .to_string(),
+                ])
                 .to_mcp_result());
             }
         }
@@ -144,25 +142,25 @@ impl WorkspaceServer {
         // Enforce maximum sync timeout
         let sync_max = crate::config::default_execution_timeout();
         if timeout_secs > sync_max {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
                     "Timeout ({} seconds) exceeds maximum ({} seconds)",
                     timeout_secs, sync_max
                 ),
-                vec![
-                    format!(
-                        "Use spawnProcess for commands longer than {} seconds",
-                        sync_max
-                    ),
-                    "spawnProcess runs in background and returns process_id".to_string(),
-                    format!(
-                        "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
-                        sync_max
-                    ),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                format!(
+                    "Use spawnProcess for commands longer than {} seconds",
+                    sync_max
+                ),
+                "spawnProcess runs in background and returns process_id".to_string(),
+                format!(
+                    "Current maximum timeout: {}s (LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT)",
+                    sync_max
+                ),
+            ])
             .to_mcp_result());
         }
 
@@ -194,18 +192,17 @@ impl WorkspaceServer {
         #[cfg(windows)]
         {
             if validation::contains_unquoted_andand(raw_command) {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1"
-                        .to_string(),
-                    vec![
-                        "Use ';' to chain commands in PowerShell".to_string(),
-                        "Example: cd src; pnpm test".to_string(),
-                        "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
-                            .to_string(),
-                    ],
+                    "Invalid PowerShell syntax: '&&' is not supported by PowerShell 5.1",
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Use ';' to chain commands in PowerShell".to_string(),
+                    "Example: cd src; pnpm test".to_string(),
+                    "If you need conditional execution, use 'if ($LASTEXITCODE -eq 0) { ... }'"
+                        .to_string(),
+                ])
                 .to_mcp_result());
             }
         }
@@ -217,22 +214,22 @@ impl WorkspaceServer {
             .unwrap_or(false);
 
         if require_input {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Background processes cannot prompt for interactive input".to_string(),
-                vec![
-                    format!(
-                        "Use {} (sync mode) for commands requiring user input",
-                        PERSISTENT_SHELL_TOOL
-                    ),
-                    format!(
-                        "{} supports requireUserInput for sudo/interactive commands",
-                        PERSISTENT_SHELL_TOOL
-                    ),
-                    "Async processes run in the background without user interaction".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                format!(
+                    "Use {} (sync mode) for commands requiring user input",
+                    PERSISTENT_SHELL_TOOL
+                ),
+                format!(
+                    "{} supports requireUserInput for sudo/interactive commands",
+                    PERSISTENT_SHELL_TOOL
+                ),
+                "Async processes run in the background without user interaction".to_string(),
+            ])
             .to_mcp_result());
         }
 

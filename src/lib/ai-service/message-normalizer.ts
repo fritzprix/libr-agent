@@ -319,9 +319,8 @@ export class MessageNormalizer {
       });
       delete message.thinking;
     }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
+    // message.thinkingSignature MUST be preserved for Gemini 3+ models
+    // It is required for history validation in tool use scenarios
 
     // Gemini-specific tool handling would be implemented here
     // For now, just remove unsupported fields

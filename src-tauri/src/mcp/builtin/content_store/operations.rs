@@ -2,7 +2,7 @@ use super::server::ContentStoreServer;
 use super::types::*;
 use super::{helpers, parsers, search};
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use log::error;
@@ -16,10 +16,13 @@ pub async fn add_content(
     let args: AddContentArgs = match serde_json::from_value(params) {
         Ok(args) => args,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid addContent parameters: {e}"),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid addContent parameters: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec!["Check the parameter schema".to_string()])
+            .to_mcp_result());
         }
     };
 
@@ -41,10 +44,13 @@ pub async fn add_content(
             let file_path_str = match helpers::extract_file_path_from_url(file_url) {
                 Ok(path) => path,
                 Err(e) => {
-                    return Ok(invalid_input_error(
-                        &format!("Invalid file URL: {e}"),
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!("Invalid file URL: {e}"),
                         ToolGroup::ContentStore,
-                    ));
+                    )
+                    .with_guidance(vec!["Ensure fileUrl is a valid file:// path".to_string()])
+                    .to_mcp_result());
                 }
             };
 
@@ -59,25 +65,31 @@ pub async fn add_content(
             {
                 parsers::ParseResult::Text(content) => content,
                 parsers::ParseResult::Error(e) => {
-                    return Ok(operation_failed_error(
-                        "Parse file",
-                        &format!("{file_path_str}: {e}"),
-                        vec![
-                            "Ensure the file format is supported (PDF, HTML, markdown, code)"
-                                .to_string(),
-                            "Check the file is not corrupted".to_string(),
-                            "Try providing content directly instead of fileUrl".to_string(),
-                        ],
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!("Parse file failed for {file_path_str}: {e}"),
                         ToolGroup::ContentStore,
-                    ));
+                    )
+                    .with_guidance(vec![
+                        "Ensure the file format is supported (PDF, HTML, markdown, code)"
+                            .to_string(),
+                        "Check the file is not corrupted".to_string(),
+                        "Try providing content directly instead of fileUrl".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             }
         }
         (Some(_), Some(_)) => {
-            return Ok(invalid_input_error(
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
                 "Cannot provide both content and fileUrl. Choose one.",
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec![
+                "Provide either content OR fileUrl, not both".to_string()
+            ])
+            .to_mcp_result());
         }
         (Option::None, Option::None) => {
             return Ok(missing_param_error(
@@ -90,16 +102,17 @@ pub async fn add_content(
     // Use passed session_id
     if let Err(e) = server.ensure_session_store(session_id).await {
         error!("Failed to ensure content store for session {session_id}: {e}");
-        return Ok(operation_failed_error(
-            "Prepare content store",
-            &format!("session {session_id}: {e}"),
-            vec![
-                "Check database connectivity".to_string(),
-                "Ensure session is active".to_string(),
-                "Retry the operation".to_string(),
-            ],
+        return Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Prepare content store failed for session {session_id}: {e}"),
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Ensure session is active".to_string(),
+            "Retry the operation".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     // Create chunks from content (simple line-based chunking)
@@ -154,16 +167,17 @@ pub async fn add_content(
     {
         Ok(item) => item,
         Err(e) => {
-            return Ok(operation_failed_error(
-                "Store content",
-                &e.to_string(),
-                vec![
-                    "Check database connectivity".to_string(),
-                    "Verify content format is valid".to_string(),
-                    "Try with smaller content size".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("Store content failed: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec![
+                "Check database connectivity".to_string(),
+                "Verify content format is valid".to_string(),
+                "Try with smaller content size".to_string(),
+            ])
+            .to_mcp_result());
         }
     };
 
@@ -259,10 +273,13 @@ pub async fn delete_content(
     let args: DeleteContentArgs = match serde_json::from_value(params) {
         Ok(args) => args,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid delete_content parameters: {e}"),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid deleteContent parameters: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec!["Check the parameter schema".to_string()])
+            .to_mcp_result());
         }
     };
 
@@ -275,47 +292,45 @@ pub async fn delete_content(
         if let Some(sid) = storage.get_content_session_id(&normalized_content_id) {
             sid
         } else {
-            return Ok(operation_failed_error(
-                "Delete content",
-                &format!("Content '{}' not found", args.content_id),
-                vec![
-                    "Use listContent to see available content".to_string(),
-                    "Verify the content ID is correct".to_string(),
-                ],
+            return Ok(not_found_error(
+                "Content",
+                &args.content_id,
                 ToolGroup::ContentStore,
             ));
         }
     };
 
     if content_session_id != session_id {
-        return Ok(operation_failed_error(
-            "Delete content",
-            &format!(
+        return Ok(guided_error(
+            ErrorCategory::PermissionDenied,
+            format!(
                 "Content '{}' belongs to a different session",
                 args.content_id
             ),
-            vec![
-                "Use listContent to see content in current session".to_string(),
-                "Switch to the session that owns this content".to_string(),
-                "Verify the content ID is correct".to_string(),
-            ],
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Use listContent to see content in current session".to_string(),
+            "Switch to the session that owns this content".to_string(),
+            "Verify the content ID is correct".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     // Delete from storage
     let mut storage = server.storage.lock().await;
     if let Err(e) = storage.delete_content(&normalized_content_id).await {
-        return Ok(operation_failed_error(
-            "Delete content",
-            &e.to_string(),
-            vec![
-                "Check database connectivity".to_string(),
-                "Verify the content ID is correct".to_string(),
-                "Use listContent to see available content".to_string(),
-            ],
+        return Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Delete content failed: {e}"),
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Verify the content ID is correct".to_string(),
+            "Use listContent to see available content".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     // Remove from search index

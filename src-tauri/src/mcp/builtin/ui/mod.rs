@@ -1,5 +1,5 @@
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, operation_failed_error, ToolGroup,
+    guided_error, missing_param_error, ErrorCategory, ToolGroup,
 };
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
@@ -71,13 +71,20 @@ impl UiServer {
 
         // Validate type
         if !["text", "select", "multiselect"].contains(&type_) {
-            return Ok(invalid_input_error(
-                &format!(
-                    "Invalid type '{}'. Must be one of: text, select, multiselect",
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid prompt type '{}'. Supported types: text, select, multiselect",
                     type_
                 ),
                 ToolGroup::UI,
-            ));
+            )
+            .with_guidance(vec![
+                "Use 'text' for free-form user input".to_string(),
+                "Use 'select' for single-choice from options".to_string(),
+                "Use 'multiselect' for multiple-choice from options".to_string(),
+            ])
+            .to_mcp_result());
         }
 
         let message_id = uuid::Uuid::new_v4().to_string();
@@ -100,10 +107,12 @@ impl UiServer {
                 let options_array = match options.as_array() {
                     Some(arr) => arr,
                     None => {
-                        return Ok(invalid_input_error(
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
                             "options must be an array of strings",
                             ToolGroup::UI,
-                        ));
+                        )
+                        .to_mcp_result());
                     }
                 };
 
@@ -151,13 +160,13 @@ impl UiServer {
                 "select-prompt"
             }
             _ => {
-                return Ok(invalid_input_error(
-                    &format!(
-                        "Invalid type '{}'. Must be one of: text, select, multiselect",
-                        type_
-                    ),
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Unsupported prompt type: {}", type_),
                     ToolGroup::UI,
-                ))
+                )
+                .with_guidance(vec!["Choose from: text, select, multiselect".to_string()])
+                .to_mcp_result())
             }
         };
 
@@ -165,15 +174,16 @@ impl UiServer {
         let html = match handlebars.render(template_name, &data) {
             Ok(h) => h,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "promptUser",
-                    &format!("Template rendering failed: {}", e),
-                    vec![
-                        "Verify template data format is correct".to_string(),
-                        "Check that all required template variables are provided".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render UI prompt: {}", e),
                     ToolGroup::UI,
-                ));
+                )
+                .with_guidance(vec![
+                    "Verify template data format is correct".to_string(),
+                    "Check that all required template variables are provided".to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -255,15 +265,16 @@ impl UiServer {
         let html = match handlebars.render("wait", &data) {
             Ok(h) => h,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "waitForUserResume",
-                    &format!("Template rendering failed: {}", e),
-                    vec![
-                        "Verify template data format is correct".to_string(),
-                        "Check that message and resumeInstruction are provided".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render wait screen: {}", e),
                     ToolGroup::UI,
-                ));
+                )
+                .with_guidance(vec![
+                    "Verify message and resumeInstruction are valid strings".to_string(),
+                    "Try again with shorter message if possible".to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -301,10 +312,18 @@ impl UiServer {
 
         // Validate type
         if !["bar", "line"].contains(&type_) {
-            return Ok(invalid_input_error(
-                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!(
+                    "Invalid visualization type '{}'. Supported: bar, line",
+                    type_
+                ),
                 ToolGroup::UI,
-            ));
+            )
+            .with_guidance(vec![
+                "Choose 'bar' for categories or 'line' for trends".to_string()
+            ])
+            .to_mcp_result());
         }
 
         let data_points = match args.get("data").and_then(|v| v.as_array()) {
@@ -313,10 +332,15 @@ impl UiServer {
         };
 
         if data_points.is_empty() {
-            return Ok(invalid_input_error(
-                "Data array cannot be empty",
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                "Visualization data array cannot be empty",
                 ToolGroup::UI,
-            ));
+            )
+            .with_guidance(vec![
+                "Provide at least one data point with label and value".to_string()
+            ])
+            .to_mcp_result());
         }
 
         let width = 600;
@@ -403,15 +427,16 @@ impl UiServer {
                 let html = match handlebars.render("bar-chart", &template_data) {
                     Ok(h) => h,
                     Err(e) => {
-                        return Ok(operation_failed_error(
-                            "visualizeData",
-                            &format!("Template rendering failed: {}", e),
-                            vec![
-                                "Verify data format is correct".to_string(),
-                                "Ensure all data points have label and value".to_string(),
-                            ],
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
+                            format!("Failed to render bar chart: {}", e),
                             ToolGroup::UI,
-                        ));
+                        )
+                        .with_guidance(vec![
+                            "Verify data format (label/value pairs) is correct".to_string(),
+                            "Ensure all values are numeric".to_string(),
+                        ])
+                        .to_mcp_result());
                     }
                 };
 
@@ -472,15 +497,16 @@ impl UiServer {
                 let html = match handlebars.render("line-chart", &template_data) {
                     Ok(h) => h,
                     Err(e) => {
-                        return Ok(operation_failed_error(
-                            "visualizeData",
-                            &format!("Template rendering failed: {}", e),
-                            vec![
-                                "Verify data format is correct".to_string(),
-                                "Ensure all data points have label and value".to_string(),
-                            ],
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
+                            format!("Failed to render line chart: {}", e),
                             ToolGroup::UI,
-                        ));
+                        )
+                        .with_guidance(vec![
+                            "Verify data format (label/value pairs) is correct".to_string(),
+                            "Ensure all values are numeric".to_string(),
+                        ])
+                        .to_mcp_result());
                     }
                 };
 
@@ -493,10 +519,13 @@ impl UiServer {
                     None,
                 ))
             }
-            _ => Ok(invalid_input_error(
-                &format!("Invalid type '{}'. Must be one of: bar, line", type_),
+            _ => Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Unsupported visualization type: {}", type_),
                 ToolGroup::UI,
-            )),
+            )
+            .with_guidance(vec!["Supported types: bar, line".to_string()])
+            .to_mcp_result()),
         }
     }
     fn circuit_break(&self, args: Value) -> Result<MCPResult, String> {
@@ -527,12 +556,15 @@ impl UiServer {
         let html = match handlebars.render("circuit-break", &data) {
             Ok(h) => h,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "circuitBreak",
-                    &format!("Template rendering failed: {}", e),
-                    vec!["Verify template data".to_string()],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render circuit breaker: {}", e),
                     ToolGroup::UI,
-                ));
+                )
+                .with_guidance(vec![
+                    "Verify internal tool name and arguments are valid".to_string()
+                ])
+                .to_mcp_result());
             }
         };
 

@@ -1,6 +1,7 @@
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, missing_param_error, operation_failed_error, ErrorCategory, SuccessHint,
+    ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -21,37 +22,56 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before navigating".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     // Proactive URL validation
     const MAX_URL_LENGTH: usize = 2048;
 
     if url.len() > MAX_URL_LENGTH {
-        return Ok(invalid_input_error(
-            &format!(
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
                 "URL exceeds maximum length of {} characters",
                 MAX_URL_LENGTH
             ),
             ToolGroup::Browser,
-        ));
+        )
+        .to_mcp_result());
     }
 
     if url.starts_with("file://") {
-        return Ok(invalid_input_error(
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
             "Local file URLs are not supported for security. Use http:// or https:// URLs only",
             ToolGroup::Browser,
-        ));
+        )
+        .to_mcp_result());
     }
 
     if !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("about:") {
-        return Ok(invalid_input_error(
-            &format!(
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
                 "Invalid URL format: '{}'. Must start with http://, https://, or about:",
                 url
             ),
             ToolGroup::Browser,
-        ));
+        )
+        .to_mcp_result());
     }
 
     let result = match service.navigate_to_url(&browser_session_id, url).await {
@@ -128,8 +148,21 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before navigating".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let result = match service.navigate_back(&browser_session_id).await {
         Ok(res) => res,
@@ -167,8 +200,21 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before navigating".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let result = match service.navigate_forward(&browser_session_id).await {
         Ok(res) => res,
@@ -206,8 +252,21 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before navigating".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let result = match service
         .execute_script(&browser_session_id, "window.location.href")

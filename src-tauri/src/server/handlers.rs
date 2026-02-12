@@ -89,6 +89,7 @@ pub async fn create_session(
     // Ensure ID and Name match the assistant (critical for tracking)
     agent_config.id = Some(assistant.id.clone());
     agent_config.name = assistant.name.clone();
+    let assistant_id = agent_config.id.clone();
 
     // 3. Create Session
     let session_id = format!("session-{}", Uuid::new_v4());
@@ -147,13 +148,14 @@ pub async fn create_session(
                 is_streaming: None,
                 thinking: None,
                 thinking_signature: None,
-                assistant_id: None,
+                assistant_id,
                 attachments: None,
                 tool_use: None,
                 created_at: now,
                 updated_at: now,
                 source: Some("api".to_string()),
                 error: None,
+                metadata: None,
             };
 
             log::info!(
@@ -257,6 +259,47 @@ pub async fn send_message(
     let session = session_opt.unwrap();
     let is_busy = matches!(session.status, crate::repositories::SessionStatus::Busy);
 
+    // NOTE: Session.agent_config may contain partial/legacy JSON in some code paths (e.g., tests).
+    // Avoid strict AgentConfig deserialization here; extract the assistant ID from common fields.
+    let assistant_id = session.agent_config.as_ref().and_then(|config_str| {
+        let config: serde_json::Value = match serde_json::from_str(config_str) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!(
+                    "Invalid session.agent_config JSON for session {} (assistant_id will be None): {}",
+                    id,
+                    e
+                );
+                return None;
+            }
+        };
+
+        let assistant_id_value = config
+            .get("assistant_id")
+            .or_else(|| config.get("assistantId"))
+            .or_else(|| config.get("id"));
+
+        match assistant_id_value {
+            Some(v) => match v.as_str() {
+                Some(s) => Some(s.to_string()),
+                None => {
+                    log::warn!(
+                        "session.agent_config assistant id field is not a string for session {} (assistant_id will be None)",
+                        id
+                    );
+                    None
+                }
+            },
+            None => {
+                log::warn!(
+                    "No assistant id field found in session.agent_config for session {} (expected one of: assistant_id, assistantId, id)",
+                    id
+                );
+                None
+            }
+        }
+    });
+
     // 2. Create Message object
     let message_id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
@@ -274,13 +317,14 @@ pub async fn send_message(
         is_streaming: None,
         thinking: None,
         thinking_signature: None,
-        assistant_id: None, // TODO: might need to fetch assistant ID from config
+        assistant_id,
         attachments: None,
         tool_use: None,
         created_at: now,
         updated_at: now,
         source: Some("api".to_string()),
         error: None,
+        metadata: None,
     };
 
     // 3. Handle based on status
