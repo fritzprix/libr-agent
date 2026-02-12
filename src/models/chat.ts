@@ -248,7 +248,7 @@ export interface MCPServerEntity {
 }
 
 export interface Assistant {
-  id?: string;
+  id: string;
   name: string;
   description?: string;
   avatar?: string; // Optional avatar URL or identifier
