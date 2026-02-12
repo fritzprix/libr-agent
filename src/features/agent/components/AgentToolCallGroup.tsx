@@ -399,7 +399,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
 };
 
 // Custom comparison for React.memo
-function arePropsEqual(
+export function arePropsEqual(
   prev: AgentToolCallGroupProps,
   next: AgentToolCallGroupProps,
 ) {
