@@ -1,5 +1,51 @@
 # Design Discussion: UI Tool Call Rejection in Idle State
 
+## Confirmed approach (2026-02-13)
+
+This section is the **team-confirmed direction** for later implementation.
+
+### Core policy
+
+We handle cancellation and continuation at the **message/run unit**, not by broad tool-name heuristics.
+
+1. A workflow run owns exactly one in-flight assistant message at a time.
+2. A message is considered complete only after all tool calls in that message (`call1..N`) are fully processed.
+3. `cancel_pending` is managed per message/run and consumed at message boundaries.
+4. Idle-state acceptance requires run/message ownership validation (not just `tool_calls` non-empty).
+
+### Required ownership checks
+
+For an incoming assistant/tool-call payload to be accepted:
+
+- `incoming.run_id == current_run_id`
+- `incoming.parent_message_id == expected_message_id` (or equivalent ownership token)
+- message/run is still active (not expired/consumed)
+
+If any check fails, reject as stale/replayed/mismatched.
+
+### Completion and cancel handling
+
+When processing a message with multiple tool calls:
+
+1. Execute all calls in sequence (`call1..N`) under the same run/message ownership.
+2. Mark the message completed only after the full call batch finishes.
+3. Then atomically consume and clear pending-cancel state for that message/run boundary.
+4. Transition state (`Busy -> Idle` or continue) only after step 3.
+
+This prevents delayed payloads from being accepted as a new continuation after completion.
+
+### Why this scales better
+
+- O(1) validation against current run/message ownership state.
+- No brittle global allowlist tied to specific tool names.
+- Works for future interactive tools without policy rewrites.
+
+### Implementation note
+
+This document records architecture intent only. Code changes should be handled in a separate PR.
+
+---
+
 ## Why this document
 
 This document captures the reasoning behind the current rejection behavior and proposes a safer workflow model for interactive UI tool continuation (e.g., `executePendingShell`).
