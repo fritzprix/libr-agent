@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.25] - 2026-02-13
+
+### 🐛 Fixes
+
+- **Windows MCP Session Startup UX**:
+  - Fixed console window flicker during agent session startup when spawning stdio MCP servers.
+  - Applied `CREATE_NO_WINDOW` to Windows MCP child-process spawning path to prevent terminal pop-up/open-close flashes.
+
 ## [0.4.24] - 2026-02-13
 
 ### 🚀 Features

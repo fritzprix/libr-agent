@@ -59,13 +59,21 @@ jobs:
           VERSION="${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}"
           VERSION_NUM="${VERSION#v}"
 
-          # Extract changelog content for this version
-          CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION_NUM\)\]/,/^## \[/p" CHANGELOG.md | sed '$d' | tail -n +3)
+          # Extract ONLY this version section from CHANGELOG.md (strict mode)
+          CHANGELOG_CONTENT=$(awk -v ver="$VERSION_NUM" '
+            BEGIN { in_section=0 }
+            $0 ~ "^## \\[" ver "\\]" { in_section=1; next }
+            in_section && $0 ~ "^## \\[" { exit }
+            in_section { print }
+          ' CHANGELOG.md)
 
-          if [ -z "$CHANGELOG_CONTENT" ]; then
-            echo "No changelog found for version $VERSION_NUM, using default content"
-            CHANGELOG_CONTENT="See CHANGELOG.md for details."
+          if ! printf '%s\n' "$CHANGELOG_CONTENT" | grep -q '[^[:space:]]'; then
+            echo "❌ Missing changelog section for [$VERSION_NUM] in CHANGELOG.md"
+            echo "Please add a section like: ## [$VERSION_NUM] - YYYY-MM-DD"
+            exit 1
           fi
+
+          echo "✅ Extracted changelog for [$VERSION_NUM]"
 
           # Escape content for GitHub Actions output
           echo "content<<EOF" >> $GITHUB_OUTPUT

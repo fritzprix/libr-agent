@@ -6,7 +6,7 @@ use crate::mcp::types::{
 };
 use dashmap::DashMap;
 use log::{debug, error, info};
-use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+use rmcp::transport::TokioChildProcess;
 use rmcp::ServiceExt;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,6 +16,9 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Manages session-specific MCP server processes with lazy spawning and idle cleanup.
 #[derive(Debug, Clone)]
@@ -137,15 +140,19 @@ impl SessionMCPManager {
         let working_dir = &self.workspace_dir;
         debug!("Spawning MCP server with CWD: {:?}", working_dir);
 
-        let cmd = Command::new(&final_command).configure(|cmd| {
-            cmd.current_dir(working_dir);
-            for arg in &final_args {
-                cmd.arg(arg);
-            }
-            for (key, value) in env {
-                cmd.env(key, value);
-            }
-        });
+        let mut cmd = Command::new(&final_command);
+        cmd.current_dir(working_dir);
+        for arg in &final_args {
+            cmd.arg(arg);
+        }
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
 
         let transport = TokioChildProcess::new(cmd)
             .map_err(|e| SessionMCPError::SpawnFailed(format!("{}", e)))?;
