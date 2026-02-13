@@ -124,8 +124,8 @@ pub fn build_shell_input_ui(
               payload: {{
                 toolName: '{}',
                 params: {{
-                  execution_id: executionId,
-                  user_input: obfuscatedInput,
+                  executionId: executionId,
+                  userInput: obfuscatedInput,
                 }},
               }},
             }},
@@ -148,7 +148,7 @@ pub fn build_shell_input_ui(
             payload: {{
               toolName: '{}',
               params: {{
-                execution_id: executionId,
+                executionId: executionId,
               }},
             }},
           }},

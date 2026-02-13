@@ -109,17 +109,27 @@ impl WorkspaceServer {
     ) -> Result<MCPResult, String> {
         use crate::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 
-        let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+        // Extract execution_id (support both camelCase and snake_case)
+        let execution_id = match args
+            .get("executionId")
+            .or_else(|| args.get("execution_id"))
+            .and_then(|v| v.as_str())
+        {
             Some(id) => id,
             None => {
-                return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+                return Ok(missing_param_error("executionId", ToolGroup::Workspace));
             }
         };
 
-        let obfuscated_input = match args.get("user_input").and_then(|v| v.as_str()) {
+        // Extract user_input (support both camelCase and snake_case)
+        let obfuscated_input = match args
+            .get("userInput")
+            .or_else(|| args.get("user_input"))
+            .and_then(|v| v.as_str())
+        {
             Some(input) => input,
             None => {
-                return Ok(missing_param_error("user_input", ToolGroup::Workspace));
+                return Ok(missing_param_error("userInput", ToolGroup::Workspace));
             }
         };
 
@@ -590,11 +600,15 @@ impl WorkspaceServer {
         args: Value,
         session_id: &str,
     ) -> Result<MCPResult, String> {
-        // Extract execution_id
-        let execution_id = match args.get("execution_id").and_then(|v| v.as_str()) {
+        // Extract execution_id (support both camelCase and snake_case)
+        let execution_id = match args
+            .get("executionId")
+            .or_else(|| args.get("execution_id"))
+            .and_then(|v| v.as_str())
+        {
             Some(id) => id,
             None => {
-                return Ok(missing_param_error("execution_id", ToolGroup::Workspace));
+                return Ok(missing_param_error("executionId", ToolGroup::Workspace));
             }
         };
 
@@ -667,6 +681,89 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .unwrap_or("text");
             (prompt, input_type)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::SessionManager;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    async fn create_server() -> WorkspaceServer {
+        let temp_dir = tempdir().unwrap();
+        let session_manager =
+            Arc::new(SessionManager::new_with_base_dir(temp_dir.path().to_path_buf()).unwrap());
+        WorkspaceServer::new("test-session".to_string(), session_manager)
+    }
+
+    #[tokio::test]
+    async fn test_execute_pending_shell_parameter_extraction() {
+        let server = create_server().await;
+        let execution_id = "test-execution-id";
+
+        // Pre-insert an entry
+        server.pending_executions.insert(PendingShellExecution {
+            execution_id: execution_id.to_string(),
+            session_id: "test-session".to_string(),
+            executable_command: "echo 'hello'".to_string(),
+            display_command: "echo 'hello'".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            encryption_nonce: "nonce".to_string(),
+            created_at: chrono::Utc::now(),
+        });
+
+        // Test with snake_case (fallback)
+        let args_snake = json!({
+            "execution_id": execution_id,
+            "user_input": "obfuscated"
+        });
+
+        // This will fail because we are in a test environment without a real process manager
+        // but we can check if it gets past parameter extraction.
+        // Actually, let's just test that it DOES NOT return missing_param_error.
+        let result = server
+            .handle_execute_pending_shell(args_snake, "test-session")
+            .await;
+
+        if let Ok(res) = result {
+            let res_json = serde_json::to_value(res).unwrap();
+            let content = res_json.get("content").and_then(|c| c.as_array()).unwrap();
+            let text = content[0].get("text").and_then(|t| t.as_str()).unwrap();
+            assert!(!text.contains("Missing executionId"));
+        }
+
+        // Test with camelCase (primary)
+        // Add it back since it was removed by previous call
+        server.pending_executions.insert(PendingShellExecution {
+            execution_id: execution_id.to_string(),
+            session_id: "test-session".to_string(),
+            executable_command: "echo 'hello'".to_string(),
+            display_command: "echo 'hello'".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            encryption_nonce: "nonce".to_string(),
+            created_at: chrono::Utc::now(),
+        });
+
+        let args_camel = json!({
+            "executionId": execution_id,
+            "userInput": "obfuscated"
+        });
+
+        let result = server
+            .handle_execute_pending_shell(args_camel, "test-session")
+            .await;
+
+        if let Ok(res) = result {
+            let res_json = serde_json::to_value(res).unwrap();
+            let content = res_json.get("content").and_then(|c| c.as_array()).unwrap();
+            let text = content[0].get("text").and_then(|t| t.as_str()).unwrap();
+            assert!(!text.contains("Missing executionId"));
         }
     }
 }

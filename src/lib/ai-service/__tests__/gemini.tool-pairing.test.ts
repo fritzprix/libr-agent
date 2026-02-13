@@ -122,4 +122,54 @@ describe('GeminiService Tool Result Handling', () => {
 
         expect(firstPart).toHaveProperty('text', 'Result content');
     });
+
+    it('should attach dummy thought signature to first functionCall when missing', () => {
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'user',
+                content: [{ type: 'text', text: 'Run a tool' }],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: 'call_1',
+                        type: 'function',
+                        function: {
+                            name: 'builtin_workspace__executePendingShell',
+                            arguments: JSON.stringify({ executionId: 'abc' }),
+                        },
+                    },
+                ],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        expect(result.length).toBe(2);
+        const modelMessage = result[1];
+
+        expect(modelMessage).toBeDefined();
+        expect(modelMessage?.role).toBe('model');
+        expect(modelMessage?.parts?.length).toBe(1);
+
+        const firstPart = modelMessage?.parts?.[0] as {
+            functionCall?: { name?: string };
+            thoughtSignature?: string;
+        };
+
+        expect(firstPart.functionCall?.name).toBe(
+            'builtin_workspace__executePendingShell',
+        );
+        expect(firstPart.thoughtSignature).toBe(
+            'skip_thought_signature_validator',
+        );
+    });
 });

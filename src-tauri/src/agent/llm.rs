@@ -6,6 +6,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
@@ -24,11 +25,14 @@ pub async fn request_llm_completion(
     {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
-            if session.metadata.status != SessionStatus::Busy {
+            if session.cancel_pending.load(Ordering::SeqCst)
+                || session.metadata.status != SessionStatus::Busy
+            {
                 log::info!(
-                    "Rejecting LLM request for session {} (status: {:?})",
+                    "Rejecting LLM request for session {} (status: {:?}, cancel_pending={})",
                     session_id,
-                    session.metadata.status
+                    session.metadata.status,
+                    session.cancel_pending.load(Ordering::SeqCst)
                 );
                 return Err(format!(
                     "Cannot request LLM completion: session status is {:?}",
@@ -175,24 +179,71 @@ pub async fn handle_llm_response(
     session_id: String,
     mut assistant_message: Message,
 ) -> Result<(), String> {
-    // Check cancellation
+    // Check cancellation and determine whether Idle tool-call entry is allowed
+    let allow_idle_tool_entry = assistant_message
+        .tool_calls
+        .as_ref()
+        .map(|calls| !calls.is_empty())
+        .unwrap_or(false);
+
+    let mut should_mark_busy = false;
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            // Check both token and status.
-            // verifying status is critical because cancel_workflow resets the token immediately.
-            if session.cancellation_token.is_cancelled()
-                || session.metadata.status != SessionStatus::Busy
-            {
+            let token_cancelled = session.cancellation_token.is_cancelled();
+            let cancel_pending = session.cancel_pending.load(Ordering::SeqCst);
+            let status = session.metadata.status.clone();
+
+            if token_cancelled || cancel_pending {
                 log::info!(
-                    "Workflow cancelled for session: {} (token_cancelled={}, status={:?})",
+                    "Workflow cancelled for session: {} (token_cancelled={}, cancel_pending={}, status={:?})",
                     session_id,
-                    session.cancellation_token.is_cancelled(),
-                    session.metadata.status
+                    token_cancelled,
+                    cancel_pending,
+                    status
+                );
+                return Err("Workflow was cancelled".to_string());
+            }
+
+            if status == SessionStatus::Busy {
+                // Normal path while workflow is already running
+            } else if status == SessionStatus::Idle && allow_idle_tool_entry {
+                // Allow tool-call initiated workflow start from Idle
+                should_mark_busy = true;
+            } else {
+                log::info!(
+                    "Rejecting LLM response for session {} (status={:?}, has_tool_calls={})",
+                    session_id,
+                    status,
+                    allow_idle_tool_entry
                 );
                 return Err("Workflow was cancelled".to_string());
             }
         }
+    }
+
+    if should_mark_busy {
+        {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                session.cancel_pending.store(false, Ordering::SeqCst);
+            }
+        }
+
+        crate::agent::lifecycle::update_session_status(
+            session_repo,
+            active_sessions,
+            app_handle,
+            &session_id,
+            SessionStatus::Busy,
+        )
+        .await?;
+
+        let event = crate::agent::events::AgentEvent::WorkflowStarted {
+            session_id: session_id.clone(),
+        };
+        crate::agent::events::emit_agent_event(app_handle, event)
+            .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
