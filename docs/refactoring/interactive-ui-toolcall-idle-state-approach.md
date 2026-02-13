@@ -1,275 +1,120 @@
-# Design Discussion: UI Tool Call Rejection in Idle State
+# Interactive UI Tool Call Idle-State Refactoring (Implemented)
 
-## Confirmed approach (2026-02-13)
+## Status
 
-This section is the **team-confirmed direction** for later implementation.
+This document reflects the **actual implementation** on branch `dev/0.4.0`.
 
-### Core policy
-
-We handle cancellation and continuation at the **message/run unit**, not by broad tool-name heuristics.
-
-1. A workflow run owns exactly one in-flight assistant message at a time.
-2. A message is considered complete only after all tool calls in that message (`call1..N`) are fully processed.
-3. `cancel_pending` is managed per message/run and consumed at message boundaries.
-4. Idle-state acceptance requires run/message ownership validation (not just `tool_calls` non-empty).
-
-### Required ownership checks
-
-For an incoming assistant/tool-call payload to be accepted:
-
-- `incoming.run_id == current_run_id`
-- `incoming.parent_message_id == expected_message_id` (or equivalent ownership token)
-- message/run is still active (not expired/consumed)
-
-If any check fails, reject as stale/replayed/mismatched.
-
-### Completion and cancel handling
-
-When processing a message with multiple tool calls:
-
-1. Execute all calls in sequence (`call1..N`) under the same run/message ownership.
-2. Mark the message completed only after the full call batch finishes.
-3. Then atomically consume and clear pending-cancel state for that message/run boundary.
-4. Transition state (`Busy -> Idle` or continue) only after step 3.
-
-This prevents delayed payloads from being accepted as a new continuation after completion.
-
-### Why this scales better
-
-- O(1) validation against current run/message ownership state.
-- No brittle global allowlist tied to specific tool names.
-- Works for future interactive tools without policy rewrites.
-
-### Implementation note
-
-This document records architecture intent only. Code changes should be handled in a separate PR.
+The prior version described a design proposal. That proposal is now partially replaced by implemented behavior.
 
 ---
 
-## Why this document
+## What Was Implemented
 
-This document captures the reasoning behind the current rejection behavior and proposes a safer workflow model for interactive UI tool continuation (e.g., `executePendingShell`).
+### 1) Message-boundary cancel handling
 
-The goal is to align on architecture before implementing code changes.
+- `cancel_pending` is now treated as a **cancel intent**.
+- If a tool-call batch is in progress (`pending_execution.is_some()`), `cancel_workflow` does not force immediate stop.
+- The workflow consumes cancel at **message boundary** (after the current message's full tool-call batch completes).
 
----
+Implementation points:
 
-## Current behavior (observed)
+- `agent/workflow.rs` (`cancel_workflow`):
+   - sets `cancel_pending = true`
+   - defers stop when a pending tool execution exists
+   - immediate stop only when no in-flight batch exists
+- `agent/workflow.rs` (`continue_workflow_after_tool`):
+   - checks `cancel_pending` after all expected tool results are collected
+   - consumes flag and transitions to idle at message boundary
 
-### Runtime sequence
+### 2) Message/tool-call integrity guard
 
-1. Agent executes a tool that returns UIResource (interactive step 1)
-2. Workflow loop detects UI interaction and **stops**
-3. Session status transitions to **Idle**
-4. User submits UI input, frontend injects tool call (`executePendingShell`)
-5. Backend receives it via `agent_handle_llm_response`
-6. `llm::handle_llm_response` rejects because status is not `Busy`
-7. User sees error: `Workflow was cancelled`
+`PendingToolExecution` now carries message-scoped ownership and idempotency data:
 
-### Why this guard exists
+- `message_id`
+- `expected_tool_call_ids`
+- `completed_tool_call_ids`
 
-The guard (`status == Busy`) was introduced as a defensive mechanism to block stale/delayed frontend responses after a workflow is cancelled or already ended.
+Tool result handling rejects:
 
-Historically this made sense for standard request/response turns:
+- **Stale** tool_call_id (not expected for current message)
+- **Duplicate** tool_call_id (already completed)
 
-- Busy means workflow owns the turn
-- Idle means no active run should accept LLM response payloads
+Implementation points:
 
-But the 2-step interactive pattern changed semantics:
+- `agent/state.rs`: extended `PendingToolExecution`
+- `agent/llm.rs`: initializes expected set when scheduling tool execution
+- `agent/tools.rs`: enforces stale/duplicate checks
 
-- Idle is now expected between step 1 and step 2
-- Step 2 is valid continuation, not stale traffic
+### 3) API semantic alignment
 
----
+- `agent_cancel_workflow` response message updated to **"cancel requested"** semantics.
+- This matches deferred cancellation behavior during in-flight message execution.
 
-## Root mismatch
+Implementation point:
 
-**Current invariant:** only `Busy` sessions may process assistant/tool-call injections.
+- `commands/agent_commands.rs`
 
-**Interactive invariant:** a validated UI continuation may legitimately arrive while `Idle`.
+### 4) Pending event cleanup simplification
 
-These invariants conflict.
+- `PendingEvent::CancelRequested` removed.
+- `PendingEventManager` now tracks message events only.
 
----
+Implementation points:
 
-## Proposed approach
-
-## A. Narrow acceptance rule (recommended)
-
-Allow Idle-state acceptance **only** for validated interactive continuation tool calls.
-
-### Acceptance conditions
-
-A tool-call injection is accepted in Idle only if all are true:
-
-1. Message contains exactly one tool call
-2. Tool name is one of:
-   - `builtin_workspace__executePendingShell`
-   - `builtin_workspace__cancelPendingExecution`
-3. Arguments include `executionId` (or temporary fallback key)
-4. Referenced pending execution exists in `WorkspaceServer.pending_executions`
-5. Pending execution belongs to same `session_id`
-6. Pending execution has not expired
-
-If any check fails, keep existing rejection behavior.
-
-### State transition
-
-When accepted in Idle:
-
-`Idle -> Busy -> execute tool -> continue normal workflow policy`
-
-On completion:
-
-- If tool output is terminal and no further model turn needed: `Busy -> Idle`
-- If recursion should continue: proceed with standard workflow continuation
+- `agent/state.rs`
+- `agent/workflow.rs` (removed obsolete enqueue)
 
 ---
 
-## B. Where to implement (minimal-scope)
+## Current Runtime Semantics
 
-### Primary gate (preferred)
+### Cancel behavior
 
-In command entrypoint or session-manager boundary before `llm::handle_llm_response` strict Busy guard:
+1. User presses cancel.
+2. Backend sets `cancel_pending = true`.
+3. If no in-flight tool batch: stop immediately.
+4. If in-flight tool batch exists: finish current message's tool-call batch.
+5. At message boundary, consume cancel and stop.
 
-- detect “interactive continuation candidate”
-- run validation
-- if valid, transition status to Busy and proceed
+### Tool result integrity
 
-### Keep strict guard unchanged for normal paths
+For current pending message execution:
 
-Avoid weakening global safety checks in `llm::handle_llm_response` for general traffic.
-
----
-
-## C. Why this is safer than removing Busy check
-
-### Do NOT do this
-
-- Removing `status != Busy` checks globally
-- Accepting all Idle assistant messages
-
-### Risks avoided by narrow gate
-
-- stale replay acceptance
-- race-induced duplicate tool execution
-- cross-session execution leakage
-- unintended assistant-injected calls during idle UI periods
+- Accept only expected tool_call IDs.
+- Ignore duplicate tool_call IDs.
+- Complete message batch when all expected IDs are completed.
 
 ---
 
-## D. Alternative designs considered
+## Tests Added
 
-## Option 1: New dedicated command for UI tool continuation
+### `agent/tools.rs`
 
-Example: `agent_handle_ui_tool_call(session_id, tool_name, args)`
+- `test_classify_tool_result_accepts_expected_unseen_id`
+- `test_classify_tool_result_rejects_stale_id`
+- `test_classify_tool_result_rejects_duplicate_id`
 
-Pros:
+### `agent/workflow.rs`
 
-- explicit protocol split
-- no ambiguity with LLM response path
-
-Cons:
-
-- larger frontend/backend API change
-- migration overhead
-
-## Option 2: Reuse `agent_inject_messages(trigger_workflow=true)`
-
-Pros:
-
-- uses existing path
-
-Cons:
-
-- still must bypass Busy-only gate safely
-- less explicit semantics
-
-## Option 3: Always keep session Busy during UI wait
-
-Pros:
-
-- no Idle continuation issue
-
-Cons:
-
-- poor UX semantics (looks running while waiting user)
-- higher chance of confusing cancellation/queue logic
-
-**Recommended now:** Option A (narrow acceptance rule)
+- `test_classify_cancel_strategy_defers_when_pending_execution_exists`
+- `test_classify_cancel_strategy_stops_immediately_without_pending_execution`
+- `test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set`
 
 ---
 
-## E. Contract proposal
+## What Is Not Yet Implemented
 
-### Backend contract
+The following stronger ownership checks are still future work:
 
-If a UI interactive continuation is valid:
-
-- backend must accept while Idle
-- backend must perform atomic state transition to Busy before processing
-
-If invalid:
-
-- return explicit error category (`not_found`, `expired`, `session_mismatch`, `invalid_payload`)
-- keep session Idle
-
-### Frontend contract
-
-UI renderer continues sending tool payload through existing path.
-No UX-level retry loops unless backend returns retryable category.
+- `run_id` based validation
+- `parent_message_id` correlation validation
+- explicit typed error categories for invalid continuation payloads
+- end-to-end integration test covering deferred cancel through full event flow
 
 ---
 
-## F. Test plan for this change
+## Practical Outcome
 
-### Unit
-
-1. Idle + valid `executePendingShell` => accepted and transitions Busy
-2. Idle + invalid tool name => rejected
-3. Idle + missing executionId => rejected
-4. Idle + expired pending execution => rejected
-5. Idle + wrong session ownership => rejected
-6. Busy + normal behavior unchanged
-
-### Integration
-
-1. interactive step1 returns UIResource, status becomes Idle
-2. UI submit triggers step2
-3. step2 executes successfully
-4. no `Workflow was cancelled` error emitted
-
-### Regression
-
-1. stale assistant response after explicit cancel still rejected
-2. non-interactive idle tool injection still rejected
-
----
-
-## G. Open questions for discussion
-
-1. Should accepted Idle continuation always emit a dedicated event (e.g., `WorkflowResumedForUIAction`) for clearer telemetry?
-2. Should we support only `executePendingShell` first, then add cancel path, or both together?
-3. Should validation of `executionId` happen in agent layer or delegated to workspace tool layer with typed error mapping?
-4. Do we keep temporary snake_case arg fallback in this gate, or require camelCase strictly now?
-
----
-
-## H. Suggested implementation order
-
-1. Add narrow Idle-continuation validator and state transition gate
-2. Wire explicit error categories for failed validation
-3. Add unit + integration tests
-4. Add telemetry log for accepted Idle continuation path
-5. Verify no regressions in cancel semantics
-
----
-
-## Decision checkpoint
-
-If agreed, implementation will follow this rule:
-
-- **Default:** Idle messages are rejected (legacy safety preserved)
-- **Exception:** Idle interactive continuation is accepted only after strict validation and atomic Busy transition
-
-This keeps safety guarantees while fixing the real interactive UX bug.
+- Removed brittle tool-name allowlist pattern from the refactoring direction.
+- Cancel is now aligned with message-level integrity.
+- Tool result processing is message-scoped, idempotent, and safer against stale/duplicate replies.
