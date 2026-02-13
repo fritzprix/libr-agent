@@ -112,4 +112,5 @@ export {
   exportAndDownloadZip,
   getServiceContext,
   greet,
+  restartApp,
 } from './utils';

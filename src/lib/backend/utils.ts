@@ -124,3 +124,10 @@ export async function getServiceContext(
 export async function greet(name: string): Promise<string> {
   return safeInvoke<string>('greet', { name });
 }
+
+/**
+ * Restarts the application process.
+ */
+export async function restartApp(): Promise<void> {
+  return safeInvoke<void>('restart_app');
+}

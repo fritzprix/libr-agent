@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
+import { restartApp } from '@/lib/backend';
 import {
   factoryReset as backendFactoryReset,
   clearAllSessions as backendClearAllSessions,
@@ -65,6 +66,23 @@ export default function SettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
+  const triggerAppRestart = useCallback(() => {
+    if (import.meta.env.DEV) {
+      window.location.reload();
+      return;
+    }
+
+    restartApp().catch((error: unknown) => {
+      logger.error('Failed to restart app', error);
+      toast.error(
+        t(
+          'settings.system.networkRestartFailed',
+          'Failed to restart the app. Please restart manually.',
+        ),
+      );
+    });
+  }, [t]);
+
   const handleFactoryReset = async () => {
     setIsResetting(true);
     try {
@@ -86,14 +104,15 @@ export default function SettingsPage() {
       toast.success(
         t(
           'settings.factoryReset.success',
-          'Factory reset complete. The application will reload.',
+          'Factory reset complete. Restart required to fully apply changes.',
         ),
+        {
+          action: {
+            label: t('common.restartNow', 'Restart now'),
+            onClick: triggerAppRestart,
+          },
+        },
       );
-
-      // Reload to ensure fresh state
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
     } catch (e) {
       logger.error('Failed to perform factory reset', e);
       toast.error(
@@ -112,11 +131,17 @@ export default function SettingsPage() {
       await dbUtils.clearAllSessions();
       await backendClearAllSessions();
       toast.success(
-        t('settings.dataReset.success', 'All sessions have been deleted.'),
+        t(
+          'settings.dataReset.success',
+          'All sessions have been deleted. Restart recommended.',
+        ),
+        {
+          action: {
+            label: t('common.restartNow', 'Restart now'),
+            onClick: triggerAppRestart,
+          },
+        },
       );
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
     } catch (e) {
       logger.error('Failed to clear sessions', e);
       toast.error(t('settings.dataReset.error', 'Failed to clear sessions.'));
@@ -346,6 +371,8 @@ export default function SettingsPage() {
       return;
     }
     try {
+      let networkSettingsChanged = false;
+
       const updates: Partial<{
         serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
         windowSize: number;
@@ -393,12 +420,31 @@ export default function SettingsPage() {
       }
       if (otherPending.system) {
         updates.system = otherPending.system;
+        networkSettingsChanged =
+          otherPending.system.httpServerPort !== system.httpServerPort ||
+          otherPending.system.httpServerExpose !== system.httpServerExpose;
       }
       if (otherPending.preferredModel) {
         updates.preferredModel = otherPending.preferredModel;
       }
 
       await update(updates);
+
+      if (networkSettingsChanged) {
+        toast.info(
+          t(
+            'settings.system.networkRestartNotice',
+            'Changes to HTTP server network settings are applied after restarting the app.',
+          ),
+          {
+            action: {
+              label: t('common.restartNow', 'Restart now'),
+              onClick: triggerAppRestart,
+            },
+          },
+        );
+      }
+
       pendingRef.current = {};
       otherPendingRef.current = {};
       setPendingCount(0);
@@ -406,7 +452,13 @@ export default function SettingsPage() {
       logger.error('Failed to apply pending settings', e);
       throw e;
     }
-  }, [update]);
+  }, [
+    system.httpServerExpose,
+    system.httpServerPort,
+    t,
+    triggerAppRestart,
+    update,
+  ]);
 
   const providerEntries = useMemo(() => {
     return Object.values(AIServiceProvider).filter(

@@ -77,7 +77,7 @@ use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
     cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_override, greet,
     list_workspace_files, open_workspace_file_with_default_app, open_workspace_in_explorer,
-    open_workspace_in_terminal, set_workspace_override,
+    open_workspace_in_terminal, restart_app, set_workspace_override,
 };
 
 // Re-export state management functions
@@ -136,6 +136,7 @@ pub fn run() {
             .plugin(tauri_plugin_opener::init())
             .invoke_handler(tauri::generate_handler![
                 greet,
+                restart_app,
                 list_workspace_files,
                 start_mcp_server,
                 stop_mcp_server,
