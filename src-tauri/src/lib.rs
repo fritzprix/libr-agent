@@ -261,9 +261,7 @@ pub fn run() {
                 import_assistant_skills,
                 reset_assistant_skills,
             ])
-            .setup(|app| {
-                lifecycle::app_setup::setup_app(app)
-            })
+            .setup(|app| lifecycle::app_setup::setup_app(app))
             .run(tauri::generate_context!())
     });
 
