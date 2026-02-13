@@ -1,5 +1,4 @@
 from playwright.sync_api import sync_playwright, Page, expect
-import time
 
 def test_tooltip(page: Page):
     # Mock Tauri IPC
@@ -79,11 +78,10 @@ def test_tooltip(page: Page):
     # Wait for tooltip content to appear
     # Tooltip content usually has role="tooltip" or we can find by text
     # The text "Send message" should appear in the tooltip
-    tooltip = page.get_by_text("Send message", exact=True)
+    tooltip = page.get_by_role("tooltip", name="Send message")
     expect(tooltip).to_be_visible()
 
     # Take a screenshot
-    time.sleep(1) # Wait a bit for animation
     page.screenshot(path="verification.png")
     print("Screenshot saved to verification.png")
 

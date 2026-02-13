@@ -352,6 +352,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                type="button"
                 onClick={handleCancel}
                 variant="destructive"
                 size="icon"
