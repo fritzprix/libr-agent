@@ -57,3 +57,8 @@
 
 **Learning:** `AgentMessageRenderer` maps `MCPToolCallContent` to new `ToolCall` objects on every render, creating new references even when data is identical. This breaks `React.memo` on `AgentToolCallGroup` which relied on reference equality check for array items, causing unnecessary re-renders during high-frequency streaming updates.
 **Action:** Update the custom `arePropsEqual` comparator in the child component (`AgentToolCallGroup`) to perform a deep equality check on the properties of the objects (`id`, `type`, `function`) instead of relying on reference equality for array items.
+
+## 2026-02-12 - Missing Database Indexes on Frequently Queried Foreign Keys
+
+**Learning:** Queries filtering by `session_id` in `messages`, `contents`, and `stores` tables were performing full table scans because SQLite (and many other DBs) does not automatically index foreign keys. This caused performance degradation in chat history loading and content management as the dataset grew.
+**Action:** Always verify database indexes for columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses, especially foreign keys. Add specific migrations to create these indexes if the ORM or database doesn't do it automatically.
