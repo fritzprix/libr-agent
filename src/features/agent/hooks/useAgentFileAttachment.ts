@@ -83,6 +83,16 @@ export function useAgentFileAttachment() {
         paths: filePaths,
       });
 
+      try {
+        await rustBackend.registerDroppedFiles(filePaths);
+      } catch (error) {
+        logger.error('Failed to register dropped file paths in backend', {
+          error,
+        });
+        alert('Failed to validate dropped files. Please try again.');
+        return;
+      }
+
       const filesToUpload: Array<{
         url: string;
         mimeType: string;
