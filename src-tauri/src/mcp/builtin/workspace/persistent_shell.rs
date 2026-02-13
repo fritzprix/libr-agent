@@ -823,9 +823,6 @@ mod tests {
             .execute(&format!("Write-Output '{}'", unicode_str))
             .await?;
 
-        println!("DEBUG: stdout bytes: {:?}", stdout.as_bytes());
-        println!("DEBUG: stdout string: {}", stdout);
-
         assert_eq!(exit_code, 0);
         assert!(
             stdout.contains(unicode_str),
