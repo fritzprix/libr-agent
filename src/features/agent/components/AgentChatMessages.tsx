@@ -116,7 +116,7 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
-                pendingMessageIds={pendingMessageIds}
+                isPending={pendingMessageIds.has(groupedMessage.message.id)}
               />
             );
           }
@@ -128,7 +128,7 @@ export function AgentChatMessages() {
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
                 groupedMessages={groupedMessage.messages}
-                pendingMessageIds={pendingMessageIds}
+                isPending={pendingMessageIds.has(groupedMessage.message.id)}
                 toolErrorGroup={true}
               />
             );
@@ -169,7 +169,7 @@ export function AgentChatMessages() {
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
-              pendingMessageIds={pendingMessageIds}
+              isPending={pendingMessageIds.has(msg.id)}
             />
           );
         })}

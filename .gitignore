@@ -51,6 +51,7 @@ target
 /.parcel-cache
 coverage/
 playwright-report/
+scripts/artifacts/
 
 # pnpm & node caches
 .pnpm-store/
