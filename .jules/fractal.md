@@ -29,3 +29,8 @@
 
 **Split:** `src-tauri/src/lifecycle/` (`database.rs`, `repositories.rs`, `app_setup.rs`, `settings.rs`, `mod.rs`)
 **Improvement:** Decoupled application startup logic (database initialization, repository setup, app configuration) from the main library entry point. Reduced `lib.rs` from ~800 lines to ~250 lines, improving readability and separation of concerns.
+## 2026-02-12 - src-tauri/src/mcp/builtin/workspace/code_execution/interactive.rs
+
+**Split:** `security.rs`, `ui.rs`, `handlers.rs`
+**Result:** Reduced from 959 lines to 4 lines (module definition).
+**Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.

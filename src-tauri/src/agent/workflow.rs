@@ -4,6 +4,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{MessageRepository, SessionStatus};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -83,6 +84,14 @@ pub async fn start_workflow(
         // Do NOT call request_llm_completion. The existing busy workflow will pick it up.
         // Do NOT emit MessageAdded (it will be emitted when drained).
         return Ok(());
+    }
+
+    // Explicit new workflow start clears cancel-pending guard
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(false, Ordering::SeqCst);
+        }
     }
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
@@ -261,6 +270,13 @@ pub async fn resume_workflow(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(false, Ordering::SeqCst);
+        }
+    }
+
     // Ensure cache is initialized before resuming (lazy load if needed, preserve if exists)
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
@@ -309,7 +325,10 @@ pub async fn terminate_session(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(true, Ordering::SeqCst);
             session.cancellation_token.cancel();
+            let mut pending_events = session.pending_events.write().await;
+            pending_events.add(crate::agent::state::PendingEvent::CancelRequested);
         } else {
             return Err(format!("Session not found: {}", session_id));
         }
@@ -363,7 +382,10 @@ pub async fn cancel_workflow(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(true, Ordering::SeqCst);
             session.cancellation_token.cancel();
+            let mut pending_events = session.pending_events.write().await;
+            pending_events.add(crate::agent::state::PendingEvent::CancelRequested);
         } else {
             return Err(format!("Session not found: {}", session_id));
         }

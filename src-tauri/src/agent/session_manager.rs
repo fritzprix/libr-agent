@@ -7,6 +7,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionMetadata, SessionRepository};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -341,6 +342,13 @@ impl AgentSessionManager {
                 "Triggering workflow after message injection for session: {}",
                 session_id
             );
+
+            {
+                let sessions = self.active_sessions.read().await;
+                if let Some(session) = sessions.get(&session_id) {
+                    session.cancel_pending.store(false, Ordering::SeqCst);
+                }
+            }
 
             // [Fix Option 1] Inline status update to ensure UI reflects 'Busy' state
             // 1. Update status to Busy

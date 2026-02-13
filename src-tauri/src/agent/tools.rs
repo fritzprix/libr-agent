@@ -3,6 +3,7 @@ use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -274,7 +275,9 @@ pub async fn handle_tool_result(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
+            if session.cancellation_token.is_cancelled()
+                || session.cancel_pending.load(Ordering::SeqCst)
+            {
                 log::info!("Workflow cancelled for session: {}", session_id);
                 return Err("Workflow was cancelled".to_string());
             }
