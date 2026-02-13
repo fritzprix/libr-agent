@@ -19,12 +19,12 @@ The prior version described a design proposal. That proposal is now partially re
 Implementation points:
 
 - `agent/workflow.rs` (`cancel_workflow`):
-   - sets `cancel_pending = true`
-   - defers stop when a pending tool execution exists
-   - immediate stop only when no in-flight batch exists
+  - sets `cancel_pending = true`
+  - defers stop when a pending tool execution exists
+  - immediate stop only when no in-flight batch exists
 - `agent/workflow.rs` (`continue_workflow_after_tool`):
-   - checks `cancel_pending` after all expected tool results are collected
-   - consumes flag and transitions to idle at message boundary
+  - checks `cancel_pending` after all expected tool results are collected
+  - consumes flag and transitions to idle at message boundary
 
 ### 2) Message/tool-call integrity guard
 
