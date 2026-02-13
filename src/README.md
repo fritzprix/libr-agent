@@ -14,7 +14,7 @@ import Groq from 'groq-sdk';
 // Use import.meta.env for Vite environment variables
 const groq = new Groq({
   apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true // Required for client-side usage
+  dangerouslyAllowBrowser: true, // Required for client-side usage
 });
 
 const getModels = async () => {
@@ -33,7 +33,7 @@ import { Groq } from 'groq-sdk';
 
 const groq = new Groq({
   apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true
+  dangerouslyAllowBrowser: true,
 });
 
 const chatCompletion = await groq.chat.completions.create({
@@ -65,7 +65,7 @@ import { Parser } from 'expr-eval';
 
 const client = new Groq({
   apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true
+  dangerouslyAllowBrowser: true,
 });
 const MODEL = 'llama-3.3-70b-versatile';
 
@@ -169,7 +169,7 @@ import { OpenAI } from 'openai';
 
 const openai = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
+  dangerouslyAllowBrowser: true,
 });
 
 const tools = [
@@ -213,7 +213,7 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true
+  dangerouslyAllowBrowser: true,
 });
 
 const prompt = `
