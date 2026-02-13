@@ -1,6 +1,12 @@
 import React from 'react';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface FileAttachmentProps {
   files: { name: string; content: string }[];
@@ -71,7 +77,33 @@ export default function FileAttachment({
 
         {/* File Count Indicator */}
         {files.length > 0 && (
-          <span className="text-xs text-muted-foreground">{files.length}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground font-normal"
+                title="View attached files"
+                aria-label="View attached files"
+              >
+                {files.length}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {files.map((file, index) => (
+                <DropdownMenuItem
+                  key={index}
+                  onClick={() => onRemove(index)}
+                  className="cursor-pointer text-xs group"
+                >
+                  <Trash2 className="mr-2 h-3 w-3 text-muted-foreground group-hover:text-destructive transition-colors" />
+                  <span className="truncate flex-1" title={file.name}>
+                    {file.name}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
     );
