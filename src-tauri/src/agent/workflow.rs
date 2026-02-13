@@ -4,10 +4,29 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{MessageRepository, SessionStatus};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CancelStrategy {
+    DeferToMessageBoundary,
+    StopImmediately,
+}
+
+fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
+    if has_pending_execution {
+        CancelStrategy::DeferToMessageBoundary
+    } else {
+        CancelStrategy::StopImmediately
+    }
+}
+
+fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
+    cancel_pending
+}
 
 /// Start an agent workflow for a session
 pub async fn start_workflow(
@@ -83,6 +102,14 @@ pub async fn start_workflow(
         // Do NOT call request_llm_completion. The existing busy workflow will pick it up.
         // Do NOT emit MessageAdded (it will be emitted when drained).
         return Ok(());
+    }
+
+    // Explicit new workflow start clears cancel-pending guard
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(false, Ordering::SeqCst);
+        }
     }
 
     // --- STANDARD START WORKFLOW (Idle/Paused) ---
@@ -261,6 +288,13 @@ pub async fn resume_workflow(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(false, Ordering::SeqCst);
+        }
+    }
+
     // Ensure cache is initialized before resuming (lazy load if needed, preserve if exists)
     crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
 
@@ -309,6 +343,7 @@ pub async fn terminate_session(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
+            session.cancel_pending.store(true, Ordering::SeqCst);
             session.cancellation_token.cancel();
         } else {
             return Err(format!("Session not found: {}", session_id));
@@ -359,17 +394,27 @@ pub async fn cancel_workflow(
 ) -> Result<(), String> {
     log::info!("Cancelling workflow for session: {}", session_id);
 
-    // Trigger cancellation token to abort running loops
-    {
+    // Determine whether to stop immediately or defer to message boundary.
+    // If a tool-call batch is in progress, we only set cancel_pending and let
+    // continue_workflow_after_tool consume it after the full message completes.
+    let has_pending_execution = {
         let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            session.cancellation_token.cancel();
-        } else {
-            return Err(format!("Session not found: {}", session_id));
-        }
+        let session = active
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        session.cancel_pending.store(true, Ordering::SeqCst);
+        session.pending_execution.is_some()
+    };
+
+    if classify_cancel_strategy(has_pending_execution) == CancelStrategy::DeferToMessageBoundary {
+        log::info!(
+            "Cancel requested for session {} (deferred to message boundary)",
+            session_id
+        );
+        return Ok(());
     }
 
-    // Update status to idle (workflow stopped)
+    // No in-flight tool-call batch: stop immediately.
     crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
@@ -379,13 +424,11 @@ pub async fn cancel_workflow(
     )
     .await?;
 
-    // Remove from active sessions and create a new cancellation token for future use
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(&session_id) {
         session.is_running = false;
-        // Reset cancellation token for potential future workflows
+        session.cancel_pending.store(false, Ordering::SeqCst);
         session.cancellation_token = CancellationToken::new();
-        // Clear pending events to prevent resurrection
         let mut pending_events = session.pending_events.write().await;
         let count = pending_events.count();
         pending_events.clear();
@@ -396,7 +439,6 @@ pub async fn cancel_workflow(
         );
     }
 
-    // Emit workflow stopped event
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
     };
@@ -468,6 +510,48 @@ pub async fn continue_workflow_after_tool(
                     }
                 }
             });
+
+            // Message-boundary cancel handling:
+            // If cancel was requested while tools were running, consume it now
+            // after this message's full tool-call batch has completed.
+            let should_stop_after_message = {
+                let sessions = active_sessions.read().await;
+                sessions
+                    .get(&session_id)
+                    .map(|session| session.cancel_pending.load(Ordering::SeqCst))
+                    .unwrap_or(false)
+            };
+
+            if should_consume_cancel_at_message_boundary(should_stop_after_message) {
+                log::info!(
+                    "Consumed pending cancel at message boundary for session {}",
+                    session_id
+                );
+
+                {
+                    let mut sessions = active_sessions.write().await;
+                    if let Some(session) = sessions.get_mut(&session_id) {
+                        session.cancel_pending.store(false, Ordering::SeqCst);
+                        session.is_running = false;
+                        session.cancellation_token = CancellationToken::new();
+                    }
+                }
+
+                let _ = crate::agent::lifecycle::update_session_status(
+                    session_repo,
+                    active_sessions,
+                    app_handle,
+                    &session_id,
+                    SessionStatus::Idle,
+                )
+                .await;
+
+                let event = crate::agent::events::AgentEvent::WorkflowCompleted {
+                    session_id: session_id.clone(),
+                };
+                let _ = crate::agent::events::emit_agent_event(app_handle, event);
+                return Ok(());
+            }
 
             // Check for UI interaction (stop condition)
             let has_ui_interaction = accumulated_messages.iter().any(|msg| {
@@ -553,4 +637,29 @@ pub async fn continue_workflow_after_tool(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_cancel_strategy, should_consume_cancel_at_message_boundary, CancelStrategy,
+    };
+
+    #[test]
+    fn test_classify_cancel_strategy_defers_when_pending_execution_exists() {
+        let strategy = classify_cancel_strategy(true);
+        assert_eq!(strategy, CancelStrategy::DeferToMessageBoundary);
+    }
+
+    #[test]
+    fn test_classify_cancel_strategy_stops_immediately_without_pending_execution() {
+        let strategy = classify_cancel_strategy(false);
+        assert_eq!(strategy, CancelStrategy::StopImmediately);
+    }
+
+    #[test]
+    fn test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set() {
+        assert!(should_consume_cancel_at_message_boundary(true));
+        assert!(!should_consume_cancel_at_message_boundary(false));
+    }
 }

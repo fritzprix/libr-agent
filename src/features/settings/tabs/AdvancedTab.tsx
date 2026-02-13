@@ -11,7 +11,10 @@ interface AdvancedTabProps {
   onChange: (key: keyof AdvancedSettings, value: number) => void;
   systemSettingsProps: {
     localSystemSettings: SystemSettings;
-    onChange: (key: keyof SystemSettings, value: number | string) => void;
+    onChange: (
+      key: keyof SystemSettings,
+      value: number | string | boolean,
+    ) => void;
   };
   dangerZoneProps: {
     isDeleting: boolean;

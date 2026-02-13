@@ -31,6 +31,19 @@ pub fn greet(name: &str) -> String {
     format!("Hello, {name}! You've been greeted from Rust!")
 }
 
+/// Restarts the application process.
+#[tauri::command]
+pub fn restart_app(app: tauri::AppHandle) -> Result<(), String> {
+    if cfg!(debug_assertions) {
+        return Err(
+            "In development mode, process restart is not supported. Use reload or restart `tauri dev`."
+                .to_string(),
+        );
+    }
+
+    app.restart();
+}
+
 /// Lists files and directories in the current session's workspace.
 ///
 /// This command reads the contents of a specified path within the session's workspace,

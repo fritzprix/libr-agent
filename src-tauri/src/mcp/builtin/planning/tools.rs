@@ -183,8 +183,7 @@ fn add_scratchpad_tool() -> MCPTool {
         description: r#"Add a note to your Scratchpad (Working Memory). Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.
 
 NOTE: The scratchpad has a strict limit of 10 items. If you reach this limit, you must use updateScratchpad to modify existing items or clearScratchpad to remove old ones before adding more.
-
-Optional source parameter: Provide the source of information for citation tracking (e.g., URLs, file paths, or tool result IDs like "https://example.com/article" or "file://path/to/doc.txt")."#.to_string(),
+"#.to_string(),
         input_schema: object_prop(
             vec![
                 (

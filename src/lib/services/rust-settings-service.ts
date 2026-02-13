@@ -64,6 +64,11 @@ export class RustSettingsService implements ISettingsService {
       };
 
       // Construct settings object with defaults
+      const storedSystem = getTypedValue(
+        'systemSettings',
+        DEFAULT_SETTING.system,
+      );
+
       const settings: Settings = {
         ...DEFAULT_SETTING,
         serviceConfigs: {
@@ -83,7 +88,10 @@ export class RustSettingsService implements ISettingsService {
         agentHubUrl: getTypedValue('agentHubUrl', DEFAULT_SETTING.agentHubUrl),
         advanced: getTypedValue('advancedSettings', DEFAULT_SETTING.advanced),
         display: getTypedValue('displaySettings', DEFAULT_SETTING.display),
-        system: getTypedValue('systemSettings', DEFAULT_SETTING.system),
+        system: {
+          ...DEFAULT_SETTING.system,
+          ...storedSystem,
+        },
       };
 
       return settings;

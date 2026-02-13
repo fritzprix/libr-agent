@@ -40,6 +40,8 @@ export interface SystemSettings {
   maxFileUploadSizeMB: number;
   workspaceCapacityMB: number;
   webActionTimeoutSeconds: number;
+  httpServerPort: number;
+  httpServerExpose: boolean;
   mcpServerStartupTimeoutSeconds: number;
   mcpToolTimeoutSeconds: number;
   searchIndexFrequencyMinutes: number;
@@ -95,6 +97,8 @@ export const DEFAULT_SETTING: Settings = {
     maxFileUploadSizeMB: 50,
     workspaceCapacityMB: 10,
     webActionTimeoutSeconds: 30,
+    httpServerPort: 3030,
+    httpServerExpose: false,
     mcpServerStartupTimeoutSeconds: 60,
     mcpToolTimeoutSeconds: 60,
     searchIndexFrequencyMinutes: 5,

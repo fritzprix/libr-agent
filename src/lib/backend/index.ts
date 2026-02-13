@@ -74,7 +74,11 @@ export {
 } from './browser';
 
 // File operations
-export { readFile, readDroppedFile, writeFile } from './file-operations';
+export {
+  readDroppedFile,
+  registerDroppedFiles,
+  writeFile,
+} from './file-operations';
 
 // Message management
 export {
@@ -108,4 +112,5 @@ export {
   exportAndDownloadZip,
   getServiceContext,
   greet,
+  restartApp,
 } from './utils';

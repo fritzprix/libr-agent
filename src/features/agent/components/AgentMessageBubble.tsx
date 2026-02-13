@@ -11,7 +11,7 @@ interface AgentMessageBubbleProps {
   toolResultsMap?: Map<string, Message>;
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
-  pendingMessageIds?: ReadonlySet<string>;
+  isPending?: boolean;
   /**
    * When true, this bubble represents a group of failed tool results.
    * Render it like normal tool output, but with subtle warning/error semantics
@@ -26,11 +26,9 @@ function AgentMessageBubbleImpl({
   toolResultsMap,
   groupedToolCalls,
   groupedMessages,
-  pendingMessageIds,
+  isPending = false,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
-  const isPending = pendingMessageIds?.has(msg.id) ?? false;
-
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.

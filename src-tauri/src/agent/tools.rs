@@ -7,6 +7,28 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
+#[derive(Debug, PartialEq, Eq)]
+enum ToolResultAcceptance {
+    Accept,
+    Stale,
+    Duplicate,
+}
+
+fn classify_tool_result(
+    pending: &crate::agent::state::PendingToolExecution,
+    tool_call_id: &str,
+) -> ToolResultAcceptance {
+    if !pending.expected_tool_call_ids.contains(tool_call_id) {
+        return ToolResultAcceptance::Stale;
+    }
+
+    if pending.completed_tool_call_ids.contains(tool_call_id) {
+        return ToolResultAcceptance::Duplicate;
+    }
+
+    ToolResultAcceptance::Accept
+}
+
 /// Collect available tools for a session based on agent configuration
 pub async fn collect_available_tools(
     session_id: &str,
@@ -270,17 +292,6 @@ pub async fn handle_tool_result(
     tool_call_id: String,
     result: crate::commands::agent_commands::ToolExecutionResult,
 ) -> Result<Option<Vec<Message>>, String> {
-    // Check cancellation
-    {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!("Workflow cancelled for session: {}", session_id);
-                return Err("Workflow was cancelled".to_string());
-            }
-        }
-    }
-
     log::debug!(
         "Tool result received for session {}, tool_call_id: {}",
         session_id,
@@ -292,6 +303,28 @@ pub async fn handle_tool_result(
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
             if let Some(pending) = &mut session.pending_execution {
+                match classify_tool_result(pending, &tool_call_id) {
+                    ToolResultAcceptance::Stale => {
+                        log::warn!(
+                            "Ignoring stale tool result for session {}: tool_call_id {} does not belong to message {}",
+                            session_id,
+                            tool_call_id,
+                            pending.message_id
+                        );
+                        return Ok(None);
+                    }
+                    ToolResultAcceptance::Duplicate => {
+                        log::warn!(
+                            "Ignoring duplicate tool result for session {}: tool_call_id {} already handled for message {}",
+                            session_id,
+                            tool_call_id,
+                            pending.message_id
+                        );
+                        return Ok(None);
+                    }
+                    ToolResultAcceptance::Accept => {}
+                }
+
                 // Create Tool Message using helper methods
                 let message = if result.is_error {
                     create_error_tool_result(
@@ -313,6 +346,7 @@ pub async fn handle_tool_result(
                 };
 
                 pending.results.push(message);
+                pending.completed_tool_call_ids.insert(tool_call_id.clone());
 
                 // Emit ToolExecutionCompleted event for external tools (progress tracking)
                 if let Some(tool_name) = pending.tool_names.get(&tool_call_id) {
@@ -326,13 +360,13 @@ pub async fn handle_tool_result(
 
                 log::debug!(
                     "Accumulated result {}/{} for session {}",
-                    pending.results.len(),
+                    pending.completed_tool_call_ids.len(),
                     pending.total_expected,
                     session_id
                 );
 
                 // Check if all results are in
-                if pending.results.len() >= pending.total_expected {
+                if pending.completed_tool_call_ids.len() >= pending.total_expected {
                     // Move results out of pending state
                     let accumulated_messages: Vec<Message> = pending.results.drain(..).collect();
                     // Clear pending state
@@ -360,6 +394,42 @@ pub async fn handle_tool_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn mock_pending_execution(
+        expected: &[&str],
+        completed: &[&str],
+    ) -> crate::agent::state::PendingToolExecution {
+        crate::agent::state::PendingToolExecution {
+            message_id: "msg-1".to_string(),
+            total_expected: expected.len(),
+            results: Vec::new(),
+            tool_names: HashMap::new(),
+            expected_tool_call_ids: expected.iter().map(|id| (*id).to_string()).collect(),
+            completed_tool_call_ids: completed.iter().map(|id| (*id).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn test_classify_tool_result_accepts_expected_unseen_id() {
+        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
+        let result = classify_tool_result(&pending, "call-2");
+        assert_eq!(result, ToolResultAcceptance::Accept);
+    }
+
+    #[test]
+    fn test_classify_tool_result_rejects_stale_id() {
+        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
+        let result = classify_tool_result(&pending, "call-999");
+        assert_eq!(result, ToolResultAcceptance::Stale);
+    }
+
+    #[test]
+    fn test_classify_tool_result_rejects_duplicate_id() {
+        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
+        let result = classify_tool_result(&pending, "call-1");
+        assert_eq!(result, ToolResultAcceptance::Duplicate);
+    }
 
     #[test]
     fn test_tool_result_with_structured_content() {

@@ -183,6 +183,12 @@ impl BuiltinMCPServer for YourServer {
 
 ### Step 4: Define Tool Schemas (Following Manifesto Rules)
 
+**Critical rule for tool docs:**
+
+- `input_schema` property descriptions are the single source of truth for parameter semantics.
+- Tool `description` should focus on purpose, prerequisites, workflow, and next actions.
+- Do **not** add `PARAMETERS:` blocks in tool `description` when the same details already exist in schema.
+
 **File:** `src-tauri/src/mcp/builtin/your_server/tools.rs`
 
 ```rust
@@ -222,10 +228,6 @@ pub fn create_your_resource_tool() -> MCPTool {
 1. System generates unique ID automatically
 2. Returns ID in response for future operations
 3. Use listResources() to verify creation
-
-PARAMETERS:
-- name: Unique name for the resource
-- description: Optional detailed description
 
 RESPONSE:
 - Created resource with system-generated ID
@@ -280,10 +282,6 @@ pub fn create_update_resource_tool() -> MCPTool {
 ⚠️ PREREQUISITE: Obtain valid ID from:
 - createResource() response
 - listResources() output
-
-PARAMETERS:
-- id: Resource ID (MANDATORY)
-- name: Updated name
 
 ERROR HANDLING:
 - If ID not found, returns error with suggestion to use listResources()
@@ -668,6 +666,8 @@ Use this checklist before submitting any builtin tool implementation:
 
 - [ ] Tool descriptions use data-oriented language (extract, use, target)
 - [ ] No human UI actions (click, type, enter, copy)
+- [ ] Parameter semantics are documented only in `input_schema` field descriptions
+- [ ] Tool descriptions do not duplicate schema parameter docs (no `PARAMETERS:` blocks)
 - [ ] Prerequisites explicitly documented
 - [ ] Workflow steps numbered and clear
 - [ ] Examples show expected patterns
@@ -754,6 +754,21 @@ Ok(operation_failed_error(
     vec!["Use listResources() to see available IDs".to_string()],
     ToolGroup::YourServer
 ))
+```
+
+### ❌ Pitfall 5: Duplicated Parameter Docs (Schema Drift Risk)
+
+```rust
+// ❌ WRONG: Parameters documented in both schema and description
+description: "Update resource.\n\nPARAMETERS:\n- id: Resource ID\n- name: New name"
+```
+
+```rust
+// ✅ CORRECT: Keep parameter details in schema only
+props.insert("id".to_string(), string_prop(Some(1), Some(50), Some("Resource ID")));
+props.insert("name".to_string(), string_prop(Some(1), Some(100), Some("New resource name")));
+
+description: "Update an existing resource.\n\nPREREQUISITE: get valid ID from listResources()."
 ```
 
 ---

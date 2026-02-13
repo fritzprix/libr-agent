@@ -54,3 +54,13 @@
 
 **Drift:** Links to missing files `docs/builtin-tools.md`, `docs/architecture/chat-feature-architecture.md`, `docs/architecture/overview.md`.
 **Reality:** Updated links to point to `src-tauri/src/mcp/builtin/README.md`, `agents.md`, or removed if missing.
+
+## 2026-03-01 - src-tauri/src/mcp/builtin/README.md
+
+**Drift:** `BuiltinMCPServer` trait documentation was missing `display_name` and `metadata` methods.
+**Reality:** Added methods to trait definition to match `mod.rs`.
+
+## 2026-03-01 - src/README.md
+
+**Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
+**Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".

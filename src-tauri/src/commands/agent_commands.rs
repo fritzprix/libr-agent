@@ -352,7 +352,7 @@ pub async fn agent_cancel_workflow(
 
     Ok(AgentResponse {
         success: true,
-        message: format!("Workflow cancelled for session: {}", session_id),
+        message: format!("Workflow cancel requested for session: {}", session_id),
         data: None,
     })
 }

@@ -43,11 +43,6 @@ pub fn create_read_file_tool() -> MCPTool {
 3. Use extracted text as oldString parameter in editFile
 4. Verify file exists with listDirectory if needed
 
-PARAMETERS:
-- path: Relative path from workspace root
-- startLine (optional): Read from this line number (1-based)
-- endLine (optional): Read up to this line number (1-based)
-
 USAGE:
 - Use readFile(path) to read entire file
 - Use readFile(path, startLine, endLine) to read specific line ranges
@@ -393,13 +388,6 @@ SEARCH MODES:
 - regex (default): Use regular expressions for pattern matching
 - exact: Literal string matching (case-sensitive unless ignoreCase=true)
 
-PARAMETERS:
-- path: File to search (relative to workspace root)
-- pattern: Search pattern (regex or exact string)
-- mode: 'regex' or 'exact' (default: 'regex')
-- ignoreCase: Case-insensitive search (default: false)
-- lineNumbers: Include line numbers (default: true)
-
 RETURNS:
 - Line numbers of matches
 - Matched content with ±2 lines of context
@@ -491,13 +479,6 @@ WORKFLOW:
 1. Use searchLineInFile to find line numbers
 2. Use editLineInFile to edit multiple lines at once
 3. All changes applied together or none at all
-
-PARAMETERS:
-- path: File to edit (relative to workspace root)
-- edits: Array of {line, old_value?, new_value}
-  - line: 1-based line number (required)
-  - old_value: Optional validation - must match current content exactly
-  - new_value: New line content (required, single-line only)
 
 VALIDATION:
 ✅ All line numbers must exist in file
@@ -639,10 +620,6 @@ pub fn create_edit_file_multi_tool() -> MCPTool {
 3. Each oldString must match exactly once in the file
 4. Replacements are applied sequentially in array order
 
-PARAMETERS:
-- path: Relative path to file
-- replacements: Array of {oldString, newString} objects (max 50)
-
 BEHAVIOR:
 ✅ All patterns valid → All replacements applied atomically
 ❌ Any pattern invalid → NO changes applied, detailed error returned
@@ -727,12 +704,6 @@ pub fn create_search_files_tool() -> MCPTool {
         
 ⚠️ PRIMARY USE CASE: Finding files when you don't know the exact path
 This tool searches for FILE NAMES, not content.
-
-PARAMETERS:
-- path: Root directory to start search (default: '.')
-- pattern: Glob pattern (e.g., '*.rs', '**/*.test.ts')
-- max_depth: Maximum directory depth to search (optional)
-- file_type: 'file', 'dir', or 'both' (default: 'both')
 
 RETURNS:
 - List of matching file paths
