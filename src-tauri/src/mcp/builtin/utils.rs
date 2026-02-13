@@ -32,7 +32,23 @@ impl SecurityValidator {
             tracing::error!("Failed to create base directory {:?}: {}", base_dir, e);
         }
 
-        Self { base_dir }
+        // Canonicalize base_dir to resolve any symlinks (e.g. /tmp -> /private/tmp on macOS)
+        // This is crucial because validate_path compares canonicalized user paths against this.
+        let final_base_dir = match base_dir.canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to canonicalize base_dir {:?}: {}. Using as-is.",
+                    base_dir,
+                    e
+                );
+                base_dir
+            }
+        };
+
+        Self {
+            base_dir: final_base_dir,
+        }
     }
 
     /// Validate and clean a file path to prevent directory traversal
@@ -113,8 +129,8 @@ impl SecurityValidator {
         };
 
         // 최종 검증: base_dir 하위인지 확인
-        if !canonical_path.starts_with(&self.base_dir) && !absolute_path.starts_with(&self.base_dir)
-        {
+        // [Sentinel] Fixed symlink traversal vulnerability by removing fallback to absolute_path
+        if !canonical_path.starts_with(&self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Path '{}' resolves outside allowed directory. Base: {:?}, Resolved: {:?}",
                 user_path, self.base_dir, canonical_path
@@ -320,5 +336,37 @@ mod tests {
         let path = "C:\\Users\\";
         let filename = SecurityValidator::extract_filename(path);
         assert_eq!(filename, Some("".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_symlink_traversal_prevention() {
+        use std::os::unix::fs::symlink;
+        use std::fs::File;
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let base_dir = temp_dir.path().join("base");
+        std::fs::create_dir(&base_dir).unwrap();
+
+        let validator = SecurityValidator::new_with_base_dir(base_dir.clone());
+
+        // Create a file outside the base directory
+        let outside_file = temp_dir.path().join("secret.txt");
+        let mut file = File::create(&outside_file).unwrap();
+        writeln!(file, "secret data").unwrap();
+
+        // Create a symlink inside base directory pointing to outside file
+        let symlink_path = base_dir.join("innocent_link");
+        symlink(&outside_file, &symlink_path).unwrap();
+
+        // Validate the symlink path - MUST FAIL
+        let result = validator.validate_path("innocent_link");
+
+        assert!(result.is_err(), "Symlink pointing outside base directory should be rejected");
+        match result {
+            Err(SecurityError::PathTraversal(_)) => {}, // Expected
+            _ => panic!("Expected PathTraversal error, got {:?}", result),
+        }
     }
 }
