@@ -25,9 +25,13 @@ fi
 
 echo ">>> Publishing release notes for $TAG..."
 
-# Extract changelog content
-# Look for [Unreleased] or [VERSION] section
-CHANGELOG_CONTENT=$(sed -n "/^## \[\(Unreleased\|$VERSION\)\]/,/^## \[/p" CHANGELOG.md | head -n -1 | tail -n +3)
+# Extract changelog content for exact [VERSION] section only
+CHANGELOG_CONTENT=$(awk -v ver="$VERSION" '
+    BEGIN { in_section=0 }
+    $0 ~ "^## \\[" ver "\\]" { in_section=1; next }
+    in_section && $0 ~ "^## \\[" { exit }
+    in_section { print }
+' CHANGELOG.md)
 
 if [ -z "$CHANGELOG_CONTENT" ]; then
     echo "Error: No changelog content found for version $VERSION"

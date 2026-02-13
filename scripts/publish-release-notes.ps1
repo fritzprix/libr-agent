@@ -41,10 +41,10 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 $changelogPath = Join-Path $PSScriptRoot ".." "CHANGELOG.md"
 $changelogContent = Get-Content $changelogPath -Raw
 
-# Extract content for this version or Unreleased
-$pattern = "(?s)## \[(Unreleased|$Version)\](.*?)(?=\n## \[|\z)"
+# Extract content for this exact version only
+$pattern = "(?s)## \[$Version\](.*?)(?=\n## \[|\z)"
 if ($changelogContent -match $pattern) {
-    $releaseNotes = $Matches[2].Trim()
+    $releaseNotes = $Matches[1].Trim()
     
     if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
         Write-Host "Error: No changelog content found for version $Version" -ForegroundColor Red
@@ -53,7 +53,7 @@ if ($changelogContent -match $pattern) {
     }
 } else {
     Write-Host "Error: No changelog section found for version $Version" -ForegroundColor Red
-    Write-Host "Please update CHANGELOG.md with a section for [$Version] or [Unreleased]" -ForegroundColor Yellow
+    Write-Host "Please update CHANGELOG.md with a section for [$Version]" -ForegroundColor Yellow
     exit 1
 }
 

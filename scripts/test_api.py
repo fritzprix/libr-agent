@@ -1,22 +1,39 @@
 import requests
 import time
-import json
 import sys
 
 # Configuration
-BASE_URL = "http://localhost:3030/api/sessions"
-ASSISTANTS_URL = "http://localhost:3030/api/assistants"
+API_ROOT = "http://localhost:3030/api"
+BASE_URL = f"{API_ROOT}/sessions"
+ASSISTANTS_URL = f"{API_ROOT}/assistants"
+HEALTH_URL = f"{API_ROOT}/health"
+REQUEST_TIMEOUT = 10
 
 def log(msg, type="INFO"):
     print(f"[{type}] {msg}")
 
 def test_session_flow():
     log("Starting API E2E Test...")
+    session_id = None
+
+    # -1. Health check
+    log("Checking API health...")
+    try:
+        health_resp = requests.get(HEALTH_URL, timeout=REQUEST_TIMEOUT)
+        health_resp.raise_for_status()
+        health = health_resp.json()
+        if health.get("status") != "ok":
+            log(f"Unexpected health response: {health}", "ERROR")
+            return False
+        log("API health check passed.", "SUCCESS")
+    except Exception as e:
+        log(f"Health check failed: {e}", "ERROR")
+        return False
 
     # 0. Fetch Assistants
     log("Fetching available assistants...")
     try:
-        resp = requests.get(ASSISTANTS_URL)
+        resp = requests.get(ASSISTANTS_URL, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         assistants = resp.json().get('assistants', [])
         if not assistants:
@@ -25,9 +42,6 @@ def test_session_flow():
         
         # Pick the first one
         assistant = assistants[0]
-        assistant_config = json.loads(assistant['config'])
-        assistant_config['id'] = assistant['id'] # Inject ID required by backend
-        assistant_config['name'] = assistant['name'] # Inject Name required by AgentConfig struct
         log(f"Using assistant: {assistant['name']} ({assistant['id']})", "INFO")
         
     except Exception as e:
@@ -42,7 +56,7 @@ def test_session_flow():
         "request": "Hello, this is a test message sent during creation."
     }
     try:
-        response = requests.post(BASE_URL, json=payload)
+        response = requests.post(BASE_URL, json=payload, timeout=REQUEST_TIMEOUT)
         if response.status_code not in [200, 201]:
              print(f"[ERROR] Failed to create session: Status {response.status_code}")
              print(f"[ERROR] Response body: {response.text}")
@@ -59,46 +73,50 @@ def test_session_flow():
         log(f"Failed to create session: {e}", "ERROR")
         return False
 
-    # 4. Poll for Response (No need to send message separately)
-    log("Polling for response...")
-    max_retries = 10
-    has_response = False
-    
-    for i in range(max_retries):
-        time.sleep(1)
-        # Check Status
-        status_resp = requests.get(f"{BASE_URL}/{session_id}")
-        current_status = status_resp.json().get('status')
-        log(f"Poll {i+1}/{max_retries}: Status = {current_status}")
+    try:
+        # 4. Poll for Response (No need to send message separately)
+        log("Polling for response...")
+        max_retries = 10
+        has_response = False
 
-        # Check Messages
-        msg_resp = requests.get(f"{BASE_URL}/{session_id}/messages")
-        messages = msg_resp.json().get('messages', [])
-        
-        # Look for assistant message
-        assistant_msgs = [m for m in messages if m['role'] == 'assistant']
-        if assistant_msgs:
-            log(f"Received assistant response: {len(assistant_msgs)} messages", "SUCCESS")
-            has_response = True
-            break
-        
-        # If we started and are now Idle, and have no response yet, wait a bit
-        if current_status == 'Idle' and not has_response and i > 5:
-             pass
+        for i in range(max_retries):
+            time.sleep(1)
 
-    if not has_response:
-        log("Timed out waiting for assistant response.", "WARN")
+            # Check Status
+            status_resp = requests.get(f"{BASE_URL}/{session_id}", timeout=REQUEST_TIMEOUT)
+            status_resp.raise_for_status()
+            current_status = status_resp.json().get('status')
+            log(f"Poll {i+1}/{max_retries}: Status = {current_status}")
 
-    # 5. Send Message while potentially Busy (Test Queuing)
-    # Note: Hard to guarantee "Busy" state in this simple script without a long-running task, 
-    # but we can try immediately after sending another one.
-    
-    # 6. Terminate Session
-    log("Terminating session...")
-    requests.post(f"{BASE_URL}/{session_id}/terminate")
-    log("Session terminated.", "SUCCESS")
-    
-    return True
+            # Check Messages
+            msg_resp = requests.get(
+                f"{BASE_URL}/{session_id}/messages", timeout=REQUEST_TIMEOUT
+            )
+            msg_resp.raise_for_status()
+            messages = msg_resp.json().get('messages', [])
+
+            # Look for assistant message
+            assistant_msgs = [m for m in messages if m.get('role') == 'assistant']
+            if assistant_msgs:
+                log(f"Received assistant response: {len(assistant_msgs)} messages", "SUCCESS")
+                has_response = True
+                break
+
+        if not has_response:
+            log("Timed out waiting for assistant response.", "WARN")
+
+        return True
+    finally:
+        if session_id:
+            log("Terminating session...")
+            try:
+                term_resp = requests.post(
+                    f"{BASE_URL}/{session_id}/terminate", timeout=REQUEST_TIMEOUT
+                )
+                term_resp.raise_for_status()
+                log("Session terminated.", "SUCCESS")
+            except Exception as e:
+                log(f"Failed to terminate session cleanly: {e}", "WARN")
 
 if __name__ == "__main__":
     try:

@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.25] - 2026-02-13
+
+### 🐛 Fixes
+
+- **Windows MCP Session Startup UX**:
+  - Fixed console window flicker during agent session startup when spawning stdio MCP servers.
+  - Applied `CREATE_NO_WINDOW` to Windows MCP child-process spawning path to prevent terminal pop-up/open-close flashes.
+
+## [0.4.24] - 2026-02-13
+
+### 🚀 Features
+
+- **Agent Workflow Integrity & Cancellation Refactor**: Improved Agent V2 execution flow for interactive tool calls and cancellation handling.
+  - **Message-Boundary Cancellation**: Cancel requests are now consumed at message boundaries during in-flight tool batches, improving consistency.
+  - **Tool Result Ownership Validation**: Added expected/completed tool-call tracking per message to reject stale or duplicate tool results safely.
+  - **API Semantics Alignment**: `agent_cancel_workflow` now reflects cancel-request semantics in responses.
+
+- **Application Runtime Controls**:
+  - Added app restart support integrated into settings.
+  - Added HTTP server configuration options (port and exposure settings).
+
+### 🐛 Fixes
+
+- **Security Hardening for File Operations**:
+  - Strengthened dropped-file registration/read flow with tighter validation.
+  - Improved size and path checks to reduce TOCTOU and DoS risk in file access paths.
+
+- **UI/UX Reliability Improvements**:
+  - Fixed chat input tooltip and button interaction issues.
+  - Improved chat rendering performance by reducing unnecessary re-renders in pending state handling.
+
+### 🔧 Refactoring & Improvements
+
+- **Lifecycle Modularization**: Refactored backend startup/lifecycle logic into clearer modules for maintainability and safer initialization flow.
+- **Interactive Workspace Decomposition**: Split interactive workspace execution logic into focused modules (handlers/security/ui), improving clarity and testability.
+- **Workspace Cleanup Robustness**: Added graceful shutdown behavior for background cleanup tasks to avoid leaked loops on teardown.
+
+### ✅ Tests
+
+- Added unit tests for:
+  - tool-result classification (`accept / stale / duplicate`),
+  - cancel strategy classification (`defer vs immediate`),
+  - message-boundary cancel consumption predicates.
+
 ## [0.4.22] - 2026-02-07
 
 ### 🚀 Features
