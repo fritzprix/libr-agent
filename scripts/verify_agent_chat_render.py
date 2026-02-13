@@ -1,7 +1,13 @@
-import time
+from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 def run():
+    artifacts_dir = Path(__file__).resolve().parent / 'artifacts'
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+    success_screenshot = artifacts_dir / 'verification_chat.png'
+    error_screenshot = artifacts_dir / 'error_screenshot.png'
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context()
@@ -90,11 +96,11 @@ def run():
             print("Found assistant message")
 
             # Take screenshot
-            page.screenshot(path="verification_chat.png")
-            print("Screenshot taken: verification_chat.png")
+            page.screenshot(path=str(success_screenshot))
+            print(f"Screenshot taken: {success_screenshot}")
         except Exception as e:
             print(f"Error: {e}")
-            page.screenshot(path="error_screenshot.png")
+            page.screenshot(path=str(error_screenshot))
 
         browser.close()
 
