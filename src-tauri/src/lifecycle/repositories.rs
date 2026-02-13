@@ -1,20 +1,20 @@
-use log::{error, info};
-use sea_orm::DatabaseConnection;
+use crate::lifecycle::settings::SystemSettings;
+use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteContentStoreRepository, SqliteMCPServerRepository, SqliteMessageRepository,
-    SqliteSessionRepository, SqliteSettingsRepository, SettingsRepository,
-    SqliteAssistantRepository, SqliteKnowledgeRepository, SqlitePlanningRepository,
-    SqlitePlaybookRepository,
+    SettingsRepository, SqliteAssistantRepository, SqliteContentStoreRepository,
+    SqliteKnowledgeRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
+use crate::services;
 use crate::state::{
     set_assistant_repository, set_content_store_repository, set_database_connection,
-    set_knowledge_repository, set_mcp_server_repository, set_message_repository,
-    set_planning_repository, set_playbook_repository, set_session_repository,
-    set_settings_repository, set_mcp_service_proxy_manager,
+    set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
+    set_message_repository, set_planning_repository, set_playbook_repository,
+    set_session_repository, set_settings_repository,
 };
-use crate::lifecycle::settings::SystemSettings;
-use crate::services;
-use crate::mcp::MCPServiceProxyManager;
+use log::{error, info};
+use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
