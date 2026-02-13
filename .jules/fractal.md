@@ -35,3 +35,9 @@
 **Split:** `security.rs`, `ui.rs`, `handlers.rs`
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
+
+## 2026-02-12 - src/features/agent/components/AgentWorkspacePanel.tsx
+
+**Split:** `types.ts`, `FileTreeNode.tsx`, `useFileTree.ts`, `useWorkspaceOverride.ts`, `useFileDrop.ts`, `useWorkspaceActions.ts`, `index.tsx`
+**Result:** Reduced from 761 lines to ~190 lines in the main component.
+**Improvement:** Decoupled UI components (recursive FileTreeNode), complex hooks (File Tree logic, DnD, Override), and types. significantly improving maintainability.
