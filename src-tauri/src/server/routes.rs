@@ -65,6 +65,13 @@ pub fn get_routes(
         .and(warp::path::end())
         .and_then(handlers::get_assistants);
 
+    // GET /api/health
+    let health = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("health"))
+        .and(warp::path::end())
+        .and_then(handlers::health);
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_headers(vec!["content-type"])
@@ -76,5 +83,6 @@ pub fn get_routes(
         .or(send_message)
         .or(terminate_session)
         .or(list_assistants)
+        .or(health)
         .with(cors)
 }

@@ -16,6 +16,7 @@ pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;
 pub mod playbook;
+pub mod session_api;
 pub mod skills;
 pub mod ui;
 pub mod utils;
@@ -366,6 +367,7 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         // Session-specific servers (knowledge, planning, playbook, assistant, browser) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
@@ -411,6 +413,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
@@ -453,6 +456,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }

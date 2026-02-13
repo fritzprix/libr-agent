@@ -636,6 +636,9 @@ async fn create_builtin_server(
         "mcp_manager" => Ok(Some(Box::new(
             crate::mcp::builtin::mcp_manager::MCPManagerServer::new(),
         ))),
+        "session_api" => Ok(Some(Box::new(
+            crate::mcp::builtin::session_api::SessionApiServer::new(),
+        ))),
         "skills" => Ok(Some(Box::new(
             crate::mcp::builtin::skills::SkillsServer::new(_session_id),
         ))),

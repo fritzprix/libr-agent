@@ -7,6 +7,12 @@ use std::sync::Arc;
 use uuid::Uuid;
 use warp::{http::StatusCode, Rejection, Reply};
 
+#[derive(Debug, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub service: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSessionRequest {
@@ -408,4 +414,14 @@ pub async fn get_assistants() -> Result<impl Reply, Rejection> {
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
     }
+}
+
+pub async fn health() -> Result<impl Reply, Rejection> {
+    Ok(warp::reply::with_status(
+        warp::reply::json(&HealthResponse {
+            status: "ok".to_string(),
+            service: "libr-agent-session-api".to_string(),
+        }),
+        StatusCode::OK,
+    ))
 }
