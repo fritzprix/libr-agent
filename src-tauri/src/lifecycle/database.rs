@@ -9,7 +9,10 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
         Ok(connection) => connection,
         Err(connect_error) => {
             if let Some(path_with_options) = db_url.strip_prefix("sqlite://") {
-                let path = path_with_options.split('?').next().unwrap_or(path_with_options);
+                let path = path_with_options
+                    .split('?')
+                    .next()
+                    .unwrap_or(path_with_options);
                 info!("⚙️ Database connect failed, attempting to create DB file: {path}");
 
                 if let Some(parent) = std::path::Path::new(path).parent() {
@@ -27,9 +30,7 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
                 sea_orm::Database::connect(db_url)
                     .await
                     .unwrap_or_else(|retry_error| {
-                        panic!(
-                            "Failed to connect to database after creating file: {retry_error}"
-                        )
+                        panic!("Failed to connect to database after creating file: {retry_error}")
                     })
             } else {
                 panic!("Failed to connect to database: {connect_error}");
