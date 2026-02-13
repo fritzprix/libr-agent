@@ -58,23 +58,34 @@ interface FileTreeNodeProps {
   onOpen: (node: FileNode) => void;
 }
 
+const FileIcon = ({
+  isDirectory,
+  isExpanded,
+}: {
+  isDirectory: boolean;
+  isExpanded?: boolean;
+}) => {
+  if (!isDirectory) return <File className="w-4 h-4 flex-shrink-0" />;
+  return isExpanded ? (
+    <FolderOpen className="w-4 h-4 flex-shrink-0" />
+  ) : (
+    <Folder className="w-4 h-4 flex-shrink-0" />
+  );
+};
+
 const FileTreeNode = ({
   node,
   depth = 0,
   onToggle,
   onOpen,
 }: FileTreeNodeProps) => {
-  const Icon = node.isDirectory
-    ? node.isExpanded
-      ? FolderOpen
-      : Folder
-    : File;
+  const indentStyle = { paddingLeft: `${8 + depth * 16}px` };
 
   return (
     <div className="select-none">
       <div
         className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 group"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
+        style={indentStyle}
         onClick={() => {
           // Keep mouse click behavior for padding area
           if (node.isDirectory) {
@@ -132,7 +143,10 @@ const FileTreeNode = ({
           }}
           aria-expanded={node.isDirectory ? node.isExpanded : undefined}
         >
-          <Icon className="w-4 h-4 flex-shrink-0" />
+          <FileIcon
+            isDirectory={node.isDirectory}
+            isExpanded={node.isExpanded}
+          />
 
           <span className="text-xs truncate flex-1" title={node.name}>
             {node.name}

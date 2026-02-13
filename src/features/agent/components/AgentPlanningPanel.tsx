@@ -5,10 +5,37 @@ import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { getLogger } from '@/lib/logger';
 import type { ScratchpadItem, PlanningState } from '@/models/planning';
 
 const logger = getLogger('AgentPlanningPanel');
+
+const getPriorityColor = (priority: string): string => {
+  switch (priority) {
+    case 'high':
+      return 'text-destructive';
+    case 'medium':
+      return 'text-warning';
+    case 'low':
+      return 'text-success';
+    default:
+      return 'text-muted-foreground';
+  }
+};
+
+const getPriorityLabel = (priority: string): string => {
+  switch (priority) {
+    case 'high':
+      return 'High';
+    case 'medium':
+      return 'Medium';
+    case 'low':
+      return 'Low';
+    default:
+      return priority;
+  }
+};
 
 export function AgentPlanningPanel() {
   const { session } = useAgentSessionState();
@@ -99,19 +126,12 @@ export function AgentPlanningPanel() {
                             className="text-xs px-1 py-0 h-4 flex items-center gap-1"
                           >
                             <Circle
-                              className={`w-2 h-2 fill-current ${
-                                todo.priority === 'high'
-                                  ? 'text-destructive'
-                                  : todo.priority === 'medium'
-                                    ? 'text-warning'
-                                    : 'text-success'
-                              }`}
+                              className={cn(
+                                'w-2 h-2 fill-current',
+                                getPriorityColor(todo.priority),
+                              )}
                             />
-                            {todo.priority === 'high'
-                              ? 'High'
-                              : todo.priority === 'medium'
-                                ? 'Medium'
-                                : 'Low'}
+                            {getPriorityLabel(todo.priority)}
                           </Badge>
                         )}
                       </div>

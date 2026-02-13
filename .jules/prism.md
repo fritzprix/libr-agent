@@ -117,3 +117,9 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-02-05 - [SessionCard] **Visual Bug:** Custom status indicator, inconsistent icons **Fix:** Used Badge component, standardized icons to 12px
 
 ## 2026-02-05 - [AgentChatStartView] **Visual Bug:** Arbitrary flex splits, magic numbers **Fix:** Used CSS Grid layout, standard spacing
+
+## 2026-03-02 - [AgentChatInput] **Visual Bug:** Magic number (maxHeightPx = 96) and inline style object **Fix:** Extracted constant MAX_TEXTAREA_HEIGHT_PX and used Tailwind utility [scrollbar-width:none]
+
+## 2026-03-02 - [AgentPlanningPanel] **Visual Bug:** Nested ternary operators for priority styling **Fix:** Implemented getPriorityColor/Label helper functions and used semantic color tokens
+
+## 2026-03-02 - [AgentWorkspacePanel] **Visual Bug:** Nested ternary for icons and inline padding calculation **Fix:** Extracted FileIcon component and used local style variable

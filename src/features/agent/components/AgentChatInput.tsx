@@ -30,10 +30,7 @@ import {
 
 const logger = getLogger('AgentChatInput');
 
-const textareaStyle = {
-  msOverflowStyle: 'none',
-  scrollbarWidth: 'none',
-} as const;
+const MAX_TEXTAREA_HEIGHT_PX = 96; // Matching Tailwind h-24
 
 interface AgentChatInputProps {
   children?: React.ReactNode;
@@ -96,8 +93,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
-      const maxHeightPx = 96; // 6rem, matching Tailwind max-h-24
-      const nextHeight = Math.min(textarea.scrollHeight, maxHeightPx);
+      const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX);
       textarea.style.height = `${nextHeight}px`;
     }
   }, [input]);
@@ -292,7 +288,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
 
   const inputClassName = cn(
-    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto',
+    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none]',
   );
 
   const formClassName = cn(
@@ -313,7 +309,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           placeholder={inputPlaceholder}
           disabled={isAttachmentLoading}
           className={inputClassName}
-          style={textareaStyle}
           autoComplete="off"
           spellCheck="false"
           rows={1}
