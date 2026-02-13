@@ -11,6 +11,7 @@ import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
+import { Search, X } from 'lucide-react';
 
 const logger = getLogger('AssistantList');
 
@@ -182,21 +183,24 @@ export default function AssistantList() {
       {/* Search bar */}
       <div className="p-4 border-b border-muted flex-shrink-0">
         <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="text"
             placeholder="Search assistants..."
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
-            className="pr-20"
+            className="pl-9 pr-9"
+            aria-label="Search assistants"
           />
           {searchQuery && (
             <Button
               variant="ghost"
-              size="sm"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7"
+              size="icon"
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
               onClick={handleClearSearch}
+              aria-label="Clear search"
             >
-              Clear
+              <X className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -225,7 +229,7 @@ export default function AssistantList() {
                 key={assistant.id}
                 assistant={assistant}
                 isExpanded={expandedId === assistant.id}
-                onToggle={() => handleToggleExpand(assistant.id!)}
+                onToggle={() => handleToggleExpand(assistant.id)}
                 builtinToolsMap={builtinToolsMap}
                 mcpServersMap={mcpServersMap}
               />

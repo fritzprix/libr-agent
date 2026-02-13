@@ -1,35 +1,46 @@
-# Client Example (javascript)
+# Frontend AI Integration Examples
+
+This document provides examples of how to integrate supported AI providers using their JavaScript SDKs within the LibrAgent frontend (React/Vite).
+
+> **Note:** In the LibrAgent codebase, direct SDK usage is generally handled via the `AIServiceFactory` and specific service implementations in `src/lib/ai-service/`. These examples are for reference or prototyping purposes.
 
 ## Groq
 
-### list models
+### List Models
 
-```js
+```javascript
 import Groq from 'groq-sdk';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+// Use import.meta.env for Vite environment variables
+const groq = new Groq({
+  apiKey: import.meta.env.VITE_GROQ_API_KEY,
+  dangerouslyAllowBrowser: true // Required for client-side usage
+});
 
 const getModels = async () => {
   return await groq.models.list();
 };
 
 getModels().then((models) => {
-  // console.log(models);
+  console.log(models);
 });
 ```
 
 ### Reasoning
 
-```js
+```javascript
 import { Groq } from 'groq-sdk';
 
-const groq = new Groq();
+const groq = new Groq({
+  apiKey: import.meta.env.VITE_GROQ_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 const chatCompletion = await groq.chat.completions.create({
   messages: [
     {
       role: 'user',
-      content: '',
+      content: 'Explain quantum entanglement',
     },
   ],
   model: 'deepseek-r1-distill-llama-70b',
@@ -37,21 +48,25 @@ const chatCompletion = await groq.chat.completions.create({
   max_completion_tokens: 4096,
   top_p: 0.95,
   stream: true,
-  // reasoning_effort is specific to O1-like models, check SDK support
   stop: null,
 });
 
 for await (const chunk of chatCompletion) {
-  process.stdout.write(chunk.choices[0]?.delta?.content || '');
+  // Use console.log for output in browser console
+  console.log(chunk.choices[0]?.delta?.content || '');
 }
 ```
 
 ### Tool Use
 
-```js
+```javascript
 import Groq from 'groq-sdk';
+import { Parser } from 'expr-eval';
 
-const client = new Groq();
+const client = new Groq({
+  apiKey: import.meta.env.VITE_GROQ_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 const MODEL = 'llama-3.3-70b-versatile';
 
 async function runConversation(userPrompt) {
@@ -103,10 +118,16 @@ async function runConversation(userPrompt) {
   const toolCalls = responseMessage.tool_calls;
 
   if (toolCalls) {
+    const parser = new Parser();
+
     const availableFunctions = {
       calculate: (args) => {
-        // Warning: eval is dangerous in production
-        return eval(args.expression);
+        // Avoid eval in production. Use a safe expression parser instead.
+        try {
+          return parser.evaluate(args.expression);
+        } catch (e) {
+          return `Error: ${e instanceof Error ? e.message : 'invalid expression'}`;
+        }
       },
     };
 
@@ -143,10 +164,13 @@ runConversation('What is 25 * 4 + 10?').then(console.log);
 
 ### Tool Use
 
-```js
+```javascript
 import { OpenAI } from 'openai';
 
-const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 const tools = [
   {
@@ -176,7 +200,7 @@ const completion = await openai.chat.completions.create({
     { role: 'user', content: 'What is the weather like in Paris today?' },
   ],
   tools,
-  store: true,
+  store: true, // Note: 'store' might be an OpenAI-specific feature requiring configured storage
 });
 
 console.log(completion.choices[0].message.tool_calls);
@@ -184,10 +208,13 @@ console.log(completion.choices[0].message.tool_calls);
 
 ### Reasoning
 
-```js
+```javascript
 import OpenAI from 'openai';
 
-const openai = new OpenAI();
+const openai = new OpenAI({
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 const prompt = `
 Write a bash script that takes a matrix represented as a string with 
@@ -213,10 +240,13 @@ console.log(completion.choices[0].message.content);
 
 ### Streaming
 
-```js
+```javascript
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic();
+const client = new Anthropic({
+  apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+  dangerouslyAllowBrowser: true, // Required for client-side usage (matches LibrAgent Anthropic service)
+});
 
 const stream = await client.messages.create({
   max_tokens: 1024,

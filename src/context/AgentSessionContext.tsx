@@ -391,7 +391,7 @@ export function AgentSessionProvider({
 
         if (!isMounted) return;
 
-        let assistant: import('@/models/agent').AgentConfig | undefined;
+        let assistant: import('@/models/chat').Assistant | undefined;
         if (response.agentConfig) {
           try {
             assistant = JSON.parse(response.agentConfig);

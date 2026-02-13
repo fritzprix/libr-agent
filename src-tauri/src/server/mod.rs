@@ -13,6 +13,10 @@ pub async fn init(
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting HTTP server on port {}", port);
 
+    // Validate port binding up-front so startup failures can be propagated.
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
+    drop(listener);
+
     let routes = routes::get_routes(agent_manager);
 
     let server_future = warp::serve(routes).run(([127, 0, 0, 1], port));

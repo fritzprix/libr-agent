@@ -199,7 +199,6 @@ function DraftChatInner() {
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
-          temperature: 0.7,
           maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
         };
 

@@ -598,7 +598,7 @@ impl MCPServiceProxyManager {
     /// It implements dual routing:
     /// - Builtin tools -> session proxy
     /// - External stdio tools -> session-specific stdio manager
-    /// - External HTTP tools -> shared HTTP manager (TODO: Phase 3)
+    /// - External HTTP tools -> shared HTTP manager
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call

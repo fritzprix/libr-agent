@@ -3,9 +3,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::mcp::builtin::error_guidance::{
-    operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::{IsolatedProcessConfig, IsolationLevel};
 
@@ -43,19 +41,21 @@ impl WorkspaceServer {
             .join(format!("sync_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Ok(operation_failed_error(
-                "Create temp directory",
-                &e.to_string(),
-                vec![
-                    "Check workspace directory permissions".to_string(),
-                    "Ensure sufficient disk space is available".to_string(),
-                    format!(
-                        "Verify tmp directory is writable: {}",
-                        workspace_path.join("tmp").display()
-                    ),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::InvalidState,
+                "Create temp directory failed".to_string(),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                "Check workspace directory permissions".to_string(),
+                "Ensure sufficient disk space is available".to_string(),
+                format!(
+                    "Verify tmp directory is writable: {}",
+                    workspace_path.join("tmp").display()
+                ),
+                format!("Error: {}", e),
+            ])
+            .to_mcp_result());
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -79,16 +79,18 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create isolated shell command",
-                    &e.to_string(),
-                    vec![
-                        "Verify shell environment is properly configured".to_string(),
-                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
-                        "Ensure workspace isolation level is valid".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Create isolated shell command failed".to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Verify shell environment is properly configured".to_string(),
+                    "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                    "Ensure workspace isolation level is valid".to_string(),
+                    format!("Error: {}", e),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -231,15 +233,16 @@ impl WorkspaceServer {
                         ],
                     };
 
-                    return Ok(operation_failed_error(
-                        "Execute shell command",
-                        &format!(
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        format!(
                             "Command failed with exit code: {}\n\n{}",
                             actual_exit_code, error_output
                         ),
-                        guidance,
                         ToolGroup::Workspace,
-                    ));
+                    )
+                    .guidance(guidance)
+                    .to_mcp_result());
                 }
 
                 // Enhanced text response with explicit status and output visibility
@@ -329,16 +332,17 @@ impl WorkspaceServer {
                     "Failed to execute isolated shell command '{}': {}",
                     command, e
                 );
-                Ok(operation_failed_error(
-                    "Execute shell command",
-                    &e.to_string(),
-                    vec![
-                        "Verify the command syntax is correct".to_string(),
-                        "Check if required programs are installed".to_string(),
-                        "Use listDirectory to verify file paths exist".to_string(),
-                    ],
+                Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    e.to_string(),
                     ToolGroup::Workspace,
-                ))
+                )
+                .guidance(vec![
+                    "Verify the command syntax is correct".to_string(),
+                    "Check if required programs are installed".to_string(),
+                    "Use listDirectory to verify file paths exist".to_string(),
+                ])
+                .to_mcp_result())
             }
             Err(_) => {
                 // Timeout - cancel the process
@@ -397,13 +401,11 @@ impl WorkspaceServer {
                     guidance.push("Use pollProcess to check status of async commands".to_string());
                 }
 
-                Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::Timeout,
-                    error_message,
-                    guidance,
-                    ToolGroup::Workspace,
+                Ok(
+                    guided_error(ErrorCategory::Timeout, error_message, ToolGroup::Workspace)
+                        .guidance(guidance)
+                        .to_mcp_result(),
                 )
-                .to_mcp_result())
             }
         }
     }

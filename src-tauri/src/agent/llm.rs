@@ -6,6 +6,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
@@ -20,6 +21,71 @@ pub async fn request_llm_completion(
     app_handle: &AppHandle,
     session_id: String,
 ) -> Result<(), String> {
+    // 1. Validate session status before proceeding (Race Condition Fix)
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            if session.cancel_pending.load(Ordering::SeqCst)
+                || session.metadata.status != SessionStatus::Busy
+            {
+                log::info!(
+                    "Rejecting LLM request for session {} (status: {:?}, cancel_pending={})",
+                    session_id,
+                    session.metadata.status,
+                    session.cancel_pending.load(Ordering::SeqCst)
+                );
+                return Err(format!(
+                    "Cannot request LLM completion: session status is {:?}",
+                    session.metadata.status
+                ));
+            }
+        } else {
+            return Err(format!("Session not found: {}", session_id));
+        }
+    }
+
+    // Emit MessageAdded events for any pending user messages before LLM request
+    // This makes them visible in the frontend (removed from pendingMessages queue)
+    // Optimization: Collect all data first, then release locks before I/O
+    let pending_messages: Vec<Message> = {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let mut pending_events = session.pending_events.write().await;
+            let pending_ids = pending_events.drain_messages();
+
+            if pending_ids.is_empty() {
+                Vec::new()
+            } else {
+                let messages = session.messages.read().await;
+
+                // Build HashMap for O(1) lookup instead of O(n) iter().find()
+                let msg_map: std::collections::HashMap<&str, &Message> =
+                    messages.iter().map(|m| (m.id.as_str(), m)).collect();
+
+                // Collect messages matching pending IDs
+                pending_ids
+                    .iter()
+                    .filter_map(|id| msg_map.get(id.as_str()).map(|&m| m.clone()))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        }
+    }; // All locks released here
+
+    // Now emit events without holding any locks
+    for msg in pending_messages {
+        let event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.clone(),
+            message: Box::new(msg.clone()),
+        };
+        let _ = crate::agent::events::emit_agent_event(app_handle, event);
+        log::info!(
+            "Emitted MessageAdded for previously pending message: {}",
+            msg.id
+        );
+    }
+
     // Read messages from in-memory cache
     let messages = {
         let sessions = active_sessions.read().await;
@@ -113,15 +179,71 @@ pub async fn handle_llm_response(
     session_id: String,
     mut assistant_message: Message,
 ) -> Result<(), String> {
-    // Check cancellation
+    // Check cancellation and determine whether Idle tool-call entry is allowed
+    let allow_idle_tool_entry = assistant_message
+        .tool_calls
+        .as_ref()
+        .map(|calls| !calls.is_empty())
+        .unwrap_or(false);
+
+    let mut should_mark_busy = false;
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
-                log::info!("Workflow cancelled for session: {}", session_id);
+            let token_cancelled = session.cancellation_token.is_cancelled();
+            let cancel_pending = session.cancel_pending.load(Ordering::SeqCst);
+            let status = session.metadata.status.clone();
+
+            if token_cancelled || cancel_pending {
+                log::info!(
+                    "Workflow cancelled for session: {} (token_cancelled={}, cancel_pending={}, status={:?})",
+                    session_id,
+                    token_cancelled,
+                    cancel_pending,
+                    status
+                );
+                return Err("Workflow was cancelled".to_string());
+            }
+
+            if status == SessionStatus::Busy {
+                // Normal path while workflow is already running
+            } else if status == SessionStatus::Idle && allow_idle_tool_entry {
+                // Allow tool-call initiated workflow start from Idle
+                should_mark_busy = true;
+            } else {
+                log::info!(
+                    "Rejecting LLM response for session {} (status={:?}, has_tool_calls={})",
+                    session_id,
+                    status,
+                    allow_idle_tool_entry
+                );
                 return Err("Workflow was cancelled".to_string());
             }
         }
+    }
+
+    if should_mark_busy {
+        {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                session.cancel_pending.store(false, Ordering::SeqCst);
+            }
+        }
+
+        crate::agent::lifecycle::update_session_status(
+            session_repo,
+            active_sessions,
+            app_handle,
+            &session_id,
+            SessionStatus::Busy,
+        )
+        .await?;
+
+        let event = crate::agent::events::AgentEvent::WorkflowStarted {
+            session_id: session_id.clone(),
+        };
+        crate::agent::events::emit_agent_event(app_handle, event)
+            .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
@@ -376,7 +498,7 @@ pub async fn handle_llm_response(
             .await;
         }
 
-        // ✅ Content present: reset thinking_only_count and complete workflow
+        // ✅ Content present: reset thinking_only_count
         {
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
@@ -384,6 +506,33 @@ pub async fn handle_llm_response(
             }
         }
 
+        // Check for pending messages before finishing
+        let has_pending = {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                session.pending_events.read().await.count() > 0
+            } else {
+                false
+            }
+        };
+
+        if has_pending {
+            log::info!(
+                "🔄 Pending messages detected for session {}. Continuing workflow.",
+                session_id
+            );
+            // Recursively trigger next turn
+            return request_llm_completion(
+                session_repo,
+                active_sessions,
+                proxy_manager,
+                app_handle,
+                session_id,
+            )
+            .await;
+        }
+
+        // No pending messages, finish workflow
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,

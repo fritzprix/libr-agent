@@ -1,7 +1,9 @@
 use super::super::utils::get_diff_context_lines;
 use super::super::WorkspaceServer;
 use super::utils::read_file_as_string;
-use crate::mcp::builtin::error_guidance::*;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -28,32 +30,32 @@ impl WorkspaceServer {
         let edits_array = match args.get("edits").and_then(|v| v.as_array()) {
             Some(arr) => arr,
             None => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::MissingRequiredParam,
                     "Parameter 'edits' is required and must be an array",
-                    vec![
-                        "Provide an array of edit objects: [{line, old_value?, new_value}, ...]"
-                            .to_string(),
-                        "Use searchLineInFile to find line numbers first".to_string(),
-                        "Example: {\"edits\": [{\"line\": 10, \"new_value\": \"updated text\"}]}"
-                            .to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Provide an array of edit objects: [{line, old_value?, new_value}, ...]"
+                        .to_string(),
+                    "Use searchLineInFile to find line numbers first".to_string(),
+                    "Example: {\"edits\": [{\"line\": 10, \"new_value\": \"updated text\"}]}"
+                        .to_string(),
+                ])
                 .to_mcp_result());
             }
         };
 
         if edits_array.is_empty() {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Parameter 'edits' cannot be empty",
-                vec![
-                    "Provide at least one edit operation".to_string(),
-                    "For single edits, consider using editFile instead".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Provide at least one edit operation".to_string(),
+                "For single edits, consider using editFile instead".to_string(),
+            ])
             .to_mcp_result());
         }
 
@@ -65,16 +67,16 @@ impl WorkspaceServer {
             let edit_obj = match edit_obj.as_object() {
                 Some(obj) => obj,
                 None => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Edit at index {} must be an object", idx),
-                        vec![
-                            "Each edit must be an object with 'line' and 'new_value' fields"
-                                .to_string(),
-                            "Example: {\"line\": 10, \"new_value\": \"updated text\"}".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Each edit must be an object with 'line' and 'new_value' fields"
+                            .to_string(),
+                        "Example: {\"line\": 10, \"new_value\": \"updated text\"}".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
@@ -83,45 +85,45 @@ impl WorkspaceServer {
             let line = match edit_obj.get("line").and_then(|v| v.as_u64()) {
                 Some(n) if n > 0 => n as usize,
                 Some(0) => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
                             "Edit at index {}: Line numbers must be 1-based (starting from 1)",
                             idx
                         ),
-                        vec![
-                            "Line numbers start from 1, not 0".to_string(),
-                            "Use searchLineInFile to get correct line numbers".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Line numbers start from 1, not 0".to_string(),
+                        "Use searchLineInFile to get correct line numbers".to_string(),
+                    ])
                     .to_mcp_result());
                 }
                 _ => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Edit at index {}: 'line' field is required and must be a positive integer", idx),
-                        vec![
-                            "Provide line number as integer (e.g., \"line\": 10)".to_string(),
-                            "Use searchLineInFile to find line numbers".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Provide line number as integer (e.g., \"line\": 10)".to_string(),
+                        "Use searchLineInFile to find line numbers".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
 
             // Check for duplicate line numbers
             if !line_numbers.insert(line) {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!("Duplicate line number {} - each line can only be edited once per operation", line),
-                    vec![
-                        "Remove duplicate line numbers from edits array".to_string(),
-                        "Combine multiple changes to the same line into one edit".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Remove duplicate line numbers from edits array".to_string(),
+                    "Combine multiple changes to the same line into one edit".to_string(),
+                ])
                 .to_mcp_result());
             }
 
@@ -129,30 +131,30 @@ impl WorkspaceServer {
             let new_value = match edit_obj.get("new_value").and_then(|v| v.as_str()) {
                 Some(s) => {
                     if s.contains('\n') {
-                        return Ok(ErrorGuidance::with_guidance(
+                        return Ok(guided_error(
                             ErrorCategory::InvalidInput,
                             format!("Edit at index {}: new_value must be single-line (no newline characters)", idx),
-                            vec![
-                                "Remove \\n characters from new_value".to_string(),
-                                "For multi-line replacements, use editFile instead".to_string(),
-                                "editLineInFile is designed for single-line edits only".to_string(),
-                            ],
                             ToolGroup::Workspace,
                         )
+                        .guidance(vec![
+                            "Remove \\n characters from new_value".to_string(),
+                            "For multi-line replacements, use editFile instead".to_string(),
+                            "editLineInFile is designed for single-line edits only".to_string(),
+                        ])
                         .to_mcp_result());
                     }
                     s.to_string()
                 }
                 None => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Edit at index {}: 'new_value' field is required", idx),
-                        vec![
-                            "Provide new_value as string (e.g., \"new_value\": \"updated text\")"
-                                .to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Provide new_value as string (e.g., \"new_value\": \"updated text\")"
+                            .to_string(),
+                    ])
                     .to_mcp_result());
                 }
             };
@@ -176,16 +178,17 @@ impl WorkspaceServer {
         let original_content = match read_file_as_string(&safe_path).await {
             Ok(content) => content,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Read file for line editing",
-                    &e.to_string(),
-                    vec![
-                        "Verify the file exists with listDirectory".to_string(),
-                        "Check file permissions".to_string(),
-                        "Ensure the path is correct".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    e.to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Verify the file exists with listDirectory".to_string(),
+                    "Check file permissions".to_string(),
+                    "Ensure the path is correct".to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -195,39 +198,38 @@ impl WorkspaceServer {
         // Check line count limit (10,000 lines)
         const MAX_LINES: usize = 10_000;
         if line_count > MAX_LINES {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!(
                     "File has {} lines, exceeding the limit of {} lines",
                     line_count, MAX_LINES
                 ),
-                vec![
-                    "Files exceeding 10,000 lines are beyond practical LLM context windows"
-                        .to_string(),
-                    "Consider splitting the file into smaller modules".to_string(),
-                    "Use editFile for smaller, targeted changes instead".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Files exceeding 10,000 lines are beyond practical LLM context windows".to_string(),
+                "Consider splitting the file into smaller modules".to_string(),
+                "Use editFile for smaller, targeted changes instead".to_string(),
+            ])
             .to_mcp_result());
         }
 
         // Validate all line numbers exist
         for edit in &edits {
             if edit.line > line_count {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
                         "Line {} does not exist (file has {} lines)",
                         edit.line, line_count
                     ),
-                    vec![
-                        format!("Valid line range: 1-{}", line_count),
-                        "Use searchLineInFile to find correct line numbers".to_string(),
-                        "Use readFile to see file structure".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    format!("Valid line range: 1-{}", line_count),
+                    "Use searchLineInFile to find correct line numbers".to_string(),
+                    "Use readFile to see file structure".to_string(),
+                ])
                 .to_mcp_result());
             }
 
@@ -235,19 +237,19 @@ impl WorkspaceServer {
             if let Some(ref expected) = edit.old_value {
                 let actual = lines[edit.line - 1]; // Convert to 0-based
                 if actual != expected {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
                             "Line {} content mismatch:\nExpected: \"{}\"\nActual: \"{}\"",
                             edit.line, expected, actual
                         ),
-                        vec![
-                            "Call readFile FIRST to get current line content".to_string(),
-                            "Use exact text from readFile response for old_value".to_string(),
-                            "File may have been modified since last read".to_string(),
-                        ],
                         ToolGroup::Workspace,
                     )
+                    .guidance(vec![
+                        "Call readFile FIRST to get current line content".to_string(),
+                        "Use exact text from readFile response for old_value".to_string(),
+                        "File may have been modified since last read".to_string(),
+                    ])
                     .to_mcp_result());
                 }
             }
@@ -318,16 +320,15 @@ impl WorkspaceServer {
         // Write file using file manager
         let file_manager = self.get_file_manager(session_id.clone());
         if let Err(e) = file_manager.write_file_string(path_str, &new_content).await {
-            return Ok(operation_failed_error(
-                "Write file after line edits",
-                &e,
-                vec![
-                    "Check file permissions".to_string(),
-                    "Ensure sufficient disk space".to_string(),
-                    "Verify the file is not locked by another process".to_string(),
-                ],
-                ToolGroup::Workspace,
-            ));
+            return Ok(
+                guided_error(ErrorCategory::OperationFailed, &e, ToolGroup::Workspace)
+                    .guidance(vec![
+                        "Check file permissions".to_string(),
+                        "Ensure sufficient disk space".to_string(),
+                        "Verify the file is not locked by another process".to_string(),
+                    ])
+                    .to_mcp_result(),
+            );
         }
 
         // Invalidate service context cache

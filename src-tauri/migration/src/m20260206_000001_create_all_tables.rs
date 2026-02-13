@@ -435,7 +435,6 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(PlanningTodos::Content).string().not_null())
                     .col(ColumnDef::new(PlanningTodos::Description).string())
                     .col(ColumnDef::new(PlanningTodos::Priority).string().not_null())
-                    .col(ColumnDef::new(PlanningTodos::ParentId).big_integer())
                     .col(
                         ColumnDef::new(PlanningTodos::IsChecked)
                             .boolean()
@@ -452,12 +451,6 @@ impl MigrationTrait for Migration {
                         ColumnDef::new(PlanningTodos::UpdatedAt)
                             .big_integer()
                             .not_null(),
-                    )
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk-planning_todos-parent_id")
-                            .from(PlanningTodos::Table, PlanningTodos::ParentId)
-                            .to(PlanningTodos::Table, PlanningTodos::Id),
                     )
                     .to_owned(),
             )
@@ -773,7 +766,6 @@ enum PlanningTodos {
     Content,
     Description,
     Priority,
-    ParentId,
     IsChecked,
     Status,
     CreatedAt,

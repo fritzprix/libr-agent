@@ -1,6 +1,8 @@
 use super::super::WorkspaceServer;
 use super::utils::{detect_language, format_file_size};
-use crate::mcp::builtin::error_guidance::*;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::types::MCPResult;
 use serde_json::{json, Value};
 use tokio::fs;
@@ -21,16 +23,16 @@ impl WorkspaceServer {
         {
             Ok(path) => path,
             Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
-                    vec![
-                        "Verify the directory path is correct".to_string(),
-                        "Use listDirectory to see available files".to_string(),
-                        "Ensure you have read permissions for the directory".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Verify the directory path is correct".to_string(),
+                    "Use listDirectory to see available files".to_string(),
+                    "Ensure you have read permissions for the directory".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
@@ -173,16 +175,17 @@ impl WorkspaceServer {
                 if is_not_found {
                     Ok(not_found_error("Directory", path_str, ToolGroup::Workspace))
                 } else {
-                    Ok(operation_failed_error(
-                        "List directory",
-                        &e.to_string(),
-                        vec![
-                            "Verify the directory exists".to_string(),
-                            "Check directory permissions".to_string(),
-                            "Try using '.' to list the current directory".to_string(),
-                        ],
+                    Ok(guided_error(
+                        ErrorCategory::OperationFailed,
+                        e.to_string(),
                         ToolGroup::Workspace,
-                    ))
+                    )
+                    .guidance(vec![
+                        "Verify the directory exists".to_string(),
+                        "Check directory permissions".to_string(),
+                        "Try using '.' to list the current directory".to_string(),
+                    ])
+                    .to_mcp_result())
                 }
             }
         }
@@ -217,15 +220,15 @@ impl WorkspaceServer {
         {
             Ok(path) => path,
             Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     format!("Path validation failed: {}", e),
-                    vec![
-                        "Verify the directory path is correct".to_string(),
-                        "Use listDirectory to see available files".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Verify the directory path is correct".to_string(),
+                    "Use listDirectory to see available files".to_string(),
+                ])
                 .to_mcp_result());
             }
         };
@@ -309,16 +312,17 @@ impl WorkspaceServer {
             }
             Err(e) => {
                 error!("File search failed: {}", e);
-                Ok(operation_failed_error(
-                    "Search files",
-                    &e.to_string(),
-                    vec![
-                        "Verify the pattern syntax is correct (use glob format like '*.txt' or '**/*.rs')".to_string(),
-                        "Check if the directory path exists with listDirectory".to_string(),
-                        "Try a simpler pattern to narrow down the issue".to_string(),
-                    ],
+                Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    e.to_string(),
                     ToolGroup::Workspace,
-                ))
+                )
+                .guidance(vec![
+                    "Verify the pattern syntax is correct (use glob format like '*.txt' or '**/*.rs')".to_string(),
+                    "Check if the directory path exists with listDirectory".to_string(),
+                    "Try a simpler pattern to narrow down the issue".to_string(),
+                ])
+                .to_mcp_result())
             }
         }
     }
@@ -357,44 +361,46 @@ impl WorkspaceServer {
                             e.to_string()
                         };
 
-                        return Ok(operation_failed_error(
-                            "Read file for search",
+                        return Ok(guided_error(
+                            ErrorCategory::OperationFailed,
                             &error_msg,
-                            vec![
-                                "Verify the file exists with listDirectory".to_string(),
-                                "Check file permissions".to_string(),
-                                "Ensure the path is correct".to_string(),
-                            ],
                             ToolGroup::Workspace,
-                        ));
+                        )
+                        .guidance(vec![
+                            "Verify the file exists with listDirectory".to_string(),
+                            "Check file permissions".to_string(),
+                            "Ensure the path is correct".to_string(),
+                        ])
+                        .to_mcp_result());
                     }
                 },
                 Err(e) => {
-                    return Ok(ErrorGuidance::with_guidance(
+                    return Ok(guided_error(
                         ErrorCategory::PermissionDenied,
                         format!("Path validation failed: {}", e),
-                        vec![
-                            "Verify the file path is within allowed directories".to_string(),
-                            "Use listDirectory to see available files".to_string(),
-                            "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
-                        ],
                         ToolGroup::Workspace,
-                    ).to_mcp_result());
+                    )
+                    .guidance(vec![
+                        "Verify the file path is within allowed directories".to_string(),
+                        "Use listDirectory to see available files".to_string(),
+                        "Check that the path doesn't contain '..' or absolute paths outside workspace".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             }
         } else if let Some(s) = args.get("input").and_then(|v| v.as_str()) {
             s.to_string()
         } else {
-            return Ok(ErrorGuidance::with_guidance(
+            return Ok(guided_error(
                 ErrorCategory::MissingRequiredParam,
                 "Either 'path' or 'input' parameter must be provided".to_string(),
-                vec![
-                    "Use 'path' to search within a file".to_string(),
-                    "Use 'input' to search within provided text".to_string(),
-                    "Example: {\"pattern\": \"error\", \"path\": \"logs.txt\"}".to_string(),
-                ],
                 ToolGroup::Workspace,
             )
+            .guidance(vec![
+                "Use 'path' to search within a file".to_string(),
+                "Use 'input' to search within provided text".to_string(),
+                "Example: {\"pattern\": \"error\", \"path\": \"logs.txt\"}".to_string(),
+            ])
             .to_mcp_result());
         };
 
@@ -404,16 +410,16 @@ impl WorkspaceServer {
         {
             Ok(r) => r,
             Err(e) => {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!("Invalid regex pattern: {}", e),
-                    vec![
-                        "Check regex syntax - use basic patterns like 'error|warning'".to_string(),
-                        "Escape special characters with backslash: \\. \\* \\+ \\?".to_string(),
-                        "Test pattern with a simpler string first".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Check regex syntax - use basic patterns like 'error|warning'".to_string(),
+                    "Escape special characters with backslash: \\. \\* \\+ \\?".to_string(),
+                    "Test pattern with a simpler string first".to_string(),
+                ])
                 .to_mcp_result());
             }
         };

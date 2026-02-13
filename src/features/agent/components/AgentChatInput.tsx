@@ -9,10 +9,17 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { Button, FileAttachment } from '@/components/ui';
+import {
+  Button,
+  FileAttachment,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui';
 import { Send, Square, Loader2 } from 'lucide-react';
 import type { Message, AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import {
@@ -284,25 +291,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     [attachedFiles, removeAttachedFile],
   );
 
-  const inputClassName = useMemo(() => {
-    return `flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto ${
-      dragState === 'valid'
-        ? 'border-success bg-success/10'
-        : dragState === 'invalid'
-          ? 'border-destructive bg-destructive/10'
-          : ''
-    }`;
-  }, [dragState]);
+  const inputClassName = cn(
+    'flex-1 min-w-0 resize-none transition-colors bg-transparent outline-none border-none py-2 px-3 text-base leading-relaxed max-h-24 overflow-y-auto',
+  );
 
-  const formClassName = useMemo(() => {
-    return `px-4 py-4 border-t flex items-center gap-2 transition-colors ${
-      dragState === 'valid'
-        ? 'bg-success/10 border-success'
-        : dragState === 'invalid'
-          ? 'bg-destructive/10 border-destructive'
-          : ''
-    }`;
-  }, [dragState]);
+  const formClassName = cn(
+    'px-4 py-4 border-t flex items-center gap-2 transition-colors',
+    dragState === 'valid' && 'bg-success/10 border-success',
+    dragState === 'invalid' && 'bg-destructive/10 border-destructive',
+  );
 
   return (
     <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
@@ -333,34 +330,46 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button
-          type="submit"
-          disabled={
-            (!input.trim() && attachedFiles.length === 0) || isAttachmentLoading
-          }
-          variant="ghost"
-          size="icon"
-          title="Send message"
-          aria-label="Send message"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="submit"
+              disabled={
+                (!input.trim() && attachedFiles.length === 0) ||
+                isAttachmentLoading
+              }
+              variant="ghost"
+              size="icon"
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Send message</TooltipContent>
+        </Tooltip>
 
         {isBusy && (
-          <Button
-            onClick={handleCancel}
-            variant="destructive"
-            size="icon"
-            disabled={pendingCancel}
-            title={pendingCancel ? 'Cancelling...' : 'Cancel request'}
-            aria-label="Cancel request"
-          >
-            {pendingCancel ? (
-              <Loader2 className="h-4 w-4 animate-spin text-warning" />
-            ) : (
-              <Square className="h-4 w-4" />
-            )}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                onClick={handleCancel}
+                variant="destructive"
+                size="icon"
+                disabled={pendingCancel}
+                aria-label="Cancel request"
+              >
+                {pendingCancel ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-warning" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {pendingCancel ? 'Cancelling...' : 'Cancel request'}
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
     </form>
