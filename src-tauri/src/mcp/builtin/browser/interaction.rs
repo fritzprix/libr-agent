@@ -1,6 +1,7 @@
 use crate::mcp::builtin::browser::BrowserServer;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory,
+    SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
@@ -17,8 +18,22 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before clicking elements"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let selector = match args.get("selector").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -99,8 +114,22 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before inputting text"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let selector = match args.get("selector").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -207,8 +236,21 @@ pub async fn scroll_page(server: &BrowserServer, args: Value) -> Result<MCPResul
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before scrolling".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let x = match args.get("x").and_then(|v| v.as_f64()) {
         Some(x_val) => x_val,
@@ -257,8 +299,22 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
         guard.clone()
     };
 
-    let browser_session_id = browser_session_id
-        .ok_or_else(|| "No active browser session. Call createSession first.".to_string())?;
+    let browser_session_id = match browser_session_id {
+        Some(id) => id,
+        None => {
+            return Ok(guided_error(
+                ErrorCategory::ResourceNotFound,
+                "No active browser session found for this agent",
+                ToolGroup::Browser,
+            )
+            .guidance(vec![
+                "Use createSession FIRST to start a browser session".to_string(),
+                "Wait for createSession to return a success message before listing elements"
+                    .to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     let filter_type = args
         .get("filterType")

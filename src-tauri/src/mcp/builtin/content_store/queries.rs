@@ -2,7 +2,7 @@ use super::search;
 use super::server::ContentStoreServer;
 use super::types::*;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, not_found_error, operation_failed_error, SuccessHint, ToolGroup,
+    guided_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use log::error;
@@ -21,10 +21,13 @@ pub async fn list_content(
         match serde_json::from_value(params) {
             Ok(args) => args,
             Err(e) => {
-                return Ok(invalid_input_error(
-                    &format!("Invalid list_content parameters: {e}"),
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid listContent parameters: {e}"),
                     ToolGroup::ContentStore,
-                ));
+                )
+                .with_guidance(vec!["Check the parameter schema".to_string()])
+                .to_mcp_result());
             }
         }
     };
@@ -33,16 +36,17 @@ pub async fn list_content(
         error!(
             "Failed to ensure content store for session {session_id} while listing content: {e}"
         );
-        return Ok(operation_failed_error(
-            "Prepare content store",
-            &format!("session {session_id}: {e}"),
-            vec![
-                "Check database connectivity".to_string(),
-                "Ensure session is active".to_string(),
-                "Retry the operation".to_string(),
-            ],
+        return Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Prepare content store failed for session {session_id}: {e}"),
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Ensure session is active".to_string(),
+            "Retry the operation".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     let (offset, limit) = args.pagination.as_ref().map_or((0usize, 100usize), |p| {
@@ -55,16 +59,17 @@ pub async fn list_content(
     let (contents, total) = match storage.list_content(session_id, offset, limit).await {
         Ok((contents, total)) => (contents, total),
         Err(e) => {
-            return Ok(operation_failed_error(
-                "List content",
-                &e.to_string(),
-                vec![
-                    "Check database connectivity".to_string(),
-                    "Verify session is active".to_string(),
-                    "Retry the operation".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("List content failed: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec![
+                "Check database connectivity".to_string(),
+                "Verify session is active".to_string(),
+                "Retry the operation".to_string(),
+            ])
+            .to_mcp_result());
         }
     };
 
@@ -154,10 +159,13 @@ pub async fn read_content(
     let args: ReadContentArgs = match serde_json::from_value(params) {
         Ok(args) => args,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid read_content parameters: {e}"),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid readContent parameters: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec!["Check the parameter schema".to_string()])
+            .to_mcp_result());
         }
     };
 
@@ -184,28 +192,36 @@ pub async fn read_content(
     };
 
     if content_session_id != session_id {
-        return Ok(operation_failed_error(
-            "Read content",
-            &format!(
+        return Ok(guided_error(
+            ErrorCategory::PermissionDenied,
+            format!(
                 "Content '{}' belongs to a different session",
                 args.content_id
             ),
-            vec![
-                "Use listContent to see content in current session".to_string(),
-                "Switch to the session that owns this content".to_string(),
-                "Verify the content ID is correct".to_string(),
-            ],
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Use listContent to see content in current session".to_string(),
+            "Switch to the session that owns this content".to_string(),
+            "Verify the content ID is correct".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     // Read content (session verification passed)
     let storage = server.storage.lock().await;
 
     // Get content metadata for accurate truncation messaging
-    let content_item = storage
-        .get_content_item(&normalized_content_id)
-        .ok_or_else(|| format!("Content '{}' not found", args.content_id))?;
+    let content_item = match storage.get_content_item(&normalized_content_id) {
+        Some(item) => item,
+        None => {
+            return Ok(not_found_error(
+                "Content",
+                &args.content_id,
+                ToolGroup::ContentStore,
+            ));
+        }
+    };
     let total_lines = content_item.line_count;
 
     let content = match storage
@@ -218,16 +234,17 @@ pub async fn read_content(
     {
         Ok(content) => content,
         Err(e) => {
-            return Ok(operation_failed_error(
-                "Read content",
-                &e.to_string(),
-                vec![
-                    "Verify the content ID is correct".to_string(),
-                    "Check line range is valid".to_string(),
-                    "Use listContent to see available content".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Read content failed for '{}': {}", args.content_id, e),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec![
+                "Verify the content ID is correct".to_string(),
+                "Check line range is valid".to_string(),
+                "Use listContent to see available content".to_string(),
+            ])
+            .to_mcp_result());
         }
     };
     drop(storage);
@@ -317,10 +334,13 @@ pub async fn keyword_similarity_search(
     let args: KeywordSearchArgs = match serde_json::from_value(params) {
         Ok(args) => args,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid keyword_search parameters: {e}"),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid keywordSimilaritySearch parameters: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec!["Check the parameter schema".to_string()])
+            .to_mcp_result());
         }
     };
 
@@ -328,16 +348,17 @@ pub async fn keyword_similarity_search(
         error!(
             "Failed to ensure content store for session {session_id} during keyword search: {e}"
         );
-        return Ok(operation_failed_error(
-            "Prepare content store",
-            &format!("session {session_id}: {e}"),
-            vec![
-                "Check database connectivity".to_string(),
-                "Ensure session is active".to_string(),
-                "Retry the operation".to_string(),
-            ],
+        return Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Prepare content store failed for session {session_id}: {e}"),
             ToolGroup::ContentStore,
-        ));
+        )
+        .with_guidance(vec![
+            "Check database connectivity".to_string(),
+            "Ensure session is active".to_string(),
+            "Retry the operation".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     let top_n = args
@@ -353,15 +374,16 @@ pub async fn keyword_similarity_search(
     let engine_arc = match server.get_search_engine(session_id).await {
         Ok(engine) => engine,
         Err(e) => {
-            return Ok(operation_failed_error(
-                "Search content",
-                &format!("Failed to initialize search: {e}"),
-                vec![
-                    "Check filesystem permissions".to_string(),
-                    "Retry the operation".to_string(),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                format!("Failed to initialize search engine: {e}"),
                 ToolGroup::ContentStore,
-            ));
+            )
+            .with_guidance(vec![
+                "Check filesystem permissions".to_string(),
+                "Retry the operation".to_string(),
+            ])
+            .to_mcp_result());
         }
     };
 
@@ -371,16 +393,17 @@ pub async fn keyword_similarity_search(
         match search_engine.search_bm25(&args.query, ranking_limit).await {
             Ok(results) => results,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Search content",
-                    &e.to_string(),
-                    vec![
-                        "Verify the search query is valid".to_string(),
-                        "Check if content has been indexed".to_string(),
-                        "Use listContent to see available content".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Search content failed for query '{}': {}", args.query, e),
                     ToolGroup::ContentStore,
-                ));
+                )
+                .with_guidance(vec![
+                    "Verify the search query is valid".to_string(),
+                    "Check if content has been indexed".to_string(),
+                    "Use listContent to see available content".to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 

@@ -1,15 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GeminiService } from '../gemini';
+import { describe, it, expect, vi } from 'vitest';
+import { convertToGeminiMessages } from '../gemini/mapper';
 import { Message } from '@/models/chat';
-import { Content } from '@google/genai';
 
 // Mock the Google AI SDK
 vi.mock('@google/genai', () => ({
-    GoogleGenAI: vi.fn().mockImplementation(() => ({
-        getGenerativeModel: vi.fn().mockReturnValue({
-            generateContentStream: vi.fn(),
-        }),
-    })),
     createPartFromFunctionResponse: vi.fn((id, name, response) => ({
         functionResponse: { id, name, response },
     })),
@@ -28,13 +22,6 @@ vi.mock('../../logger', () => ({
 }));
 
 describe('GeminiService Tool Result Handling', () => {
-    let service: GeminiService;
-
-    beforeEach(() => {
-        service = new GeminiService('test-api-key', {
-            defaultModel: 'gemini-1.5-flash',
-        });
-    });
 
     it('should correctly convert tool result to FunctionResponse part using history', () => {
         const toolCallId = 'call_123';
@@ -75,9 +62,7 @@ describe('GeminiService Tool Result Handling', () => {
             },
         ];
 
-        const result = (service as unknown as {
-            convertToGeminiMessages: (messages: Message[]) => Content[];
-        }).convertToGeminiMessages(messages);
+        const result = convertToGeminiMessages(messages);
 
         // Expecting 3 messages
         // 1. user: What is the weather?
@@ -124,9 +109,7 @@ describe('GeminiService Tool Result Handling', () => {
             },
         ];
 
-        const result = (service as unknown as {
-            convertToGeminiMessages: (messages: Message[]) => Content[];
-        }).convertToGeminiMessages(messages);
+        const result = convertToGeminiMessages(messages);
 
         expect(result.length).toBe(1);
         const firstMsg = result[0];
@@ -138,5 +121,55 @@ describe('GeminiService Tool Result Handling', () => {
         if (!firstPart) return;
 
         expect(firstPart).toHaveProperty('text', 'Result content');
+    });
+
+    it('should attach dummy thought signature to first functionCall when missing', () => {
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'user',
+                content: [{ type: 'text', text: 'Run a tool' }],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: 'call_1',
+                        type: 'function',
+                        function: {
+                            name: 'builtin_workspace__executePendingShell',
+                            arguments: JSON.stringify({ executionId: 'abc' }),
+                        },
+                    },
+                ],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        expect(result.length).toBe(2);
+        const modelMessage = result[1];
+
+        expect(modelMessage).toBeDefined();
+        expect(modelMessage?.role).toBe('model');
+        expect(modelMessage?.parts?.length).toBe(1);
+
+        const firstPart = modelMessage?.parts?.[0] as {
+            functionCall?: { name?: string };
+            thoughtSignature?: string;
+        };
+
+        expect(firstPart.functionCall?.name).toBe(
+            'builtin_workspace__executePendingShell',
+        );
+        expect(firstPart.thoughtSignature).toBe(
+            'skip_thought_signature_validator',
+        );
     });
 });

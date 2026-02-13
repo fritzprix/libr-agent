@@ -123,6 +123,7 @@ export const DEFAULT_MCP_CONFIG = {
 
 export function getNewAssistantTemplate(): Assistant {
   return {
+    id: createId(),
     name: 'New Assistant',
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',

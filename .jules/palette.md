@@ -17,3 +17,7 @@
 
 **Learning:** Wrapping a functional component (like `Button`) inside `TooltipTrigger` without `asChild` creates invalid nesting and breaks accessibility/event propagation in Radix UI.
 **Action:** Always use `<TooltipTrigger asChild>` when the trigger content is a custom component that forwards refs.
+## 2025-07-15 - [Accessible Dialog Descriptions]
+
+**Learning:** Radix UI `DialogContent` triggers accessibility warnings if `DialogDescription` is missing. Even if the content is self-explanatory (like a list), a description is required for screen readers or must be explicitly disabled via `aria-describedby={undefined}`.
+**Action:** Always include a `DialogDescription` or explicit `aria-describedby` when implementing modals using `@/components/ui/dialog`.
