@@ -64,3 +64,13 @@
 
 **Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
 **Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".
+
+## 2026-03-01 - docs/api/tauri-commands.md
+
+**Drift:** Missing comprehensive list of Tauri commands.
+**Reality:** Updated to include a complete list of commands (Session, Message, Browser, File, MCP, System) with correct TypeScript argument names and types.
+
+## 2026-03-01 - src-tauri/src/mcp/builtin/README.md
+
+**Drift:** `BuiltinMCPServer` trait example was missing `metadata()` and `display_name()` methods.
+**Reality:** Updated trait definition and `ExampleServer` implementation to explicitly include these methods.

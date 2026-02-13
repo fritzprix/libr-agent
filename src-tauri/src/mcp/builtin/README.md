@@ -38,9 +38,10 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     fn version(&self) -> &str { "1.0.0" }           // Version (default provided)
 
     // Returns a human-friendly display name for the UI
+    // Default implementation capitalizes the server name
     fn display_name(&self) -> String { ... }
 
-    // Returns complete UI metadata for this server
+    // Returns complete UI metadata for this server (icon, display name, description)
     fn metadata(&self) -> BuiltinServerMetadata { ... }
 
     // Returns a list of tools provided by this server
@@ -86,7 +87,7 @@ use std::collections::HashMap;
 use tracing::{info, error};
 
 use super::BuiltinMCPServer;
-use crate::mcp::types::{MCPResult, ServiceContext, MCPContent};
+use crate::mcp::types::{MCPResult, ServiceContext, MCPContent, BuiltinServerMetadata};
 use crate::mcp::{JSONSchema, JSONSchemaType, MCPTool};
 
 /// Example MCP Server providing text processing tools
@@ -171,6 +172,20 @@ impl BuiltinMCPServer for ExampleServer {
 
     fn description(&self) -> &str {
         "Example MCP server providing text processing tools"
+    }
+
+    // Optional: Override display name if needed (default is capitalized name)
+    fn display_name(&self) -> String {
+        "Text Processing Example".to_string()
+    }
+
+    // Optional: Override metadata if you have a custom icon or other UI needs
+    fn metadata(&self) -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: self.display_name(),
+            description: self.description().to_string(),
+            icon: Some("text-cursor".to_string()), // Lucide icon name
+        }
     }
 
     fn tools(&self) -> Vec<MCPTool> {

@@ -1,313 +1,293 @@
-# Tauri Commands
+# Tauri Commands API Reference
 
-This document provides a comprehensive reference for all Tauri commands available in LibrAgent.
+This document provides a comprehensive reference for all Tauri commands available in LibrAgent, grouped by functionality.
 
-## Server Management
+## Agent Workflow Commands
 
-### start_mcp_server
+Commands for managing agent sessions, messages, and execution flow.
 
-**Purpose**: Starts an MCP server and initializes its toolset.
+### Session Management
 
-**Source**: [`src-tauri/src/lib.rs:20-25`](../src-tauri/src/lib.rs#L20-L25)
+#### `agent_create_session`
+Creates a new agent session.
+- **Rust Function**: `agent_create_session`
+- **Arguments**:
+  - `request`: `CreateAgentSessionRequest`
+    - `sessionId`: string (UUID)
+    - `name`: string | null
+    - `model`: string | null
+    - `provider`: string | null
+    - `agentConfig`: `AgentConfig`
+    - `isEphemeral`: boolean (default: false)
+    - `workspacePath`: string | null
+- **Returns**: `SessionMetadata`
 
-**Parameters**:
+#### `agent_get_session`
+Retrieves metadata for a specific session.
+- **Rust Function**: `agent_get_session`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `SessionMetadata | null`
 
-- `config: MCPServerConfig` - The server configuration object. See [`types.md#mcpserverconfig`](./types.md#mcpserverconfig) for details.
+#### `agent_get_all_sessions`
+Retrieves all stored sessions.
+- **Rust Function**: `agent_get_all_sessions`
+- **Returns**: `SessionMetadata[]`
 
-**Returns**:
+#### `agent_delete_session`
+Deletes a session and its associated data (messages, memory).
+- **Rust Function**: `agent_delete_session`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `AgentResponse`
 
-- `Result<String, String>` - Returns the server name on success, or an error message on failure.
+#### `agent_clear_all_sessions`
+Deletes all sessions.
+- **Rust Function**: `agent_clear_all_sessions`
+- **Returns**: `AgentResponse`
 
-**Usage**:
+#### `agent_update_session_config`
+Updates the configuration for an existing session.
+- **Rust Function**: `agent_update_session_config`
+- **Arguments**:
+  - `request`: `UpdateAgentConfigRequest`
+    - `sessionId`: string
+    - `model`: string | null
+    - `provider`: string | null
+    - `agentConfig`: `AgentConfig`
+- **Returns**: `AgentResponse`
 
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
+### Message Handling
 
-const config = {
-  name: 'filesystem',
-  command: 'npx',
-  args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
-};
+#### `agent_send_message`
+Sends a user message to an agent session, triggering the workflow.
+- **Rust Function**: `agent_send_message`
+- **Arguments**:
+  - `request`: `SendUserMessageRequest`
+    - `sessionId`: string
+    - `message`: `AgentMessageDto`
+- **Returns**: `AgentResponse`
 
-try {
-  const serverName = await invoke<string>('start_mcp_server', { config });
-  console.log(`Server started: ${serverName}`);
-} catch (error) {
-  console.error('Failed to start server:', error);
-}
-```
+#### `agent_init_session_with_messages`
+Initializes a session with messages from the database (hydrates state).
+- **Rust Function**: `agent_init_session_with_messages`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `AgentResponse`
 
-**Error Cases**:
+#### `messages_get_page`
+Retrieves a paginated list of messages for a session.
+- **Rust Function**: `messages_get_page`
+- **Arguments**:
+  - `sessionId`: string
+  - `page`: number
+  - `pageSize`: number
+- **Returns**: `PaginatedResponse<Message>`
 
-- Server executable not found.
-- Port is already in use.
-- Initialization failure due to invalid configuration.
+### Workflow Execution
 
-**Related**:
+#### `agent_handle_llm_response`
+Processes a response received from the LLM (called by frontend).
+- **Rust Function**: `agent_handle_llm_response`
+- **Arguments**:
+  - `sessionId`: string
+  - `assistantMessage`: `AgentMessageDto`
+- **Returns**: `AgentResponse`
 
-- [`stop_mcp_server`](#stop_mcp_server)
-- [`check_server_status`](#check_server_status)
-- [`MCPServerConfig`](./types.md#mcpserverconfig)
+#### `agent_handle_tool_result`
+Processes the result of a tool execution (called by frontend).
+- **Rust Function**: `agent_handle_tool_result`
+- **Arguments**:
+  - `sessionId`: string
+  - `toolCallId`: string
+  - `result`: `ToolExecutionResult`
+- **Returns**: `AgentResponse`
+
+#### `agent_handle_llm_error`
+Handles errors reported by the LLM provider.
+- **Rust Function**: `agent_handle_llm_error`
+- **Arguments**:
+  - `sessionId`: string
+  - `error`: string
+- **Returns**: `AgentResponse`
+
+#### `agent_pause_workflow`
+Pauses an active workflow.
+- **Rust Function**: `agent_pause_workflow`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `AgentResponse`
+
+#### `agent_resume_workflow`
+Resumes a paused workflow.
+- **Rust Function**: `agent_resume_workflow`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `AgentResponse`
+
+#### `agent_terminate_workflow`
+Terminates a running workflow immediately.
+- **Rust Function**: `agent_terminate_workflow`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `AgentResponse`
+
+#### `agent_get_available_tools`
+Retrieves tools available to a specific session (filtered by config).
+- **Rust Function**: `agent_get_available_tools`
+- **Arguments**:
+  - `sessionId`: string
+- **Returns**: `MCPTool[]`
+
+## MCP Management Commands
+
+Commands for managing Model Context Protocol (MCP) servers and tools.
+
+### Server Management
+
+#### `start_mcp_server`
+Starts an MCP server.
+- **Rust Function**: `start_mcp_server`
+- **Arguments**:
+  - `config`: `MCPServerConfig`
+- **Returns**: `string` (server name)
+
+#### `stop_mcp_server`
+Stops a running MCP server.
+- **Rust Function**: `stop_mcp_server`
+- **Arguments**:
+  - `serverName`: string
+
+#### `get_connected_servers`
+Lists all currently connected MCP servers.
+- **Rust Function**: `get_connected_servers`
+- **Returns**: `string[]`
+
+#### `check_server_status`
+Checks if a specific server is responsive.
+- **Rust Function**: `check_server_status`
+- **Arguments**:
+  - `serverName`: string
+- **Returns**: `boolean`
+
+#### `create_mcp_server_config`
+Saves a new MCP server configuration.
+- **Rust Function**: `create_mcp_server_config`
+- **Arguments**:
+  - `config`: `MCPServerConfig`
+- **Returns**: `MCPServerConfig`
+
+#### `list_mcp_server_configs`
+Lists all saved MCP server configurations.
+- **Rust Function**: `list_mcp_server_configs`
+- **Returns**: `MCPServerConfig[]`
+
+### Tool Operations
+
+#### `call_mcp_tool`
+Calls a tool on a specific MCP server.
+- **Rust Function**: `call_mcp_tool`
+- **Arguments**:
+  - `serverName`: string
+  - `toolName`: string
+  - `arguments`: object
+- **Returns**: `ToolCallResult`
+
+#### `list_mcp_tools`
+Lists tools provided by a specific server.
+- **Rust Function**: `list_mcp_tools`
+- **Arguments**:
+  - `serverName`: string
+- **Returns**: `MCPTool[]`
+
+#### `list_all_tools`
+Lists all tools from all connected servers.
+- **Rust Function**: `list_all_tools`
+- **Returns**: `MCPTool[]`
+
+## Built-in Tools Commands
+
+Direct access to built-in capabilities.
+
+### Browser
+
+#### `create_browser_session`
+Starts a headless browser session.
+- **Rust Function**: `create_browser_session`
+- **Arguments**:
+  - `sessionId`: string (optional)
+  - `url`: string (optional)
+- **Returns**: `string` (browser session ID)
+
+#### `navigate_to_url`
+Navigates a browser session to a URL.
+- **Rust Function**: `navigate_to_url`
+- **Arguments**:
+  - `id`: string (browser session ID)
+  - `url`: string
+
+#### `execute_script`
+Executes JavaScript in a browser session.
+- **Rust Function**: `execute_script`
+- **Arguments**:
+  - `id`: string
+  - `script`: string
+- **Returns**: `any`
+
+### File System
+
+#### `list_workspace_files`
+Lists files in the current workspace directory.
+- **Rust Function**: `list_workspace_files`
+- **Arguments**:
+  - `path`: string (relative path)
+- **Returns**: `FileEntry[]`
+
+#### `read_dropped_file`
+Reads the content of a file dropped onto the window.
+- **Rust Function**: `read_dropped_file`
+- **Arguments**:
+  - `filePath`: string
+- **Returns**: `string` (file content)
+
+#### `write_file`
+Writes content to a file.
+- **Rust Function**: `write_file`
+- **Arguments**:
+  - `path`: string
+  - `content`: string
+
+## System Commands
+
+#### `get_app_logs_dir`
+Returns the directory path where application logs are stored.
+- **Rust Function**: `get_app_logs_dir`
+- **Returns**: `string`
+
+#### `list_log_files`
+Lists available log files.
+- **Rust Function**: `list_log_files`
+- **Returns**: `string[]`
+
+#### `set_setting`
+Updates a system setting.
+- **Rust Function**: `set_setting`
+- **Arguments**:
+  - `key`: string
+  - `value`: string
+- **Returns**: `void`
+
+#### `get_setting`
+Retrieves a system setting.
+- **Rust Function**: `get_setting`
+- **Arguments**:
+  - `key`: string
+- **Returns**: `string | null`
+
+#### `agent_factory_reset`
+Resets all data and settings to factory defaults.
+- **Rust Function**: `agent_factory_reset`
+- **Returns**: `AgentResponse`
 
 ---
-
-### stop_mcp_server
-
-**Purpose**: Stops a running MCP server.
-
-**Source**: [`src-tauri/src/lib.rs:27-32`](../src-tauri/src/lib.rs#L27-L32)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server to stop.
-
-**Returns**:
-
-- `Result<(), String>` - Returns `Ok` on success, or an error message on failure.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-try {
-  await invoke('stop_mcp_server', { serverName: 'filesystem' });
-  console.log('Server stopped successfully.');
-} catch (error) {
-  console.error('Failed to stop server:', error);
-}
-```
-
-**Related**:
-
-- [`start_mcp_server`](#start_mcp_server)
-- [`check_all_servers_status`](#check_all_servers_status)
-
-## Tool Operations
-
-### call_mcp_tool
-
-**Purpose**: Calls a specific tool on a running MCP server.
-
-**Source**: [`src-tauri/src/lib.rs:34-41`](../src-tauri/src/lib.rs#L34-L41)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server hosting the tool.
-- `tool_name: String` - The name of the tool to call.
-- `arguments: serde_json::Value` - The arguments to pass to the tool, as a JSON object.
-
-**Returns**:
-
-- `ToolCallResult` - The result of the tool call. See [`types.md#toolcallresult`](./types.md#toolcallresult).
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-try {
-  const result = await invoke('call_mcp_tool', {
-    serverName: 'filesystem',
-    toolName: 'writeFile',
-    arguments: { path: '/tmp/test.txt', content: 'Hello, World!' },
-  });
-  console.log('Tool call result:', result);
-} catch (error) {
-  console.error('Tool call failed:', error);
-}
-```
-
----
-
-### list_mcp_tools
-
-**Purpose**: Lists all available tools on a specific MCP server.
-
-**Source**: [`src-tauri/src/lib.rs:43-48`](../src-tauri/src/lib.rs#L43-L48)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server.
-
-**Returns**:
-
-- `Result<Vec<MCPTool>, String>` - A list of tool definitions on success, or an error message on failure.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-try {
-  const tools = await invoke('list_mcp_tools', { serverName: 'filesystem' });
-  console.log('Available tools:', tools);
-} catch (error) {
-  console.error('Failed to list tools:', error);
-}
-```
-
----
-
-### list_tools_from_config
-
-**Purpose**: Starts servers from a configuration object and lists all their tools. This is useful for discovering tools from multiple servers at once.
-
-**Source**: [`src-tauri/src/lib.rs:50-142`](../src-tauri/src/lib.rs#L50-L142)
-
-**Parameters**:
-
-- `config: serde_json::Value` - A JSON object containing server configurations. It supports both `mcpServers` (object) and `servers` (array) formats.
-
-**Returns**:
-
-- `Result<Vec<MCPTool>, String>` - A flattened list of all tools from all servers, with tool names prefixed by their server name (e.g., `serverName__toolName`).
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const config = {
-  mcpServers: {
-    filesystem: {
-      command: 'npx',
-      args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
-    },
-    // ... other servers
-  },
-};
-
-try {
-  const allTools = await invoke('list_tools_from_config', { config });
-  console.log('All discovered tools:', allTools);
-} catch (error) {
-  console.error('Failed to list tools from config:', error);
-}
-```
-
-## Status & Monitoring
-
-### get_connected_servers
-
-**Purpose**: Gets a list of all currently connected MCP server names.
-
-**Source**: [`src-tauri/src/lib.rs:144-146`](../src-tauri/src/lib.rs#L144-L146)
-
-**Returns**:
-
-- `Vec<String>` - A list of connected server names.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const connectedServers = await invoke<string[]>('get_connected_servers');
-console.log('Connected servers:', connectedServers);
-```
-
----
-
-### check_server_status
-
-**Purpose**: Checks if a specific MCP server is currently alive and responsive.
-
-**Source**: [`src-tauri/src/lib.rs:148-150`](../src-tauri/src/lib.rs#L148-L150)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server to check.
-
-**Returns**:
-
-- `bool` - `true` if the server is alive, `false` otherwise.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const isAlive = await invoke('check_server_status', {
-  serverName: 'filesystem',
-});
-console.log('Server status:', isAlive ? 'Alive' : 'Not Responding');
-```
-
----
-
-### check_all_servers_status
-
-**Purpose**: Checks the status of all managed MCP servers.
-
-**Source**: [`src-tauri/src/lib.rs:152-154`](../src-tauri/src/lib.rs#L152-L154)
-
-**Returns**:
-
-- `std::collections::HashMap<String, bool>` - A map where keys are server names and values are their status (`true` for alive, `false` for not responding).
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-const allStatuses = await invoke('check_all_servers_status');
-console.log('All server statuses:', allStatuses);
-```
-
-## Utility Functions
-
-### list_all_tools
-
-**Purpose**: Lists all tools from all currently connected servers.
-
-**Source**: [`src-tauri/src/lib.rs:156-161`](../src-tauri/src/lib.rs#L156-L161)
-
-**Returns**:
-
-- `Result<Vec<mcp::MCPTool>, String>` - A list of all tools, or an error message.
-
-**Usage**:
-
-```typescript
-import { invoke } from '@tauri-apps/api/tauri';
-
-try {
-  const allTools = await invoke('list_all_tools');
-  console.log('All tools from connected servers:', allTools);
-} catch (error) {
-  console.error(error);
-}
-```
-
----
-
-### get_validated_tools
-
-**Purpose**: Retrieves a list of tools from a server that have a valid schema.
-
-**Source**: [`src-tauri/src/lib.rs:163-168`](../src-tauri/src/lib.rs#L163-L168)
-
-**Parameters**:
-
-- `server_name: String` - The name of the server.
-
-**Returns**:
-
-- `Result<Vec<mcp::MCPTool>, String>` - A list of validated tools, or an error message.
-
----
-
-### validate_tool_schema
-
-**Purpose**: Validates the schema of a single tool.
-
-**Source**: [`src-tauri/src/lib.rs:170-173`](../src-tauri/src/lib.rs#L170-L173)
-
-**Parameters**:
-
-- `tool: mcp::MCPTool` - The tool object to validate.
-
-**Returns**:
-
-- `Result<(), String>` - Returns `Ok` if the schema is valid, otherwise an error message.
+**Note**: All commands are invoked using `invoke('command_name', { ...args })` from the frontend. Argument keys must match the camelCase names listed above.
