@@ -61,6 +61,7 @@ for await (const chunk of chatCompletion) {
 
 ```javascript
 import Groq from 'groq-sdk';
+import { Parser } from 'expr-eval';
 
 const client = new Groq({
   apiKey: import.meta.env.VITE_GROQ_API_KEY,
@@ -117,16 +118,15 @@ async function runConversation(userPrompt) {
   const toolCalls = responseMessage.tool_calls;
 
   if (toolCalls) {
+    const parser = new Parser();
+
     const availableFunctions = {
       calculate: (args) => {
-        // Note: eval is dangerous in production. Use a math parser library instead.
-        // For this example, we assume trusted input or use a safer alternative if possible.
+        // Avoid eval in production. Use a safe expression parser instead.
         try {
-            // Safe mock implementation for example
-            console.log(`Calculating: ${args.expression}`);
-            return "42";
+          return parser.evaluate(args.expression);
         } catch (e) {
-            return "Error";
+          return `Error: ${e instanceof Error ? e.message : 'invalid expression'}`;
         }
       },
     };
@@ -245,8 +245,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const client = new Anthropic({
   apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-  // Anthropic SDK might not support browser usage directly without proxy or dangerouslyAllowBrowser equivalent
-  // Check SDK documentation. LibrAgent uses it in frontend, so it likely works or is polyfilled.
+  dangerouslyAllowBrowser: true, // Required for client-side usage (matches LibrAgent Anthropic service)
 });
 
 const stream = await client.messages.create({
