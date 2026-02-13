@@ -5,7 +5,9 @@ use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::services::{InteractiveBrowserServer, SecureFileManager};
 use crate::state;
-use log::{info, warn};
+use log::info;
+#[cfg(target_os = "linux")]
+use log::warn;
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
