@@ -53,8 +53,8 @@ describe('token-utils', () => {
 
   it('should return all messages if they fit within the limit', () => {
       const messages = [
-        createMessage('1', 'short'),
-        createMessage('2', 'message'),
+        createMessage('1', 'short', 'user'),
+        createMessage('2', 'message', 'assistant'),
       ];
 
       // 'user: short' = 11 tokens
@@ -85,9 +85,9 @@ describe('token-utils', () => {
 
       const result = selectMessagesWithinContext(messages, 'openai', 'gpt-4');
       
-      // Should keep msg 2 (400) and drop msg 1 (1500) because 400+1500 > 1800
+      // Should be merged if both are user role
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('2');
+      expect(result[0].id).toBe('merged_1_2');
     });
 
     it('should reserve tokens for system prompt and tools', () => {
@@ -135,7 +135,7 @@ describe('token-utils', () => {
       const result = selectMessagesWithinContext(messages, 'openai', 'gpt-4', maxTokens);
       
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('2');
+      expect(result[0].id).toBe('merged_1_2');
     });
   });
 });

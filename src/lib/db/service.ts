@@ -235,7 +235,6 @@ export const dbUtils = {
     const assistants = await assistantsBackend.listAssistants();
 
     for (const assistant of assistants) {
-      if (!assistant.id) continue;
       const all = await playbooksBackend.listPlaybooks({
         agentId: assistant.id,
       });

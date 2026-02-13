@@ -3,6 +3,7 @@ use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
@@ -160,6 +161,7 @@ pub fn create_tool_result_message(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
+        metadata: None,
     }
 }
 
@@ -192,6 +194,9 @@ pub fn create_error_tool_result(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
+        metadata: Some(serde_json::json!({
+            "toolError": true,
+        })),
     }
 }
 
@@ -213,6 +218,20 @@ pub fn create_tool_result_message_with_content(
 ) -> Message {
     let now = chrono::Utc::now().timestamp_millis();
 
+    // Some servers may return error semantics via MCPContent (e.g., Text { is_error: Some(true) })
+    // without flipping the outer ToolExecutionResult.is_error flag.
+    // We propagate that signal into Message.metadata.toolError so the UI can group failed tool
+    // results deterministically without parsing text.
+    let tool_error = content.iter().any(|c| {
+        matches!(
+            c,
+            MCPContent::Text {
+                is_error: Some(true),
+                ..
+            }
+        )
+    });
+
     Message {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: session_id.to_string(),
@@ -230,6 +249,13 @@ pub fn create_tool_result_message_with_content(
         updated_at: now,
         source: Some("tool".to_string()),
         error: None,
+        metadata: if tool_error {
+            Some(serde_json::json!({
+                "toolError": true,
+            }))
+        } else {
+            None
+        },
     }
 }
 
@@ -249,7 +275,9 @@ pub async fn handle_tool_result(
     {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            if session.cancellation_token.is_cancelled() {
+            if session.cancellation_token.is_cancelled()
+                || session.cancel_pending.load(Ordering::SeqCst)
+            {
                 log::info!("Workflow cancelled for session: {}", session_id);
                 return Err("Workflow was cancelled".to_string());
             }

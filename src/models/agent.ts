@@ -5,10 +5,6 @@ import { Assistant } from './chat';
  * This is what's stored in agent_sessions.agent_config and includes
  * model/provider/temperature that are NOT part of the persistent Assistant entity.
  */
-export interface AgentConfig extends Assistant {
-  temperature: number;
-  maxTokens?: number;
-}
 
 /**
  * Agent session metadata from Rust backend
@@ -21,7 +17,7 @@ export interface AgentSession {
   provider: string;
   createdAt: Date;
   updatedAt?: Date;
-  assistant?: AgentConfig; // Runtime config, not persistent Assistant
+  assistant?: Assistant; // Runtime config, not persistent Assistant
 }
 
 /**

@@ -11,8 +11,14 @@ import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 
 export function AgentChatMessages() {
-  const { messages, error, llmError, retryMessage, workflowStatus } =
-    useAgentChat();
+  const {
+    messages,
+    pendingMessages,
+    error,
+    llmError,
+    retryMessage,
+    workflowStatus,
+  } = useAgentChat();
   const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
@@ -22,6 +28,13 @@ export function AgentChatMessages() {
 
   // Group messages for display
   const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
+
+  // Convert pendingMessages to a Set of IDs for O(1) lookups
+  // This prevents O(n*m) performance issues when checking if each message is pending
+  const pendingMessageIds = useMemo(
+    () => new Set(pendingMessages.map((msg) => msg.id)),
+    [pendingMessages],
+  );
 
   // Only auto-scroll if enabled
   useEffect(() => {
@@ -61,11 +74,7 @@ export function AgentChatMessages() {
     setAutoScrollEnabled(atBottom);
   }, 100);
 
-  const lastMessageWho = useMemo(
-    () =>
-      messages.length > 0 ? messages[messages.length - 1].role : undefined,
-    [messages],
-  );
+  const lastMessageWho = messages[messages.length - 1]?.role;
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -78,7 +87,7 @@ export function AgentChatMessages() {
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const getAssistantNameForMessage = useCallback(
     (msg: Message) => {
-      if (msg.role === 'assistant') {
+      if (msg?.role === 'assistant') {
         return session?.assistant?.name || 'Agent';
       }
       return '';
@@ -91,18 +100,11 @@ export function AgentChatMessages() {
     return retryMessage();
   };
 
-  // Check if any message is currently streaming
-  const isLastStreaming = useMemo(() => {
-    return messages.length > 0
-      ? messages[messages.length - 1].isStreaming
-      : false;
-  }, [messages]);
-
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
         ref={scrollContainerRef}
-        className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6 terminal-scrollbar"
+        className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6"
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {
@@ -114,6 +116,20 @@ export function AgentChatMessages() {
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
+                isPending={pendingMessageIds.has(groupedMessage.message.id)}
+              />
+            );
+          }
+
+          if (groupedMessage.type === 'tool_error_group') {
+            return (
+              <AgentMessageBubble
+                key={groupedMessage.message.id}
+                message={groupedMessage.message}
+                getAssistantName={getAssistantNameForMessage}
+                groupedMessages={groupedMessage.messages}
+                isPending={pendingMessageIds.has(groupedMessage.message.id)}
+                toolErrorGroup={true}
               />
             );
           }
@@ -121,10 +137,7 @@ export function AgentChatMessages() {
           // Handle message-level errors
           if (groupedMessage.message.error) {
             return (
-              <div
-                className="self-start mt-2 mb-2"
-                key={groupedMessage.message.id}
-              >
+              <div className="self-start my-2" key={groupedMessage.message.id}>
                 <ErrorBubble
                   error={groupedMessage.message.error}
                   onRetry={handleRetry}
@@ -156,6 +169,7 @@ export function AgentChatMessages() {
               key={msg.id}
               message={msg}
               getAssistantName={getAssistantNameForMessage}
+              isPending={pendingMessageIds.has(msg.id)}
             />
           );
         })}
@@ -187,9 +201,13 @@ export function AgentChatMessages() {
             />
           </div>
         )}
-        {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming yet */}
+        {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming/meaningful yet */}
         {workflowStatus === 'busy' &&
-          (!isLastStreaming || lastMessageWho === 'user') && (
+          (lastMessageWho !== 'assistant' ||
+            (messages[messages.length - 1]?.role === 'assistant' &&
+              !messages[messages.length - 1]?.content?.length &&
+              !messages[messages.length - 1]?.thinking &&
+              !messages[messages.length - 1]?.tool_calls?.length)) && (
             <div className="flex justify-start mb-8 mt-3">
               <div className="w-full max-w-full bg-secondary/30 rounded-lg px-6 py-5">
                 <div className="flex items-center gap-3 mb-2">

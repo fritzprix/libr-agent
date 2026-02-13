@@ -3,9 +3,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::mcp::builtin::error_guidance::{
-    operation_failed_error, ErrorCategory, ErrorGuidance, SuccessHint, ToolGroup,
-};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
 use crate::mcp::types::MCPResult;
 use crate::session_isolation::IsolatedProcessConfig;
 
@@ -46,19 +44,19 @@ impl WorkspaceServer {
                 .count();
 
             if running_count >= MAX_CONCURRENT_PROCESSES {
-                return Ok(ErrorGuidance::with_guidance(
+                return Ok(guided_error(
                     ErrorCategory::InvalidState,
                     format!(
                         "Maximum concurrent processes limit reached ({}/{})",
                         running_count, MAX_CONCURRENT_PROCESSES
                     ),
-                    vec![
-                        "Use listProcesses to see running processes".to_string(),
-                        "Use stopProcess to cancel unnecessary processes".to_string(),
-                        "Wait for some processes to finish before starting new ones".to_string(),
-                    ],
                     ToolGroup::Workspace,
                 )
+                .guidance(vec![
+                    "Use listProcesses to see running processes".to_string(),
+                    "Use stopProcess to cancel unnecessary processes".to_string(),
+                    "Wait for some processes to finish before starting new ones".to_string(),
+                ])
                 .to_mcp_result());
             }
         }
@@ -72,19 +70,20 @@ impl WorkspaceServer {
             .join(format!("process_{process_id}"));
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
-            return Ok(operation_failed_error(
-                "Create process directory",
-                &e.to_string(),
-                vec![
-                    "Check workspace directory permissions".to_string(),
-                    "Ensure sufficient disk space is available".to_string(),
-                    format!(
-                        "Verify tmp directory is writable: {}",
-                        workspace_path.join("tmp").display()
-                    ),
-                ],
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
                 ToolGroup::Workspace,
-            ));
+            )
+            .guidance(vec![
+                "Check workspace directory permissions".to_string(),
+                "Ensure sufficient disk space is available".to_string(),
+                format!(
+                    "Verify tmp directory is writable: {}",
+                    workspace_path.join("tmp").display()
+                ),
+            ])
+            .to_mcp_result());
         }
 
         let stdout_path = process_tmp_dir.join("stdout");
@@ -123,16 +122,17 @@ impl WorkspaceServer {
         {
             Ok(cmd) => cmd,
             Err(e) => {
-                return Ok(operation_failed_error(
-                    "Create isolated command",
-                    &e.to_string(),
-                    vec![
-                        "Verify shell environment is properly configured".to_string(),
-                        "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
-                        "Ensure workspace isolation level is valid".to_string(),
-                    ],
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    e.to_string(),
                     ToolGroup::Workspace,
-                ));
+                )
+                .guidance(vec![
+                    "Verify shell environment is properly configured".to_string(),
+                    "Check if required shell binary exists (bash/sh/PowerShell)".to_string(),
+                    "Ensure workspace isolation level is valid".to_string(),
+                ])
+                .to_mcp_result());
             }
         };
 
@@ -244,16 +244,17 @@ impl WorkspaceServer {
             let registry = self.process_registry.read().await;
             if let Some(entry) = registry.entries.get(&process_id) {
                 if matches!(entry.status, terminal_manager::ProcessStatus::Failed) {
-                    return Ok(operation_failed_error(
-                        "Start background process",
+                    return Ok(guided_error(
+                        ErrorCategory::OperationFailed,
                         "Process failed to start",
-                        vec![
-                            "Verify the command syntax is correct".to_string(),
-                            "Check if required programs are installed".to_string(),
-                            "Use listProcesses to see failed process details".to_string(),
-                        ],
                         ToolGroup::Workspace,
-                    ));
+                    )
+                    .guidance(vec![
+                        "Verify the command syntax is correct".to_string(),
+                        "Check if required programs are installed".to_string(),
+                        "Use listProcesses to see failed process details".to_string(),
+                    ])
+                    .to_mcp_result());
                 }
             }
         }
@@ -275,7 +276,7 @@ impl WorkspaceServer {
             ),
             vec![
                 format!(
-                    "Use pollProcess(\"{}\") to check status and completion",
+                    "Use waitForProcess(\"{}\", 0) to check status and completion",
                     process_id
                 ),
                 "If status is 'failed', use readProcessOutput with 'stderr' to view errors"

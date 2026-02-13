@@ -185,7 +185,7 @@ pub async fn create_basic_isolated_command(
 
         let encoded_command = general_purpose::STANDARD.encode(&full_command);
         let wrapped_command = format!(
-            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
             encoded_command
         );
 
@@ -338,7 +338,7 @@ mod tests {
         let test_command = "Remove-Item -Path \"C:\\test\" -Recurse -Force";
         let encoded = general_purpose::STANDARD.encode(test_command);
         let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
             encoded
         );
 
@@ -368,7 +368,7 @@ mod tests {
         let encoded = general_purpose::STANDARD.encode(test_command);
 
         let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
+            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
             encoded
         );
 

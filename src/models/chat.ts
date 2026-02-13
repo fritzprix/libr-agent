@@ -11,6 +11,18 @@ import {
 export interface UIResource {
   uri?: string; // Recommended format: ui://...
   mimeType: string; // 'text/html' | 'text/uri-list' | 'application/vnd.mcp-ui.remote-dom'
+  /**
+   * True when this message is a tool result that represents a tool execution failure.
+   *
+   * UI uses this flag to visually distinguish failed tool results and to group
+   * consecutive tool failures into an "error group".
+   */
+  toolError?: boolean;
+  /**
+   * Optional normalized category for tool failures (e.g., InvalidInput, NotFound).
+   * This is UI-facing and should remain stable even if backend internals change.
+   */
+  toolErrorCategory?: string;
   text?: string; // inline HTML or remote-dom script
   blob?: string; // base64-encoded content when used
 }
@@ -248,7 +260,7 @@ export interface MCPServerEntity {
 }
 
 export interface Assistant {
-  id?: string;
+  id: string;
   name: string;
   description?: string;
   avatar?: string; // Optional avatar URL or identifier

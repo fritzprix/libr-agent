@@ -7,6 +7,7 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::builtin::BuiltinMCPServer;
+use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::server::MCPServerManager;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
@@ -304,7 +305,19 @@ impl MCPServiceProxy {
                     let server = self
                         .builtin_servers
                         .get(&server_id)
-                        .ok_or_else(|| format!("Built-in server not found: {}", server_id))?;
+                        .ok_or_else(|| {
+                            let available = self.builtin_servers.keys()
+                                .map(|k| format!("'{}'", k))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            format!(
+                                "Built-in server '{}' not enabled in this session.\n\n\
+                                Available servers: [{}]\n\n\
+                                💡 To fix: Update the assistant's 'allowedBuiltInServiceAliases' \
+                                configuration to include \"{}\"",
+                                server_id, available, server_id
+                            )
+                        })?;
 
                     log::debug!(
                         "Calling builtin tool '{}' for session '{}'",
@@ -340,29 +353,97 @@ impl MCPServiceProxy {
                     // 1. Check if it's a session-isolated HTTP server
                     if self.session_managers.http.has_server(&server_name).await {
                         log::debug!("Routing to session-isolated HTTP server: {}", server_name);
-                        return self
+                        return match self
                             .session_managers
                             .http
                             .call_tool(&server_name, &real_tool_name, args)
                             .await
-                            .map_err(|e| e.to_string());
+                        {
+                            Ok(resp) => Ok(resp),
+                            Err(e) => {
+                                let result = external_tool_error_result(
+                                    "Call External Tool",
+                                    &server_name,
+                                    &real_tool_name,
+                                    ExternalMcpErrorCategory::Transport,
+                                    &e.to_string(),
+                                    vec![
+                                        "Verify the HTTP MCP server URL and headers are valid".to_string(),
+                                        "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
+                                        "Re-run session tool discovery to confirm tool availability".to_string(),
+                                    ],
+                                );
+
+                                Ok(MCPResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id: Some(super::types::JsonRpcId::String(
+                                        uuid::Uuid::new_v4().to_string(),
+                                    )),
+                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                                    error: None,
+                                })
+                            }
+                        };
                     }
 
                     // 2. Check if it's a session-isolated Stdio server
                     if self.session_managers.stdio.has_server(&server_name) {
                         log::debug!("Routing to session-isolated Stdio server: {}", server_name);
-                        return self
+                        return match self
                             .session_managers
                             .stdio
                             .call_tool(&server_name, &real_tool_name, args)
                             .await
-                            .map_err(|e| e.to_string());
+                        {
+                            Ok(resp) => Ok(resp),
+                            Err(e) => {
+                                let result = external_tool_error_result(
+                                    "Call External Tool",
+                                    &server_name,
+                                    &real_tool_name,
+                                    ExternalMcpErrorCategory::Transport,
+                                    &e.to_string(),
+                                    vec![
+                                        "Verify the MCP server command can be spawned".to_string(),
+                                        "Check server stderr logs for startup errors".to_string(),
+                                        "Re-run session tool discovery to confirm tool availability".to_string(),
+                                    ],
+                                );
+
+                                Ok(MCPResponse {
+                                    jsonrpc: "2.0".to_string(),
+                                    id: Some(super::types::JsonRpcId::String(
+                                        uuid::Uuid::new_v4().to_string(),
+                                    )),
+                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                                    error: None,
+                                })
+                            }
+                        };
                     }
 
-                    Err(format!(
-                        "Tool '{}' not found in session '{}'. Session isolation is active, and the tool is not available in the session-specific server instances.",
-                        tool_name, self.session_id
-                    ))
+                    let result = external_tool_error_result(
+                        "Call External Tool",
+                        &server_name,
+                        &real_tool_name,
+                        ExternalMcpErrorCategory::NotFound,
+                        &format!(
+                            "Tool '{}' not found in session '{}'",
+                            tool_name, self.session_id
+                        ),
+                        vec![
+                            "Verify the server is enabled for this agent/session".to_string(),
+                            "Re-run session tool discovery to list available tools".to_string(),
+                            "Confirm the tool name matches the server tool list".to_string(),
+                        ],
+                    );
+
+                    Ok(MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(uuid::Uuid::new_v4().to_string())),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    })
                 }
             }
         })

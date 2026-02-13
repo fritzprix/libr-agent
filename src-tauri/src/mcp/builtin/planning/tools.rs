@@ -75,29 +75,10 @@ fn clear_goal_tool() -> MCPTool {
 }
 
 fn add_todo_tool() -> MCPTool {
-    let subtask_schema = object_prop(
-        vec![
-            (
-                "description".to_string(),
-                string_prop_required("Subtask description"),
-            ),
-            (
-                "priority".to_string(),
-                enum_prop(
-                    vec!["low", "medium", "high"],
-                    "medium",
-                    Some("Priority level"),
-                ),
-            ),
-        ],
-        vec!["description".to_string()],
-        None,
-    );
-
     MCPTool {
         name: "addTodo".to_string(),
         title: Some("Add Todo".to_string()),
-        description: "Add a todo item to the goal. Supports 1-level nesting: you can add subtasks inline or specify a parentId to create a child task. Use to break down a goal into actionable steps.".to_string(),
+        description: "Add a simple todo item. No subtasks, no nesting - flat structure only. Use to track individual tasks.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -109,22 +90,7 @@ fn add_todo_tool() -> MCPTool {
                     enum_prop(
                         vec!["low", "medium", "high"],
                         "medium",
-                        Some("The priority of the todo item."),
-                    ),
-                ),
-                (
-                    "parentId".to_string(),
-                    integer_prop(
-                        None,
-                        Some(1),
-                        Some("Parent todo ID to create a subtask. Only top-level todos (without parentId) can be parents. Maximum 1-level nesting."),
-                    ),
-                ),
-                (
-                    "subtasks".to_string(),
-                    array_schema(
-                        subtask_schema,
-                        Some("Array of subtasks to create with this todo. Only allowed when creating a top-level todo (no parentId)."),
+                        Some("Priority level (default: medium)."),
                     ),
                 ),
             ],
@@ -140,39 +106,27 @@ fn check_todo_tool() -> MCPTool {
     MCPTool {
         name: "checkTodo".to_string(),
         title: Some("Check Todo".to_string()),
-        description: "Mark a todo item as completed or unchecked. Checked todos remain in the list for progress tracking and can be unchecked later. Optionally provide a summary of how the task was completed (e.g., 'Fixed with PR #42', 'Resolved in commit abc123').".to_string(),
+        description: "Mark a todo as done or undone using its position. Get positions from getCurrentState. Checked todos remain in the list for progress tracking.".to_string(),
         input_schema: object_prop(
             vec![
-                (
-                    "id".to_string(),
-                    integer_prop(
-                        None,
-                        Some(1),
-                        Some("The database ID of the todo to update"),
-                    ),
-                ),
                 (
                     "index".to_string(),
                     integer_prop(
                         None,
                         Some(0),
-                        Some("The 0-based index position of the todo in the current list"),
+                        Some("The 0-based position of the todo in the list (e.g., 0 for first todo, 1 for second)"),
                     ),
                 ),
                 (
                     "checked".to_string(),
-                    boolean_prop(Some("Whether to mark the todo as checked (true) or unchecked (false). Defaults to true.")),
+                    boolean_prop(Some("Whether to mark as done (true) or undone (false). Defaults to true.")),
                 ),
                 (
                     "summary".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Completion summary documenting how the task was resolved (e.g., 'Fixed with PR #42', 'Resolved in commit abc123', 'Documentation updated'). This summary is displayed in service context and helps track progress across sessions."),
-                    ),
+                    string_prop(None, None, Some("Optional completion summary (e.g., 'Fixed with PR #42', 'Resolved in commit abc123').")),
                 ),
             ],
-            vec![],
+            vec!["index".to_string()],
             None,
         ),
         output_schema: None,
@@ -184,34 +138,26 @@ fn cancel_todo_tool() -> MCPTool {
     MCPTool {
         name: "cancelTodo".to_string(),
         title: Some("Cancel Todo".to_string()),
-        description: r#"Permanently remove specific todos by ID or index. Use this tool when:
+        description: r#"Remove a single todo by its position. Use this tool when:
 • Task was created incorrectly
 • Requirements changed and task is no longer needed
 • Task duplicates another todo
 
 ⚠️ IMPORTANT: This operation is irreversible
 ❌ DO NOT use for completed tasks - use checkTodo instead to preserve completion history
-✓ Use cancelTodo only for tasks that should not exist
-
-If no parameters provided, cancels ALL todos (complete reset)."#.to_string(),
+✓ Use cancelTodo only for tasks that should not exist"#.to_string(),
         input_schema: object_prop(
             vec![
                 (
-                    "ids".to_string(),
-                    array_schema(
-                        integer_prop(None, Some(1), None),
-                        Some("Array of todo IDs to cancel. Extract from getCurrentState response."),
-                    ),
-                ),
-                (
-                    "indices".to_string(),
-                    array_schema(
-                        integer_prop(None, Some(0), None),
-                        Some("Array of todo indices (0-based) to cancel. Extract from getCurrentState response."),
+                    "index".to_string(),
+                    integer_prop(
+                        None,
+                        Some(0),
+                        Some("The 0-based position of the todo to remove (e.g., 0 for first todo, 1 for second)"),
                     ),
                 ),
             ],
-            vec![],
+            vec!["index".to_string()],
             None,
         ),
         output_schema: None,

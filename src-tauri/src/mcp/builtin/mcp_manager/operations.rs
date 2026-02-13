@@ -1,18 +1,17 @@
 use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
-    invalid_input_error, missing_param_error, operation_failed_error, ErrorCategory, ErrorGuidance,
-    SuccessHint, ToolGroup,
+    guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
 
-use super::queries::get_server_config;
+use super::queries::{get_server_config, get_server_details};
 
 use super::MCPManagerServer;
 
-async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
+async fn save_server_config(config: &MCPServerConfig) -> Result<String, String> {
     let repo = get_mcp_server_repository();
     let server_name = config
         .name
@@ -22,32 +21,38 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<(), String> {
     let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
     // Try to update first (by name lookup), create if doesn't exist
-    match repo.get_by_name(server_name).await {
+    let id = match repo.get_by_name(server_name).await {
         Ok(Some(existing)) => {
             // Update by ID with new config
             repo.update(&existing.id, None, Some(config_value))
                 .await
-                .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+                .map_err(|e| format!("Failed to update MCP server config: {}", e))?
+                .id
         }
         Ok(None) => {
             repo.create(server_name, config_value)
                 .await
-                .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+                .map_err(|e| format!("Failed to create MCP server config: {}", e))?
+                .id
         }
         Err(e) => return Err(format!("DB query error: {}", e)),
-    }
-    Ok(())
+    };
+    Ok(id)
 }
 
-async fn delete_server_config_db(name: String) -> Result<(), String> {
+async fn delete_server_config_db(id_or_name: String) -> Result<(), String> {
     let repo = get_mcp_server_repository();
 
-    // Lookup by name first, then delete by ID
-    let server = repo
-        .get_by_name(&name)
-        .await
-        .map_err(|e| format!("DB Query Error: {}", e))?
-        .ok_or_else(|| format!("MCP server '{}' not found", name))?;
+    // Try ID first, then name
+    let mut server = repo.get(&id_or_name).await.map_err(|e| e.to_string())?;
+    if server.is_none() {
+        server = repo
+            .get_by_name(&id_or_name)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    let server = server.ok_or_else(|| format!("MCP server '{}' not found", id_or_name))?;
 
     repo.delete(&server.id)
         .await
@@ -57,43 +62,16 @@ async fn delete_server_config_db(name: String) -> Result<(), String> {
 
 /// Register a new MCP server configuration
 pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<MCPResult, String> {
-    // Get and validate name (required parameter)
     let name = match args.get("name").and_then(|v| v.as_str()) {
-        Some(custom_name) if !custom_name.trim().is_empty() => {
-            let sanitized = custom_name.trim().to_string();
-
-            // Validate name format (alphanumeric, hyphens, underscores)
-            if !sanitized
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-            {
-                return Ok(invalid_input_error(
-                    "Server name must contain only alphanumeric characters, hyphens, and underscores",
-                    ToolGroup::McpManager,
-                ));
-            }
-
-            // Check if name already exists (uniqueness constraint)
-            if get_server_config(&sanitized).await.ok().flatten().is_some() {
-                return Ok(ErrorGuidance::with_guidance(
-                    ErrorCategory::DuplicateResource,
-                    format!("Server name '{}' already exists", sanitized),
-                    vec![
-                        "Choose a different name".to_string(),
-                        "Use listServers to see existing server names".to_string(),
-                    ],
-                    ToolGroup::McpManager,
-                )
-                .to_mcp_result());
-            }
-
-            sanitized
-        }
+        Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
-            return Ok(invalid_input_error(
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
                 "Server name cannot be empty",
                 ToolGroup::McpManager,
-            ))
+            )
+            .with_guidance(vec!["Provide a unique name for this MCP server".to_string()])
+            .to_mcp_result())
         }
         None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
@@ -106,10 +84,19 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
     let transport: TransportConfig = match serde_json::from_value(transport_val.clone()) {
         Ok(config) => config,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid transport config: {}", e),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid transport config: {}", e),
                 ToolGroup::McpManager,
-            ))
+            )
+            .with_guidance(vec![
+                "Verify the 'transport' object matches the expected schema (stdio or http)"
+                    .to_string(),
+                "For stdio: { \"type\": \"stdio\", \"command\": \"...\", \"args\": [...] }"
+                    .to_string(),
+                "For http: { \"type\": \"http\", \"url\": \"...\" }".to_string(),
+            ])
+            .to_mcp_result())
         }
     };
 
@@ -130,14 +117,21 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
         metadata,
     };
 
-    if let Err(e) = save_server_config(&config).await {
-        return Ok(operation_failed_error(
-            "save_server_config",
-            &e,
-            vec!["Check database connectivity".to_string()],
-            ToolGroup::McpManager,
-        ));
-    }
+    let id = match save_server_config(&config).await {
+        Ok(id) => id,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("Failed to register server: {}", e),
+                ToolGroup::McpManager,
+            )
+            .with_guidance(vec![
+                "Check database connectivity".to_string(),
+                "Ensure the server name is unique".to_string(),
+            ])
+            .to_mcp_result());
+        }
+    };
 
     // Note: Session Isolation means we cannot auto-start via global manager
     // External servers are now created per-session through MCPServiceProxyManager
@@ -148,15 +142,16 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\nServer Name: {}\nStatus: Configured (not auto-started)\n\nExternal servers are managed per-session through MCPServiceProxyManager.",
-            name
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Configured (ready to use)\n\nExternal servers are managed per-session through MCPServiceProxyManager.",
+            name, id
         ),
         vec![
-            "Use listServers to view all registered servers".to_string(),
+            "Use listExternalServers to view all registered servers".to_string(),
             format!("Use connectServer('{}') to start this server in a session", name),
+            "The Server ID is required when configuring an assistant's mcpServerIds".to_string(),
         ],
     );
-    Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name }))))
+    Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
 
 /// Delete an MCP server
@@ -164,26 +159,20 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n.to_string(),
         Some(_) => {
-            return Ok(invalid_input_error(
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
                 "Target name cannot be empty",
                 ToolGroup::McpManager,
-            ))
+            )
+            .with_guidance(vec!["Specify the name of the server to delete".to_string()])
+            .to_mcp_result())
         }
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
     // Check if server exists (Hallucination Firewall - Section 3.2)
     if let Ok(Option::None) = get_server_config(&name).await {
-        return Ok(ErrorGuidance::with_guidance(
-            ErrorCategory::ResourceNotFound,
-            format!("Server '{}' not found in configuration", name),
-            vec![
-                "Use listServers to view all registered servers".to_string(),
-                format!("Use searchServer(query='{}') to find similar names", name),
-            ],
-            ToolGroup::McpManager,
-        )
-        .to_mcp_result());
+        return Ok(not_found_error("Server", &name, ToolGroup::McpManager));
     }
 
     // Note: Session Isolation means we cannot stop via global manager
@@ -191,15 +180,16 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     // Delete config
     if let Err(e) = delete_server_config_db(name.clone()).await {
-        return Ok(operation_failed_error(
-            "deleteServer",
-            &format!("Failed to exclude server configuration: {}", e),
-            vec![
-                "Verify database permissions".to_string(),
-                "Target 'listServers' to ensure the name exists".to_string(),
-            ],
+        return Ok(guided_error(
+            ErrorCategory::DatabaseError,
+            format!("Failed to exclude server configuration: {}", e),
             ToolGroup::McpManager,
-        ));
+        )
+        .with_guidance(vec![
+            "Verify database permissions".to_string(),
+            "Target 'listServers' to ensure the name exists".to_string(),
+        ])
+        .to_mcp_result());
     }
 
     server.invalidate_cache().await;
@@ -219,10 +209,13 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         Some(_) => {
-            return Ok(invalid_input_error(
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
                 "Target name cannot be empty",
                 ToolGroup::McpManager,
-            ))
+            )
+            .with_guidance(vec!["Specify the name of the server to update".to_string()])
+            .to_mcp_result())
         }
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
@@ -235,25 +228,21 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     let transport_config: TransportConfig = match serde_json::from_value(transport.clone()) {
         Ok(config) => config,
         Err(e) => {
-            return Ok(invalid_input_error(
-                &format!("Invalid transport config: {}", e),
+            return Ok(guided_error(
+                ErrorCategory::InvalidInput,
+                format!("Invalid transport config: {}", e),
                 ToolGroup::McpManager,
-            ))
+            )
+            .with_guidance(vec![
+                "Verify the 'transport' object matches the expected schema".to_string(),
+            ])
+            .to_mcp_result())
         }
     };
 
     // Check if server exists (Hallucination Firewall - Section 3.2)
     if let Ok(Option::None) = get_server_config(name).await {
-        return Ok(ErrorGuidance::with_guidance(
-            ErrorCategory::ResourceNotFound,
-            format!("Server '{}' not found in configuration", name),
-            vec![
-                "Use listServers to view all registered servers".to_string(),
-                format!("Use searchServer(query='{}') to find similar names", name),
-            ],
-            ToolGroup::McpManager,
-        )
-        .to_mcp_result());
+        return Ok(not_found_error("Server", name, ToolGroup::McpManager));
     }
 
     // Extract optional description for metadata
@@ -273,15 +262,19 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         metadata,
     };
 
-    // Update config
-    if let Err(e) = save_server_config(&config).await {
-        return Ok(operation_failed_error(
-            "updateServer",
-            &format!("Failed to target server for configuration update: {}", e),
-            vec!["Check database connectivity".to_string()],
-            ToolGroup::McpManager,
-        ));
-    }
+    // Update config and get ID
+    let id = match save_server_config(&config).await {
+        Ok(id) => id,
+        Err(e) => {
+            return Ok(guided_error(
+                ErrorCategory::DatabaseError,
+                format!("Failed to update server configuration: {}", e),
+                ToolGroup::McpManager,
+            )
+            .with_guidance(vec!["Check database connectivity".to_string()])
+            .to_mcp_result());
+        }
+    };
 
     // Note: Session Isolation means we cannot restart via global manager
     // Configuration updates take effect when servers are next started in a session
@@ -292,10 +285,10 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     events::emit_resource_updated("mcpServer", "update", Some(name.to_string()));
 
     let hint = SuccessHint::new(
-        "Server configuration updated".to_string(),
-        vec!["Use listServers to extract status".to_string()],
+        format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
+        vec!["Use listExternalServers to verify changes".to_string()],
     );
-    Ok(hint.to_mcp_result())
+    Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
 
 /// Verify server configuration and connectivity
@@ -309,20 +302,9 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     };
 
     // Get server config
-    let config = match get_server_config(name).await? {
-        Some(c) => c,
-        Option::None => {
-            return Ok(ErrorGuidance::with_guidance(
-                ErrorCategory::ResourceNotFound,
-                format!("Server '{}' not found in configuration", name),
-                vec![
-                    "Use listServers to view all registered servers".to_string(),
-                    format!("Use searchServer(query='{}') to find similar names", name),
-                ],
-                ToolGroup::McpManager,
-            )
-            .to_mcp_result())
-        }
+    let (id, config) = match get_server_details(name).await? {
+        Some(details) => details,
+        Option::None => return Ok(not_found_error("Server", name, ToolGroup::McpManager)),
     };
 
     // Determine transport type
@@ -355,27 +337,34 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         Ok(tool_count) => {
             // Persist tool count to database for UI display
             let repo = get_mcp_server_repository();
-            if let Err(e) = repo.update_tool_count(name, tool_count as i32).await {
-                log::warn!("Failed to cache tool count for '{}': {}", name, e);
+            if let Err(e) = repo.update_tool_count(&id, tool_count as i32).await {
+                log::warn!(
+                    "Failed to cache tool count for '{}' (ID: {}): {}",
+                    name,
+                    id,
+                    e
+                );
                 // Continue - don't fail verification if cache update fails
             }
 
             let result_text = format!(
-                "✓ Server '{}' verification successful\n\n\
+                "✓ Server '{}' (ID: {}) verification successful\n\n\
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
                 Available tools: {} (cached)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
-                name, transport_type, transport_details, tool_count, latency_ms
+                name, id, transport_type, transport_details, tool_count, latency_ms
             );
 
             Ok(SuccessHint::new(
                 result_text,
                 vec!["Server configuration is valid and operational".to_string()],
             )
-            .to_mcp_result())
+            .to_mcp_result_with_data(Some(
+                json!({ "name": name, "id": id, "toolCount": tool_count }),
+            )))
         }
         Err(error) => {
             let error_msg = format!("✗ Server '{}' verification failed", name);
@@ -404,12 +393,12 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
                 _ => vec!["Review server configuration".to_string()],
             };
 
-            Ok(ErrorGuidance::with_guidance(
+            Ok(guided_error(
                 ErrorCategory::OperationFailed,
                 format!("{}\n\n{}", error_msg, error_details),
-                suggestions,
                 ToolGroup::McpManager,
             )
+            .with_guidance(suggestions)
             .to_mcp_result())
         }
     }

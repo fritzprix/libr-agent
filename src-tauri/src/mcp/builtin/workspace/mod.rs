@@ -96,6 +96,20 @@ impl PendingExecutions {
     pub fn remove(&self, id: &str) -> Option<PendingShellExecution> {
         self.0.lock().unwrap().remove(id)
     }
+
+    /// Remove expired pending executions older than the given TTL
+    pub fn cleanup_expired(&self, ttl_seconds: u64) {
+        let mut map = self.0.lock().unwrap();
+        let now = chrono::Utc::now();
+        let ttl_duration = chrono::Duration::seconds(ttl_seconds as i64);
+
+        map.retain(|_id, pending| (now - pending.created_at) < ttl_duration);
+    }
+
+    /// Get count of pending executions (for monitoring)
+    pub fn count(&self) -> usize {
+        self.0.lock().unwrap().len()
+    }
 }
 
 #[derive(Debug)]
@@ -113,16 +127,20 @@ impl WorkspaceServer {
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
         info!("WorkspaceServer created for session: {}", session_id);
         let process_registry = terminal_manager::create_process_registry();
+        let pending_executions = Arc::new(PendingExecutions::new());
 
         // Start cleanup task for old processes
         Self::start_cleanup_task(process_registry.clone());
+
+        // Start cleanup task for pending shell executions (10-minute retention)
+        Self::start_pending_executions_cleanup_task(pending_executions.clone());
 
         Self {
             session_id,
             session_manager,
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
-            pending_executions: Arc::new(PendingExecutions::new()),
+            pending_executions,
             shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
         }
@@ -150,6 +168,20 @@ impl WorkspaceServer {
             loop {
                 interval.tick().await;
                 Self::cleanup_old_processes(&registry).await;
+            }
+        });
+    }
+
+    /// Start background task to cleanup pending shell executions (10-minute retention)
+    fn start_pending_executions_cleanup_task(pending_executions: Arc<PendingExecutions>) {
+        tokio::spawn(async move {
+            use std::time::Duration;
+            let mut interval = tokio::time::interval(Duration::from_secs(60)); // Every minute
+
+            loop {
+                interval.tick().await;
+                // Cleanup entries older than 10 minutes (600 seconds)
+                pending_executions.cleanup_expired(600);
             }
         });
     }
@@ -495,7 +527,7 @@ impl BuiltinMCPServer for WorkspaceServer {
 - Running: {}{}
 - Total: {}
 
-💡 Use pollProcess(processId) to check status or listProcesses() to see all (including full commands).",
+💡 Use waitForProcess(processId, 0) to check status or listProcesses() to see all (including full commands).",
             workspace_dir, shell_cwd, os, arch, shell, running_count, running_processes_text, total_count
         );
 
@@ -619,5 +651,49 @@ fn detect_shell(os: &str) -> String {
                 .unwrap_or_else(|| "bash".to_string())
         }
         _ => "unknown".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pending_executions_cleanup() {
+        let pending = PendingExecutions::new();
+        let now = chrono::Utc::now();
+
+        // Add one old entry (15 minutes ago)
+        pending.insert(PendingShellExecution {
+            execution_id: "old".to_string(),
+            session_id: "sess".to_string(),
+            executable_command: "ls".to_string(),
+            display_command: "ls".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            encryption_nonce: "nonce".to_string(),
+            created_at: now - chrono::Duration::minutes(15),
+        });
+
+        // Add one new entry
+        pending.insert(PendingShellExecution {
+            execution_id: "new".to_string(),
+            session_id: "sess".to_string(),
+            executable_command: "ls".to_string(),
+            display_command: "ls".to_string(),
+            run_mode: "sync".to_string(),
+            timeout: 30,
+            encryption_nonce: "nonce".to_string(),
+            created_at: now,
+        });
+
+        assert_eq!(pending.count(), 2);
+
+        // Cleanup entries older than 10 minutes (600s)
+        pending.cleanup_expired(600);
+
+        assert_eq!(pending.count(), 1);
+        assert!(pending.remove("new").is_some());
+        assert!(pending.remove("old").is_none());
     }
 }

@@ -37,6 +37,12 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     fn description(&self) -> &str;                   // Server description
     fn version(&self) -> &str { "1.0.0" }           // Version (default provided)
 
+    // Returns a human-friendly display name for the UI
+    fn display_name(&self) -> String { ... }
+
+    // Returns complete UI metadata for this server
+    fn metadata(&self) -> BuiltinServerMetadata { ... }
+
     // Returns a list of tools provided by this server
     fn tools(&self) -> Vec<MCPTool>;
 

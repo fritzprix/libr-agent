@@ -138,11 +138,17 @@ impl BuiltinMCPServer for YourServer {
         };
 
         // Build context prompt for AI (what the agent SEES)
+        // ✅ RULE 7: Echo recent changes with context
         let context_prompt = format!(
             "## Your Server
 
 **Session**: {}
 **Status**: Active
+
+**Recent Activity**:
+- Resource 'A' created (ID: 123)
+- Resource 'B' updated: 'Refactoring login flow' (ID: 456)
+
 **Available Features**: Feature A, Feature B
 
 💡 Use listYourResources() to see available items.",
@@ -256,6 +262,16 @@ pub fn create_update_resource_tool() -> MCPTool {
         ),
     );
 
+    // ✅ RULE 6: Memory-Augmented Mutation
+    props.insert(
+        "summary".to_string(),
+        string_prop(
+            None,
+            Some(200),
+            Some("Optional context: why this change is being made (e.g., 'Refactoring X', 'Fixing bug Y')")
+        ),
+    );
+
     MCPTool {
         name: "updateResource".to_string(),
         title: Some("Update Resource".to_string()),
@@ -332,6 +348,7 @@ struct CreateResourceArgs {
 struct UpdateResourceArgs {
     id: String,  // ✅ Required for updates
     name: String,
+    summary: Option<String>, // ✅ Rule 6
 }
 
 /// ✅ CREATE HANDLER: Generates ID, returns it in BOTH channels (Rule 3)
@@ -421,13 +438,18 @@ pub async fn handle_update_resource(
     //     name: args.name.clone(),
     // }).await?;
 
-    // ✅ DUAL-CHANNEL RESPONSE
+    // ✅ RULE 7: State Echo
+    // If a summary was provided, echo it back so the agent knows it was recorded
+    let summary_echo = args.summary.as_deref().unwrap_or("No summary provided");
+
     let result_text = format!(
         "Resource updated successfully (ID: {}).\n\n\
-         New name: {}\n\n\
+         New name: {}\n\
+         Context: {}\n\n\
          💡 Use getResource(\"{}\") to view updated details",
         args.id,
         args.name,
+        summary_echo,
         args.id
     );
 
@@ -657,6 +679,18 @@ Use this checklist before submitting any builtin tool implementation:
 - [ ] Error format: "❌ Problem. 💡 Use toolName() to fix"
 - [ ] No raw "Not Found" errors without context
 
+### Rule 6: Memory-Augmented Mutation Rule (New) ✅
+
+- [ ] All state-changing tools (UPDATE/DELETE/COMPLETE) have optional `summary` or `reason` parameter
+- [ ] This parameter allows agent to Explain Why/How
+- [ ] Stored alongside the data change (not discarded)
+
+### Rule 7: The State Echo Rule (New) ✅
+
+- [ ] Agent-provided summaries are echoed back in `get_service_context`
+- [ ] Echoed summaries are truncated if too long (e.g., >50 chars)
+- [ ] Context prompt prioritizes recent state changes + reasons
+
 ---
 
 ## Common Pitfalls to Avoid
@@ -721,6 +755,32 @@ Ok(operation_failed_error(
     ToolGroup::YourServer
 ))
 ```
+
+---
+
+## 🚫 Critical Anti-Patterns
+
+Check for these subtle design flaws that cripple agent reasoning:
+
+### 1. The "State Amnesia" Pattern
+
+- **Symptom**: Agent completes a task but loses the _reason context_.
+- **Example**: `completeTask(id)` (No summary)
+- **Result**: Agent forgets _how_ it solved the problem. If user asks "How did we fix X?", the agent has to search chat history or Hallucinate.
+- **Fix**: Always include optional `summary`, `reason`, or `context` parameters in state-changing tools (Rule 6).
+
+### 2. The "Implementation Gap"
+
+- **Symptom**: Tool design docs specify rich parameters, but implementation omits them as "optional/skippable".
+- **Example**: Design says `checkTodo(id, summary)`, code implements `checkTodo(id)`.
+- **Result**: Agent tries to use the planned feature but fails silently or gives poor data.
+- **Fix**: Treat the Tool Schema as a binding contract. Optional parameters are functional requirements for AI reasoning.
+
+### 3. The "Blind Alley" Response
+
+- **Symptom**: Tool returns `void` or generic "Success".
+- **Result**: Agent is left in a void, unsure if the action persisted.
+- **Fix**: Always return an "Echo" of the new state (Rule 7).
 
 ---
 

@@ -59,7 +59,6 @@ pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValida
             "content",
             "description",
             "priority",
-            "parent_id",  // Critical: self-referential column
             "is_checked", // Critical: completion tracking
             "status",
             "created_at",
@@ -214,7 +213,7 @@ mod tests {
 
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE planning_todos (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, description TEXT, priority TEXT, parent_id INTEGER, is_checked INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER)".to_string(),
+            "CREATE TABLE planning_todos (id INTEGER PRIMARY KEY, session_id TEXT, content TEXT, description TEXT, priority TEXT, is_checked INTEGER, status TEXT, created_at INTEGER, updated_at INTEGER)".to_string(),
         ))
         .await
         .expect("Failed to create planning_todos table");
@@ -278,7 +277,7 @@ mod tests {
         let result = validate_table_columns(
             &db,
             "planning_todos",
-            &["id", "session_id", "content", "parent_id"],
+            &["id", "session_id", "content", "priority"],
         )
         .await;
 
@@ -295,7 +294,6 @@ mod tests {
         let columns = get_table_columns(&db, "planning_todos").await.unwrap();
 
         assert!(columns.contains(&"id".to_string()));
-        assert!(columns.contains(&"parent_id".to_string()));
         assert!(columns.contains(&"is_checked".to_string()));
     }
 }

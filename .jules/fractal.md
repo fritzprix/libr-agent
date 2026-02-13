@@ -7,3 +7,31 @@
 
 **Split:** `types.rs`, `common.rs`, `platforms/mod.rs`, `platforms/windows.rs`, `platforms/linux.rs`, `platforms/macos.rs`, `platforms/unix.rs`, `mod.rs`
 **Improvement:** Decoupled platform-specific isolation logic (Linux `unshare`, macOS `sandbox-exec`, Windows job objects) into dedicated modules. Separated types and common utilities. Reduced monolithic file size from ~811 lines to focused modules, improving maintainability and readability.
+
+## 2026-02-09 - src-tauri/src/session.rs
+
+**Split:** `types.rs`, `manager.rs`, `mod.rs`
+**Improvement:** Decoupled data types (`SessionWorkspaceInfo`, `SessionStats`) from core logic (`SessionManager`). Separated global initialization and re-exports into `mod.rs`. Improved maintainability by creating a dedicated module directory structure for session management.
+
+## 2026-02-09 - src/features/agent/components/AgentMessageRenderer.tsx
+
+**Split:** `types/index.ts`, `hooks/useIsDarkMode.ts`, `hooks/useUIActionHandler.ts`, `components/CodeBlock.tsx`, `components/MarkdownText.tsx`, `config/markdown.tsx`, `utils/contentGrouping.ts`
+**Result:** Reduced from ~960 lines to ~280 lines in the main component.
+**Improvement:** Decoupled Markdown rendering, UI action handling, and content grouping logic. Extracted large memoized components (`CodeBlock`, `MarkdownText`) and hooks.
+
+## 2026-02-11 - src/lib/ai-service/gemini.ts
+
+**Split:** `config.ts`, `mapper.ts`, `models.ts`, `service.ts`, `stream.ts`, `types.ts`, `index.ts`
+**Result:** Reduced from ~1120 lines to ~250 lines in the main service class.
+**Improvement:** Decoupled message conversion (Gemini format), stream processing (chunk parsing, tool calls), and model management logic from the main service class. Centralized configuration and types.
+
+## 2026-02-12 - src-tauri/src/lib.rs
+
+**Split:** `src-tauri/src/lifecycle/` (`database.rs`, `repositories.rs`, `app_setup.rs`, `settings.rs`, `mod.rs`)
+**Improvement:** Decoupled application startup logic (database initialization, repository setup, app configuration) from the main library entry point. Reduced `lib.rs` from ~800 lines to ~250 lines, improving readability and separation of concerns.
+
+## 2026-02-12 - src-tauri/src/mcp/builtin/workspace/code_execution/interactive.rs
+
+**Split:** `security.rs`, `ui.rs`, `handlers.rs`
+**Result:** Reduced from 959 lines to 4 lines (module definition).
+**Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.

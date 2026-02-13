@@ -88,6 +88,8 @@ export function useLLMExecution({
         messageCount: messages.length,
         provider,
         model,
+        temperature,
+        maxTokens,
         firstMessageId: messages[0]?.id ?? 'none',
         lastMessageId: messages[messages.length - 1]?.id ?? 'none',
       });
@@ -183,11 +185,11 @@ export function useLLMExecution({
 
         // Build config
         const config: AIServiceConfig = {
-          temperature,
           maxTokens:
             maxTokens ||
             settingsRef.current.advanced?.defaultMaxOutputTokens ||
             8192,
+          temperature: temperature,
         };
 
         // Calculate safe input token limit
@@ -216,9 +218,7 @@ export function useLLMExecution({
         if (modelInfo) {
           // Use resolved max tokens or fallback
           const effectiveMaxTokens =
-            maxTokens ||
-            settingsRef.current.advanced?.defaultMaxOutputTokens ||
-            8192;
+            settingsRef.current.advanced?.defaultMaxOutputTokens || 8192;
 
           // Reserve maxTokens + 100 safety buffer
           const reserved = effectiveMaxTokens + 100;
@@ -245,6 +245,10 @@ export function useLLMExecution({
           {
             systemPrompt: finalSystemPrompt,
             maxMessages: windowSize,
+            // Gemini requires all tool calls in a single turn to maintain thought signature validity
+            // Splitting messages (batching) breaks this as subsequent batches lack the signature
+            maxToolCallsPerMessage:
+              provider === AIServiceProvider.Gemini ? 100 : 4,
           },
         );
 
@@ -315,6 +319,7 @@ export function useLLMExecution({
         let thinkingStartTime: number | undefined;
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
+        let thinkingSignature: string | undefined;
 
         for await (const chunk of streamGenerator) {
           if (firstChunkTime === undefined) {
@@ -363,7 +368,19 @@ export function useLLMExecution({
             }
           }
 
-          // 3. Accumulate Tool Calls
+          // 3. Accumulate Thinking Signature
+          if (
+            parsedChunk.thinkingSignature &&
+            typeof parsedChunk.thinkingSignature === 'string'
+          ) {
+            thinkingSignature = parsedChunk.thinkingSignature;
+            logger.debug('🧠 Captured thinking signature', {
+              sessionId,
+              signatureLength: thinkingSignature.length,
+            });
+          }
+
+          // 4. Accumulate Tool Calls
           if (parsedChunk.tool_calls && Array.isArray(parsedChunk.tool_calls)) {
             (
               parsedChunk.tool_calls as (ToolCall & { index?: number })[]
@@ -466,6 +483,7 @@ export function useLLMExecution({
               tool_calls:
                 legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
               thinking: legacyThinking || undefined,
+              thinkingSignature,
               thinkingTime: currentThinkingTime,
               usage: finalUsage,
               isStreaming: true,
@@ -524,6 +542,7 @@ export function useLLMExecution({
           tool_calls:
             finalLegacyToolCalls.length > 0 ? finalLegacyToolCalls : undefined,
           thinking: finalLegacyThinking || undefined,
+          thinkingSignature,
           thinkingTime: thinkingStartTime
             ? (performance.now() - thinkingStartTime) / 1000
             : undefined,
