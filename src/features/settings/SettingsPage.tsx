@@ -154,6 +154,8 @@ export default function SettingsPage() {
         maxFileUploadSizeMB: 50,
         workspaceCapacityMB: 10,
         webActionTimeoutSeconds: 30,
+        httpServerPort: 3030,
+        httpServerExpose: false,
         searchIndexFrequencyMinutes: 5,
         activeSessionRetentionHours: 24,
       },
@@ -307,7 +309,7 @@ export default function SettingsPage() {
   );
 
   const handleSystemSettingsChange = useCallback(
-    (key: keyof SystemSettings, value: number | string) => {
+    (key: keyof SystemSettings, value: number | string | boolean) => {
       setLocalSystemSettings((prev) => {
         const newSettings = { ...prev, [key]: value };
         otherPendingRef.current.system = newSettings;

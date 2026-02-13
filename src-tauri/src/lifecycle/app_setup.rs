@@ -25,7 +25,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ SecureFileManager initialized");
 
     // Fetch System Settings
-    let (web_action_timeout, http_port) = tauri::async_runtime::block_on(async {
+    let (web_action_timeout, http_port, http_expose) = tauri::async_runtime::block_on(async {
         use crate::state::get_settings_repository;
         let settings_repo = get_settings_repository();
         match settings_repo.get("systemSettings").await {
@@ -34,9 +34,10 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
                 (
                     std::time::Duration::from_secs(s.web_action_timeout_seconds.unwrap_or(30)),
                     s.http_server_port.unwrap_or(3030),
+                    s.http_server_expose.unwrap_or(false),
                 )
             }
-            _ => (std::time::Duration::from_secs(30), 3030),
+            _ => (std::time::Duration::from_secs(30), 3030, false),
         }
     });
 
@@ -70,11 +71,17 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .inner()
         .clone_for_task();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = crate::server::init(std::sync::Arc::new(server_manager), http_port).await {
+        if let Err(e) =
+            crate::server::init(std::sync::Arc::new(server_manager), http_port, http_expose).await
+        {
             log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
         }
     });
-    info!("✅ HTTP Server spawned on port {}", http_port);
+    info!(
+        "✅ HTTP Server spawned on {}:{}",
+        if http_expose { "0.0.0.0" } else { "127.0.0.1" },
+        http_port
+    );
 
     // Spawn session recovery in background
     let recovery_manager = app

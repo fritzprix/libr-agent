@@ -10,16 +10,22 @@ use crate::agent::AgentSessionManager;
 pub async fn init(
     agent_manager: Arc<AgentSessionManager>,
     port: u16,
+    expose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Starting HTTP server on port {}", port);
+    let bind_addr = if expose {
+        std::net::Ipv4Addr::UNSPECIFIED
+    } else {
+        std::net::Ipv4Addr::LOCALHOST
+    };
+    info!("Starting HTTP server on {}:{}", bind_addr, port);
 
     // Validate port binding up-front so startup failures can be propagated.
-    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))?;
+    let listener = std::net::TcpListener::bind((bind_addr, port))?;
     drop(listener);
 
     let routes = routes::get_routes(agent_manager);
 
-    let server_future = warp::serve(routes).run(([127, 0, 0, 1], port));
+    let server_future = warp::serve(routes).run((bind_addr.octets(), port));
 
     // Spawn the server in a separate task so it doesn't block
     tokio::spawn(async move {

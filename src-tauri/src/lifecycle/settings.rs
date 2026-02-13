@@ -7,4 +7,5 @@ pub struct SystemSettings {
     pub web_action_timeout_seconds: Option<u64>,
     pub active_session_retention_hours: Option<u64>,
     pub http_server_port: Option<u16>,
+    pub http_server_expose: Option<bool>,
 }

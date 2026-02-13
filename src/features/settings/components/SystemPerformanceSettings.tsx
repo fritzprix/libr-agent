@@ -4,7 +4,7 @@ import { Input } from '@/components/ui';
 
 interface SystemPerformanceSettingsProps {
   localSystemSettings: SystemSettings;
-  onChange: (key: keyof SystemSettings, value: number) => void;
+  onChange: (key: keyof SystemSettings, value: number | boolean) => void;
 }
 
 export function SystemPerformanceSettings({
@@ -235,6 +235,74 @@ export function SystemPerformanceSettings({
               )}
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Network */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-foreground">
+          {t('settings.system.network', 'Network')}
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'settings.system.networkRestartNotice',
+            'Changes to HTTP server network settings are applied after restarting the app.',
+          )}
+        </p>
+
+        {/* HTTP Server Port */}
+        <div className="min-w-0">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t('settings.system.httpServerPort', 'HTTP Server Port')}
+          </label>
+          <Input
+            type="number"
+            placeholder="e.g., 3030"
+            min={1}
+            max={65535}
+            value={localSystemSettings.httpServerPort ?? 3030}
+            onChange={(e) =>
+              onChange('httpServerPort', parseInt(e.target.value, 10) || 3030)
+            }
+            className="bg-background border text-foreground w-full max-w-xs"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.system.httpServerPortDescription',
+              'Port used by the internal HTTP API server.',
+            )}
+          </p>
+        </div>
+
+        {/* HTTP Server Exposure */}
+        <div className="min-w-0">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t('settings.system.httpServerExpose', 'Expose HTTP Server')}
+          </label>
+          <select
+            value={localSystemSettings.httpServerExpose ? 'public' : 'local'}
+            onChange={(e) =>
+              onChange('httpServerExpose', e.target.value === 'public')
+            }
+            className="bg-background border text-foreground w-full max-w-xs p-2 rounded"
+          >
+            <option value="local">Local only (127.0.0.1)</option>
+            <option value="public">Expose to network (0.0.0.0)</option>
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.system.httpServerExposeDescription',
+              'Use local-only by default. Exposing allows access from other devices on your network.',
+            )}
+          </p>
+          {localSystemSettings.httpServerExpose && (
+            <p className="text-xs text-warning mt-2">
+              {t(
+                'settings.system.httpServerExposeWarning',
+                'Warning: HTTP API is exposed to your network (0.0.0.0). Use only in trusted networks and protect access appropriately.',
+              )}
+            </p>
+          )}
         </div>
       </div>
     </div>
