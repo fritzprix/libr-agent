@@ -74,7 +74,11 @@ export {
 } from './browser';
 
 // File operations
-export { readDroppedFile, writeFile } from './file-operations';
+export {
+  readDroppedFile,
+  registerDroppedFiles,
+  writeFile,
+} from './file-operations';
 
 // Message management
 export {

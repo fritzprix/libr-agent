@@ -14,6 +14,14 @@ export async function readDroppedFile(filePath: string): Promise<number[]> {
 }
 
 /**
+ * Registers file paths that were delivered by an OS file-drop event.
+ * Backend will only allow `read_dropped_file` for paths from this allowlist.
+ */
+export async function registerDroppedFiles(paths: string[]): Promise<void> {
+  return safeInvoke<void>('register_dropped_files', { paths });
+}
+
+/**
  * Writes content to a file in the filesystem.
  * @param filePath The path to the file to write to.
  * @param content An array of numbers representing the byte content to write.
