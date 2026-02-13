@@ -49,7 +49,7 @@ def build_tauri_mock_script(session_id: str) -> str:
                 provider: 'openai',
               }};
             }}
-            if (cmd === 'agent_get_tools') {{
+            if (cmd === 'agent_get_available_tools' || cmd === 'agent_get_tools') {{
               return [
                 {{
                   name: 'builtin_tool_1',

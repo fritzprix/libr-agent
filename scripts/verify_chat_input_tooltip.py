@@ -1,6 +1,33 @@
+import argparse
+import os
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright, Page, expect
 
-def test_tooltip(page: Page):
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description='Capture chat input tooltip screenshot with mocked Tauri IPC.',
+    )
+    parser.add_argument(
+        '--base-url',
+        default='http://localhost:1420',
+        help='Frontend base URL (default: http://localhost:1420)',
+    )
+    parser.add_argument(
+        '--session-id',
+        default='test-session',
+        help='Agent session ID used in route (default: test-session)',
+    )
+    parser.add_argument(
+        '--output-dir',
+        default=os.environ.get('CHAT_INPUT_TOOLTIP_OUTPUT_DIR', 'scripts/artifacts'),
+        help='Directory for screenshots (default: CHAT_INPUT_TOOLTIP_OUTPUT_DIR or scripts/artifacts)',
+    )
+    return parser.parse_args()
+
+
+def test_tooltip(page: Page, base_url: str, session_id: str, output_dir: Path):
     # Mock Tauri IPC
     page.add_init_script("""
         window.__TAURI__ = {
@@ -57,7 +84,7 @@ def test_tooltip(page: Page):
     """)
 
     # Navigate to the agent page
-    page.goto("http://localhost:1420/agent/test-session")
+    page.goto(f"{base_url}/agent/{session_id}")
 
     # Wait for the input area to be visible
     # The textarea has aria-label="Chat input"
@@ -82,17 +109,23 @@ def test_tooltip(page: Page):
     expect(tooltip).to_be_visible()
 
     # Take a screenshot
-    page.screenshot(path="verification.png")
-    print("Screenshot saved to verification.png")
+    verification_path = output_dir / 'verification.png'
+    page.screenshot(path=str(verification_path))
+    print(f"Screenshot saved to {verification_path}")
 
 if __name__ == "__main__":
+    args = parse_args()
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         try:
-            test_tooltip(page)
+            test_tooltip(page, args.base_url, args.session_id, output_dir)
         except Exception as e:
             print(f"Error: {e}")
-            page.screenshot(path="error.png")
+            error_path = output_dir / 'error.png'
+            page.screenshot(path=str(error_path))
         finally:
             browser.close()

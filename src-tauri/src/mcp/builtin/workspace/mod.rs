@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::task::JoinHandle;
 use tracing::info;
 
 use super::BuiltinMCPServer;
@@ -121,6 +123,8 @@ pub struct WorkspaceServer {
     pub(crate) pending_executions: Arc<PendingExecutions>,
     pub(crate) shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
     pub(crate) context_cache: Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>,
+    cleanup_shutdown: Arc<AtomicBool>,
+    cleanup_tasks: Vec<JoinHandle<()>>,
 }
 
 impl WorkspaceServer {
@@ -128,12 +132,17 @@ impl WorkspaceServer {
         info!("WorkspaceServer created for session: {}", session_id);
         let process_registry = terminal_manager::create_process_registry();
         let pending_executions = Arc::new(PendingExecutions::new());
+        let cleanup_shutdown = Arc::new(AtomicBool::new(false));
 
         // Start cleanup task for old processes
-        Self::start_cleanup_task(process_registry.clone());
+        let process_cleanup_task =
+            Self::start_cleanup_task(process_registry.clone(), cleanup_shutdown.clone());
 
         // Start cleanup task for pending shell executions (10-minute retention)
-        Self::start_pending_executions_cleanup_task(pending_executions.clone());
+        let pending_cleanup_task = Self::start_pending_executions_cleanup_task(
+            pending_executions.clone(),
+            cleanup_shutdown.clone(),
+        );
 
         Self {
             session_id,
@@ -143,6 +152,8 @@ impl WorkspaceServer {
             pending_executions,
             shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            cleanup_shutdown,
+            cleanup_tasks: vec![process_cleanup_task, pending_cleanup_task],
         }
     }
 
@@ -160,30 +171,42 @@ impl WorkspaceServer {
     }
 
     /// Start background task to cleanup old processes (24-hour retention)
-    fn start_cleanup_task(registry: terminal_manager::ProcessRegistry) {
+    fn start_cleanup_task(
+        registry: terminal_manager::ProcessRegistry,
+        shutdown: Arc<AtomicBool>,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             use std::time::Duration;
             let mut interval = tokio::time::interval(Duration::from_secs(3600)); // Every hour
 
-            loop {
+            while !shutdown.load(Ordering::Relaxed) {
                 interval.tick().await;
+                if shutdown.load(Ordering::Relaxed) {
+                    break;
+                }
                 Self::cleanup_old_processes(&registry).await;
             }
-        });
+        })
     }
 
     /// Start background task to cleanup pending shell executions (10-minute retention)
-    fn start_pending_executions_cleanup_task(pending_executions: Arc<PendingExecutions>) {
+    fn start_pending_executions_cleanup_task(
+        pending_executions: Arc<PendingExecutions>,
+        shutdown: Arc<AtomicBool>,
+    ) -> JoinHandle<()> {
         tokio::spawn(async move {
             use std::time::Duration;
             let mut interval = tokio::time::interval(Duration::from_secs(60)); // Every minute
 
-            loop {
+            while !shutdown.load(Ordering::Relaxed) {
                 interval.tick().await;
+                if shutdown.load(Ordering::Relaxed) {
+                    break;
+                }
                 // Cleanup entries older than 10 minutes (600 seconds)
                 pending_executions.cleanup_expired(600);
             }
-        });
+        })
     }
 
     /// Clean up processes older than 24 hours
@@ -391,6 +414,15 @@ impl WorkspaceServer {
             display_name: "Workspace".to_string(),
             description: "Execute shell commands and manage background processes".to_string(),
             icon: None,
+        }
+    }
+}
+
+impl Drop for WorkspaceServer {
+    fn drop(&mut self) {
+        self.cleanup_shutdown.store(true, Ordering::Relaxed);
+        for handle in self.cleanup_tasks.drain(..) {
+            handle.abort();
         }
     }
 }

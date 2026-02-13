@@ -10,6 +10,12 @@ pub fn build_shell_input_ui(
     input_type: &str,
     nonce: &str,
 ) -> String {
+    let safe_input_type = if input_type.eq_ignore_ascii_case("password") {
+        "password"
+    } else {
+        "text"
+    };
+
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -75,7 +81,7 @@ pub fn build_shell_input_ui(
         <input
           type="{}"
           id="userInput"
-          placeholder="Enter {}..."
+          placeholder="Enter input..."
           required
           autofocus
         />
@@ -162,11 +168,46 @@ pub fn build_shell_input_ui(
   </body>
 </html>"#,
         html_escape::encode_safe(prompt),
-        input_type,
-        input_type,
+        safe_input_type,
         execution_id,
         nonce,
         EXECUTE_PENDING_SHELL,
         CANCEL_PENDING_EXECUTION
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_shell_input_ui;
+
+    #[test]
+    fn test_build_shell_input_ui_whitelists_input_type() {
+        let html = build_shell_input_ui("exec-1", "Prompt", "password", "nonce-1");
+        assert!(
+            html.contains(r#"type="password""#),
+            "password should be preserved as allowed input type"
+        );
+
+        let html_with_invalid_type = build_shell_input_ui(
+            "exec-2",
+            "Prompt",
+            r#"text" autofocus onfocus="alert(1)""#,
+            "nonce-2",
+        );
+        assert!(
+            html_with_invalid_type.contains(r#"type="text""#),
+            "invalid input_type should be downgraded to text"
+        );
+        assert!(
+            !html_with_invalid_type.contains("autofocus onfocus"),
+            "injected attributes must not appear in generated HTML"
+        );
+    }
+
+    #[test]
+    fn test_build_shell_input_ui_uses_static_placeholder() {
+        let html = build_shell_input_ui("exec-3", "Prompt", "password", "nonce-3");
+        assert!(html.contains(r#"placeholder="Enter input...""#));
+        assert!(!html.contains("Enter password..."));
+    }
 }

@@ -45,9 +45,8 @@ pub fn run_with_sqlite_sync(db_url: String) {
         }
 
         // Start background indexing worker
-        let indexing_worker =
+        let _indexing_worker =
             search::IndexingWorker::new(std::time::Duration::from_secs(index_freq_mins * 60));
-        std::mem::forget(indexing_worker);
         info!("✅ Background message indexing worker started");
 
         // Global MCPServerManager initialization is intentionally skipped.

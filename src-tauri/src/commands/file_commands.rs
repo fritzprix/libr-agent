@@ -43,6 +43,13 @@ pub async fn register_dropped_files(paths: Vec<String>) -> Result<(), String> {
             continue;
         }
 
+        let Ok(metadata) = std::fs::symlink_metadata(path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+
         if has_hidden_or_relative_component(path) {
             continue;
         }
@@ -63,11 +70,14 @@ pub async fn register_dropped_files(paths: Vec<String>) -> Result<(), String> {
         .lock()
         .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
 
-    if guard.len() > MAX_DROPPED_FILE_ALLOWLIST_SIZE {
+    if guard.len() >= MAX_DROPPED_FILE_ALLOWLIST_SIZE {
         guard.clear();
     }
 
     for path in normalized_paths {
+        if guard.len() >= MAX_DROPPED_FILE_ALLOWLIST_SIZE {
+            break;
+        }
         guard.insert(path);
     }
 
@@ -228,7 +238,7 @@ pub async fn workspace_write_file(
 mod tests {
     use super::*;
     use std::fs::File;
-    use tempfile::tempdir;
+    use tempfile::{tempdir, Builder};
 
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
@@ -360,6 +370,70 @@ mod tests {
         assert!(
             second.is_err(),
             "Path should be consumed and rejected on second read"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_register_dropped_files_caps_allowlist_size() {
+        reset_allowlist_for_test();
+        let current_dir = std::env::current_dir().unwrap();
+        let dir = Builder::new()
+            .prefix("allowlist-capacity-test-")
+            .tempdir_in(current_dir)
+            .unwrap();
+
+        let mut paths = Vec::new();
+        for index in 0..300 {
+            let file_path = dir.path().join(format!("file-{index}.txt"));
+            std::fs::write(&file_path, "ok").unwrap();
+            paths.push(file_path.to_string_lossy().to_string());
+        }
+
+        register_dropped_files(paths)
+            .await
+            .expect("register_dropped_files should succeed");
+
+        let allowlist = dropped_file_allowlist();
+        let guard = allowlist
+            .lock()
+            .expect("Dropped file allowlist lock should not be poisoned in tests");
+
+        assert!(
+            guard.len() <= 256,
+            "allowlist size must never exceed max capacity"
+        );
+        assert_eq!(guard.len(), 256, "allowlist should stop at max capacity");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_register_dropped_files_rejects_symlink_paths() {
+        reset_allowlist_for_test();
+        let dir = tempdir().unwrap();
+
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, "ok").unwrap();
+
+        let symlink_path = dir.path().join("link.txt");
+        symlink(&target, &symlink_path).unwrap();
+
+        register_dropped_files(vec![symlink_path.to_string_lossy().to_string()])
+            .await
+            .expect("register_dropped_files should not fail for symlink input");
+
+        let resolved_target = std::fs::canonicalize(&target)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+        let allowlist = dropped_file_allowlist();
+        let guard = allowlist
+            .lock()
+            .expect("Dropped file allowlist lock should not be poisoned in tests");
+
+        assert!(
+            !guard.contains(&resolved_target),
+            "symlink registration must not add canonical target to allowlist"
         );
     }
 }
