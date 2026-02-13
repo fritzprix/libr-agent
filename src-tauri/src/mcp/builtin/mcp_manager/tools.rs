@@ -303,10 +303,6 @@ pub fn list_internal_tools_tool() -> MCPTool {
 • Use verifyExternalServer to check specific server tools
 • Add to assistant via updateAssistant(mcpServerIds: [...])
 
-USAGE:
-• No parameter: List all internal tools (88+ tools)
-• serverName='workspace': Filter by specific internal service
-
 PAGINATION:
 Results are paginated (20 tools per page) for large result sets.
 "
