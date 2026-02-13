@@ -1,12 +1,12 @@
+pub mod app_setup;
 pub mod database;
 pub mod repositories;
-pub mod app_setup;
 pub mod settings;
 
-use log::{info};
-use crate::state::set_sqlite_db_url;
-use crate::session::get_session_manager;
 use crate::search;
+use crate::session::get_session_manager;
+use crate::state::set_sqlite_db_url;
+use log::info;
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 pub fn run_with_sqlite_sync(db_url: String) {
@@ -14,12 +14,9 @@ pub fn run_with_sqlite_sync(db_url: String) {
     set_sqlite_db_url(db_url.clone());
     info!("🔄 Initializing LibrAgent with SQLite support: {db_url}");
 
-    // Create a Tokio runtime for async initialization
-    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-
-    rt.block_on(async {
+    // Run async initialization on Tauri's global async runtime
+    tauri::async_runtime::block_on(async {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
-        let session_manager_arc = std::sync::Arc::new(session_manager.clone());
 
         // Initialize Database
         let db = database::init_database(&db_url).await;
@@ -48,20 +45,15 @@ pub fn run_with_sqlite_sync(db_url: String) {
         }
 
         // Start background indexing worker
-        let _indexing_worker =
+        let indexing_worker =
             search::IndexingWorker::new(std::time::Duration::from_secs(index_freq_mins * 60));
+        std::mem::forget(indexing_worker);
         info!("✅ Background message indexing worker started");
 
-        // Initialize the MCP manager with database connection
-        // NOTE: Global MCPServerManager is deprecated in favor of session-isolated management
-        use crate::mcp::MCPServerManager;
-        let _mcp_manager = MCPServerManager::new_with_session_manager_and_db(
-            session_manager_arc.clone(),
-            db.clone(),
-        )
-        .await;
-
-        info!("✅ Session-Isolated MCP architecture initialized");
+        // Global MCPServerManager initialization is intentionally skipped.
+        // Session-isolated MCP architecture uses MCPServiceProxyManager initialized in repositories.
+        let _ = db;
+        info!("✅ Session-isolated MCP architecture initialized");
     });
 
     // Call the main run function

@@ -1,12 +1,13 @@
-use tauri::{App, Manager, Listener, Emitter};
-use log::{info, error, warn};
-use std::sync::Arc;
-use crate::logger;
-use crate::services::{SecureFileManager, InteractiveBrowserServer};
 use crate::agent;
-use crate::state;
-use crate::repositories;
 use crate::lifecycle::settings::SystemSettings;
+use crate::logger;
+use crate::repositories;
+use crate::repositories::settings_repository::SettingsRepository;
+use crate::services::{InteractiveBrowserServer, SecureFileManager};
+use crate::state;
+use log::{info, warn};
+use std::sync::Arc;
+use tauri::{App, Emitter, Listener, Manager};
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
@@ -24,29 +25,22 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     info!("✅ SecureFileManager initialized");
 
     // Fetch System Settings
-    let (web_action_timeout, http_port) = {
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async {
-            use crate::state::get_settings_repository;
-            let settings_repo = get_settings_repository();
-            match settings_repo.get("systemSettings").await {
-                Ok(Some(model)) => {
-                    let s: SystemSettings =
-                        serde_json::from_str(&model.value).unwrap_or_default();
-                    (
-                        std::time::Duration::from_secs(
-                            s.web_action_timeout_seconds.unwrap_or(30),
-                        ),
-                        s.http_server_port.unwrap_or(3030),
-                    )
-                }
-                _ => (std::time::Duration::from_secs(30), 3030),
+    let (web_action_timeout, http_port) = tauri::async_runtime::block_on(async {
+        use crate::state::get_settings_repository;
+        let settings_repo = get_settings_repository();
+        match settings_repo.get("systemSettings").await {
+            Ok(Some(model)) => {
+                let s: SystemSettings = serde_json::from_str(&model.value).unwrap_or_default();
+                (
+                    std::time::Duration::from_secs(s.web_action_timeout_seconds.unwrap_or(30)),
+                    s.http_server_port.unwrap_or(3030),
+                )
             }
-        })
-    };
+            _ => (std::time::Duration::from_secs(30), 3030),
+        }
+    });
 
-    let browser_server =
-        InteractiveBrowserServer::new(app.handle().clone(), web_action_timeout);
+    let browser_server = InteractiveBrowserServer::new(app.handle().clone(), web_action_timeout);
     app.manage(browser_server);
     info!(
         "✅ Interactive Browser Server initialized with timeout: {:?}",
@@ -62,11 +56,8 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let session_repo_arc: Arc<dyn repositories::SessionRepository> =
         Arc::new(state::get_session_repository().clone());
 
-    let agent_session_manager = agent::AgentSessionManager::new(
-        app.handle().clone(),
-        proxy_manager_arc,
-        session_repo_arc,
-    );
+    let agent_session_manager =
+        agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc, session_repo_arc);
     app.manage(agent_session_manager);
 
     // Initialize global AppHandle for event emission from builtin tools
@@ -79,9 +70,7 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .inner()
         .clone_for_task();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) =
-            crate::server::init(std::sync::Arc::new(server_manager), http_port).await
-        {
+        if let Err(e) = crate::server::init(std::sync::Arc::new(server_manager), http_port).await {
             log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
         }
     });

@@ -1,16 +1,17 @@
+use crate::db_schema_validator::validate_schema;
+use crate::migration::{Migrator, MigratorTrait};
 use log::{error, info, warn};
 use sea_orm::DatabaseConnection;
-use crate::migration::{Migrator, MigratorTrait};
-use crate::db_schema_validator::validate_schema;
 
 pub async fn init_database(db_url: &str) -> DatabaseConnection {
     // Connect to database using SeaORM
-    let db = sea_orm::Database::connect(db_url)
-        .await
-        .unwrap_or_else(|e| {
-            // If this looks like a file-backed sqlite URL, try to create the file
-            if let Some(path) = db_url.strip_prefix("sqlite://") {
+    let db = match sea_orm::Database::connect(db_url).await {
+        Ok(connection) => connection,
+        Err(connect_error) => {
+            if let Some(path_with_options) = db_url.strip_prefix("sqlite://") {
+                let path = path_with_options.split('?').next().unwrap_or(path_with_options);
                 info!("⚙️ Database connect failed, attempting to create DB file: {path}");
+
                 if let Some(parent) = std::path::Path::new(path).parent() {
                     if let Err(err) = std::fs::create_dir_all(parent) {
                         error!("Failed to create parent directory for DB: {err}");
@@ -23,18 +24,18 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
                     info!("✅ Created new SQLite DB file: {path}");
                 }
 
-                // Retry connection once
-                futures::executor::block_on(async {
-                    sea_orm::Database::connect(db_url)
-                        .await
-                        .unwrap_or_else(|err| {
-                            panic!("Failed to connect to database after creating file: {err}")
-                        })
-                })
+                sea_orm::Database::connect(db_url)
+                    .await
+                    .unwrap_or_else(|retry_error| {
+                        panic!(
+                            "Failed to connect to database after creating file: {retry_error}"
+                        )
+                    })
             } else {
-                panic!("Failed to connect to database: {e}");
+                panic!("Failed to connect to database: {connect_error}");
             }
-        });
+        }
+    };
     info!("✅ Database connected: {db_url}");
 
     // Run migrations with auto-recovery
