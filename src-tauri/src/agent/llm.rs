@@ -579,13 +579,18 @@ pub async fn handle_llm_response(
         {
             let mut active = active_sessions.write().await;
             if let Some(session) = active.get_mut(&session_id) {
+                let expected_tool_call_ids: std::collections::HashSet<String> =
+                    tool_calls.iter().map(|tc| tc.id.clone()).collect();
                 session.pending_execution = Some(crate::agent::state::PendingToolExecution {
+                    message_id: assistant_message.id.clone(),
                     total_expected: tool_calls.len(),
                     results: Vec::new(),
                     tool_names: tool_calls
                         .iter()
                         .map(|tc| (tc.id.clone(), tc.function.name.clone()))
                         .collect(),
+                    expected_tool_call_ids,
+                    completed_tool_call_ids: std::collections::HashSet::new(),
                 });
             }
         }

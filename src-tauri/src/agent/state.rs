@@ -1,7 +1,7 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::commands::messages_commands::Message;
 use crate::repositories::SessionMetadata;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -14,18 +14,21 @@ pub const MAX_CACHED_MESSAGES: usize = 1000;
 /// Tracks the state of pending tool executions for a conversational turn
 #[derive(Debug)]
 pub struct PendingToolExecution {
+    pub message_id: String,
     pub total_expected: usize,
     pub results: Vec<Message>,
     /// Maps tool_call_id to tool_name for event emission
     pub tool_names: HashMap<String, String>,
+    /// Tool call IDs expected for the current message execution
+    pub expected_tool_call_ids: HashSet<String>,
+    /// Tool call IDs already completed for the current message execution
+    pub completed_tool_call_ids: HashSet<String>,
 }
 
 /// Pending events waiting to be processed by the workflow
 #[derive(Debug, Clone)]
 pub enum PendingEvent {
     Message(String), // Stores Message ID
-    CancelRequested,
-    // Future extensions: ToolApproval, etc.
 }
 
 /// Manages pending events for a session
@@ -55,7 +58,6 @@ impl PendingEventManager {
                 messages.push(id.clone());
                 false
             }
-            _ => true,
         });
         messages
     }
