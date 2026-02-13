@@ -10,6 +10,8 @@ import {
 
 const logger = getLogger('GeminiMapper');
 
+const GEMINI_DUMMY_THOUGHT_SIGNATURE = 'skip_thought_signature_validator';
+
 /**
  * Generates a unique ID for a tool call.
  */
@@ -218,6 +220,19 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
           signature: m.thinkingSignature?.substring(0, 20),
         });
 
+        const signatureForToolCalls =
+          m.thinkingSignature ?? GEMINI_DUMMY_THOUGHT_SIGNATURE;
+
+        if (!m.thinkingSignature) {
+          logger.warn(
+            'Missing thinking signature for assistant tool calls; applying Gemini dummy signature fallback',
+            {
+              toolCallsCount: m.tool_calls.length,
+              fallback: GEMINI_DUMMY_THOUGHT_SIGNATURE,
+            },
+          );
+        }
+
         geminiMessages.push({
           role: 'model',
           parts: m.tool_calls.map((tc, index) => {
@@ -238,13 +253,12 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
 
             // Attach thought signature to the first function call part only
             if (index === 0) {
-              if (m.thinkingSignature) {
-                functionCallPart.thoughtSignature = m.thinkingSignature;
-                logger.debug('✅ Attached signature to first FC', {
-                  toolName: tc.function.name,
-                  signature: m.thinkingSignature.substring(0, 20) + '...',
-                });
-              }
+              functionCallPart.thoughtSignature = signatureForToolCalls;
+              logger.debug('✅ Attached signature to first FC', {
+                toolName: tc.function.name,
+                signature: signatureForToolCalls.substring(0, 20) + '...',
+                isFallback: !m.thinkingSignature,
+              });
             }
 
             return functionCallPart;
@@ -305,6 +319,19 @@ export function convertSingleMessage(message: Message): unknown {
         hasSignature: !!message.thinkingSignature,
       });
 
+      const signatureForToolCalls =
+        message.thinkingSignature ?? GEMINI_DUMMY_THOUGHT_SIGNATURE;
+
+      if (!message.thinkingSignature) {
+        logger.warn(
+          'convertSingleMessage: missing thinking signature for assistant tool calls; applying Gemini dummy signature fallback',
+          {
+            toolCallsCount: message.tool_calls.length,
+            fallback: GEMINI_DUMMY_THOUGHT_SIGNATURE,
+          },
+        );
+      }
+
       return {
         role: 'model',
         parts: message.tool_calls.map((tc, index) => {
@@ -323,8 +350,8 @@ export function convertSingleMessage(message: Message): unknown {
             },
           };
 
-          if (index === 0 && message.thinkingSignature) {
-            functionCallPart.thoughtSignature = message.thinkingSignature;
+          if (index === 0) {
+            functionCallPart.thoughtSignature = signatureForToolCalls;
           }
 
           return functionCallPart;

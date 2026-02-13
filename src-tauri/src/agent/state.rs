@@ -24,7 +24,8 @@ pub struct PendingToolExecution {
 #[derive(Debug, Clone)]
 pub enum PendingEvent {
     Message(String), // Stores Message ID
-                     // Future extensions: ToolApproval, etc.
+    CancelRequested,
+    // Future extensions: ToolApproval, etc.
 }
 
 /// Manages pending events for a session
@@ -48,16 +49,15 @@ impl PendingEventManager {
 
     /// Drain all pending messages and return their IDs
     pub fn drain_messages(&mut self) -> Vec<String> {
-        // Currently only Message variant exists.
-        // We drain all events and extract IDs.
-        // If future variants are added, this logic must be updated to filter/preserve them.
-        self.events
-            .drain(..)
-            .map(|event| {
-                let PendingEvent::Message(id) = event;
-                id
-            })
-            .collect()
+        let mut messages = Vec::new();
+        self.events.retain(|event| match event {
+            PendingEvent::Message(id) => {
+                messages.push(id.clone());
+                false
+            }
+            _ => true,
+        });
+        messages
     }
 
     pub fn count(&self) -> usize {
@@ -77,6 +77,10 @@ pub struct AgentSession {
     pub is_running: bool,
     /// Cancellation token to abort running workflows
     pub cancellation_token: CancellationToken,
+
+    /// Cancel-pending flag to block post-cancel recursion/re-entry
+    pub cancel_pending: Arc<AtomicBool>,
+
     /// State of current turn's tool execution
     pub pending_execution: Option<PendingToolExecution>,
 
