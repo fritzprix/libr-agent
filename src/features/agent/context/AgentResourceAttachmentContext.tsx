@@ -399,10 +399,9 @@ export function AgentResourceAttachmentProvider({
         }
 
         // Debug logging to verify backend response
-        console.log(
-          '[AgentResourceAttachmentContext] saveAgentFile result:',
+        logger.debug('[AgentResourceAttachmentContext] saveAgentFile result:', {
           result,
-        );
+        });
 
         return {
           sessionId: result.sessionId,
