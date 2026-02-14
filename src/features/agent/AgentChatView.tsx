@@ -28,6 +28,7 @@ import { AgentChatAttachedFiles } from './components/AgentChatAttachedFiles';
 import { AgentWorkspacePanel } from './components/AgentWorkspacePanel';
 import { AgentPlanningPanel } from './components/AgentPlanningPanel';
 import { getLogger } from '@/lib/logger';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 const logger = getLogger('AgentChatView');
 
@@ -155,7 +156,7 @@ export default function AgentChatView() {
       <div className="flex h-full items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
           {/* Spinner */}
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <LoadingSpinner size="lg" className="border-4" />
 
           <div className="flex flex-col items-center gap-1">
             <div className="text-muted-foreground font-medium animate-pulse">

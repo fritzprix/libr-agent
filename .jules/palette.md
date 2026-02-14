@@ -17,3 +17,8 @@
 
 **Learning:** Radix UI `DialogContent` triggers accessibility warnings if `DialogDescription` is missing. Even if the content is self-explanatory (like a list), a description is required for screen readers or must be explicitly disabled via `aria-describedby={undefined}`.
 **Action:** Always include a `DialogDescription` or explicit `aria-describedby` when implementing modals using `@/components/ui/dialog`.
+
+## 2025-07-16 - [Accessible Loading Indicators]
+
+**Learning:** Purely visual loading indicators (spinners, bouncing dots) are invisible to screen readers, causing confusion during async operations.
+**Action:** Always wrap loading animations in a container with `role="status"` and provide an `aria-label` (or `sr-only` text) describing the state (e.g., "Loading...").

@@ -5,6 +5,8 @@ interface LoadingIndicatorProps {
   className?: string;
   /** Size of the dots (text size class) */
   size?: 'sm' | 'md' | 'lg';
+  /** Accessible label */
+  label?: string;
 }
 
 /**
@@ -15,6 +17,7 @@ interface LoadingIndicatorProps {
 export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   className = '',
   size = 'md',
+  label = 'Loading',
 }) => {
   const sizeClass = {
     sm: 'text-xs',
@@ -23,14 +26,31 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   }[size];
 
   return (
-    <span className={`flex gap-1 ${sizeClass} ${className}`}>
-      <span className="animate-bounce" style={{ animationDelay: '0ms' }}>
+    <span
+      role="status"
+      aria-label={label}
+      className={`flex gap-1 ${sizeClass} ${className}`}
+    >
+      <span className="sr-only">{label}</span>
+      <span
+        aria-hidden="true"
+        className="animate-bounce"
+        style={{ animationDelay: '0ms' }}
+      >
         ●
       </span>
-      <span className="animate-bounce" style={{ animationDelay: '150ms' }}>
+      <span
+        aria-hidden="true"
+        className="animate-bounce"
+        style={{ animationDelay: '150ms' }}
+      >
         ●
       </span>
-      <span className="animate-bounce" style={{ animationDelay: '300ms' }}>
+      <span
+        aria-hidden="true"
+        className="animate-bounce"
+        style={{ animationDelay: '300ms' }}
+      >
         ●
       </span>
     </span>
