@@ -64,3 +64,23 @@
 
 **Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
 **Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".
+
+## 2026-03-01 - Memory (Internal)
+
+**Drift:** Memory claimed `AnthropicService` (`src/lib/ai-service/anthropic.ts`) was decomposed into a directory `src/lib/ai-service/anthropic/`.
+**Reality:** `src/lib/ai-service/anthropic.ts` exists as a single file.
+
+## 2026-03-01 - src/lib/ai-service/README.md
+
+**Drift:** "Provider-Specific Handling" section claimed Anthropic currently inherits base behavior for `source` field.
+**Reality:** `AnthropicService` explicitly handles the `source` field, converting UI-sourced messages to the 'user' role.
+
+## 2026-03-01 - src-tauri/src/commands/session_commands.rs
+
+**Drift:** `switch_session` documentation contained contradictory statements about being "Used by..." vs "Legacy/Deprecated".
+**Reality:** The command is a deprecated no-op in Agent V2, which uses ID-based isolation instead of global context switching.
+
+## 2026-03-01 - src-tauri/src/commands/agent_commands.rs
+
+**Drift:** `agent_create_session` documentation was missing details about `workspace_path` and `is_ephemeral` parameters.
+**Reality:** The function accepts these parameters for critical functionality (workspace overrides and in-memory sessions).

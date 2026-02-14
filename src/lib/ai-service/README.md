@@ -131,8 +131,9 @@ const effectiveRole = m.source === 'ui' ? 'user' : m.role;
 
 #### Anthropic (`anthropic.ts`)
 
-- Currently inherits base behavior
-- May need provider-specific handling if Anthropic has different requirements
+- UI-sourced messages → converted to `'user'` role
+- Assistant-sourced messages → retain original role
+- Consistent with OpenAI implementation
 
 #### Other Providers
 

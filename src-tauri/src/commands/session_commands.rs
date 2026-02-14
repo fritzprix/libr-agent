@@ -23,9 +23,8 @@ pub struct SessionResponse {
     pub data: Option<serde_json::Value>,
 }
 
-/// Switch to a specific session for workspace isolation
-/// Used by BuiltInToolProvider to switch backend workspace when changing Agent V2 sessions
 /// Switch to a specific session (Legacy/Deprecated)
+///
 /// In Agent V2, sessions are isolated by ID and do not rely on global context switching.
 /// This command is preserved as a no-op to prevent frontend errors during transition.
 #[command]

@@ -71,7 +71,10 @@ pub struct AgentResponse {
     pub data: Option<serde_json::Value>,
 }
 
-/// Create a new agent session
+/// Create a new agent session.
+///
+/// Supports optional `workspace_path` to override the default workspace location,
+/// and `is_ephemeral` flag for in-memory only sessions (no DB persistence).
 #[command]
 pub async fn agent_create_session(
     manager: State<'_, AgentSessionManager>,
