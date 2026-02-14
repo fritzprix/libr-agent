@@ -35,3 +35,8 @@
 **Split:** `security.rs`, `ui.rs`, `handlers.rs`
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
+
+## 2026-02-14 - src-tauri/src/mcp/builtin/workspace/file_operations/edit_replace.rs
+
+**Split:** `common.rs`, `preview.rs`, `single.rs`, `multi.rs`, `mod.rs`
+**Improvement:** Decoupled file edit handling logic into focused modules. Extracted shared similarity search and validation logic into `common.rs` to reduce duplication. Reduced monolithic file size from ~34KB to focused modules.
