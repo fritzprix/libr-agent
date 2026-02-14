@@ -419,56 +419,36 @@ impl AgentSessionManager {
         .await
     }
 
-    /// Delete an agent session and all its data
-    pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
-        use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
+    /// Recursively collect all descendant session IDs (children, grandchildren, etc.)
+    async fn collect_descendant_ids(&self, session_id: &str) -> Result<Vec<String>, String> {
         use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
 
-        // 1. Terminate workflow if running
-        let _ = self.terminate_session(session_id.clone()).await;
-
-        // 2. Remove from active sessions
-        self.active_sessions.write().await.remove(&session_id);
-
-        // 3. Delete all messages for the session
-        let msg_repo = crate::state::get_message_repository();
-        msg_repo
-            .delete_by_session(&session_id)
-            .await
-            .map_err(|e| format!("Failed to delete messages: {}", e))?;
-
-        // 4. Delete session metadata from database
         let session_repo = crate::state::get_session_repository();
-        session_repo
-            .delete_session(&session_id)
-            .await
-            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+        let mut all_descendants = Vec::new();
+        let mut queue = vec![session_id.to_string()];
 
-        // 5. Delete search index
-        if let Err(e) = crate::search::index_storage::delete_index(&session_id) {
-            log::warn!(
-                "Failed to delete search index for session {}: {}",
-                session_id,
-                e
-            );
+        while let Some(current_id) = queue.pop() {
+            let children = session_repo
+                .get_child_session_ids(&current_id)
+                .await
+                .map_err(|e| format!("Failed to get children for {}: {}", current_id, e))?;
+
+            for child_id in children {
+                all_descendants.push(child_id.clone());
+                queue.push(child_id);
+            }
         }
 
-        // 6. Delete index metadata
-        let msg_repo = crate::state::get_message_repository();
-        if let Err(e) = msg_repo.delete_index_metadata(&session_id).await {
-            log::warn!(
-                "Failed to delete index metadata for session {}: {}",
-                session_id,
-                e
-            );
-        }
+        Ok(all_descendants)
+    }
 
-        // 7. Delete workspace directory
+    /// Delete workspace directory for a session
+    async fn delete_session_workspace(&self, session_id: &str) -> Result<(), String> {
         match crate::session::get_session_manager() {
             Ok(manager) => {
                 // Ensure workspace is loaded into pool before attempting removal
-                let _ = manager.get_session_workspace_dir_by_id(&session_id);
-                if let Err(e) = manager.remove_session(&session_id).await {
+                let _ = manager.get_session_workspace_dir_by_id(session_id);
+                if let Err(e) = manager.remove_session(session_id).await {
                     log::warn!(
                         "Failed to remove workspace for session {}: {}",
                         session_id,
@@ -480,8 +460,82 @@ impl AgentSessionManager {
                 log::warn!("Failed to get session manager for workspace cleanup: {}", e);
             }
         }
+        Ok(())
+    }
 
-        log::info!("✅ Deleted agent session: {}", session_id);
+    /// Delete an agent session and all its data
+    ///
+    /// **Cascade Philosophy:** "시간의 인과관계 - 근원이 사라지면 결과도 사라진다"
+    /// - DB-level CASCADE automatically deletes child session records
+    /// - We must manually delete workspace directories for all descendants before DB deletion
+    pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        // 0. Collect all descendant IDs BEFORE cascade delete (so we can clean their workspaces)
+        log::debug!(
+            "Collecting descendants for cascade workspace cleanup: {}",
+            session_id
+        );
+        let descendant_ids = self.collect_descendant_ids(&session_id).await?;
+
+        if !descendant_ids.is_empty() {
+            log::info!(
+                "🌳 Cascade delete: {} will remove {} descendant session(s)",
+                session_id,
+                descendant_ids.len()
+            );
+        }
+
+        // 1. Terminate workflow if running (for this session and all descendants)
+        let _ = self.terminate_session(session_id.clone()).await;
+        for descendant_id in &descendant_ids {
+            let _ = self.terminate_session(descendant_id.clone()).await;
+        }
+
+        // 2. Remove from active sessions (parent only - descendants might not be in memory)
+        self.active_sessions.write().await.remove(&session_id);
+
+        // 3. Delete workspaces for all descendants BEFORE DB cascade
+        //    (DB CASCADE will delete records, but not filesystem directories)
+        for descendant_id in &descendant_ids {
+            self.delete_session_workspace(descendant_id).await?;
+
+            // Also delete search index (filesystem)
+            if let Err(e) = crate::search::index_storage::delete_index(descendant_id) {
+                log::warn!(
+                    "Failed to delete search index for descendant {}: {}",
+                    descendant_id,
+                    e
+                );
+            }
+        }
+
+        // 4. Delete workspace and search index for the parent session
+        self.delete_session_workspace(&session_id).await?;
+
+        if let Err(e) = crate::search::index_storage::delete_index(&session_id) {
+            log::warn!(
+                "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        // 5. Delete from database (CASCADE will automatically delete all descendant records)
+        //    - Child sessions (via FK parent_session_id)
+        //    - All messages (via FK session_id)
+        //    - Index metadata (via FK session_id, if exists)
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .delete_session(&session_id)
+            .await
+            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+
+        log::info!(
+            "✅ Deleted agent session: {} (cascade removed {} descendants)",
+            session_id,
+            descendant_ids.len()
+        );
         Ok(())
     }
 

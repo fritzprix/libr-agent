@@ -1126,7 +1126,7 @@ impl BuiltinMCPServer for SessionApiServer {
                             .filter_map(|a| {
                                 let name = a.get("name")?.as_str()?;
                                 let id = a.get("id")?.as_str()?;
-                                
+
                                 // Parse config (might be string or object)
                                 let config = a.get("config")?;
                                 let parsed_config = if let Some(config_str) = config.as_str() {
@@ -1136,9 +1136,13 @@ impl BuiltinMCPServer for SessionApiServer {
                                 };
 
                                 // Extract description from config
-                                let description = Self::extract_assistant_description(&parsed_config);
-                                
-                                Some(format!("• {} [ID: {}]\n  Description: {}", name, id, description))
+                                let description =
+                                    Self::extract_assistant_description(&parsed_config);
+
+                                Some(format!(
+                                    "• {} [ID: {}]\n  Description: {}",
+                                    name, id, description
+                                ))
                             })
                             .collect::<Vec<_>>()
                             .join("\n\n")
@@ -1157,7 +1161,11 @@ impl BuiltinMCPServer for SessionApiServer {
                     format!(
                         "Found {} {}:\n\n{}",
                         assistant_count,
-                        if assistant_count == 1 { "assistant" } else { "assistants" },
+                        if assistant_count == 1 {
+                            "assistant"
+                        } else {
+                            "assistants"
+                        },
                         assistants_text
                     )
                 };
