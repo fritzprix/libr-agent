@@ -15,3 +15,9 @@
 **Vulnerability:** `tokio::fs::read` reads entire files into memory without size checks, enabling DoS. Checking metadata size before reading introduces a TOCTOU race condition if the file grows between check and read.
 **Learning:** Metadata checks are insufficient for limiting resource usage during file I/O because file state is mutable.
 **Prevention:** Use `File::open` combined with `take(limit)` (or `read_to_end` with a capped buffer) to strictly enforce read limits at the I/O operation level.
+
+## 2025-05-24 - Symlink Path Traversal via Insecure Path Validation
+
+**Vulnerability:** `SecurityValidator` allowed path traversal via symlinks because it permitted access if *either* the canonical path *or* the absolute path (constructed from `base_dir` + relative path) was within the base directory. An attacker could create a symlink inside the workspace pointing outside, and the "absolute path" check would pass (since it's lexically inside), bypassing the canonical path check.
+**Learning:** Relying on lexical path containment (`starts_with`) without full canonicalization is insufficient when the filesystem supports symlinks. The `base_dir` itself must also be canonicalized to ensure a consistent comparison.
+**Prevention:** Always canonicalize both the `base_dir` (at initialization) and the target path. Enforce strict containment checks on the fully resolved canonical paths only. Do not provide "fallback" validation that ignores symlink resolution.

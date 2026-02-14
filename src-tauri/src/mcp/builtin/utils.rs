@@ -32,7 +32,25 @@ impl SecurityValidator {
             tracing::error!("Failed to create base directory {:?}: {}", base_dir, e);
         }
 
-        Self { base_dir }
+        // Canonicalize base_dir to resolve any symlinks for secure path validation
+        let canonical_base = match base_dir.canonicalize() {
+            Ok(p) => {
+                tracing::debug!("Canonicalized base_dir to {:?}", p);
+                p
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to canonicalize base_dir {:?}: {}. Using original.",
+                    base_dir,
+                    e
+                );
+                base_dir
+            }
+        };
+
+        Self {
+            base_dir: canonical_base,
+        }
     }
 
     /// Validate and clean a file path to prevent directory traversal
@@ -113,8 +131,8 @@ impl SecurityValidator {
         };
 
         // 최종 검증: base_dir 하위인지 확인
-        if !canonical_path.starts_with(&self.base_dir) && !absolute_path.starts_with(&self.base_dir)
-        {
+        // FIX: Strictly check canonical path to prevent symlink traversal
+        if !canonical_path.starts_with(&self.base_dir) {
             return Err(SecurityError::PathTraversal(format!(
                 "Path '{}' resolves outside allowed directory. Base: {:?}, Resolved: {:?}",
                 user_path, self.base_dir, canonical_path
