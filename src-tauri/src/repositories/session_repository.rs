@@ -294,6 +294,7 @@ mod tests {
             lineage_id: None,
             depth: None,
             max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -331,6 +332,7 @@ mod tests {
             lineage_id: None,
             depth: None,
             max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -375,6 +377,7 @@ mod tests {
                 lineage_id: None,
                 depth: None,
                 max_depth: None,
+                max_fanout: None,
                 created_at: now,
                 updated_at: now + i,
             };
@@ -436,6 +439,11 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -454,6 +462,11 @@ mod tests {
             agent_config: Some(r#"{"updated": true}"#.to_string()),
             created_at: now,
             updated_at: now + 1000,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
         };
 
         repo.upsert_session(&updated_session)
@@ -489,6 +502,11 @@ mod tests {
             agent_config: None,
             created_at: now,
             updated_at: now,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
         };
 
         repo.upsert_session(&session)

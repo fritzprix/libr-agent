@@ -212,6 +212,7 @@ mod tests {
             lineage_id: None,
             depth: None,
             max_depth: None,
+            max_fanout: None,
             created_at: 1234567890,
             updated_at: 1234567890,
         };
@@ -240,6 +241,7 @@ mod tests {
             lineage_id: None,
             depth: None,
             max_depth: None,
+            max_fanout: None,
             created_at: 100,
             updated_at: 100,
         };
@@ -280,6 +282,7 @@ mod tests {
             lineage_id: None,
             depth: None,
             max_depth: None,
+            max_fanout: None,
             created_at: 100,
             updated_at: 100,
         };
@@ -313,14 +316,7 @@ mod tests {
                 lineage_id: None,
                 depth: None,
                 max_depth: None,
-                parent_session_id: None,
-                lineage_id: None,
-                depth: None,
-                max_depth: None,
-                parent_session_id: None,
-                lineage_id: None,
-                depth: None,
-                max_depth: None,
+                max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
             };
@@ -345,6 +341,11 @@ mod tests {
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
                 agent_config: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
+                max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
             };
@@ -379,6 +380,11 @@ mod tests {
                     agent_config: None,
                     created_at: 100,
                     updated_at: 100,
+                    parent_session_id: None,
+                    lineage_id: None,
+                    depth: None,
+                    max_depth: None,
+                    max_fanout: None,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });
