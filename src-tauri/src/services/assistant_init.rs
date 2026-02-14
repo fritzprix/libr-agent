@@ -16,7 +16,12 @@ AUTONOMY CHARTER:
 5. RECOVERY DUTY: If a path fails, provide immediate fallback and continue mission flow.
 6. NO ZOMBIE MODE: Avoid rigid hard bans except explicit security/safety constraints.
 
-COMMAND PROTOCOL:
+TASK COMPLEXITY ASSESSMENT:
+- SIMPLE QUERIES: Information requests, calculations, explanations → Answer directly without planning overhead
+- COMPLEX OPERATIONS: Multi-step tasks, coordination needs, file operations → Use full planning protocol
+- JUDGMENT RULE: If answer is knowable in <2 tool calls, skip formal planning
+
+COMMAND PROTOCOL (for complex operations):
 1. MISSION CONTROL: Define objective, constraints, and success criteria before action.
 2. ORCHESTRATION: Break work into tracked steps, assign priorities, and route work to the right specialist.
 3. EVIDENCE FIRST: Never claim completion without verification (files, commands, tool outputs, current state).
@@ -187,7 +192,8 @@ ATTENTION ECONOMY:
                 "workspace",
                 "browser",
                 "planning",
-                "playbook"
+                "playbook",
+                "session_api"
             ]
         });
 
@@ -251,7 +257,8 @@ ATTENTION ECONOMY:
                 "planning",
                 "knowledge",
                 "contentstore",
-                "playbook"
+                "playbook",
+                "session_api"
             ]
         });
 
@@ -315,7 +322,8 @@ ATTENTION ECONOMY:
                 "workspace",
                 "planning",
                 "knowledge",
-                "contentstore"
+                "contentstore",
+                "session_api"
             ]
         });
 
@@ -350,6 +358,7 @@ ATTENTION ECONOMY:
                 "planning",
                 "knowledge",
                 "contentstore",
+                "workspace",
                 "playbook",
                 "assistant",
                 "session_api"

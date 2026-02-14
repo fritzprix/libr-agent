@@ -6,6 +6,7 @@ mod m20260211_000003_create_message_index_meta;
 mod m20260212_000004_add_indexes;
 mod m20260214_000005_add_lineage_fields_to_sessions;
 mod m20260214_000006_add_max_fanout_to_sessions;
+mod m20260214_000007_create_knowledge_fts;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260212_000004_add_indexes::Migration),
             Box::new(m20260214_000005_add_lineage_fields_to_sessions::Migration),
             Box::new(m20260214_000006_add_max_fanout_to_sessions::Migration),
+            Box::new(m20260214_000007_create_knowledge_fts::Migration),
         ]
     }
 }
