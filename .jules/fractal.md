@@ -35,3 +35,9 @@
 **Split:** `security.rs`, `ui.rs`, `handlers.rs`
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
+
+## 2026-02-13 - src/lib/ai-service/anthropic.ts
+
+**Split:** `types.ts`, `constants.ts`, `tool-utils.ts`, `message-converter.ts`, `stream-handler.ts`, `service.ts`, `index.ts`
+**Result:** Reduced from 845 lines to ~350 lines in the main service class.
+**Improvement:** Decoupled message conversion (Anthropic format), stream processing (chunk accumulation, tool input parsing), and core service logic. Centralized types and constants.
