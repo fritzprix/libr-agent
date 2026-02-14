@@ -556,8 +556,14 @@ impl MCPServiceProxy {
     pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
         let mut contexts = HashMap::new();
 
+        let options = super::types::ServiceContextOptions {
+            session_id: Some(self.session_id.clone()),
+            assistant_id: None,
+        };
+        let options_value = serde_json::to_value(options).ok();
+
         for (tool_id, server) in &self.builtin_servers {
-            let context = server.get_service_context(None).await;
+            let context = server.get_service_context(options_value.as_ref()).await;
 
             // Always include the context, even if empty, as structured state might be present
             contexts.insert(tool_id.clone(), context);

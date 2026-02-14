@@ -13,6 +13,7 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::repositories::SessionRepository;
 use crate::state::get_settings_repository;
 
 pub mod tools;
@@ -967,14 +968,52 @@ impl BuiltinMCPServer for SessionApiServer {
         }
     }
 
-    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
         let base_url = self.base_url().await;
 
+        // 1. Base prompt
+        let mut context_prompt = format!(
+            "## Session API\n\nInternal API client is available at {}\nUse these tools to create/manage nested sessions.",
+            base_url
+        );
+
+        // 2. Fetch child sessions if session_id is provided
+        if let Some(opts) = options {
+            if let Some(session_id) = opts.get("sessionId").and_then(|v| v.as_str()) {
+                let repo = crate::state::get_session_repository();
+                match repo.get_child_session_ids(session_id).await {
+                    Ok(child_ids) => {
+                        if !child_ids.is_empty() {
+                            context_prompt
+                                .push_str("\n\n### Running Sub-Agents (Direct Children)\n");
+                            context_prompt.push_str("You have the following active sub-agents:\n");
+
+                            for child_id in child_ids {
+                                if let Ok(Some(child)) = repo.get_session(&child_id).await {
+                                    let status = child.status.as_str();
+                                    let name = child.name.as_deref().unwrap_or("Unnamed");
+                                    // Use first 8 chars of ID for brevity if needed, but full ID is safer
+                                    context_prompt.push_str(&format!(
+                                        "- **{}** (ID: `{}`): Status `{}`\n",
+                                        name, child.id, status
+                                    ));
+                                }
+                            }
+
+                            context_prompt.push_str("\nUse `session_api` tools to communicate with them or check their status.");
+                        } else {
+                            context_prompt.push_str("\n\n(No active sub-agents currently running)");
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to fetch child sessions for context: {}", e);
+                    }
+                }
+            }
+        }
+
         ServiceContext {
-            context_prompt: format!(
-                "## Session API\n\nInternal API client is available at {}\nUse these tools to create/manage nested sessions.",
-                base_url
-            ),
+            context_prompt,
             structured_state: Some(json!({
                 "base_url": base_url,
                 "server": "session_api"
