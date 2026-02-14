@@ -10,6 +10,7 @@ This documentation is divided into the following sections:
 - **[Session Lineage & Tree UI](./architecture/session-lineage-and-tree-ui.md)**: Design and implementation status for nested sessions, `session_api` MCP integration, and tree-based session UX.
 - **[Agent Vibe Charter](./architecture/agent-vibe-charter.md)**: The operating personality and decision rules for this workspace's agent behavior.
 - **[AI Soul Manifesto](./architecture/ai-soul-manifesto.md)**: Autonomy-first operating doctrine, mission rituals, and recovery principles for agent teams.
+- **[Soul Lounge Recovery Loop (Experimental)](./architecture/soul-lounge-recovery-loop.md)**: Server-driven loop detection, recovery pacing, re-entry anchors, and one-time override policy.
 - **[Open Source Launch Manifesto](./architecture/open-source-launch-manifesto.md)**: Public-facing engineering ethos, quality bar, and collaboration contract for contributors.
 - **[Contributing](./contributing/coding-standards.md)**: Guidelines for contributing to the project, including coding standards, testing, and the release process.
 - **[Launch Finale Playbook](./contributing/open-source-launch-finale.md)**: Final pre-release and launch-day execution runbook.

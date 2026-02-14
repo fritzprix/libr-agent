@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-02-14
+
+### 🐛 Fixes
+
+- **Session Lineage Grouping (Start View)**:
+  - Fixed a regression where clicking a session card's lineage focus could hide the parent while showing only child sessions.
+  - Root cause: some sessions were created without normalized `lineageId`, causing lineage filtering mismatch between parent and child records.
+  - Backend now normalizes lineage defaults during session creation (`lineageId` falls back to `sessionId` for roots, `parentSessionId` for children when missing).
+  - Frontend session list normalization now backfills missing lineage/depth values for legacy records so parent/child lineage focus remains stable.
+
+### ✅ Validation
+
+- Re-ran API E2E flow via `scripts/test_api.py` after fix:
+  - session create/resume/message polling,
+  - parent-child lineage checks,
+  - `maxDepth` limit behavior,
+  - `maxFanout` limit behavior.
+- Result: all scenarios passed.
+
 ## [0.5.0] - 2026-02-14
 
 ### 🚀 Features

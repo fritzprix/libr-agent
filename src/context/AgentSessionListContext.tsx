@@ -143,6 +143,14 @@ export function AgentSessionListProvider({
           }
         }
 
+        if (!lineageId) {
+          lineageId = parentSessionId || s.id;
+        }
+
+        if (depth === undefined) {
+          depth = parentSessionId ? 1 : 0;
+        }
+
         return {
           id: s.id,
           name: s.name,
@@ -228,6 +236,9 @@ export function AgentSessionListProvider({
           status: 'idle' | 'busy' | 'paused' | 'error';
           model: string;
           provider: string;
+          parentSessionId?: string;
+          lineageId?: string;
+          depth?: number;
           createdAt: number;
           updatedAt?: number;
         }>('agent_create_session', {
@@ -245,6 +256,10 @@ export function AgentSessionListProvider({
           model: response.model,
           provider: response.provider,
           assistant: agentConfig,
+          parentSessionId: response.parentSessionId,
+          lineageId:
+            response.lineageId || response.parentSessionId || response.id,
+          depth: response.depth ?? (response.parentSessionId ? 1 : 0),
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
