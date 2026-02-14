@@ -75,6 +75,29 @@ impl SessionApiServer {
         tools::all_tools()
     }
 
+    fn extract_assistant_description(config: &Value) -> String {
+        if let Some(description) = config.get("description").and_then(|v| v.as_str()) {
+            let cleaned = description.trim();
+            if !cleaned.is_empty() {
+                return Self::truncate_text(cleaned, 140);
+            }
+        }
+
+        if let Some(system_prompt) = config.get("systemPrompt").and_then(|v| v.as_str()) {
+            let first_meaningful_line = system_prompt
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .unwrap_or("");
+
+            if !first_meaningful_line.is_empty() {
+                return Self::truncate_text(first_meaningful_line, 140);
+            }
+        }
+
+        "No description".to_string()
+    }
+
     async fn base_url(&self) -> String {
         let settings_repo = get_settings_repository();
 
@@ -1103,11 +1126,18 @@ impl BuiltinMCPServer for SessionApiServer {
                             .filter_map(|a| {
                                 let name = a.get("name")?.as_str()?;
                                 let id = a.get("id")?.as_str()?;
-                                let description = a
-                                    .get("config")
-                                    .and_then(|c| c.get("systemPrompt"))
-                                    .and_then(|s| s.as_str())
-                                    .unwrap_or("No description");
+                                
+                                // Parse config (might be string or object)
+                                let config = a.get("config")?;
+                                let parsed_config = if let Some(config_str) = config.as_str() {
+                                    serde_json::from_str::<Value>(config_str).ok()?
+                                } else {
+                                    config.clone()
+                                };
+
+                                // Extract description from config
+                                let description = Self::extract_assistant_description(&parsed_config);
+                                
                                 Some(format!("• {} [ID: {}]\n  Description: {}", name, id, description))
                             })
                             .collect::<Vec<_>>()
