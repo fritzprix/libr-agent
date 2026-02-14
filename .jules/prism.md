@@ -117,3 +117,13 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-02-05 - [SessionCard] **Visual Bug:** Custom status indicator, inconsistent icons **Fix:** Used Badge component, standardized icons to 12px
 
 ## 2026-02-05 - [AgentChatStartView] **Visual Bug:** Arbitrary flex splits, magic numbers **Fix:** Used CSS Grid layout, standard spacing
+
+## 2026-02-12 - [DropdownMenu] **Visual Bug:** Magic number width (min-w-[8rem]) **Fix:** Use grid value (min-w-32)
+
+## 2026-02-12 - [Select] **Visual Bug:** Magic number width (min-w-[8rem]) **Fix:** Use grid value (min-w-32)
+
+## 2026-02-12 - [Sidebar] **Visual Bug:** Magic number width (w-[2px]) **Fix:** Use grid value (w-0.5)
+
+## 2026-02-12 - [SessionFilesPopover] **Visual Bug:** Ambiguous percentage height (max-h-[80%]) **Fix:** Use viewport unit (max-h-[80vh])
+
+## 2026-02-12 - [SessionCard] **Visual Bug:** Magic numbers (h-5, text-[10px]) and inconsistent button size **Fix:** Use standard tokens (h-6, text-xs)

@@ -219,7 +219,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         open={!!selectedFile}
         onOpenChange={(open) => !open && setSelectedFile(null)}
       >
-        <DialogContent className="max-w-4xl max-h-[80%] flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-sm">
               {selectedFile?.filename}
