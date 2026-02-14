@@ -61,8 +61,6 @@ export {
   listBuiltinServersWithMetadata,
   listAvailableBuiltinServerDefinitions,
   callBuiltinTool,
-  listAllToolsUnified,
-  callToolUnified,
 } from './builtin-tools';
 
 // Browser operations

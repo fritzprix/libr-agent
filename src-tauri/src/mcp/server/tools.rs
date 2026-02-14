@@ -520,38 +520,6 @@ pub async fn call_builtin_tool(
     result
 }
 
-pub async fn list_all_tools_unified(manager: &MCPServerManager) -> Result<Vec<MCPTool>> {
-    let mut all_tools = Vec::new();
-
-    // Get external server tools
-    match list_all_tools(manager).await {
-        Ok(external_tools) => all_tools.extend(external_tools),
-        Err(e) => warn!("Failed to get external server tools: {e}"),
-    }
-
-    // Get builtin server tools
-    let builtin_tools = list_builtin_tools(manager).await;
-    all_tools.extend(builtin_tools);
-
-    Ok(all_tools)
-}
-
-pub async fn call_tool_unified(
-    manager: &MCPServerManager,
-    server_name: &str,
-    tool_name: &str,
-    args: serde_json::Value,
-    request_id: Option<serde_json::Value>,
-) -> MCPResponse {
-    // Check if it's a builtin server (starts with "builtin.")
-    if server_name.starts_with("builtin.") {
-        let normalized_server_name = server_name.strip_prefix("builtin.").unwrap_or(server_name);
-        call_builtin_tool(manager, normalized_server_name, tool_name, args, request_id).await
-    } else {
-        call_tool(manager, server_name, tool_name, args, request_id).await
-    }
-}
-
 pub async fn get_service_context(
     manager: &MCPServerManager,
     server_name: &str,

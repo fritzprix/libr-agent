@@ -74,14 +74,6 @@ export interface RustBackendAPI {
     args: Record<string, unknown>,
   ) => Promise<MCPResponse<unknown>>;
 
-  // Unified Tools API
-  listAllToolsUnified: () => Promise<MCPTool[]>;
-  callToolUnified: (
-    serverName: string,
-    toolName: string,
-    args: Record<string, unknown>,
-  ) => Promise<MCPResponse<unknown>>;
-
   // File System Operations (returns number[] representing bytes)
   registerDroppedFiles: (paths: string[]) => Promise<void>;
   readDroppedFile: (filePath: string) => Promise<number[]>;
@@ -160,10 +152,6 @@ const backendAPI: RustBackendAPI = {
   listAvailableBuiltinServerDefinitions:
     client.listAvailableBuiltinServerDefinitions,
   callBuiltinTool: client.callBuiltinTool,
-
-  // Unified Tools API
-  listAllToolsUnified: client.listAllToolsUnified,
-  callToolUnified: client.callToolUnified,
 
   // File System Operations
   registerDroppedFiles: client.registerDroppedFiles,
