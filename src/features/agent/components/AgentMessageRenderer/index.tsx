@@ -46,6 +46,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   className = '',
   expandResources = false,
   toolResultsMap,
+  toolResults,
 }) => {
   const { openExternalUrl } = useRustBackend();
   const isDark = useIsDarkMode();
@@ -84,6 +85,22 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
     () => groupContent(finalContent, message),
     [finalContent, message?.thinking, message?.thinkingTime],
   );
+
+  // Compute local tool results map if toolResults array is provided
+  // This allows avoiding the global toolResultsMap dependency
+  const localToolResultsMap = useMemo(() => {
+    if (!toolResults) return undefined;
+    const map = new Map<string, Message>();
+    toolResults.forEach((m) => {
+      if (m && m.tool_call_id) {
+        map.set(m.tool_call_id, m);
+      }
+    });
+    return map;
+  }, [toolResults]);
+
+  // Use local map if available, otherwise fallback to global map
+  const activeToolResultsMap = localToolResultsMap || toolResultsMap;
 
   // Keep latest content in a ref to avoid recreating callbacks on each render
   const contentRef = useRef<MCPContent[]>(finalContent);
@@ -192,7 +209,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             function: { name: tc.name, arguments: tc.arguments },
           }));
           const toolGroupResults = toolGroupCalls.map((call) =>
-            toolResultsMap?.get(call.id),
+            activeToolResultsMap?.get(call.id),
           );
 
           return (

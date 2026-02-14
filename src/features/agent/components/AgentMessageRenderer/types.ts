@@ -9,6 +9,8 @@ export interface AgentMessageRendererProps {
   expandResources?: boolean;
   /** Map of tool call ID to result message (for unified rendering) */
   toolResultsMap?: Map<string, Message>;
+  /** Optional array of tool results (parallel to tool calls) */
+  toolResults?: (Message | undefined)[];
 }
 
 // Helper type to avoid implicit any in markdown components

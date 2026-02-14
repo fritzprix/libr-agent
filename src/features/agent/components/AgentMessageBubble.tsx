@@ -9,6 +9,8 @@ interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
   toolResultsMap?: Map<string, Message>;
+  /** Optional stable array of tool results, preventing re-renders on global map changes */
+  toolResults?: (Message | undefined)[];
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   isPending?: boolean;
@@ -24,6 +26,7 @@ function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
   toolResultsMap,
+  toolResults,
   groupedToolCalls,
   groupedMessages,
   isPending = false,
@@ -152,6 +155,7 @@ function AgentMessageBubbleImpl({
                   content={displayContent || msg.content}
                   message={msg}
                   toolResultsMap={toolResultsMap}
+                  toolResults={toolResults}
                 />
               </>
             ) : (
