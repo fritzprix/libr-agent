@@ -77,6 +77,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         model: resolved_model,
         provider: resolved_provider,
         agent_config: Some(config_json),
+        parent_session_id: agent_config.parent_session_id.clone(),
+        lineage_id: agent_config.lineage_id.clone(),
+        depth: agent_config.depth,
+        max_depth: agent_config.max_depth,
+        max_fanout: agent_config.max_fanout,
         created_at: now,
         updated_at: now,
     };

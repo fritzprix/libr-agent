@@ -46,6 +46,17 @@ vi.mock('../GlobalEventContext', () => ({
     useBackendResource: vi.fn(),
 }));
 
+vi.mock('@/context/SettingsContext', () => ({
+    useSettings: () => ({
+        value: {
+            advanced: {
+                defaultSessionMaxDepth: 0,
+                defaultSessionMaxFanout: 0,
+            },
+        },
+    }),
+}));
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
     return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
 }

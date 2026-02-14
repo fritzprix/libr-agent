@@ -2,6 +2,11 @@
 
 This document outlines the process for releasing new versions of LibrAgent.
 
+Companion documents:
+
+- `open-source-launch-finale.md` (final launch execution runbook)
+- `github-release-notes-template.md` (copy-ready release notes template)
+
 ## 1. Versioning
 
 - **Semantic Versioning**: The project follows Semantic Versioning (SemVer).

@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-02-14
+
+### 🚀 Features
+
+- **Master Mind Autonomy Update**:
+  - Updated default Master Mind doctrine to autonomy-first operation with explicit recovery duty.
+  - Added automatic system prompt backfill/update for existing Master Mind assistant records.
+
+- **Session Lineage Reliability**:
+  - `createSession` and `createChildSession` now auto-resolve parent lineage from caller session context when omitted.
+  - Added support for `parentSessionId: "current"` alias resolution.
+
+- **Terminal Result Fidelity**:
+  - `waitForSessionIdle` now returns full latest assistant text output by default (not short preview snippets).
+  - Added optional `assistantMessageMaxChars` to cap output when needed.
+
+### 🔧 Improvements
+
+- **Timeout Baseline for Long-Running Tool Calls**:
+  - Raised default MCP tool execution timeout from 60s to 180s across frontend defaults, UI fallback, and backend fallback config.
+
+- **Documentation / Positioning Refresh**:
+  - Rewrote README tone toward concise, product-confident messaging.
+  - Added AI Soul manifesto documentation and docs index linkage.
+
+### 🐛 Fixes
+
+- Fixed parent-child session creation friction where child session creation could fail without explicit parent wiring in orchestration flows.
+- Fixed wait-result truncation behavior that caused loss of final assistant detail in long reports.
+
 ## [0.4.25] - 2026-02-13
 
 ### 🐛 Fixes

@@ -1,21 +1,16 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAssistantContext } from '@/context/AssistantContext';
 import {
   useAgentSessionListState,
   useAgentSessionListActions,
 } from '@/context/AgentSessionListContext';
-import { SessionCard } from './components/SessionCard';
 import { AssistantSelectionCard } from './components/AssistantSelectionCard';
+import { SessionHistoryPanel } from './components/SessionHistoryPanel';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { RefreshCw, Search } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { filterSessions } from '@/lib/session-utils';
 import { getPlaybook } from '@/lib/backend/playbooks';
 
 const logger = getLogger('AgentChatStartView');
@@ -127,50 +122,6 @@ export default function AgentChatStartView() {
     loadSessions();
   }, [loadSessions]);
 
-  // Filter and sort sessions
-  const filteredAndSortedSessions = useMemo(() => {
-    const statusPriority = {
-      busy: 1,
-      idle: 2,
-      paused: 3,
-      error: 4,
-    };
-
-    let filtered = sessions;
-
-    // Filter by Tab
-    if (activeTab !== 'all') {
-      filtered = filtered.filter((session) => session.status === activeTab);
-    }
-
-    // Filter by search query
-    filtered = filterSessions(filtered, searchQuery);
-
-    // Sort by status first, then by creation date
-    return [...filtered].sort((a, b) => {
-      const statusDiff = statusPriority[a.status] - statusPriority[b.status];
-      if (statusDiff !== 0) return statusDiff;
-      return b.createdAt.getTime() - a.createdAt.getTime();
-    });
-  }, [sessions, searchQuery, activeTab]);
-
-  // Compute counts for tabs
-  const statusCounts = useMemo(() => {
-    const counts = {
-      all: sessions.length,
-      busy: 0,
-      idle: 0,
-      paused: 0,
-      error: 0,
-    };
-    sessions.forEach((s) => {
-      if (Object.prototype.hasOwnProperty.call(counts, s.status)) {
-        counts[s.status as keyof typeof counts]++;
-      }
-    });
-    return counts;
-  }, [sessions]);
-
   const handleAssistantSelect = useCallback(
     async (assistant: Assistant) => {
       // Show loading state
@@ -271,123 +222,17 @@ export default function AgentChatStartView() {
         role="region"
         aria-label="Session History"
       >
-        <div className="p-6 border-b">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold" id="session-heading">
-                Recent Sessions
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Resume previous agent sessions (
-                {filteredAndSortedSessions.length}/{sessions.length})
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefreshSessions}
-              disabled={isSessionsListLoading}
-              aria-label="Refresh sessions"
-            >
-              <RefreshCw
-                className={cn(
-                  'h-4 w-4',
-                  isSessionsListLoading && 'animate-spin',
-                )}
-              />
-            </Button>
-          </div>
-
-          <Tabs
-            defaultValue="all"
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="w-full mb-4"
-          >
-            <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="all" className="flex-1">
-                All ({statusCounts.all})
-              </TabsTrigger>
-              <TabsTrigger value="busy" className="flex-1">
-                Busy ({statusCounts.busy})
-              </TabsTrigger>
-              <TabsTrigger value="idle" className="flex-1">
-                Idle ({statusCounts.idle})
-              </TabsTrigger>
-              <TabsTrigger value="paused" className="flex-1">
-                Paused ({statusCounts.paused})
-              </TabsTrigger>
-              <TabsTrigger value="error" className="flex-1">
-                Error ({statusCounts.error})
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="text"
-              placeholder="Search sessions by name or ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-              aria-label="Search sessions"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6">
-          {isSessionsListLoading && sessions.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
-                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                <p className="text-sm">Loading sessions...</p>
-              </div>
-            </div>
-          ) : filteredAndSortedSessions.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center text-muted-foreground">
-                {searchQuery.trim() ? (
-                  <>
-                    <p className="text-sm">
-                      No sessions found matching &quot;{searchQuery}&quot;
-                    </p>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      onClick={() => setSearchQuery('')}
-                      className="mt-2"
-                    >
-                      Clear search
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm">No previous sessions</p>
-                    <p className="text-xs mt-2">
-                      Select an assistant to start your first session
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <ul
-              className="grid grid-cols-1 gap-4 max-w-2xl list-none"
-              aria-labelledby="session-heading"
-            >
-              {filteredAndSortedSessions.map((session) => (
-                <li key={session.id}>
-                  <SessionCard
-                    session={session}
-                    onResume={handleResumeSession}
-                    onDelete={handleDeleteSession}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <SessionHistoryPanel
+          sessions={sessions}
+          isLoading={isSessionsListLoading}
+          activeTab={activeTab}
+          searchQuery={searchQuery}
+          onActiveTabChange={setActiveTab}
+          onSearchQueryChange={setSearchQuery}
+          onRefresh={handleRefreshSessions}
+          onResume={handleResumeSession}
+          onDelete={handleDeleteSession}
+        />
       </div>
     </main>
   );

@@ -18,6 +18,9 @@ export interface AgentSession {
   createdAt: Date;
   updatedAt?: Date;
   assistant?: Assistant; // Runtime config, not persistent Assistant
+  parentSessionId?: string;
+  lineageId?: string;
+  depth?: number;
 }
 
 /**

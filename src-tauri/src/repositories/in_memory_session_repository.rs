@@ -157,6 +157,16 @@ impl SessionRepository for InMemorySessionRepository {
         Ok(result)
     }
 
+    async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {
+        let sessions = self.sessions.read().await;
+        let children = sessions
+            .values()
+            .filter(|s| s.parent_session_id.as_deref() == Some(parent_session_id))
+            .map(|s| s.id.clone())
+            .collect();
+        Ok(children)
+    }
+
     /// Delete a session from memory
     ///
     /// Idempotent - succeeds even if session doesn't exist.
@@ -198,6 +208,10 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: Some("{}".to_string()),
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
             created_at: 1234567890,
             updated_at: 1234567890,
         };
@@ -222,6 +236,10 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
             created_at: 100,
             updated_at: 100,
         };
@@ -258,6 +276,10 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
             created_at: 100,
             updated_at: 100,
         };
@@ -287,6 +309,18 @@ mod tests {
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
                 agent_config: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
                 created_at: 100,
                 updated_at: 100,
             };

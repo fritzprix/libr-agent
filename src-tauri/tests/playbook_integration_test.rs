@@ -63,6 +63,11 @@ async fn test_playbook_ui_rendering_integration() {
             r#"{"assistant_id":"assistant-rendering-test"}"#.to_string(),
         )),
         status: Set("idle".to_string()),
+        parent_session_id: Set(None),
+        lineage_id: Set(None),
+        depth: Set(None),
+        max_depth: Set(None),
+        max_fanout: Set(None),
         created_at: Set(0),
         updated_at: Set(0),
     };
@@ -208,6 +213,11 @@ async fn test_playbook_ui_interaction_flow() {
             r#"{"assistant_id":"assistant-flow-test"}"#.to_string(),
         )),
         status: Set("idle".to_string()),
+        parent_session_id: Set(None),
+        lineage_id: Set(None),
+        depth: Set(None),
+        max_depth: Set(None),
+        max_fanout: Set(None),
         created_at: Set(0),
         updated_at: Set(0),
     };

@@ -5,6 +5,43 @@ use crate::mcp::types::MCPResult;
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
 
+fn truncate_text(input: &str, max_chars: usize) -> String {
+    let normalized = input.replace('\n', " ").trim().to_string();
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+
+    let mut truncated = String::new();
+    for ch in normalized.chars().take(max_chars) {
+        truncated.push(ch);
+    }
+    truncated.push_str("...");
+    truncated
+}
+
+fn extract_assistant_description(config: &Value) -> String {
+    if let Some(description) = config.get("description").and_then(|v| v.as_str()) {
+        let cleaned = description.trim();
+        if !cleaned.is_empty() {
+            return truncate_text(cleaned, 140);
+        }
+    }
+
+    if let Some(system_prompt) = config.get("systemPrompt").and_then(|v| v.as_str()) {
+        let first_meaningful_line = system_prompt
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or("");
+
+        if !first_meaningful_line.is_empty() {
+            return truncate_text(first_meaningful_line, 140);
+        }
+    }
+
+    "No description".to_string()
+}
+
 /// List all assistants with pagination support
 pub async fn list_assistants(
     db: &sea_orm::DatabaseConnection,
@@ -70,10 +107,7 @@ pub async fn list_assistants(
             let assistants_text = assistants
                 .iter()
                 .map(|a| {
-                    let description = a["config"]
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("No description");
+                    let description = extract_assistant_description(&a["config"]);
                     format!(
                         "• {} [ID: {}]\n  Description: {}",
                         a["name"].as_str().unwrap_or("?"),

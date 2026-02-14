@@ -200,6 +200,14 @@ function DraftChatInner() {
           localServices: assistant.localServices || [],
           allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
           maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
+          ...(settings?.advanced?.defaultSessionMaxDepth &&
+          settings.advanced.defaultSessionMaxDepth > 0
+            ? { maxDepth: settings.advanced.defaultSessionMaxDepth }
+            : {}),
+          ...(settings?.advanced?.defaultSessionMaxFanout &&
+          settings.advanced.defaultSessionMaxFanout > 0
+            ? { maxFanout: settings.advanced.defaultSessionMaxFanout }
+            : {}),
         };
 
         if (!toastId) toastId = toast.loading('Creating session...');

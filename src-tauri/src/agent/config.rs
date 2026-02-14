@@ -42,6 +42,21 @@ pub struct AgentConfig {
 
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
+
+    /// Optional maximum recursive child depth (None = unlimited)
+    pub max_depth: Option<u32>,
+
+    /// Optional maximum direct children per parent session (None = unlimited)
+    pub max_fanout: Option<u32>,
+
+    /// Optional parent session ID for nested session lineage
+    pub parent_session_id: Option<String>,
+
+    /// Optional lineage root identifier shared across a session tree
+    pub lineage_id: Option<String>,
+
+    /// Optional hierarchy depth (root=0)
+    pub depth: Option<u32>,
 }
 
 fn default_temperature() -> f32 {
@@ -64,6 +79,11 @@ impl Default for AgentConfig {
             allowed_built_in_service_aliases: None, // Allow all by default
             temperature: 1.0,
             max_tokens: None,
+            max_depth: None,
+            max_fanout: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
         }
     }
 }
@@ -121,6 +141,11 @@ mod tests {
             allowed_built_in_service_aliases: Some(vec!["browser".to_string()]),
             temperature: 0.7,
             max_tokens: Some(4096),
+            max_depth: Some(8),
+            max_fanout: Some(4),
+            parent_session_id: Some("session-parent".to_string()),
+            lineage_id: Some("lineage-root".to_string()),
+            depth: Some(1),
         };
 
         let json = config.to_json().unwrap();
