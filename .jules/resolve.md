@@ -13,3 +13,5 @@
 **Solution:** Extracted `assistant_id` from `agent_config` in `create_session` and `send_message` functions and populated the `Message` struct to ensure proper assistant tracking.
 
 ## 2026-02-10 - [src-tauri/src/mcp/service_proxy_manager/mod.rs] **Debt Cleared:** `/// - External HTTP tools -> shared HTTP manager (TODO: Phase 3)` **Solution:** Verified that `HttpSessionManager` correctly implements session-isolated HTTP connections with `Mcp-Session-Id` header injection. Removed the stale TODO comment as the implementation is complete.
+
+## 2026-02-12 - [src-tauri/src/session_isolation/platforms/windows.rs] **Debt Cleared:** `// Refactor: We create the correct command initially.` **Solution:** Refactored `create_basic_isolated_command` to determine the correct executable (PowerShell wrapper or direct) upfront, eliminating redundant `AsyncCommand` creation and duplicated environment variable setup logic.

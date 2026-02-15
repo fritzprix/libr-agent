@@ -9,6 +9,7 @@ use tracing::{info, warn};
 pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
 ) -> Result<AsyncCommand, String> {
+    // 1. Determine configuration
     // Detect if this is a direct PowerShell/executable command (Windows-specific)
     let (shell_cmd, use_shell_wrapper) = {
         let cmd_lower = config.command.to_lowercase();
@@ -29,26 +30,10 @@ pub async fn create_basic_isolated_command(
         }
     };
 
-    let mut cmd = AsyncCommand::new(&shell_cmd);
-
-    // Set working directory
-    cmd.current_dir(&config.workspace_path);
-
+    // 2. Prepare environment (PATH)
     // Smart Discovery: Auto-detect Python path to be used later
     let detected_python = detect_python_path().await;
     let python_path_str = detected_python.as_ref().map(|p| p.to_string_lossy());
-
-    // Configure base environment (applied to both wrapper and direct execution)
-    // Windows: DO NOT use env_clear() as it breaks process execution
-    cmd.env("USERPROFILE", &config.workspace_path);
-    cmd.env("HOME", &config.workspace_path);
-    cmd.env("TEMP", config.workspace_path.join("tmp"));
-    cmd.env("TMP", config.workspace_path.join("tmp"));
-
-    // Add user-specified environment variables (applies to all platforms)
-    for (key, value) in &config.env_vars {
-        cmd.env(key, value);
-    }
 
     // Construct PATH environment variable carefully
     let current_path = std::env::var("PATH").unwrap_or_default();
@@ -77,10 +62,36 @@ pub async fn create_basic_isolated_command(
         }
     }
 
+    // 3. Create Command and apply common configuration
+    // If using wrapper, force "powershell", otherwise use detected shell command
+    let final_cmd_str = if use_shell_wrapper {
+        "powershell"
+    } else {
+        &shell_cmd
+    };
+
+    let mut cmd = AsyncCommand::new(final_cmd_str);
+
+    // Set working directory
+    cmd.current_dir(&config.workspace_path);
+
+    // Configure base environment (applied to both wrapper and direct execution)
+    // Windows: DO NOT use env_clear() as it breaks process execution
+    cmd.env("USERPROFILE", &config.workspace_path);
+    cmd.env("HOME", &config.workspace_path);
+    cmd.env("TEMP", config.workspace_path.join("tmp"));
+    cmd.env("TMP", config.workspace_path.join("tmp"));
+
+    // Add user-specified environment variables (applies to all platforms)
+    for (key, value) in &config.env_vars {
+        cmd.env(key, value);
+    }
+
     // Set PATH on the command
     cmd.env("PATH", &new_path);
 
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
+
     // Additional env diagnostic info to help diagnose missing output on Windows
     let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
@@ -88,7 +99,7 @@ pub async fn create_basic_isolated_command(
     let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
     info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
 
-    // Set command arguments based on platform and shell type
+    // 4. Set command arguments based on mode
     if !use_shell_wrapper {
         // Direct PowerShell execution: parse and pass arguments directly
         // Extract PowerShell args from the command string
@@ -114,60 +125,13 @@ pub async fn create_basic_isolated_command(
         );
     } else {
         // Windows: Use PowerShell instead of cmd.exe for better quote handling
-        // We override cmd to be "powershell" here, which REPLACES the previous AsyncCommand::new(&shell_cmd)
-        // So we must re-apply environment variables!
-
-        // However, instead of recreating `cmd`, we can just ensure `shell_cmd` was "powershell" to begin with.
-        // `get_shell_command` returns "powershell" or "cmd".
-        // If we are here, `use_shell_wrapper` is true.
-        // The original code re-created `cmd` which wiped out envs.
-        // Let's modify logic to NOT recreate `cmd` if possible, or re-apply envs.
-
-        // But `cmd` struct doesn't allow changing the program once created.
-        // So we MUST create a new command if we switch to PowerShell wrapper logic.
-
-        // Refactor: We create the correct command initially.
-        // But wait, `get_shell_command` returns "powershell" by default on Windows.
-        // So `shell_cmd` is likely already "powershell".
-        // The only case where it might be "cmd" is if ShellType::Cmd was requested explicitly.
-        // But the wrapper logic forces "powershell" usage anyway: `cmd = AsyncCommand::new("powershell")`.
-        // So effectively, `shell_cmd` is ignored in this branch!
-
-        // So, let's fix the initial creation to use "powershell" directly if wrapper is needed.
-        // Actually, let's just create a NEW command here and re-apply envs properly.
-
-        let mut wrapped_cmd = AsyncCommand::new("powershell");
-        wrapped_cmd.current_dir(&config.workspace_path);
-
-        // Re-apply envs
-        wrapped_cmd.env("USERPROFILE", &config.workspace_path);
-        wrapped_cmd.env("HOME", &config.workspace_path);
-        wrapped_cmd.env("TEMP", config.workspace_path.join("tmp"));
-        wrapped_cmd.env("TMP", config.workspace_path.join("tmp"));
-        for (key, value) in &config.env_vars {
-            wrapped_cmd.env(key, value);
-        }
-        wrapped_cmd.env("PATH", &new_path); // Use the computed PATH with Python
-
-        // Now handle the command wrapping
-        // We need to construct the command string carefully.
-        // Joining with spaces is risky if args contain spaces.
-        // We should quote arguments.
+        // Since we created 'cmd' with "powershell" above, we just need to set the arguments.
 
         // Helper to quote arguments for PowerShell
         let quote_arg = |arg: &str| -> String {
             // Simple quoting: wrap in single quotes, escape single quotes inside
             format!("'{}'", arg.replace("'", "''"))
         };
-
-        // Wait, if we run `python file.py`, we want `python 'file.py'`.
-        // If we run `"C:\Program Files\Python\python.exe" file.py`, we want `'C:\Program Files\Python\python.exe' 'file.py'`.
-        // PowerShell handles `& 'path' args` syntax.
-        // Invoke-Expression expects a string.
-
-        // Let's use simple space joining for the binary (assuming it's simple) and quoted args.
-        // Ideally we should use `&` operator in PowerShell if the command is quoted.
-        // e.g. `& 'C:\Path\To\Exe' 'arg1' 'arg2'`
 
         let binary = &config.command;
         let args_str = config
@@ -189,7 +153,7 @@ pub async fn create_basic_isolated_command(
             encoded_command
         );
 
-        wrapped_cmd.args([
+        cmd.args([
             "-NoProfile",
             "-NonInteractive",
             "-Command",
@@ -197,9 +161,6 @@ pub async fn create_basic_isolated_command(
         ]);
 
         info!("Windows PowerShell execution with proper argument escaping and error redirection");
-
-        // Replace `cmd` with `wrapped_cmd`
-        cmd = wrapped_cmd;
 
         // Log environment snapshot
         let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
