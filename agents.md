@@ -75,16 +75,26 @@ libr-agent/
 │   ├── context/                # React context providers
 │   ├── hooks/                  # Generic, reusable hooks
 │   ├── lib/                    # Service layer, business logic, data, API
+│   ├── locales/                # i18n localization files
 │   ├── models/                 # TypeScript types and interfaces
 │   ├── styles/                 # Global or shared CSS
+│   ├── test/                   # Frontend tests
+│   ├── types/                  # Global type definitions
 │   ├── README.md
 │   └── vite-env.d.ts
 ├── src-tauri/                 # Rust Backend
-│   ├── src/
+│   ├── capabilities/           # Tauri capabilities configuration
+│   ├── examples/               # Example code and usage
+│   ├── icons/                  # Application icons
+│   ├── migration/              # SeaORM database migrations
+│   ├── src/                    # Rust source code
+│   ├── tests/                  # Backend tests
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── docs/                      # Documentation
 ├── dist/                      # Build artifacts
+├── public/                    # Static public assets
+├── scripts/                   # Utility scripts
 ├── package.json
 ├── tailwind.config.js
 └── vite.config.ts

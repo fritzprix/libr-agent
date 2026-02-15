@@ -17,7 +17,9 @@ src-tauri/src/mcp/builtin/
 ├── mcp_manager/          # MCP server management
 ├── planning/             # Task planning and tracking
 ├── playbook/             # Workflow automation
+├── session_api/          # Client tools for internal Session Management HTTP API
 ├── skills/               # Reusable capabilities
+├── tests/                # Module tests
 ├── ui/                   # UI interaction tools
 ├── workspace/            # Terminal, File Manager, Code Execution
 ├── utils.rs              # Common utilities
