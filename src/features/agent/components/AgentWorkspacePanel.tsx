@@ -74,7 +74,7 @@ const FileTreeNode = ({
     <div className="select-none">
       <div
         className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 group"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
+        style={{ paddingLeft: `${0.5 + depth}rem` }}
         onClick={() => {
           // Keep mouse click behavior for padding area
           if (node.isDirectory) {
@@ -87,7 +87,7 @@ const FileTreeNode = ({
         {node.isDirectory ? (
           <button
             type="button"
-            className="w-4 h-4 flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
+            className="w-6 h-6 flex items-center justify-center focus:outline-none focus:ring-1 focus:ring-ring rounded-sm hover:bg-background/50"
             onClick={(e) => {
               e.stopPropagation();
               onToggle(node);
@@ -104,7 +104,7 @@ const FileTreeNode = ({
             )}
           </button>
         ) : (
-          <div className="w-4 h-4" /> // Spacer
+          <div className="w-6 h-6" /> // Spacer
         )}
 
         <div
@@ -634,7 +634,7 @@ export function AgentWorkspacePanel() {
                 variant="ghost"
                 size="sm"
                 onClick={handleOpenInExplorer}
-                className="h-6 px-2 text-xs"
+                className="h-7 px-2 text-xs"
                 title="Open in Explorer"
               >
                 <Folder className="w-3 h-3" />
@@ -643,7 +643,7 @@ export function AgentWorkspacePanel() {
                 variant="ghost"
                 size="sm"
                 onClick={handleOpenInTerminal}
-                className="h-6 px-2 text-xs"
+                className="h-7 px-2 text-xs"
                 title="Open in Terminal"
               >
                 <Terminal className="w-3 h-3" />
@@ -652,7 +652,7 @@ export function AgentWorkspacePanel() {
                 variant="ghost"
                 size="sm"
                 onClick={() => loadDirectory(rootPath)}
-                className="h-6 w-6 p-0"
+                className="h-7 w-7 p-0"
                 title="Refresh"
               >
                 <RefreshCw

@@ -36,7 +36,7 @@ export function AgentChatAttachedFiles() {
               variant="ghost"
               size="icon"
               onClick={() => removeAttachedFile(file)}
-              className="ml-1 h-6 w-6"
+              className="ml-1 h-7 w-7"
               title={`Remove ${file.filename}`}
               aria-label={`Remove ${file.filename}`}
             >

@@ -112,7 +112,7 @@ export function SessionCard({
   return (
     <article
       className="border rounded-xl p-4 hover:bg-muted/50 transition-colors"
-      style={{ marginLeft: `${nestingLevel * 16}px` }}
+      style={{ marginLeft: `${nestingLevel}rem` }}
       aria-label={`Session: ${session.name || session.id.slice(0, 8)}`}
     >
       <div className="flex items-start justify-between mb-2">
@@ -162,7 +162,7 @@ export function SessionCard({
                 type="button"
                 size="sm"
                 variant={isSelectedLineage ? 'default' : 'outline'}
-                className="h-5 px-1.5 text-[10px]"
+                className="h-6 px-2 text-xs"
                 onClick={() => onLineageSelect?.(session.lineageId!)}
                 aria-label={`Filter by lineage ${shortLineageId}`}
               >

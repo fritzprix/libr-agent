@@ -84,7 +84,7 @@ function AgentMessageBubbleImpl({
       >
         <div
           className={cn(
-            'relative max-w-[85%] md:max-w-2xl p-3 rounded-lg flex flex-col',
+            'relative max-w-[85%] md:max-w-3xl p-3 rounded-lg flex flex-col',
             msg.role === 'user'
               ? isPending
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
