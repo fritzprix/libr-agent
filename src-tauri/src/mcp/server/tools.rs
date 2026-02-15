@@ -420,7 +420,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
     use crate::mcp::builtin::BuiltinMCPServer;
     use crate::mcp::builtin::*;
 
-    vec![
+    let all_servers = vec![
         BuiltinServerInfo {
             name: "bootstrap".to_string(),
             metadata: bootstrap::BootstrapServer::new().metadata(),
@@ -481,7 +481,19 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             metadata: skills::SkillsServer::metadata_static(),
             tool_count: skills::SkillsServer::tools_static().len(),
         },
-    ]
+    ];
+
+    // Filter out essential services from the UI list
+    let essential_services: std::collections::HashSet<&str> =
+        crate::mcp::builtin::ESSENTIAL_BUILTIN_SERVICES
+            .iter()
+            .cloned()
+            .collect();
+
+    all_servers
+        .into_iter()
+        .filter(|server| !essential_services.contains(server.name.as_str()))
+        .collect()
 }
 
 pub async fn call_builtin_tool(

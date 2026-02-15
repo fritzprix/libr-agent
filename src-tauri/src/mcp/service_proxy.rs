@@ -241,9 +241,16 @@ impl MCPServiceProxy {
     ) -> Result<Self, String> {
         let mut builtin_servers = HashMap::new();
 
-        for tool_id in &tool_ids {
+        // Merge user-configured tools with essential backend services
+        // Use a HashSet to dedup
+        let mut all_tool_ids: std::collections::HashSet<String> = tool_ids.into_iter().collect();
+        for &service in crate::mcp::builtin::ESSENTIAL_BUILTIN_SERVICES {
+            all_tool_ids.insert(service.to_string());
+        }
+
+        for tool_id in all_tool_ids {
             if let Some(server) = create_builtin_server(
-                tool_id,
+                &tool_id,
                 session_id.clone(),
                 db.clone(),
                 session_manager.clone(),
@@ -556,9 +563,12 @@ impl MCPServiceProxy {
     pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
         let mut contexts = HashMap::new();
 
+        // Try to resolve assistant_id for the session
+        let assistant_id = get_assistant_id_from_session(&self.session_id).await.ok();
+
         let options = super::types::ServiceContextOptions {
             session_id: Some(self.session_id.clone()),
-            assistant_id: None,
+            assistant_id,
         };
         let options_value = serde_json::to_value(options).ok();
 
