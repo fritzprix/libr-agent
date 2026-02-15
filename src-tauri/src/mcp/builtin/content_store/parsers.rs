@@ -1,8 +1,12 @@
+use crate::utils::fs::read_file_with_limit;
 use calamine::{open_workbook, Reader, Xlsx};
 use docx_rs::*;
 use lopdf::Document;
 use std::path::Path;
 use tokio::fs;
+
+const MAX_FILE_SIZE_MB: u64 = 50;
+const MAX_FILE_SIZE_BYTES: u64 = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 /// Result type for document parsing operations
 #[derive(Debug)]
@@ -17,6 +21,11 @@ pub struct DocumentParser;
 impl DocumentParser {
     /// Parse a file based on its MIME type
     pub async fn parse_file(file_path: &Path, mime_type: &str) -> ParseResult {
+        // Validate file size first to prevent DoS
+        if let Err(e) = Self::validate_file(file_path, MAX_FILE_SIZE_MB).await {
+            return ParseResult::Error(e);
+        }
+
         match mime_type {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
                 Self::parse_docx(file_path).await
@@ -32,7 +41,7 @@ impl DocumentParser {
 
     /// Parse DOCX files using docx-rs
     async fn parse_docx(file_path: &Path) -> ParseResult {
-        match std::fs::read(file_path) {
+        match read_file_with_limit(file_path, MAX_FILE_SIZE_BYTES).await {
             Ok(data) => {
                 match docx_rs::read_docx(&data) {
                     Ok(docx) => {
@@ -454,26 +463,25 @@ impl DocumentParser {
 
     /// Parse plain text files
     async fn parse_text(file_path: &Path) -> ParseResult {
-        match fs::read_to_string(file_path).await {
-            Ok(content) => {
-                if content.is_empty() {
-                    ParseResult::Error("Text file is empty".to_string())
-                } else {
-                    ParseResult::Text(content)
+        match read_file_with_limit(file_path, MAX_FILE_SIZE_BYTES).await {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(content) => {
+                    if content.is_empty() {
+                        ParseResult::Error("Text file is empty".to_string())
+                    } else {
+                        ParseResult::Text(content)
+                    }
                 }
-            }
-            Err(e) => {
-                if e.kind() == std::io::ErrorKind::InvalidData {
-                    ParseResult::Error("Failed to read text file: Content appears to be binary or contains invalid UTF-8 characters".to_string())
-                } else {
-                    ParseResult::Error(format!("Failed to read text file: {e}"))
-                }
-            }
+                Err(_) => ParseResult::Error(
+                    "Failed to read text file: Content appears to be binary or contains invalid UTF-8 characters"
+                        .to_string(),
+                ),
+            },
+            Err(e) => ParseResult::Error(format!("Failed to read text file: {e}")),
         }
     }
 
     /// Get file size for validation
-    #[allow(dead_code)]
     pub async fn get_file_size(file_path: &Path) -> Result<u64, String> {
         match fs::metadata(file_path).await {
             Ok(metadata) => Ok(metadata.len()),
@@ -482,7 +490,6 @@ impl DocumentParser {
     }
 
     /// Validate file before parsing
-    #[allow(dead_code)]
     pub async fn validate_file(file_path: &Path, max_size_mb: u64) -> Result<(), String> {
         let max_size_bytes = max_size_mb * 1024 * 1024;
 
@@ -534,6 +541,22 @@ mod tests {
 
         // Should pass validation for 1MB limit
         assert!(DocumentParser::validate_file(&file_path, 1).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_validation_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("large.txt");
+
+        // Create a file slightly larger than 1MB
+        let content = vec![b'a'; 1024 * 1024 + 100];
+        fs::write(&file_path, content).await.unwrap();
+
+        // Should fail validation for 1MB limit
+        match DocumentParser::validate_file(&file_path, 1).await {
+            Ok(_) => panic!("Validation should have failed"),
+            Err(e) => assert!(e.contains("exceeds maximum allowed size")),
+        }
     }
 
     #[tokio::test]
