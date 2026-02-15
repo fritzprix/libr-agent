@@ -13,6 +13,9 @@ const AssistantList = lazy(() => import('@/features/assistant/List'));
 const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
+const MCPServerPage = lazy(
+  () => import('@/features/mcp-servers/MCPServerPage'),
+);
 
 import { Toaster } from 'sonner';
 import { ThemeToggle } from '../components/common/ThemeToggle';
@@ -163,6 +166,10 @@ function App() {
                                     <Route
                                       path="/settings"
                                       element={<SettingsPage />}
+                                    />
+                                    <Route
+                                      path="/mcp-servers"
+                                      element={<MCPServerPage />}
                                     />
                                   </Routes>
                                 </Suspense>

@@ -116,8 +116,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
                 vec![
                     "Page load timed out, but the session is ready and page may be usable."
                         .to_string(),
-                    "Try extractWebContent to see if content loaded despite the timeout."
-                        .to_string(),
+                    "Try content to see if content loaded despite the timeout.".to_string(),
                     "If the page is blank, navigate to a different URL.".to_string(),
                 ],
             )
@@ -179,7 +178,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
             (
                 format!("Browser session created. Page loaded: {}", url),
                 vec![
-                    "Use extractWebContent to read the page content".to_string(),
+                    "Use content to read the page content".to_string(),
                     "Use listInteractable to see interactive elements".to_string(),
                 ],
             )
@@ -187,7 +186,7 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     } else {
         (
             format!("Browser session created. {}", status_msg),
-            vec!["Use navigateToUrl to load a webpage".to_string()],
+            vec!["Use goto to load a webpage".to_string()],
         )
     };
 

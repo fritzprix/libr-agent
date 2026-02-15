@@ -30,8 +30,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Sessions::Depth).integer())
                     .col(ColumnDef::new(Sessions::MaxDepth).integer())
                     .col(ColumnDef::new(Sessions::MaxFanout).integer())
-                    .col(ColumnDef::new(Sessions::LlmProvider).string())
-                    .col(ColumnDef::new(Sessions::ModelName).string())
+                    .col(ColumnDef::new(Sessions::Provider).string())
+                    .col(ColumnDef::new(Sessions::Model).string())
                     .col(ColumnDef::new(Sessions::CreatedAt).big_integer().not_null())
                     .col(ColumnDef::new(Sessions::UpdatedAt).big_integer().not_null())
                     // Add FK constraint with CASCADE
@@ -52,11 +52,11 @@ impl MigrationTrait for Migration {
         let copy_result = db
             .execute_unprepared(
                 "INSERT INTO sessions_new (id, name, status, agent_config, parent_session_id, 
-                 lineage_id, depth, max_depth, max_fanout, llm_provider, model_name, 
+                 lineage_id, depth, max_depth, max_fanout, provider, model, 
                  created_at, updated_at)
                  SELECT id, name, status, agent_config, parent_session_id, 
                         lineage_id, depth, max_depth, max_fanout, 
-                        COALESCE(llm_provider, NULL), COALESCE(model_name, NULL),
+                        COALESCE(provider, NULL), COALESCE(model, NULL),
                         created_at, updated_at 
                  FROM sessions",
             )
@@ -132,8 +132,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Sessions::Depth).integer())
                     .col(ColumnDef::new(Sessions::MaxDepth).integer())
                     .col(ColumnDef::new(Sessions::MaxFanout).integer())
-                    .col(ColumnDef::new(Sessions::LlmProvider).string())
-                    .col(ColumnDef::new(Sessions::ModelName).string())
+                    .col(ColumnDef::new(Sessions::Provider).string())
+                    .col(ColumnDef::new(Sessions::Model).string())
                     .col(ColumnDef::new(Sessions::CreatedAt).big_integer().not_null())
                     .col(ColumnDef::new(Sessions::UpdatedAt).big_integer().not_null())
                     // No FK constraint
@@ -145,11 +145,11 @@ impl MigrationTrait for Migration {
         let copy_result = db
             .execute_unprepared(
                 "INSERT INTO sessions_old (id, name, status, agent_config, parent_session_id, 
-                 lineage_id, depth, max_depth, max_fanout, llm_provider, model_name, 
+                 lineage_id, depth, max_depth, max_fanout, provider, model, 
                  created_at, updated_at)
                  SELECT id, name, status, agent_config, parent_session_id, 
                         lineage_id, depth, max_depth, max_fanout, 
-                        COALESCE(llm_provider, NULL), COALESCE(model_name, NULL),
+                        COALESCE(provider, NULL), COALESCE(model, NULL),
                         created_at, updated_at 
                  FROM sessions",
             )
@@ -212,8 +212,8 @@ enum Sessions {
     Depth,
     MaxDepth,
     MaxFanout,
-    LlmProvider,
-    ModelName,
+    Provider,
+    Model,
     CreatedAt,
     UpdatedAt,
 }

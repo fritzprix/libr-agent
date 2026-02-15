@@ -19,7 +19,6 @@ import {
   TabsTrigger,
 } from '@/components/ui';
 import { toast } from 'sonner';
-import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
@@ -529,9 +528,6 @@ export default function SettingsPage() {
             <TabsTrigger value="chat-interface">
               {t('settings.tabs.chatInterface', 'Chat Interface')}
             </TabsTrigger>
-            <TabsTrigger value="mcp-servers">
-              {t('settings.tabs.mcpServers', 'MCP Servers')}
-            </TabsTrigger>
             <TabsTrigger value="advanced">
               {t('settings.tabs.advanced', 'Advanced')}
             </TabsTrigger>
@@ -569,10 +565,6 @@ export default function SettingsPage() {
               onAdvancedSettingsChange={handleAdvancedSettingsChange}
               onDisplaySettingsChange={handleDisplaySettingsChange}
             />
-          </TabsContent>
-
-          <TabsContent value="mcp-servers">
-            <MCPServerManagement />
           </TabsContent>
 
           <TabsContent value="advanced">

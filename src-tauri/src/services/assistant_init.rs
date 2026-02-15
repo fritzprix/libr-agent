@@ -374,5 +374,125 @@ ATTENTION ECONOMY:
     ensure_assistant_description(repo, mastermind_name, mastermind_description).await?;
     ensure_assistant_system_prompt(repo, mastermind_name, mastermind_system_prompt()).await?;
 
+    // Update allowedBuiltInServiceAliases for all default assistants
+    // 1. Libr Assistant
+    ensure_assistant_allowed_services(
+        repo,
+        libr_name,
+        vec![
+            "knowledge",
+            "contentstore",
+            "workspace",
+            "browser",
+            "planning",
+            "playbook",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 2. Coding Expert
+    ensure_assistant_allowed_services(
+        repo,
+        coding_name,
+        vec![
+            "workspace",
+            "planning",
+            "knowledge",
+            "contentstore",
+            "playbook",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 3. App Wizard
+    ensure_assistant_allowed_services(
+        repo,
+        wizard_name,
+        vec![
+            "bootstrap",
+            "mcp_manager",
+            "assistant",
+            "workspace",
+            "planning",
+            "knowledge",
+            "contentstore",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 4. Master Mind
+    ensure_assistant_allowed_services(
+        repo,
+        mastermind_name,
+        vec![
+            "planning",
+            "knowledge",
+            "contentstore",
+            "workspace",
+            "playbook",
+            "assistant",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_assistant_allowed_services(
+    repo: &crate::repositories::SqliteAssistantRepository,
+    assistant_name: &str,
+    allowed_services: Vec<&str>,
+) -> Result<(), String> {
+    let assistants = repo
+        .list_assistants()
+        .await
+        .map_err(|e| format!("Failed to list assistants for service update: {}", e))?;
+
+    let Some(target) = assistants
+        .into_iter()
+        .find(|assistant| assistant.name == assistant_name)
+    else {
+        return Ok(());
+    };
+
+    let mut config_value =
+        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
+
+    let current_services = config_value
+        .get("allowedBuiltInServiceAliases")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    let target_services: Vec<String> = allowed_services.iter().map(|s| s.to_string()).collect();
+
+    if current_services == target_services {
+        return Ok(());
+    }
+
+    config_value["allowedBuiltInServiceAliases"] = json!(allowed_services);
+
+    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to update allowed services for {}: {}",
+                assistant_name, e
+            )
+        })?;
+
     Ok(())
 }

@@ -442,7 +442,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             tool_count: playbook::PlaybookServer::tools_static().len(),
         },
         BuiltinServerInfo {
-            name: "assistant_manager".to_string(),
+            name: "assistant".to_string(),
             metadata: assistant::AssistantServer::metadata_static(),
             tool_count: assistant::AssistantServer::tools_static().len(),
         },
@@ -475,6 +475,11 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             name: "session_api".to_string(),
             metadata: session_api::SessionApiServer::metadata_static(),
             tool_count: session_api::SessionApiServer::tools_static().len(),
+        },
+        BuiltinServerInfo {
+            name: "skills".to_string(),
+            metadata: skills::SkillsServer::metadata_static(),
+            tool_count: skills::SkillsServer::tools_static().len(),
         },
     ]
 }
@@ -612,6 +617,7 @@ pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
     tools.extend(crate::mcp::builtin::ui::tools::all_tools());
     tools.extend(crate::mcp::builtin::mcp_manager::tools::all_tools());
     tools.extend(crate::mcp::builtin::session_api::tools::all_tools());
+    tools.extend(crate::mcp::builtin::skills::SkillsServer::tools_static());
 
     tools
 }
@@ -633,14 +639,13 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         "content_store" | "contentstore" => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
-        "assistant" | "assistant_manager" => {
-            crate::mcp::builtin::assistant::AssistantServer::tools_static()
-        }
+        "assistant" => crate::mcp::builtin::assistant::AssistantServer::tools_static(),
         "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
         "bootstrap" => crate::mcp::builtin::bootstrap::tools::all_tools(),
         "ui" => crate::mcp::builtin::ui::tools::all_tools(),
         "mcp_manager" => crate::mcp::builtin::mcp_manager::tools::all_tools(),
         "session_api" => crate::mcp::builtin::session_api::tools::all_tools(),
+        "skills" => crate::mcp::builtin::skills::SkillsServer::tools_static(),
         _ => Vec::new(),
     }
 }
