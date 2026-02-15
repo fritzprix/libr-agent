@@ -13,6 +13,7 @@ import { useBackendResource } from './GlobalEventContext';
 import { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant } from '@/lib/backend/assistants';
 import { Assistant } from '@/models/chat';
+import { useSettings } from '@/context/SettingsContext';
 
 const logger = getLogger('AgentSessionListContext');
 
@@ -61,6 +62,9 @@ export function AgentSessionListProvider({
   children,
 }: AgentSessionListProviderProps) {
   const { modelId, provider } = useModelOptions();
+  const {
+    value: { advanced },
+  } = useSettings();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
 
@@ -81,6 +85,9 @@ export function AgentSessionListProvider({
           model: string;
           provider: string;
           agentConfig?: string;
+          parentSessionId?: string;
+          lineageId?: string;
+          depth?: number;
           createdAt: number;
           updatedAt?: number;
         }>
@@ -88,12 +95,60 @@ export function AgentSessionListProvider({
 
       const sessionList: AgentSession[] = response.map((s) => {
         let assistant: Assistant | undefined;
+        let parentSessionId: string | undefined = s.parentSessionId;
+        let lineageId: string | undefined = s.lineageId;
+        let depth: number | undefined = s.depth;
+
+        const readStringField = (
+          record: Record<string, unknown>,
+          ...keys: string[]
+        ): string | undefined => {
+          for (const key of keys) {
+            const value = record[key];
+            if (typeof value === 'string' && value.length > 0) {
+              return value;
+            }
+          }
+          return undefined;
+        };
+
+        const readNumberField = (
+          record: Record<string, unknown>,
+          ...keys: string[]
+        ): number | undefined => {
+          for (const key of keys) {
+            const value = record[key];
+            if (typeof value === 'number' && Number.isFinite(value)) {
+              return value;
+            }
+          }
+          return undefined;
+        };
+
         if (s.agentConfig) {
           try {
-            assistant = JSON.parse(s.agentConfig);
+            const parsed = JSON.parse(s.agentConfig) as unknown;
+            if (typeof parsed === 'object' && parsed !== null) {
+              const record = parsed as Record<string, unknown>;
+              parentSessionId =
+                parentSessionId ||
+                readStringField(record, 'parentSessionId', 'parent_session_id');
+              lineageId =
+                lineageId || readStringField(record, 'lineageId', 'lineage_id');
+              depth = depth ?? readNumberField(record, 'depth');
+              assistant = parsed as Assistant;
+            }
           } catch (e) {
             logger.error('Failed to parse agent config', e);
           }
+        }
+
+        if (!lineageId) {
+          lineageId = parentSessionId || s.id;
+        }
+
+        if (depth === undefined) {
+          depth = parentSessionId ? 1 : 0;
         }
 
         return {
@@ -103,6 +158,9 @@ export function AgentSessionListProvider({
           model: s.model,
           provider: s.provider,
           assistant,
+          parentSessionId,
+          lineageId,
+          depth,
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
         };
@@ -154,8 +212,17 @@ export function AgentSessionListProvider({
         });
 
         // Build agent config from fresh assistant data
-        const agentConfig: Assistant = {
+        const agentConfig: Assistant & {
+          maxDepth?: number;
+          maxFanout?: number;
+        } = {
           ...freshAssistant,
+          ...(advanced.defaultSessionMaxDepth > 0
+            ? { maxDepth: advanced.defaultSessionMaxDepth }
+            : {}),
+          ...(advanced.defaultSessionMaxFanout > 0
+            ? { maxFanout: advanced.defaultSessionMaxFanout }
+            : {}),
         };
 
         // Generate session ID
@@ -169,6 +236,9 @@ export function AgentSessionListProvider({
           status: 'idle' | 'busy' | 'paused' | 'error';
           model: string;
           provider: string;
+          parentSessionId?: string;
+          lineageId?: string;
+          depth?: number;
           createdAt: number;
           updatedAt?: number;
         }>('agent_create_session', {
@@ -186,6 +256,10 @@ export function AgentSessionListProvider({
           model: response.model,
           provider: response.provider,
           assistant: agentConfig,
+          parentSessionId: response.parentSessionId,
+          lineageId:
+            response.lineageId || response.parentSessionId || response.id,
+          depth: response.depth ?? (response.parentSessionId ? 1 : 0),
           createdAt: new Date(response.createdAt),
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
@@ -205,7 +279,12 @@ export function AgentSessionListProvider({
         throw err;
       }
     },
-    [modelId, provider],
+    [
+      advanced.defaultSessionMaxDepth,
+      advanced.defaultSessionMaxFanout,
+      modelId,
+      provider,
+    ],
   );
 
   /**

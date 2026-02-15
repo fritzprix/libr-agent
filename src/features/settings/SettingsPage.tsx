@@ -163,6 +163,9 @@ export default function SettingsPage() {
         retryDelay: 5000,
         circuitBreakerThreshold: 3,
         diffContextLines: 3,
+        defaultMaxOutputTokens: 8192,
+        defaultSessionMaxDepth: 0,
+        defaultSessionMaxFanout: 0,
       },
     );
   const [localDisplay, setLocalDisplay] = useState<DisplaySettings>(

@@ -71,16 +71,32 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-git commit -m "chore(release): bump to v$newVersion"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: git commit failed"
-    exit 1
+$hasStagedChanges = $true
+git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+    $hasStagedChanges = $false
 }
 
-git tag "v$newVersion"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Error: git tag failed"
-    exit 1
+if ($hasStagedChanges) {
+    git commit -m "chore(release): bump to v$newVersion"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: git commit failed"
+        exit 1
+    }
+} else {
+    Write-Host "No release file changes detected. Skipping commit."
+}
+
+$tagName = "v$newVersion"
+git rev-parse -q --verify "refs/tags/$tagName" *> $null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Tag $tagName already exists locally. Skipping tag creation."
+} else {
+    git tag "$tagName"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: git tag failed"
+        exit 1
+    }
 }
 
 Write-Host ">>> Pushing to GitHub..."
@@ -96,7 +112,7 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-git push origin "v$newVersion"
+git push origin "$tagName"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Error: git push tag failed"
     exit 1

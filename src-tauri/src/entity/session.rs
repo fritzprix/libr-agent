@@ -10,6 +10,11 @@ pub struct Model {
     pub model: String,
     pub provider: String,
     pub agent_config: Option<String>,
+    pub parent_session_id: Option<String>,
+    pub lineage_id: Option<String>,
+    pub depth: Option<i32>,
+    pub max_depth: Option<i32>,
+    pub max_fanout: Option<i32>,
     pub created_at: i64,
     pub updated_at: i64,
 }
