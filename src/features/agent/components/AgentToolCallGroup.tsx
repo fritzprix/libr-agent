@@ -209,7 +209,7 @@ const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
 /**
  * Compact tool call item - no individual border, tight spacing
  */
-const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
+const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
   isLast = false,
@@ -219,9 +219,11 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
   // Parse tool name (remove server prefix)
   const toolName = parseToolName(toolCall.function.name);
 
-  // Parse arguments for summary
-  const params = parseToolArguments(toolCall.function.arguments);
-  const paramSummary = formatToolArgumentsSummary(params);
+  // Parse arguments for summary - Memoized to prevent expensive JSON.parse/zod validation on every render
+  const paramSummary = useMemo(() => {
+    const p = parseToolArguments(toolCall.function.arguments);
+    return formatToolArgumentsSummary(p);
+  }, [toolCall.function.arguments]);
 
   // Check for error using utility function
   const hasError = hasToolCallError(toolResult);
@@ -294,6 +296,25 @@ const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
     </div>
   );
 };
+
+// Custom comparison for ToolCallCompactItem
+function areToolCallCompactItemPropsEqual(
+  prev: ToolCallCompactItemProps,
+  next: ToolCallCompactItemProps,
+) {
+  return (
+    prev.isLast === next.isLast &&
+    prev.toolResult === next.toolResult &&
+    prev.toolCall.id === next.toolCall.id &&
+    prev.toolCall.function.name === next.toolCall.function.name &&
+    prev.toolCall.function.arguments === next.toolCall.function.arguments
+  );
+}
+
+const ToolCallCompactItem = memo(
+  ToolCallCompactItemImpl,
+  areToolCallCompactItemPropsEqual,
+);
 
 /**
  * Groups multiple tool calls into a single collapsible bubble for Agent V2.

@@ -62,3 +62,8 @@
 
 **Learning:** Queries filtering by `session_id` in `messages`, `contents`, and `stores` tables were performing full table scans because SQLite (and many other DBs) does not automatically index foreign keys. This caused performance degradation in chat history loading and content management as the dataset grew.
 **Action:** Always verify database indexes for columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses, especially foreign keys. Add specific migrations to create these indexes if the ORM or database doesn't do it automatically.
+
+## 2026-06-03 - Memoizing Array Item Components with Unstable Object Props
+
+**Learning:** `AgentToolCallGroup` was re-rendering all `ToolCallCompactItem`s whenever a new tool result arrived, because `AgentMessageRenderer` recreates the `toolCall` object reference on every render. This caused O(N) re-renders and repeated JSON parsing/validation for every item in the list.
+**Action:** Wrap list item components in `React.memo` with a custom comparator that checks deep equality of relevant properties (e.g. ID, arguments) instead of relying on object reference equality. Also, use `useMemo` for expensive computations (like JSON parsing) inside the component to avoid redundant work if the component does re-render.
