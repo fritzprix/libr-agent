@@ -1,3 +1,4 @@
+use crate::mcp::utils::command_helper::CommandExt;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -295,6 +296,7 @@ impl WorkspaceServer {
                             use std::process::Command;
                             let _ = Command::new("taskkill")
                                 .args(["/PID", &pid.to_string(), "/F"])
+                                .silent()
                                 .output();
                         }
                     }

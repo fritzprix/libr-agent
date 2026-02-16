@@ -21,6 +21,7 @@
 //!   - Unix: `command -v <tool>`
 //! - Gracefully handles missing tools and features on each platform
 
+use crate::mcp::utils::command_helper::CommandExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -223,6 +224,7 @@ fn command_exists(cmd: &str) -> bool {
     {
         // Windows: Use 'where' command
         Command::new("where")
+            .silent()
             .arg(cmd)
             .output()
             .map(|output| output.status.success())
@@ -243,7 +245,9 @@ fn command_exists(cmd: &str) -> bool {
 
 /// Get the version of a tool
 fn get_tool_version(tool: &str) -> Option<String> {
-    let output = Command::new(tool).arg("--version").output().ok()?;
+    let mut cmd = Command::new(tool);
+    cmd.silent();
+    let output = cmd.arg("--version").output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -266,7 +270,7 @@ fn get_command_path(cmd: &str) -> Option<String> {
     #[cfg(windows)]
     {
         // Windows: Use 'where' command (returns first match)
-        let output = Command::new("where").arg(cmd).output().ok()?;
+        let output = Command::new("where").silent().arg(cmd).output().ok()?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)
