@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-02-16
+
+### 🧘 Mental Clarity & Safety (The "Soul" Update)
+
+- **Terminology Unification**:
+  - Renamed `listExternalServers` → **`listServers`** (Simplified)
+  - Renamed `listInternalTools` → **`listBuiltinTools`** (Clarified)
+  - Merged `searchServer` into `listServers` (via `query` param)
+
+- **Safety First (HashLine)**:
+  - `editLineInFile` now **REQUIRES** `expected_hash` to prevent race conditions.
+  - `searchLineInFile` now returns **content hash** (`a1b2`) along with text, enabling immediate safe edits.
+
+- **Tool Diet**:
+  - Hidden deprecated tools: `editFile`, `editFileMulti`, `searchServer`.
+  - Minified tool descriptions to save context tokens.
+
 ## [0.5.1] - 2026-02-14
 
 ### 🐛 Fixes
