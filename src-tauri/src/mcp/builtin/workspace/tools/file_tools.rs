@@ -61,9 +61,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some(
-                "Relative path from workspace root. Examples: 'src/main.rs', 'config.json'",
-            ),
+            Some("Relative path from workspace root. Examples: 'src/main.rs', 'config.json'"),
         ),
     );
     props.insert(
@@ -71,16 +69,12 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some(
-                "Content to write to the file. Maximum size enforced server-side.",
-            ),
+            Some("Content to write to the file. Maximum size enforced server-side."),
         ),
     );
     props.insert(
         "overwrite".to_string(),
-        boolean_prop(Some(
-            "Allow overwriting existing files? (default: false)",
-        )),
+        boolean_prop(Some("Allow overwriting existing files? (default: false)")),
     );
 
     MCPTool {
@@ -237,7 +231,9 @@ pub fn create_search_line_in_file_tool() -> MCPTool {
     MCPTool {
         name: "searchLineInFile".to_string(),
         title: Some("Search Lines in File".to_string()),
-        description: "Search for text patterns in a file and get matching line numbers with context.".to_string(),
+        description:
+            "Search for text patterns in a file and get matching line numbers with context."
+                .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "pattern".to_string()]),
         output_schema: None,
         annotations: None,
@@ -422,7 +418,9 @@ pub fn create_search_files_tool() -> MCPTool {
     MCPTool {
         name: "searchFiles".to_string(),
         title: Some("Search Files by Name".to_string()),
-        description: "Find files and directories using glob patterns. Searches for FILE NAMES, not content.".to_string(),
+        description:
+            "Find files and directories using glob patterns. Searches for FILE NAMES, not content."
+                .to_string(),
         input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
         annotations: None,

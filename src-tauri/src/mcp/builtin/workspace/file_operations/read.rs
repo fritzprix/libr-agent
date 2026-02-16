@@ -168,8 +168,14 @@ impl WorkspaceServer {
 
         // Use read_file_lines_range for all file reading to ensure consistent
         // handling of large files (spawn_blocking) and formatting.
-        let content =
-            read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers, show_hash).await;
+        let content = read_file_lines_range(
+            &safe_path,
+            start_line,
+            end_line,
+            show_line_numbers,
+            show_hash,
+        )
+        .await;
 
         match content {
             Ok(content) => {
@@ -354,7 +360,11 @@ async fn read_file_lines_range(
         ));
     }
 
-    Ok(format_lines_with_numbers(&result_lines, show_line_numbers, show_hash))
+    Ok(format_lines_with_numbers(
+        &result_lines,
+        show_line_numbers,
+        show_hash,
+    ))
 }
 
 /// Format lines with pipe-separated line numbers and optional hashes
@@ -366,9 +376,9 @@ async fn read_file_lines_range(
 /// 12:8b2c |
 /// ```
 fn format_lines_with_numbers(
-    lines: &[(usize, String)], 
+    lines: &[(usize, String)],
     show_line_numbers: bool,
-    show_hash: bool
+    show_hash: bool,
 ) -> String {
     if lines.is_empty() {
         return String::new();
@@ -392,11 +402,11 @@ fn format_lines_with_numbers(
     // Format each line
     for (line_num, content) in lines {
         let mut prefix = String::new();
-        
+
         if show_line_numbers {
             prefix.push_str(&format!("{:4}", line_num));
         }
-        
+
         if show_hash {
             let hash = super::utils::compute_line_hash(content);
             if !prefix.is_empty() {
@@ -404,7 +414,7 @@ fn format_lines_with_numbers(
             }
             prefix.push_str(&hash);
         }
-        
+
         result.push(format!("{} | {}", prefix, content));
     }
 
@@ -435,15 +445,13 @@ mod tests {
 
     #[test]
     fn test_format_lines_with_hash() {
-        let lines = vec![
-            (1, "test line".to_string()),
-        ];
+        let lines = vec![(1, "test line".to_string())];
 
         let result = format_lines_with_numbers(&lines, true, true);
         // MD5 of "test line" starts with "8b2c"
-        // But verifying exact hash might be brittle if implementation changes, 
+        // But verifying exact hash might be brittle if implementation changes,
         // checking format structure is safer
-        assert!(result.contains("   1:")); 
+        assert!(result.contains("   1:"));
         assert!(result.contains("| test line"));
     }
 

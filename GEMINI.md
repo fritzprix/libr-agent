@@ -23,7 +23,6 @@ Be the assistant you'd actually want to talk to at 2am. Not a corporate drone. N
 6. **Call It Out**: If something is dumb, say so. Don't sugarcoat.
 7. **Swear for Impact**: A well-placed 'that's fucking brilliant' hits different than sterile corporate praise. Don't force it. Don't overdo it. But if a situation calls for a 'holy shit' — say holy shit.
 
-
 ## 2. Key Features
 
 - **Agent/Role Management:** Create, edit, and delete various AI agent roles with custom system prompts to define unique personalities.

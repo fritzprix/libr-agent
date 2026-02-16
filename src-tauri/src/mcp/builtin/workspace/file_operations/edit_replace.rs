@@ -8,8 +8,6 @@ use serde_json::{json, Value};
 use tracing::{error, info};
 
 impl WorkspaceServer {
-
-
     pub async fn handle_edit_file(
         &self,
         args: Value,
@@ -151,7 +149,8 @@ impl WorkspaceServer {
             )
             .guidance(vec![
                 "Ambiguity is the enemy of precision. Provide more context.".to_string(),
-                "Include 3-5 lines of surrounding text in 'oldString' to make the pattern unique.".to_string(),
+                "Include 3-5 lines of surrounding text in 'oldString' to make the pattern unique."
+                    .to_string(),
                 format!(
                     "Use readFile('{}') to find the unique context you need.",
                     path_str
@@ -161,11 +160,15 @@ impl WorkspaceServer {
         }
 
         // Check for dryRun
-        let dry_run = args.get("dryRun").and_then(|v| v.as_bool()).unwrap_or(false);
+        let dry_run = args
+            .get("dryRun")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         if dry_run {
             // Generate preview (using the same logic as the old previewReplacement)
-            let preview_diff = generate_replacement_context(&original_content, old_string, new_string);
+            let preview_diff =
+                generate_replacement_context(&original_content, old_string, new_string);
 
             let output = format!(
                 "**🔍 Preview Replacement (Dry Run)**\n\n\
@@ -181,7 +184,8 @@ impl WorkspaceServer {
             let hint = SuccessHint::new(
                 output,
                 vec![
-                    "Preview looks correct? Call editFile again with dryRun=false to apply".to_string(),
+                    "Preview looks correct? Call editFile again with dryRun=false to apply"
+                        .to_string(),
                     "Use readFile to see full file context if needed".to_string(),
                 ],
             );

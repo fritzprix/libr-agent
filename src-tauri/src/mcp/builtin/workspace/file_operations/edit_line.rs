@@ -272,7 +272,7 @@ impl WorkspaceServer {
             // Validate expected_hash (MANDATORY HashLine mechanism)
             let actual_line = lines[edit.line - 1]; // Convert to 0-based
             let actual_hash = super::utils::compute_line_hash(actual_line);
-            
+
             if actual_hash != edit.expected_hash {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
