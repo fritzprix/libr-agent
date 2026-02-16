@@ -13,6 +13,7 @@ struct LineEdit {
     line: usize,
     old_value: Option<String>,
     new_value: String,
+    expected_hash: String, // Now mandatory
 }
 
 impl WorkspaceServer {
@@ -94,8 +95,9 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Line numbers start from 1, not 0".to_string(),
-                        "Use searchLineInFile to get correct line numbers".to_string(),
+                        "The map is not the territory. Line numbers start at 1.".to_string(),
+                        "Your index is off by one. Adjust your coordinates.".to_string(),
+                        "Use searchLineInFile to verify the terrain before striking.".to_string(),
                     ])
                     .to_mcp_result());
                 }
@@ -137,9 +139,9 @@ impl WorkspaceServer {
                             ToolGroup::Workspace,
                         )
                         .guidance(vec![
-                            "Remove \\n characters from new_value".to_string(),
-                            "For multi-line replacements, use editFile instead".to_string(),
-                            "editLineInFile is designed for single-line edits only".to_string(),
+                            "One line at a time. Simplicity is key.".to_string(),
+                            "This tool handles single lines only. Remove the newline characters.".to_string(),
+                            "For heavier lifting (multi-line changes), use editFile instead.".to_string(),
                         ])
                         .to_mcp_result());
                     }
@@ -165,10 +167,23 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
+            // Extract expected_hash (MANDATORY)
+            let expected_hash = edit_obj
+                .get("expected_hash")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| {
+                    format!(
+                        "Missing 'expected_hash' for line {}. You MUST read the file with `showHash: true` first.",
+                        line
+                    )
+                })?
+                .to_string();
+
             edits.push(LineEdit {
                 line,
                 old_value,
                 new_value,
+                expected_hash,
             });
         }
 
@@ -252,6 +267,27 @@ impl WorkspaceServer {
                     ])
                     .to_mcp_result());
                 }
+            }
+
+            // Validate expected_hash (MANDATORY HashLine mechanism)
+            let actual_line = lines[edit.line - 1]; // Convert to 0-based
+            let actual_hash = super::utils::compute_line_hash(actual_line);
+            
+            if actual_hash != edit.expected_hash {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Line {} hash mismatch:\nExpected: \"{}\"\nActual: \"{}\"",
+                        edit.line, edit.expected_hash, actual_hash
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "The line content has changed since you last read it.".to_string(),
+                    "Race condition detected! Aborting to prevent data corruption.".to_string(),
+                    "Re-read the file with `readFile` (and `showHash: true`) to get updated hashes.".to_string(),
+                ])
+                .to_mcp_result());
             }
         }
 
