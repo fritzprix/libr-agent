@@ -174,6 +174,7 @@ impl WorkspaceServer {
             end_line,
             show_line_numbers,
             show_hash,
+            crate::config::max_file_size(),
         )
         .await;
 
@@ -253,8 +254,9 @@ async fn read_file_lines_range(
     end_line: Option<usize>,
     show_line_numbers: bool,
     show_hash: bool,
+    max_size: usize,
 ) -> Result<String, String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
     // ✅ ENHANCED: Use spawn_blocking for large files to prevent async runtime blocking
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -266,9 +268,11 @@ async fn read_file_lines_range(
         let path = path.to_path_buf();
 
         let result = tokio::task::spawn_blocking(move || {
+            use std::io::Read;
             // Blocking file I/O for CPU-intensive line enumeration
             let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-            let reader = std::io::BufReader::new(file);
+            // Limit read to prevent infinite growth DoS
+            let reader = std::io::BufReader::new(file.take(max_size as u64));
             let mut result_lines = Vec::new();
             let mut current_line = 1;
             let mut total_lines = 0;
@@ -322,7 +326,8 @@ async fn read_file_lines_range(
     let file = tokio::fs::File::open(path)
         .await
         .map_err(|e| e.to_string())?;
-    let reader = BufReader::new(file);
+    // Limit read to prevent infinite growth DoS
+    let reader = BufReader::new(file.take(max_size as u64));
     let mut lines = reader.lines();
     let mut result_lines = Vec::new();
     let mut current_line = 1;
@@ -496,5 +501,23 @@ mod tests {
         assert!(result.contains("NOT part of the code"));
         assert!(result.contains("   1 | int main() {}"));
         assert!(result.contains("   2 | "));
+    }
+
+    #[tokio::test]
+    async fn test_read_file_limit() {
+        // Create temp file
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("large.txt");
+        let content = "a".repeat(100);
+        tokio::fs::write(&file_path, &content).await.unwrap();
+
+        // Read with limit 50
+        let result = read_file_lines_range(&file_path, None, None, false, false, 50).await;
+
+        let s = result.unwrap();
+        // Since no formatting, it returns raw content
+        // Should be exactly 50 bytes
+        assert_eq!(s.len(), 50);
+        assert_eq!(s, "a".repeat(50));
     }
 }
