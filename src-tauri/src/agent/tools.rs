@@ -301,7 +301,7 @@ pub async fn handle_tool_result(
     app_handle: &AppHandle,
     session_id: String,
     tool_call_id: String,
-    result: crate::commands::agent_commands::ToolExecutionResult,
+    result: crate::commands::agent::ToolExecutionResult,
 ) -> Result<Option<Vec<Message>>, String> {
     log::debug!(
         "Tool result received for session {}, tool_call_id: {}",

@@ -6,7 +6,7 @@ use tauri::command;
 // ============================================================================
 // Session Manager Commands
 // Used for workspace-level session isolation (file system separation)
-// Agent V2 sessions are managed via agent_commands.rs (SQLite-based)
+// Agent V2 sessions are managed via commands/agent/ (SQLite-based)
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-pub mod agent_commands;
+pub mod agent;
 pub mod assistant_crud_commands;
 pub mod browser_commands;
 pub mod content_store_commands;

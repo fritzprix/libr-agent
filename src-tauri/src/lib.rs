@@ -20,7 +20,7 @@ pub mod utils;
 // Re-export migration for use in MCP modules
 pub use migration;
 
-use commands::agent_commands::{
+use commands::agent::{
     agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,
     agent_get_all_sessions, agent_get_available_tools, agent_get_service_contexts,

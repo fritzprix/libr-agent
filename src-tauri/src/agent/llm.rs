@@ -625,7 +625,7 @@ pub async fn handle_llm_response(
                     Ok(v) => v,
                     Err(e) => {
                         log::error!("Failed to parse tool arguments: {}", e);
-                        let result = crate::commands::agent_commands::ToolExecutionResult {
+                    let result = crate::commands::agent::ToolExecutionResult {
                             success: false,
                             content: String::new(),
                             error: Some(format!("Failed to parse args: {}", e)),
@@ -670,7 +670,7 @@ pub async fn handle_llm_response(
                         let is_error = response.error.is_some();
                         let error_msg = response.error.map(|e| e.message);
 
-                        crate::commands::agent_commands::ToolExecutionResult {
+                    crate::commands::agent::ToolExecutionResult {
                             success: !is_error,
                             content: debug_content,
                             error: error_msg,
@@ -678,7 +678,7 @@ pub async fn handle_llm_response(
                             mcp_content,
                         }
                     }
-                    Err(e) => crate::commands::agent_commands::ToolExecutionResult {
+                Err(e) => crate::commands::agent::ToolExecutionResult {
                         success: false,
                         content: String::new(),
                         error: Some(e),

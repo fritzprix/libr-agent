@@ -457,7 +457,7 @@ pub async fn continue_workflow_after_tool(
     app_handle: &AppHandle,
     session_id: String,
     tool_call_id: String,
-    result: crate::commands::agent_commands::ToolExecutionResult,
+    result: crate::commands::agent::ToolExecutionResult,
 ) -> Result<(), String> {
     use crate::mcp::types::MCPContent;
 

@@ -390,7 +390,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         tool_call_id: String,
-        result: crate::commands::agent_commands::ToolExecutionResult,
+        result: crate::commands::agent::ToolExecutionResult,
     ) -> Result<(), String> {
         // Use shared workflow logic for consistency between internal and external tool execution
         crate::agent::workflow::continue_workflow_after_tool(
