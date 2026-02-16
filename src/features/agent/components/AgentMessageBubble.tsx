@@ -9,6 +9,7 @@ interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
   toolResultsMap?: Map<string, Message>;
+  toolResults?: (Message | undefined)[];
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   isPending?: boolean;
@@ -24,6 +25,7 @@ function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
   toolResultsMap,
+  toolResults,
   groupedToolCalls,
   groupedMessages,
   isPending = false,
@@ -152,6 +154,7 @@ function AgentMessageBubbleImpl({
                   content={displayContent || msg.content}
                   message={msg}
                   toolResultsMap={toolResultsMap}
+                  toolResults={toolResults}
                 />
               </>
             ) : (

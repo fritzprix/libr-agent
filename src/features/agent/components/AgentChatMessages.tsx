@@ -113,7 +113,7 @@ export function AgentChatMessages() {
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
-                toolResultsMap={toolResultsMap}
+                toolResults={groupedMessage.toolGroup.results}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
                 isPending={pendingMessageIds.has(groupedMessage.message.id)}

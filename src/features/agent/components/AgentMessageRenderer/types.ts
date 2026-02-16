@@ -9,6 +9,11 @@ export interface AgentMessageRendererProps {
   expandResources?: boolean;
   /** Map of tool call ID to result message (for unified rendering) */
   toolResultsMap?: Map<string, Message>;
+  /**
+   * Array of tool results relevant to this message group.
+   * If provided, a local map will be created from this array, avoiding the need for a global map.
+   */
+  toolResults?: (Message | undefined)[];
 }
 
 // Helper type to avoid implicit any in markdown components

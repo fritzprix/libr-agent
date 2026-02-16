@@ -46,8 +46,23 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
   className = '',
   expandResources = false,
   toolResultsMap,
+  toolResults,
 }) => {
   const { openExternalUrl } = useRustBackend();
+
+  // Compute local map for tool results if provided as array
+  const localToolResultsMap = useMemo(() => {
+    if (toolResults) {
+      const map = new Map<string, Message>();
+      toolResults.forEach((res) => {
+        if (res && res.tool_call_id) {
+          map.set(res.tool_call_id, res);
+        }
+      });
+      return map;
+    }
+    return toolResultsMap;
+  }, [toolResults, toolResultsMap]);
   const isDark = useIsDarkMode();
 
   // Memoize markdown components to include dynamic isDark prop
@@ -192,7 +207,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             function: { name: tc.name, arguments: tc.arguments },
           }));
           const toolGroupResults = toolGroupCalls.map((call) =>
-            toolResultsMap?.get(call.id),
+            localToolResultsMap?.get(call.id),
           );
 
           return (
