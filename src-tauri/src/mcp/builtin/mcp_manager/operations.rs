@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
+use crate::mcp::utils::command_helper::CommandExt;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde_json::{json, Value};
@@ -435,6 +436,8 @@ async fn test_server_connection(
                 for (key, value) in env {
                     cmd.env(key, value);
                 }
+
+                cmd.silent();
             });
 
             let transport = TokioChildProcess::new(cmd)

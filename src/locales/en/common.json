@@ -2,14 +2,14 @@
   "assistant": {
     "nameLabel": "Assistant Name *",
     "namePlaceholder": "Enter assistant name...",
-    "systemPromptLabel": "System Prompt *",
+    "systemPromptLabel": "Instructions *",
     "systemPromptPlaceholder": "Describe the AI's role and behavior...",
     "mcp": {
-      "label": "MCP Servers",
-      "noActive": "No active MCP servers.",
-      "addServersLink": "Add servers in Settings",
-      "searchPlaceholder": "Search servers...",
-      "noMatch": "No servers match your search",
+      "label": "Extensions",
+      "noActive": "No extensions installed.",
+      "addServersLink": "Browse extensions",
+      "searchPlaceholder": "Search extensions...",
+      "noMatch": "No extensions match your search",
       "transport": {
         "stdio": "stdio",
         "http": "http"
@@ -27,7 +27,7 @@
     "card": {
       "protected": "PROTECTED",
       "active": "ACTIVE",
-      "mcpCount": "MCP Servers: {{count}}",
+      "mcpCount": "Extensions: {{count}}",
       "builtinCount": "Built-in: {{count}}",
       "builtinCountAll": "Built-in: All",
       "allBuiltin": "All Built-in Tools",

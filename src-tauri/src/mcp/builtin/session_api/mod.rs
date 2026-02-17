@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use reqwest::{Client, Method};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -13,6 +13,8 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPContent, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::repositories::MessageRepository;
+use crate::repositories::SessionRepository;
 use crate::state::get_settings_repository;
 
 pub mod tools;
@@ -53,6 +55,10 @@ struct SystemSettings {
 }
 
 impl SessionApiServer {
+    const SWARM_CONTEXT_NODE_LIMIT: usize = 40;
+    const SWARM_CONTEXT_PREVIEW_LIMIT: usize = 20;
+    const SWARM_MESSAGE_PREVIEW_MAX_CHARS: usize = 140;
+
     pub fn new() -> Self {
         Self
     }
@@ -67,6 +73,29 @@ impl SessionApiServer {
 
     pub fn tools_static() -> Vec<MCPTool> {
         tools::all_tools()
+    }
+
+    fn extract_assistant_description(config: &Value) -> String {
+        if let Some(description) = config.get("description").and_then(|v| v.as_str()) {
+            let cleaned = description.trim();
+            if !cleaned.is_empty() {
+                return Self::truncate_text(cleaned, 140);
+            }
+        }
+
+        if let Some(system_prompt) = config.get("systemPrompt").and_then(|v| v.as_str()) {
+            let first_meaningful_line = system_prompt
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .unwrap_or("");
+
+            if !first_meaningful_line.is_empty() {
+                return Self::truncate_text(first_meaningful_line, 140);
+            }
+        }
+
+        "No description".to_string()
     }
 
     async fn base_url(&self) -> String {
@@ -154,17 +183,167 @@ impl SessionApiServer {
     fn resolve_parent_session_id(
         provided_parent: Option<&str>,
         caller_session_id: Option<&str>,
-    ) -> Option<String> {
-        match provided_parent
+    ) -> Result<Option<String>, String> {
+        let normalized = provided_parent
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            Some(value) if value.eq_ignore_ascii_case("current") => {
-                caller_session_id.map(str::to_string)
-            }
-            Some(value) => Some(value.to_string()),
-            None => caller_session_id.map(str::to_string),
+            .filter(|value| !value.is_empty());
+
+        match caller_session_id {
+            Some(caller_id) => Ok(Some(caller_id.to_string())),
+            None => match normalized {
+                None => Ok(None),
+                Some(value) if value.eq_ignore_ascii_case("current") => Err(
+                    "parentSessionId='current' requires caller session context. Provide an explicit parentSessionId or call from within a session.".to_string(),
+                ),
+                Some(value) => Ok(Some(value.to_string())),
+            },
         }
+    }
+
+    async fn collect_descendant_snapshot(
+        root_session_id: &str,
+        max_nodes: usize,
+    ) -> Result<(Vec<(String, String, String, usize, Option<String>)>, bool), String> {
+        let repo = crate::state::get_session_repository();
+        let mut queue: VecDeque<(String, usize)> = VecDeque::new();
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut rows: Vec<(String, String, String, usize, Option<String>)> = Vec::new();
+        let mut truncated = false;
+
+        queue.push_back((root_session_id.to_string(), 0));
+        visited.insert(root_session_id.to_string());
+
+        'bfs: while let Some((parent_id, parent_depth)) = queue.pop_front() {
+            let child_ids = repo
+                .get_child_session_ids(&parent_id)
+                .await
+                .map_err(|e| format!("Failed to fetch child sessions for {}: {}", parent_id, e))?;
+
+            for child_id in child_ids {
+                if !visited.insert(child_id.clone()) {
+                    continue;
+                }
+
+                let (name, status) = match repo.get_session(&child_id).await {
+                    Ok(Some(child)) => (
+                        child.name.unwrap_or_else(|| "Unnamed".to_string()),
+                        child.status.as_str().to_string(),
+                    ),
+                    Ok(None) => ("Unknown".to_string(), "unknown".to_string()),
+                    Err(_) => ("Unknown".to_string(), "unknown".to_string()),
+                };
+
+                let preview = if rows.len() < Self::SWARM_CONTEXT_PREVIEW_LIMIT {
+                    Self::latest_assistant_preview_for_session(
+                        &child_id,
+                        Self::SWARM_MESSAGE_PREVIEW_MAX_CHARS,
+                    )
+                    .await
+                } else {
+                    None
+                };
+
+                rows.push((child_id.clone(), name, status, parent_depth + 1, preview));
+
+                if rows.len() >= max_nodes {
+                    truncated = true;
+                    break 'bfs;
+                }
+
+                queue.push_back((child_id, parent_depth + 1));
+            }
+        }
+
+        Ok((rows, truncated))
+    }
+
+    fn build_swarm_snapshot_text(
+        root_session_id: &str,
+        rows: &[(String, String, String, usize, Option<String>)],
+        truncated: bool,
+        max_nodes: usize,
+    ) -> String {
+        if rows.is_empty() {
+            return format!(
+                "Swarm board: no active sub-agents under current command session {}.\nNext step: use createChildSession to spawn a worker.",
+                root_session_id
+            );
+        }
+
+        let direct_count = rows
+            .iter()
+            .filter(|(_, _, _, depth, _)| *depth == 1)
+            .count();
+        let total_count = rows.len();
+
+        let mut status_counts: HashMap<String, usize> = HashMap::new();
+        for (_, _, status, _, _) in rows {
+            *status_counts.entry(status.clone()).or_insert(0) += 1;
+        }
+
+        let mut status_parts = status_counts
+            .iter()
+            .map(|(status, count)| format!("{}:{}", status, count))
+            .collect::<Vec<_>>();
+        status_parts.sort();
+
+        let mut text = format!(
+            "Swarm command board (commander session: {})\n- Direct units: {}\n- Total descendants: {}\n- Status breakdown: {}\n\nUnit roster:\n",
+            root_session_id,
+            direct_count,
+            total_count,
+            status_parts.join(", ")
+        );
+
+        for (session_id, name, status, depth, preview) in rows {
+            let indent = "  ".repeat(depth.saturating_sub(1));
+            let mut line = format!(
+                "- {}{} (ID: {}) status={} depth={}\n",
+                indent, name, session_id, status, depth
+            );
+
+            if let Some(summary) = preview {
+                line.push_str(&format!("  {}latest assistant: {}\n", indent, summary));
+            }
+
+            text.push_str(&line);
+        }
+
+        if truncated {
+            text.push_str(&format!(
+                "\nRoster truncated at {} units. Use specific session IDs with getMessages/getSession for deeper checks.",
+                max_nodes
+            ));
+        }
+
+        text
+    }
+
+    async fn latest_assistant_preview_for_session(
+        session_id: &str,
+        max_chars: usize,
+    ) -> Option<String> {
+        let repo = crate::state::get_message_repository();
+        let messages = repo.get_messages_by_session(session_id, 10).await.ok()?;
+
+        for message in messages {
+            if message.role != "assistant" {
+                continue;
+            }
+
+            for item in message.content {
+                if let MCPContent::Text { text, .. } = item {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        return Some(Self::truncate_text(trimmed, max_chars));
+                    }
+                }
+            }
+
+            return Some("[assistant message has no text content]".to_string());
+        }
+
+        None
     }
 
     fn truncate_text(input: &str, max_chars: usize) -> String {
@@ -599,66 +778,6 @@ impl BuiltinMCPServer for SessionApiServer {
                     data,
                 ))
             }
-            "createSession" => {
-                let assistant_id = Self::read_required_string(&args, "assistantId")?;
-                let request = Self::read_required_string(&args, "request")?;
-
-                let mut body = json!({
-                    "assistantId": assistant_id,
-                    "request": request,
-                });
-
-                if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
-                    body["name"] = Value::String(name.to_string());
-                }
-
-                if let Some(path) = args.get("workspacePath").and_then(|v| v.as_str()) {
-                    body["workspacePath"] = Value::String(path.to_string());
-                }
-
-                if let Some(max_depth) = args.get("maxDepth").and_then(|v| v.as_u64()) {
-                    body["maxDepth"] = Value::Number(max_depth.into());
-                }
-
-                if let Some(max_fanout) = args.get("maxFanout").and_then(|v| v.as_u64()) {
-                    body["maxFanout"] = Value::Number(max_fanout.into());
-                }
-
-                let explicit_parent = args.get("parentSessionId").and_then(|v| v.as_str());
-                let effective_parent =
-                    Self::resolve_parent_session_id(explicit_parent, caller_session_id.as_deref());
-
-                if let Some(parent_session_id) = effective_parent {
-                    body["parentSessionId"] = Value::String(parent_session_id.to_string());
-                }
-
-                let data = self
-                    .call_json(Method::POST, "/api/sessions", Some(body), None)
-                    .await?;
-
-                let session_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let status = data
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-                let parent = data
-                    .get("parentSessionId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("none");
-                let depth = data.get("depth").and_then(|v| v.as_u64()).unwrap_or(0);
-                let lineage = data
-                    .get("lineageId")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-
-                Ok(Self::success_result(
-                    format!(
-                        "Session created: {} (status: {}, parent: {}, depth: {}, lineage: {})",
-                        session_id, status, parent, depth, lineage
-                    ),
-                    data,
-                ))
-            }
             "createChildSession" => {
                 let assistant_id = Self::read_required_string(&args, "assistantId")?;
                 let request = Self::read_required_string(&args, "request")?;
@@ -666,9 +785,9 @@ impl BuiltinMCPServer for SessionApiServer {
                 let parent_session_id = Self::resolve_parent_session_id(
                     args.get("parentSessionId").and_then(|v| v.as_str()),
                     caller_session_id.as_deref(),
-                )
+                )?
                 .ok_or_else(|| {
-                    "Missing parent session context: provide parentSessionId or call from within a session"
+                    "Missing parent session context: provide explicit parentSessionId or call from within a parent session"
                         .to_string()
                 })?;
 
@@ -897,15 +1016,61 @@ impl BuiltinMCPServer for SessionApiServer {
                     )
                     .await?;
 
-                let count = data.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let child_ids = data
+                    .get("children")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|value| value.as_str().map(str::to_string))
+                    .collect::<Vec<_>>();
 
-                Ok(Self::success_result(
-                    format!(
-                        "Fetched {} child sessions for parent {}",
-                        count, parent_session_id
-                    ),
-                    data,
-                ))
+                let repo = crate::state::get_session_repository();
+                let mut rows: Vec<(String, String, String, Option<String>)> = Vec::new();
+
+                for child_id in &child_ids {
+                    let (name, status) = match repo.get_session(child_id).await {
+                        Ok(Some(child)) => (
+                            child.name.unwrap_or_else(|| "Unnamed".to_string()),
+                            child.status.as_str().to_string(),
+                        ),
+                        Ok(None) => ("Unknown".to_string(), "unknown".to_string()),
+                        Err(_) => ("Unknown".to_string(), "unknown".to_string()),
+                    };
+
+                    let preview = Self::latest_assistant_preview_for_session(
+                        child_id,
+                        Self::SWARM_MESSAGE_PREVIEW_MAX_CHARS,
+                    )
+                    .await;
+
+                    rows.push((child_id.clone(), name, status, preview));
+                }
+
+                let mut message = format!(
+                    "Fetched {} direct sub-agents for commander session {}",
+                    child_ids.len(),
+                    parent_session_id
+                );
+
+                if rows.is_empty() {
+                    message.push_str(
+                        "\n\nNo direct sub-agents online. Next step: createChildSession to deploy a worker.",
+                    );
+                } else {
+                    message.push_str("\n\nDirect unit roster:\n");
+                    for (child_id, name, status, preview) in rows {
+                        message.push_str(&format!(
+                            "- {} (ID: {}) status={}\n",
+                            name, child_id, status
+                        ));
+                        if let Some(summary) = preview {
+                            message.push_str(&format!("  latest assistant: {}\n", summary));
+                        }
+                    }
+                }
+
+                Ok(Self::success_result(message, data))
             }
             "sendMessage" => {
                 let session_id = Self::read_required_string(&args, "sessionId")?;
@@ -952,29 +1117,99 @@ impl BuiltinMCPServer for SessionApiServer {
                     .call_json(Method::GET, "/api/assistants", None, None)
                     .await?;
 
+                // Extract assistant details for text output (AI agents need to see this!)
+                let assistants_text = data
+                    .get("assistants")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|a| {
+                                let name = a.get("name")?.as_str()?;
+                                let id = a.get("id")?.as_str()?;
+
+                                // Parse config (might be string or object)
+                                let config = a.get("config")?;
+                                let parsed_config = if let Some(config_str) = config.as_str() {
+                                    serde_json::from_str::<Value>(config_str).ok()?
+                                } else {
+                                    config.clone()
+                                };
+
+                                // Extract description from config
+                                let description =
+                                    Self::extract_assistant_description(&parsed_config);
+
+                                Some(format!(
+                                    "• {} [ID: {}]\n  Description: {}",
+                                    name, id, description
+                                ))
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n\n")
+                    })
+                    .unwrap_or_default();
+
                 let assistant_count = data
                     .get("assistants")
                     .and_then(|v| v.as_array())
                     .map(|arr| arr.len())
                     .unwrap_or(0);
 
-                Ok(Self::success_result(
-                    format!("Fetched {} assistants", assistant_count),
-                    data,
-                ))
+                let text = if assistant_count == 0 {
+                    "No assistants found".to_string()
+                } else {
+                    format!(
+                        "Found {} {}:\n\n{}",
+                        assistant_count,
+                        if assistant_count == 1 {
+                            "assistant"
+                        } else {
+                            "assistants"
+                        },
+                        assistants_text
+                    )
+                };
+
+                Ok(Self::success_result(text, data))
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
 
-    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
         let base_url = self.base_url().await;
 
+        // 1. Base prompt
+        let mut context_prompt = format!(
+            "## Session API\n\nInternal API client is available at {}\nUse these tools to create/manage nested sessions.",
+            base_url
+        );
+
+        // 2. Fetch swarm snapshot if session_id is provided
+        if let Some(opts) = options {
+            if let Some(session_id) = opts.get("sessionId").and_then(|v| v.as_str()) {
+                match Self::collect_descendant_snapshot(session_id, Self::SWARM_CONTEXT_NODE_LIMIT)
+                    .await
+                {
+                    Ok((rows, truncated)) => {
+                        context_prompt.push_str("\n\n### Swarm Snapshot\n");
+                        context_prompt.push_str(&Self::build_swarm_snapshot_text(
+                            session_id,
+                            &rows,
+                            truncated,
+                            Self::SWARM_CONTEXT_NODE_LIMIT,
+                        ));
+                        context_prompt.push_str("\n\nUse `session_api` tools to communicate with specific sub-agents or poll their messages.");
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to fetch child sessions for context: {}", e);
+                    }
+                }
+            }
+        }
+
         ServiceContext {
-            context_prompt: format!(
-                "## Session API\n\nInternal API client is available at {}\nUse these tools to create/manage nested sessions.",
-                base_url
-            ),
+            context_prompt,
             structured_state: Some(json!({
                 "base_url": base_url,
                 "server": "session_api"

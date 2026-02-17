@@ -2,14 +2,14 @@
   "assistant": {
     "nameLabel": "어시스턴트 이름 *",
     "namePlaceholder": "어시스턴트 이름을 입력하세요...",
-    "systemPromptLabel": "시스템 프롬프트 *",
+    "systemPromptLabel": "지시사항 (Instructions) *",
     "systemPromptPlaceholder": "AI의 역할과 행동을 설명하세요...",
     "mcp": {
-      "label": "MCP 서버",
-      "noActive": "활성화된 MCP 서버가 없습니다.",
-      "addServersLink": "설정에서 서버 추가",
-      "searchPlaceholder": "서버 검색...",
-      "noMatch": "검색과 일치하는 서버가 없습니다",
+      "label": "확장기능 (Extensions)",
+      "noActive": "설치된 확장기능이 없습니다.",
+      "addServersLink": "확장기능 찾아보기",
+      "searchPlaceholder": "확장기능 검색...",
+      "noMatch": "일치하는 확장기능이 없습니다",
       "transport": {
         "stdio": "stdio",
         "http": "http"
@@ -27,7 +27,7 @@
     "card": {
       "protected": "보호됨",
       "active": "활성",
-      "mcpCount": "MCP 서버: {{count}}개",
+      "mcpCount": "확장기능: {{count}}개",
       "builtinCount": "내장 도구: {{count}}개",
       "builtinCountAll": "내장 도구: 전체",
       "allBuiltin": "모든 내장 도구",

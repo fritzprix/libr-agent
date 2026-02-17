@@ -4,6 +4,7 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::mcp::utils::command_helper::CommandExt;
 use serde_json::Value;
 
 /// Terminal/Process management handlers
@@ -514,6 +515,7 @@ impl WorkspaceServer {
                         use std::process::Command;
                         let _ = Command::new("taskkill")
                             .args(["/PID", &pid.to_string(), "/F"])
+                            .silent()
                             .output();
                     }
                 }
