@@ -125,23 +125,18 @@ impl SecurityValidator {
         Ok(absolute_path)
     }
 
-    /// Validate a path for read-only operations. Absolute paths outside the base directory are
-    /// permitted, while relative paths continue to be constrained to the base directory.
+    /// Validate a path for read-only operations.
+    ///
+    /// This function enforces the same security constraints as `validate_path` (workspace confinement),
+    /// ensuring that all read operations are restricted to the workspace.
+    ///
+    /// Previously, this allowed arbitrary absolute paths, which was identified as a security vulnerability.
+    /// Now, all paths must resolve to within the workspace base directory.
     pub fn validate_path_for_read(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
-        let normalized = user_path.replace('\\', "/");
-
-        // Detect Windows drive-letter absolute paths like C:\foo
-        let is_windows_absolute = normalized.len() >= 2 && normalized.as_bytes()[1] == b':';
-
-        // Also treat Unix-style absolute paths (starting with '/') as absolute
-        let is_unix_style_absolute = normalized.starts_with('/');
-
-        if Path::new(&normalized).is_absolute() || is_windows_absolute || is_unix_style_absolute {
-            let cleaned = PathBuf::from(&normalized).clean();
-            return Ok(cleaned);
-        }
-
-        self.validate_path(&normalized)
+        // Enforce workspace confinement for all paths, including absolute ones.
+        // We delegate to validate_path which correctly handles relative paths and
+        // ensures absolute paths are within the base_dir.
+        self.validate_path(user_path)
     }
 
     /// Check if file size is within limits
@@ -249,9 +244,21 @@ mod tests {
             .validate_path("attachments/docker_조사....md")
             .is_ok());
 
-        // Absolute paths for read operations should be allowed
+        // Absolute paths for read operations should be rejected if outside workspace
+        // This was a vulnerability fix: arbitrary reads are no longer allowed
         assert!(validator
             .validate_path_for_read("/tmp/some-file.txt")
+            .is_err());
+
+        // Absolute paths INSIDE the workspace should be allowed
+        let inside_abs = temp_dir.join("inside.txt");
+        // We need to use to_string_lossy to get a string path
+        let inside_abs_str = inside_abs.to_string_lossy();
+        // On Windows, temp_dir likely starts with C:, so this is an absolute path test
+        // On Unix, it starts with /, so also absolute.
+        // validate_path logic handles absolute paths if they start with base_dir
+        assert!(validator
+            .validate_path_for_read(&inside_abs_str)
             .is_ok());
 
         // Invalid paths (directory traversal)

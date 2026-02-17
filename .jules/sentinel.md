@@ -15,3 +15,8 @@
 **Vulnerability:** `tokio::fs::read` reads entire files into memory without size checks, enabling DoS. Checking metadata size before reading introduces a TOCTOU race condition if the file grows between check and read.
 **Learning:** Metadata checks are insufficient for limiting resource usage during file I/O because file state is mutable.
 **Prevention:** Use `File::open` combined with `take(limit)` (or `read_to_end` with a capped buffer) to strictly enforce read limits at the I/O operation level.
+
+## 2025-05-24 - Unrestricted Arbitrary File Read in MCP Tool
+**Vulnerability:** The `readFile` MCP tool allowed reading arbitrary files (absolute paths) outside the workspace by bypassing `validate_path` checks in `validate_path_for_read`.
+**Learning:** Functions named `validate_...` should not have "bypass" modes unless explicitly unsafe. `validate_path_for_read` implied safety but was permissive.
+**Prevention:** Strictly enforce `validate_path` (workspace confinement) for all file operations, even read-only ones, unless there is a specific, secure requirement otherwise.
