@@ -412,16 +412,20 @@ export function arePropsEqual(
 
   // Check calls array content (length and content of items)
   // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
-  if (prev.toolGroup.calls.length !== next.toolGroup.calls.length) return false;
-  for (let i = 0; i < prev.toolGroup.calls.length; i++) {
-    const prevCall = prev.toolGroup.calls[i];
-    const nextCall = next.toolGroup.calls[i];
-
-    if (prevCall.id !== nextCall.id) return false;
-    if (prevCall.type !== nextCall.type) return false;
-    if (prevCall.function.name !== nextCall.function.name) return false;
-    if (prevCall.function.arguments !== nextCall.function.arguments)
+  // Optimization: If the array reference is identical (thanks to ToolGroupBlock), we skip deep checks.
+  if (prev.toolGroup.calls !== next.toolGroup.calls) {
+    if (prev.toolGroup.calls.length !== next.toolGroup.calls.length)
       return false;
+    for (let i = 0; i < prev.toolGroup.calls.length; i++) {
+      const prevCall = prev.toolGroup.calls[i];
+      const nextCall = next.toolGroup.calls[i];
+
+      if (prevCall.id !== nextCall.id) return false;
+      if (prevCall.type !== nextCall.type) return false;
+      if (prevCall.function.name !== nextCall.function.name) return false;
+      if (prevCall.function.arguments !== nextCall.function.arguments)
+        return false;
+    }
   }
 
   // Check toolResults array content (shallow comparison of Message objects)
