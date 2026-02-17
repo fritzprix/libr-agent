@@ -411,24 +411,34 @@ export function arePropsEqual(
   if (prev.visibleCount !== next.visibleCount) return false;
 
   // Check calls array content (length and content of items)
-  // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
-  if (prev.toolGroup.calls.length !== next.toolGroup.calls.length) return false;
-  for (let i = 0; i < prev.toolGroup.calls.length; i++) {
-    const prevCall = prev.toolGroup.calls[i];
-    const nextCall = next.toolGroup.calls[i];
-
-    if (prevCall.id !== nextCall.id) return false;
-    if (prevCall.type !== nextCall.type) return false;
-    if (prevCall.function.name !== nextCall.function.name) return false;
-    if (prevCall.function.arguments !== nextCall.function.arguments)
+  // Optimization: Check for reference equality first (for AgentToolGroupBlock support)
+  if (
+    prev.toolGroup !== next.toolGroup &&
+    prev.toolGroup.calls !== next.toolGroup.calls
+  ) {
+    // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
+    if (prev.toolGroup.calls.length !== next.toolGroup.calls.length)
       return false;
+    for (let i = 0; i < prev.toolGroup.calls.length; i++) {
+      const prevCall = prev.toolGroup.calls[i];
+      const nextCall = next.toolGroup.calls[i];
+
+      if (prevCall.id !== nextCall.id) return false;
+      if (prevCall.type !== nextCall.type) return false;
+      if (prevCall.function.name !== nextCall.function.name) return false;
+      if (prevCall.function.arguments !== nextCall.function.arguments)
+        return false;
+    }
   }
 
   // Check toolResults array content (shallow comparison of Message objects)
-  // We assume Message objects are stable (from useAgentChatState)
-  if (prev.toolResults.length !== next.toolResults.length) return false;
-  for (let i = 0; i < prev.toolResults.length; i++) {
-    if (prev.toolResults[i] !== next.toolResults[i]) return false;
+  // Optimization: Check for reference equality first
+  if (prev.toolResults !== next.toolResults) {
+    // We assume Message objects are stable (from useAgentChatState)
+    if (prev.toolResults.length !== next.toolResults.length) return false;
+    for (let i = 0; i < prev.toolResults.length; i++) {
+      if (prev.toolResults[i] !== next.toolResults[i]) return false;
+    }
   }
 
   return true;
