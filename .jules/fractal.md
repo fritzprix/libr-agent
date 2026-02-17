@@ -35,3 +35,9 @@
 **Split:** `security.rs`, `ui.rs`, `handlers.rs`
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
+
+## 2026-02-14 - src-tauri/src/mcp/builtin/session_api/mod.rs
+
+**Split:** `types.rs`, `client.rs`, `formatting.rs`, `cache.rs`, `utils.rs`, `handlers.rs`
+**Result:** Reduced from ~1200 lines to ~100 lines (entry point).
+**Improvement:** Decoupled HTTP client, message caching, formatting logic, and tool handlers. Separated concerns for better maintainability and testability.
