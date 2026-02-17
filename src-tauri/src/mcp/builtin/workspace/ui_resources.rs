@@ -137,7 +137,7 @@ pub fn create_html_export_ui(
             showStatus('Preparing download...', 'loading');
 
             try {{
-                // Tauri 내부 명령어로 다운로드 요청 (prefix 기반 라우팅)
+                // Request download via Tauri internal command (prefix-based routing)
                 window.parent.postMessage({{
                     type: 'tool',
                     payload: {{

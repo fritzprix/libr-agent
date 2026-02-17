@@ -25,9 +25,9 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 - React 18
 - TypeScript
 - RMCP (Rust-based Model Context Protocol client)
-- Tailwind CSS
+- Tailwind CSS 4
 - SQLite (SeaORM)
-- Vite
+- Vite 6
 
 ## Development Scripts & Workflow
 

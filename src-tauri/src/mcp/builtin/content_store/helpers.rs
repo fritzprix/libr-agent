@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_extract_file_path_from_url_with_unicode() {
-        // Unicode characters in path (한글)
+        // Unicode characters in path (Korean)
         let result = extract_file_path_from_url("file:///C:/Users/%EB%AC%B8%EC%84%9C/file.txt");
         assert!(result.is_ok());
         let _path = result.unwrap();

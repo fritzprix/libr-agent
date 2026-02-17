@@ -64,3 +64,8 @@
 
 **Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
 **Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".
+
+## 2026-03-01 - Multiple Files (agents.md, Rust Sources)
+
+**Drift:** 'RMCP' acronym was ambiguous. Korean comments and UI text found in Rust codebase.
+**Reality:** Updated 'RMCP' to 'RMCP (Rust-based Model Context Protocol client)'. Translated all Korean comments and UI text to English to comply with project language policy.

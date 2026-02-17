@@ -496,7 +496,7 @@ mod tests {
                 let command_schema = props.get("command").unwrap();
                 let examples = command_schema.examples.as_ref().unwrap();
 
-                // Windows 명령어 예제 확인
+                // Check Windows command examples
                 assert!(examples
                     .iter()
                     .any(|e| e.as_str().unwrap().contains("Get-ChildItem")));

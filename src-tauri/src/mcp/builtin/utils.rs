@@ -37,18 +37,18 @@ impl SecurityValidator {
 
     /// Validate and clean a file path to prevent directory traversal
     pub fn validate_path(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
-        // 디버깅을 위한 로깅 추가
+        // Add logging for debugging
         tracing::debug!(
             "Validating path: '{}' against base: '{:?}'",
             user_path,
             self.base_dir
         );
 
-        // 경로 구분자 정규화 및 정리
+        // Normalize path separators and clean the path
         let normalized_path = user_path.replace('\\', "/");
         let mut clean_path = PathBuf::from(normalized_path).clean();
 
-        // 절대경로 처리: base_dir 내부에 있으면 허용하고 상대경로로 변환
+        // Handle absolute paths: allow if inside base_dir, convert to relative
         if clean_path.is_absolute() {
             if clean_path.starts_with(&self.base_dir) {
                 match clean_path.strip_prefix(&self.base_dir) {
@@ -69,7 +69,7 @@ impl SecurityValidator {
                 )));
             }
         } else {
-            // Windows 드라이브 경로 금지 (C:, D: 등) - 상대경로인 경우에만 체크
+            // Check for Windows drive letters (e.g., C:, D:) - only check if it's treated as a relative path
             if user_path.len() >= 2 && user_path.chars().nth(1) == Some(':') {
                 return Err(SecurityError::PathTraversal(format!(
                     "Absolute paths with drive letters are not allowed for destination paths: '{user_path}'. \
@@ -79,7 +79,7 @@ impl SecurityValidator {
             }
         }
 
-        // 상위 디렉터리 탐색 금지
+        // Prevent parent directory traversal
         let traversal_check_path = user_path.replace('\\', "/");
 
         if Path::new(&traversal_check_path)
@@ -91,19 +91,19 @@ impl SecurityValidator {
             )));
         }
 
-        // base_dir 기준 상대경로로만 처리
+        // Process only as relative path from base_dir
         let absolute_path = self.base_dir.join(clean_path);
 
         tracing::debug!("Resolved path: '{:?}'", absolute_path);
 
-        // 부모 디렉터리 생성 로직 제거 (SecurityValidator는 검증만 수행해야 함)
-        // 쓰기 작업 시에는 SecureFileManager가 명시적으로 디렉터리를 생성함
+        // Removed parent directory creation logic (SecurityValidator should only validate)
+        // SecureFileManager explicitly creates directories during write operations
 
-        // 정규화하여 심볼릭 링크 공격 방지
+        // Canonicalize to prevent symlink attacks
         let canonical_path = match absolute_path.canonicalize() {
             Ok(path) => path,
             Err(_) => {
-                // 파일이 존재하지 않는 경우 (쓰기 작업에서 발생 가능)
+                // File might not exist yet (possible during write operations)
                 tracing::debug!(
                     "File doesn't exist yet, using non-canonical path: '{:?}'",
                     absolute_path
@@ -112,7 +112,7 @@ impl SecurityValidator {
             }
         };
 
-        // 최종 검증: base_dir 하위인지 확인
+        // Final validation: ensure it is within base_dir
         if !canonical_path.starts_with(&self.base_dir) && !absolute_path.starts_with(&self.base_dir)
         {
             return Err(SecurityError::PathTraversal(format!(
@@ -258,12 +258,12 @@ mod tests {
         assert!(validator.validate_path("../test.txt").is_err());
         assert!(validator.validate_path("../../etc/passwd").is_err());
 
-        // Invalid paths (absolute paths) - 새로 추가된 보안 검증
+        // Invalid paths (absolute paths) - newly added security check
         assert!(validator.validate_path("/etc/passwd").is_err());
         assert!(validator.validate_path("/Users/test/file.txt").is_err());
         assert!(validator.validate_path("/tmp/outside.txt").is_err());
 
-        // Invalid paths (Windows drive letters) - 추가된 검증
+        // Invalid paths (Windows drive letters) - added check
         assert!(validator.validate_path("C:\\Windows\\System32").is_err());
         assert!(validator.validate_path("D:\\secret.txt").is_err());
 
@@ -272,7 +272,7 @@ mod tests {
             .validate_path("./subdir/../../../etc/passwd")
             .is_err());
 
-        // Windows 스타일 경로도 상대경로로 처리되지만, ".." 포함으로 차단됨
+        // Windows style paths are treated as relative, but blocked due to ".."
         assert!(validator.validate_path("subdir\\..\\..\\Windows").is_err());
     }
 
