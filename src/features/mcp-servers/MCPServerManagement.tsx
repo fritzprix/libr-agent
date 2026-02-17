@@ -332,6 +332,7 @@ function MCPServerManagementComponent() {
                         size="icon"
                         variant="ghost"
                         className="h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary"
+                        aria-label={`Install ${preset.name} extension`}
                       >
                         <Download className="w-3.5 h-3.5" />
                       </Button>

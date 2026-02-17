@@ -551,6 +551,7 @@ function MCPServerDialogComponent({
                             size="icon"
                             onClick={() => handleRemoveEnvVar(item.id)}
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            aria-label="Remove environment variable"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -695,6 +696,7 @@ function MCPServerDialogComponent({
                                 size="icon"
                                 onClick={() => handleRemoveHeader(header.id)}
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                aria-label="Remove header"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </Button>
