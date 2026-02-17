@@ -3,6 +3,13 @@ use crate::migration::{Migrator, MigratorTrait};
 use log::{error, info, warn};
 use sea_orm::DatabaseConnection;
 
+/// Helper function to safely remove database file by renaming it
+fn remove_db_file(file_path: &str) {
+    let backup = format!("{}.old", file_path);
+    std::fs::rename(file_path, &backup).expect("Cannot rename database file");
+    info!("✅ Database file moved to: {}", backup);
+}
+
 pub async fn init_database(db_url: &str) -> DatabaseConnection {
     // Connect to database using SeaORM
     let db = match sea_orm::Database::connect(db_url).await {
@@ -64,12 +71,8 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
                 // Drop existing connection to release file lock
                 drop(db);
 
-                // Delete the corrupted database file
-                if let Err(err) = std::fs::remove_file(file_path) {
-                    error!("Failed to delete corrupted database file: {err}");
-                } else {
-                    info!("✅ Corrupted database file deleted");
-                }
+                // Rename the corrupted database file
+                remove_db_file(file_path);
 
                 // Create fresh file
                 if let Err(err) = std::fs::File::create(file_path) {
@@ -107,13 +110,8 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
             // Drop connection
             drop(db);
 
-            // Delete database
-            if let Err(err) = std::fs::remove_file(file_path) {
-                error!("Failed to delete database: {err}");
-                panic!("Cannot reset database after schema validation failure");
-            } else {
-                info!("✅ Outdated database deleted");
-            }
+            // Rename the database file
+            remove_db_file(file_path);
 
             // Recreate
             std::fs::File::create(file_path).expect("Failed to recreate database file");
@@ -144,4 +142,71 @@ pub async fn init_database(db_url: &str) -> DatabaseConnection {
     }
 
     db
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn test_remove_db_file_success() {
+        // Create temp directory
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_db_remove.db");
+        let backup_file = format!("{}.old", test_file.display());
+
+        // Create test file
+        let mut file = fs::File::create(&test_file).unwrap();
+        file.write_all(b"test data").unwrap();
+        drop(file);
+
+        // Verify file exists
+        assert!(test_file.exists());
+
+        // Call remove_db_file
+        remove_db_file(test_file.to_str().unwrap());
+
+        // Verify original is gone and backup exists
+        assert!(!test_file.exists(), "Original file should not exist");
+        assert!(
+            std::path::Path::new(&backup_file).exists(),
+            "Backup file should exist"
+        );
+
+        // Cleanup
+        let _ = fs::remove_file(&backup_file);
+    }
+
+    #[test]
+    fn test_remove_db_file_with_existing_backup() {
+        // Create temp directory
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_db_existing_backup.db");
+        let backup_file = format!("{}.old", test_file.display());
+
+        // Create test file
+        fs::File::create(&test_file).unwrap();
+
+        // Create existing backup
+        fs::File::create(&backup_file).unwrap();
+
+        // Call remove_db_file (should overwrite existing backup)
+        remove_db_file(test_file.to_str().unwrap());
+
+        // Verify original is gone and backup still exists
+        assert!(!test_file.exists());
+        assert!(std::path::Path::new(&backup_file).exists());
+
+        // Cleanup
+        let _ = fs::remove_file(&backup_file);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot rename database file")]
+    fn test_remove_db_file_nonexistent() {
+        // Try to remove non-existent file
+        remove_db_file("/nonexistent/path/to/file.db");
+    }
 }
