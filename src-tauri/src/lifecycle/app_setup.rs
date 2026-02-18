@@ -8,84 +8,8 @@ use crate::state;
 use log::info;
 #[cfg(target_os = "linux")]
 use log::warn;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
-
-/// Copy bundled skills from app resources to AppData/skills directory
-/// - If skill contains .force_update marker: always overwrites existing skill
-/// - Otherwise: only copies if destination doesn't exist (preserves user modifications)
-async fn copy_bundled_skills_to_app_data(app: &App) -> Result<(), Box<dyn std::error::Error>> {
-    use std::fs;
-
-    // Get paths
-    let resource_dir = app.path().resource_dir()?;
-    let bundled_skills_dir = resource_dir.join("bundled_skills");
-
-    let app_data_dir = app.path().app_data_dir()?;
-    let target_skills_dir = app_data_dir.join("skills");
-
-    // Check if bundled_skills exists in resources
-    if !bundled_skills_dir.exists() {
-        log::debug!("No bundled_skills directory found in resources");
-        return Ok(());
-    }
-
-    // Ensure target directory exists
-    fs::create_dir_all(&target_skills_dir)?;
-
-    // Copy each skill directory
-    for entry in fs::read_dir(&bundled_skills_dir)? {
-        let entry = entry?;
-        let skill_name = entry.file_name();
-        let source_skill_dir = entry.path();
-        let target_skill_dir = target_skills_dir.join(&skill_name);
-
-        // Check for .force_update marker
-        let force_update_marker = source_skill_dir.join(".force_update");
-        let should_force_update = force_update_marker.exists();
-
-        if should_force_update {
-            // Force update: remove existing and copy fresh
-            if target_skill_dir.exists() {
-                log::info!("🔄 Force updating skill: {:?}", skill_name);
-                fs::remove_dir_all(&target_skill_dir)?;
-            } else {
-                log::info!("📦 Installing new skill: {:?}", skill_name);
-            }
-            copy_dir_recursive(&source_skill_dir, &target_skill_dir)?;
-        } else if !target_skill_dir.exists() {
-            // Normal install: only if doesn't exist
-            log::info!("📦 Copying bundled skill: {:?}", skill_name);
-            copy_dir_recursive(&source_skill_dir, &target_skill_dir)?;
-        } else {
-            log::debug!("⏭️  Skill already exists, skipping: {:?}", skill_name);
-        }
-    }
-
-    Ok(())
-}
-
-/// Recursively copy directory contents
-fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
-    use std::fs;
-
-    fs::create_dir_all(dst)?;
-
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-
-    Ok(())
-}
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // Setup custom file logger FIRST (before any log calls)
@@ -101,15 +25,6 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
     app.manage(file_manager);
     info!("✅ SecureFileManager initialized");
-
-    // Copy bundled skills to AppData/skills if not already present
-    tauri::async_runtime::block_on(async {
-        if let Err(e) = copy_bundled_skills_to_app_data(app).await {
-            log::warn!("⚠️  Failed to copy bundled skills: {}", e);
-        } else {
-            info!("✅ Bundled skills initialized");
-        }
-    });
 
     // Fetch System Settings
     let (web_action_timeout, http_port, http_expose) = tauri::async_runtime::block_on(async {

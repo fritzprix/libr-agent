@@ -4,6 +4,7 @@ use crate::mcp::utils::schema_builder::*;
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
         health_check_tool(),
+        create_session_tool(),
         create_child_session_tool(),
         get_session_tool(),
         wait_for_session_idle_tool(),
@@ -22,6 +23,54 @@ pub fn health_check_tool() -> MCPTool {
         title: Some("Health Check".to_string()),
         description: "Check whether the internal session HTTP API is reachable.".to_string(),
         input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn create_session_tool() -> MCPTool {
+    MCPTool {
+        name: "createSession".to_string(),
+        title: Some("Create Session".to_string()),
+        description: "Create a new agent session through the internal Session API. If parentSessionId is omitted and this tool is called inside a session, caller session ID is automatically used as parent for lineage tracking. Returns session ID for follow-up calls.".to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "assistantId".to_string(),
+                    string_prop_required("Assistant ID to bind to the new session"),
+                ),
+                (
+                    "request".to_string(),
+                    string_prop_required("Initial user request to start workflow"),
+                ),
+                (
+                    "name".to_string(),
+                    string_prop(None, None, Some("Optional session display name")),
+                ),
+                (
+                    "workspacePath".to_string(),
+                    string_prop(None, None, Some("Optional absolute workspace override path")),
+                ),
+                (
+                    "maxDepth".to_string(),
+                    integer_prop(Some(0), None, Some("Optional recursion depth limit (None = unlimited)")),
+                ),
+                (
+                    "maxFanout".to_string(),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Optional max direct children per parent session (None = unlimited)"),
+                    ),
+                ),
+                (
+                    "parentSessionId".to_string(),
+                    string_prop(None, None, Some("Optional parent session ID for lineage tracking")),
+                ),
+            ],
+            vec!["assistantId".to_string(), "request".to_string()],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }
