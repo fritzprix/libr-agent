@@ -15,7 +15,7 @@ keywords = ["ai", "agent", "multi-agent", "orchestration", "mcp", "model-context
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "tauri_mcp_agent_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 test = false
 
 [build-dependencies]
