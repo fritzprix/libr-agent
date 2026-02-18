@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-static SERVER_MAP_CACHE: once_cell::sync::Lazy<Mutex<Option<(Instant, HashMap<String, String>)>>> =
+type ServerMapCache = Mutex<Option<(Instant, HashMap<String, String>)>>;
+
+static SERVER_MAP_CACHE: once_cell::sync::Lazy<ServerMapCache> =
     once_cell::sync::Lazy::new(|| Mutex::new(None));
 
 async fn get_server_id_to_name_map() -> HashMap<String, String> {
