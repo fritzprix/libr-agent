@@ -52,6 +52,18 @@ export function useLLMExecution({
   // Track timeout IDs for cleanup
   const timeoutsRef = useRef<Map<string, number>>(new Map());
 
+  // Use refs for frequently changing props to keep executeCompletionRequest stable
+  const streamingMessagesRef = useRef(streamingMessages);
+  const sessionAgentModesRef = useRef(sessionAgentModes);
+
+  useEffect(() => {
+    streamingMessagesRef.current = streamingMessages;
+  }, [streamingMessages]);
+
+  useEffect(() => {
+    sessionAgentModesRef.current = sessionAgentModes;
+  }, [sessionAgentModes]);
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
@@ -173,7 +185,9 @@ export function useLLMExecution({
         activeServicesRef.current.set(sessionId, service);
 
         // Get existing streaming message (already set by event listener)
-        const existingStreamingMessage = streamingMessages.get(sessionId);
+        const existingStreamingMessage = streamingMessagesRef.current.get(
+          sessionId,
+        );
         const streamingMessage: Partial<Message> = existingStreamingMessage || {
           id: `msg_${Date.now()}`,
           sessionId,
@@ -310,7 +324,7 @@ export function useLLMExecution({
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
-          forceToolUse: sessionAgentModes.get(sessionId) ?? false,
+          forceToolUse: sessionAgentModesRef.current.get(sessionId) ?? false,
         });
 
         const content: MCPContent[] = [];
@@ -630,13 +644,7 @@ export function useLLMExecution({
         throw error;
       }
     },
-    [
-      updateSessionStatus,
-      settingsRef,
-      streamingMessages,
-      setStreamingMessages,
-      sessionAgentModes,
-    ],
+    [updateSessionStatus, settingsRef, setStreamingMessages],
   );
 
   return { executeCompletionRequest };

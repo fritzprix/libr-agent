@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -135,14 +136,24 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     setStreamingMessages,
   });
 
-  const value: LLMServiceContextValue = {
-    streamingMessages,
-    getSessionStatus,
-    clearStreamingMessage,
-    executeCompletionRequest,
-    setAgentMode,
-    getAgentMode,
-  };
+  const value = useMemo<LLMServiceContextValue>(
+    () => ({
+      streamingMessages,
+      getSessionStatus,
+      clearStreamingMessage,
+      executeCompletionRequest,
+      setAgentMode,
+      getAgentMode,
+    }),
+    [
+      streamingMessages,
+      getSessionStatus,
+      clearStreamingMessage,
+      executeCompletionRequest,
+      setAgentMode,
+      getAgentMode,
+    ],
+  );
 
   return (
     <LLMServiceContext.Provider value={value}>
