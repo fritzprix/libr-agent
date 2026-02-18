@@ -1,9 +1,9 @@
 use serde_json::Value;
-use std::collections::{VecDeque, HashSet};
+use std::collections::{HashSet, VecDeque};
 
-use crate::mcp::types::{MCPResult, MCPContent};
-use super::types::MessageSummaryOptions;
 use super::formatting::truncate_text;
+use super::types::MessageSummaryOptions;
+use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::{MessageRepository, SessionRepository};
 
 pub const SWARM_CONTEXT_PREVIEW_LIMIT: usize = 20;
@@ -153,11 +153,8 @@ pub async fn collect_descendant_snapshot(
             };
 
             let preview = if rows.len() < SWARM_CONTEXT_PREVIEW_LIMIT {
-                latest_assistant_preview_for_session(
-                    &child_id,
-                    SWARM_MESSAGE_PREVIEW_MAX_CHARS,
-                )
-                .await
+                latest_assistant_preview_for_session(&child_id, SWARM_MESSAGE_PREVIEW_MAX_CHARS)
+                    .await
             } else {
                 None
             };

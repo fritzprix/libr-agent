@@ -2,9 +2,9 @@ use reqwest::{Client, Method};
 use serde_json::Value;
 use std::time::Duration;
 
-use crate::state::get_settings_repository;
-use crate::repositories::settings_repository::SettingsRepository;
 use super::types::SystemSettings;
+use crate::repositories::settings_repository::SettingsRepository;
+use crate::state::get_settings_repository;
 
 pub fn http_client() -> Result<Client, String> {
     Client::builder()

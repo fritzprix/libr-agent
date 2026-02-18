@@ -1,9 +1,9 @@
+use serde_json::Value;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock as TokioRwLock;
-use serde_json::Value;
 
 use super::types::{MessageFetchCacheEntry, MessageSummaryOptions};
 
@@ -131,8 +131,7 @@ pub async fn min_interval_notice(
         entry.rapid_call_count = entry.rapid_call_count.saturating_add(1);
         entry.last_checked_at = now;
 
-        if options.forced_rest_seconds > 0
-            && entry.rapid_call_count >= options.rapid_call_threshold
+        if options.forced_rest_seconds > 0 && entry.rapid_call_count >= options.rapid_call_threshold
         {
             let cooldown_until = now + Duration::from_secs(options.forced_rest_seconds);
             entry.cooldown_until = Some(cooldown_until);

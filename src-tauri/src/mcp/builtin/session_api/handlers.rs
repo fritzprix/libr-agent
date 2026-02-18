@@ -6,10 +6,10 @@ use tokio::time::sleep;
 use crate::mcp::types::MCPResult;
 use crate::repositories::SessionRepository;
 
+use super::cache::*;
 use super::client::call_json;
 use super::formatting::*;
 use super::utils::*;
-use super::cache::*;
 
 async fn wait_until_session_terminal(
     session_id: &str,
@@ -153,12 +153,9 @@ pub async fn handle_tool_call(
                 .map(|v| v.min(200000) as usize)
                 .filter(|v| *v > 0);
 
-            let (session_data, poll_count) = wait_until_session_terminal(
-                &session_id,
-                timeout_seconds,
-                poll_interval_seconds,
-            )
-            .await?;
+            let (session_data, poll_count) =
+                wait_until_session_terminal(&session_id, timeout_seconds, poll_interval_seconds)
+                    .await?;
 
             let final_status = extract_session_status(&session_data);
 
@@ -181,7 +178,10 @@ pub async fn handle_tool_call(
                 Method::GET,
                 &format!("/api/sessions/{}/messages", session_id),
                 None,
-                Some(vec![("limit".to_string(), result_message_limit.to_string())]),
+                Some(vec![(
+                    "limit".to_string(),
+                    result_message_limit.to_string(),
+                )]),
             )
             .await?;
 
@@ -310,11 +310,9 @@ pub async fn handle_tool_call(
                     Err(_) => ("Unknown".to_string(), "unknown".to_string()),
                 };
 
-                let preview = latest_assistant_preview_for_session(
-                    child_id,
-                    SWARM_MESSAGE_PREVIEW_MAX_CHARS,
-                )
-                .await;
+                let preview =
+                    latest_assistant_preview_for_session(child_id, SWARM_MESSAGE_PREVIEW_MAX_CHARS)
+                        .await;
 
                 rows.push((child_id.clone(), name, status, preview));
             }
@@ -449,7 +447,10 @@ pub async fn handle_tool_call(
             )
             .await?;
 
-            let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            let name = data
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
             let config = data.get("config").cloned().unwrap_or(json!({}));
             let parsed_config = if let Some(s) = config.as_str() {
                 serde_json::from_str::<Value>(s).unwrap_or(json!({}))
