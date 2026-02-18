@@ -61,6 +61,59 @@ pub async fn handle_tool_call(
                 data,
             ))
         }
+        "createSession" => {
+            let assistant_id = read_required_string(&args, "assistantId")?;
+            let request = read_required_string(&args, "request")?;
+
+            let mut body = json!({
+                "assistantId": assistant_id,
+                "request": request,
+            });
+
+            // Parent is optional - auto-attach from caller context if available
+            let parent_session_id = resolve_parent_session_id(
+                args.get("parentSessionId").and_then(|v| v.as_str()),
+                caller_session_id.as_deref(),
+            )?;
+
+            if let Some(pid) = &parent_session_id {
+                body["parentSessionId"] = Value::String(pid.clone());
+            }
+
+            if let Some(name) = args.get("name").and_then(|v| v.as_str()) {
+                body["name"] = Value::String(name.to_string());
+            }
+
+            if let Some(path) = args.get("workspacePath").and_then(|v| v.as_str()) {
+                body["workspacePath"] = Value::String(path.to_string());
+            }
+
+            if let Some(max_depth) = args.get("maxDepth").and_then(|v| v.as_u64()) {
+                body["maxDepth"] = Value::Number(max_depth.into());
+            }
+
+            if let Some(max_fanout) = args.get("maxFanout").and_then(|v| v.as_u64()) {
+                body["maxFanout"] = Value::Number(max_fanout.into());
+            }
+
+            let data = call_json(Method::POST, "/api/sessions", Some(body), None).await?;
+
+            let session_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let depth = data.get("depth").and_then(|v| v.as_u64()).unwrap_or(0);
+
+            let parent_info = parent_session_id
+                .as_deref()
+                .map(|pid| format!(", parent: {}", pid))
+                .unwrap_or_default();
+
+            Ok(success_result(
+                format!(
+                    "Session created: {} (depth: {}{})\nUse getMessages(\"{}\") to poll progress.",
+                    session_id, depth, parent_info, session_id
+                ),
+                data,
+            ))
+        }
         "createChildSession" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
             let request = read_required_string(&args, "request")?;
@@ -438,6 +491,42 @@ pub async fn handle_tool_call(
             };
 
             Ok(success_result(text, data))
+        }
+        "getAssistant" => {
+            let assistant_id = read_required_string(&args, "assistantId")?;
+            let data = call_json(
+                Method::GET,
+                &format!("/api/assistants/{}", assistant_id),
+                None,
+                None,
+            )
+            .await?;
+
+            let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+            let config = data.get("config").cloned().unwrap_or(json!({}));
+            let parsed_config = if let Some(s) = config.as_str() {
+                serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+            } else {
+                config
+            };
+
+            let description = extract_assistant_description(&parsed_config);
+            let system_prompt = parsed_config
+                .get("systemPrompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(none)");
+            let model = parsed_config
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            Ok(success_result(
+                format!(
+                    "Assistant: {} [ID: {}]\nModel: {}\nDescription: {}\nSystem Prompt:\n{}",
+                    name, assistant_id, model, description, system_prompt
+                ),
+                data,
+            ))
         }
         _ => Err(format!("Unknown tool: {}", tool_name)),
     }
