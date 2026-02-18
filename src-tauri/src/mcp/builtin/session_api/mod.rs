@@ -114,7 +114,7 @@ impl SessionApiServer {
 
     fn http_client(&self) -> Result<Client, String> {
         Client::builder()
-            .timeout(Duration::from_secs(20))
+            .timeout(Duration::from_secs(60))
             .build()
             .map_err(|e| format!("Failed to build HTTP client: {e}"))
     }
