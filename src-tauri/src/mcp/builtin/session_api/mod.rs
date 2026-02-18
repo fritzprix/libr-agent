@@ -16,6 +16,12 @@ use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
 
 pub mod tools;
+mod types;
+mod client;
+mod formatting;
+mod cache;
+mod utils;
+mod handlers;
 
 static MESSAGE_FETCH_CACHE: OnceLock<TokioRwLock<HashMap<String, MessageFetchCacheEntry>>> =
     OnceLock::new();
@@ -53,6 +59,8 @@ struct SystemSettings {
 }
 
 impl SessionApiServer {
+    const SWARM_CONTEXT_NODE_LIMIT: usize = 40;
+
     pub fn new() -> Self {
         Self
     }
@@ -994,7 +1002,7 @@ impl BuiltinMCPServer for SessionApiServer {
 
                                 // Extract description from config
                                 let description =
-                                    Self::extract_assistant_description(&parsed_config);
+                                    formatting::extract_assistant_description(&parsed_config);
 
                                 // Extract tools info
                                 let tools_summary = {
@@ -1246,12 +1254,12 @@ impl BuiltinMCPServer for SessionApiServer {
         // 2. Fetch swarm snapshot if session_id is provided
         if let Some(opts) = options {
             if let Some(session_id) = opts.get("sessionId").and_then(|v| v.as_str()) {
-                match Self::collect_descendant_snapshot(session_id, Self::SWARM_CONTEXT_NODE_LIMIT)
+                match utils::collect_descendant_snapshot(session_id, Self::SWARM_CONTEXT_NODE_LIMIT)
                     .await
                 {
                     Ok((rows, truncated)) => {
                         context_prompt.push_str("\n\n### Swarm Snapshot\n");
-                        context_prompt.push_str(&Self::build_swarm_snapshot_text(
+                        context_prompt.push_str(&formatting::build_swarm_snapshot_text(
                             session_id,
                             &rows,
                             truncated,

@@ -2,8 +2,43 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+static SERVER_MAP_CACHE: once_cell::sync::Lazy<Mutex<Option<(Instant, HashMap<String, String>)>>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
+async fn get_server_id_to_name_map() -> HashMap<String, String> {
+    const CACHE_TTL: Duration = Duration::from_secs(30);
+
+    // Try to get from cache first
+    if let Ok(cache) = SERVER_MAP_CACHE.lock() {
+        if let Some((timestamp, map)) = &*cache {
+            if timestamp.elapsed() < CACHE_TTL {
+                return map.clone();
+            }
+        }
+    }
+
+    // Cache miss or expired - fetch from DB
+    let repo = crate::state::get_mcp_server_repository();
+    let map: HashMap<String, String> = if let Ok(models) = repo.list().await {
+        models.into_iter().map(|m| (m.id, m.name)).collect()
+    } else {
+        HashMap::new()
+    };
+
+    // Update cache
+    if let Ok(mut cache) = SERVER_MAP_CACHE.lock() {
+        *cache = Some((Instant::now(), map.clone()));
+    }
+
+    map
+}
 
 fn truncate_text(input: &str, max_chars: usize) -> String {
     let normalized = input.replace('\n', " ").trim().to_string();
