@@ -162,7 +162,7 @@ export function SessionCard({
                 type="button"
                 size="sm"
                 variant={isSelectedLineage ? 'default' : 'outline'}
-                className="h-6 px-2 text-xs"
+                className="h-7 px-2 text-xs"
                 onClick={() => onLineageSelect?.(session.lineageId!)}
                 aria-label={`Filter by lineage ${shortLineageId}`}
               >
