@@ -51,7 +51,10 @@ pub fn run_with_sqlite_sync(db_url: String) {
                 // Retry with fresh DB
                 match database::init_database(&db_url).await {
                     Ok(connection) => {
-                        log::warn!("✅ Fresh DB created after quarantine. Previous data preserved at: {}", quarantine_path);
+                        log::warn!(
+                            "✅ Fresh DB created after quarantine. Previous data preserved at: {}",
+                            quarantine_path
+                        );
                         connection
                     }
                     Err(second_err) => {

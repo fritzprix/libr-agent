@@ -55,8 +55,7 @@ impl MigrationTrait for Migration {
             // Check that the source table exists before attempting to copy from it.
             // On a completely fresh DB seaql_migrations may not yet have rows (or may
             // not exist) – either case is fine, we simply skip the backfill.
-            let source_exists =
-                helpers::table_exists(manager, "seaql_migrations").await?;
+            let source_exists = helpers::table_exists(manager, "seaql_migrations").await?;
 
             if source_exists {
                 // seaql_migrations only has a `version` column (SeaORM standard).
