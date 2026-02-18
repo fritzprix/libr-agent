@@ -9,6 +9,7 @@ interface AgentMessageBubbleProps {
   message: Message;
   getAssistantName?: (msg: Message) => string;
   toolResultsMap?: Map<string, Message>;
+  toolResults?: (Message | undefined)[];
   groupedToolCalls?: ToolCall[];
   groupedMessages?: Message[];
   isPending?: boolean;
@@ -24,11 +25,28 @@ function AgentMessageBubbleImpl({
   message: msg,
   getAssistantName,
   toolResultsMap,
+  toolResults,
   groupedToolCalls,
   groupedMessages,
   isPending = false,
   toolErrorGroup = false,
 }: AgentMessageBubbleProps) {
+  // Optimization: Create a local, memoized map from the stable toolResults array if provided.
+  // This prevents the bubble from re-rendering whenever the global toolResultsMap changes
+  // due to unrelated tool executions.
+  const effectiveToolResultsMap = useMemo(() => {
+    if (toolResults) {
+      const map = new Map<string, Message>();
+      toolResults.forEach((res) => {
+        if (res && res.tool_call_id) {
+          map.set(res.tool_call_id, res);
+        }
+      });
+      return map;
+    }
+    return toolResultsMap;
+  }, [toolResults, toolResultsMap]);
+
   // Construct display content:
   // If groupedMessages is present (new logic), we interleave content from all messages.
   // If only groupedToolCalls is present (legacy/fallback), we use the old logic.
@@ -151,7 +169,7 @@ function AgentMessageBubbleImpl({
                 <AgentMessageRenderer
                   content={displayContent || msg.content}
                   message={msg}
-                  toolResultsMap={toolResultsMap}
+                  toolResultsMap={effectiveToolResultsMap}
                 />
               </>
             ) : (

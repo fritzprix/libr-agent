@@ -42,14 +42,18 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
   // --- Model Fetching Logic (Mirrors ModelProvider but scoped to localProvider) ---
 
-  // Get API key for the selected local provider
-  const apiKey = useMemo(() => {
-    return serviceConfigs[localProvider as AIServiceProvider]?.apiKey || '';
+  // Get API key and Base URL for the selected local provider
+  const { apiKey, baseUrl } = useMemo(() => {
+    const config = serviceConfigs[localProvider as AIServiceProvider];
+    return {
+      apiKey: config?.apiKey || '',
+      baseUrl: config?.baseUrl || '',
+    };
   }, [serviceConfigs, localProvider]);
 
   // Fetcher for dynamic models
   const fetchDynamicModels = useCallback(
-    async ([, provider, key]: [string, string, string]) => {
+    async ([, provider, key]: [string, string, string, string]) => {
       const supportsDynamic =
         provider === AIServiceProvider.Ollama ||
         provider === AIServiceProvider.OpenAI ||
@@ -73,6 +77,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         const service = AIServiceFactory.getService(
           provider as AIServiceProvider,
           effectiveApiKey,
+          // Ensure we pass the latest config which includes the baseUrl
           providerConfig,
         );
         const modelList = await service.listModels();
@@ -99,7 +104,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     mutate: refreshModels,
     isValidating: isRefreshing,
   } = useSWR(
-    localProvider ? ['local-models', localProvider, apiKey] : null,
+    localProvider ? ['local-models', localProvider, apiKey, baseUrl] : null,
     fetchDynamicModels,
     {
       revalidateOnFocus: false,
