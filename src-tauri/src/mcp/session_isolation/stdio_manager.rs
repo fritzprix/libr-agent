@@ -4,7 +4,6 @@ use crate::mcp::session_isolation_config::SessionIsolationConfig;
 use crate::mcp::types::{
     MCPError, MCPResponse, MCPResponseResult, MCPServerConfig, TransportConfig,
 };
-use crate::mcp::utils::command_helper::CommandExt;
 use dashmap::DashMap;
 use log::{debug, error, info};
 use rmcp::transport::TokioChildProcess;
@@ -17,6 +16,9 @@ use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Manages session-specific MCP server processes with lazy spawning and idle cleanup.
 #[derive(Debug, Clone)]
@@ -147,7 +149,10 @@ impl SessionMCPManager {
             cmd.env(key, value);
         }
 
-        cmd.silent();
+        #[cfg(windows)]
+        {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
 
         let transport = TokioChildProcess::new(cmd)
             .map_err(|e| SessionMCPError::SpawnFailed(format!("{}", e)))?;

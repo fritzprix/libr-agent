@@ -397,87 +397,69 @@ impl MCPServiceProxyManager {
             );
         }
 
-        let stdio_futures = stdio_configs.keys().enumerate().map(|(i, server_name)| {
-            let server_name = server_name.clone();
-            let session_id = session_id.clone();
-            let stdio_manager = stdio_manager.clone();
-            let proxy_arc = proxy_arc.clone();
-            let server_id = server_name_to_id.get(&server_name).cloned();
-            let app_handle = app_handle.clone();
-            let total_servers = stdio_configs.len();
+        for (i, server_name) in stdio_configs.keys().enumerate() {
+            let step_msg = format!(
+                "Loading tools from {} ({}/{})",
+                server_name,
+                i + 1,
+                stdio_configs.len()
+            );
+            emit_status(&step_msg, InitializationStatus::Running);
 
-            async move {
-                if let Some(app) = &app_handle {
-                    let step_msg = format!(
-                        "Loading tools from {} ({}/{})",
+            // Check if we have cached tool count (indicates tools were fetched before)
+            // Always fetch tools to populate proxy, regardless of cache status
+            // The server will spawn on-demand when list_tools is called
+            log::debug!(
+                "Fetching tools from session stdio server '{}' for session '{}'",
+                server_name,
+                session_id
+            );
+
+            match stdio_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from stdio server '{}' for session '{}'",
+                        tools.len(),
                         server_name,
-                        i + 1,
-                        total_servers
+                        session_id
                     );
-                    let event = crate::agent::events::AgentEvent::InitializationStep {
-                        session_id: session_id.clone(),
-                        step: step_msg,
-                        status: crate::agent::events::InitializationStatus::Running,
-                    };
-                    if let Err(e) = crate::agent::events::emit_agent_event(app, event) {
-                        log::warn!("Failed to emit initialization status: {}", e);
-                    }
-                }
 
-                log::debug!(
-                    "Fetching tools from session stdio server '{}' for session '{}'",
-                    server_name,
-                    session_id
-                );
-
-                match stdio_manager.list_tools(&server_name).await {
-                    Ok(tools) => {
-                        log::info!(
-                            "✅ Fetched {} tools from stdio server '{}' for session '{}'",
-                            tools.len(),
-                            server_name,
-                            session_id
-                        );
-
-                        // Cache tool count in database for UI display
-                        if let Some(server_id) = server_id {
-                            let repo = crate::state::get_mcp_server_repository();
-                            if let Err(e) = repo.update_tool_count(&server_id, tools.len() as i32).await
-                            {
-                                log::warn!(
-                                    "Failed to cache tool count for '{}' (ID: {}): {}",
-                                    server_name,
-                                    server_id,
-                                    e
-                                );
-                            }
+                    // Cache tool count in database for UI display
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
                         }
-
-                        let prefixed_tools: Vec<_> = tools
-                            .into_iter()
-                            .map(|mut tool| {
-                                tool.name = format!("{}__{}", server_name, tool.name);
-                                tool
-                            })
-                            .collect();
-
-                        proxy_arc
-                            .set_session_stdio_tools(server_name.clone(), prefixed_tools)
-                            .await;
                     }
-                    Err(e) => {
-                        log::error!(
-                            "❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
-                            server_name,
-                            session_id,
-                            e
-                        );
-                    }
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_stdio_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
                 }
             }
-        });
-
-        futures::future::join_all(stdio_futures).await;
+        }
 
         // ✅ CACHE-FIRST TOOL LOADING: Skip eager discovery for HTTP servers if cached
         if !http_configs.is_empty() {
@@ -491,79 +473,71 @@ impl MCPServiceProxyManager {
             );
         }
 
-        let http_futures = http_configs.keys().map(|server_name| {
-            let server_name = server_name.clone();
-            let session_id = session_id.clone();
-            let http_manager = http_manager.clone();
-            let proxy_arc = proxy_arc.clone();
-            let server_id = server_name_to_id.get(&server_name).cloned();
+        for server_name in http_configs.keys() {
+            // Check if tools are already cached in-memory for this session
+            // Note: We check the in-memory cache (source of truth), not DB tool_count
+            // DB tool_count persists across restarts but in-memory cache is session-specific
+            let has_cache = proxy_arc.has_http_tools_cached(server_name).await;
 
-            async move {
-                // Check if tools are already cached in-memory for this session
-                let has_cache = proxy_arc.has_http_tools_cached(&server_name).await;
-
-                if has_cache {
-                    log::info!(
-                        "⚡ Skipping eager discovery for HTTP server '{}' - tools already cached in session",
-                        server_name
-                    );
-                    return;
-                }
-
-                log::debug!(
-                    "No cache for HTTP server '{}', fetching tools for session '{}'",
-                    server_name,
-                    session_id
+            if has_cache {
+                log::info!(
+                    "⚡ Skipping eager discovery for HTTP server '{}' - tools already cached in session",
+                    server_name
                 );
+                continue;
+            }
 
-                match http_manager.list_tools(&server_name).await {
-                    Ok(tools) => {
-                        log::info!(
-                            "✅ Fetched {} tools from HTTP server '{}' for session '{}'",
-                            tools.len(),
-                            server_name,
-                            session_id
-                        );
+            log::debug!(
+                "No cache for HTTP server '{}', fetching tools for session '{}'",
+                server_name,
+                session_id
+            );
 
-                        // Cache tool count in database for UI display
-                        if let Some(server_id) = server_id {
-                            let repo = crate::state::get_mcp_server_repository();
-                            if let Err(e) = repo.update_tool_count(&server_id, tools.len() as i32).await
-                            {
-                                log::warn!(
-                                    "Failed to cache tool count for '{}' (ID: {}): {}",
-                                    server_name,
-                                    server_id,
-                                    e
-                                );
-                            }
+            match http_manager.list_tools(server_name).await {
+                Ok(tools) => {
+                    log::info!(
+                        "✅ Fetched {} tools from HTTP server '{}' for session '{}'",
+                        tools.len(),
+                        server_name,
+                        session_id
+                    );
+
+                    // Cache tool count in database for UI display
+                    if let Some(server_id) = server_name_to_id.get(server_name) {
+                        let repo = crate::state::get_mcp_server_repository();
+                        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await
+                        {
+                            log::warn!(
+                                "Failed to cache tool count for '{}' (ID: {}): {}",
+                                server_name,
+                                server_id,
+                                e
+                            );
                         }
-
-                        let prefixed_tools: Vec<_> = tools
-                            .into_iter()
-                            .map(|mut tool| {
-                                tool.name = format!("{}__{}", server_name, tool.name);
-                                tool
-                            })
-                            .collect();
-
-                        proxy_arc
-                            .set_session_http_tools(server_name.clone(), prefixed_tools)
-                            .await;
                     }
-                    Err(e) => {
-                        log::error!(
-                            "❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
-                            server_name,
-                            session_id,
-                            e
-                        );
-                    }
+
+                    let prefixed_tools: Vec<_> = tools
+                        .into_iter()
+                        .map(|mut tool| {
+                            tool.name = format!("{}__{}", server_name, tool.name);
+                            tool
+                        })
+                        .collect();
+
+                    proxy_arc
+                        .set_session_http_tools(server_name.clone(), prefixed_tools)
+                        .await;
+                }
+                Err(e) => {
+                    log::error!(
+                        "❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
+                        server_name,
+                        session_id,
+                        e
+                    );
                 }
             }
-        });
-
-        futures::future::join_all(http_futures).await;
+        }
 
         log::info!("Created MCP service proxy for session: {}", session_id);
 

@@ -72,9 +72,3 @@ pub async fn list_mcp_server_configs() -> Result<Vec<MCPServerDto>, String> {
         .map_err(|e| format!("Failed to list MCP server configs: {}", e))?;
     Ok(models.into_iter().map(|s| s.into()).collect())
 }
-
-#[command]
-pub async fn list_mcp_server_presets() -> Result<Vec<crate::mcp::presets::MCPServerPreset>, String>
-{
-    Ok(crate::mcp::presets::get_recommended_servers())
-}
