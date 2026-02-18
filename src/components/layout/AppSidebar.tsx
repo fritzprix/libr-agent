@@ -5,7 +5,6 @@ import {
   Settings,
   Users,
   BookOpen,
-  Blocks,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -97,18 +96,6 @@ export default function AppSidebar() {
                   <Link to="/playbooks">
                     <BookOpen size={16} />
                     <span>Playbooks</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.pathname === '/mcp-servers'}
-                  tooltip="Extensions"
-                >
-                  <Link to="/mcp-servers">
-                    <Blocks size={16} />
-                    <span>Extensions</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

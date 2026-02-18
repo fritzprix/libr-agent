@@ -2,45 +2,8 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
-
-type ServerMapCache = Mutex<Option<(Instant, HashMap<String, String>)>>;
-
-static SERVER_MAP_CACHE: once_cell::sync::Lazy<ServerMapCache> =
-    once_cell::sync::Lazy::new(|| Mutex::new(None));
-
-async fn get_server_id_to_name_map() -> HashMap<String, String> {
-    const CACHE_TTL: Duration = Duration::from_secs(30);
-
-    // Try to get from cache first
-    if let Ok(cache) = SERVER_MAP_CACHE.lock() {
-        if let Some((timestamp, map)) = &*cache {
-            if timestamp.elapsed() < CACHE_TTL {
-                return map.clone();
-            }
-        }
-    }
-
-    // Cache miss or expired - fetch from DB
-    let repo = crate::state::get_mcp_server_repository();
-    let map: HashMap<String, String> = if let Ok(models) = repo.list().await {
-        models.into_iter().map(|m| (m.id, m.name)).collect()
-    } else {
-        HashMap::new()
-    };
-
-    // Update cache
-    if let Ok(mut cache) = SERVER_MAP_CACHE.lock() {
-        *cache = Some((Instant::now(), map.clone()));
-    }
-
-    map
-}
 
 fn truncate_text(input: &str, max_chars: usize) -> String {
     let normalized = input.replace('\n', " ").trim().to_string();
@@ -77,39 +40,6 @@ fn extract_assistant_description(config: &Value) -> String {
     }
 
     "No description".to_string()
-}
-
-fn format_skills(config: &Value, server_map: &HashMap<String, String>) -> String {
-    let mut skills = Vec::new();
-
-    // Builtin services
-    if let Some(builtin) = config
-        .get("allowedBuiltInServiceAliases")
-        .and_then(|v| v.as_array())
-    {
-        let items: Vec<_> = builtin.iter().filter_map(|v| v.as_str()).collect();
-        if !items.is_empty() {
-            skills.push(format!("Built-in: {}", items.join(", ")));
-        }
-    }
-
-    // External MCP servers
-    if let Some(mcp) = config.get("mcpServerIds").and_then(|v| v.as_array()) {
-        let names: Vec<_> = mcp
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|id| server_map.get(id).map(|s| s.as_str()).unwrap_or(id))
-            .collect();
-        if !names.is_empty() {
-            skills.push(format!("External: {}", names.join(", ")));
-        }
-    }
-
-    if skills.is_empty() {
-        "Base (no extra skills)".to_string()
-    } else {
-        skills.join(" | ")
-    }
 }
 
 /// List all assistants with pagination support
@@ -150,9 +80,6 @@ pub async fn list_assistants(
     // Fetch paginated results using database-level pagination
     let result = repo.list_assistants_paginated(limit, offset).await;
 
-    // Fetch server mapping for skill resolution
-    let server_map = get_server_id_to_name_map().await;
-
     match result {
         Ok(models) => {
             let assistants: Vec<Value> = models
@@ -181,13 +108,11 @@ pub async fn list_assistants(
                 .iter()
                 .map(|a| {
                     let description = extract_assistant_description(&a["config"]);
-                    let skills = format_skills(&a["config"], &server_map);
                     format!(
-                        "• {} [ID: {}]\n  Description: {}\n  Skills: {}",
+                        "• {} [ID: {}]\n  Description: {}",
                         a["name"].as_str().unwrap_or("?"),
                         a["id"].as_str().unwrap_or("?"),
-                        description,
-                        skills
+                        description
                     )
                 })
                 .collect::<Vec<_>>()
@@ -272,9 +197,6 @@ pub async fn search_assistant(
 
     let result = repo.search_assistants(query).await;
 
-    // Fetch server mapping for skill resolution
-    let server_map = get_server_id_to_name_map().await;
-
     match result {
         Ok(models) => {
             let assistants: Vec<Value> = models
@@ -299,16 +221,14 @@ pub async fn search_assistant(
             let assistants_text = assistants
                 .iter()
                 .map(|a| {
-                    let skills = format_skills(&a["config"], &server_map);
                     format!(
-                        "• {} [ID: {}]\n  Skills: {}",
+                        "• {} [ID: {}]",
                         a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?"),
-                        skills
+                        a["id"].as_str().unwrap_or("?")
                     )
                 })
                 .collect::<Vec<_>>()
-                .join("\n\n");
+                .join("\n");
 
             let hint = SuccessHint::new(
                 format!(
@@ -368,14 +288,10 @@ pub async fn get_assistant(
             let config_display =
                 serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
 
-            // Resolve server names for display
-            let server_map = get_server_id_to_name_map().await;
-            let skills_display = format_skills(&config, &server_map);
-
             let hint = SuccessHint::new(
                 format!(
-                    "Assistant: {}\nID: {}\nSkills: {}\n\nConfiguration:\n{}",
-                    model.name, model.id, skills_display, config_display
+                    "Assistant: {}\nID: {}\n\nConfiguration:\n{}",
+                    model.name, model.id, config_display
                 ),
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),

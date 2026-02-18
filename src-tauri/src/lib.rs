@@ -244,7 +244,6 @@ pub fn run() {
                 update_mcp_server_config,
                 delete_mcp_server_config,
                 list_mcp_server_configs,
-                crate::commands::mcp_server_config_commands::list_mcp_server_presets,
                 create_playbook,
                 update_playbook,
                 delete_playbook,
