@@ -31,6 +31,12 @@ pub async fn create_basic_isolated_command(
 
     let mut cmd = AsyncCommand::new(&shell_cmd);
 
+    // Suppress console window on Windows (prevents terminal flashing)
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
@@ -137,6 +143,13 @@ pub async fn create_basic_isolated_command(
         // Actually, let's just create a NEW command here and re-apply envs properly.
 
         let mut wrapped_cmd = AsyncCommand::new("powershell");
+
+        // Suppress console window on Windows (prevents terminal flashing)
+        #[cfg(target_os = "windows")]
+        {
+            wrapped_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
         wrapped_cmd.current_dir(&config.workspace_path);
 
         // Re-apply envs
