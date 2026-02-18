@@ -215,6 +215,22 @@ impl SecureFileManager {
             .await
             .map_err(|e| format!("Failed to open file for append: {e}"))?;
 
+        // Check if appending will exceed the file size limit
+        let metadata = file
+            .metadata()
+            .await
+            .map_err(|e| format!("Failed to get file metadata: {e}"))?;
+        let current_size = metadata.len();
+        let max_size = crate::config::max_file_size() as u64;
+
+        if current_size.saturating_add(content.len() as u64) > max_size {
+            return Err(format!(
+                "File size limit exceeded: Appending would result in {} bytes (max: {} bytes)",
+                current_size + content.len() as u64,
+                max_size
+            ));
+        }
+
         file.write_all(content.as_bytes())
             .await
             .map_err(|e| format!("Failed to append to file: {e}"))?;
@@ -287,5 +303,31 @@ impl SecureFileManager {
     /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_append_file_string_exceeds_max_size() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_append.txt");
+
+        // Create a file and set its length to near the limit (100MB - 10 bytes)
+        let f = File::create(&file_path).unwrap();
+        let max_size = crate::config::max_file_size() as u64;
+        f.set_len(max_size - 10).unwrap();
+
+        let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
+
+        // Append 20 bytes -> total > max_size
+        let append_content = "b".repeat(20);
+        let result = manager.append_file_string("test_append.txt", &append_content).await;
+
+        assert!(result.is_err(), "Appending beyond max file size should fail");
     }
 }
