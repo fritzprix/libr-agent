@@ -1117,6 +1117,28 @@ impl BuiltinMCPServer for SessionApiServer {
                     .call_json(Method::GET, "/api/assistants", None, None)
                     .await?;
 
+                // 1. Fetch Global MCP Settings for Resolution
+                let settings_repo = get_settings_repository();
+                let mcp_servers_map =
+                    if let Ok(Some(setting)) = settings_repo.get("mcpServers").await {
+                        let servers_json: Value =
+                            serde_json::from_str(&setting.value).unwrap_or(json!([]));
+                        servers_json
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|s| {
+                                        let id = s.get("id")?.as_str()?.to_string();
+                                        let name = s.get("name")?.as_str()?.to_string();
+                                        Some((id, name))
+                                    })
+                                    .collect::<HashMap<String, String>>()
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        HashMap::new()
+                    };
+
                 // Extract assistant details for text output (AI agents need to see this!)
                 let assistants_text = data
                     .get("assistants")
@@ -1139,9 +1161,60 @@ impl BuiltinMCPServer for SessionApiServer {
                                 let description =
                                     Self::extract_assistant_description(&parsed_config);
 
+                                // Extract tools info
+                                let tools_summary = {
+                                    let mut tools = Vec::new();
+
+                                    // Built-in tools
+                                    if let Some(builtins) = parsed_config
+                                        .get("allowedBuiltInServiceAliases")
+                                        .and_then(|v| v.as_array())
+                                    {
+                                        let names: Vec<String> = builtins
+                                            .iter()
+                                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                            .collect();
+                                        if !names.is_empty() {
+                                            tools
+                                                .push(format!("Built-ins: [{}]", names.join(", ")));
+                                        }
+                                    } else {
+                                        // Default is usually "all" or "core", but explicit config is better to show
+                                        tools.push("Built-ins: [All]".to_string());
+                                    }
+
+                                    // MCP Servers
+                                    if let Some(mcps) =
+                                        parsed_config.get("mcpServerIds").and_then(|v| v.as_array())
+                                    {
+                                        let names: Vec<String> = mcps
+                                            .iter()
+                                            .filter_map(|v| {
+                                                let id = v.as_str()?;
+                                                // Resolve ID to Name if possible, otherwise keep ID
+                                                Some(
+                                                    mcp_servers_map
+                                                        .get(id)
+                                                        .cloned()
+                                                        .unwrap_or_else(|| id.to_string()),
+                                                )
+                                            })
+                                            .collect();
+                                        if !names.is_empty() {
+                                            tools.push(format!("MCP: [{}]", names.join(", ")));
+                                        }
+                                    }
+
+                                    if tools.is_empty() {
+                                        "Tools: [Default]".to_string()
+                                    } else {
+                                        format!("Tools: {}", tools.join(" | "))
+                                    }
+                                };
+
                                 Some(format!(
-                                    "• {} [ID: {}]\n  Description: {}",
-                                    name, id, description
+                                    "• {} [ID: {}]\n  Description: {}\n  {}",
+                                    name, id, description, tools_summary
                                 ))
                             })
                             .collect::<Vec<_>>()
@@ -1171,6 +1244,156 @@ impl BuiltinMCPServer for SessionApiServer {
                 };
 
                 Ok(Self::success_result(text, data))
+            }
+            "getAssistant" => {
+                let assistant_id = Self::read_required_string(&args, "assistantId")?;
+
+                // 1. Fetch Assistant Data
+                let assistant_data = self
+                    .call_json(
+                        Method::GET,
+                        &format!("/api/assistants/{}", assistant_id),
+                        None,
+                        None,
+                    )
+                    .await?;
+
+                // 2. Extract Config
+                let mut config = assistant_data
+                    .get("config")
+                    .and_then(|v| {
+                        if let Some(s) = v.as_str() {
+                            serde_json::from_str::<Value>(s).ok()
+                        } else {
+                            Some(v.clone())
+                        }
+                    })
+                    .unwrap_or(json!({}));
+
+                // 3. Resolve MCP Server Details (Global Settings)
+                if let Some(server_ids) = config
+                    .get("mcpServerIds")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                {
+                    let settings_repo = get_settings_repository();
+                    let mcp_servers_setting = settings_repo.get("mcpServers").await.unwrap_or(None);
+
+                    let resolved_servers = if let Some(setting) = mcp_servers_setting {
+                        let servers_json: Value =
+                            serde_json::from_str(&setting.value).unwrap_or(json!([]));
+                        let servers_map: HashMap<String, Value> = servers_json
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|s| {
+                                        let id = s.get("id")?.as_str()?.to_string();
+                                        Some((id, s.clone()))
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        server_ids
+                            .iter()
+                            .map(|id_val| {
+                                let id = id_val.as_str().unwrap_or("unknown");
+                                if let Some(server_info) = servers_map.get(id) {
+                                    json!({
+                                        "id": id,
+                                        "name": server_info.get("name").unwrap_or(&json!("Unknown")),
+                                        "type": server_info.get("type").unwrap_or(&json!("stdio")),
+                                        "enabled": server_info.get("enabled").unwrap_or(&json!(true))
+                                    })
+                                } else {
+                                    json!({ "id": id, "status": "missing_configuration" })
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        // Settings not found, return IDs as objects
+                        server_ids
+                            .iter()
+                            .map(|id| json!({ "id": id }))
+                            .collect::<Vec<_>>()
+                    };
+
+                    config["mcpServers"] = Value::Array(resolved_servers);
+                    if let Some(obj) = config.as_object_mut() {
+                        obj.remove("mcpServerIds");
+                    }
+                }
+
+                // 4. Remove UI-only fields to save tokens
+                if let Some(obj) = config.as_object_mut() {
+                    obj.remove("icon");
+                    obj.remove("theme");
+                    obj.remove("createdAt");
+                    obj.remove("updatedAt");
+                    obj.remove("voice");
+                    obj.remove("avatar");
+                }
+
+                // 5. Format Text Output
+                let name = assistant_data
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown");
+
+                let model = config
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown");
+
+                let provider = config
+                    .get("provider")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown");
+
+                let system_prompt = config
+                    .get("systemPrompt")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(No system prompt)");
+
+                // Format Tools
+                let tools_list = config
+                    .get("allowedBuiltInServiceAliases")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_else(|| "None".to_string());
+
+                // Format MCP Servers
+                let mcp_servers_list = config
+                    .get("mcpServers")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        if arr.is_empty() {
+                            return "None".to_string();
+                        }
+                        arr.iter()
+                            .map(|s| {
+                                let name =
+                                    s.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                                let s_type =
+                                    s.get("type").and_then(|v| v.as_str()).unwrap_or("stdio");
+                                format!("- {} ({})", name, s_type)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_else(|| "None".to_string());
+
+                let report = format!(
+                    "## Assistant Report: {}\n\n**ID:** `{}`\n**Model:** {} ({})\n\n### System Prompt (Personality & Instructions)\n```\n{}\n```\n\n### Capabilities (Weapons)\n**Built-in Tools:**\n{}\n\n**External Capability Servers (MCP):**\n{}",
+                    name, assistant_id, model, provider, system_prompt, tools_list, mcp_servers_list
+                );
+
+                Ok(Self::success_result(report, config))
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

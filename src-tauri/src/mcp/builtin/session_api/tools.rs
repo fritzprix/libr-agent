@@ -10,8 +10,9 @@ pub fn all_tools() -> Vec<MCPTool> {
         get_child_sessions_tool(),
         get_messages_tool(),
         send_message_tool(),
-        terminate_session_tool(),
         list_assistants_tool(),
+        get_assistant_tool(),
+        terminate_session_tool(),
     ]
 }
 
@@ -30,32 +31,32 @@ pub fn create_child_session_tool() -> MCPTool {
     MCPTool {
         name: "createChildSession".to_string(),
         title: Some("Create Child Session".to_string()),
-        description: "Create a child session linked to a parent session (lineage contract). In caller context, parent is always caller session (peer/sibling creation disabled) and provided parentSessionId is ignored. If called without caller context, provide explicit parentSessionId. The alias 'current' is supported only with caller context."
+        description: "Spawn a new sub-agent worker to handle a specific task. Returns the new session ID immediately (non-blocking). Use this to delegate work in parallel."
             .to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "parentSessionId".to_string(),
-                    string_prop(None, None, Some("Optional parent session ID. Ignored in caller context; required only when no caller context exists")),
+                    string_prop(None, None, Some("Parent session ID. If called from within a session, this is optional (defaults to self).")),
                 ),
                 (
                     "assistantId".to_string(),
-                    string_prop_required("Assistant ID to bind to child session"),
+                    string_prop_required("Assistant ID to bind to child session (e.g., 'assistant', 'coder')"),
                 ),
                 (
                     "request".to_string(),
-                    string_prop_required("Initial request for child session"),
+                    string_prop_required("The task instruction for the sub-agent"),
                 ),
                 (
                     "name".to_string(),
-                    string_prop(None, None, Some("Optional child session name")),
+                    string_prop(None, None, Some("Optional name for the sub-agent session (for your reference)")),
                 ),
                 (
                     "workspacePath".to_string(),
                     string_prop(
                         None,
                         None,
-                        Some("Optional absolute workspace override path"),
+                        Some("Optional: Override workspace path for the sub-agent"),
                     ),
                 ),
                 (
@@ -63,7 +64,7 @@ pub fn create_child_session_tool() -> MCPTool {
                     integer_prop(
                         Some(0),
                         None,
-                        Some("Optional recursion depth limit (None = unlimited)"),
+                        Some("Optional: Max recursion depth (default: unlimited)"),
                     ),
                 ),
                 (
@@ -71,7 +72,7 @@ pub fn create_child_session_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         None,
-                        Some("Optional max direct children per parent session (None = unlimited)"),
+                        Some("Optional: Max direct children limit (default: unlimited)"),
                     ),
                 ),
             ],
@@ -90,7 +91,7 @@ pub fn get_session_tool() -> MCPTool {
     MCPTool {
         name: "getSession".to_string(),
         title: Some("Get Session".to_string()),
-        description: "Get current session metadata/status by session ID.".to_string(),
+        description: "Get status and metadata for a specific session ID.".to_string(),
         input_schema: object_prop(
             vec![(
                 "sessionId".to_string(),
@@ -108,7 +109,7 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
     MCPTool {
         name: "waitForSessionIdle".to_string(),
         title: Some("Wait For Session Idle".to_string()),
-        description: "Wait until a session reaches terminal status (usually Idle), then optionally fetch latest assistant result. By default, returns full assistant text in the text channel. Use this instead of aggressive getMessages polling."
+        description: "Block and wait for a sub-agent to finish its task. Returns the final result/answer once the session becomes Idle. Use this to synchronize and get the output of a delegated task."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -121,7 +122,7 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
                     integer_prop(
                         Some(5),
                         Some(900),
-                        Some("Max time to wait before timeout (default: 180)"),
+                        Some("Max time to wait (default: 180s)"),
                     ),
                 ),
                 (
@@ -129,19 +130,19 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         Some(30),
-                        Some("Polling interval while waiting (default: 3)"),
+                        Some("Polling interval (default: 3s)"),
                     ),
                 ),
                 (
                     "includeLastAssistantMessage".to_string(),
-                    boolean_prop(Some("If true (default), include latest assistant text result after session becomes idle")),
+                    boolean_prop(Some("If true (default), returns the final answer text from the sub-agent")),
                 ),
                 (
                     "resultMessageLimit".to_string(),
                     integer_prop(
                         Some(1),
                         Some(200),
-                        Some("How many latest messages to inspect when extracting final assistant result (default: 20)"),
+                        Some("How far back to check for the final answer (default: 20 messages)"),
                     ),
                 ),
                 (
@@ -149,7 +150,7 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
                     integer_prop(
                         Some(0),
                         Some(200000),
-                        Some("Optional max chars for returned assistant text (default: 0 = full text)"),
+                        Some("Max chars for the returned answer (default: 0 = full text)"),
                     ),
                 ),
             ],
@@ -165,7 +166,7 @@ pub fn get_messages_tool() -> MCPTool {
     MCPTool {
         name: "getMessages".to_string(),
         title: Some("Get Messages".to_string()),
-        description: "Fetch recent messages for a session with context-budget controls (summary mode, preview limit, and unchanged-result dedupe).".to_string(),
+        description: "Fetch the conversation history of a session. Use 'summaryOnly=true' (default) to save tokens, or 'includeRawPreview=true' to see full code/text content.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -177,35 +178,35 @@ pub fn get_messages_tool() -> MCPTool {
                     integer_prop(
                         Some(1),
                         Some(500),
-                        Some("Optional maximum messages to fetch"),
+                        Some("Max messages to fetch"),
                     ),
                 ),
                 (
                     "summaryOnly".to_string(),
-                    boolean_prop(Some("If true (default), return concise previews instead of expanded message lines")),
+                    boolean_prop(Some("If true (default), returns concise summaries. Set false for full message structure.")),
                 ),
                 (
                     "includeRawPreview".to_string(),
-                    boolean_prop(Some("If true, include longer text snippets in previews (higher token cost)")),
+                    boolean_prop(Some("If true, includes full text/code content in the summary (costs more tokens). Recommended for coding tasks.")),
                 ),
                 (
                     "previewLimit".to_string(),
                     integer_prop(
                         Some(1),
                         Some(10),
-                        Some("Maximum number of message previews to include in text output (default: 3)"),
+                        Some("Number of recent messages to preview in summary mode (default: 3)"),
                     ),
                 ),
                 (
                     "skipIfUnchanged".to_string(),
-                    boolean_prop(Some("If true (default), return a short notice when fetched message digest is unchanged since last fetch")),
+                    boolean_prop(Some("If true (default), avoids returning data if nothing changed since last fetch")),
                 ),
                 (
                     "minIntervalSeconds".to_string(),
                     integer_prop(
                         Some(0),
                         Some(120),
-                        Some("Minimum seconds between repeated polls for the same caller/session/limit key (default: 5; set 0 to disable)"),
+                        Some("Throttle: Minimum seconds between polls (default: 5)"),
                     ),
                 ),
                 (
@@ -213,7 +214,7 @@ pub fn get_messages_tool() -> MCPTool {
                     integer_prop(
                         Some(0),
                         Some(300),
-                        Some("Hard cooldown seconds applied after too many rapid polls (default: 20; set 0 to disable)"),
+                        Some("Throttle: Cooldown after rapid polling (default: 20)"),
                     ),
                 ),
                 (
@@ -221,7 +222,7 @@ pub fn get_messages_tool() -> MCPTool {
                     integer_prop(
                         Some(2),
                         Some(10),
-                        Some("Rapid poll count threshold that triggers forced cooldown (default: 3)"),
+                        Some("Throttle: Rapid poll limit (default: 3)"),
                     ),
                 ),
             ],
@@ -237,7 +238,8 @@ pub fn get_child_sessions_tool() -> MCPTool {
     MCPTool {
         name: "getChildSessions".to_string(),
         title: Some("Get Child Sessions".to_string()),
-        description: "List direct child sessions for a parent session.".to_string(),
+        description: "List all direct sub-agents (workers) created by a specific session."
+            .to_string(),
         input_schema: object_prop(
             vec![(
                 "parentSessionId".to_string(),
@@ -301,6 +303,24 @@ pub fn list_assistants_tool() -> MCPTool {
         title: Some("List Assistants".to_string()),
         description: "List all available assistants from the internal Session API.".to_string(),
         input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn get_assistant_tool() -> MCPTool {
+    MCPTool {
+        name: "getAssistant".to_string(),
+        title: Some("Get Assistant Details".to_string()),
+        description: "Get detailed configuration of an assistant (system prompt, tools, model). Use this for meta-analysis or verifying capabilities.".to_string(),
+        input_schema: object_prop(
+            vec![(
+                "assistantId".to_string(),
+                string_prop_required("Target assistant ID"),
+            )],
+            vec!["assistantId".to_string()],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }

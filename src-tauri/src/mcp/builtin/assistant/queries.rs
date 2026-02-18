@@ -365,18 +365,63 @@ pub async fn get_assistant(
                 json!({})
             });
 
-            let config_display =
-                serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
-
             // Resolve server names for display
             let server_map = get_server_id_to_name_map().await;
-            let skills_display = format_skills(&config, &server_map);
+
+            // Extract fields for report
+            let system_prompt = config
+                .get("systemPrompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(No system prompt)");
+
+            let model_name = config
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            let provider = config
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            // Format Tools
+            let tools_list = config
+                .get("allowedBuiltInServiceAliases")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            // Format MCP Servers
+            let mcp_servers_list = config
+                .get("mcpServerIds")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    if arr.is_empty() {
+                        return "None".to_string();
+                    }
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|id| {
+                            let name = server_map.get(id).map(|s| s.as_str()).unwrap_or("Unknown");
+                            format!("- {} (ID: {})", name, id)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            let report = format!(
+                "## Assistant Report: {}\n\n**ID:** `{}`\n**Model:** {} ({})\n\n### System Prompt (Personality & Instructions)\n```\n{}\n```\n\n### Capabilities (Weapons)\n**Built-in Tools:**\n{}\n\n**External Capability Servers (MCP):**\n{}",
+                model.name, model.id, model_name, provider, system_prompt, tools_list, mcp_servers_list
+            );
 
             let hint = SuccessHint::new(
-                format!(
-                    "Assistant: {}\nID: {}\nSkills: {}\n\nConfiguration:\n{}",
-                    model.name, model.id, skills_display, config_display
-                ),
+                report,
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
                     "Use builtin_assistant__deleteAssistant to remove this assistant".to_string(),
