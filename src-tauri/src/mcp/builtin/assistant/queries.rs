@@ -2,8 +2,45 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::repositories::AssistantRepository;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+type ServerMapCache = Mutex<Option<(Instant, HashMap<String, String>)>>;
+
+static SERVER_MAP_CACHE: once_cell::sync::Lazy<ServerMapCache> =
+    once_cell::sync::Lazy::new(|| Mutex::new(None));
+
+async fn get_server_id_to_name_map() -> HashMap<String, String> {
+    const CACHE_TTL: Duration = Duration::from_secs(30);
+
+    // Try to get from cache first
+    if let Ok(cache) = SERVER_MAP_CACHE.lock() {
+        if let Some((timestamp, map)) = &*cache {
+            if timestamp.elapsed() < CACHE_TTL {
+                return map.clone();
+            }
+        }
+    }
+
+    // Cache miss or expired - fetch from DB
+    let repo = crate::state::get_mcp_server_repository();
+    let map: HashMap<String, String> = if let Ok(models) = repo.list().await {
+        models.into_iter().map(|m| (m.id, m.name)).collect()
+    } else {
+        HashMap::new()
+    };
+
+    // Update cache
+    if let Ok(mut cache) = SERVER_MAP_CACHE.lock() {
+        *cache = Some((Instant::now(), map.clone()));
+    }
+
+    map
+}
 
 fn truncate_text(input: &str, max_chars: usize) -> String {
     let normalized = input.replace('\n', " ").trim().to_string();
@@ -285,14 +322,63 @@ pub async fn get_assistant(
                 json!({})
             });
 
-            let config_display =
-                serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
+            // Resolve server names for display
+            let server_map = get_server_id_to_name_map().await;
+
+            // Extract fields for report
+            let system_prompt = config
+                .get("systemPrompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(No system prompt)");
+
+            let model_name = config
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            let provider = config
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            // Format Tools
+            let tools_list = config
+                .get("allowedBuiltInServiceAliases")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            // Format MCP Servers
+            let mcp_servers_list = config
+                .get("mcpServerIds")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    if arr.is_empty() {
+                        return "None".to_string();
+                    }
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|id| {
+                            let name = server_map.get(id).map(|s| s.as_str()).unwrap_or("Unknown");
+                            format!("- {} (ID: {})", name, id)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            let report = format!(
+                "## Assistant Report: {}\n\n**ID:** `{}`\n**Model:** {} ({})\n\n### System Prompt (Personality & Instructions)\n```\n{}\n```\n\n### Capabilities (Weapons)\n**Built-in Tools:**\n{}\n\n**External Capability Servers (MCP):**\n{}",
+                model.name, model.id, model_name, provider, system_prompt, tools_list, mcp_servers_list
+            );
 
             let hint = SuccessHint::new(
-                format!(
-                    "Assistant: {}\nID: {}\n\nConfiguration:\n{}",
-                    model.name, model.id, config_display
-                ),
+                report,
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
                     "Use builtin_assistant__deleteAssistant to remove this assistant".to_string(),

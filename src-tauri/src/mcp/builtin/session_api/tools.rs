@@ -1,10 +1,9 @@
-use crate::mcp::types::MCPTool;
+﻿use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
         health_check_tool(),
-        create_session_tool(),
         create_child_session_tool(),
         get_session_tool(),
         wait_for_session_idle_tool(),
@@ -13,6 +12,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         send_message_tool(),
         terminate_session_tool(),
         list_assistants_tool(),
+        get_assistant_tool(),
     ]
 }
 
@@ -27,65 +27,17 @@ pub fn health_check_tool() -> MCPTool {
     }
 }
 
-pub fn create_session_tool() -> MCPTool {
-    MCPTool {
-        name: "createSession".to_string(),
-        title: Some("Create Session".to_string()),
-        description: "Create a new agent session through the internal Session API. If parentSessionId is omitted and this tool is called inside a session, caller session ID is automatically used as parent for lineage tracking. Returns session ID for follow-up calls.".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "assistantId".to_string(),
-                    string_prop_required("Assistant ID to bind to the new session"),
-                ),
-                (
-                    "request".to_string(),
-                    string_prop_required("Initial user request to start workflow"),
-                ),
-                (
-                    "name".to_string(),
-                    string_prop(None, None, Some("Optional session display name")),
-                ),
-                (
-                    "workspacePath".to_string(),
-                    string_prop(None, None, Some("Optional absolute workspace override path")),
-                ),
-                (
-                    "maxDepth".to_string(),
-                    integer_prop(Some(0), None, Some("Optional recursion depth limit (None = unlimited)")),
-                ),
-                (
-                    "maxFanout".to_string(),
-                    integer_prop(
-                        Some(1),
-                        None,
-                        Some("Optional max direct children per parent session (None = unlimited)"),
-                    ),
-                ),
-                (
-                    "parentSessionId".to_string(),
-                    string_prop(None, None, Some("Optional parent session ID for lineage tracking")),
-                ),
-            ],
-            vec!["assistantId".to_string(), "request".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
 pub fn create_child_session_tool() -> MCPTool {
     MCPTool {
         name: "createChildSession".to_string(),
         title: Some("Create Child Session".to_string()),
-        description: "Create a child session linked to a parent session (lineage contract). If parentSessionId is omitted, caller session ID is used automatically. The alias 'current' is also supported."
+        description: "Create a child session linked to a parent session (lineage contract). In caller context, parent is always caller session (peer/sibling creation disabled) and provided parentSessionId is ignored. If called without caller context, provide explicit parentSessionId. The alias 'current' is supported only with caller context."
             .to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "parentSessionId".to_string(),
-                    string_prop(None, None, Some("Optional parent session ID. If omitted or set to 'current', caller session ID is used")),
+                    string_prop(None, None, Some("Optional parent session ID. Ignored in caller context; required only when no caller context exists")),
                 ),
                 (
                     "assistantId".to_string(),
@@ -350,6 +302,24 @@ pub fn list_assistants_tool() -> MCPTool {
         title: Some("List Assistants".to_string()),
         description: "List all available assistants from the internal Session API.".to_string(),
         input_schema: object_prop(vec![], vec![], None),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+pub fn get_assistant_tool() -> MCPTool {
+    MCPTool {
+        name: "getAssistant".to_string(),
+        title: Some("Get Assistant Details".to_string()),
+        description: "Get detailed configuration of an assistant (system prompt, tools, model). Use this for meta-analysis or verifying capabilities.".to_string(),
+        input_schema: object_prop(
+            vec![(
+                "assistantId".to_string(),
+                string_prop_required("Target assistant ID"),
+            )],
+            vec!["assistantId".to_string()],
+            None,
+        ),
         output_schema: None,
         annotations: None,
     }

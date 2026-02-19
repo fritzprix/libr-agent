@@ -2,7 +2,6 @@
 // Injects available skills documentation into system prompts
 
 use super::ContextProvider;
-use crate::state::get_settings_repository;
 use async_trait::async_trait;
 
 /// Context provider for skills documentation
@@ -17,27 +16,11 @@ impl SkillsContextProvider {
         Self
     }
 
-    /// Get skills directory from settings
+    /// Get skills directory from settings, falling back to default [AppData]/skills
     async fn get_skills_directory(&self) -> Result<String, String> {
-        use crate::repositories::settings_repository::SettingsRepository;
-
-        let settings_repo = get_settings_repository();
-
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct SystemSettings {
-            skills_directory: String,
-        }
-
-        match settings_repo.get("systemSettings").await {
-            Ok(Some(model)) => {
-                let settings: SystemSettings = serde_json::from_str(&model.value)
-                    .map_err(|e| format!("Failed to parse system settings: {}", e))?;
-                Ok(settings.skills_directory)
-            }
-            Ok(None) => Err("System settings not found".to_string()),
-            Err(e) => Err(format!("Failed to get system settings: {}", e)),
-        }
+        // Reuse get_configured_skills_directory() which already has proper fallback:
+        // settings.skillsDirectory → [AppData]/skills (if not configured)
+        crate::commands::skill_commands::get_configured_skills_directory().await
     }
 
     /// Build skills XML from scanned skills directory

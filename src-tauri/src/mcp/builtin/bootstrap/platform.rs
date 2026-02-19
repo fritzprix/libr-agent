@@ -26,6 +26,9 @@ use std::collections::HashMap;
 use std::env;
 use std::process::Command;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Platform information for the current system
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -221,8 +224,10 @@ fn detect_installed_tools() -> HashMap<String, ToolInfo> {
 fn command_exists(cmd: &str) -> bool {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         // Windows: Use 'where' command
         Command::new("where")
+            .creation_flags(CREATE_NO_WINDOW)
             .arg(cmd)
             .output()
             .map(|output| output.status.success())
@@ -243,6 +248,16 @@ fn command_exists(cmd: &str) -> bool {
 
 /// Get the version of a tool
 fn get_tool_version(tool: &str) -> Option<String> {
+    #[cfg(windows)]
+    let output = {
+        use std::os::windows::process::CommandExt;
+        Command::new(tool)
+            .creation_flags(CREATE_NO_WINDOW)
+            .arg("--version")
+            .output()
+            .ok()?
+    };
+    #[cfg(not(windows))]
     let output = Command::new(tool).arg("--version").output().ok()?;
 
     if !output.status.success() {
@@ -265,8 +280,13 @@ fn get_tool_version(tool: &str) -> Option<String> {
 fn get_command_path(cmd: &str) -> Option<String> {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         // Windows: Use 'where' command (returns first match)
-        let output = Command::new("where").arg(cmd).output().ok()?;
+        let output = Command::new("where")
+            .creation_flags(CREATE_NO_WINDOW)
+            .arg(cmd)
+            .output()
+            .ok()?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)
