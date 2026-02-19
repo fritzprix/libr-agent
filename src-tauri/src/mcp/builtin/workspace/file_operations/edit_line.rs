@@ -37,6 +37,29 @@ impl LineEdit {
     }
 }
 
+/// Pure apply function — applies sorted edits (high → low) to a slice of lines.
+/// Extracted for testability; used by `handle_replace_lines`.
+fn apply_edits(orig_lines: &[&str], edits: &[LineEdit]) -> Vec<String> {
+    let mut modified: Vec<String> = orig_lines.iter().map(|&s| s.to_string()).collect();
+    let mut sorted = edits.to_vec();
+    sorted.sort_by(|a, b| b.start_line.cmp(&a.start_line)); // high → low to preserve indices
+
+    for edit in &sorted {
+        let start_idx = edit.start_line - 1; // 0-based
+        let replacement: Vec<String> = edit.new_value.lines().map(|s| s.to_string()).collect();
+
+        if edit.insert_after {
+            // Insert-after: splice at anchor+1 without touching the anchor line
+            let insert_idx = (start_idx + 1).min(modified.len());
+            modified.splice(insert_idx..insert_idx, replacement);
+        } else {
+            // Replace / delete: splice replaces [start..end]
+            modified.splice(start_idx..edit.end_line, replacement);
+        }
+    }
+    modified
+}
+
 impl WorkspaceServer {
     pub async fn handle_replace_lines(
         &self,
@@ -386,24 +409,7 @@ impl WorkspaceServer {
         }
 
         // --- Apply edits in reverse order (preserves line indices for subsequent edits) ---
-        let mut modified_lines: Vec<String> = orig_lines.iter().map(|&s| s.to_string()).collect();
-        let mut sorted_edits = edits.clone();
-        sorted_edits.sort_by(|a, b| b.start_line.cmp(&a.start_line)); // high → low
-
-        for edit in &sorted_edits {
-            let start_idx = edit.start_line - 1; // 0-based
-            let replacement: Vec<String> = edit.new_value.lines().map(|s| s.to_string()).collect();
-
-            if edit.insert_after {
-                // Insert-after mode: splice at (anchor+1..anchor+1) — anchor line untouched
-                let insert_idx = (start_idx + 1).min(modified_lines.len());
-                modified_lines.splice(insert_idx..insert_idx, replacement);
-            } else {
-                // Replace/delete mode: splice replaces [start..end]
-                // (empty replacement = deletion)
-                modified_lines.splice(start_idx..edit.end_line, replacement);
-            }
-        }
+        let modified_lines = apply_edits(&orig_lines, &edits);
 
         let new_content = modified_lines.join("\n");
         let new_content = if original_content.ends_with('\n') && !new_content.ends_with('\n') {
@@ -604,5 +610,186 @@ impl WorkspaceServer {
         );
 
         Ok(hint.to_mcp_result())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- helpers ---
+
+    fn make_edit(line: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: line,
+            end_line: line,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: false,
+        }
+    }
+
+    fn make_range_edit(start: usize, end: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: start,
+            end_line: end,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: false,
+        }
+    }
+
+    fn make_insert_after(line: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: line,
+            end_line: line,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: true,
+        }
+    }
+
+    fn lines(s: &str) -> Vec<&str> {
+        s.lines().collect()
+    }
+
+    // --- replace ---
+
+    #[test]
+    fn test_replace_single_line() {
+        let orig = lines("line1\nline2\nline3");
+        let result = apply_edits(&orig, &[make_edit(2, "replaced")]);
+        assert_eq!(result, vec!["line1", "replaced", "line3"]);
+    }
+
+    #[test]
+    fn test_replace_range_with_fewer_lines() {
+        let orig = lines("a\nb\nc\nd\ne");
+        // Replace lines 2-4 with a single line
+        let result = apply_edits(&orig, &[make_range_edit(2, 4, "merged")]);
+        assert_eq!(result, vec!["a", "merged", "e"]);
+    }
+
+    #[test]
+    fn test_replace_range_with_more_lines() {
+        let orig = lines("a\nb\nc");
+        // Replace line 2 range (2-2) with two lines
+        let result = apply_edits(&orig, &[make_range_edit(2, 2, "x\ny")]);
+        assert_eq!(result, vec!["a", "x", "y", "c"]);
+    }
+
+    // --- delete ---
+
+    #[test]
+    fn test_delete_single_line() {
+        let orig = lines("line1\nline2\nline3");
+        let result = apply_edits(&orig, &[make_edit(2, "")]);
+        assert_eq!(result, vec!["line1", "line3"]);
+    }
+
+    #[test]
+    fn test_delete_range() {
+        let orig = lines("a\nb\nc\nd\ne");
+        let result = apply_edits(&orig, &[make_range_edit(2, 4, "")]);
+        assert_eq!(result, vec!["a", "e"]);
+    }
+
+    #[test]
+    fn test_delete_first_line() {
+        let orig = lines("first\nsecond\nthird");
+        let result = apply_edits(&orig, &[make_edit(1, "")]);
+        assert_eq!(result, vec!["second", "third"]);
+    }
+
+    #[test]
+    fn test_delete_last_line() {
+        let orig = lines("first\nsecond\nlast");
+        let result = apply_edits(&orig, &[make_edit(3, "")]);
+        assert_eq!(result, vec!["first", "second"]);
+    }
+
+    // --- insert_after ---
+
+    #[test]
+    fn test_insert_after_middle_line() {
+        let orig = lines("a\nb\nc");
+        let result = apply_edits(&orig, &[make_insert_after(2, "inserted")]);
+        assert_eq!(result, vec!["a", "b", "inserted", "c"]);
+    }
+
+    #[test]
+    fn test_insert_after_anchor_line_is_untouched() {
+        // The anchor line must survive intact
+        let orig = lines("fn foo() {\n    // body\n}");
+        let result = apply_edits(&orig, &[make_insert_after(1, "// new comment")]);
+        assert_eq!(result[0], "fn foo() {");
+        assert_eq!(result[1], "// new comment");
+        assert_eq!(result[2], "    // body");
+    }
+
+    #[test]
+    fn test_insert_after_last_line_appends() {
+        let orig = lines("first\nlast");
+        let result = apply_edits(&orig, &[make_insert_after(2, "appended")]);
+        assert_eq!(result, vec!["first", "last", "appended"]);
+    }
+
+    #[test]
+    fn test_insert_after_multiline_new_value() {
+        let orig = lines("a\nb");
+        let result = apply_edits(&orig, &[make_insert_after(1, "x\ny\nz")]);
+        assert_eq!(result, vec!["a", "x", "y", "z", "b"]);
+    }
+
+    // --- multiple edits ---
+
+    #[test]
+    fn test_multiple_edits_high_to_low_applied_correctly() {
+        // Delete line 3, replace line 1 — both should apply independently
+        let orig = lines("a\nb\nc\nd");
+        let edits = vec![make_edit(1, "A"), make_edit(3, "")];
+        let result = apply_edits(&orig, &edits);
+        assert_eq!(result, vec!["A", "b", "d"]);
+    }
+
+    #[test]
+    fn test_delete_then_insert_after_independent_regions() {
+        let orig = lines("a\nb\nc\nd\ne");
+        // delete line 4, insert after line 1
+        let edits = vec![make_edit(4, ""), make_insert_after(1, "inserted")];
+        let result = apply_edits(&orig, &edits);
+        assert_eq!(result, vec!["a", "inserted", "b", "c", "e"]);
+    }
+
+    // --- is_range ---
+
+    #[test]
+    fn test_is_range_false_for_single_line() {
+        assert!(!make_edit(5, "x").is_range());
+    }
+
+    #[test]
+    fn test_is_range_true_for_span() {
+        assert!(make_range_edit(3, 7, "x").is_range());
+    }
+
+    #[test]
+    fn test_is_range_false_for_insert_after_even_with_span() {
+        let e = LineEdit {
+            start_line: 1,
+            end_line: 5,
+            new_value: "x".to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: true,
+        };
+        assert!(!e.is_range(), "insert_after is never a range");
     }
 }
