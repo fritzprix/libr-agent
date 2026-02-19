@@ -19,8 +19,8 @@ Three builtin MCP servers currently operate as separate alias entries:
 
 The same logical operation appears under two different prefixes:
 
-| Tool name        | `session_api`                     | `assistant`                       | Notes                   |
-| ---------------- | --------------------------------- | --------------------------------- | ----------------------- |
+| Tool name        | `session_api`                    | `assistant`                      | Notes                   |
+| ---------------- | -------------------------------- | -------------------------------- | ----------------------- |
 | `listAssistants` | ??(HTTP ??`/api/assistants`)     | ??(DB direct, pagination/search) | session_api is a subset |
 | `getAssistant`   | ??(HTTP ??`/api/assistants/:id`) | ??(DB direct)                    | session_api is a subset |
 
@@ -112,22 +112,25 @@ The three existing modules (`session_api`, `assistant`, `mcp_manager`) are **kep
 
 ### Tools dropped from `session_api` (deduplicated)
 
-| Tool | Reason |
-|---|---|
+| Tool             | Reason                                                        |
+| ---------------- | ------------------------------------------------------------- |
 | `listAssistants` | `assistant` version is a strict superset (pagination, search) |
-| `getAssistant` | `assistant` version is a strict superset |
+| `getAssistant`   | `assistant` version is a strict superset                      |
 
 ### Final tool list under `builtin_agent_hub__`
 
 **From `session_api` (8 tools ??child session lifecycle):**
+
 - `healthCheck`, `createChildSession`, `getSession`, `waitForSessionIdle`
 - `getMessages`, `sendMessage`, `terminateSession`, `getChildSessions`
 
 **From `assistant` (6 tools ??assistant CRUD):**
+
 - `createAssistant`, `updateAssistant`, `deleteAssistant`
 - `listAssistants`, `getAssistant`, `searchAssistant`
 
 **From `mcp_manager` (7 tools ??external server management):**
+
 - `listExternalServers`, `listInternalTools`, `searchServer`
 - `registerServer`, `updateServer`, `deleteServer`, `verifyServer`
 
@@ -167,5 +170,3 @@ The following were analysed and explicitly deferred:
 - REST API completion (`POST/PUT/DELETE /api/assistants`, `/api/mcp-servers`)
 - HTTP transport layer for `planning`, `playbook`, `knowledge`, `content_store`
 - Session key portability across instances
-
-
