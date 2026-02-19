@@ -42,6 +42,28 @@ pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValida
     validate_table_exists(db, "messages").await?;
     validate_table_exists(db, "assistants").await?;
 
+    // Validate sessions table columns (Critical for auto-recovery)
+    validate_table_columns(
+        db,
+        "sessions",
+        &[
+            "id",
+            "name",
+            "status",
+            "model",
+            "provider",
+            "agent_config",
+            "parent_session_id",
+            "lineage_id",
+            "depth",
+            "max_depth",
+            "max_fanout",
+            "created_at",
+            "updated_at",
+        ],
+    )
+    .await?;
+
     // Validate planning module tables with specific columns
     validate_table_columns(
         db,
@@ -185,7 +207,22 @@ mod tests {
         // Create test tables
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT)".to_string(),
+            "CREATE TABLE sessions (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                status TEXT,
+                model TEXT,
+                provider TEXT,
+                agent_config TEXT,
+                parent_session_id TEXT,
+                lineage_id TEXT,
+                depth INTEGER,
+                max_depth INTEGER,
+                max_fanout INTEGER,
+                created_at INTEGER,
+                updated_at INTEGER
+            )"
+            .to_string(),
         ))
         .await
         .expect("Failed to create sessions table");

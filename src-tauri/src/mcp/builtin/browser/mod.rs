@@ -21,13 +21,13 @@ mod tools;
 ///
 /// ## Basic Navigation Flow
 /// 1. `createSession(url?)` → get `session_id`
-/// 2. `navigateToUrl(session_id, url)` → navigate to page
-/// 3. `extractWebContent(session_id)` → read content
+/// 2. `goto(session_id, url)` → navigate to page
+/// 3. `content(session_id)` → read content
 ///
 /// ## Interaction Flow
 /// 1. `listInteractable(session_id)` → find elements
-/// 2. `clickElement(session_id, selector)` → interact
-/// 3. `extractWebContent(session_id)` → verify changes
+/// 2. `click(session_id, selector)` → interact
+/// 3. `content(session_id)` → verify changes
 ///
 /// ## Error Recovery
 /// - **Session expired**: call `createSession` again
@@ -255,6 +255,17 @@ impl BuiltinMCPServer for BrowserServer {
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
+
+            // Aliases (Playwright & UX Friendly)
+            "goto" => navigation::navigate_to_url(self, args).await,
+            "click" => interaction::click_element(self, args).await,
+            "fill" => interaction::input_text(self, args).await,
+            "type" => interaction::input_text(self, args).await,
+            "content" => content::smart_content(self, args).await,
+            "readPage" => content::read_web_content(self, args).await,
+            "back" => navigation::navigate_back(self, args).await,
+            "forward" => navigation::navigate_forward(self, args).await,
+            "scroll" => interaction::scroll_page(self, args).await,
 
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

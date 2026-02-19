@@ -1,4 +1,4 @@
-﻿use sea_orm_migration::{prelude::*, schema::*};
+use sea_orm_migration::{prelude::*, schema::*};
 
 use super::helpers;
 
@@ -48,13 +48,13 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        // ??IDEMPOTENT: migrate seaql_migrations ??migration_metadata only when empty.
+        // ✅ IDEMPOTENT: migrate seaql_migrations → migration_metadata only when empty.
         // Use the shared helper so COUNT(*) aliasing is consistent across all migrations.
         let existing_count = helpers::count_rows(manager, MigrationMetadata::Table).await?;
         if existing_count == 0 {
             // Check that the source table exists before attempting to copy from it.
             // On a completely fresh DB seaql_migrations may not yet have rows (or may
-            // not exist) ??either case is fine, we simply skip the backfill.
+            // not exist) – either case is fine, we simply skip the backfill.
             let source_exists = helpers::table_exists(manager, "seaql_migrations").await?;
 
             if source_exists {

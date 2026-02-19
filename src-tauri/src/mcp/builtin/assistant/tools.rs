@@ -28,14 +28,14 @@ pub fn create_assistant_tool() -> MCPTool {
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of allowed built-in service aliases (e.g., 'mcp_manager', 'workspace', 'browser')"),
+                        Some("List of allowed built-in service aliases.\n\nUsage: Call `builtin_mcp_manager__listBuiltinTools` to see available internal services (e.g., 'workspace', 'browser')."),
                     ),
                 ),
                 (
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n1. Call builtin_mcp_manager__listMcpServers FIRST\n2. Extract ID field (UUID format like 'cm3x...') from response\n3. NEVER use server name - it will fail validation\n4. Empty array = no external MCP servers\n\nExample valid ID: \"cm3xkn2w00000ld...\"\nExample INVALID: \"filesystem\" (this is a name, not ID)"),
+                        Some("List of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n1. Call builtin_mcp_manager__listServers FIRST\n2. Extract ID field (UUID format like 'cm3x...') from response\n3. NEVER use server name - it will fail validation\n4. Empty array = no external MCP servers\n\nExample valid ID: \"cm3xkn2w00000ld...\"\nExample INVALID: \"filesystem\" (this is a name, not ID)"),
                     ),
                 ),
             ],
@@ -77,14 +77,14 @@ pub fn update_assistant_tool() -> MCPTool {
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update list of allowed built-in service aliases"),
+                        Some("Update list of allowed built-in service aliases. Use `listBuiltinTools` to see options."),
                     ),
                 ),
                 (
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update list of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n• Call builtin_mcp_manager__listMcpServers first\n• Extract ID field (UUID format) from response\n• NEVER use server name - validation will fail"),
+                        Some("Update list of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n• Call builtin_mcp_manager__listServers first\n• Extract ID field (UUID format) from response\n• NEVER use server name - validation will fail"),
                     ),
                 ),
             ],
