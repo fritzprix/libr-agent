@@ -224,8 +224,14 @@ pub fn create_replace_lines_tool() -> MCPTool {
     // Define the edits array schema
     let mut edit_item_props = HashMap::new();
     edit_item_props.insert(
+        "insertAfter".to_string(),
+        boolean_prop(Some(
+            "Insert-after mode (default: false). When true, new_value is inserted AFTER line N without modifying it. line_hash validates the anchor line for staleness. new_value may contain \\n.",
+        )),
+    );
+    edit_item_props.insert(
         "line".to_string(),
-        integer_prop(Some(1), None, Some("Start line number (1-based, required). For single-line edit this is the only line. For range edit this is the first line of the replaced range.")),
+        integer_prop(Some(1), None, Some("Start line number (1-based, required). Use line = (total_lines + 1) to APPEND at end of file. For range edit this is the first line of the replaced range.")),
     );
     edit_item_props.insert(
         "endLine".to_string(),
@@ -260,7 +266,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Replacement content. Single-line mode: no \\n allowed. Range mode (endLine present): \\n is allowed and each \\n-separated segment becomes a new line."),
+            Some("Replacement content. Use empty string \"\" to DELETE the line(s). Single-line mode: no \\n allowed. Range mode (endLine present): \\n is allowed and each \\n-separated segment becomes a new line."),
         ),
     );
 
@@ -282,25 +288,37 @@ pub fn create_replace_lines_tool() -> MCPTool {
     MCPTool {
         name: "replaceLines".to_string(),
         title: Some("Edit Multiple Lines in File".to_string()),
-        description: "Replace lines in a file. All edits in one call are atomic — all succeed or all fail.\n\
+        description:
+            "Replace lines in a file. All edits in one call are atomic — all succeed or all fail.\n\
 \n\
 MODES:\n\
-  Single-line: { line, line_hash?, new_value }          — new_value must not contain \\n\n\
-  Range:       { line, endLine, line_hash?, endHash?,   — new_value may contain \\n\n\
+  Replace:     { line, line_hash?, new_value }           — replaces the line\n\
+  Range:       { line, endLine, line_hash?, endHash?,    — replaces lines [line..endLine]\n\
                  new_value }\n\
+  Delete:      { line, new_value: \"\" }                  — empty string removes the line(s)\n\
+  Insert-after: { line, line_hash?, insertAfter: true,  — inserts AFTER anchor, anchor untouched\n\
+                  new_value }                            — new_value may contain \\n\n\
 \n\
-Workflow: readFile → copy hash from '42:a3|...' prefix → pass as line_hash → hash mismatch triggers staleness error → re-read and retry.\n\
+Workflow: readFile → copy hash from '42:a3|...' prefix → pass as line_hash.\n\
 \n\
 Examples:\n\
-  // single-line with staleness check\n\
+  // replace with staleness check\n\
   { path: 'src/main.rs', edits: [{ line: 42, line_hash: 'a3', new_value: 'let x = 2;' }] }\n\
+\n\
+  // delete line 10\n\
+  { path: 'src/lib.rs', edits: [{ line: 10, new_value: '' }] }\n\
+\n\
+  // insert two lines after line 42 (anchor hash guards staleness)\n\
+  { path: 'src/lib.rs', edits: [{ line: 42, line_hash: 'a3', insertAfter: true,\n\
+    new_value: 'fn bar() {\\n    todo!()\\n}' }] }\n\
 \n\
   // range replacement\n\
   { path: 'src/lib.rs', edits: [{ line: 42, endLine: 58, line_hash: 'a3', endHash: '0e',\n\
     new_value: 'fn foo() {\\n    todo!()\\n}' }] }\n\
 \n\
-  // batch (multiple edits, one call)\n\
-  { path: 'src/main.rs', edits: [{ line: 10, new_value: 'x' }, { line: 25, new_value: 'y' }] }".to_string(),
+  // batch\n\
+  { path: 'src/main.rs', edits: [{ line: 10, new_value: 'x' }, { line: 25, new_value: 'y' }] }"
+                .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
         output_schema: None,
         annotations: None,
