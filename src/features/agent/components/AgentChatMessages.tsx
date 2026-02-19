@@ -37,11 +37,15 @@ export function AgentChatMessages() {
   );
 
   // Only auto-scroll if enabled
+  const throttledScrollToBottom = useThrottle(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, 100);
+
   useEffect(() => {
     if (autoScrollEnabled) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      throttledScrollToBottom();
     }
-  }, [messages, autoScrollEnabled]);
+  }, [messages, autoScrollEnabled, throttledScrollToBottom]);
 
   // Throttle the refetch function to prevent excessive backend calls
   const throttledRefetch = useThrottle(() => {

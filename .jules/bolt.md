@@ -62,3 +62,8 @@
 
 **Learning:** Queries filtering by `session_id` in `messages`, `contents`, and `stores` tables were performing full table scans because SQLite (and many other DBs) does not automatically index foreign keys. This caused performance degradation in chat history loading and content management as the dataset grew.
 **Action:** Always verify database indexes for columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses, especially foreign keys. Add specific migrations to create these indexes if the ORM or database doesn't do it automatically.
+
+## 2026-02-27 - Throttling Layout-Thrashing Effects
+
+**Learning:** `AgentChatMessages` was triggering `scrollIntoView({ behavior: 'smooth' })` on every token update during streaming (~50ms), causing layout thrashing and potentially resetting the scroll animation repeatedly.
+**Action:** Use `useThrottle` to wrap the scroll effect, ensuring it only executes at a sustainable frame rate (e.g., 100ms) while capturing the latest ref in the closure. This preserves smoothness without overwhelming the browser's layout engine.
