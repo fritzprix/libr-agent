@@ -1,4 +1,4 @@
-use sea_orm_migration::prelude::*;
+﻿use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
 
 use super::helpers;
@@ -46,7 +46,7 @@ impl MigrationTrait for Migration {
         ))
         .await?;
 
-        // ✅ IDEMPOTENT: Only populate FTS when it is empty.
+        // ??IDEMPOTENT: Only populate FTS when it is empty.
         // Without this guard, re-running the migration (e.g. after a reset that
         // left seaql_migrations intact) would create duplicate FTS rows and
         // cause relevance scores / result sets to be wrong.

@@ -64,9 +64,6 @@ function ProviderCardBase({
           </label>
           <Input
             type="password"
-            autoComplete="off"
-            data-1p-ignore
-            data-lpignore="true"
             placeholder={`Enter your ${providerName} API key`}
             value={localApiKey}
             onChange={(e) => {

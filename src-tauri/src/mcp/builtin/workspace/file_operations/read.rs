@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::{detect_language, format_file_size, LARGE_FILE_THRESHOLD};
+use super::utils::{compute_line_hash, detect_language, format_file_size, LARGE_FILE_THRESHOLD};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -64,11 +64,10 @@ impl WorkspaceServer {
             .get("showLineNumbers")
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default to false for cleaner raw content
-
-        let show_hash = args
-            .get("showHash")
+        let show_line_hashes = args
+            .get("showLineHashes")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(true); // Default ON: agents always get stable hashes for replaceLines
 
         // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {
@@ -173,7 +172,7 @@ impl WorkspaceServer {
             start_line,
             end_line,
             show_line_numbers,
-            show_hash,
+            show_line_hashes,
         )
         .await;
 
@@ -190,18 +189,21 @@ impl WorkspaceServer {
                 let line_count = content.lines().count();
 
                 // Format response for clean markdown rendering
-                let text_message = if show_line_numbers {
-                    // Line numbers mode: use plain code block
+                let text_message = if show_line_hashes {
+                    // Hashline mode: {N}:{hash}|{content} — stable anchors for replaceLines
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```\n{}\n```",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nHashline: `{{N}}:{{hash}}|{{content}}` — pass hash as `line_hash` in replaceLines",
+                        path_str, size_str, line_count, content
+                    )
+                } else if show_line_numbers {
+                    format!(
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```",
                         path_str, size_str, line_count, content
                     )
                 } else {
-                    // Auto-detect language from file extension for syntax highlighting
                     let language = detect_language(&safe_path);
-
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```{}\n{}\n```",
+                        "📄 **`{}`** — {} / {} lines\n\n```{}\n{}\n```",
                         path_str, size_str, line_count, language, content
                     )
                 };
@@ -209,11 +211,9 @@ impl WorkspaceServer {
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "Use editFile for targeted changes".to_string(),
-                        "Use writeFile for full file updates".to_string(),
-                        "Use searchLineInFile to find specific text".to_string(),
-                        "Need line numbers? Use 'showLineNumbers': true".to_string(),
-                        "Need extra safety? Use 'showHash': true".to_string(),
+                        "replaceLines: copy line_hash from prefix (e.g. 'a3' from '42:a3|...')"
+                            .to_string(),
+                        "writeFile for full file replacement".to_string(),
                     ],
                 );
 
@@ -252,7 +252,7 @@ async fn read_file_lines_range(
     start_line: Option<usize>,
     end_line: Option<usize>,
     show_line_numbers: bool,
-    show_hash: bool,
+    show_line_hashes: bool,
 ) -> Result<String, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -310,7 +310,11 @@ async fn read_file_lines_range(
                 ));
             }
 
-            Ok::<_, String>(format_lines_with_numbers(&result_lines, show_line_numbers, show_hash))
+            Ok::<_, String>(format_lines_with_numbers(
+                &result_lines,
+                show_line_numbers,
+                show_line_hashes,
+            ))
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;
@@ -363,29 +367,45 @@ async fn read_file_lines_range(
     Ok(format_lines_with_numbers(
         &result_lines,
         show_line_numbers,
-        show_hash,
+        show_line_hashes,
     ))
 }
 
-/// Format lines with pipe-separated line numbers and optional hashes
+/// Format lines with pipe-separated line numbers (LLM-friendly format)
 ///
 /// Uses visual separation to prevent confusion between metadata and code:
 /// ```text
-/// 10:a3d1 | def calculate_sum(a, b):
-/// 11:f2a1 |     return a + b
-/// 12:8b2c |
+/// 10 | def calculate_sum(a, b):
+/// 11 |     return a + b
+/// 12 |
 /// ```
+///
+/// Note: Preserves ALL empty lines for accurate indentation/structure visibility
 fn format_lines_with_numbers(
     lines: &[(usize, String)],
     show_line_numbers: bool,
-    show_hash: bool,
+    show_hashes: bool,
 ) -> String {
     if lines.is_empty() {
         return String::new();
     }
 
-    if !show_line_numbers && !show_hash {
-        // Return raw content without metadata
+    if show_hashes {
+        // Hashline format: "{N}:{hash}|{content}"
+        // The hash is a stable 2-char FNV-1a fingerprint of the line content.
+        // Agents reference it in replaceLines via `line_hash` to detect staleness.
+        return lines
+            .iter()
+            .map(|(line_num, content)| {
+                let hash = compute_line_hash(content);
+                format!("{}:{}|{}", line_num, hash, content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+
+    if !show_line_numbers {
+        // Return raw content without line numbers
         return lines
             .iter()
             .map(|(_, content)| content.as_str())
@@ -395,31 +415,17 @@ fn format_lines_with_numbers(
 
     // Add header for clarity
     let mut result = vec![
-        "[File Content - Metadata is for reference only]".to_string(),
+        "[File Content - Line numbers are for reference only]".to_string(),
         "─────────────────────────────────────────────────────".to_string(),
     ];
 
-    // Format each line
+    // Format each line with pipe separator
     for (line_num, content) in lines {
-        let mut prefix = String::new();
-
-        if show_line_numbers {
-            prefix.push_str(&format!("{:4}", line_num));
-        }
-
-        if show_hash {
-            let hash = super::utils::compute_line_hash(content);
-            if !prefix.is_empty() {
-                prefix.push(':');
-            }
-            prefix.push_str(&hash);
-        }
-
-        result.push(format!("{} | {}", prefix, content));
+        result.push(format!("{:4} | {}", line_num, content));
     }
 
     result.push("─────────────────────────────────────────────────────".to_string());
-    result.push("(Note: Metadata and '|' symbols are NOT part of the code)".to_string());
+    result.push("(Note: Line numbers and '|' symbols are NOT part of the code)".to_string());
 
     result.join("\n")
 }
@@ -441,18 +447,6 @@ mod tests {
         assert!(result.contains("   1 | #include <stdio.h>"));
         assert!(result.contains("   2 | "));
         assert!(result.contains("   3 | int main() {"));
-    }
-
-    #[test]
-    fn test_format_lines_with_hash() {
-        let lines = vec![(1, "test line".to_string())];
-
-        let result = format_lines_with_numbers(&lines, true, true);
-        // MD5 of "test line" starts with "8b2c"
-        // But verifying exact hash might be brittle if implementation changes,
-        // checking format structure is safer
-        assert!(result.contains("   1:"));
-        assert!(result.contains("| test line"));
     }
 
     #[test]
@@ -490,11 +484,50 @@ mod tests {
     #[test]
     fn test_format_lines_includes_header_and_footer() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
+
         let result = format_lines_with_numbers(&lines, true, false);
 
         assert!(result.contains("[File Content"));
         assert!(result.contains("NOT part of the code"));
         assert!(result.contains("   1 | int main() {}"));
         assert!(result.contains("   2 | "));
+    }
+
+    #[test]
+    fn test_format_lines_hashline_format() {
+        let lines = vec![
+            (11, "function hello() {".to_string()),
+            (22, "  return \"world\";".to_string()),
+            (33, "}".to_string()),
+        ];
+
+        let result = format_lines_with_numbers(&lines, false, true);
+
+        // Each line must be {N}:{2-char-hex}|{content}
+        let result_lines: Vec<&str> = result.lines().collect();
+        assert_eq!(result_lines.len(), 3);
+
+        // Verify format: starts with line number, colon, 2 hex chars, pipe
+        for line in &result_lines {
+            let parts: Vec<&str> = line.splitn(2, '|').collect();
+            assert_eq!(parts.len(), 2, "Hashline must contain '|' separator");
+            let prefix = parts[0];
+            let colon_pos = prefix.find(':').expect("Hashline prefix must contain ':'");
+            let hash_part = &prefix[colon_pos + 1..];
+            assert_eq!(hash_part.len(), 2, "Hash must be 2 hex chars");
+            assert!(
+                hash_part.chars().all(|c| c.is_ascii_hexdigit()),
+                "Hash must be hex digits"
+            );
+        }
+
+        // Verify content is preserved after '|'
+        assert!(result_lines[0].ends_with("function hello() {"));
+        assert!(result_lines[1].ends_with("  return \"world\";"));
+        assert!(result_lines[2].ends_with('}'));
+
+        // Verify determinism: same content → same hash
+        let result2 = format_lines_with_numbers(&lines, false, true);
+        assert_eq!(result, result2);
     }
 }

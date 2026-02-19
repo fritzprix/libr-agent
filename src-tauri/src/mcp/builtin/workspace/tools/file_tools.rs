@@ -34,20 +34,27 @@ pub fn create_read_file_tool() -> MCPTool {
     props.insert(
         "showLineNumbers".to_string(),
         boolean_prop(Some(
-            "If true, includes line numbers in the output (default: false)",
+            "Show decorated line numbers in output (e.g. '  42 | code'). Use showLineHashes instead for replaceLines workflows.",
         )),
     );
     props.insert(
-        "showHash".to_string(),
+        "showLineHashes".to_string(),
         boolean_prop(Some(
-            "If true, includes short MD5 hash for each line. REQUIRED for editing with editLineInFile.",
+            "Emit hashline format: '{N}:{hash}|{content}' (DEFAULT: true). The 2-char FNV-1a hash is a stable fingerprint of the line — pass it as `line_hash` in replaceLines for staleness-safe editing. Set to false only for raw content output (e.g. copy-paste).",
         )),
     );
 
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read the contents of a file from the workspace. Returns file content as text. Supports optional line range reading.".to_string(),
+        description: "Read a file. Default output is hashline format: `{N}:{hash}|{content}` (e.g. `42:a3|fn foo() {`).
+
+The 2-char hash is a staleness fingerprint — pass it as `line_hash` in replaceLines to detect concurrent changes.
+
+- readFile(path) — entire file with hashlines
+- readFile(path, startLine, endLine) — specific range
+- readFile(path, showLineHashes=false) — raw content (copy-paste)"
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -61,7 +68,7 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path from workspace root. Examples: 'src/main.rs', 'config.json'"),
+            Some("Relative path from workspace root (e.g. 'src/main.rs')"),
         ),
     );
     props.insert(
@@ -69,22 +76,27 @@ pub fn create_write_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Content to write to the file. Maximum size enforced server-side."),
+            Some("File content to write. Empty string creates an empty file."),
         ),
     );
     props.insert(
         "overwrite".to_string(),
-        boolean_prop(Some("Allow overwriting existing files? (default: false)")),
+        boolean_prop(Some(
+            "Allow overwriting existing files (default: false). When true, replaces entire content and returns a diff.",
+        )),
     );
 
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create a new file or overwrite an existing one (if overwrite=true). Returns success status and diffs.".to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["path".to_string(), "content".to_string()],
-        ),
+        description: "Create a new file or overwrite an existing one.
+
+- overwrite=false (default): fails if file already exists
+- overwrite=true: replaces entire content, returns a diff
+
+Use replaceLines for targeted edits instead of full overwrites."
+            .to_string(),
+        input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -104,7 +116,13 @@ pub fn create_list_directory_tool() -> MCPTool {
     MCPTool {
         name: "listDirectory".to_string(),
         title: Some("List Directory".to_string()),
-        description: "List all files and subdirectories in a workspace directory. Returns names and types (file/directory).".to_string(),
+        description: "List files and subdirectories in a workspace directory.
+
+- listDirectory('.') — workspace root
+- listDirectory('src/components') — subdirectory
+
+Returns names and types (file/directory). Use searchFiles for glob-based filtering."
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -143,57 +161,7 @@ pub fn create_import_file_tool() -> MCPTool {
     }
 }
 
-pub fn create_edit_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to modify (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "oldString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Exact text content to find and replace. Must match precisely including whitespace."),
-        ),
-    );
-    props.insert(
-        "newString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("New text content to replace oldString with. Use empty string to delete the matched text."),
-        ),
-    );
-    props.insert(
-        "dryRun".to_string(),
-        boolean_prop(Some(
-            "If true, returns a preview of the changes without modifying the file (default: false)",
-        )),
-    );
-
-    MCPTool {
-        name: "editFile".to_string(),
-        title: Some("Edit File (Deprecated)".to_string()),
-        description: "[DEPRECATED] Replace a single string in a file. Use `editLineInFile` instead for safer, hash-verified editing.".to_string(),
-        input_schema: object_schema(
-            props,
-            vec![
-                "path".to_string(),
-                "oldString".to_string(),
-                "newString".to_string(),
-            ],
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_search_line_in_file_tool() -> MCPTool {
+pub fn create_search_lines_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -229,18 +197,20 @@ pub fn create_search_line_in_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "searchLineInFile".to_string(),
+        name: "searchLines".to_string(),
         title: Some("Search Lines in File".to_string()),
-        description:
-            "Search for text patterns in a file and get matching line numbers with context."
-                .to_string(),
+        description: "Search for text patterns within a file. Returns matching line numbers and surrounding context.
+
+Modes: `regex` (default) or `exact`. Set `ignoreCase=true` for case-insensitive.
+
+Use the returned line numbers directly in replaceLines. For finding files by name, use searchFiles instead.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "pattern".to_string()]),
         output_schema: None,
         annotations: None,
     }
 }
 
-pub fn create_edit_line_in_file_tool() -> MCPTool {
+pub fn create_replace_lines_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -255,22 +225,34 @@ pub fn create_edit_line_in_file_tool() -> MCPTool {
     let mut edit_item_props = HashMap::new();
     edit_item_props.insert(
         "line".to_string(),
-        integer_prop(Some(1), None, Some("Line number to edit (1-based)")),
+        integer_prop(Some(1), None, Some("Start line number (1-based, required). For single-line edit this is the only line. For range edit this is the first line of the replaced range.")),
+    );
+    edit_item_props.insert(
+        "endLine".to_string(),
+        integer_prop(Some(1), None, Some("End line number (1-based, optional). When provided, lines [line..endLine] are replaced with new_value. new_value may contain \\n for multi-line replacement. Must be ≥ line.")),
+    );
+    edit_item_props.insert(
+        "line_hash".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Optional: 2-char FNV-1a hash of the START line from readFile(showLineHashes=true). Detects staleness. Alias: 'startHash'. Copy directly from '{N}:{hash}|content' prefix."),
+        ),
+    );
+    edit_item_props.insert(
+        "endHash".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Optional: 2-char hash of the END line (range mode only). Provides staleness detection on both boundaries."),
+        ),
     );
     edit_item_props.insert(
         "old_value".to_string(),
         string_prop(
             None,
             None,
-            Some("Optional: Expected current line content for validation. If provided, must match exactly."),
-        ),
-    );
-    edit_item_props.insert(
-        "expected_hash".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Optional: Expected MD5 hash (first 4 chars) of the line. If provided, must match current line hash."),
+            Some("Optional: exact current content of the line for validation (single-line mode only). Ignored in range mode. Prefer line_hash instead."),
         ),
     );
     edit_item_props.insert(
@@ -278,17 +260,13 @@ pub fn create_edit_line_in_file_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("New line content (single-line only, no newline characters)"),
+            Some("Replacement content. Single-line mode: no \\n allowed. Range mode (endLine present): \\n is allowed and each \\n-separated segment becomes a new line."),
         ),
     );
 
     let edit_item_schema = object_schema(
         edit_item_props,
-        vec![
-            "line".to_string(),
-            "new_value".to_string(),
-            "expected_hash".to_string(),
-        ],
+        vec!["line".to_string(), "new_value".to_string()],
     );
 
     props.insert(
@@ -302,9 +280,27 @@ pub fn create_edit_line_in_file_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "editLineInFile".to_string(),
+        name: "replaceLines".to_string(),
         title: Some("Edit Multiple Lines in File".to_string()),
-        description: "Edit multiple lines in a file atomically using line numbers. All edits succeed or all fail.".to_string(),
+        description: "Replace lines in a file. All edits in one call are atomic — all succeed or all fail.\n\
+\n\
+MODES:\n\
+  Single-line: { line, line_hash?, new_value }          — new_value must not contain \\n\n\
+  Range:       { line, endLine, line_hash?, endHash?,   — new_value may contain \\n\n\
+                 new_value }\n\
+\n\
+Workflow: readFile → copy hash from '42:a3|...' prefix → pass as line_hash → hash mismatch triggers staleness error → re-read and retry.\n\
+\n\
+Examples:\n\
+  // single-line with staleness check\n\
+  { path: 'src/main.rs', edits: [{ line: 42, line_hash: 'a3', new_value: 'let x = 2;' }] }\n\
+\n\
+  // range replacement\n\
+  { path: 'src/lib.rs', edits: [{ line: 42, endLine: 58, line_hash: 'a3', endHash: '0e',\n\
+    new_value: 'fn foo() {\\n    todo!()\\n}' }] }\n\
+\n\
+  // batch (multiple edits, one call)\n\
+  { path: 'src/main.rs', edits: [{ line: 10, new_value: 'x' }, { line: 25, new_value: 'y' }] }".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
         output_schema: None,
         annotations: None,
@@ -325,56 +321,11 @@ pub fn create_delete_file_tool() -> MCPTool {
     MCPTool {
         name: "deleteFile".to_string(),
         title: Some("Delete File".to_string()),
-        description: "Delete a file from the workspace. Permanently removes the file.".to_string(),
+        description: "Permanently delete a file from the workspace. Irreversible.
+
+For partial content changes, use replaceLines instead."
+            .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_edit_file_multi_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to modify (from workspace root)"),
-        ),
-    );
-    // Define the replacement item object schema
-    let mut replacement_props = HashMap::new();
-    replacement_props.insert(
-        "oldString".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Exact text to find and replace (must match precisely including whitespace)"),
-        ),
-    );
-    replacement_props.insert(
-        "newString".to_string(),
-        string_prop(None, None, Some("New text to replace oldString with")),
-    );
-
-    let replacement_item = object_schema(
-        replacement_props,
-        vec!["oldString".to_string(), "newString".to_string()],
-    );
-
-    props.insert(
-        "replacements".to_string(),
-        array_schema(
-            replacement_item,
-            Some("Array of replacements to apply sequentially. Each replacement must specify oldString and newString (max 50)."),
-        ),
-    );
-
-    MCPTool {
-        name: "editFileMulti".to_string(),
-        title: Some("Edit File (Multiple Replacements) [Deprecated]".to_string()),
-        description: "[DEPRECATED] Apply multiple text replacements. Use `editLineInFile` instead for safer, atomic, hash-verified editing.".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "replacements".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -418,9 +369,14 @@ pub fn create_search_files_tool() -> MCPTool {
     MCPTool {
         name: "searchFiles".to_string(),
         title: Some("Search Files by Name".to_string()),
-        description:
-            "Find files and directories using glob patterns. Searches for FILE NAMES, not content."
-                .to_string(),
+        description: "Find files and directories by glob pattern. Returns paths, not content.
+
+- searchFiles({pattern: '*.rs'}) — all Rust files in root
+- searchFiles({pattern: 'src/**/*.ts'}) — recursive TS files
+- Use `**` for recursive search
+
+For searching text inside files, use searchLines."
+            .to_string(),
         input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
         annotations: None,

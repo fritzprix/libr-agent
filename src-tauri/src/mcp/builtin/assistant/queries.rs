@@ -79,39 +79,6 @@ fn extract_assistant_description(config: &Value) -> String {
     "No description".to_string()
 }
 
-fn format_skills(config: &Value, server_map: &HashMap<String, String>) -> String {
-    let mut skills = Vec::new();
-
-    // Builtin services
-    if let Some(builtin) = config
-        .get("allowedBuiltInServiceAliases")
-        .and_then(|v| v.as_array())
-    {
-        let items: Vec<_> = builtin.iter().filter_map(|v| v.as_str()).collect();
-        if !items.is_empty() {
-            skills.push(format!("Built-in: {}", items.join(", ")));
-        }
-    }
-
-    // External MCP servers
-    if let Some(mcp) = config.get("mcpServerIds").and_then(|v| v.as_array()) {
-        let names: Vec<_> = mcp
-            .iter()
-            .filter_map(|v| v.as_str())
-            .map(|id| server_map.get(id).map(|s| s.as_str()).unwrap_or(id))
-            .collect();
-        if !names.is_empty() {
-            skills.push(format!("External: {}", names.join(", ")));
-        }
-    }
-
-    if skills.is_empty() {
-        "Base (no extra skills)".to_string()
-    } else {
-        skills.join(" | ")
-    }
-}
-
 /// List all assistants with pagination support
 pub async fn list_assistants(
     db: &sea_orm::DatabaseConnection,
@@ -150,9 +117,6 @@ pub async fn list_assistants(
     // Fetch paginated results using database-level pagination
     let result = repo.list_assistants_paginated(limit, offset).await;
 
-    // Fetch server mapping for skill resolution
-    let server_map = get_server_id_to_name_map().await;
-
     match result {
         Ok(models) => {
             let assistants: Vec<Value> = models
@@ -181,13 +145,11 @@ pub async fn list_assistants(
                 .iter()
                 .map(|a| {
                     let description = extract_assistant_description(&a["config"]);
-                    let skills = format_skills(&a["config"], &server_map);
                     format!(
-                        "• {} [ID: {}]\n  Description: {}\n  Skills: {}",
+                        "• {} [ID: {}]\n  Description: {}",
                         a["name"].as_str().unwrap_or("?"),
                         a["id"].as_str().unwrap_or("?"),
-                        description,
-                        skills
+                        description
                     )
                 })
                 .collect::<Vec<_>>()
@@ -272,9 +234,6 @@ pub async fn search_assistant(
 
     let result = repo.search_assistants(query).await;
 
-    // Fetch server mapping for skill resolution
-    let server_map = get_server_id_to_name_map().await;
-
     match result {
         Ok(models) => {
             let assistants: Vec<Value> = models
@@ -299,16 +258,14 @@ pub async fn search_assistant(
             let assistants_text = assistants
                 .iter()
                 .map(|a| {
-                    let skills = format_skills(&a["config"], &server_map);
                     format!(
-                        "• {} [ID: {}]\n  Skills: {}",
+                        "• {} [ID: {}]",
                         a["name"].as_str().unwrap_or("?"),
-                        a["id"].as_str().unwrap_or("?"),
-                        skills
+                        a["id"].as_str().unwrap_or("?")
                     )
                 })
                 .collect::<Vec<_>>()
-                .join("\n\n");
+                .join("\n");
 
             let hint = SuccessHint::new(
                 format!(
@@ -365,18 +322,63 @@ pub async fn get_assistant(
                 json!({})
             });
 
-            let config_display =
-                serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string());
-
             // Resolve server names for display
             let server_map = get_server_id_to_name_map().await;
-            let skills_display = format_skills(&config, &server_map);
+
+            // Extract fields for report
+            let system_prompt = config
+                .get("systemPrompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(No system prompt)");
+
+            let model_name = config
+                .get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            let provider = config
+                .get("provider")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+
+            // Format Tools
+            let tools_list = config
+                .get("allowedBuiltInServiceAliases")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            // Format MCP Servers
+            let mcp_servers_list = config
+                .get("mcpServerIds")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    if arr.is_empty() {
+                        return "None".to_string();
+                    }
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|id| {
+                            let name = server_map.get(id).map(|s| s.as_str()).unwrap_or("Unknown");
+                            format!("- {} (ID: {})", name, id)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_else(|| "None".to_string());
+
+            let report = format!(
+                "## Assistant Report: {}\n\n**ID:** `{}`\n**Model:** {} ({})\n\n### System Prompt (Personality & Instructions)\n```\n{}\n```\n\n### Capabilities (Weapons)\n**Built-in Tools:**\n{}\n\n**External Capability Servers (MCP):**\n{}",
+                model.name, model.id, model_name, provider, system_prompt, tools_list, mcp_servers_list
+            );
 
             let hint = SuccessHint::new(
-                format!(
-                    "Assistant: {}\nID: {}\nSkills: {}\n\nConfiguration:\n{}",
-                    model.name, model.id, skills_display, config_display
-                ),
+                report,
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
                     "Use builtin_assistant__deleteAssistant to remove this assistant".to_string(),

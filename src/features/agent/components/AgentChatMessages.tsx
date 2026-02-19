@@ -29,7 +29,7 @@ export function AgentChatMessages() {
   const prevMessagesLength = useRef(messages.length);
 
   // Group messages for display
-  const { groupedMessages } = useMessageGrouping(messages);
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
 
   // Convert pendingMessages to a Set of IDs for O(1) lookups
   // This prevents O(n*m) performance issues when checking if each message is pending
@@ -121,8 +121,7 @@ export function AgentChatMessages() {
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
-                // Optimization: Pass pre-calculated results array instead of global map
-                toolResults={groupedMessage.toolGroup.results}
+                toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
                 isPending={pendingMessageIds.has(groupedMessage.message.id)}

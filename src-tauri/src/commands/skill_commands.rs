@@ -1,9 +1,13 @@
 use crate::session::get_session_manager;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+use crate::repositories::settings_repository::SettingsRepository;
+use crate::state::get_settings_repository;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SkillMetadata {
@@ -44,8 +48,28 @@ pub async fn open_skills_directory_in_explorer(directory: Option<String>) -> Res
 }
 
 pub async fn get_configured_skills_directory() -> Result<String, String> {
-    // Always use default directory (auto-copied from bundled_skills on startup)
-    // Assistant-specific skills can override via {data_dir}/assistants/{id}/skills
+    let repo = get_settings_repository();
+
+    match repo.get("systemSettings").await {
+        Ok(Some(model)) => match serde_json::from_str::<Value>(&model.value) {
+            Ok(json) => {
+                if let Some(skills_dir) = json.get("skillsDirectory").and_then(|v| v.as_str()) {
+                    if !skills_dir.is_empty() {
+                        return Ok(skills_dir.to_string());
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to parse systemSettings JSON: {}", e);
+            }
+        },
+        Err(e) => {
+            warn!("Failed to get systemSettings from repository: {}", e);
+        }
+        Ok(None) => {}
+    }
+
+    // Fallback to default
     get_default_skills_directory().await
 }
 
@@ -177,6 +201,9 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::TempDir;
+
+    // Note: resolve_skills() integration tests live in tests/skill_resolution_test.rs
+    // (lib unit tests cannot load native DLLs on Windows, so async tests go in tests/)
 
     #[test]
     fn test_parse_skill_metadata_valid() {
