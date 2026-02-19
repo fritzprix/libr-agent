@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { Button } from '@/components/ui';
-import { FolderOutput, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { Button, Input } from '@/components/ui';
+import {
+  FolderOpen,
+  FolderOutput,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
+} from 'lucide-react';
 import { SkillsListModal } from '../components/SkillsListModal';
 import { getLogger } from '@/lib/logger';
 
@@ -18,9 +25,16 @@ interface SkillMetadata {
 interface GeneralTabProps {
   localLanguage: string;
   onChange: (lang: string) => void;
+  skillsDirectory?: string;
+  onSkillsDirectoryChange: (path: string) => void;
 }
 
-function GeneralTabComponent({ localLanguage, onChange }: GeneralTabProps) {
+function GeneralTabComponent({
+  localLanguage,
+  onChange,
+  skillsDirectory,
+  onSkillsDirectoryChange,
+}: GeneralTabProps) {
   const { t } = useTranslation('common');
   const [verificationStatus, setVerificationStatus] = useState<
     'idle' | 'loading' | 'success' | 'error'
@@ -28,32 +42,64 @@ function GeneralTabComponent({ localLanguage, onChange }: GeneralTabProps) {
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [skillsDirectory, setSkillsDirectory] = useState<string>('');
 
   useEffect(() => {
-    async function loadSkills() {
+    async function verifySkills() {
+      if (!skillsDirectory) {
+        try {
+          // If no directory is set, try to get the default one
+          const defaultDir = await invoke<string>(
+            'get_default_skills_directory',
+          );
+          onSkillsDirectoryChange(defaultDir);
+          return; // The change will trigger the effect again
+        } catch (error) {
+          logger.warn('Failed to get default skills directory', error);
+          // Fall through to empty state
+        }
+      }
+
+      const dirToVerify = skillsDirectory || '';
+
+      if (!dirToVerify) {
+        setVerificationStatus('idle');
+        setSkills([]);
+        return;
+      }
+
       setVerificationStatus('loading');
       try {
-        // Get default skills directory (auto-copied from bundled_skills)
-        const defaultDir = await invoke<string>('get_default_skills_directory');
-        setSkillsDirectory(defaultDir);
-
-        // Scan skills in the directory
         const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
-          directory: defaultDir,
+          directory: dirToVerify,
         });
         setSkills(result);
         setVerificationStatus('success');
       } catch (error) {
-        logger.error('Failed to load skills', error);
+        logger.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
         setErrorMessage(String(error));
         setSkills([]);
       }
     }
 
-    loadSkills();
-  }, []);
+    verifySkills();
+  }, [skillsDirectory]);
+
+  const handleBrowseEvents = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: 'Select Skills Directory',
+      });
+
+      if (selected && typeof selected === 'string') {
+        onSkillsDirectoryChange(selected);
+      }
+    } catch (error) {
+      logger.error('Failed to open folder dialog', error);
+    }
+  };
 
   const handleOpenDirectory = async () => {
     if (!skillsDirectory) {
@@ -92,74 +138,72 @@ function GeneralTabComponent({ localLanguage, onChange }: GeneralTabProps) {
 
       <div className="min-w-0">
         <label className="block text-muted-foreground mb-2 font-medium">
-          {t('settings.general.globalSkills', 'Global Skills')}
+          {t('settings.general.skillsDirectory', 'Skills Directory')}
         </label>
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2 max-w-lg">
+            <Input
+              value={skillsDirectory || ''}
+              onChange={(e) => onSkillsDirectoryChange(e.target.value)}
+              placeholder="Select a directory for local skills..."
+              className="bg-background border text-foreground flex-1"
+            />
+            <Button
+              variant="outline"
+              onClick={handleBrowseEvents}
+              title="Browse"
+              className="px-3"
+              aria-label="Browse skills directory"
+            >
+              <FolderOpen className="w-4 h-4" />
+            </Button>
+            {skillsDirectory && (
+              <Button
+                variant="outline"
+                onClick={handleOpenDirectory}
+                title="Open in Explorer"
+                className="px-3"
+              >
+                <FolderOutput className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+
+          {/* Verification Status */}
+          <div className="flex items-center gap-2 text-sm h-5">
             {verificationStatus === 'loading' && (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">
-                  {t('settings.general.loadingSkills', 'Loading skills...')}
-                </span>
+                <span className="text-muted-foreground">Verifying...</span>
               </>
             )}
             {verificationStatus === 'success' && (
-              <>
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 hover:underline focus:outline-none"
+              >
                 <CheckCircle className="w-4 h-4 text-success" />
-                <span className="text-sm text-muted-foreground">
-                  {skills.length}{' '}
-                  {t('settings.general.skillsFound', 'skills available')}
+                <span className="text-success">
+                  Found {skills.length} skill{skills.length !== 1 ? 's' : ''}
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsModalOpen(true)}
-                  className="ml-2"
-                >
-                  {t('settings.general.viewSkills', 'View Skills')}
-                </Button>
-                {skillsDirectory && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleOpenDirectory}
-                    title={t(
-                      'settings.general.openInExplorer',
-                      'Open in Explorer',
-                    )}
-                  >
-                    <FolderOutput className="w-4 h-4" />
-                  </Button>
-                )}
-              </>
+              </button>
             )}
             {verificationStatus === 'error' && (
               <>
                 <AlertCircle className="w-4 h-4 text-destructive" />
-                <span className="text-sm text-destructive">
-                  {errorMessage ||
-                    t(
-                      'settings.general.skillsLoadError',
-                      'Failed to load skills',
-                    )}
+                <span className="text-destructive">
+                  {errorMessage || 'Invalid directory'}
                 </span>
               </>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'settings.general.globalSkillsDescription',
-              'Global skills are automatically provided with LibrAgent. Assistant-specific skills can be configured per assistant.',
-            )}
-          </p>
-          {skillsDirectory && (
-            <p className="text-xs text-muted-foreground/70">
-              {t('settings.general.skillsLocation', 'Location')}:{' '}
-              {skillsDirectory}
-            </p>
-          )}
         </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.general.skillsDirectoryDescription',
+            'Directory containing Agent Skills (folders with SKILL.md). New skills will be discovered automatically.',
+          )}
+        </p>
       </div>
 
       <SkillsListModal
@@ -173,6 +217,9 @@ function GeneralTabComponent({ localLanguage, onChange }: GeneralTabProps) {
 
 export default React.memo(GeneralTabComponent, (prev, next) => {
   return (
-    prev.localLanguage === next.localLanguage && prev.onChange === next.onChange
+    prev.localLanguage === next.localLanguage &&
+    prev.skillsDirectory === next.skillsDirectory &&
+    prev.onChange === next.onChange &&
+    prev.onSkillsDirectoryChange === next.onSkillsDirectoryChange
   );
 });

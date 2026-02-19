@@ -37,8 +37,8 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
     )
 }
 
-/// List all registered MCP servers (Base tool)
-pub fn list_servers_tool_base() -> MCPTool {
+/// List all registered MCP servers
+pub fn list_servers_tool() -> MCPTool {
     MCPTool {
         name: "listServers".to_string(),
         title: Some("List Servers".to_string()),
@@ -90,7 +90,7 @@ pub fn search_server_tool() -> MCPTool {
     MCPTool {
         name: "searchServer".to_string(),
         title: Some("Search Server".to_string()),
-        description: "[DEPRECATED] Use `listServers` with `query` parameter instead.".to_string(),
+        description: "Search for MCP servers by name".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -284,23 +284,23 @@ This tool tests the server by:
     }
 }
 
-/// List all available built-in LibrAgent tools (NEW NAME)
-pub fn list_builtin_tools_tool() -> MCPTool {
+/// List all available internal LibrAgent tools (NEW NAME)
+pub fn list_internal_tools_tool() -> MCPTool {
     MCPTool {
-        name: "listBuiltinTools".to_string(),
-        title: Some("List Built-in Tools".to_string()),
-        description: "List tool schemas from BUILT-IN LibrAgent capabilities.
+        name: "listInternalTools".to_string(),
+        title: Some("List Internal Tools".to_string()),
+        description: "List tool schemas from INTERNAL LibrAgent services.
 
-⚠️ IMPORTANT: This tool lists NATIVE capabilities (workspace, browser, etc.).
+⚠️ IMPORTANT: This tool does NOT work with external MCP servers.
 
-🏠 BUILT-IN SERVICES (this tool):
+🏠 INTERNAL SERVICES (this tool):
 • planning, knowledge, browser, workspace
 • content_store, assistant, playbook
 • bootstrap, ui, mcp_manager
 
-🌐 MCP SERVERS (use listServers):
-• Use listServers to see user-added MCP servers
-• Add to assistant via updateAssistant(mcpServerIds: [...])
+🌐 EXTERNAL SERVERS (not supported):
+• Use listExternalServers to see user-registered servers
+• Use verifyExternalServer to check specific server tools
 • Add to assistant via updateAssistant(mcpServerIds: [...])
 
 PAGINATION:
@@ -324,58 +324,33 @@ Results are paginated (20 tools per page) for large result sets.
     }
 }
 
-/// List all registered MCP servers (NEW NAME)
-pub fn list_servers_tool() -> MCPTool {
-    let mut tool = list_servers_tool_base();
-    tool.name = "listServers".to_string();
-    tool.title = Some("List MCP Servers".to_string());
-    tool.description = "List or search registered MCP servers.
+/// List all registered external MCP servers (NEW NAME)
+pub fn list_external_servers_tool() -> MCPTool {
+    let mut tool = list_servers_tool();
+    tool.name = "listExternalServers".to_string();
+    tool.title = Some("List External Servers".to_string());
+    tool.description = "List all registered EXTERNAL MCP servers.
 
-🌐 SERVERS (this tool):
-• User-added MCP servers (github-mcp, postgres-mcp, etc.)
-• Use `query` parameter to filter by name.
+🌐 EXTERNAL SERVERS (this tool):
+• User-registered MCP servers (yahoo-finance-mcp, ddg-search, etc.)
 
-🏠 BUILT-IN TOOLS (use listBuiltinTools):
-• LibrAgent native capabilities (planning, workspace, etc.)
+🏠 INTERNAL SERVICES (use listInternalTools):
+• LibrAgent built-in services (planning, knowledge, browser, workspace, etc.)
 
 ⚠️ MANDATORY:
-1. Extract the 'id' (UUID) from the list for assistant configuration.
+1. Extract the 'name' from the list for subsequent operations.
 2. Use this tool if server status is unknown.
 "
     .to_string();
-
-    // Add query parameter to schema
-    if let crate::mcp::schema::JSONSchemaType::Object {
-        properties,
-        required,
-        ..
-    } = &mut tool.input_schema.schema_type
-    {
-        if let Some(props) = properties {
-            props.insert(
-                "query".to_string(),
-                string_prop(
-                    None,
-                    None,
-                    Some("Optional search query to filter servers by name"),
-                ),
-            );
-        }
-        // Remove 'query' from required if it was copied from search tool (it wasn't, but safe to ensure)
-        if let Some(req) = required {
-            req.retain(|k| k != "query");
-        }
-    }
-
     tool
 }
 
 /// Returns all MCP Manager tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        list_servers_tool(),
-        list_builtin_tools_tool(),
-        // searchServer is hidden (deprecated)
+        list_external_servers_tool(),
+        list_internal_tools_tool(),
+        search_server_tool(),
         register_server_tool(),
         update_server_tool(),
         delete_server_tool(),

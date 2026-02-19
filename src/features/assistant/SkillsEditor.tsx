@@ -217,7 +217,7 @@ export default function SkillsEditor() {
             <p className="text-xs text-muted-foreground">
               {t(
                 'skills.dragDropDesc',
-                'Drag and drop a zip file or folder to add custom skills.',
+                'Drag and drop a zip file or folder to override skills.',
               )}
             </p>
           </div>
@@ -235,7 +235,7 @@ export default function SkillsEditor() {
                 className="text-destructive border-destructive/50 hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                {t('skills.reset', 'Reset to Default')}
+                {t('skills.reset', 'Reset Override')}
               </Button>
             )}
             <Button
@@ -313,7 +313,7 @@ export default function SkillsEditor() {
                           onClick={() => handleOverride(skill.name)}
                           title={t(
                             'skills.override',
-                            'Customize for this assistant',
+                            'Override for this assistant',
                           )}
                           disabled={isDisabled}
                         >
@@ -325,7 +325,7 @@ export default function SkillsEditor() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleRevert(skill.name)}
-                          title={t('skills.revert', 'Restore global default')}
+                          title={t('skills.revert', 'Revert to global')}
                           disabled={isDisabled}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

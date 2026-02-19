@@ -30,8 +30,6 @@ import { Settings, Wrench, Server } from 'lucide-react';
 export default function AssistantEditor() {
   const { draft, update } = useEditor<Assistant>();
   const { t } = useTranslation('common');
-  // Removed strict hiding toggle based on user feedback
-  // const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
     <div className="w-full">
@@ -39,7 +37,7 @@ export default function AssistantEditor() {
         <TabsList className="w-full grid grid-cols-3 mb-4">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            <span>{t('assistant.tabs.general', 'Profile')}</span>
+            <span>{t('assistant.tabs.general', 'General')}</span>
           </TabsTrigger>
           <TabsTrigger value="tools" className="flex items-center gap-2">
             <Wrench className="h-4 w-4" />
@@ -53,31 +51,25 @@ export default function AssistantEditor() {
 
         <TabsContent value="general" className="space-y-4 p-4">
           <InputWithLabel
-            label={t('assistant.nameLabel', 'Name')}
+            label={t('assistant.nameLabel')}
             value={draft?.name || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.name = e.target.value;
               })
             }
-            placeholder={t(
-              'assistant.namePlaceholder',
-              'e.g. Personal Assistant',
-            )}
+            placeholder={t('assistant.namePlaceholder')}
           />
 
           <TextareaWithLabel
-            label={t('assistant.instructionsLabel', 'Instructions')}
+            label={t('assistant.systemPromptLabel')}
             value={draft?.systemPrompt || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.systemPrompt = e.target.value;
               })
             }
-            placeholder={t(
-              'assistant.instructionsPlaceholder',
-              'Describe how this assistant should behave and what it can do...',
-            )}
+            placeholder={t('assistant.systemPromptPlaceholder')}
             className="min-h-52"
           />
         </TabsContent>
@@ -128,12 +120,12 @@ function MCPServersTab() {
     <div className="space-y-4">
       <div>
         <Label className="text-base font-semibold">
-          {t('assistant.mcp.label', 'Extensions')}
+          {t('assistant.mcp.label', 'MCP Servers')}
         </Label>
         <p className="text-sm text-muted-foreground mt-1">
           {t(
             'assistant.mcp.description',
-            'Connect external apps and services to expand functionality',
+            'Select which MCP servers this assistant can access',
           )}
         </p>
       </div>
@@ -142,13 +134,13 @@ function MCPServersTab() {
         <div className="text-center py-8 border rounded-lg bg-muted/20">
           <Server className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground mb-2">
-            {t('assistant.mcp.noActive', 'No extensions installed')}
+            {t('assistant.mcp.noActive', 'No active MCP servers found')}
           </p>
           <Link
-            to="/mcp-servers"
+            to="/settings"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
-            {t('assistant.mcp.addServersLink', 'Browse extensions')} →
+            {t('assistant.mcp.addServersLink', 'Add servers in settings')} →
           </Link>
         </div>
       ) : (
@@ -156,7 +148,7 @@ function MCPServersTab() {
           <Input
             placeholder={t(
               'assistant.mcp.searchPlaceholder',
-              'Search extensions...',
+              'Search servers...',
             )}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -165,7 +157,7 @@ function MCPServersTab() {
           <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
-                {t('assistant.mcp.noMatch', 'No extensions match your search')}
+                {t('assistant.mcp.noMatch', 'No servers match your search')}
               </p>
             ) : (
               filteredServers.map((server) => (
