@@ -183,7 +183,11 @@ impl WorkspaceServer {
                             let truncated_bytes = &content[..max_display_bytes.min(content.len())];
                             truncated_bytes.lines().take(max_display_lines).collect()
                         } else {
-                            content_lines.iter().take(max_display_lines).copied().collect()
+                            content_lines
+                                .iter()
+                                .take(max_display_lines)
+                                .copied()
+                                .collect()
                         };
                         let partial = truncated.join("\n");
                         format!(
