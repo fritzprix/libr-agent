@@ -15,3 +15,9 @@
 **Vulnerability:** `tokio::fs::read` reads entire files into memory without size checks, enabling DoS. Checking metadata size before reading introduces a TOCTOU race condition if the file grows between check and read.
 **Learning:** Metadata checks are insufficient for limiting resource usage during file I/O because file state is mutable.
 **Prevention:** Use `File::open` combined with `take(limit)` (or `read_to_end` with a capped buffer) to strictly enforce read limits at the I/O operation level.
+
+## 2026-02-19 - File Size Limit Bypass via Append
+
+**Vulnerability:** The `append_file_string` function in `SecureFileManager` did not check if appending content would exceed the configured maximum file size, allowing unbounded file growth beyond `LIBRAGENT_MAX_FILE_SIZE`.
+**Learning:** Append operations must validate the *resulting* file size (current size + append size), not just the size of the chunk being appended.
+**Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. use `saturating_add` to prevent integer overflow during size calculation.
