@@ -202,6 +202,9 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
+    // Note: resolve_skills() integration tests live in tests/skill_resolution_test.rs
+    // (lib unit tests cannot load native DLLs on Windows, so async tests go in tests/)
+
     #[test]
     fn test_parse_skill_metadata_valid() {
         let temp_dir = TempDir::new().unwrap();

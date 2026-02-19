@@ -1,7 +1,7 @@
 use log::{error, warn};
 
 mod agent;
-mod commands;
+pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
