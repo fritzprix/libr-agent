@@ -29,19 +29,10 @@ interface MCPServerDialogProps {
   onCancel: () => void;
 }
 
-interface KeyValuePair {
+interface CustomHeader {
   id: string;
   key: string;
   value: string;
-}
-
-interface MCPServerMetadata {
-  description?: string;
-  variableDefinitions?: Record<
-    string,
-    { label?: string; description?: string; required?: boolean; type?: string }
-  >;
-  [key: string]: unknown;
 }
 
 function MCPServerDialogComponent({
@@ -60,17 +51,11 @@ function MCPServerDialogComponent({
     }
     return '';
   });
-
-  // Environment Variables state (Key-Value List)
-  const [envVars, setEnvVars] = useState<KeyValuePair[]>(() => {
+  const [envJson, setEnvJson] = useState(() => {
     if (server.transport.type === 'stdio' && server.transport.env) {
-      return Object.entries(server.transport.env).map(([key, value]) => ({
-        id: createId(),
-        key,
-        value: typeof value === 'string' ? value : JSON.stringify(value),
-      }));
+      return JSON.stringify(server.transport.env, null, 2);
     }
-    return [];
+    return '{}';
   });
 
   // HTTP specific state
@@ -91,7 +76,7 @@ function MCPServerDialogComponent({
     return '';
   });
 
-  const [customHeaders, setCustomHeaders] = useState<KeyValuePair[]>(() => {
+  const [customHeaders, setCustomHeaders] = useState<CustomHeader[]>(() => {
     if (
       ((server.transport.type as string) === 'http' ||
         server.transport.type === 'http-sse') &&
@@ -129,27 +114,7 @@ function MCPServerDialogComponent({
     if (!draft.name.trim()) return false;
 
     if (draft.transport.type === 'stdio') {
-      const hasCommand = !!draft.transport.command.trim();
-
-      // Check required defined variables
-      const definitions = (draft.metadata as MCPServerMetadata | undefined)
-        ?.variableDefinitions;
-      if (definitions) {
-        const missingRequired = Object.entries(definitions).some(
-          ([key, def]) => {
-            if (def.required) {
-              // Check if it exists in envVars AND has a value
-              // (Note: envVars state is what we edit, draft is updated on save)
-              const v = envVars.find((item) => item.key === key);
-              return !v || !v.value.trim();
-            }
-            return false;
-          },
-        );
-        if (missingRequired) return false;
-      }
-
-      return hasCommand;
+      return !!draft.transport.command.trim();
     } else if (
       (draft.transport.type as string) === 'http' ||
       draft.transport.type === 'http-sse'
@@ -160,24 +125,50 @@ function MCPServerDialogComponent({
     return false;
   };
 
-  const handleAddEnvVar = () => {
-    setEnvVars([...envVars, { id: createId(), key: '', value: '' }]);
-  };
+  const validateEnvJson = (): {
+    valid: boolean;
+    error?: string;
+    env?: Record<string, string>;
+  } => {
+    try {
+      const parsed = JSON.parse(envJson);
 
-  const handleRemoveEnvVar = (id: string) => {
-    setEnvVars(envVars.filter((item) => item.id !== id));
-  };
+      // Check if it's an object (not array, null, etc.)
+      if (
+        typeof parsed !== 'object' ||
+        Array.isArray(parsed) ||
+        parsed === null
+      ) {
+        return {
+          valid: false,
+          error:
+            'Environment variables must be a JSON object, e.g., {"KEY": "value"}',
+        };
+      }
 
-  const handleUpdateEnvVar = (
-    id: string,
-    field: 'key' | 'value',
-    value: string,
-  ) => {
-    setEnvVars(
-      envVars.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item,
-      ),
-    );
+      // Check if all values are strings
+      const invalidEntries = Object.entries(parsed).filter(
+        ([, value]) => typeof value !== 'string',
+      );
+
+      if (invalidEntries.length > 0) {
+        const keys = invalidEntries.map(([key]) => key).join(', ');
+        return {
+          valid: false,
+          error: `All values must be strings. Invalid keys: ${keys}`,
+        };
+      }
+
+      return {
+        valid: true,
+        env: parsed as Record<string, string>,
+      };
+    } catch (err) {
+      return {
+        valid: false,
+        error: `Invalid JSON syntax: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      };
+    }
   };
 
   const handleAddHeader = () => {
@@ -212,13 +203,15 @@ function MCPServerDialogComponent({
 
     try {
       if (draft.transport.type === 'stdio') {
-        // Construct env object from key-value pairs
-        const env: Record<string, string> = {};
-        envVars.forEach((item) => {
-          if (item.key.trim()) {
-            env[item.key.trim()] = item.value;
-          }
-        });
+        // Validate environment variables for stdio transport
+        const envValidation = validateEnvJson();
+        if (!envValidation.valid) {
+          setValidationError(
+            envValidation.error || 'Invalid environment variables',
+          );
+          setIsSaving(false);
+          return;
+        }
 
         // Parse arguments from text input
         const args = argsText.trim()
@@ -231,7 +224,7 @@ function MCPServerDialogComponent({
           transport: {
             ...draft.transport,
             args,
-            env,
+            env: envValidation.env,
           },
         };
         await onSave(updatedDraft);
@@ -273,7 +266,7 @@ function MCPServerDialogComponent({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isNewServer ? 'Add Extension' : `Edit Extension: ${server.name}`}
+            {isNewServer ? 'Add MCP Server' : `Edit MCP Server: ${server.name}`}
           </DialogTitle>
         </DialogHeader>
 
@@ -288,7 +281,7 @@ function MCPServerDialogComponent({
           {/* Server Name */}
           <div className="space-y-2">
             <Label htmlFor="server-name">
-              Name <span className="text-destructive">*</span>
+              Server Name <span className="text-destructive">*</span>
             </Label>
             <Input
               id="server-name"
@@ -297,7 +290,7 @@ function MCPServerDialogComponent({
               placeholder="e.g., filesystem, github, sequential-thinking"
             />
             <p className="text-xs text-muted-foreground">
-              Unique identifier for this extension
+              Unique identifier for this MCP server
             </p>
           </div>
 
@@ -313,7 +306,7 @@ function MCPServerDialogComponent({
                   metadata: { ...draft.metadata, description: e.target.value },
                 })
               }
-              placeholder="Optional description for this extension"
+              placeholder="Optional description for this server"
               rows={2}
             />
           </div>
@@ -336,7 +329,7 @@ function MCPServerDialogComponent({
                     transport: { type: 'stdio', command: '', args: [] },
                   });
                   setArgsText('');
-                  setEnvVars([]);
+                  setEnvJson('{}');
                 } else {
                   setDraft({
                     ...draft,
@@ -385,7 +378,7 @@ function MCPServerDialogComponent({
                   placeholder="e.g., npx, node, python"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Executable command to start the extension
+                  Executable command to start the MCP server
                 </p>
               </div>
 
@@ -406,160 +399,21 @@ function MCPServerDialogComponent({
                 </p>
               </div>
 
-              {/* Environment Variables List */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label>Environment Variables</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddEnvVar}
-                    className="h-7 text-xs"
-                  >
-                    <Plus className="w-3 h-3 mr-1" /> Add Variable
-                  </Button>
-                </div>
-
-                {/* Defined Variables (from Preset) */}
-                {(server.metadata as MCPServerMetadata | undefined)
-                  ?.variableDefinitions && (
-                  <div className="space-y-4 mb-4 p-4 border rounded-md bg-muted/10">
-                    <h4 className="text-sm font-medium mb-2">
-                      Required Configuration
-                    </h4>
-                    {Object.entries(
-                      (server.metadata as MCPServerMetadata)
-                        .variableDefinitions || {},
-                    ).map(([key, def]) => {
-                      const envVar = envVars.find((v) => v.key === key);
-
-                      // Ensure the variable exists in state if it's defined
-                      if (!envVar) {
-                        // This logic is tricky inside render, but we relied on initial state.
-                        // If it's missing, the user might have deleted it.
-                        // We should probably rely on valid state.
-                        // For now, let's just render a controlled input that updates the envVars state.
-                      }
-
-                      const val = envVar?.value || '';
-
-                      return (
-                        <div key={key} className="space-y-2">
-                          <Label
-                            htmlFor={`env-${key}`}
-                            className="flex gap-1 items-center"
-                          >
-                            {def.label || key}
-                            {def.required && (
-                              <span className="text-destructive">*</span>
-                            )}
-                          </Label>
-                          <Input
-                            id={`env-${key}`}
-                            type={def.type === 'password' ? 'password' : 'text'}
-                            value={val}
-                            placeholder={def.label}
-                            onChange={(e) => {
-                              if (envVar) {
-                                handleUpdateEnvVar(
-                                  envVar.id,
-                                  'value',
-                                  e.target.value,
-                                );
-                              } else {
-                                // If it doesn't exist, add it
-                                setEnvVars((prev) => [
-                                  ...prev,
-                                  {
-                                    id: createId(),
-                                    key,
-                                    value: e.target.value,
-                                  },
-                                ]);
-                              }
-                            }}
-                          />
-                          {def.description && (
-                            <p className="text-xs text-muted-foreground">
-                              {def.description}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Custom/Other Variables */}
-                {envVars.filter(
-                  (item) =>
-                    !(server.metadata as MCPServerMetadata | undefined)
-                      ?.variableDefinitions?.[item.key],
-                ).length === 0 ? (
-                  !(server.metadata as MCPServerMetadata | undefined)
-                    ?.variableDefinitions && (
-                    <div className="text-xs text-muted-foreground italic py-2 border rounded-md border-dashed text-center bg-muted/20">
-                      No custom environment variables configured.
-                    </div>
-                  )
-                ) : (
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">
-                      Custom Variables
-                    </Label>
-                    {envVars
-                      .filter(
-                        (item) =>
-                          !(server.metadata as MCPServerMetadata | undefined)
-                            ?.variableDefinitions?.[item.key],
-                      )
-                      .map((item) => (
-                        <div key={item.id} className="flex gap-2 items-start">
-                          <div className="flex-1">
-                            <Input
-                              placeholder="Key (e.g. API_KEY)"
-                              value={item.key}
-                              onChange={(e) =>
-                                handleUpdateEnvVar(
-                                  item.id,
-                                  'key',
-                                  e.target.value,
-                                )
-                              }
-                              className="h-8 text-sm font-mono"
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <Input
-                              placeholder="Value"
-                              value={item.value}
-                              onChange={(e) =>
-                                handleUpdateEnvVar(
-                                  item.id,
-                                  'value',
-                                  e.target.value,
-                                )
-                              }
-                              type="password" // Mask values for security
-                              className="h-8 text-sm font-mono"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveEnvVar(item.id)}
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
+              <div className="space-y-2">
+                <Label htmlFor="stdio-env">Environment Variables (JSON)</Label>
+                <Textarea
+                  id="stdio-env"
+                  value={envJson}
+                  onChange={(e) => {
+                    setEnvJson(e.target.value);
+                    if (validationError) setValidationError(null);
+                  }}
+                  placeholder='{"KEY": "value"}'
+                  rows={3}
+                  className="font-mono text-sm"
+                />
                 <p className="text-xs text-muted-foreground">
-                  Environment variables passed to the process (e.g. API Keys).
+                  Optional environment variables as JSON object.
                 </p>
               </div>
             </>
@@ -594,7 +448,7 @@ function MCPServerDialogComponent({
                   placeholder="https://api.example.com/mcp"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Full URL to the remote extension endpoint
+                  Full URL to the remote MCP server endpoint
                 </p>
               </div>
 

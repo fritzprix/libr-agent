@@ -49,6 +49,7 @@ export interface SystemSettings {
   searchIndexFrequencyMinutes: number;
   activeSessionRetentionHours: number;
   shellIsolationLevel: IsolationLevel;
+  skillsDirectory?: string;
 }
 
 export interface Settings {
@@ -107,6 +108,7 @@ export const DEFAULT_SETTING: Settings = {
     searchIndexFrequencyMinutes: 5,
     activeSessionRetentionHours: 24,
     shellIsolationLevel: 'medium',
+    skillsDirectory: '',
   },
 };
 

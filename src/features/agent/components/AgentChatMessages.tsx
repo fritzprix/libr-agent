@@ -25,9 +25,11 @@ export function AgentChatMessages() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  // Keep track of previous message count to determine scroll behavior
+  const prevMessagesLength = useRef(messages.length);
 
   // Group messages for display
-  const { groupedMessages } = useMessageGrouping(messages);
+  const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
 
   // Convert pendingMessages to a Set of IDs for O(1) lookups
   // This prevents O(n*m) performance issues when checking if each message is pending
@@ -39,8 +41,14 @@ export function AgentChatMessages() {
   // Only auto-scroll if enabled
   useEffect(() => {
     if (autoScrollEnabled) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // If we have a NEW message, smooth scroll.
+      // If we are just streaming (same message count), jump to bottom (auto) to avoid jank.
+      const isNewMessage = messages.length > prevMessagesLength.current;
+      const behavior = isNewMessage ? 'smooth' : 'auto';
+
+      messagesEndRef.current?.scrollIntoView({ behavior });
     }
+    prevMessagesLength.current = messages.length;
   }, [messages, autoScrollEnabled]);
 
   // Throttle the refetch function to prevent excessive backend calls
@@ -113,8 +121,7 @@ export function AgentChatMessages() {
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
                 getAssistantName={getAssistantNameForMessage}
-                // Optimization: Pass pre-calculated results array instead of global map
-                toolResults={groupedMessage.toolGroup.results}
+                toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
                 isPending={pendingMessageIds.has(groupedMessage.message.id)}

@@ -1,6 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
-// use crate::agent::context::skills::SkillsContextProvider; // Removed
-
+use crate::agent::context::skills::SkillsContextProvider;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::commands::messages_commands::Message;
@@ -53,6 +52,9 @@ impl AgentSessionManager {
 
         // Register time/location context provider (high priority)
         registry.register(Box::new(TimeLocationContextProvider::new()));
+
+        // Register skills context provider
+        registry.register(Box::new(SkillsContextProvider::new()));
 
         log::info!(
             "✅ Context registry initialized with {} providers",
@@ -463,7 +465,7 @@ impl AgentSessionManager {
 
     /// Delete an agent session and all its data
     ///
-    /// **Cascade Philosophy:** "시간의 인과관계 - 근원이 사라지면 결과도 사라진다"
+    /// **Cascade Philosophy:** "부모를 지우면 자식도 지워진다"
     /// - DB-level CASCADE automatically deletes child session records
     /// - We must manually delete workspace directories for all descendants before DB deletion
     pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
@@ -478,7 +480,7 @@ impl AgentSessionManager {
 
         if !descendant_ids.is_empty() {
             log::info!(
-                "🌳 Cascade delete: {} will remove {} descendant session(s)",
+                "🌲 Cascade delete: {} will remove {} descendant session(s)",
                 session_id,
                 descendant_ids.len()
             );

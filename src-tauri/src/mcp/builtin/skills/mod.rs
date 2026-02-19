@@ -18,18 +18,6 @@ impl SkillsServer {
         Self { session_id }
     }
 
-    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
-        crate::mcp::types::BuiltinServerMetadata {
-            display_name: "Skills".to_string(),
-            description: "Provides access to skill documentation and guides".to_string(),
-            icon: None,
-        }
-    }
-
-    pub fn tools_static() -> Vec<MCPTool> {
-        vec![]
-    }
-
     async fn get_skills_directory() -> Result<String, String> {
         let repo = get_settings_repository();
 
