@@ -5,6 +5,8 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
+#[cfg(windows)]
+use crate::mcp::utils::command_helper::CommandExt;
 
 /// Terminal/Process management handlers
 /// Extracted from mod.rs for better code organization

@@ -23,6 +23,8 @@ use super::ShellType;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};
+#[cfg(windows)]
+use crate::mcp::utils::command_helper::CommandExt;
 
 /// Read a line from BufReader with lossy UTF-8 conversion
 ///

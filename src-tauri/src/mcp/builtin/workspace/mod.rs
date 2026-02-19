@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
+use crate::mcp::utils::command_helper::CommandExt;
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
 use tracing::info;
