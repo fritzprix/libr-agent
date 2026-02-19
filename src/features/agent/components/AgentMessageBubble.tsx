@@ -164,5 +164,39 @@ function AgentMessageBubbleImpl({
   );
 }
 
+const arePropsEqual = (
+  prev: AgentMessageBubbleProps,
+  next: AgentMessageBubbleProps,
+) => {
+  if (
+    prev.message !== next.message ||
+    prev.getAssistantName !== next.getAssistantName ||
+    prev.isPending !== next.isPending ||
+    prev.toolErrorGroup !== next.toolErrorGroup ||
+    prev.groupedMessages !== next.groupedMessages ||
+    prev.groupedToolCalls !== next.groupedToolCalls
+  ) {
+    return false;
+  }
+
+  // If toolResultsMap changed, check if it affects THIS component
+  if (prev.toolResultsMap !== next.toolResultsMap) {
+    if (next.groupedToolCalls && next.groupedToolCalls.length > 0) {
+      // Check each tool call ID in the NEW map vs OLD map
+      for (const call of next.groupedToolCalls) {
+        const prevRes = prev.toolResultsMap?.get(call.id);
+        const nextRes = next.toolResultsMap?.get(call.id);
+        if (prevRes !== nextRes) return false;
+      }
+      return true; // All relevant results are same
+    }
+    // If we rely on toolResultsMap but don't have groupedToolCalls (shouldn't happen for tool_group),
+    // we fallback to re-rendering to be safe.
+    return false;
+  }
+
+  return true;
+};
+
 // Memoized to prevent unnecessary re-renders of chat bubbles when unrelated state changes (e.g. streaming, scrolling)
-export const AgentMessageBubble = memo(AgentMessageBubbleImpl);
+export const AgentMessageBubble = memo(AgentMessageBubbleImpl, arePropsEqual);
