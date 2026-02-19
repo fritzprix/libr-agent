@@ -25,6 +25,8 @@ export function AgentChatMessages() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  // Keep track of previous message count to determine scroll behavior
+  const prevMessagesLength = useRef(messages.length);
 
   // Group messages for display
   const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
@@ -39,8 +41,14 @@ export function AgentChatMessages() {
   // Only auto-scroll if enabled
   useEffect(() => {
     if (autoScrollEnabled) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // If we have a NEW message, smooth scroll.
+      // If we are just streaming (same message count), jump to bottom (auto) to avoid jank.
+      const isNewMessage = messages.length > prevMessagesLength.current;
+      const behavior = isNewMessage ? 'smooth' : 'auto';
+
+      messagesEndRef.current?.scrollIntoView({ behavior });
     }
+    prevMessagesLength.current = messages.length;
   }, [messages, autoScrollEnabled]);
 
   // Throttle the refetch function to prevent excessive backend calls

@@ -311,7 +311,8 @@ mod tests {
             let embedded_hash = &hashline[colon + 1..pipe];
             let expected_hash = compute_line_hash(raw_line);
             assert_eq!(
-                embedded_hash, expected_hash,
+                embedded_hash,
+                expected_hash,
                 "embedded hash must match compute_line_hash for line {}",
                 i + 1
             );
