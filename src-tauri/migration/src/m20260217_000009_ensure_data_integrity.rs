@@ -1,4 +1,4 @@
-﻿use sea_orm_migration::prelude::*;
+use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
 
 #[derive(DeriveMigrationName)]
@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         let backend = manager.get_database_backend();
 
-        // ??Step 1: Fill NULL values in existing data
+        // ✅ Step 1: Fill NULL values in existing data
         db.execute(Statement::from_string(
             backend,
             r#"
@@ -70,7 +70,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
-        // Data migrations are not reversible
+        // Data migration은 rollback 불가능
         Ok(())
     }
 }

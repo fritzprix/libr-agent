@@ -22,6 +22,19 @@ pub mod ui;
 pub mod utils;
 pub mod workspace;
 
+/// List of built-in services that are always enabled and hidden from the UI configuration.
+/// These services provide core functionality essential for the agent's operation.
+pub const ESSENTIAL_BUILTIN_SERVICES: &[&str] = &[
+    "skills",
+    "workspace",
+    "contentstore", // content_store alias
+    "session_api",
+    "assistant",
+    "mcp_manager",
+    "bootstrap",
+    "ui",
+];
+
 #[cfg(test)]
 mod tests;
 

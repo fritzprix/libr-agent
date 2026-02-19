@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::{format_as_hashlines, format_file_size};
+use super::utils::{detect_language, format_file_size};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, permission_denied_error, ErrorCategory, SuccessHint,
     ToolGroup,
@@ -106,11 +106,8 @@ impl WorkspaceServer {
                     ),
                     "   → then: writeFile(path, content, overwrite=true)".to_string(),
                     "".to_string(),
-                    "⚠️ ALTERNATIVE: Use replaceLines for targeted edits (safer)".to_string(),
-                    format!(
-                        "   → replaceLines(\"{}\", [{{line, line_hash, new_value}}])",
-                        path_str
-                    ),
+                    "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
+                    format!("   → editFile(\"{}\", oldText, newText)", path_str),
                 ])
                 .to_mcp_result());
             } else {
@@ -149,6 +146,7 @@ impl WorkspaceServer {
 
                 let lines = content.lines().count();
                 let size_str = format_file_size(content.len() as u64);
+                let language = detect_language(std::path::Path::new(path_str));
 
                 let message_header = if file_exists {
                     "**✅ File Overwritten Successfully**"
@@ -162,26 +160,23 @@ impl WorkspaceServer {
                 );
 
                 if file_exists {
-                    // Show diff then hashlines of new content for immediate editing
+                    // Show diff for overwritten files
                     use super::utils::format_file_diff;
                     let diff_output = format_file_diff(&old_content, content, path_str);
                     message.push_str(&diff_output);
-                    message.push_str(&format!(
-                        "\nCurrent hashlines:\n```\n{}\n```\n",
-                        format_as_hashlines(content)
-                    ));
                 } else {
-                    // New file — show hashlines so agent can immediately use replaceLines
+                    // New file - show content preview (truncated if large)
                     let max_display_lines = 100;
                     let max_display_bytes = 51200; // 50KB
                     let content_lines: Vec<&str> = content.lines().collect();
                     let is_truncated = content_lines.len() > max_display_lines
                         || content.len() > max_display_bytes;
 
-                    let display_hashlines = if is_truncated {
-                        let truncated: Vec<&str> = if content.len() > max_display_bytes {
-                            let truncated_bytes = &content[..max_display_bytes.min(content.len())];
-                            truncated_bytes.lines().take(max_display_lines).collect()
+                    let display_content = if is_truncated {
+                        let truncated_lines: Vec<&str> = if content.len() > max_display_bytes {
+                            // Truncate by bytes first
+                            let truncated = &content[..max_display_bytes.min(content.len())];
+                            truncated.lines().take(max_display_lines).collect()
                         } else {
                             content_lines
                                 .iter()
@@ -189,18 +184,27 @@ impl WorkspaceServer {
                                 .copied()
                                 .collect()
                         };
-                        let partial = truncated.join("\n");
                         format!(
-                            "{}\n\n... (truncated: showing first {} of {} lines)",
-                            format_as_hashlines(&partial),
-                            truncated.len(),
+                            "{}\n\n... ⚠️ TRUNCATED: Showing first {} of {} lines ({}% shown)",
+                            truncated_lines.join("\n"),
+                            truncated_lines.len(),
                             content_lines.len(),
+                            (truncated_lines.len() * 100) / content_lines.len()
                         )
                     } else {
-                        format_as_hashlines(content)
+                        content.to_string()
                     };
 
-                    message.push_str(&format!("```\n{}\n```\n", display_hashlines));
+                    message.push_str(&format!(
+                        "**Content:**\n```{}\n{}\n```\n",
+                        language, display_content
+                    ));
+
+                    if is_truncated {
+                        message.push_str(
+                            "\n⚠️ **CONTENT TRUNCATED**: Only showing first 100 lines as preview\n",
+                        );
+                    }
                 }
 
                 // Context-aware next steps
@@ -220,7 +224,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use replaceLines for targeted edits to \"{}\"",
+                        "Use editFile(\"{}\", oldText, newText) for targeted edits",
                         path_str
                     ));
                 }

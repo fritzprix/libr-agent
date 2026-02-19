@@ -327,7 +327,7 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_search_lines(
+    pub async fn handle_search_line_in_file(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -430,7 +430,13 @@ impl WorkspaceServer {
         for (idx, line) in lines.iter().enumerate() {
             if regex.is_match(line) {
                 if line_numbers {
-                    matches.push(json!({ "line": idx + 1, "text": line }));
+                    // Compute hash for HashLine compatibility
+                    let hash = super::utils::compute_line_hash(line);
+                    matches.push(json!({
+                        "line": idx + 1,
+                        "text": line,
+                        "hash": hash
+                    }));
                 } else {
                     matches.push(json!(line));
                 }
@@ -489,10 +495,11 @@ impl WorkspaceServer {
                 if let Some(obj) = match_item.as_object() {
                     if let Some(line_num) = obj.get("line").and_then(|v| v.as_u64()) {
                         let line_content = obj.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                        let hash = obj.get("hash").and_then(|h| h.as_str()).unwrap_or("");
 
-                        // ✅ ENHANCED: Explicitly format line number in text output
-                        // Format: "Line 123: content"
-                        s.push_str(&format!("Line {}: {}\n", line_num, line_content));
+                        // ✅ ENHANCED: Explicitly format line number AND hash in text output
+                        // Format: "Line 123 (a1b2): content"
+                        s.push_str(&format!("Line {} ({}): {}\n", line_num, hash, line_content));
                     } else if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
                         s.push_str(&format!("{}\n", text));
                     }
@@ -513,7 +520,7 @@ impl WorkspaceServer {
             s.push_str(
                 "**Next Steps:**\n\
                 - Use readFile to see full file context\n\
-                - Use replaceLines to modify matched content\n\
+                - Use editFile to modify matched content\n\
                 - Refine search pattern for more specific results",
             );
 

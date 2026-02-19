@@ -4,7 +4,8 @@
 use async_trait::async_trait;
 
 pub mod registry;
-pub mod skills;
+// pub mod skills; // Removed in favor of MCP SkillsServer
+
 pub mod time_location;
 
 /// Trait for providers that inject read-only context into system prompts

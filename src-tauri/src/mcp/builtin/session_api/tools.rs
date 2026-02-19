@@ -1,4 +1,4 @@
-﻿use crate::mcp::types::MCPTool;
+use crate::mcp::types::MCPTool;
 use crate::mcp::utils::schema_builder::*;
 
 pub fn all_tools() -> Vec<MCPTool> {
@@ -12,7 +12,6 @@ pub fn all_tools() -> Vec<MCPTool> {
         send_message_tool(),
         terminate_session_tool(),
         list_assistants_tool(),
-        get_assistant_tool(),
     ]
 }
 
@@ -302,24 +301,6 @@ pub fn list_assistants_tool() -> MCPTool {
         title: Some("List Assistants".to_string()),
         description: "List all available assistants from the internal Session API.".to_string(),
         input_schema: object_prop(vec![], vec![], None),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn get_assistant_tool() -> MCPTool {
-    MCPTool {
-        name: "getAssistant".to_string(),
-        title: Some("Get Assistant Details".to_string()),
-        description: "Get detailed configuration of an assistant (system prompt, tools, model). Use this for meta-analysis or verifying capabilities.".to_string(),
-        input_schema: object_prop(
-            vec![(
-                "assistantId".to_string(),
-                string_prop_required("Target assistant ID"),
-            )],
-            vec!["assistantId".to_string()],
-            None,
-        ),
         output_schema: None,
         annotations: None,
     }
