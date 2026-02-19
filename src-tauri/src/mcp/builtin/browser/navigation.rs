@@ -1,4 +1,3 @@
-use super::interaction::create_rich_response;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, operation_failed_error, ErrorCategory, SuccessHint,
@@ -94,10 +93,10 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    let _suggestions = if result.contains("load wait timed out") {
+    let suggestions = if result.contains("load wait timed out") {
         vec![
             "Navigation timed out waiting for page load. The page may still be usable.".to_string(),
-            "Try content to see if content is available despite the timeout.".to_string(),
+            "Try extractWebContent to see if content is available despite the timeout.".to_string(),
             "If the page is blank or broken, create a new session and try a different URL."
                 .to_string(),
         ]
@@ -128,13 +127,13 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
         vec!["The site returned an error. Consider finding an alternative source.".to_string()]
     } else {
         vec![
-            "Extract page content with content to see what's on the page".to_string(),
+            "Extract page content with extractWebContent to see what's on the page".to_string(),
             "List interactive elements with listInteractable".to_string(),
         ]
     };
 
-    // ✅ Success: Return Rich Response
-    create_rich_response(&service, &browser_session_id, &result).await
+    let hint = SuccessHint::new(result, suggestions);
+    Ok(hint.to_mcp_result())
 }
 
 pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
@@ -182,8 +181,11 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    // ✅ Success: Return Rich Response
-    create_rich_response(&service, &browser_session_id, &result).await
+    let hint = SuccessHint::new(
+        result,
+        vec!["Extract content with extractWebContent to see the previous page".to_string()],
+    );
+    Ok(hint.to_mcp_result())
 }
 
 pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
@@ -231,8 +233,11 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    // ✅ Success: Return Rich Response
-    create_rich_response(&service, &browser_session_id, &result).await
+    let hint = SuccessHint::new(
+        result,
+        vec!["Extract content with extractWebContent to see the next page".to_string()],
+    );
+    Ok(hint.to_mcp_result())
 }
 
 pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCPResult, String> {
@@ -283,7 +288,7 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
 
     let hint = SuccessHint::new(
         result,
-        vec!["Navigate to a different URL with goto if needed".to_string()],
+        vec!["Navigate to a different URL with navigateToUrl if needed".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -323,7 +328,10 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
 
     let hint = SuccessHint::new(
         result,
-        vec!["Extract full page content with content to see what's on this page".to_string()],
+        vec![
+            "Extract full page content with extractWebContent to see what's on this page"
+                .to_string(),
+        ],
     );
     Ok(hint.to_mcp_result())
 }

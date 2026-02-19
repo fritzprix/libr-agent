@@ -65,11 +65,6 @@ impl WorkspaceServer {
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default to false for cleaner raw content
 
-        let show_hash = args
-            .get("showHash")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
         // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if start > end {
@@ -168,14 +163,8 @@ impl WorkspaceServer {
 
         // Use read_file_lines_range for all file reading to ensure consistent
         // handling of large files (spawn_blocking) and formatting.
-        let content = read_file_lines_range(
-            &safe_path,
-            start_line,
-            end_line,
-            show_line_numbers,
-            show_hash,
-        )
-        .await;
+        let content =
+            read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers).await;
 
         match content {
             Ok(content) => {
@@ -212,8 +201,6 @@ impl WorkspaceServer {
                         "Use editFile for targeted changes".to_string(),
                         "Use writeFile for full file updates".to_string(),
                         "Use searchLineInFile to find specific text".to_string(),
-                        "Need line numbers? Use 'showLineNumbers': true".to_string(),
-                        "Need extra safety? Use 'showHash': true".to_string(),
                     ],
                 );
 
@@ -252,7 +239,6 @@ async fn read_file_lines_range(
     start_line: Option<usize>,
     end_line: Option<usize>,
     show_line_numbers: bool,
-    show_hash: bool,
 ) -> Result<String, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -310,7 +296,7 @@ async fn read_file_lines_range(
                 ));
             }
 
-            Ok::<_, String>(format_lines_with_numbers(&result_lines, show_line_numbers, show_hash))
+            Ok::<_, String>(format_lines_with_numbers(&result_lines, show_line_numbers))
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;
@@ -360,32 +346,26 @@ async fn read_file_lines_range(
         ));
     }
 
-    Ok(format_lines_with_numbers(
-        &result_lines,
-        show_line_numbers,
-        show_hash,
-    ))
+    Ok(format_lines_with_numbers(&result_lines, show_line_numbers))
 }
 
-/// Format lines with pipe-separated line numbers and optional hashes
+/// Format lines with pipe-separated line numbers (LLM-friendly format)
 ///
 /// Uses visual separation to prevent confusion between metadata and code:
 /// ```text
-/// 10:a3d1 | def calculate_sum(a, b):
-/// 11:f2a1 |     return a + b
-/// 12:8b2c |
+/// 10 | def calculate_sum(a, b):
+/// 11 |     return a + b
+/// 12 |
 /// ```
-fn format_lines_with_numbers(
-    lines: &[(usize, String)],
-    show_line_numbers: bool,
-    show_hash: bool,
-) -> String {
+///
+/// Note: Preserves ALL empty lines for accurate indentation/structure visibility
+fn format_lines_with_numbers(lines: &[(usize, String)], show_line_numbers: bool) -> String {
     if lines.is_empty() {
         return String::new();
     }
 
-    if !show_line_numbers && !show_hash {
-        // Return raw content without metadata
+    if !show_line_numbers {
+        // Return raw content without line numbers
         return lines
             .iter()
             .map(|(_, content)| content.as_str())
@@ -395,31 +375,17 @@ fn format_lines_with_numbers(
 
     // Add header for clarity
     let mut result = vec![
-        "[File Content - Metadata is for reference only]".to_string(),
+        "[File Content - Line numbers are for reference only]".to_string(),
         "─────────────────────────────────────────────────────".to_string(),
     ];
 
-    // Format each line
+    // Format each line with pipe separator
     for (line_num, content) in lines {
-        let mut prefix = String::new();
-
-        if show_line_numbers {
-            prefix.push_str(&format!("{:4}", line_num));
-        }
-
-        if show_hash {
-            let hash = super::utils::compute_line_hash(content);
-            if !prefix.is_empty() {
-                prefix.push(':');
-            }
-            prefix.push_str(&hash);
-        }
-
-        result.push(format!("{} | {}", prefix, content));
+        result.push(format!("{:4} | {}", line_num, content));
     }
 
     result.push("─────────────────────────────────────────────────────".to_string());
-    result.push("(Note: Metadata and '|' symbols are NOT part of the code)".to_string());
+    result.push("(Note: Line numbers and '|' symbols are NOT part of the code)".to_string());
 
     result.join("\n")
 }
@@ -436,23 +402,11 @@ mod tests {
             (3, "int main() {".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, true, false);
+        let result = format_lines_with_numbers(&lines, true);
 
         assert!(result.contains("   1 | #include <stdio.h>"));
         assert!(result.contains("   2 | "));
         assert!(result.contains("   3 | int main() {"));
-    }
-
-    #[test]
-    fn test_format_lines_with_hash() {
-        let lines = vec![(1, "test line".to_string())];
-
-        let result = format_lines_with_numbers(&lines, true, true);
-        // MD5 of "test line" starts with "8b2c"
-        // But verifying exact hash might be brittle if implementation changes,
-        // checking format structure is safer
-        assert!(result.contains("   1:"));
-        assert!(result.contains("| test line"));
     }
 
     #[test]
@@ -471,7 +425,7 @@ mod tests {
             (11, "}".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, true, false);
+        let result = format_lines_with_numbers(&lines, true);
 
         // Should have pipe-separated format
         assert!(result.contains("   1 | #include <stdio.h>"));
@@ -490,7 +444,8 @@ mod tests {
     #[test]
     fn test_format_lines_includes_header_and_footer() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
-        let result = format_lines_with_numbers(&lines, true, false);
+
+        let result = format_lines_with_numbers(&lines, true);
 
         assert!(result.contains("[File Content"));
         assert!(result.contains("NOT part of the code"));

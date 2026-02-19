@@ -208,10 +208,3 @@ pub fn format_string_diff(replacements: &[(String, String)], file_path: &str) ->
 
     diff_lines.join("\n")
 }
-
-/// Compute a short MD5 hash for a line of text (first 4 chars)
-pub fn compute_line_hash(line: &str) -> String {
-    let digest = md5::compute(line);
-    let hash_str = format!("{:x}", digest);
-    hash_str[..4].to_string()
-}

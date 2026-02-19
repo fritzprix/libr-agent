@@ -86,59 +86,6 @@ pub fn prepare_command(command: &str, args: &[String]) -> (String, Vec<String>) 
     (command.to_string(), args.to_vec())
 }
 
-/// Constant for Windows CREATE_NO_WINDOW flag
-pub const CREATE_NO_WINDOW: u32 = 0x08000000;
-/// Constant for Windows CREATE_NEW_PROCESS_GROUP flag
-pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-
-/// Trait to provide a unified way to configure commands to be silent (no window on Windows)
-pub trait CommandExt {
-    /// Sets the CREATE_NO_WINDOW flag on Windows.
-    fn silent(&mut self) -> &mut Self;
-
-    /// Sets both CREATE_NO_WINDOW and CREATE_NEW_PROCESS_GROUP flags on Windows.
-    /// Useful for isolated background processes.
-    fn silent_isolated(&mut self) -> &mut Self;
-}
-
-impl CommandExt for std::process::Command {
-    fn silent(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            self.creation_flags(CREATE_NO_WINDOW);
-        }
-        self
-    }
-
-    fn silent_isolated(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            self.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-        }
-        self
-    }
-}
-
-impl CommandExt for tokio::process::Command {
-    fn silent(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            self.creation_flags(CREATE_NO_WINDOW);
-        }
-        self
-    }
-
-    fn silent_isolated(&mut self) -> &mut Self {
-        #[cfg(windows)]
-        {
-            self.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-        }
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

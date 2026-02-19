@@ -1,35 +1,16 @@
 {
   "mcpServers": {
     "mcp-hn": {
-      "description": "Read top stories from Hacker News.",
       "command": "uvx",
       "args": ["mcp-hn"]
     },
     "yfinance": {
-      "description": "Get real-time stock market data and financial news.",
       "command": "uvx",
       "args": ["yfin-mcp"]
     },
     "ddg-search": {
-      "description": "Search the web privately using DuckDuckGo.",
       "command": "uvx",
       "args": ["duckduckgo-mcp-server"]
-    },
-    "fred": {
-      "description": "Access economic data from the Federal Reserve (FRED).",
-      "command": "uvx",
-      "args": ["fred-data-mcp"],
-      "env": {
-        "FRED_API_KEY": ""
-      },
-      "variableDefinitions": {
-        "FRED_API_KEY": {
-          "required": true,
-          "label": "FRED API Key",
-          "description": "Get your API key from https://fred.stlouisfed.org/docs/api/api_key.html",
-          "type": "password"
-        }
-      }
     }
   }
 }

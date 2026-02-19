@@ -126,7 +126,7 @@ export default function BuiltInToolsEditor() {
       <Label className="text-base font-semibold">Built-in Tools</Label>
 
       <div className="text-sm text-muted-foreground">
-        Core features like web browsing and file management. Disable any tools
+        Assistants can use all built-in tools by default. Disable any services
         you want to restrict for this assistant.
       </div>
 

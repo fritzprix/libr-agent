@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.4] - 2026-02-19
+
+### 🚀 Features
+
+- **Session API Builtin Server**:
+  - New builtin MCP server exposing tools for session management, swarm context queries, and assistant lookups directly from within agent sessions.
+  - Added `GET /api/assistants/:id` endpoint for direct assistant retrieval by ID.
+
+- **Agent Model Picker**:
+  - Added `AgentModelPicker` component allowing users to select AI models and providers on a per-agent basis.
+
+- **Enhanced Assistant Tools**:
+  - Assistant tools now return detailed configuration including full tool schema and improved descriptions for better agent comprehension.
+
+- **Database Backup**:
+  - Implemented database backup functionality to safeguard user data.
+
+- **Skills Download Prompt**:
+  - `SkillsProvider` now detects missing skills and prompts the user to download them, improving the out-of-box agent experience.
+
+### 🐛 Fixes
+
+- **Windows Process Spawning**:
+  - Restored `CREATE_NO_WINDOW` flag for stdio MCP server child-process spawning on Windows that was accidentally dropped in a prior merge.
+
+- **Session API Tool Definitions**:
+  - Removed duplicate `createSession` tool entry and restored the missing `getAssistant` tool definition and handler.
+
+- **Skills Directory Resolution**:
+  - Fixed inconsistent skills directory path resolution that caused skills to be found on some code paths but not others.
+
+- **Migration & Cascade Deletes**:
+  - Restored missing database migrations and cascade delete logic that were lost during a prior merge.
+
 ## [0.5.3] - 2026-02-17
 
 ### 🧠 Performance & Decision Quality (The "Orchestrator" Update)

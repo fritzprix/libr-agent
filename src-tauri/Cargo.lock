@@ -3123,7 +3123,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libragent"
-version = "0.5.2"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3148,7 +3148,6 @@ dependencies = [
  "libsqlite3-sys",
  "log",
  "lopdf 0.31.0",
- "md5 0.8.0",
  "migration",
  "oauth2 4.4.2",
  "once_cell",
@@ -3259,7 +3258,7 @@ dependencies = [
  "itoa",
  "linked-hash-map",
  "log",
- "md5 0.7.0",
+ "md5",
  "nom",
  "rayon",
  "time",
@@ -3377,12 +3376,6 @@ name = "md5"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
-
-[[package]]
-name = "md5"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "memchr"
