@@ -45,23 +45,16 @@ function App() {
       let shouldPrompt = false;
       try {
         try {
-          const defaultPath = await invoke<string>(
-            'get_default_skills_directory',
-          );
-          try {
-            const result = await invoke<SkillMetadata[]>(
-              'scan_skills_directory',
-              { directory: defaultPath },
-            );
-            if (Array.isArray(result) && result.length === 0)
-              shouldPrompt = true;
-          } catch {
-            // specific error matching might be needed, but robustly: if we can't scan, maybe we should prompt?
-            // Or if directory doesn't exist.
-            shouldPrompt = true;
-          }
+          // Use get_aggregated_skills which respects the configured skillsDirectory
+          // (falling back to [AppData]/skills if not set), so a custom path
+          // won't trigger a false "Download?" prompt.
+          const result = await invoke<SkillMetadata[]>('get_aggregated_skills', {
+            assistantId: null,
+          });
+          if (Array.isArray(result) && result.length === 0) shouldPrompt = true;
         } catch {
-          console.error('Failed to check skills');
+          // If the command fails entirely (e.g. no skills dir at all), prompt to download
+          shouldPrompt = true;
         }
 
         if (shouldPrompt) {

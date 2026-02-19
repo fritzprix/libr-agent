@@ -72,15 +72,13 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.system?.skillsDirectory]);
 
-  // Initial fetch - wait for settings to load and only scan if skillsDirectory is configured
+  // Initial fetch - wait for settings to load, then scan.
+  // fetchSkills() already falls back to [AppData]/skills when skillsDirectory is not configured.
   useEffect(() => {
-    if (!settingsLoading && settings.system?.skillsDirectory) {
+    if (!settingsLoading) {
       fetchSkills();
-    } else if (!settingsLoading && !settings.system?.skillsDirectory) {
-      logger.warn('Skills directory not configured, skipping scan');
-      setSkills([]);
     }
-  }, [fetchSkills, settingsLoading, settings.system?.skillsDirectory]);
+  }, [fetchSkills, settingsLoading]);
 
   return (
     <SkillsContext.Provider
