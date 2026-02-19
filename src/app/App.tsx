@@ -1,8 +1,22 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useRef } from 'react';
+import { lazy, Suspense } from 'react';
+import { Toaster } from 'sonner';
 import AppSidebar from '../components/layout/AppSidebar';
-import { invoke } from '@tauri-apps/api/core';
-import { toast } from 'sonner';
+import { ThemeToggle } from '../components/common/ThemeToggle';
+import { AppHeader } from '../components/layout/AppHeader';
+import { SidebarProvider } from '../components/ui/sidebar';
+import { AssistantContextProvider } from '../context/AssistantContext';
+import { MCPServerProvider } from '../context/MCPServerContext';
+import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
+import { ModelOptionsProvider } from '../context/ModelProvider';
+import { SettingsProvider } from '../context/SettingsContext';
+import { SkillsProvider } from '../context/SkillsContext';
+import { DnDContextProvider } from '@/context/DnDContext';
+import { LLMServiceProvider } from '@/context/LLMServiceContext';
+import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
+import { GlobalEventProvider } from '@/context/GlobalEventContext';
+import '../styles/globals.css';
+import './App.css';
 
 // Lazy-load route components to reduce initial bundle and improve first paint
 const AgentContainer = lazy(() => import('@/features/agent'));
@@ -14,85 +28,7 @@ const PlaybookList = lazy(() => import('@/features/playbook/List'));
 const History = lazy(() => import('@/features/history/History'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 
-import { Toaster } from 'sonner';
-import { ThemeToggle } from '../components/common/ThemeToggle';
-import { AppHeader } from '../components/layout/AppHeader';
-import { SidebarProvider } from '../components/ui/sidebar';
-import { AssistantContextProvider } from '../context/AssistantContext';
-import { MCPServerProvider } from '../context/MCPServerContext';
-import { MCPServerRegistryProvider } from '../context/MCPServerRegistryContext';
-import { ModelOptionsProvider } from '../context/ModelProvider';
-import { SettingsProvider } from '../context/SettingsContext';
-import { SkillsProvider } from '../context/SkillsContext';
-import '../styles/globals.css';
-import './App.css';
-// Removed legacy tool provider imports
-import { DnDContextProvider } from '@/context/DnDContext';
-import { LLMServiceProvider } from '@/context/LLMServiceContext';
-import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
-import { GlobalEventProvider } from '@/context/GlobalEventContext';
-
 function App() {
-  const hasCheckedSkills = useRef(false);
-
-  useEffect(() => {
-    const checkGlobalSkills = async () => {
-      interface SkillMetadata {
-        name: string;
-        path: string;
-      }
-
-      let shouldPrompt = false;
-      try {
-        try {
-          // Use get_aggregated_skills which respects the configured skillsDirectory
-          // (falling back to [AppData]/skills if not set), so a custom path
-          // won't trigger a false "Download?" prompt.
-          const result = await invoke<SkillMetadata[]>('get_aggregated_skills', {
-            assistantId: null,
-          });
-          if (Array.isArray(result) && result.length === 0) shouldPrompt = true;
-        } catch {
-          // If the command fails entirely (e.g. no skills dir at all), prompt to download
-          shouldPrompt = true;
-        }
-
-        if (shouldPrompt) {
-          toast('Global skills not found', {
-            description: 'Would you like to download the default skill set?',
-            action: {
-              label: 'Download',
-              onClick: () => {
-                const toastId = toast.loading('Downloading global skills...');
-                invoke<string>('download_global_skills')
-                  .then(() => {
-                    toast.success('Skills downloaded successfully', {
-                      id: toastId,
-                    });
-                  })
-                  .catch((err) => {
-                    toast.error(`Download failed: ${err}`, { id: toastId });
-                  });
-              },
-            },
-            cancel: {
-              label: 'Cancel',
-              onClick: () => {},
-            },
-            duration: Infinity,
-          });
-        }
-      } catch (error) {
-        console.error('Startup check failed:', error);
-      }
-    };
-
-    if (!hasCheckedSkills.current) {
-      hasCheckedSkills.current = true;
-      checkGlobalSkills();
-    }
-  }, []);
-
   return (
     <div className="h-screen w-full">
       <SettingsProvider>
