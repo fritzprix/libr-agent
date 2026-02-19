@@ -70,4 +70,5 @@ Thumbs.db
 *.p12
 *.key
 .trace.json
+docs/skills-porting-dev040-to-dev05x.md
 a42/
