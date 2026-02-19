@@ -4,7 +4,6 @@ use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::mcp::utils::command_helper::CommandExt;
 use serde_json::Value;
 
 /// Terminal/Process management handlers

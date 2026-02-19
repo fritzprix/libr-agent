@@ -20,7 +20,6 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::ShellType;
-use crate::mcp::utils::command_helper::CommandExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};

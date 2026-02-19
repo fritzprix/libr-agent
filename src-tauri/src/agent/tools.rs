@@ -132,6 +132,7 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
                 "content_store" | "contentstore" => tool_ids.push("content_store".to_string()),
                 "ui" => tool_ids.push("ui".to_string()),
                 "browser" => tool_ids.push("browser".to_string()),
+                "skills" => tool_ids.push("skills".to_string()),
                 "mcp_manager" => tool_ids.push("mcp_manager".to_string()),
                 "session_api" => tool_ids.push("session_api".to_string()),
                 _ => {
@@ -150,6 +151,7 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
         tool_ids.push("content_store".to_string());
         tool_ids.push("ui".to_string());
         tool_ids.push("browser".to_string());
+        tool_ids.push("skills".to_string());
         tool_ids.push("mcp_manager".to_string());
         tool_ids.push("session_api".to_string());
     }
