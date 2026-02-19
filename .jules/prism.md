@@ -117,3 +117,17 @@ This log tracks visual inconsistencies, layout breaks, and design system violati
 ## 2026-02-05 - [SessionCard] **Visual Bug:** Custom status indicator, inconsistent icons **Fix:** Used Badge component, standardized icons to 12px
 
 ## 2026-02-05 - [AgentChatStartView] **Visual Bug:** Arbitrary flex splits, magic numbers **Fix:** Used CSS Grid layout, standard spacing
+
+## 2026-02-13 - [AgentWorkspacePanel] **Visual Bug:** Magic number padding (8 + depth * 16px) **Fix:** Use rem calculation (0.5rem + depth * 1rem)
+
+## 2026-02-13 - [AgentWorkspacePanel] **Visual Bug:** Small buttons (h-6) **Fix:** Use standard size (h-7)
+
+## 2026-02-13 - [SessionCard] **Visual Bug:** Magic number margin (nestingLevel * 16px) **Fix:** Use rem calculation (nestingLevel * 1rem)
+
+## 2026-02-13 - [SessionCard] **Visual Bug:** Inaccessible font size (text-[10px]) **Fix:** Use standard token (text-xs)
+
+## 2026-02-13 - [SessionCard] **Visual Bug:** Small buttons (h-5) **Fix:** Use standard size (h-7)
+
+## 2026-02-13 - [AgentMessageBubble] **Visual Bug:** Arbitrary max-width (85%) **Fix:** Use standard responsive width (max-w-[85%] md:max-w-3xl)
+
+## 2026-02-13 - [AgentChatAttachedFiles] **Visual Bug:** Small touch targets (h-6) **Fix:** Use standard size (h-7)
