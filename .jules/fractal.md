@@ -35,3 +35,9 @@
 **Split:** `security.rs`, `ui.rs`, `handlers.rs`
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
+
+## 2026-02-13 - src-tauri/src/services/interactive_browser_server.rs
+
+**Split:** `types.rs`, `constants.rs`, `utils.rs`, `id_gen.rs`, `mod.rs`
+**Result:** Reduced from ~845 lines to ~450 lines in the main module.
+**Improvement:** Decoupled types (`BrowserSession`), constants (`INIT_SCRIPT`), stateless utilities (`check_url_status`, `validate_and_normalize_url`), and ID generation from the main server logic. Improved readability and testability.

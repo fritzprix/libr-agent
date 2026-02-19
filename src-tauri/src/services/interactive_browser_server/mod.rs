@@ -16,115 +16,23 @@ use dashmap::DashMap;
 
 use uuid::Uuid;
 
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 use tokio::sync::{oneshot, Notify};
 
 use super::browser_error::BrowserError;
 use reqwest;
 
-/// Global counter for generating unique session IDs within the same millisecond
-static SESSION_COUNTER: AtomicU16 = AtomicU16::new(0);
+pub mod types;
+pub use types::{BrowserSession, SessionStatus};
 
-/// Represents an interactive browser session, corresponding to a Tauri window.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrowserSession {
-    /// A unique identifier for the session.
-    pub id: String,
-    /// The label used by Tauri to identify the window.
-    pub window_label: String,
-    /// The current URL of the browser session.
-    pub url: String,
-    /// The timestamp of when the session was created.
-    pub created_at: DateTime<Utc>,
-    /// The current status of the session.
-    pub status: SessionStatus,
-}
+pub mod constants;
+pub use constants::INIT_SCRIPT;
 
-/// Represents the status of a `BrowserSession`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SessionStatus {
-    /// The session is in the process of being created.
-    Creating,
-    /// The session is active and ready for interaction.
-    Active,
-    /// The session is currently paused.
-    Paused,
-    /// The session has been closed.
-    Closed,
-    /// The session has encountered an error.
-    Error(String),
-}
+pub mod utils;
+pub use utils::{check_url_status, validate_and_normalize_url};
 
-// ==================================================================================
-// JavaScript Templates
-// ==================================================================================
-
-/// The initialization script injected into every browser window.
-/// It sets up the `window.__LIBR_AGENT__` global object which handles:
-/// 1. Waiting for Tauri IPC to be ready (critical for Linux/WebKitGTK)
-/// 2. Executing scripts safely
-/// 3. Sending results back to the Rust backend
-const INIT_SCRIPT: &str = r#"
-(function() {
-    if (window.__LIBR_AGENT__) return;
-
-    window.__LIBR_AGENT__ = {
-        // Wait for Tauri IPC to be ready
-        waitForIPC: async function(retries = 50, interval = 100) {
-            if (window.__TAURI__) return true;
-            console.log('[LibrAgent] Waiting for Tauri IPC...');
-            for (let i = 0; i < retries; i++) {
-                await new Promise(r => setTimeout(r, interval));
-                if (window.__TAURI__) {
-                    console.log('[LibrAgent] Tauri IPC is ready');
-                    return true;
-                }
-            }
-            console.error('[LibrAgent] Tauri IPC failed to initialize');
-            return false;
-        },
-
-        // Send result back to Rust
-        sendResult: async function(sessionId, requestId, result, isError = false) {
-            if (!await this.waitForIPC()) {
-                console.error('[LibrAgent] IPC not available, cannot send result');
-                return;
-            }
-            
-            const payload = {
-                sessionId,
-                requestId,
-                result: isError ? `Error: ${result}` : (
-                    typeof result === 'object' ? JSON.stringify(result) : String(result)
-                )
-            };
-            
-            try {
-                await window.__TAURI__.core.invoke('browser_script_result', { payload });
-            } catch (e) {
-                console.error('[LibrAgent] Failed to invoke Tauri command:', e);
-            }
-        },
-
-        // Execute user script safely
-        execute: async function(sessionId, requestId, scriptContent) {
-            console.log(`[LibrAgent] Executing request: ${requestId}`);
-            try {
-                // Use Function constructor to create an async function from the string
-                const asyncFn = new Function('return (async () => { ' + scriptContent + ' })()');
-                const result = await asyncFn();
-                await this.sendResult(sessionId, requestId, result, false);
-            } catch (e) {
-                console.error('[LibrAgent] Script execution error:', e);
-                await this.sendResult(sessionId, requestId, e.message, true);
-            }
-        }
-    };
-    
-    console.log('[LibrAgent] Runtime initialized');
-})();
-"#;
+pub mod id_gen;
+pub use id_gen::generate_session_id;
 
 /// Manages multiple interactive browser sessions.
 /// This struct is managed as Tauri state and shared across commands.
@@ -181,48 +89,6 @@ impl InteractiveBrowserServer {
         // No platform-specific settings needed anymore
     }
 
-    /// Validates URL and returns normalized version.
-    /// Supports: http://, https://
-    ///
-    /// # Arguments
-    /// * `url` - The URL to validate
-    ///
-    /// # Returns
-    /// A `Result` containing the normalized URL on success, or an error string on failure.
-    fn validate_and_normalize_url(&self, url: &str) -> Result<String, String> {
-        let parsed_result = url::Url::parse(url);
-
-        match parsed_result {
-            Ok(parsed) => {
-                // Determine if we should allow based on scheme
-                match parsed.scheme() {
-                    "http" | "https" => Ok(url.to_string()),
-                    "about" => {
-                        // Replace 'about:blank' with a minimal data URI to ensure webview lifecycle triggers correctly
-                        // about:blank specifically can fail to trigger 'PageLoad' events on some WebKit/WebView2 backends
-                        Ok(
-                            "data:text/html,<html><body><h1>Agent Ready</h1></body></html>"
-                                .to_string(),
-                        )
-                    }
-                    scheme => Err(format!(
-                        "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",
-                        scheme
-                    )),
-                }
-            }
-            Err(_) => {
-                // Try prepending https://
-                let with_proto = format!("https://{}", url);
-                if let Ok(_parsed) = url::Url::parse(&with_proto) {
-                    return Ok(with_proto);
-                }
-
-                Err(format!("Invalid URL format: {}", url))
-            }
-        }
-    }
-
     /// Creates a new browser session by opening a new Tauri window.
     ///
     /// Each session is tracked in the `sessions` map and is associated with a unique window.
@@ -244,15 +110,10 @@ impl InteractiveBrowserServer {
         }
 
         // Validate URL first
-        let validated_url = self.validate_and_normalize_url(url)?;
+        let validated_url = validate_and_normalize_url(url)?;
 
-        // Generate short session ID: timestamp (5 hex) + counter (3 hex) = 8 chars
-        // This supports ~4096 sessions per millisecond without collision
-        let now = Utc::now();
-        let timestamp = (now.timestamp_millis() % 100000) as u32; // Last 5 digits
-        let counter = SESSION_COUNTER.fetch_add(1, Ordering::SeqCst) % 4096;
-        let session_id = format!("{:05X}{:03X}", timestamp, counter);
-
+        // Generate short session ID
+        let session_id = generate_session_id();
         let window_label = format!("browser-{session_id}");
 
         // Check URL status (skip for about:blank)
@@ -262,7 +123,7 @@ impl InteractiveBrowserServer {
         let status_check = if parsed_url.scheme() == "about" {
             None
         } else {
-            Some(self.check_url_status(&validated_url).await)
+            Some(check_url_status(&validated_url).await)
         };
 
         let session_title = title.unwrap_or("Interactive Browser Agent");
@@ -650,7 +511,7 @@ impl InteractiveBrowserServer {
         let status_check = if target_url.starts_with("about:") {
             None
         } else {
-            Some(self.check_url_status(&target_url).await)
+            Some(check_url_status(&target_url).await)
         };
 
         info!("Navigating session {session_id} to {target_url}");
@@ -730,20 +591,6 @@ impl InteractiveBrowserServer {
         } else {
             Err("Browser window not found".to_string())
         }
-    }
-
-    /// Checks the HTTP status of a URL using reqwest.
-    async fn check_url_status(&self, url: &str) -> Result<u16, String> {
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 LibrAgent Browser")
-            .timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        // We use GET instead of HEAD to be more robust against servers that block HEAD or return 405.
-        // reqwest does not download the body unless we consume the stream, so it's efficient.
-        let response = client.get(url).send().await.map_err(|e| e.to_string())?;
-        Ok(response.status().as_u16())
     }
 
     /// Handles the page loaded notification from the frontend.
