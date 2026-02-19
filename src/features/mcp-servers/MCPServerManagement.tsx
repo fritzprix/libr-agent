@@ -1,9 +1,14 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import useSWRInfinite from 'swr/infinite';
-import { Plus } from 'lucide-react';
+import useSWRImmutable from 'swr/immutable';
+import { Plus, Download } from 'lucide-react';
 import { createId } from '@paralleldrive/cuid2';
 import { MCPServerEntity } from '@/models/chat';
 import { McpServerService } from '@/lib/services/mcp-server-service';
+import {
+  listMCPServerPresets,
+  type MCPServerPreset,
+} from '@/lib/backend/mcp-server-config';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { useSettings } from '@/hooks/use-settings';
 import {
@@ -12,6 +17,7 @@ import {
   CardHeader,
   CardTitle,
   CardContent,
+  Separator,
 } from '@/components/ui';
 import {
   AlertDialog,
@@ -116,6 +122,12 @@ function MCPServerManagementComponent() {
   const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
   const { value: settings } = useSettings();
 
+  // Fetch Recommended Presets
+  const { data: presets } = useSWRImmutable<MCPServerPreset[]>(
+    'mcpServerPresets',
+    listMCPServerPresets,
+  );
+
   const mcpServerService = useMemo(() => {
     return new McpServerService(settings.agentHubUrl);
   }, [settings.agentHubUrl]);
@@ -171,26 +183,58 @@ function MCPServerManagementComponent() {
     setEditingServer(newServer);
   }, []);
 
-  const handleEdit = useCallback((server: MCPServerEntity) => {
-    setEditingServer(server);
+  const handleSetupPreset = useCallback((preset: MCPServerPreset) => {
+    const newServer: MCPServerEntity = {
+      id: createId(),
+      name: preset.name,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      metadata: {
+        description: preset.description,
+        variableDefinitions: preset.variableDefinitions,
+      } as Record<string, unknown>,
+      transport: {
+        type: 'stdio',
+        command: preset.command || 'uvx',
+        args: preset.args || [],
+        // If variableDefinitions exist, we might start with empty env for those keys
+        // to force user to enter them, or keep preset defaults.
+        // For security, presets usually shouldn't have secrets in 'env'.
+        env: (preset.env as Record<string, string>) || {},
+      },
+    };
+    setEditingServer(newServer);
   }, []);
 
   const handleSave = useCallback(
     async (server: MCPServerEntity) => {
       try {
-        await saveServer(server);
+        if (server.createdAt) {
+          await saveServer(server);
+        } else {
+          await saveServer({
+            ...server,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
         await mutateServers();
         setEditingServer(null);
-        toast.success('MCP server saved successfully');
+        toast.success('Extension saved successfully');
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
-        toast.error(`Failed to save server: ${message}`);
-        logger.error('Failed to save MCP server', error);
+        toast.error(`Failed to save extension: ${message}`);
+        logger.error('Failed to save extension', error);
       }
     },
     [saveServer, mutateServers],
   );
+
+  const handleEdit = useCallback((server: MCPServerEntity) => {
+    setEditingServer(server);
+  }, []);
 
   const handleDelete = useCallback((server: MCPServerEntity) => {
     setServerToDelete(server);
@@ -229,51 +273,124 @@ function MCPServerManagementComponent() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">MCP Server Management</h2>
+        <h2 className="text-xl font-semibold">Extensions</h2>
         <Button onClick={handleCreateNew}>
           <Plus className="w-4 h-4 mr-2" />
-          Add Server
+          Add Extension
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="text-center py-8 text-muted-foreground">
-          Loading MCP servers...
-        </div>
-      ) : servers.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          No MCP servers configured. Click &ldquo;Add Server&rdquo; to create
-          one.
-        </div>
-      ) : (
-        <>
-          <div className="grid gap-4">
-            {servers.map((server) => (
-              <ServerCard
-                key={server.id}
-                server={server}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onToggleActive={handleToggleActive}
-              />
-            ))}
+      {/* Recommended Servers Section */}
+      {presets && presets.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Recommended Extensions
+            </h3>
+            <Separator className="flex-1" />
           </div>
-
-          {hasNextPage && (
-            <div className="flex justify-center pt-2">
-              <Button
-                variant="outline"
-                disabled={isValidating}
-                onClick={() => setSize((s) => s + 1)}
-              >
-                {isValidating ? 'Loading…' : 'Load more'}
-              </Button>
-            </div>
-          )}
-        </>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {presets.map((preset) => {
+              const isInstalled = servers.some((s) => s.name === preset.name);
+              return (
+                <div
+                  key={preset.name}
+                  className={`group relative flex flex-col justify-between rounded-lg border bg-card p-4 transition-all ${
+                    isInstalled
+                      ? 'opacity-60 cursor-default bg-muted/20'
+                      : 'hover:bg-accent/50 cursor-pointer'
+                  }`}
+                  onClick={() => !isInstalled && handleSetupPreset(preset)}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold tracking-tight">
+                        {preset.name}
+                      </h4>
+                      {isInstalled ? (
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
+                          Installed
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
+                          stdio
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {preset.description || 'No description available'}
+                    </p>
+                  </div>
+                  {!isInstalled && (
+                    <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between opacity-60 group-hover:opacity-100 transition-opacity">
+                      <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
+                        {preset.command} {preset.args?.[0]}
+                      </code>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
+
+      {/* Existing Servers List */}
+      <div className="space-y-4">
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">
+            Loading extensions...
+          </div>
+        ) : servers.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+            No extensions installed. Add one or choose a recommended extension
+            above.
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {servers.map((server) => (
+                <ServerCard
+                  key={server.id}
+                  server={server}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onToggleActive={handleToggleActive}
+                />
+              ))}
+            </div>
+
+            {isValidating && servers.length > 0 && (
+              <div className="flex justify-center py-2">
+                <span className="text-xs text-muted-foreground">
+                  Updating...
+                </span>
+              </div>
+            )}
+
+            {hasNextPage && (
+              <div className="flex justify-center pt-2">
+                <Button
+                  variant="outline"
+                  disabled={isValidating}
+                  onClick={() => setSize((s) => s + 1)}
+                >
+                  {isValidating ? 'Loading…' : 'Load more'}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {editingServer && (
         <MCPServerDialog
@@ -289,7 +406,7 @@ function MCPServerManagementComponent() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete MCP Server</AlertDialogTitle>
+            <AlertDialogTitle>Delete Extension</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete &quot;{serverToDelete?.name}
               &quot;? This action cannot be undone.

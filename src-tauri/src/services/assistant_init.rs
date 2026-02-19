@@ -1,10 +1,153 @@
 use crate::repositories::AssistantRepository;
-use serde_json::json;
+use serde_json::{json, Value};
+
+fn mastermind_system_prompt() -> &'static str {
+    r#"You are Master Mind: the command orchestrator for complex, high-impact missions.
+You coordinate strategy, delegate execution to specialist assistants, and keep shared knowledge coherent under pressure.
+
+PRIME DIRECTIVE:
+Deliver reliable outcomes by combining planning discipline, evidence-based execution, and continuous situational awareness.
+
+AUTONOMY CHARTER:
+1. AI AGENCY: Respect specialist autonomy and decision quality. Do not micromanage execution details that can be handled by capable agents.
+2. DELEGATION DEFAULT: Prefer delegation for efficiency and throughput.
+3. DIRECT ACTION ALLOWED: Direct execution is always allowed when speed, clarity, or risk control justifies it.
+4. RISK-AWARE CHOICE: Choose delegation vs direct action by expected reliability, latency, and token cost.
+5. RECOVERY DUTY: If a path fails, provide immediate fallback and continue mission flow.
+6. NO ZOMBIE MODE: Avoid rigid hard bans except explicit security/safety constraints.
+
+TASK COMPLEXITY ASSESSMENT:
+- SIMPLE QUERIES: Information requests, calculations, explanations → Answer directly without planning overhead
+- COMPLEX OPERATIONS: Multi-step tasks, coordination needs, file operations → Use full planning protocol
+- JUDGMENT RULE: If answer is knowable in <2 tool calls, skip formal planning
+
+COMMAND PROTOCOL (for complex operations):
+1. MISSION CONTROL: Define objective, constraints, and success criteria before action.
+2. ORCHESTRATION: Break work into tracked steps, assign priorities, and route work to the right specialist.
+3. EVIDENCE FIRST: Never claim completion without verification (files, commands, tool outputs, current state).
+4. KNOWLEDGE OPERATIONS: Capture critical findings (IDs, paths, decisions, risks) and reuse them deliberately.
+5. REAL-TIME INTELLIGENCE: Pull fresh information via available tools when uncertainty exists; avoid stale assumptions.
+
+ATTENTION ECONOMY:
+- Keep active tool families minimal for each phase.
+- Prefer delegation over direct multi-tool thrashing.
+- Require explicit reason before switching tool domains.
+
+KNOWLEDGE LOOP:
+- Persist critical discoveries to shared memory.
+- Retrieve and reconcile prior knowledge before major decisions.
+- Prefer reusable knowledge over repeating expensive investigation.
+
+SPECIALIST COORDINATION MODEL:
+- Libr Assistant: general field operations and cross-domain execution.
+- Coding Expert: implementation/refactor/debug execution.
+- App Wizard: environment, MCP, assistant configuration execution.
+- Master Mind: strategy, delegation, quality gates, conflict resolution.
+
+OPERATING STYLE:
+- Strategic, decisive, and explicit
+- No vague status reports
+- No hidden assumptions
+- Clear next action at every step
+
+FAILSAFE RULES:
+- If required data is missing, ask precise questions.
+- If a command or tool fails, report exact failure and recovery path.
+- If risk escalates, recommend controlled rollback or containment."#
+}
+
+async fn ensure_assistant_description(
+    repo: &crate::repositories::SqliteAssistantRepository,
+    assistant_name: &str,
+    description: &str,
+) -> Result<(), String> {
+    let assistants = repo
+        .list_assistants()
+        .await
+        .map_err(|e| format!("Failed to list assistants for description backfill: {}", e))?;
+
+    let Some(target) = assistants
+        .into_iter()
+        .find(|assistant| assistant.name == assistant_name)
+    else {
+        return Ok(());
+    };
+
+    let mut config_value =
+        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
+    let has_description = config_value
+        .get("description")
+        .and_then(|value| value.as_str())
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+
+    if has_description {
+        return Ok(());
+    }
+
+    config_value["description"] = Value::String(description.to_string());
+
+    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to backfill description for {}: {}",
+                assistant_name, e
+            )
+        })?;
+
+    Ok(())
+}
+
+async fn ensure_assistant_system_prompt(
+    repo: &crate::repositories::SqliteAssistantRepository,
+    assistant_name: &str,
+    system_prompt: &str,
+) -> Result<(), String> {
+    let assistants = repo
+        .list_assistants()
+        .await
+        .map_err(|e| format!("Failed to list assistants for prompt update: {}", e))?;
+
+    let Some(target) = assistants
+        .into_iter()
+        .find(|assistant| assistant.name == assistant_name)
+    else {
+        return Ok(());
+    };
+
+    let mut config_value =
+        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
+    let current_prompt = config_value
+        .get("systemPrompt")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim();
+
+    if current_prompt == system_prompt.trim() {
+        return Ok(());
+    }
+
+    config_value["systemPrompt"] = Value::String(system_prompt.to_string());
+
+    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to update systemPrompt for {}: {}",
+                assistant_name, e
+            )
+        })?;
+
+    Ok(())
+}
 
 pub async fn ensure_default_assistants() -> Result<(), String> {
     // 1. Libr Assistant
     let repo = crate::get_assistant_repository();
     let libr_name = "Libr Assistant";
+    let libr_description =
+        "Field operations specialist for verified research, execution, and cross-domain task delivery.";
     let libr_exists = repo
         .check_assistant_exists(libr_name)
         .await
@@ -12,7 +155,7 @@ pub async fn ensure_default_assistants() -> Result<(), String> {
 
     if !libr_exists {
         println!("Creating default 'Libr Assistant'...");
-        let system_prompt = r#"You are the Libr Assistant: a general-purpose knowledge and automation agent.
+        let system_prompt = r#"You are the Libr Assistant: a field operations specialist in the Master Mind command structure.
 Your primary directive is to provide ACCURATE, VERIFIED assistance by combining knowledge with action.
 
 CORE PROTOCOLS:
@@ -26,20 +169,31 @@ COMPLEX TASKS (3+ steps):
 3. Save critical findings (file paths, IDs, discoveries) for later reference
 
 CONTEXT MANAGEMENT:
-Your conversation context is limited. For complex tasks: establish persistent goals, save critical findings to working memory (limit ~10 items), and reference saved information instead of re-gathering."#;
+Your conversation context is limited. For complex tasks: establish persistent goals, save critical findings to working memory (limit ~10 items), and reference saved information instead of re-gathering.
+
+TEAM DOCTRINE:
+- When a higher-level plan exists, execute your assigned part with discipline.
+- Report concrete outcomes, blockers, and evidence for command-level decisions.
+
+ATTENTION ECONOMY:
+- Prefer the smallest viable toolset per step.
+- Do not hop tools unless current evidence requires it.
+- Finish one investigative thread before opening another."#;
 
         let config = json!({
+            "description": libr_description,
             "systemPrompt": system_prompt,
             "mcpServerIds": [],
             "deletionProtected": true,
             "localServices": [],
             "allowedBuiltInServiceAliases": [
+                "knowledge",
                 "contentstore",
                 "workspace",
                 "browser",
                 "planning",
                 "playbook",
-                "ui",
+                "session_api"
             ]
         });
 
@@ -49,8 +203,12 @@ Your conversation context is limited. For complex tasks: establish persistent go
             .map_err(|e| format!("Failed to create Libr Assistant: {}", e))?;
     }
 
+    ensure_assistant_description(repo, libr_name, libr_description).await?;
+
     // 2. Coding Expert Assistant
     let coding_name = "Coding Expert";
+    let coding_description =
+        "Engineering execution specialist for implementation, refactoring, debugging, and verification.";
     let coding_exists = repo
         .check_assistant_exists(coding_name)
         .await
@@ -58,7 +216,8 @@ Your conversation context is limited. For complex tasks: establish persistent go
 
     if !coding_exists {
         println!("Creating default 'Coding Expert'...");
-        let system_prompt = r#"You are the Coding Expert: a specialized software development assistant with deep expertise in code analysis, architecture, and implementation.
+        let system_prompt = r#"You are the Coding Expert: an engineering execution specialist under Master Mind command.
+    You handle implementation-heavy software tasks with precision and evidence.
 
 INTEGRITY PROTOCOLS:
 1. READ BEFORE WRITE: Never edit code without reading current state first.
@@ -77,9 +236,18 @@ CORE COMPETENCIES:
 - Analyze code structure and patterns before changes
 - Consider system architecture and design patterns
 - Apply SOLID principles and best practices
-- Make surgical, incremental changes"#;
+- Make surgical, incremental changes
+
+TEAM DOCTRINE:
+- When strategy is provided, translate it into safe, verifiable code changes.
+- Return exact results, diffs, and technical risks for command-level review.
+
+ATTENTION ECONOMY:
+- Stay in code-analysis/edit/verification loop unless mission scope changes.
+- Avoid unnecessary tool switching during implementation."#;
 
         let config = json!({
+            "description": coding_description,
             "systemPrompt": system_prompt,
             "mcpServerIds": [],
             "deletionProtected": true,
@@ -87,10 +255,10 @@ CORE COMPETENCIES:
             "allowedBuiltInServiceAliases": [
                 "workspace",
                 "planning",
+                "knowledge",
                 "contentstore",
                 "playbook",
-                "browser",
-                "assistant",
+                "session_api"
             ]
         });
 
@@ -100,8 +268,12 @@ CORE COMPETENCIES:
             .map_err(|e| format!("Failed to create Coding Expert: {}", e))?;
     }
 
+    ensure_assistant_description(repo, coding_name, coding_description).await?;
+
     // 3. App Wizard (Setup Assistant)
     let wizard_name = "App Wizard";
+    let wizard_description =
+        "Environment and configuration specialist for MCP setup, assistant management, and system readiness.";
     let wizard_exists = repo
         .check_assistant_exists(wizard_name)
         .await
@@ -109,7 +281,7 @@ CORE COMPETENCIES:
 
     if !wizard_exists {
         println!("Creating default 'App Wizard'...");
-        let system_prompt = r#"You are the App Wizard: a specialized agent for managing the LibrAgent application environment.
+        let system_prompt = r#"You are the App Wizard: an environment and systems setup specialist under Master Mind command.
 Your role is to help users configure the application, manage assistants, and set up MCP servers.
 
 CORE PRINCIPLES:
@@ -127,9 +299,18 @@ Your context is limited. For complex setup: establish persistent goals, save con
 CAPABILITIES:
 1. ASSISTANTS: Create, update, list, search. Write detailed system prompts following best practices.
 2. MCP SERVERS: Register, configure (args, paths, env vars), explain requirements.
-3. ENVIRONMENT: Detect OS, verify dependencies, guide installation, validate readiness."#;
+3. ENVIRONMENT: Detect OS, verify dependencies, guide installation, validate readiness.
+
+TEAM DOCTRINE:
+- Execute setup plans reliably and surface operational risks early.
+- Provide exact verification checkpoints for command-level go/no-go decisions.
+
+ATTENTION ECONOMY:
+- Stay focused on environment/configuration operations.
+- Only escalate to broader tools when setup verification demands it."#;
 
         let config = json!({
+            "description": wizard_description,
             "systemPrompt": system_prompt,
             "mcpServerIds": [],
             "deletionProtected": true,
@@ -139,10 +320,10 @@ CAPABILITIES:
                 "mcp_manager",
                 "assistant",
                 "workspace",
-                "browser",
                 "planning",
-                "ui",
-                "contentstore"
+                "knowledge",
+                "contentstore",
+                "session_api"
             ]
         });
 
@@ -151,6 +332,167 @@ CAPABILITIES:
             .await
             .map_err(|e| format!("Failed to create App Wizard: {}", e))?;
     }
+
+    ensure_assistant_description(repo, wizard_name, wizard_description).await?;
+
+    // 4. Master Mind (Orchestrator)
+    let mastermind_name = "Master Mind";
+    let mastermind_description =
+        "Command orchestrator that plans strategy, delegates to specialists, and enforces quality gates.";
+    let mastermind_exists = repo
+        .check_assistant_exists(mastermind_name)
+        .await
+        .map_err(|e| format!("Failed to check for Master Mind: {}", e))?;
+
+    if !mastermind_exists {
+        println!("Creating default 'Master Mind'...");
+        let system_prompt = mastermind_system_prompt();
+
+        let config = json!({
+            "description": mastermind_description,
+            "systemPrompt": system_prompt,
+            "mcpServerIds": [],
+            "deletionProtected": true,
+            "localServices": [],
+            "allowedBuiltInServiceAliases": [
+                "planning",
+                "knowledge",
+                "contentstore",
+                "workspace",
+                "playbook",
+                "assistant",
+                "session_api"
+            ]
+        });
+
+        let id = uuid::Uuid::new_v4().to_string();
+        repo.create_assistant(id, mastermind_name.to_string(), config.to_string())
+            .await
+            .map_err(|e| format!("Failed to create Master Mind: {}", e))?;
+    }
+
+    ensure_assistant_description(repo, mastermind_name, mastermind_description).await?;
+    ensure_assistant_system_prompt(repo, mastermind_name, mastermind_system_prompt()).await?;
+
+    // Update allowedBuiltInServiceAliases for all default assistants
+    // 1. Libr Assistant
+    ensure_assistant_allowed_services(
+        repo,
+        libr_name,
+        vec![
+            "knowledge",
+            "contentstore",
+            "workspace",
+            "browser",
+            "planning",
+            "playbook",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 2. Coding Expert
+    ensure_assistant_allowed_services(
+        repo,
+        coding_name,
+        vec![
+            "workspace",
+            "planning",
+            "knowledge",
+            "contentstore",
+            "playbook",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 3. App Wizard
+    ensure_assistant_allowed_services(
+        repo,
+        wizard_name,
+        vec![
+            "bootstrap",
+            "mcp_manager",
+            "assistant",
+            "workspace",
+            "planning",
+            "knowledge",
+            "contentstore",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    // 4. Master Mind
+    ensure_assistant_allowed_services(
+        repo,
+        mastermind_name,
+        vec![
+            "planning",
+            "knowledge",
+            "contentstore",
+            "workspace",
+            "playbook",
+            "assistant",
+            "session_api",
+            "skills",
+        ],
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_assistant_allowed_services(
+    repo: &crate::repositories::SqliteAssistantRepository,
+    assistant_name: &str,
+    allowed_services: Vec<&str>,
+) -> Result<(), String> {
+    let assistants = repo
+        .list_assistants()
+        .await
+        .map_err(|e| format!("Failed to list assistants for service update: {}", e))?;
+
+    let Some(target) = assistants
+        .into_iter()
+        .find(|assistant| assistant.name == assistant_name)
+    else {
+        return Ok(());
+    };
+
+    let mut config_value =
+        serde_json::from_str::<Value>(&target.config).unwrap_or_else(|_| json!({}));
+
+    let current_services = config_value
+        .get("allowedBuiltInServiceAliases")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+        })
+        .unwrap_or_default();
+
+    let target_services: Vec<String> = allowed_services.iter().map(|s| s.to_string()).collect();
+
+    if current_services == target_services {
+        return Ok(());
+    }
+
+    config_value["allowedBuiltInServiceAliases"] = json!(allowed_services);
+
+    repo.update_assistant(&target.id, None, Some(config_value.to_string()))
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to update allowed services for {}: {}",
+                assistant_name, e
+            )
+        })?;
 
     Ok(())
 }

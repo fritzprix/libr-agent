@@ -1,3 +1,4 @@
+use crate::mcp::utils::command_helper::CommandExt;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -295,6 +296,7 @@ impl WorkspaceServer {
                             use std::process::Command;
                             let _ = Command::new("taskkill")
                                 .args(["/PID", &pid.to_string(), "/F"])
+                                .silent()
                                 .output();
                         }
                     }
@@ -608,7 +610,6 @@ impl BuiltinMCPServer for WorkspaceServer {
             "listDirectory" => self.handle_list_directory(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,
             "editFileMulti" => self.handle_edit_file_multi(args, session_id).await,
-            "previewReplacement" => self.handle_preview_replacement(args, session_id).await,
             "importFile" => self.handle_import_file(args, session_id).await,
             "searchLineInFile" => self.handle_search_line_in_file(args, session_id).await,
             "searchFiles" => self.handle_search_files(args, session_id).await,

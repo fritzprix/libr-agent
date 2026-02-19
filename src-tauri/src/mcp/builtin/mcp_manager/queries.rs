@@ -43,7 +43,7 @@ pub async fn get_server_config(id_or_name: &str) -> Result<Option<MCPServerConfi
         .map(|opt| opt.map(|(_, config)| config))
 }
 
-/// List servers with pagination
+/// List servers with pagination and optional search
 pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
     let page = args.get("page").and_then(|v| v.as_u64()).unwrap_or(1);
     // Cap page_size to prevent context overflow (Section 8.2 - Context Economy)
@@ -52,6 +52,12 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
         .and_then(|v| v.as_i64())
         .unwrap_or(20)
         .min(50) as usize;
+
+    // Optional search query
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase());
 
     // Use repository to get full models (includes tool_count from DB)
     let repo = get_mcp_server_repository();
@@ -68,14 +74,24 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
         }
     };
 
+    // Filter by query if provided
+    let filtered_models: Vec<_> = if let Some(q) = query {
+        models
+            .into_iter()
+            .filter(|m| m.name.to_lowercase().contains(&q))
+            .collect()
+    } else {
+        models
+    };
+
     // Pagination
-    let total = models.len();
+    let total = filtered_models.len();
     let start = ((page - 1) * page_size as u64) as usize;
     let models_slice: Vec<_> = if start >= total {
         Vec::new()
     } else {
         let end = (start + page_size).min(total);
-        models[start..end].to_vec()
+        filtered_models[start..end].to_vec()
     };
 
     // Generate human-readable list with transport details and tool counts
@@ -120,24 +136,24 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
 
     let hint = SuccessHint::new(
         format!(
-            "📋 MCP Servers (Page {}/{}):\n\n{}\n\n\
-            💡 When creating an assistant, use the ID values:\n\n\
-            Example:\n\
+            "📋 MCP Servers (Page {}/{}) | Total: {}\n\n{}\n\n\
+            💡 When creating an assistant, use the ID values:\n\
             mcpServerIds: [{}]\n\n\
-            ⚠️ IMPORTANT: Use ID (not name). IDs are stable even if you rename the server.",
+            ⚠️ IMPORTANT: Use ID (not name). IDs are stable.",
             page,
             total_pages,
+            total,
             servers_text,
             if example_ids.is_empty() {
-                "/* no servers yet */".to_string()
+                "/* no servers found */".to_string()
             } else {
                 example_ids
             }
         ),
         vec![
             "Copy the ID line exactly (case-sensitive UUID)".to_string(),
-            "Names can change, IDs cannot - always use IDs for references".to_string(),
             "Use registerServer to add new MCP servers".to_string(),
+            "Use 'query' parameter to filter this list".to_string(),
         ],
     );
 

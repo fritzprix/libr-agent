@@ -12,6 +12,10 @@ interface SessionCardProps {
   session: AgentSession;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
+  nestingLevel?: number;
+  lineageHint?: string;
+  selectedLineageId?: string | null;
+  onLineageSelect?: (lineageId: string) => void;
 }
 
 /**
@@ -20,7 +24,15 @@ interface SessionCardProps {
  * Displays agent session metadata with action buttons.
  * Used in AgentChatStartView's session history panel.
  */
-export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
+export function SessionCard({
+  session,
+  onResume,
+  onDelete,
+  nestingLevel = 0,
+  lineageHint,
+  selectedLineageId = null,
+  onLineageSelect,
+}: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -89,10 +101,18 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
   const statusConfig = getStatusConfig(session.status);
   const isActive = session.status === 'busy' || session.status === 'idle';
   const isViewOnly = session.status === 'error';
+  const shortLineageId = session.lineageId?.slice(0, 8);
+  const shortParentId = session.parentSessionId?.slice(0, 8);
+  const depthLabel =
+    typeof session.depth === 'number' ? `D${session.depth}` : null;
+  const relationBadge = session.parentSessionId ? 'Child' : 'Root';
+  const isSelectedLineage =
+    !!session.lineageId && selectedLineageId === session.lineageId;
 
   return (
     <article
       className="border rounded-xl p-4 hover:bg-muted/50 transition-colors"
+      style={{ marginLeft: `${nestingLevel * 16}px` }}
       aria-label={`Session: ${session.name || session.id.slice(0, 8)}`}
     >
       <div className="flex items-start justify-between mb-2">
@@ -130,6 +150,28 @@ export function SessionCard({ session, onResume, onDelete }: SessionCardProps) {
       </div>
 
       <div className="text-xs text-muted-foreground space-y-1">
+        {(depthLabel || shortParentId || shortLineageId) && (
+          <div className="flex flex-wrap items-center gap-1">
+            <Badge variant="secondary">{relationBadge}</Badge>
+            {depthLabel && <Badge variant="outline">{depthLabel}</Badge>}
+            {shortParentId && (
+              <Badge variant="outline">Parent: {shortParentId}</Badge>
+            )}
+            {shortLineageId && session.lineageId && (
+              <Button
+                type="button"
+                size="sm"
+                variant={isSelectedLineage ? 'default' : 'outline'}
+                className="h-5 px-1.5 text-[10px]"
+                onClick={() => onLineageSelect?.(session.lineageId!)}
+                aria-label={`Filter by lineage ${shortLineageId}`}
+              >
+                Lineage: {shortLineageId}
+              </Button>
+            )}
+          </div>
+        )}
+        {lineageHint && <div>{lineageHint}</div>}
         {session.model && session.provider && (
           <div className="flex items-center gap-1">
             <span className="font-medium">Model:</span>

@@ -54,6 +54,11 @@ pub struct SessionMetadata {
     pub model: String,
     pub provider: String,
     pub agent_config: Option<String>, // JSON string of agent configuration
+    pub parent_session_id: Option<String>,
+    pub lineage_id: Option<String>,
+    pub depth: Option<u32>,
+    pub max_depth: Option<u32>,
+    pub max_fanout: Option<u32>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -69,6 +74,11 @@ impl TryFrom<session::Model> for SessionMetadata {
             model: model.model,
             provider: model.provider,
             agent_config: model.agent_config,
+            parent_session_id: model.parent_session_id,
+            lineage_id: model.lineage_id,
+            depth: model.depth.and_then(|v| u32::try_from(v).ok()),
+            max_depth: model.max_depth.and_then(|v| u32::try_from(v).ok()),
+            max_fanout: model.max_fanout.and_then(|v| u32::try_from(v).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
         })
@@ -99,6 +109,9 @@ pub trait SessionRepository: Send + Sync {
     /// Get all sessions
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError>;
 
+    /// Get direct child session IDs for a parent session ID
+    async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError>;
+
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
 }
@@ -128,6 +141,11 @@ impl SessionRepository for SqliteSessionRepository {
             model: Set(session.model.clone()),
             provider: Set(session.provider.clone()),
             agent_config: Set(session.agent_config.clone()),
+            parent_session_id: Set(session.parent_session_id.clone()),
+            lineage_id: Set(session.lineage_id.clone()),
+            depth: Set(session.depth.and_then(|v| i32::try_from(v).ok())),
+            max_depth: Set(session.max_depth.and_then(|v| i32::try_from(v).ok())),
+            max_fanout: Set(session.max_fanout.and_then(|v| i32::try_from(v).ok())),
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
         };
@@ -141,6 +159,11 @@ impl SessionRepository for SqliteSessionRepository {
                         session::Column::Model,
                         session::Column::Provider,
                         session::Column::AgentConfig,
+                        session::Column::ParentSessionId,
+                        session::Column::LineageId,
+                        session::Column::Depth,
+                        session::Column::MaxDepth,
+                        session::Column::MaxFanout,
                         session::Column::UpdatedAt,
                     ])
                     .to_owned(),
@@ -220,6 +243,17 @@ impl SessionRepository for SqliteSessionRepository {
         sessions
     }
 
+    async fn get_child_session_ids(&self, parent_session_id: &str) -> Result<Vec<String>, DbError> {
+        use sea_orm::{ColumnTrait, QueryFilter};
+
+        let models = Session::find()
+            .filter(session::Column::ParentSessionId.eq(parent_session_id))
+            .all(&self.db)
+            .await?;
+
+        Ok(models.into_iter().map(|m| m.id).collect())
+    }
+
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
         Session::delete_by_id(session_id).exec(&self.db).await?;
         Ok(())
@@ -256,6 +290,11 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: Some(r#"{"model": "gpt-4"}"#.to_string()),
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -289,6 +328,11 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -329,6 +373,11 @@ mod tests {
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
                 agent_config: None,
+                parent_session_id: None,
+                lineage_id: None,
+                depth: None,
+                max_depth: None,
+                max_fanout: None,
                 created_at: now,
                 updated_at: now + i,
             };
@@ -390,6 +439,11 @@ mod tests {
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
             agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
             created_at: now,
             updated_at: now,
         };
@@ -408,6 +462,11 @@ mod tests {
             agent_config: Some(r#"{"updated": true}"#.to_string()),
             created_at: now,
             updated_at: now + 1000,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
         };
 
         repo.upsert_session(&updated_session)
@@ -443,6 +502,11 @@ mod tests {
             agent_config: None,
             created_at: now,
             updated_at: now,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
         };
 
         repo.upsert_session(&session)

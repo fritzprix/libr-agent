@@ -39,13 +39,31 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         name,
         model,
         provider,
-        agent_config,
+        mut agent_config,
     } = params;
 
     let now = chrono::Utc::now().timestamp_millis();
 
     // Validate agent config
     agent_config.validate()?;
+
+    // Normalize lineage defaults so root sessions are always groupable in UI.
+    if agent_config.lineage_id.is_none() {
+        let normalized_lineage_id = if let Some(parent_id) = &agent_config.parent_session_id {
+            parent_id.clone()
+        } else {
+            session_id.clone()
+        };
+        agent_config.lineage_id = Some(normalized_lineage_id);
+    }
+
+    if agent_config.depth.is_none() {
+        agent_config.depth = Some(if agent_config.parent_session_id.is_some() {
+            1
+        } else {
+            0
+        });
+    }
 
     // Serialize config for storage
     let config_json = agent_config.to_json()?;
@@ -77,6 +95,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         model: resolved_model,
         provider: resolved_provider,
         agent_config: Some(config_json),
+        parent_session_id: agent_config.parent_session_id.clone(),
+        lineage_id: agent_config.lineage_id.clone(),
+        depth: agent_config.depth,
+        max_depth: agent_config.max_depth,
+        max_fanout: agent_config.max_fanout,
         created_at: now,
         updated_at: now,
     };

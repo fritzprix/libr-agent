@@ -16,10 +16,24 @@ pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;
 pub mod playbook;
+pub mod session_api;
 pub mod skills;
 pub mod ui;
 pub mod utils;
 pub mod workspace;
+
+/// List of built-in services that are always enabled and hidden from the UI configuration.
+/// These services provide core functionality essential for the agent's operation.
+pub const ESSENTIAL_BUILTIN_SERVICES: &[&str] = &[
+    "skills",
+    "workspace",
+    "contentstore", // content_store alias
+    "session_api",
+    "assistant",
+    "mcp_manager",
+    "bootstrap",
+    "ui",
+];
 
 #[cfg(test)]
 mod tests;
@@ -366,6 +380,7 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         // Session-specific servers (knowledge, planning, playbook, assistant, browser) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
@@ -411,6 +426,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
@@ -453,6 +469,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }

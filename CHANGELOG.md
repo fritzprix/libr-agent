@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-02-17
+
+### 🧠 Performance & Decision Quality (The "Orchestrator" Update)
+
+- **Assistant Discovery Optimization**:
+  - Enhanced `listAssistants`, `searchAssistant`, and `getAssistant` to include resolved **Skills** summaries.
+  - Automatically resolves cryptic MCP server IDs into human-readable names (e.g., `google-search`) in the skill list, helping orchestrator agents (MasterMind) make faster decisions.
+
+- **Intelligent Caching**:
+  - Implemented a thread-safe, 30-second TTL cache for the server name map.
+  - Eliminates redundant database hits during recursive assistant lookups while maintaining data freshness.
+
+## [0.5.2] - 2026-02-16
+
+### 🧘 Mental Clarity & Safety (The "Soul" Update)
+
+- **Terminology Unification**:
+  - Renamed `listExternalServers` → **`listServers`** (Simplified)
+  - Renamed `listInternalTools` → **`listBuiltinTools`** (Clarified)
+  - Merged `searchServer` into `listServers` (via `query` param)
+
+- **Safety First (HashLine)**:
+  - `editLineInFile` now **REQUIRES** `expected_hash` to prevent race conditions.
+  - `searchLineInFile` now returns **content hash** (`a1b2`) along with text, enabling immediate safe edits.
+
+- **Tool Diet**:
+  - Hidden deprecated tools: `editFile`, `editFileMulti`, `searchServer`.
+  - Minified tool descriptions to save context tokens.
+
+## [0.5.1] - 2026-02-14
+
+### 🐛 Fixes
+
+- **Session Lineage Grouping (Start View)**:
+  - Fixed a regression where clicking a session card's lineage focus could hide the parent while showing only child sessions.
+  - Root cause: some sessions were created without normalized `lineageId`, causing lineage filtering mismatch between parent and child records.
+  - Backend now normalizes lineage defaults during session creation (`lineageId` falls back to `sessionId` for roots, `parentSessionId` for children when missing).
+  - Frontend session list normalization now backfills missing lineage/depth values for legacy records so parent/child lineage focus remains stable.
+
+### ✅ Validation
+
+- Re-ran API E2E flow via `scripts/test_api.py` after fix:
+  - session create/resume/message polling,
+  - parent-child lineage checks,
+  - `maxDepth` limit behavior,
+  - `maxFanout` limit behavior.
+- Result: all scenarios passed.
+
+## [0.5.0] - 2026-02-14
+
+### 🚀 Features
+
+- **Master Mind Autonomy Update**:
+  - Updated default Master Mind doctrine to autonomy-first operation with explicit recovery duty.
+  - Added automatic system prompt backfill/update for existing Master Mind assistant records.
+
+- **Session Lineage Reliability**:
+  - `createSession` and `createChildSession` now auto-resolve parent lineage from caller session context when omitted.
+  - Added support for `parentSessionId: "current"` alias resolution.
+
+- **Terminal Result Fidelity**:
+  - `waitForSessionIdle` now returns full latest assistant text output by default (not short preview snippets).
+  - Added optional `assistantMessageMaxChars` to cap output when needed.
+
+### 🔧 Improvements
+
+- **Timeout Baseline for Long-Running Tool Calls**:
+  - Raised default MCP tool execution timeout from 60s to 180s across frontend defaults, UI fallback, and backend fallback config.
+
+- **Documentation / Positioning Refresh**:
+  - Rewrote README tone toward concise, product-confident messaging.
+  - Added AI Soul manifesto documentation and docs index linkage.
+
+### 🐛 Fixes
+
+- Fixed parent-child session creation friction where child session creation could fail without explicit parent wiring in orchestration flows.
+- Fixed wait-result truncation behavior that caused loss of final assistant detail in long reports.
+
 ## [0.4.25] - 2026-02-13
 
 ### 🐛 Fixes

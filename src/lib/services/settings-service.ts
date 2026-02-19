@@ -25,6 +25,8 @@ export interface AdvancedSettings {
   circuitBreakerThreshold: number;
   diffContextLines: number;
   defaultMaxOutputTokens: number;
+  defaultSessionMaxDepth: number;
+  defaultSessionMaxFanout: number;
 }
 
 export interface DisplaySettings {
@@ -47,7 +49,6 @@ export interface SystemSettings {
   searchIndexFrequencyMinutes: number;
   activeSessionRetentionHours: number;
   shellIsolationLevel: IsolationLevel;
-  skillsDirectory?: string;
 }
 
 export interface Settings {
@@ -86,6 +87,8 @@ export const DEFAULT_SETTING: Settings = {
     circuitBreakerThreshold: 3,
     diffContextLines: 3,
     defaultMaxOutputTokens: 8192,
+    defaultSessionMaxDepth: 0,
+    defaultSessionMaxFanout: 0,
   },
   display: {
     metricDisplayMode: 'inline',
@@ -100,11 +103,10 @@ export const DEFAULT_SETTING: Settings = {
     httpServerPort: 3030,
     httpServerExpose: false,
     mcpServerStartupTimeoutSeconds: 60,
-    mcpToolTimeoutSeconds: 60,
+    mcpToolTimeoutSeconds: 180,
     searchIndexFrequencyMinutes: 5,
     activeSessionRetentionHours: 24,
     shellIsolationLevel: 'medium',
-    skillsDirectory: '',
   },
 };
 

@@ -2,10 +2,20 @@ use crate::agent::AgentSessionManager;
 use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
 use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::session_repository::SessionRepository;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
+use tokio::sync::RwLock as TokioRwLock;
 use uuid::Uuid;
 use warp::{http::StatusCode, Rejection, Reply};
+
+#[derive(Debug, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub service: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,13 +24,22 @@ pub struct CreateSessionRequest {
     pub assistant_id: String, // Replaces agent_config
     pub workspace_path: Option<String>,
     pub request: String,
+    pub parent_session_id: Option<String>,
+    pub max_depth: Option<u32>,
+    pub max_fanout: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSessionResponse {
     pub id: String,
     pub name: Option<String>,
     pub status: String,
+    pub parent_session_id: Option<String>,
+    pub lineage_id: String,
+    pub depth: u32,
+    pub max_depth: Option<u32>,
+    pub max_fanout: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +61,31 @@ pub struct ErrorResponse {
 #[derive(Debug, Deserialize)]
 pub struct GetMessagesQuery {
     pub limit: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLineageMeta {
+    pub parent_session_id: Option<String>,
+    pub lineage_id: String,
+    pub depth: u32,
+    pub max_depth: Option<u32>,
+    pub max_fanout: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChildSessionsResponse {
+    pub parent_session_id: String,
+    pub count: usize,
+    pub children: Vec<String>,
+}
+
+static SESSION_LINEAGE: OnceLock<TokioRwLock<HashMap<String, SessionLineageMeta>>> =
+    OnceLock::new();
+
+fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> {
+    SESSION_LINEAGE.get_or_init(|| TokioRwLock::new(HashMap::new()))
 }
 
 pub async fn create_session(
@@ -91,11 +135,171 @@ pub async fn create_session(
     agent_config.name = assistant.name.clone();
     let assistant_id = agent_config.id.clone();
 
-    // 3. Create Session
+    // 3. Resolve lineage metadata (parent/reference contract)
+    let parent_session_id = body.parent_session_id.clone();
+    let requested_max_depth = body.max_depth;
+    let requested_max_fanout = body.max_fanout;
+
+    if let Some(ref parent_id) = parent_session_id {
+        match manager.get_session(parent_id).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&ErrorResponse {
+                        error: format!("Parent session not found: {}", parent_id),
+                    }),
+                    StatusCode::BAD_REQUEST,
+                ))
+            }
+            Err(e) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&ErrorResponse {
+                        error: format!("Failed to validate parent session: {}", e),
+                    }),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ))
+            }
+        }
+    }
+
+    // 4. Create Session
     let session_id = format!("session-{}", Uuid::new_v4());
 
     // Use provided name or default to Assistant name
     let session_name = body.name.or(Some(assistant.name.clone()));
+
+    let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
+        let store = lineage_store().read().await;
+        if let Some(parent_meta) = store.get(&parent_id) {
+            let effective_max_depth = requested_max_depth.or(parent_meta.max_depth);
+            let effective_max_fanout = requested_max_fanout.or(parent_meta.max_fanout);
+            let next_depth = parent_meta.depth.saturating_add(1);
+
+            let session_repo = crate::state::get_session_repository();
+            let child_count = session_repo
+                .get_child_session_ids(&parent_id)
+                .await
+                .map(|children| children.len())
+                .unwrap_or_else(|_| {
+                    store
+                        .values()
+                        .filter(|meta| {
+                            meta.parent_session_id.as_deref() == Some(parent_id.as_str())
+                        })
+                        .count()
+                });
+
+            if let Some(limit) = effective_max_depth {
+                if next_depth > limit {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&ErrorResponse {
+                            error: format!(
+                                "Depth limit exceeded: next depth {} is greater than maxDepth {}",
+                                next_depth, limit
+                            ),
+                        }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+
+            if let Some(limit) = effective_max_fanout {
+                if child_count >= limit as usize {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&ErrorResponse {
+                            error: format!(
+                                "Fanout limit exceeded: parent already has {} children, maxFanout is {}",
+                                child_count, limit
+                            ),
+                        }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+
+            SessionLineageMeta {
+                parent_session_id: Some(parent_id),
+                lineage_id: parent_meta.lineage_id.clone(),
+                depth: next_depth,
+                max_depth: effective_max_depth,
+                max_fanout: effective_max_fanout,
+            }
+        } else {
+            drop(store);
+
+            let session_repo = crate::state::get_session_repository();
+            let parent_meta = session_repo.get_session(&parent_id).await.ok().flatten();
+
+            let parent_depth = parent_meta.as_ref().and_then(|m| m.depth).unwrap_or(0);
+            let parent_lineage_id = parent_meta
+                .as_ref()
+                .and_then(|m| m.lineage_id.clone())
+                .unwrap_or_else(|| parent_id.clone());
+            let inherited_max_depth = parent_meta.as_ref().and_then(|m| m.max_depth);
+            let inherited_max_fanout = parent_meta.as_ref().and_then(|m| m.max_fanout);
+
+            let effective_max_depth = requested_max_depth.or(inherited_max_depth);
+            let effective_max_fanout = requested_max_fanout.or(inherited_max_fanout);
+            let next_depth = parent_depth.saturating_add(1);
+
+            let child_count = session_repo
+                .get_child_session_ids(&parent_id)
+                .await
+                .map(|children| children.len())
+                .unwrap_or(0);
+
+            if let Some(limit) = effective_max_depth {
+                if next_depth > limit {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&ErrorResponse {
+                            error: format!(
+                                "Depth limit exceeded: next depth {} is greater than maxDepth {}",
+                                next_depth, limit
+                            ),
+                        }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+
+            if let Some(limit) = effective_max_fanout {
+                if child_count >= limit as usize {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&ErrorResponse {
+                            error: format!(
+                                "Fanout limit exceeded: parent already has {} children, maxFanout is {}",
+                                child_count, limit
+                            ),
+                        }),
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            }
+
+            SessionLineageMeta {
+                parent_session_id: Some(parent_id),
+                lineage_id: parent_lineage_id,
+                depth: next_depth,
+                max_depth: effective_max_depth,
+                max_fanout: effective_max_fanout,
+            }
+        }
+    } else {
+        SessionLineageMeta {
+            parent_session_id: None,
+            lineage_id: session_id.clone(),
+            depth: 0,
+            max_depth: requested_max_depth,
+            max_fanout: requested_max_fanout,
+        }
+    };
+
+    // Persist lineage contract into session agent_config so frontend/session list can render hierarchy.
+    agent_config.parent_session_id = lineage_meta.parent_session_id.clone();
+    agent_config.lineage_id = Some(lineage_meta.lineage_id.clone());
+    agent_config.depth = Some(lineage_meta.depth);
+    agent_config.max_depth = lineage_meta.max_depth;
+    agent_config.max_fanout = lineage_meta.max_fanout;
 
     // Register override if path provided
     if let Some(path_str) = body.workspace_path {
@@ -130,6 +334,11 @@ pub async fn create_session(
         .await
     {
         Ok(mut session) => {
+            lineage_store()
+                .write()
+                .await
+                .insert(session_id.clone(), lineage_meta.clone());
+
             // Check for initial message to trigger workflow
             let content = body.request;
             let message_id = Uuid::new_v4().to_string();
@@ -173,6 +382,11 @@ pub async fn create_session(
                 id: session.id,
                 name: session.name,
                 status: format!("{:?}", session.status),
+                parent_session_id: lineage_meta.parent_session_id,
+                lineage_id: lineage_meta.lineage_id,
+                depth: lineage_meta.depth,
+                max_depth: lineage_meta.max_depth,
+                max_fanout: lineage_meta.max_fanout,
             };
             Ok(warp::reply::with_status(
                 warp::reply::json(&response),
@@ -380,16 +594,49 @@ pub async fn terminate_session(
     id: String,
     manager: Arc<AgentSessionManager>,
 ) -> Result<impl Reply, Rejection> {
-    match manager.terminate_session(id).await {
-        Ok(_) => Ok(warp::reply::with_status(
-            warp::reply::json(&serde_json::json!({ "success": true })),
-            StatusCode::OK,
-        )),
+    match manager.terminate_session(id.clone()).await {
+        Ok(_) => {
+            lineage_store().write().await.remove(&id);
+            Ok(warp::reply::with_status(
+                warp::reply::json(&serde_json::json!({ "success": true })),
+                StatusCode::OK,
+            ))
+        }
         Err(e) => Ok(warp::reply::with_status(
             warp::reply::json(&ErrorResponse { error: e }),
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
     }
+}
+
+pub async fn get_child_sessions(id: String) -> Result<impl Reply, Rejection> {
+    let session_repo = crate::state::get_session_repository();
+
+    let children = match session_repo.get_child_session_ids(&id).await {
+        Ok(ids) => ids,
+        Err(_) => {
+            let store = lineage_store().read().await;
+            store
+                .iter()
+                .filter_map(|(session_id, meta)| {
+                    if meta.parent_session_id.as_deref() == Some(id.as_str()) {
+                        Some(session_id.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+    };
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&ChildSessionsResponse {
+            parent_session_id: id,
+            count: children.len(),
+            children,
+        }),
+        StatusCode::OK,
+    ))
 }
 
 pub async fn get_assistants() -> Result<impl Reply, Rejection> {
@@ -408,4 +655,14 @@ pub async fn get_assistants() -> Result<impl Reply, Rejection> {
             StatusCode::INTERNAL_SERVER_ERROR,
         )),
     }
+}
+
+pub async fn health() -> Result<impl Reply, Rejection> {
+    Ok(warp::reply::with_status(
+        warp::reply::json(&HealthResponse {
+            status: "ok".to_string(),
+            service: "libr-agent-session-api".to_string(),
+        }),
+        StatusCode::OK,
+    ))
 }

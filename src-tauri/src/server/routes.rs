@@ -58,12 +58,28 @@ pub fn get_routes(
         .and(agent_manager.clone())
         .and_then(handlers::terminate_session);
 
+    // GET /api/sessions/:id/children
+    let get_child_sessions = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("children"))
+        .and(warp::path::end())
+        .and_then(handlers::get_child_sessions);
+
     // GET /api/assistants
     let list_assistants = warp::get()
         .and(warp::path("api"))
         .and(warp::path("assistants"))
         .and(warp::path::end())
         .and_then(handlers::get_assistants);
+
+    // GET /api/health
+    let health = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("health"))
+        .and(warp::path::end())
+        .and_then(handlers::health);
 
     let cors = warp::cors()
         .allow_any_origin()
@@ -75,6 +91,8 @@ pub fn get_routes(
         .or(get_messages)
         .or(send_message)
         .or(terminate_session)
+        .or(get_child_sessions)
         .or(list_assistants)
+        .or(health)
         .with(cors)
 }

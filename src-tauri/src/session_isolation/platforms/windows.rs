@@ -1,3 +1,4 @@
+use crate::mcp::utils::command_helper::CommandExt;
 use crate::session_isolation::common::get_shell_command;
 use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
 use base64::{engine::general_purpose, Engine as _};
@@ -30,6 +31,9 @@ pub async fn create_basic_isolated_command(
     };
 
     let mut cmd = AsyncCommand::new(&shell_cmd);
+
+    // Apply window-less flags for Windows release builds to prevent terminal flashing
+    cmd.silent();
 
     // Set working directory
     cmd.current_dir(&config.workspace_path);
@@ -137,6 +141,7 @@ pub async fn create_basic_isolated_command(
         // Actually, let's just create a NEW command here and re-apply envs properly.
 
         let mut wrapped_cmd = AsyncCommand::new("powershell");
+        wrapped_cmd.silent();
         wrapped_cmd.current_dir(&config.workspace_path);
 
         // Re-apply envs
@@ -226,10 +231,7 @@ pub async fn create_medium_isolated_command(
     let mut cmd = create_basic_isolated_command(config.clone()).await?;
 
     // Apply platform-specific process group isolation
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
-    }
+    cmd.silent_isolated();
 
     // Windows resource limits not implemented yet
     warn!("Windows resource limits not implemented yet, using basic limits");
@@ -245,10 +247,7 @@ pub async fn create_high_isolated_command(
     let mut cmd = create_medium_isolated_command(config.clone(), isolation_config).await?;
 
     // Apply Windows-specific isolation
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
-    }
+    cmd.silent_isolated();
 
     info!(
         "Created Windows high isolation command for session: {}",
@@ -260,7 +259,10 @@ pub async fn create_high_isolated_command(
 /// Detects a valid Python installation on Windows, prioritizing non-Store versions.
 async fn detect_python_path() -> Option<PathBuf> {
     // 1. Try `where python` to find registered executables
-    if let Ok(output) = AsyncCommand::new("where").arg("python").output().await {
+    let mut discover_cmd = AsyncCommand::new("where");
+    discover_cmd.silent();
+
+    if let Ok(output) = discover_cmd.arg("python").output().await {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {

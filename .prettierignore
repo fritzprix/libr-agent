@@ -9,6 +9,7 @@ src/**/*.test.ts
 src/**/*.test.tsx
 src-tauri/
 public/
+.venv/
 
 # Handlebars templates (preserve formatting and doctype)
 *.hbs

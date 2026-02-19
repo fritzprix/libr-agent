@@ -187,14 +187,14 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 60"
+              placeholder="e.g., 180"
               min={1}
               max={600}
-              value={localSystemSettings.mcpToolTimeoutSeconds ?? 60}
+              value={localSystemSettings.mcpToolTimeoutSeconds ?? 180}
               onChange={(e) =>
                 onChange(
                   'mcpToolTimeoutSeconds',
-                  parseInt(e.target.value, 10) || 60,
+                  parseInt(e.target.value, 10) || 180,
                 )
               }
               className="bg-background border text-foreground w-full max-w-xs"

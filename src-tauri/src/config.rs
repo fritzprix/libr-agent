@@ -255,5 +255,5 @@ pub fn mcp_tool_call_timeout_seconds() -> u64 {
     std::env::var("LIBRAGENT_MCP_TOOL_TIMEOUT_SECONDS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(60)
+        .unwrap_or(180)
 }

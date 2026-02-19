@@ -138,6 +138,66 @@ function AdvancedTabComponent({
 
       <div className="min-w-0">
         <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.defaultSessionMaxDepth',
+            'Session Branching Limit (Advanced)',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="0 = unlimited"
+          min={0}
+          max={64}
+          step={1}
+          value={localAdvancedSettings.defaultSessionMaxDepth ?? 0}
+          onChange={(e) =>
+            onChange(
+              'defaultSessionMaxDepth',
+              parseInt(e.target.value, 10) || 0,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.defaultSessionMaxDepthDescription',
+            'Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.',
+          )}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.defaultSessionMaxFanout',
+            'Session Child Limit (Advanced)',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="0 = unlimited"
+          min={0}
+          max={64}
+          step={1}
+          value={localAdvancedSettings.defaultSessionMaxFanout ?? 0}
+          onChange={(e) =>
+            onChange(
+              'defaultSessionMaxFanout',
+              parseInt(e.target.value, 10) || 0,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.defaultSessionMaxFanoutDescription',
+            'Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.',
+          )}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
           {t('settings.advanced.shellIsolation', 'Shell Isolation Level')}
         </label>
         <select
@@ -178,6 +238,10 @@ export default React.memo(AdvancedTabComponent, (prev, next) => {
       next.localAdvancedSettings.circuitBreakerThreshold &&
     prev.localAdvancedSettings.defaultMaxOutputTokens ===
       next.localAdvancedSettings.defaultMaxOutputTokens &&
+    prev.localAdvancedSettings.defaultSessionMaxDepth ===
+      next.localAdvancedSettings.defaultSessionMaxDepth &&
+    prev.localAdvancedSettings.defaultSessionMaxFanout ===
+      next.localAdvancedSettings.defaultSessionMaxFanout &&
     prev.onChange === next.onChange &&
     prev.systemSettingsProps.localSystemSettings ===
       next.systemSettingsProps.localSystemSettings &&

@@ -20,6 +20,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::ShellType;
+use crate::mcp::utils::command_helper::CommandExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};
@@ -122,6 +123,7 @@ impl PersistentShell {
                 c.arg("-NoProfile");
                 c.arg("-NoLogo");
                 c.arg("-NonInteractive"); // Critical: removes prompts and echo
+                c.silent();
                 debug!("Creating persistent PowerShell session for: {}", session_id);
                 c
             }
@@ -129,6 +131,7 @@ impl PersistentShell {
                 let mut c = Command::new("cmd.exe");
                 c.arg("/Q"); // Echo off
                 c.arg("/K"); // Keep running (don't exit after first command)
+                c.silent();
                 debug!("Creating persistent Cmd shell for: {}", session_id);
                 c
             }
@@ -822,9 +825,6 @@ mod tests {
         let (stdout, _, exit_code, _cwd) = shell
             .execute(&format!("Write-Output '{}'", unicode_str))
             .await?;
-
-        println!("DEBUG: stdout bytes: {:?}", stdout.as_bytes());
-        println!("DEBUG: stdout string: {}", stdout);
 
         assert_eq!(exit_code, 0);
         assert!(

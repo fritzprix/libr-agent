@@ -1,5 +1,6 @@
 use super::MCPServerManager;
 use crate::mcp::types::{MCPConnection, MCPServerConfig, TransportConfig};
+use crate::mcp::utils::command_helper::CommandExt;
 use anyhow::Result;
 use log::{debug, error, info};
 use rmcp::{
@@ -74,6 +75,8 @@ async fn start_stdio_server(
         for (key, value) in env {
             cmd.env(key, value);
         }
+
+        cmd.silent();
     });
 
     // Create transport and connect using RMCP pattern

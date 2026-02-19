@@ -2,7 +2,7 @@
 
 ![LibrAgent Banner](/public/banner.png)
 
-> **Lightning-fast AI agent platform with built-in tools and MCP support**
+> **Autonomous AI agent platform with built-in tools, persistent state, and MCP extensibility**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
@@ -10,9 +10,12 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![Rust](https://img.shields.io/badge/Rust-Latest-CE422B?logo=rust)](https://www.rust-lang.org)
 
-**Automate everything with intelligent AI agents. No complex setup. No dependency hell.**
+**Less glue code. Less setup pain. More real execution.**
 
-[Quick Start](#installation) • [Features](#built-in-tools) • [Architecture](#architecture) • [Contributing](#contributing)
+[Quick Start](#installation) • [Features](#key-built-in-tools) • [Architecture](#architecture) • [Contributing](#contributing)
+
+For the project's engineering ethos and open-source direction, read the [Open Source Launch Manifesto](docs/architecture/open-source-launch-manifesto.md).
+For the autonomy-first operational doctrine, read the [AI Soul Manifesto](docs/architecture/ai-soul-manifesto.md).
 
 ---
 
@@ -20,77 +23,76 @@
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-This demo highlights the core capabilities of LibrAgent:
+This demo shows the default flow LibrAgent is built for:
 
-- **Integrated Browser & Computer Use Tools**: Seamlessly control the browser and execute Shell/PowerShell commands.
-- **AI Agent Assistance**: Unified planning and UI bubbles to assist the agent in complex tasks.
+- **Integrated Browser + Computer Use**: Browser control and Shell/PowerShell execution in one place.
+- **Agentic Execution Loop**: Planning, tool use, and result capture inside a single workflow.
 
-## The Problem
+## Why This Exists
 
-MCP (Model Context Protocol) is a good idea, but using it has friction:
+MCP is powerful. Real-world MCP usage is often painful.
 
 ### Dependency Hell
 
-- Each MCP server needs Node.js, Python, or other runtimes
-- Version conflicts between servers
-- Installation is manual and error-prone
+- Every server drags runtime/version baggage.
+- Setup becomes a compatibility mini-game.
+- Local onboarding becomes fragile and slow.
 
 ### Trust Issues
 
-- MCP servers run arbitrary code on your machine
-- Hard to verify what third-party servers actually do
-- No sandboxing by default
+- Third-party servers execute code locally.
+- Visibility into behavior is limited.
+- Sandboxing is not guaranteed by default.
 
 ### Stateless Tools
 
-- Tools don't maintain state between calls
-- LLM can't see what's currently in the browser, terminal, etc.
-- Makes multi-step workflows clunky
+- Tool calls often lose context between turns.
+- Agents repeatedly rediscover the same state.
+- Multi-step work becomes expensive and brittle.
 
-Example: LLM asks to open a website. You wait. It asks to click a button. You wait again. It has no idea what's on screen because the browser state isn't in context.
+Classic failure mode: open page → wait → click button → wait → lose context → repeat.
 
-## How LibrAgent is Different
+## What Makes LibrAgent Different
 
 ### Built-in Tools with Persistent State
 
-- Browser, terminal, file manager, code execution included
-- Tools maintain their state (browser tabs, terminal history, file system)
-- State is always visible to the LLM in context
+- Built-in browser, workspace, terminal, and code tools.
+- Persistent state across steps (tabs, command history, filesystem context).
+- State is surfaced to the agent so it can continue, not restart.
 
-This means the LLM can:
+Result:
 
-- See what's currently rendered in the browser
-- Know what commands were run in the terminal
-- Track file operations across multiple steps
+- Understand current browser/terminal/workspace state.
+- Execute longer workflows with fewer redundant calls.
+- Keep strategic focus instead of tool thrash.
 
 ### Still Supports MCP
 
-- Connect external MCP servers when you need specialized tools
-- Built-in tools handle 80% of common workflows
-- You're not forced to install anything for basic use
+- External MCP servers remain first-class for niche capabilities.
+- Built-ins cover most daily execution paths.
+- You can start fast, then extend as needed.
 
 ## Trade-offs
 
 ### Larger Binary
 
-- Built-in tools make the app ~50MB instead of ~5MB
-- We chose convenience over size
+- Bigger binary than minimal clients.
+- Trade chosen deliberately: reliability and speed of execution over tiny footprint.
 
 ### Limited Tool Selection
 
-- Only common tools are built-in
-- For niche tools, you still need MCP servers
-- But most workflows don't need niche tools
+- Built-ins are opinionated toward common workflows.
+- Niche work still belongs to external MCP servers.
 
 ## Is This Production Ready?
 
-Not yet. It works for daily use but has rough edges:
+Not fully. It is already useful for real work, but we still have sharp edges:
 
 - Error handling could be better
 - Some tools need more sandboxing
 - Performance isn't optimized
 
-Contributions welcome.
+If you're shipping serious agent systems, contributions are welcome.
 
 ## Installation
 
