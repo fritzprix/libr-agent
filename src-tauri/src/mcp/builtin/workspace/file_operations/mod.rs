@@ -3,7 +3,6 @@
 
 pub mod delete;
 pub mod edit_line;
-pub mod edit_replace;
 pub mod import;
 pub mod read;
 pub mod search_query;

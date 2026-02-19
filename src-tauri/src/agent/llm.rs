@@ -597,7 +597,7 @@ pub async fn handle_llm_response(
 
         // Execute tool calls
         // 🔥 CRITICAL CHANGE: Execute tools SEQUENTIALLY to prevent race conditions
-        // (e.g., writeFile followed by editFile on the same file)
+        // (e.g., writeFile followed by replaceLines on the same file)
         let session_repo_clone = session_repo.clone();
         let active_sessions_clone = active_sessions.clone();
         let app_handle_clone = app_handle.clone();
