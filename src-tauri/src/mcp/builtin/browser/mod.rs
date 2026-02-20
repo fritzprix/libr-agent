@@ -21,13 +21,13 @@ mod tools;
 ///
 /// ## Basic Navigation Flow
 /// 1. `createSession(url?)` → get `session_id`
-/// 2. `navigateToUrl(session_id, url)` → navigate to page
-/// 3. `extractWebContent(session_id)` → read content
+/// 2. `goto(url)` → navigate to page
+/// 3. `content` → read content
 ///
 /// ## Interaction Flow
-/// 1. `listInteractable(session_id)` → find elements
-/// 2. `clickElement(session_id, selector)` → interact
-/// 3. `extractWebContent(session_id)` → verify changes
+/// 1. `listInteractable` → find elements
+/// 2. `click(selector)` → interact
+/// 3. `content` → verify changes
 ///
 /// ## Error Recovery
 /// - **Session expired**: call `createSession` again
@@ -100,9 +100,6 @@ impl BrowserServer {
 
     /// Invalidate state cache (call after navigation or page changes)
     pub(crate) fn invalidate_cache(&self) {
-        if let Ok(mut cache_guard) = self.state_cache.write() {
-            *cache_guard = None;
-        }
         if let Ok(mut cache_guard) = self.state_cache.write() {
             *cache_guard = None;
         }
@@ -255,6 +252,16 @@ impl BuiltinMCPServer for BrowserServer {
             "inputText" => interaction::input_text(self, args).await,
             "scrollPage" => interaction::scroll_page(self, args).await,
             "listInteractable" => interaction::list_interactable(self, args).await,
+            // Aliases (Playwright & UX Friendly)
+            "goto" => navigation::navigate_to_url(self, args).await,
+            "click" => interaction::click_element(self, args).await,
+            "fill" => interaction::input_text(self, args).await,
+            "type" => interaction::input_text(self, args).await,
+            "content" => content::smart_content(self, args).await,
+            "readPage" => content::read_web_content(self, args).await,
+            "back" => navigation::navigate_back(self, args).await,
+            "forward" => navigation::navigate_forward(self, args).await,
+            "scroll" => interaction::scroll_page(self, args).await,
 
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

@@ -352,7 +352,7 @@ ATTENTION ECONOMY:
                 "contentstore",
                 "playbook",
                 "assistant",
-                "session_api"
+                "swarm"
             ]
         });
 

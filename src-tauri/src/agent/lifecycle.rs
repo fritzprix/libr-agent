@@ -5,10 +5,10 @@ use crate::repositories::message_repository::MessageRepository as MessageReposit
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::{SessionMetadata, SessionStatus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -336,6 +336,90 @@ pub async fn update_session_status(
     Ok(())
 }
 
+/// Close orphaned tool calls for a recovered session by injecting synthetic error responses.
+/// Prevents the UI from showing stuck running spinners after a crash recovery.
+async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
+    let message_repo = crate::state::get_message_repository();
+
+    // Load messages for the session (up to MAX_CACHED_MESSAGES)
+    let page = message_repo
+        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
+        .await
+        .map_err(|e| format!("Failed to load messages for tombstone check: {}", e))?;
+
+    let messages = page.items;
+
+    // Collect all resolved tool_call_ids (role="tool" messages with a tool_call_id)
+    let resolved_ids: HashSet<String> = messages
+        .iter()
+        .filter(|m| m.role == "tool")
+        .filter_map(|m| m.tool_call_id.clone())
+        .collect();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let mut tombstones: Vec<crate::commands::messages_commands::Message> = Vec::new();
+
+    // Find assistant messages with unresolved tool calls
+    for msg in &messages {
+        if msg.role != "assistant" {
+            continue;
+        }
+        let Some(tool_calls) = &msg.tool_calls else {
+            continue;
+        };
+        for tc in tool_calls {
+            if resolved_ids.contains(&tc.id) {
+                continue;
+            }
+            // Inject a synthetic error result tombstone so the UI can unblock
+            tombstones.push(crate::commands::messages_commands::Message {
+                id: uuid::Uuid::new_v4().to_string(),
+                session_id: session_id.to_string(),
+                role: "tool".to_string(),
+                content: vec![crate::mcp::types::MCPContent::Text {
+                    text: "[system] Tool call did not complete (session recovered after crash)."
+                        .to_string(),
+                    is_error: Some(true),
+                }],
+                tool_calls: None,
+                tool_call_id: Some(tc.id.clone()),
+                is_streaming: None,
+                thinking: None,
+                thinking_signature: None,
+                assistant_id: None,
+                attachments: None,
+                tool_use: None,
+                created_at: now,
+                updated_at: now,
+                source: Some("recovery".to_string()),
+                error: None,
+                metadata: None,
+            });
+        }
+    }
+
+    if tombstones.is_empty() {
+        return Ok(());
+    }
+
+    log::info!(
+        "Inserting {} tombstone(s) for orphaned tool calls in session '{}'",
+        tombstones.len(),
+        session_id
+    );
+
+    message_repo
+        .insert_many(tombstones)
+        .await
+        .map_err(|e| format!("Failed to insert tombstone messages: {}", e))?;
+
+    Ok(())
+}
+
 /// Recover sessions stuck in BUSY state after app crash/restart
 pub async fn recover_sessions(
     session_repo: &Arc<dyn SessionRepository>,
@@ -379,15 +463,24 @@ pub async fn recover_sessions(
                     session.id
                 );
                 existing_session.metadata = session.clone();
+                // Ensure status is Paused regardless of DB snapshot ordering
+                existing_session.metadata.status = SessionStatus::Paused;
             } else {
                 log::info!(
                     "Initializing new active state for recovered session: {}",
                     session.id
                 );
+                // Use a corrected metadata snapshot with Paused status.
+                // `session` was fetched with status=Busy before update_session_status ran,
+                // and at this point the session is not yet in active_sessions, so
+                // update_session_status's in-memory update was a no-op. We must set
+                // the correct status here explicitly to avoid start_workflow seeing Busy.
+                let mut recovered_metadata = session.clone();
+                recovered_metadata.status = SessionStatus::Paused;
                 active.insert(
                     session.id.clone(),
                     AgentSession {
-                        metadata: session.clone(),
+                        metadata: recovered_metadata,
                         is_running: false,
                         cancellation_token: CancellationToken::new(),
                         cancel_pending: Arc::new(AtomicBool::new(false)),
@@ -404,6 +497,15 @@ pub async fn recover_sessions(
                 );
             }
             drop(active); // Release lock early
+
+            // Close any orphaned tool calls that never got a result (crash tombstones)
+            if let Err(e) = close_orphaned_tool_calls(&session.id).await {
+                log::warn!(
+                    "Failed to close orphaned tool calls for session '{}': {}",
+                    session.id,
+                    e
+                );
+            }
 
             recovered_count += 1;
         }

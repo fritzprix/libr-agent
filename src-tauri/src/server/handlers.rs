@@ -45,6 +45,7 @@ pub struct CreateSessionResponse {
 #[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -536,7 +537,7 @@ pub async fn send_message(
         tool_use: None,
         created_at: now,
         updated_at: now,
-        source: Some("api".to_string()),
+        source: body.source.or_else(|| Some("api".to_string())),
         error: None,
         metadata: None,
     };
@@ -588,6 +589,39 @@ pub async fn send_message(
             StatusCode::OK,
         ))
     }
+}
+
+/// POST /api/sessions/:id/resume
+/// Loads a paused session into memory and resumes workflow without adding any new message.
+/// Used by awaitAgent crash recovery to avoid injecting garbage user messages.
+pub async fn resume_session_workflow(
+    id: String,
+    manager: Arc<AgentSessionManager>,
+) -> Result<impl Reply, Rejection> {
+    // Step 1: Load the session into active_sessions and recreate the MCP proxy
+    if let Err(e) = manager.resume_session(&id).await {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: format!("Failed to resume session: {}", e),
+            }),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
+
+    // Step 2: Resume the workflow from existing messages (no new message injection)
+    if let Err(e) = manager.resume_workflow(id.clone()).await {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&ErrorResponse {
+                error: format!("Failed to resume workflow: {}", e),
+            }),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
+
+    Ok(warp::reply::with_status(
+        warp::reply::json(&serde_json::json!({ "status": "resumed" })),
+        StatusCode::OK,
+    ))
 }
 
 pub async fn terminate_session(

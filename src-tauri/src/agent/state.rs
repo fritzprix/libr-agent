@@ -46,6 +46,7 @@ impl PendingEventManager {
         self.events.push(event);
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.events.clear();
     }
