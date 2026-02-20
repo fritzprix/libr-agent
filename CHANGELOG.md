@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.7] - 2026-02-20
+
+### 🐛 Fixes
+
+- **Agent restart after cancel**: Fixed regression where cancelling an agent session permanently blocked subsequent messages. The workflow state machine now unconditionally resets the cancellation token on `start_workflow`, enabling cancel-then-continue as intended.
+- **LLM abort error detection**: `isAbortError` utility now correctly identifies `DOMException`-based abort errors (not just `Error` subclasses), preventing false `error` status transitions after user-initiated cancellation in all browser environments.
+- **Session status on abort**: Cancelled LLM requests now correctly transition session status to `idle` instead of `error`.
+
+### 🔧 Internal
+
+- Extracted shared `isAbortError()` utility from duplicated inline detection in `useLLMExecution` and `useLLMListener`.
+- Added comprehensive cancel state machine test suite: 13 Rust integration tests (`tests/cancel_logic.rs`) + 20 TypeScript unit tests (`cancel.test.ts`).
+- Rust cancel tests moved to integration test binary to avoid `STATUS_ENTRYPOINT_NOT_FOUND` DLL errors on Windows.
+
 ## [0.5.6] - 2026-02-20
 
 ### 🚀 Features
