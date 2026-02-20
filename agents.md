@@ -132,7 +132,8 @@ libr-agent/
 
 1. Install Rust ([rustup.rs](https://rustup.rs/)), Node.js (v18+), and pnpm (`npm install -g pnpm`).
 2. Run `pnpm install` to install dependencies.
-3. Start development: `pnpm tauri dev`
+3. Start development: `pnpm tauri dev` (runs the full desktop app with backend)
+   - Or run `pnpm dev` for frontend-only development (Vite).
 4. Build for production: `pnpm tauri build`
 5. API keys are managed in-app via the settings modal (not in .env files).
 
@@ -873,12 +874,12 @@ pub async fn command_name(param: Type) -> Result<ReturnType, String> {
 
 1. Install Rust via rustup.rs
 2. Install Node.js (v18+) and pnpm
-3. Copy `.env.example` to `.env` and configure API keys
-4. Run `pnpm install` for dependencies
+3. Run `pnpm install` for dependencies
 
 ### Development Commands
 
-- `pnpm tauri dev` - Start development server
+- `pnpm tauri dev` - Start development server (Desktop App + Backend)
+- `pnpm dev` - Start frontend development server (Vite only)
 - `pnpm tauri build` - Create production build
 - `pnpm lint` - Run ESLint checks
 - `pnpm format` - Format code with Prettier
@@ -1067,7 +1068,7 @@ When refactoring or implementing new features, adhere to these fundamental softw
 
 ### API Key Management
 
-- Store API keys in environment variables
+- Manage API keys securely via the in-app Settings modal
 - Never commit API keys to version control
 - Use secure storage for production deployments
 - Implement key rotation strategies
