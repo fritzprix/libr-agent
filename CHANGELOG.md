@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] - 2026-02-20
+
+### 🚀 Features
+
+- **MCP Server Presets**:
+  - New `MCPServerManagement` panel with curated preset catalog — one-click install for popular MCP servers (GitHub, Brave Search, Filesystem, etc.).
+  - `MCPServerDialog` now supports preset selection, variable substitution UI, and environment variable definitions.
+  - Backend `presets.rs` embeds `mcp-server.json` at compile time for zero-cost preset resolution.
+  - Dedicated `/mcp-servers` route and sidebar nav entry.
+
+- **Database Lifecycle Robustness**:
+  - WAL journal mode enabled by default for improved write throughput and crash safety (`SqliteJournalMode::Wal`).
+  - New `MigrationVerifier`: SHA-256 checksums over migration file list detect schema drift before startup.
+  - New `BackupManager`: timestamped SQLite backups before migrations, auto-pruning oldest beyond 5 kept.
+  - Structured `DatabaseError` enum replaces bare `String` errors across the lifecycle layer.
+  - New `retry_with_backoff` / `retry_with_backoff_async` utilities power a quarantine-and-retry pattern in `run_with_sqlite_sync`.
+  - New `SchemaVersionRecord` and schema info display for diagnostics.
+
+- **Browser Tools — Playwright-Style Aliases**:
+  - Short-name aliases now exposed: `goto`, `click`, `fill`, `type`, `content`, `back`, `forward`, `scroll`.
+  - `content` is a smart router: no args → extract fresh page content; `page` arg → read from cache. Replaces both `extractWebContent` and `readWebContent`.
+  - `create_rich_response`: all success paths now return live page title + URL as post-action verification.
+  - `suggest_selectors`: element-not-found errors now auto-suggest up to 5 visible candidate selectors from the live DOM.
+  - `all_tools()` now exposes the curated Playwright-style set only; legacy names remain routed for backward compatibility.
+
+### 🐛 Fixes
+
+- **`navigate_to_url` HTTP error routing**:
+  - HTTP 403/401/404/5xx/timeout/Network Error responses now return targeted, action-specific guidance instead of silently passing through to `create_rich_response`.
+
+- **`invalidate_cache` double write lock**:
+  - Removed duplicate `state_cache.write()` call in `BrowserServer::invalidate_cache()`.
+
+- **Browser tool description stale names**:
+  - `click_element_tool` schema and `extract_web_content_tool` description corrected to reference `content` instead of old names.
+
+## [0.5.5] - 2026-02-20
+
+### 🚀 Features
+
+- **MCP Server Presets**:
+  - New `MCPServerManagement` panel with curated preset catalog — one-click install for popular MCP servers (GitHub, Brave Search, Filesystem, etc.).
+  - `MCPServerDialog` now supports preset selection, variable substitution UI, and environment variable definitions.
+  - Backend `presets.rs` embeds `mcp-server.json` at compile time for zero-cost preset resolution.
+  - Dedicated `/mcp-servers` route and sidebar nav entry.
+
+- **Database Lifecycle Robustness**:
+  - WAL journal mode enabled by default for improved write throughput and crash safety (`SqliteJournalMode::Wal`).
+  - New `MigrationVerifier`: SHA-256 checksums over migration file list detect schema drift before startup.
+  - New `BackupManager`: timestamped SQLite backups before migrations, auto-pruning oldest beyond 5 kept.
+  - Structured `DatabaseError` enum replaces bare `String` errors across the lifecycle layer.
+  - New `retry_with_backoff` / `retry_with_backoff_async` utilities power a quarantine-and-retry pattern in `run_with_sqlite_sync`.
+  - New `SchemaVersionRecord` and schema info display for diagnostics.
+
+- **Browser Tools — Playwright-Style Aliases**:
+  - Short-name aliases now exposed: `goto`, `click`, `fill`, `type`, `content`, `back`, `forward`, `scroll`.
+  - `content` is a smart router: no args → extract fresh page content; `page` arg → read from cache. Replaces both `extractWebContent` and `readWebContent`.
+  - `create_rich_response`: all success paths now return live page title + URL as post-action verification, so agents can confirm the action result without an extra call.
+  - `suggest_selectors`: element-not-found errors now auto-suggest up to 5 visible candidate selectors from the live DOM.
+  - `all_tools()` now exposes the curated Playwright-style set only; legacy names remain routed for backward compatibility.
+
+### 🐛 Fixes
+
+- **`navigate_to_url` HTTP error routing**:
+  - HTTP 403/401/404/5xx/timeout/Network Error responses now return targeted, action-specific guidance (e.g., "Abandon this page" for 403) instead of silently passing through to `create_rich_response`.
+
+- **`invalidate_cache` double write lock**:
+  - Removed duplicate `state_cache.write()` call in `BrowserServer::invalidate_cache()` — redundant re-lock after first guard was dropped.
+
+- **Browser tool description stale names**:
+  - `click_element_tool` schema description still referenced `extractWebContent`; `extract_web_content_tool` description still referenced `readWebContent(page)`. Both corrected to `content`.
+
 ## [0.5.4] - 2026-02-19
 
 ### 🚀 Features

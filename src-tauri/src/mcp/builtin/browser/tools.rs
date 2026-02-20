@@ -47,7 +47,7 @@ The browser session is managed automatically by the backend. Simply provide the 
 - Timeout: Page too complex or blocking - try different URL
 
 Next Steps:
-- Use extractWebContent to read page content
+- Use `content` to read page content
 - Use listInteractable to see clickable elements".to_string(),
         input_schema: object_prop(
             vec![(
@@ -117,7 +117,7 @@ pub fn extract_web_content_tool() -> MCPTool {
         title: None,
         description: "Extract the content of the current page as markdown. Large pages are automatically paginated.
 
-For pages > 3000 tokens, content is split into pages. Use readWebContent(page) to read subsequent pages.".to_string(),
+For pages > 3000 tokens, content is split into pages. Use content(page) to read subsequent pages.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -145,12 +145,12 @@ pub fn click_element_tool() -> MCPTool {
         description: "Click an element on the page using a CSS selector.
 
 ⚠️ PREREQUISITE:
-- Call listInteractable OR extractWebContent FIRST to find valid selectors on the page.
+- Call listInteractable OR `content` FIRST to find valid selectors on the page.
 - Do NOT guess selectors.".to_string(),
         input_schema: object_prop(
             vec![(
                 "selector".to_string(),
-                string_prop_required("CSS selector of the element to click (must match an element visible in listInteractable/extractWebContent)"),
+                string_prop_required("CSS selector of the element to click (must match an element visible in listInteractable or `content`)"),
             )],
             vec!["selector".to_string()],
             None,
@@ -168,7 +168,7 @@ pub fn input_text_tool() -> MCPTool {
         description: "Input text into an element on the page.
 
 ⚠️ PREREQUISITE:
-- Call listInteractable OR extractWebContent FIRST to find valid selectors.
+- Call listInteractable OR `content` FIRST to find valid selectors.
 - Verify the element is an input or textarea."
             .to_string(),
         input_schema: object_prop(
@@ -257,41 +257,105 @@ pub fn close_session_tool() -> MCPTool {
     }
 }
 
-/// Read a specific page from extracted content
-pub fn read_web_content_tool() -> MCPTool {
-    MCPTool {
-        name: "readWebContent".to_string(),
-        title: None,
-        description: "Read a specific page from previously extracted content (if paginated)."
-            .to_string(),
-        input_schema: object_prop(
-            vec![(
-                "page".to_string(),
-                number_prop(None, None, Some("Page number to read (1-based index)")),
-            )],
-            vec!["page".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
+// --- Alias wrappers (Playwright-style short names) ---
+
+/// Alias for navigate_to_url_tool with short name "goto"
+pub fn goto_tool() -> MCPTool {
+    let mut tool = navigate_to_url_tool();
+    tool.name = "goto".to_string();
+    tool.description = "Navigate to a URL. Provide `url` (required).\n\n⚠️ Error Handling:\n- 403/401: blocked - abandon and search elsewhere\n- 404: not found - check URL\n- Timeout: try different URL\n\nNext: Use `content` to read page.".to_string();
+    tool
 }
 
-/// Returns all browser tools
+/// Alias for extract_web_content_tool with merged schema including `page` for cache reads
+pub fn content_tool() -> MCPTool {
+    let mut tool = extract_web_content_tool();
+    tool.name = "content".to_string();
+    tool.description = "Get page content.\n    - No args: Extracts fresh content from the current page.\n    - `page`: Reads a specific page number from previously extracted cache.".to_string();
+    tool.input_schema = object_prop(
+        vec![
+            (
+                "page".to_string(),
+                number_prop(
+                    None,
+                    None,
+                    Some("Page number to read from cache (optional)"),
+                ),
+            ),
+            (
+                "autoMerge".to_string(),
+                boolean_prop(Some(
+                    "Whether to attempt merging all pages (default: true).",
+                )),
+            ),
+            (
+                "saveRawHtml".to_string(),
+                boolean_prop(Some("Whether to save raw HTML to a file (default: false)")),
+            ),
+        ],
+        vec![],
+        None,
+    );
+    tool
+}
+
+/// Alias for click_element_tool with short name "click"
+pub fn click_tool() -> MCPTool {
+    let mut tool = click_element_tool();
+    tool.name = "click".to_string();
+    tool.description = "Click element by CSS selector. Use listInteractable or `content` first to find valid selectors.".to_string();
+    tool
+}
+
+/// Alias for input_text_tool with short name "fill"
+pub fn fill_tool() -> MCPTool {
+    let mut tool = input_text_tool();
+    tool.name = "fill".to_string();
+    tool.description =
+        "Type text into an input. Use listInteractable or `content` first to find valid selector."
+            .to_string();
+    tool
+}
+
+/// Alias for scroll_page_tool with short name "scroll"
+pub fn scroll_tool() -> MCPTool {
+    let mut tool = scroll_page_tool();
+    tool.name = "scroll".to_string();
+    tool
+}
+
+/// Alias for navigate_back_tool with short name "back"
+pub fn back_tool() -> MCPTool {
+    let mut tool = navigate_back_tool();
+    tool.name = "back".to_string();
+    tool
+}
+
+/// Alias for navigate_forward_tool with short name "forward"
+pub fn forward_tool() -> MCPTool {
+    let mut tool = navigate_forward_tool();
+    tool.name = "forward".to_string();
+    tool
+}
+
+/// Returns all browser tools (Playwright-style aliases favored)
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        create_session_tool(),
-        navigate_to_url_tool(),
-        navigate_back_tool(),
-        navigate_forward_tool(),
+        create_session_tool(), // Essential: Session management
+        close_session_tool(),  // Essential: Cleanup
+        // --- Navigation (Playwright style) ---
+        goto_tool(),    // Alias for navigateToUrl
+        back_tool(),    // Alias for navigateBack
+        forward_tool(), // Alias for navigateForward
         get_current_url_tool(),
         get_page_title_tool(),
-        extract_web_content_tool(),
-        click_element_tool(),
-        input_text_tool(),
-        scroll_page_tool(),
-        list_interactable_tool(),
-        close_session_tool(),
-        read_web_content_tool(),
+        // --- Interaction (Playwright style) ---
+        click_tool(),  // Alias for clickElement
+        fill_tool(),   // Alias for inputText
+        scroll_tool(), // Alias for scrollPage
+        // --- Content ---
+        content_tool(), // Merged alias for extractWebContent + readWebContent
+        // --- Discovery ---
+        list_interactable_tool(), // Useful for fallback element discovery
     ]
 }
