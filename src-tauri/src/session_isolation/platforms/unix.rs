@@ -14,7 +14,18 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
-    // Unix: Inherit environment variables (do not clear)
+    // Clear environment to prevent leakage of secrets (e.g. API keys) from the parent process
+    cmd.env_clear();
+
+    // Re-inherit essential environment variables from parent
+    if let Ok(path) = std::env::var("PATH") {
+        cmd.env("PATH", path);
+    }
+    if let Ok(term) = std::env::var("TERM") {
+        cmd.env("TERM", term);
+    }
+
+    // Set isolated environment variables
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
@@ -99,4 +110,49 @@ pub async fn create_high_isolated_command(
 ) -> Result<AsyncCommand, String> {
     warn!("High isolation not supported on this platform, falling back to medium isolation");
     create_medium_isolated_command(config, isolation_config).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn test_env_clearing() {
+        // Set a secret in the parent process. Use a unique name to avoid collision/race conditions.
+        // Note: std::env::set_var is not thread-safe in tests, but we lack `serial_test` crate here.
+        let secret_var = "SECRET_KEY_UNIT_TEST_ISOLATION";
+        unsafe {
+            std::env::set_var(secret_var, "should_not_be_seen");
+        }
+
+        let config = IsolatedProcessConfig {
+            session_id: "test-session".to_string(),
+            workspace_path: std::env::temp_dir(),
+            // logic: create_basic_isolated_command wraps this in `sh -c "..."` when args is empty,
+            // allowing shell expansion of $SECRET_KEY_UNIT_TEST_ISOLATION.
+            command: format!("echo ${}", secret_var),
+            args: vec![],
+            env_vars: HashMap::new(),
+            isolation_level: crate::session_isolation::types::IsolationLevel::Basic,
+            shell_type: None,
+        };
+
+        // Create the command
+        let mut cmd = create_basic_isolated_command(config)
+            .await
+            .expect("Failed to create command");
+
+        // Execute and capture output
+        let output = cmd.output().await.expect("Failed to execute command");
+        let stdout = String::from_utf8(output.stdout).expect("Invalid UTF-8");
+
+        // Verify the secret is NOT in the output
+        assert_eq!(stdout.trim(), "", "Secret leaked to child process!");
+
+        // Clean up (best effort)
+        unsafe {
+            std::env::remove_var(secret_var);
+        }
+    }
 }

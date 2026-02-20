@@ -15,3 +15,9 @@
 **Vulnerability:** `tokio::fs::read` reads entire files into memory without size checks, enabling DoS. Checking metadata size before reading introduces a TOCTOU race condition if the file grows between check and read.
 **Learning:** Metadata checks are insufficient for limiting resource usage during file I/O because file state is mutable.
 **Prevention:** Use `File::open` combined with `take(limit)` (or `read_to_end` with a capped buffer) to strictly enforce read limits at the I/O operation level.
+
+## 2025-05-24 - Environment Variable Leakage
+
+**Vulnerability:** `create_basic_isolated_command` inherited all environment variables from the parent process by default (standard `std::process::Command` behavior), exposing sensitive secrets (e.g., API keys) to isolated child processes.
+**Learning:** Process isolation requires explicit environment clearing (`env_clear()`) because "isolation" defaults are often permissive for convenience.
+**Prevention:** Always use `env_clear()` when spawning untrusted child processes and explicitly allowlist necessary variables (`PATH`, `TERM`) instead of inheriting everything.
