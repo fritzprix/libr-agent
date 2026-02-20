@@ -164,7 +164,7 @@ We take code quality seriously. Before submitting a PR:
 pnpm test
 
 # Run specific test file
-pnpm test src/lib/ai-service/__tests__/openai.test.ts
+pnpm test src/lib/ai-service/__tests__/anthropic.test.ts
 
 # Test Rust backend
 cd src-tauri && cargo test

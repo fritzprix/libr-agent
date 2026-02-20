@@ -17,7 +17,9 @@ src-tauri/src/mcp/builtin/
 ├── mcp_manager/          # MCP server management
 ├── planning/             # Task planning and tracking
 ├── playbook/             # Workflow automation
+├── session_api/          # Session API server
 ├── skills/               # Reusable capabilities
+├── tests/                # Integration tests
 ├── ui/                   # UI interaction tools
 ├── workspace/            # Terminal, File Manager, Code Execution
 ├── utils.rs              # Common utilities
@@ -38,9 +40,11 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
     fn version(&self) -> &str { "1.0.0" }           // Version (default provided)
 
     // Returns a human-friendly display name for the UI
+    // Default implementation capitalizes the server name
     fn display_name(&self) -> String { ... }
 
     // Returns complete UI metadata for this server
+    // Default implementation uses display_name and description
     fn metadata(&self) -> BuiltinServerMetadata { ... }
 
     // Returns a list of tools provided by this server
@@ -67,9 +71,9 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 
 ### Tool Naming Conventions
 
-- **Internal**: Use simple names (e.g., `"echo"`).
-- **Registry**: Tools are exposed with IDs in the form `builtin_{server_id}__{tool_name}` (e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`).
-- **Frontend**: Call tools using the same ID format, e.g., `"builtin_example__echo"` or `"builtin_workspace__runCommand"`.
+- **Internal**: Use simple names (e.g., `"echo"`, `"readFile"`).
+- **Registry**: Tools are exposed directly with their internal names. Ensure uniqueness across servers if necessary, though current implementations use distinct names naturally.
+- **Frontend**: Call tools using the simple name, e.g., `"echo"` or `"runCommand"`.
 
 ## 🚀 Step-by-Step Guide to Adding a New MCP Server Module
 
@@ -87,7 +91,8 @@ use tracing::{info, error};
 
 use super::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext, MCPContent};
-use crate::mcp::{JSONSchema, JSONSchemaType, MCPTool};
+use crate::mcp::MCPTool;
+use crate::mcp::utils::schema_builder::*; // Helper functions for schema building
 
 /// Example MCP Server providing text processing tools
 #[derive(Debug)]
@@ -98,47 +103,23 @@ impl ExampleServer {
         Self
     }
 
-    /// Define the Echo tool
+    /// Define the Echo tool using schema builder helpers
     fn create_echo_tool() -> MCPTool {
+        let mut props = HashMap::new();
+        props.insert(
+            "text".to_string(),
+            string_prop(
+                Some(1),
+                Some(1000),
+                Some("Text to echo back to the user"),
+            ),
+        );
+
         MCPTool {
             name: "echo".to_string(),
             title: Some("Echo Text".to_string()),
             description: "Echo the input text back to the user".to_string(),
-            input_schema: JSONSchema {
-                schema_type: JSONSchemaType::Object {
-                    properties: Some({
-                        let mut props = HashMap::new();
-                        props.insert(
-                            "text".to_string(),
-                            JSONSchema {
-                                schema_type: JSONSchemaType::String {
-                                    min_length: Some(1),
-                                    max_length: Some(1000),
-                                    pattern: None,
-                                    format: None,
-                                },
-                                title: None,
-                                description: Some("Text to echo".to_string()),
-                                default: None,
-                                examples: Some(vec![json!("Hello, world!")]),
-                                enum_values: None,
-                                const_value: None,
-                            },
-                        );
-                        props
-                    }),
-                    required: Some(vec!["text".to_string()]),
-                    additional_properties: Some(false),
-                    min_properties: None,
-                    max_properties: None,
-                },
-                title: None,
-                description: None,
-                default: None,
-                examples: None,
-                enum_values: None,
-                const_value: None,
-            },
+            input_schema: object_schema(props, vec!["text".to_string()]),
             output_schema: None,
             annotations: None,
         }
@@ -206,8 +187,7 @@ registry.register_server(Box::new(example::ExampleServer::new()));
 
 ### Automatic Tool Detection
 
-The frontend automatically detects new tools:
-- `builtin_example__echo`
+The frontend automatically detects new tools exposed by the registry.
 
 ### Tool Call Example
 
@@ -216,7 +196,7 @@ const toolCall = {
   id: "req-123",
   type: "function",
   function: {
-    name: "builtin_example__echo",
+    name: "echo",
     arguments: JSON.stringify({ text: "Hello, LibrAgent!" })
   }
 };

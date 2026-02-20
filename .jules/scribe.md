@@ -65,6 +65,15 @@
 **Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
 **Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".
 
+## 2026-03-01 - src-tauri/src/mcp/builtin/README.md
+
+**Drift:** Module structure missing `session_api` and `tests`. Claimed tools use `builtin_` prefix.
+**Reality:** Added missing modules. Clarified that tools use simple names (e.g., `readFile`) without prefixes. Updated frontend integration example.
+
+## 2026-03-01 - CONTRIBUTING.md
+
+**Drift:** Referenced `src/lib/ai-service/__tests__/openai.test.ts` which does not exist.
+**Reality:** Updated to use `src/lib/ai-service/__tests__/anthropic.test.ts` which exists and passes.
 ## 2026-03-02 - CLAUDE.md
 
 **Drift:** Linked to missing files `docs/architecture/chat-feature-architecture.md`, `docs/builtin-tools.md`, `docs/external-mcp-integration.md`.
