@@ -1,5 +1,5 @@
-use std::time::Duration;
 use reqwest;
+use std::time::Duration;
 
 /// Validates URL and returns normalized version.
 /// Supports: http://, https://
@@ -20,10 +20,7 @@ pub fn validate_and_normalize_url(url: &str) -> Result<String, String> {
                 "about" => {
                     // Replace 'about:blank' with a minimal data URI to ensure webview lifecycle triggers correctly
                     // about:blank specifically can fail to trigger 'PageLoad' events on some WebKit/WebView2 backends
-                    Ok(
-                        "data:text/html,<html><body><h1>Agent Ready</h1></body></html>"
-                            .to_string(),
-                    )
+                    Ok("data:text/html,<html><body><h1>Agent Ready</h1></body></html>".to_string())
                 }
                 scheme => Err(format!(
                     "Unsupported URL scheme '{}'. Allowed: http://, https://, about:",

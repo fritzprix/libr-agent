@@ -1,8 +1,6 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 
 use log::{debug, error, info, warn};
-
-use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
@@ -20,7 +18,6 @@ use std::time::Duration;
 use tokio::sync::{oneshot, Notify};
 
 use super::browser_error::BrowserError;
-use reqwest;
 
 pub mod types;
 pub use types::{BrowserSession, SessionStatus};
