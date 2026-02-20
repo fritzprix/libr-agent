@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.8] - 2026-02-20
+
+### 🐛 Fixes
+
+- **Crash recovery: child agent session stuck as "paused" forever**: After a crash/restart, child agent sessions that were mid-execution would remain paused indefinitely and never resume. The awaitAgent tool now correctly resumes paused sessions through a new `POST /api/sessions/:id/resume` endpoint — no garbage messages are injected into the session history.
+- **Session history list not reflecting live status**: The start-view session card list was not updating when a child session transitioned from `paused` to `busy` during crash recovery. The `AgentSessionListContext` now subscribes directly to `statusChanged` events and patches session status in-place without a full reload.
+- **Garbage `[system] Resume after crash recovery.` message in child session**: The previous recovery mechanism injected a fake user message via `POST /messages`, polluting the session history and the LLM context. The new `/resume` endpoint triggers workflow continuation from existing messages without adding any new message.
+- **"Session not found" on crash recovery kick**: Paused sessions at startup were not loaded into `active_sessions` memory, causing `/messages` POST to fail. The new `/resume` endpoint calls `resume_session` first (loads session into memory, recreates MCP proxy) before triggering the workflow.
+- **Stale "Busy" in-memory status after crash recovery**: `recover_sessions` was inserting a stale `Busy` metadata snapshot for newly-recovered sessions, causing the next `start_workflow` call to see a busy session and silently queue rather than run.
+- **Orphaned tool call spinners after crash**: Tool calls that were in-flight at crash time left the UI with permanently spinning tool result indicators. Crash recovery now injects tombstone error results for all unresolved tool calls, allowing the UI to unblock.
+
+### 🔧 Internal
+
+- New `POST /api/sessions/:id/resume` HTTP endpoint (`resume_session_workflow` handler) that loads a session into memory and resumes the LLM workflow from existing message history.
+- `recover_sessions` explicitly sets `SessionStatus::Paused` on recovered metadata in both "new entry" and "already active" branches to prevent status snapshot race conditions.
+- `last_message_is_ui_resource()` helper in `formatting.rs` distinguishes intentional UI-pause (awaiting user interaction) from crash-pause, preventing spurious resume kicks on sessions waiting for a UI resource response.
+- Recovery tombstone messages tagged with `source: "recovery"` and filtered out from LLM context in `llm.rs` to avoid confusing the model.
+- Added 7 TypeScript unit tests for `statusChanged` in-place patching and 9 Rust unit tests for `last_message_is_ui_resource` / `is_terminal_status` in `formatting.rs`.
+
 ## [0.5.7] - 2026-02-20
 
 ### 🐛 Fixes

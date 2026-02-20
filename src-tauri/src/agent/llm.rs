@@ -86,7 +86,7 @@ pub async fn request_llm_completion(
         );
     }
 
-    // Read messages from in-memory cache
+    // Read messages from in-memory cache, excluding recovery tombstones (source="recovery")
     let messages = {
         let sessions = active_sessions.read().await;
         let session = sessions
@@ -94,7 +94,11 @@ pub async fn request_llm_completion(
             .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
         let messages_lock = session.messages.read().await;
-        messages_lock.clone()
+        messages_lock
+            .iter()
+            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .cloned()
+            .collect::<Vec<_>>()
     };
 
     log::info!(

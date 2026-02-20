@@ -158,6 +158,68 @@ pub async fn handle_tool_call(
                 .map(|v| v.min(200000) as usize)
                 .filter(|v| *v > 0);
 
+            // Pre-check: if child is paused (crash recovery), auto-resume unless it's
+            // an intentional pause waiting for a UI resource interaction.
+            {
+                let initial_session = call_json(
+                    Method::GET,
+                    &format!("/api/sessions/{}", session_id),
+                    None,
+                    None,
+                )
+                .await
+                .unwrap_or_default();
+                if extract_session_status(&initial_session) == "paused" {
+                    let msgs_data = call_json(
+                        Method::GET,
+                        &format!("/api/sessions/{}/messages", session_id),
+                        None,
+                        Some(vec![("limit".to_string(), "5".to_string())]),
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let msgs = msgs_data
+                        .get("messages")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    if last_message_is_ui_resource(&msgs) {
+                        log::info!(
+                            "awaitAgent: session '{}' is paused waiting for UI resource — leaving alone",
+                            session_id
+                        );
+                    } else {
+                        log::info!(
+                            "awaitAgent: session '{}' is paused from crash, resuming via /resume endpoint",
+                            session_id
+                        );
+                        // Use /resume instead of /messages to avoid injecting a garbage user message.
+                        // /resume loads the session into memory and triggers workflow from existing messages.
+                        match call_json(
+                            Method::POST,
+                            &format!("/api/sessions/{}/resume", session_id),
+                            None,
+                            None,
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                log::info!(
+                                    "awaitAgent: resume triggered for '{}', session now busy",
+                                    session_id
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("awaitAgent: resume failed for '{}': {}", session_id, e);
+                            }
+                        }
+                        // Brief pause to allow the session to transition to busy
+                        sleep(Duration::from_millis(500)).await;
+                    }
+                }
+            }
+
             let (session_data, poll_count) =
                 wait_until_session_terminal(&session_id, timeout_seconds, poll_interval_seconds)
                     .await?;

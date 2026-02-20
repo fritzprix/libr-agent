@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
@@ -316,6 +317,40 @@ export function AgentSessionListProvider({
     logger.debug('Agent updated session resource, refreshing session list...');
     loadSessions();
   });
+
+  // Subscribe to statusChanged events to update session status in-place
+  // (avoids full reload on every status transition during normal workflow)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setup = async () => {
+      unlisten = await listen<{
+        type: string;
+        sessionId?: string;
+        status?: 'idle' | 'busy' | 'paused' | 'error';
+      }>('agent:event', (event) => {
+        const payload = event.payload;
+        if (
+          payload.type === 'statusChanged' &&
+          payload.sessionId &&
+          payload.status
+        ) {
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === payload.sessionId
+                ? { ...s, status: payload.status as AgentSession['status'] }
+                : s,
+            ),
+          );
+        }
+      });
+    };
+
+    setup();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   const stateValue = useMemo(
     () => ({
