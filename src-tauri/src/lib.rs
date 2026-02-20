@@ -1,6 +1,6 @@
 use log::{error, warn};
 
-mod agent;
+pub mod agent; // pub for integration tests (cancel_logic.rs)
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
@@ -53,7 +53,7 @@ use commands::mcp_commands::{
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
-    update_mcp_server_config,
+    list_mcp_server_presets, update_mcp_server_config,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -244,6 +244,7 @@ pub fn run() {
                 update_mcp_server_config,
                 delete_mcp_server_config,
                 list_mcp_server_configs,
+                list_mcp_server_presets,
                 create_playbook,
                 update_playbook,
                 delete_playbook,

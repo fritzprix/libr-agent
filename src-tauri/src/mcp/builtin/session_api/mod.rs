@@ -24,8 +24,9 @@ impl SessionApiServer {
 
     pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
         crate::mcp::types::BuiltinServerMetadata {
-            display_name: "Session API".to_string(),
-            description: "Client tools for the internal Session Management HTTP API".to_string(),
+            display_name: "Swarm".to_string(),
+            description: "Spawn and orchestrate child agents to delegate tasks in parallel"
+                .to_string(),
             icon: None,
         }
     }
@@ -38,11 +39,11 @@ impl SessionApiServer {
 #[async_trait]
 impl BuiltinMCPServer for SessionApiServer {
     fn name(&self) -> &str {
-        "session_api"
+        "swarm"
     }
 
     fn description(&self) -> &str {
-        "Client tools for internal HTTP Session Management API"
+        "Spawn and orchestrate child agents to delegate tasks in parallel"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -63,7 +64,7 @@ impl BuiltinMCPServer for SessionApiServer {
 
         // 1. Base prompt
         let mut context_prompt = format!(
-            "## Session API\n\nInternal API client is available at {}\nUse these tools to create/manage nested sessions.",
+            "## Swarm Capability\n\nYou can delegate tasks to specialist agents and collect their results. Use this when the task benefits from parallelism or specialist knowledge. Internal API at {}",
             base_url
         );
 
@@ -81,7 +82,7 @@ impl BuiltinMCPServer for SessionApiServer {
                             truncated,
                             Self::SWARM_CONTEXT_NODE_LIMIT,
                         ));
-                        context_prompt.push_str("\n\nUse `session_api` tools to communicate with specific sub-agents or poll their messages.");
+                        context_prompt.push_str("\n\nUse swarm tools to communicate with specific sub-agents or poll their messages.");
                     }
                     Err(e) => {
                         log::warn!("Failed to fetch child sessions for context: {}", e);
@@ -94,7 +95,7 @@ impl BuiltinMCPServer for SessionApiServer {
             context_prompt,
             structured_state: Some(json!({
                 "base_url": base_url,
-                "server": "session_api"
+                "server": "swarm"
             })),
         }
     }

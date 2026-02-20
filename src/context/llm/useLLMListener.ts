@@ -8,6 +8,7 @@ import { AIServiceProvider } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import type { CompletionRequest } from './types';
+import { isAbortError } from './types';
 
 const logger = getLogger('useLLMListener');
 
@@ -195,6 +196,20 @@ export function useLLMListener({
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
+            // If the request was intentionally aborted (user cancelled), do NOT report
+            // this as an error to Rust - the cancel_workflow command already handles
+            // state transition to Idle. Reporting it would cause a race where Rust
+            // transitions: Idle (cancel) → Error (stale abort) in wrong order.
+            const isAborted = isAbortError(error);
+
+            if (isAborted) {
+              logger.info(
+                'LLM request aborted due to cancellation, skipping error report to Rust',
+                { sessionId },
+              );
+              return;
+            }
+
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust

@@ -55,6 +55,26 @@ pub fn is_terminal_status(status: &str) -> bool {
     )
 }
 
+/// Returns true if the last tool-role message in `messages` contains a
+/// content item with `"type": "resource"` — indicating an intentional pause
+/// waiting for user interaction (e.g. a UI resource prompt).
+pub fn last_message_is_ui_resource(messages: &[Value]) -> bool {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.get("role").and_then(|v| v.as_str()) == Some("tool"))
+        .map(|m| {
+            m.get("content")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .any(|item| item.get("type").and_then(|v| v.as_str()) == Some("resource"))
+                })
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
 pub fn message_preview_text(message: &Value, options: MessageSummaryOptions) -> Option<String> {
     let role = message
         .get("role")
@@ -158,7 +178,7 @@ pub fn build_swarm_snapshot_text(
 ) -> String {
     if rows.is_empty() {
         return format!(
-            "Swarm board: no active sub-agents under current command session {}.\nNext step: use createChildSession to spawn a worker.",
+            "Swarm board: no active sub-agents under current command session {}.\nNext step: use spawnAgent to deploy a worker.",
             root_session_id
         );
     }
@@ -204,7 +224,7 @@ pub fn build_swarm_snapshot_text(
 
     if truncated {
         text.push_str(&format!(
-            "\nRoster truncated at {} units. Use specific session IDs with getMessages/getSession for deeper checks.",
+            "\nRoster truncated at {} units. Use specific session IDs with getAgentLog/getAgentStatus for deeper checks.",
             max_nodes
         ));
     }
@@ -258,4 +278,113 @@ pub fn latest_assistant_message_text(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -----------------------------------------------------------------------
+    // last_message_is_ui_resource
+    // -----------------------------------------------------------------------
+
+    /// Basic happy path: last tool message contains a "resource" content item.
+    /// This identifies an *intentional* pause waiting for UI interaction, so
+    /// awaitAgent must NOT inject a recovery kick.
+    #[test]
+    fn ui_resource_returns_true_when_last_tool_has_resource() {
+        let messages = vec![
+            json!({ "role": "user",      "content": [{"type": "text", "text": "hi"}] }),
+            json!({ "role": "assistant", "content": [{"type": "tool_call", "name": "foo"}] }),
+            json!({ "role": "tool",      "content": [{"type": "resource", "uri": "ui://form/abc"}] }),
+        ];
+        assert!(last_message_is_ui_resource(&messages));
+    }
+
+    /// Tool message exists but has only text content → NOT a UI resource pause.
+    #[test]
+    fn ui_resource_returns_false_when_last_tool_has_only_text() {
+        let messages =
+            vec![json!({ "role": "tool", "content": [{"type": "text", "text": "done"}] })];
+        assert!(!last_message_is_ui_resource(&messages));
+    }
+
+    /// No tool messages at all → false.
+    #[test]
+    fn ui_resource_returns_false_with_no_tool_messages() {
+        let messages = vec![
+            json!({ "role": "user",      "content": [{"type": "text", "text": "hello"}] }),
+            json!({ "role": "assistant", "content": [{"type": "text", "text": "hey"}] }),
+        ];
+        assert!(!last_message_is_ui_resource(&messages));
+    }
+
+    /// Empty message list → false.
+    #[test]
+    fn ui_resource_returns_false_for_empty_list() {
+        assert!(!last_message_is_ui_resource(&[]));
+    }
+
+    /// Only the *last* tool message matters.
+    /// Earlier tool messages with resource content must not cause a false positive.
+    #[test]
+    fn ui_resource_only_last_tool_message_matters() {
+        let messages = vec![
+            // Earlier tool: has resource (should be ignored)
+            json!({ "role": "tool",      "content": [{"type": "resource", "uri": "ui://old"}] }),
+            json!({ "role": "assistant", "content": [{"type": "text", "text": "processing"}] }),
+            // Last tool: plain text result (crash scenario / normal completion)
+            json!({ "role": "tool",      "content": [{"type": "text", "text": "result"}] }),
+        ];
+        assert!(!last_message_is_ui_resource(&messages));
+    }
+
+    /// A tool message with *mixed* content (resource + text) should still return true.
+    #[test]
+    fn ui_resource_returns_true_for_mixed_content_with_resource() {
+        let messages = vec![json!({
+            "role": "tool",
+            "content": [
+                {"type": "text", "text": "Here is your form"},
+                {"type": "resource", "uri": "ui://form/xyz"}
+            ]
+        })];
+        assert!(last_message_is_ui_resource(&messages));
+    }
+
+    /// Non-tool roles with "resource" type must NOT trigger the check.
+    #[test]
+    fn ui_resource_ignores_resource_in_non_tool_roles() {
+        let messages = vec![
+            json!({ "role": "assistant", "content": [{"type": "resource", "uri": "ui://foo"}] }),
+        ];
+        assert!(!last_message_is_ui_resource(&messages));
+    }
+
+    // -----------------------------------------------------------------------
+    // is_terminal_status – sanity check for crash-recovery poll-loop exit
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn terminal_status_idle_is_terminal() {
+        assert!(is_terminal_status("idle"));
+        assert!(is_terminal_status("Idle")); // case-insensitive
+    }
+
+    #[test]
+    fn terminal_status_busy_is_not_terminal() {
+        assert!(!is_terminal_status("busy"));
+    }
+
+    #[test]
+    fn terminal_status_paused_is_not_terminal() {
+        assert!(!is_terminal_status("paused"));
+    }
+
+    #[test]
+    fn terminal_status_error_is_terminal() {
+        assert!(is_terminal_status("error"));
+        assert!(is_terminal_status("failed"));
+    }
 }

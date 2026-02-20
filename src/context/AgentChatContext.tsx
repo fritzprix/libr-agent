@@ -121,7 +121,11 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, addMessage, resumeSession } = useAgentSessionActions();
 
-  const { streamingMessages, setAgentMode: setLLMAgentMode } = useLLMService();
+  const {
+    streamingMessages,
+    setAgentMode: setLLMAgentMode,
+    cancelCompletionRequest,
+  } = useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
@@ -470,9 +474,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     logger.info('Cancelling workflow', { sessionId: session.id });
 
-    // Also clear pending messages
+    // 1. Immediately cancel any local streaming LLM requests
+    cancelCompletionRequest(session.id);
+
+    // 2. Clear pending messages to remove them optimistically from UI
     setPendingMessages([]);
 
+    // 3. Inform Rust backend to cancel the workflow loop
     try {
       await invoke('agent_cancel_workflow', {
         sessionId: session.id,
@@ -483,7 +491,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);
     }
-  }, [session?.id]);
+  }, [session?.id, cancelCompletionRequest, setError]);
 
   /**
    * Retry the last failed message
