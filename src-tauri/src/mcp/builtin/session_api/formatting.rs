@@ -158,7 +158,7 @@ pub fn build_swarm_snapshot_text(
 ) -> String {
     if rows.is_empty() {
         return format!(
-            "Swarm board: no active sub-agents under current command session {}.\nNext step: use createChildSession to spawn a worker.",
+            "Swarm board: no active sub-agents under current command session {}.\nNext step: use spawnAgent to deploy a worker.",
             root_session_id
         );
     }
@@ -204,7 +204,7 @@ pub fn build_swarm_snapshot_text(
 
     if truncated {
         text.push_str(&format!(
-            "\nRoster truncated at {} units. Use specific session IDs with getMessages/getSession for deeper checks.",
+            "\nRoster truncated at {} units. Use specific session IDs with getAgentLog/getAgentStatus for deeper checks.",
             max_nodes
         ));
     }

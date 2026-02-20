@@ -66,7 +66,15 @@ pub async fn unchanged_messages_notice(
 
     let mut cache = message_fetch_cache().write().await;
     if cache.len() > 2048 {
-        cache.clear();
+        // Remove oldest half instead of wholesale clear to avoid burst-poll spikes
+        let mut keys_by_age: Vec<(String, Instant)> = cache
+            .iter()
+            .map(|(k, v)| (k.clone(), v.last_checked_at))
+            .collect();
+        keys_by_age.sort_by_key(|(_, t)| *t);
+        for (k, _) in keys_by_age.into_iter().take(1024) {
+            cache.remove(&k);
+        }
     }
 
     let now = Instant::now();
@@ -118,7 +126,7 @@ pub async fn min_interval_notice(
             let wait_seconds = cooldown_until.duration_since(now).as_secs().max(1);
             entry.last_checked_at = now;
             return Some(format!(
-                "Forced cooldown active for session {}.\n\nPlease wait {}s before calling getMessages again.",
+                "Forced cooldown active for session {}.\n\nPlease wait {}s before calling getAgentLog again.",
                 target_session_id, wait_seconds
             ));
         }
@@ -137,14 +145,14 @@ pub async fn min_interval_notice(
             entry.cooldown_until = Some(cooldown_until);
             entry.rapid_call_count = 0;
             return Some(format!(
-                "Too many rapid getMessages calls detected for session {}.\n\nForced cooldown started: {}s. Let the model rest before polling again.",
+                "Too many rapid getAgentLog calls detected for session {}.\n\nForced cooldown started: {}s. Let the model rest before polling again.",
                 target_session_id, options.forced_rest_seconds
             ));
         }
 
         let wait_seconds = options.min_interval_seconds - elapsed;
         return Some(format!(
-            "Skipped getMessages for session {} to preserve context budget.\n\nPlease wait {}s before polling again (minIntervalSeconds={}; rapidCount={}/{}).",
+            "Skipped getAgentLog for session {} to preserve context budget.\n\nPlease wait {}s before polling again (minIntervalSeconds={}; rapidCount={}/{}).",
             target_session_id,
             wait_seconds,
             options.min_interval_seconds,

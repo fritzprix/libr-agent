@@ -52,6 +52,8 @@ export function useLLMExecution({
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   // Track timeout IDs for cleanup
   const timeoutsRef = useRef<Map<string, number>>(new Map());
+  // Track last streaming UI update time per session (throttle to ~20fps)
+  const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
 
   // Clean up on unmount
   useEffect(() => {
@@ -329,6 +331,7 @@ export function useLLMExecution({
         const activeToolCallIndices = new Map<number, number>();
 
         let thinkingStartTime: number | undefined;
+        let currentThinkingTime: number | undefined;
         let finalUsage: TokenUsage | undefined;
         let firstChunkTime: number | undefined;
         let thinkingSignature: string | undefined;
@@ -442,7 +445,6 @@ export function useLLMExecution({
             });
           }
 
-          let currentThinkingTime: number | undefined;
           if (thinkingStartTime !== undefined) {
             currentThinkingTime =
               (performance.now() - thinkingStartTime) / 1000;
@@ -468,41 +470,84 @@ export function useLLMExecution({
             }
           }
 
-          setStreamingMessages((prev) => {
-            const next = new Map(prev);
-            const legacyToolCalls: ToolCall[] = content
-              .filter((c) => c.type === 'tool_call')
-              .map((c) => {
-                const tc = c as MCPToolCallContent;
-                return {
-                  id: tc.id,
-                  type: 'function',
-                  function: {
-                    name: tc.name,
-                    arguments: tc.arguments,
-                  },
-                };
+          // Throttle React state updates to ~20fps (50ms) to avoid WebView GPU overload
+          // Content accumulation above still happens on every chunk (cheap)
+          const nowMs = performance.now();
+          const lastUpdateMs =
+            lastStreamingUpdateRef.current.get(sessionId) ?? 0;
+          if (nowMs - lastUpdateMs >= 50) {
+            lastStreamingUpdateRef.current.set(sessionId, nowMs);
+            setStreamingMessages((prev) => {
+              const next = new Map(prev);
+              const legacyToolCalls: ToolCall[] = content
+                .filter((c) => c.type === 'tool_call')
+                .map((c) => {
+                  const tc = c as MCPToolCallContent;
+                  return {
+                    id: tc.id,
+                    type: 'function',
+                    function: {
+                      name: tc.name,
+                      arguments: tc.arguments,
+                    },
+                  };
+                });
+
+              const legacyThinking = content
+                .filter((c) => c.type === 'thinking')
+                .map((c) => (c as MCPThinkingContent).thinking)
+                .join('\n');
+
+              next.set(sessionId, {
+                ...streamingMessage,
+                content,
+                tool_calls:
+                  legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
+                thinking: legacyThinking || undefined,
+                thinkingSignature,
+                thinkingTime: currentThinkingTime,
+                usage: finalUsage,
+                isStreaming: true,
               });
-
-            const legacyThinking = content
-              .filter((c) => c.type === 'thinking')
-              .map((c) => (c as MCPThinkingContent).thinking)
-              .join('\n');
-
-            next.set(sessionId, {
-              ...streamingMessage,
-              content,
-              tool_calls:
-                legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
-              thinking: legacyThinking || undefined,
-              thinkingSignature,
-              thinkingTime: currentThinkingTime,
-              usage: finalUsage,
-              isStreaming: true,
+              return next;
             });
-            return next;
-          });
+          }
         }
+
+        // Always flush final streaming state after loop ends (ensures last content is visible)
+        lastStreamingUpdateRef.current.delete(sessionId);
+        setStreamingMessages((prev) => {
+          const next = new Map(prev);
+          const legacyToolCalls: ToolCall[] = content
+            .filter((c) => c.type === 'tool_call')
+            .map((c) => {
+              const tc = c as MCPToolCallContent;
+              return {
+                id: tc.id,
+                type: 'function',
+                function: {
+                  name: tc.name,
+                  arguments: tc.arguments,
+                },
+              };
+            });
+          const legacyThinking = content
+            .filter((c) => c.type === 'thinking')
+            .map((c) => (c as MCPThinkingContent).thinking)
+            .join('\n');
+          next.set(sessionId, {
+            ...streamingMessage,
+            content,
+            tool_calls:
+              legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
+            thinking: legacyThinking || undefined,
+            thinkingSignature,
+            thinkingTime: currentThinkingTime,
+            usage: finalUsage,
+            isStreaming: true,
+          });
+          return next;
+        });
 
         const endTime = performance.now();
         const totalDurationMs = endTime - startTime;

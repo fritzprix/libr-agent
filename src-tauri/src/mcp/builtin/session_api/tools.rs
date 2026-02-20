@@ -29,9 +29,9 @@ pub fn health_check_tool() -> MCPTool {
 
 pub fn create_child_session_tool() -> MCPTool {
     MCPTool {
-        name: "createChildSession".to_string(),
-        title: Some("Create Child Session".to_string()),
-        description: "Create a child session linked to a parent session (lineage contract). In caller context, parent is always caller session (peer/sibling creation disabled) and provided parentSessionId is ignored. If called without caller context, provide explicit parentSessionId. The alias 'current' is supported only with caller context."
+        name: "spawnAgent".to_string(),
+        title: Some("Spawn Agent".to_string()),
+        description: "Spawn a child agent with a specific task. The child runs autonomously; wait for it to finish and collect the result. Caller is always the parent."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -89,9 +89,9 @@ pub fn create_child_session_tool() -> MCPTool {
 
 pub fn get_session_tool() -> MCPTool {
     MCPTool {
-        name: "getSession".to_string(),
-        title: Some("Get Session".to_string()),
-        description: "Get current session metadata/status by session ID.".to_string(),
+        name: "getAgentStatus".to_string(),
+        title: Some("Get Agent Status".to_string()),
+        description: "Get current status and metadata of an agent session.".to_string(),
         input_schema: object_prop(
             vec![(
                 "sessionId".to_string(),
@@ -107,9 +107,9 @@ pub fn get_session_tool() -> MCPTool {
 
 pub fn wait_for_session_idle_tool() -> MCPTool {
     MCPTool {
-        name: "waitForSessionIdle".to_string(),
-        title: Some("Wait For Session Idle".to_string()),
-        description: "Wait until a session reaches terminal status (usually Idle), then optionally fetch latest assistant result. By default, returns full assistant text in the text channel. Use this instead of aggressive getMessages polling."
+        name: "awaitAgent".to_string(),
+        title: Some("Await Agent".to_string()),
+        description: "Wait until an agent finishes its task, then return its final result. Prefer this over polling getAgentLog repeatedly."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -164,9 +164,9 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
 
 pub fn get_messages_tool() -> MCPTool {
     MCPTool {
-        name: "getMessages".to_string(),
-        title: Some("Get Messages".to_string()),
-        description: "Fetch recent messages for a session with context-budget controls (summary mode, preview limit, and unchanged-result dedupe).".to_string(),
+        name: "getAgentLog".to_string(),
+        title: Some("Get Agent Log".to_string()),
+        description: "Fetch recent messages from an agent with context-budget controls. Use awaitAgent instead if you just want the final result.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -236,9 +236,9 @@ pub fn get_messages_tool() -> MCPTool {
 
 pub fn get_child_sessions_tool() -> MCPTool {
     MCPTool {
-        name: "getChildSessions".to_string(),
-        title: Some("Get Child Sessions".to_string()),
-        description: "List direct child sessions for a parent session.".to_string(),
+        name: "getChildAgents".to_string(),
+        title: Some("Get Child Agents".to_string()),
+        description: "List all agents directly spawned by a parent agent.".to_string(),
         input_schema: object_prop(
             vec![(
                 "parentSessionId".to_string(),
@@ -254,10 +254,10 @@ pub fn get_child_sessions_tool() -> MCPTool {
 
 pub fn send_message_tool() -> MCPTool {
     MCPTool {
-        name: "sendMessage".to_string(),
-        title: Some("Send Message".to_string()),
+        name: "messageAgent".to_string(),
+        title: Some("Message Agent".to_string()),
         description:
-            "Send a new user message to a session. If session is busy, message may be queued."
+            "Send a user message to a running agent. If the agent is busy, the message will be queued."
                 .to_string(),
         input_schema: object_prop(
             vec![
@@ -280,9 +280,9 @@ pub fn send_message_tool() -> MCPTool {
 
 pub fn terminate_session_tool() -> MCPTool {
     MCPTool {
-        name: "terminateSession".to_string(),
-        title: Some("Terminate Session".to_string()),
-        description: "Terminate a session immediately.".to_string(),
+        name: "terminateAgent".to_string(),
+        title: Some("Terminate Agent".to_string()),
+        description: "Terminate an agent session immediately.".to_string(),
         input_schema: object_prop(
             vec![(
                 "sessionId".to_string(),
@@ -298,9 +298,9 @@ pub fn terminate_session_tool() -> MCPTool {
 
 pub fn list_assistants_tool() -> MCPTool {
     MCPTool {
-        name: "listAssistants".to_string(),
-        title: Some("List Assistants".to_string()),
-        description: "List all available assistants from the internal Session API.".to_string(),
+        name: "listAgentTypes".to_string(),
+        title: Some("List Agent Types".to_string()),
+        description: "List available agent types (assistants) you can spawn. Call this to discover which specialists exist before delegating tasks.".to_string(),
         input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
@@ -309,9 +309,9 @@ pub fn list_assistants_tool() -> MCPTool {
 
 pub fn get_assistant_tool() -> MCPTool {
     MCPTool {
-        name: "getAssistant".to_string(),
-        title: Some("Get Assistant Details".to_string()),
-        description: "Get detailed configuration of an assistant (system prompt, tools, model). Use this for meta-analysis or verifying capabilities.".to_string(),
+        name: "getAgentConfig".to_string(),
+        title: Some("Get Agent Config".to_string()),
+        description: "Get the full configuration of an agent type (system prompt, tools, capabilities). Use for capability verification before spawning.".to_string(),
         input_schema: object_prop(
             vec![(
                 "assistantId".to_string(),
