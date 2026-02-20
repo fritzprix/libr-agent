@@ -41,10 +41,10 @@ pub async fn start_workflow(
     let should_queue = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            // Check for cancellation
-            if session.cancellation_token.is_cancelled() {
-                return Err("Workflow was cancelled before starting".to_string());
-            }
+            // Note: we intentionally do NOT check is_cancelled() here.
+            // cancel_workflow (soft cancel) leaves the token in a cancelled state to block
+            // stale LLM responses, but start_workflow resets it unconditionally below.
+            // Failing here would prevent users from sending new messages after a cancel.
 
             // Deduplicate: Check if message ID already exists
             {
@@ -104,11 +104,14 @@ pub async fn start_workflow(
         return Ok(());
     }
 
-    // Explicit new workflow start clears cancel-pending guard
+    // Explicit new workflow start: reset all cancellation state.
+    // Uses a write lock to also reset the cancellation_token, which cancel_workflow
+    // may have left in a cancelled state to block stale LLM responses.
     {
-        let active = active_sessions.read().await;
-        if let Some(session) = active.get(&session_id) {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
             session.cancel_pending.store(false, Ordering::SeqCst);
+            session.cancellation_token = CancellationToken::new();
         }
     }
 
@@ -411,6 +414,11 @@ pub async fn cancel_workflow(
             "Cancel requested for session {} (deferred to message boundary)",
             session_id
         );
+        // Discard any user messages that arrived while the agent was busy and
+        // are waiting in the pending_events queue. They must not be processed
+        // after the agent stops, regardless of when the active tool batch
+        // completes. The tool batch itself is still allowed to finish cleanly.
+        discard_pending_events(active_sessions, &session_id).await;
         return Ok(());
     }
 
@@ -428,16 +436,15 @@ pub async fn cancel_workflow(
     if let Some(session) = active.get_mut(&session_id) {
         session.is_running = false;
         session.cancel_pending.store(false, Ordering::SeqCst);
-        session.cancellation_token = CancellationToken::new();
-        let mut pending_events = session.pending_events.write().await;
-        let count = pending_events.count();
-        pending_events.clear();
-        log::info!(
-            "Cleared {} pending events for session {}",
-            count,
-            session_id
-        );
+        // Cancel the token (do NOT replace with a fresh one yet).
+        // The cancelled state persists until start_workflow explicitly resets it.
+        // This prevents stale in-flight LLM responses carrying tool_calls from
+        // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
+        session.cancellation_token.cancel();
     }
+    drop(active);
+
+    discard_pending_events(active_sessions, &session_id).await;
 
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
@@ -536,6 +543,8 @@ pub async fn continue_workflow_after_tool(
                         session.cancellation_token = CancellationToken::new();
                     }
                 }
+
+                discard_pending_events(active_sessions, &session_id).await;
 
                 let _ = crate::agent::lifecycle::update_session_status(
                     session_repo,
@@ -637,6 +646,48 @@ pub async fn continue_workflow_after_tool(
         }
     }
     Ok(())
+}
+
+async fn discard_pending_events(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) {
+    let mut messages_to_delete = Vec::new();
+
+    // 1. Drain from pending events queue and remove from in-memory cache
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            let mut pending_events = session.pending_events.write().await;
+            messages_to_delete = pending_events.drain_messages();
+
+            if !messages_to_delete.is_empty() {
+                let mut messages = session.messages.write().await;
+                // Remove these messages from the cache
+                messages.retain(|m| !messages_to_delete.contains(&m.id));
+
+                log::info!(
+                    "Cleared {} pending events from queue and cache for session {}",
+                    messages_to_delete.len(),
+                    session_id
+                );
+            }
+        }
+    }
+
+    // 2. Delete from database
+    if !messages_to_delete.is_empty() {
+        let repo = crate::state::get_message_repository();
+        for msg_id in messages_to_delete {
+            if let Err(e) = repo.delete_by_id(&msg_id).await {
+                log::error!(
+                    "Failed to delete cancelled pending message {} from DB: {}",
+                    msg_id,
+                    e
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

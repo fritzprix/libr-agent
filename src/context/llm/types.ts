@@ -2,6 +2,17 @@ import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 
 /**
+ * Returns true if the error is an intentional abort (user cancel via AbortController).
+ * Used to distinguish cancellation from real failures in both execution and listener.
+ */
+export function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'AbortError' || error.message === 'Request aborted')
+  );
+}
+
+/**
  * Request from Rust backend to execute an LLM completion
  */
 export interface CompletionRequest {
@@ -66,4 +77,9 @@ export interface LLMServiceContextValue {
    * Get agent mode status for a session
    */
   getAgentMode: (sessionId: string) => boolean;
+
+  /**
+   * Cancel an ongoing completion request for a session
+   */
+  cancelCompletionRequest: (sessionId: string) => void;
 }

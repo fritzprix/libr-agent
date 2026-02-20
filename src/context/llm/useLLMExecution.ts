@@ -25,6 +25,7 @@ import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
 import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
+import { isAbortError } from './types';
 
 const logger = getLogger('useLLMExecution');
 
@@ -155,23 +156,34 @@ export function useLLMExecution({
       // Update status to streaming
       updateSessionStatus(sessionId, 'streaming');
 
+      // Cancel and dispose any previously active request for this session
+      // This can happen if a new LLM turn starts before a prior cancelled request
+      // fully resolved its async cleanup.
+      const previousController = abortControllersRef.current.get(sessionId);
+      if (previousController) {
+        previousController.abort();
+      }
+      const previousService = activeServicesRef.current.get(sessionId);
+      if (previousService) {
+        previousService.dispose();
+      }
+
       // Create abort controller for this request
       const abortController = new AbortController();
       abortControllersRef.current.set(sessionId, abortController);
 
+      // Get service instance before the try block so it's accessible in catch
+      const providerConfig =
+        settingsRef.current.serviceConfigs?.[provider as AIServiceProvider] ||
+        {};
+      const service = AIServiceFactory.getService(
+        provider as AIServiceProvider,
+        apiKey ?? '',
+        providerConfig,
+      );
+      activeServicesRef.current.set(sessionId, service);
+
       try {
-        // Get service instance with provider-specific configuration
-        const providerConfig =
-          settingsRef.current.serviceConfigs?.[provider as AIServiceProvider] ||
-          {};
-
-        const service = AIServiceFactory.getService(
-          provider as AIServiceProvider,
-          apiKey ?? '',
-          providerConfig,
-        );
-        activeServicesRef.current.set(sessionId, service);
-
         // Get existing streaming message (already set by event listener)
         const existingStreamingMessage = streamingMessages.get(sessionId);
         const streamingMessage: Partial<Message> = existingStreamingMessage || {
@@ -557,7 +569,10 @@ export function useLLMExecution({
         });
 
         const hasContent =
-          (finalMessage.content && finalMessage.content.length > 0) ||
+          (finalMessage.content &&
+            finalMessage.content.some((c) =>
+              c.type === 'text' ? !!(c as MCPTextContent).text?.trim() : true,
+            )) ||
           (finalMessage.tool_calls && finalMessage.tool_calls.length > 0) ||
           !!finalMessage.thinking;
 
@@ -603,29 +618,55 @@ export function useLLMExecution({
 
         updateSessionStatus(sessionId, 'idle');
 
-        abortControllersRef.current.delete(sessionId);
-        activeServicesRef.current.delete(sessionId);
+        // Only clean up this execution's controller/service if they're still registered
+        // (a new execution may have already replaced them)
+        if (abortControllersRef.current.get(sessionId) === abortController) {
+          abortControllersRef.current.delete(sessionId);
+        }
+        if (activeServicesRef.current.get(sessionId) === service) {
+          activeServicesRef.current.delete(sessionId);
+        }
 
         return finalMessage;
       } catch (error) {
-        logger.error('Completion request failed', error);
+        // Distinguish intentional abort (user cancel) from real errors.
+        // AbortError means cancelCompletionRequest() fired — this is NOT an error.
+        const isAborted = isAbortError(error);
 
-        updateSessionStatus(sessionId, 'error');
-
-        setStreamingMessages((prev) => {
-          const next = new Map(prev);
-          next.delete(sessionId);
-          return next;
-        });
-
-        const timeoutId = timeoutsRef.current.get(sessionId);
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutsRef.current.delete(sessionId);
+        if (isAborted) {
+          logger.info('Completion request was aborted by cancellation', {
+            sessionId,
+          });
+        } else {
+          logger.error('Completion request failed', error);
         }
 
-        abortControllersRef.current.delete(sessionId);
-        activeServicesRef.current.delete(sessionId);
+        // Only update session status and clean up streaming state if this execution's
+        // controller is still the active one — if a new execution started, do not stomp
+        // on its state.
+        if (abortControllersRef.current.get(sessionId) === abortController) {
+          // Set 'idle' for intentional aborts, 'error' for real failures.
+          // Without this distinction, cancellation leaves the local LLM status as
+          // 'error' while the Rust workflow correctly transitions to 'idle'.
+          updateSessionStatus(sessionId, isAborted ? 'idle' : 'error');
+
+          setStreamingMessages((prev) => {
+            const next = new Map(prev);
+            next.delete(sessionId);
+            return next;
+          });
+
+          const timeoutId = timeoutsRef.current.get(sessionId);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutsRef.current.delete(sessionId);
+          }
+
+          abortControllersRef.current.delete(sessionId);
+        }
+        if (activeServicesRef.current.get(sessionId) === service) {
+          activeServicesRef.current.delete(sessionId);
+        }
 
         throw error;
       }
@@ -639,5 +680,13 @@ export function useLLMExecution({
     ],
   );
 
-  return { executeCompletionRequest };
+  const cancelCompletionRequest = useCallback((sessionId: string) => {
+    logger.info('Manually cancelling completion request', { sessionId });
+    const abortController = abortControllersRef.current.get(sessionId);
+    if (abortController) {
+      abortController.abort();
+    }
+  }, []);
+
+  return { executeCompletionRequest, cancelCompletionRequest };
 }
