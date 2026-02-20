@@ -1,4 +1,4 @@
-use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+﻿use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -11,12 +11,12 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CancelStrategy {
+pub enum CancelStrategy {
     DeferToMessageBoundary,
     StopImmediately,
 }
 
-fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
+pub fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
     if has_pending_execution {
         CancelStrategy::DeferToMessageBoundary
     } else {
@@ -24,7 +24,7 @@ fn classify_cancel_strategy(has_pending_execution: bool) -> CancelStrategy {
     }
 }
 
-fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
+pub fn should_consume_cancel_at_message_boundary(cancel_pending: bool) -> bool {
     cancel_pending
 }
 
@@ -133,9 +133,9 @@ pub async fn start_workflow(
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
     match crate::agent::events::emit_agent_event(app_handle, event) {
-        Ok(()) => log::info!("✅ WorkflowStarted event emitted successfully"),
+        Ok(()) => log::info!("??WorkflowStarted event emitted successfully"),
         Err(e) => {
-            log::error!("❌ Failed to emit WorkflowStarted event: {}", e);
+            log::error!("??Failed to emit WorkflowStarted event: {}", e);
             return Err(format!("Failed to emit event: {}", e));
         }
     }
@@ -161,7 +161,7 @@ pub async fn start_workflow(
         }
 
         log::info!(
-            "📝 Message stack after user message: session={}, count={}, latest_message={}",
+            "?뱷 Message stack after user message: session={}, count={}, latest_message={}",
             session_id,
             messages.len(),
             user_message.id
@@ -228,7 +228,7 @@ pub async fn start_workflow(
                     .await?;
 
                 log::info!(
-                    "✅ Successfully recreated MCP proxy for session: {}",
+                    "??Successfully recreated MCP proxy for session: {}",
                     session_id
                 );
             } else {
@@ -687,30 +687,5 @@ async fn discard_pending_events(
                 );
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        classify_cancel_strategy, should_consume_cancel_at_message_boundary, CancelStrategy,
-    };
-
-    #[test]
-    fn test_classify_cancel_strategy_defers_when_pending_execution_exists() {
-        let strategy = classify_cancel_strategy(true);
-        assert_eq!(strategy, CancelStrategy::DeferToMessageBoundary);
-    }
-
-    #[test]
-    fn test_classify_cancel_strategy_stops_immediately_without_pending_execution() {
-        let strategy = classify_cancel_strategy(false);
-        assert_eq!(strategy, CancelStrategy::StopImmediately);
-    }
-
-    #[test]
-    fn test_should_consume_cancel_at_message_boundary_only_when_pending_flag_set() {
-        assert!(should_consume_cancel_at_message_boundary(true));
-        assert!(!should_consume_cancel_at_message_boundary(false));
     }
 }

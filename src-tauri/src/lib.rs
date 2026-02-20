@@ -1,6 +1,6 @@
 use log::{error, warn};
 
-mod agent;
+pub mod agent; // pub for integration tests (cancel_logic.rs)
 pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity

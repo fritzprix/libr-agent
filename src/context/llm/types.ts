@@ -4,11 +4,18 @@ import type { MCPTool } from '@/lib/mcp';
 /**
  * Returns true if the error is an intentional abort (user cancel via AbortController).
  * Used to distinguish cancellation from real failures in both execution and listener.
+ *
+ * Handles both:
+ *  - DOMException {name:'AbortError'} thrown by fetch when AbortController fires
+ *    (DOMException does not extend Error in some environments such as jsdom)
+ *  - Error {message:'Request aborted'} thrown by some LLM SDKs
  */
 export function isAbortError(error: unknown): boolean {
+  if (error == null || typeof error !== 'object') return false;
+  const e = error as Record<string, unknown>;
   return (
-    error instanceof Error &&
-    (error.name === 'AbortError' || error.message === 'Request aborted')
+    e['name'] === 'AbortError' ||
+    (typeof e['message'] === 'string' && e['message'] === 'Request aborted')
   );
 }
 
