@@ -74,3 +74,7 @@
 
 **Drift:** Referenced `src/lib/ai-service/__tests__/openai.test.ts` which does not exist.
 **Reality:** Updated to use `src/lib/ai-service/__tests__/anthropic.test.ts` which exists and passes.
+## 2026-03-02 - CLAUDE.md
+
+**Drift:** Linked to missing files `docs/architecture/chat-feature-architecture.md`, `docs/builtin-tools.md`, `docs/external-mcp-integration.md`.
+**Reality:** Updated links to point to `docs/architecture/agent-workflow-architecture.md`, `src-tauri/src/mcp/builtin/README.md`, and `docs/architecture/external-mcp-integration.md`.
