@@ -1,5 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Trash2, Play, Eye, Circle, Pause, XCircle } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { getLogger } from '@/lib/logger';
@@ -222,15 +227,20 @@ export function SessionCard({
                 </>
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              aria-label={`Delete session ${session.name || session.id.slice(0, 8)}`}
-            >
-              <Trash2 className="w-3 h-3" aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  aria-label={`Delete session ${session.name || session.id.slice(0, 8)}`}
+                >
+                  <Trash2 className="w-3 h-3" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete session</TooltipContent>
+            </Tooltip>
           </>
         ) : (
           <>
