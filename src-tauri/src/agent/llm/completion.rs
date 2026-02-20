@@ -8,8 +8,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
-use super::types::CompletionRequest;
 use super::prompt::build_session_system_prompt;
+use super::types::CompletionRequest;
 
 /// Request LLM completion from frontend
 ///
