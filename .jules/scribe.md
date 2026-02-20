@@ -64,3 +64,8 @@
 
 **Drift:** Contained Node.js examples (`process.env`, `process.stdout`, `eval`) in a frontend source directory.
 **Reality:** Updated to Frontend-compatible examples (`import.meta.env`, `console.log`) and renamed title to "Frontend AI Integration Examples".
+
+## 2026-03-02 - CLAUDE.md
+
+**Drift:** Linked to missing files `docs/architecture/chat-feature-architecture.md`, `docs/builtin-tools.md`, `docs/external-mcp-integration.md`.
+**Reality:** Updated links to point to `docs/architecture/agent-workflow-architecture.md`, `src-tauri/src/mcp/builtin/README.md`, and `docs/architecture/external-mcp-integration.md`.
