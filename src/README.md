@@ -3,6 +3,8 @@
 This document provides examples of how to integrate supported AI providers using their JavaScript SDKs within the LibrAgent frontend (React/Vite).
 
 > **Note:** In the LibrAgent codebase, direct SDK usage is generally handled via the `AIServiceFactory` and specific service implementations in `src/lib/ai-service/`. These examples are for reference or prototyping purposes.
+>
+> **Important:** The main LibrAgent application manages API keys via the Settings Modal (stored in app configuration). The examples below use `import.meta.env` for simplicity in standalone scripts/prototypes, which may require a local `.env` file during development.
 
 ## Groq
 

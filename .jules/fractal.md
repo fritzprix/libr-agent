@@ -40,3 +40,8 @@
 
 **Split:** `types.rs`, `prompt.rs`, `completion.rs`, `response.rs`, `mod.rs`
 **Improvement:** Decoupled LLM request handling, response processing, and prompt construction into focused modules. Extracted `CompletionRequest` DTO and prompt building logic. Reduced file size from >800 lines to composed sub-modules.
+## 2026-02-13 - src-tauri/src/services/interactive_browser_server.rs
+
+**Split:** `types.rs`, `constants.rs`, `utils.rs`, `id_gen.rs`, `mod.rs`
+**Result:** Reduced from ~845 lines to ~450 lines in the main module.
+**Improvement:** Decoupled types (`BrowserSession`), constants (`INIT_SCRIPT`), stateless utilities (`check_url_status`, `validate_and_normalize_url`), and ID generation from the main server logic. Improved readability and testability.
