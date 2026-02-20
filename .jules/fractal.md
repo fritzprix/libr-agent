@@ -36,6 +36,11 @@
 **Result:** Reduced from 959 lines to 4 lines (module definition).
 **Improvement:** Decoupled security (redaction/obfuscation), UI generation (HTML), and MCP request handling logic into dedicated modules.
 
+## 2026-02-12 - src-tauri/src/agent/llm.rs
+
+**Split:** `types.rs`, `prompt.rs`, `completion.rs`, `response.rs`, `mod.rs`
+**Improvement:** Decoupled LLM request handling, response processing, and prompt construction into focused modules. Extracted `CompletionRequest` DTO and prompt building logic. Reduced file size from >800 lines to composed sub-modules.
+
 ## 2026-02-13 - src-tauri/src/services/interactive_browser_server.rs
 
 **Split:** `types.rs`, `constants.rs`, `utils.rs`, `id_gen.rs`, `mod.rs`
