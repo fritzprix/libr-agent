@@ -19,5 +19,5 @@
 ## 2026-02-19 - File Size Limit Bypass via Append
 
 **Vulnerability:** The `append_file_string` function in `SecureFileManager` did not check if appending content would exceed the configured maximum file size, allowing unbounded file growth beyond `LIBRAGENT_MAX_FILE_SIZE`.
-**Learning:** Append operations must validate the *resulting* file size (current size + append size), not just the size of the chunk being appended.
-**Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. use `saturating_add` to prevent integer overflow during size calculation.
+**Learning:** Append operations must validate the _resulting_ file size (current size + append size), not just the size of the chunk being appended.
+**Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. Use `saturating_add` to prevent integer overflow during size calculation.

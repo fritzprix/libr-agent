@@ -20,6 +20,9 @@ pub mod utils;
 // Re-export migration for use in MCP modules
 pub use migration;
 
+// Re-export SecureFileManager for integration tests
+pub use services::SecureFileManager;
+
 use commands::agent_commands::{
     agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_session, agent_factory_reset,

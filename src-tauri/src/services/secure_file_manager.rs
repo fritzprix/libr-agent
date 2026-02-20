@@ -210,14 +210,15 @@ impl SecureFileManager {
         // Open the existing file and append content
         use tokio::io::AsyncWriteExt;
 
-        // Security check: verify that appending won't exceed file size limit
-        let current_size = fs::metadata(&safe_path)
+        // Security check: verify that appending won't exceed file size limit.
+        // Keep arithmetic in u64 to avoid truncation on 32-bit targets.
+        let current_size: u64 = fs::metadata(&safe_path)
             .await
             .map_err(|e| format!("Failed to get file metadata: {e}"))?
-            .len() as usize;
+            .len();
 
-        let max_size = crate::config::max_file_size();
-        let append_size = content.len();
+        let max_size = crate::config::max_file_size() as u64;
+        let append_size = content.len() as u64;
 
         if current_size.saturating_add(append_size) > max_size {
             return Err(format!(
@@ -304,38 +305,5 @@ impl SecureFileManager {
     /// Returns a reference to the internal `SecurityValidator`.
     pub fn get_security_validator(&self) -> &SecurityValidator {
         &self.security
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn test_append_file_string_limit_bypass() {
-        // Save original value
-        let original_val = std::env::var("LIBRAGENT_MAX_FILE_SIZE");
-
-        // Set small limit (10 bytes)
-        // We need to be careful with concurrency here, but for a repro this is fine.
-        unsafe { std::env::set_var("LIBRAGENT_MAX_FILE_SIZE", "10"); }
-
-        let dir = tempdir().unwrap();
-        let manager = SecureFileManager::new_with_base_dir(dir.path().to_path_buf());
-
-        // Create a file with 5 bytes
-        manager.write_file_string("test.txt", "12345").await.unwrap();
-
-        // Append 6 bytes - should fail (5 + 6 > 10)
-        let result = manager.append_file_string("test.txt", "123456").await;
-
-        // Restore env var
-        match original_val {
-            Ok(v) => unsafe { std::env::set_var("LIBRAGENT_MAX_FILE_SIZE", v) },
-            Err(_) => unsafe { std::env::remove_var("LIBRAGENT_MAX_FILE_SIZE") },
-        }
-
-        assert!(result.is_err(), "Append should fail if resulting file size exceeds limit");
     }
 }
