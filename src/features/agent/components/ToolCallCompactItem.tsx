@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -52,6 +52,8 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   isLast = false,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const previousHasError = useRef(false);
+  const previousHasResource = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = parseToolName(toolCall.function.name);
@@ -66,60 +68,78 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   // Get execution time
   const executionTime = toolResult?.metadata?.executionTime;
+  const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand on error or if it's the last message with a UI resource
+  // Auto-expand only when transitioning to error/resource state.
+  // This preserves manual expand/collapse toggles from users.
   useEffect(() => {
-    if (hasError && !isExpanded) {
+    const errorBecameVisible = !previousHasError.current && hasError;
+    const resourceBecameVisible = !previousHasResource.current && hasResource;
+
+    if (errorBecameVisible) {
       setIsExpanded(true);
-    } else if (hasResource) {
-      setIsExpanded(isLast);
+    } else if (resourceBecameVisible && isLast) {
+      setIsExpanded(true);
     }
-  }, [hasError, hasResource, isLast, isExpanded]);
+
+    previousHasError.current = hasError;
+    previousHasResource.current = hasResource;
+  }, [hasError, hasResource, isLast]);
 
   return (
     <div
       className={cn(
-        'rounded px-3 py-2 text-sm transition-colors cursor-pointer',
+        'rounded px-3 py-2 text-sm transition-colors',
         hasError
           ? 'bg-destructive/10 hover:bg-destructive/20'
           : 'bg-background hover:bg-muted/50',
       )}
-      onClick={() => setIsExpanded(!isExpanded)}
     >
       {/* Collapsed header line */}
-      <div className="flex items-center gap-2">
-        <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
+      <button
+        type="button"
+        className="w-full text-left"
+        aria-expanded={isExpanded}
+        aria-controls={detailsId}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-2">
+          <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
 
-        {/* Tool name */}
-        <span className="flex-shrink-0 font-medium">{toolName}</span>
+          {/* Tool name */}
+          <span className="flex-shrink-0 font-medium">{toolName}</span>
 
-        {/* Params Summary */}
-        {paramSummary && (
-          <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
-            {paramSummary}
-          </span>
-        )}
-        {!paramSummary && <span className="flex-1" />}
-
-        {/* Execution time */}
-        {executionTime !== undefined && (
-          <span className="text-xs text-muted-foreground flex-shrink-0">
-            {formatExecutionTime(executionTime)}
-          </span>
-        )}
-
-        {/* Expand indicator */}
-        <ChevronDown
-          className={cn(
-            'w-3.5 h-3.5 transition-transform flex-shrink-0 text-muted-foreground',
-            isExpanded && 'rotate-180',
+          {/* Params Summary */}
+          {paramSummary && (
+            <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
+              {paramSummary}
+            </span>
           )}
-        />
-      </div>
+          {!paramSummary && <span className="flex-1" />}
+
+          {/* Execution time */}
+          {executionTime !== undefined && (
+            <span className="text-xs text-muted-foreground flex-shrink-0">
+              {formatExecutionTime(executionTime)}
+            </span>
+          )}
+
+          {/* Expand indicator */}
+          <ChevronDown
+            className={cn(
+              'w-3.5 h-3.5 transition-transform flex-shrink-0 text-muted-foreground',
+              isExpanded && 'rotate-180',
+            )}
+          />
+        </div>
+      </button>
 
       {/* Expanded details */}
       {isExpanded && (
-        <div className="mt-3 pt-3 border-t border-muted/50 min-w-0">
+        <div
+          id={detailsId}
+          className="mt-3 pt-3 border-t border-muted/50 min-w-0"
+        >
           <AgentToolCallDetails
             toolCall={toolCall}
             toolResult={toolResult}
@@ -152,4 +172,5 @@ function arePropsEqual(
   return true;
 }
 
+export { arePropsEqual };
 export const ToolCallCompactItem = memo(ToolCallCompactItemImpl, arePropsEqual);
