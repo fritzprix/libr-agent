@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { SystemSettings } from '@/context/SettingsContext';
 import { Input } from '@/components/ui';
+import { Badge } from '@/components/ui';
 
 interface SystemPerformanceSettingsProps {
   localSystemSettings: SystemSettings;
@@ -179,22 +180,28 @@ export function SystemPerformanceSettings({
 
           {/* MCP Tool Execution Timeout */}
           <div className="min-w-0">
-            <label className="block text-muted-foreground mb-2 font-medium">
-              {t(
-                'settings.system.mcpToolTimeout',
-                'MCP Tool Execution Timeout (Sec)',
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-muted-foreground font-medium">
+                {t(
+                  'settings.system.mcpToolTimeout',
+                  'MCP Tool Execution Timeout (Sec)',
+                )}
+              </label>
+              {(localSystemSettings.mcpToolTimeoutSeconds ?? 0) === 0 && (
+                <Badge variant="outline" className="text-xs">
+                  {t('settings.system.mcpToolTimeoutDisabled', 'Disabled')}
+                </Badge>
               )}
-            </label>
+            </div>
             <Input
               type="number"
-              placeholder="e.g., 180"
-              min={1}
-              max={600}
-              value={localSystemSettings.mcpToolTimeoutSeconds ?? 180}
+              placeholder="0 (disabled)"
+              min={0}
+              value={localSystemSettings.mcpToolTimeoutSeconds ?? 0}
               onChange={(e) =>
                 onChange(
                   'mcpToolTimeoutSeconds',
-                  parseInt(e.target.value, 10) || 180,
+                  parseInt(e.target.value, 10) || 0,
                 )
               }
               className="bg-background border text-foreground w-full max-w-xs"
@@ -202,7 +209,7 @@ export function SystemPerformanceSettings({
             <p className="text-xs text-muted-foreground mt-1">
               {t(
                 'settings.system.mcpToolTimeoutDescription',
-                'How long to wait for a tool to finish execution execution before timing out.',
+                'How long to wait for a single tool call before cancelling it. Set to 0 to disable (recommended for long-running agent tools like awaitAgent).',
               )}
             </p>
           </div>

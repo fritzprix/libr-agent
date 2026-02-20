@@ -30,7 +30,6 @@ const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
 );
-
 function App() {
   return (
     <div className="h-screen w-full">

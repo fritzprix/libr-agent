@@ -41,6 +41,7 @@
     "rust:check": "cd src-tauri && cargo check",
     "rust:check:all": "cd src-tauri && cargo check --all-features",
     "rust:test": "cd src-tauri && cargo test",
+    "rust:clean": "cd src-tauri && cargo clean",
     "rust:validate": "pnpm rust:fmt && pnpm rust:clippy && pnpm rust:check:all",
     "refactor:validate": "pnpm lint && pnpm format && pnpm test:run && pnpm rust:validate && pnpm rust:test && pnpm build && pnpm dead-code",
     "verify-planning": "node scripts/manage-logs.js --pattern=\"PLANNING\" -n=5000",
