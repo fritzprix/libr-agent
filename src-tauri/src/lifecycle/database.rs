@@ -241,5 +241,3 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
 
     Ok(db)
 }
-
-

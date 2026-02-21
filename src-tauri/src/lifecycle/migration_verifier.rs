@@ -255,5 +255,3 @@ impl MigrationVerifier {
         }
     }
 }
-
-
