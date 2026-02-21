@@ -12,6 +12,17 @@ vi.mock('@/hooks/use-rust-backend', () => ({
   }),
 }));
 
+vi.mock('@/hooks/use-settings', () => ({
+  useSettings: () => ({
+    value: {
+      toolCallGroupVisibleCount: 4,
+    },
+    update: vi.fn(),
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 vi.mock('@/context/AgentChatContext', () => ({
   useAgentChatActions: () => ({
     submit: vi.fn(),

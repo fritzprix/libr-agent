@@ -541,7 +541,11 @@ function MCPServerDialogComponent({
                             variant="ghost"
                             size="icon"
                             onClick={() => handleRemoveEnvVar(item.id)}
-                            aria-label="Remove environment variable"
+                            aria-label={
+                              item.key
+                                ? `Remove environment variable ${item.key}`
+                                : 'Remove unnamed environment variable'
+                            }
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -691,7 +695,11 @@ function MCPServerDialogComponent({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleRemoveHeader(header.id)}
-                                aria-label="Remove header"
+                                aria-label={
+                                  header.key
+                                    ? `Remove header ${header.key}`
+                                    : 'Remove unnamed header'
+                                }
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
