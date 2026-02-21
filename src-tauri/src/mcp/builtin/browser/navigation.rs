@@ -1,4 +1,4 @@
-use super::interaction::create_rich_response;
+use crate::mcp::builtin::browser::interaction::create_rich_response;
 use crate::mcp::builtin::browser::{handle_browser_op_error, BrowserServer};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, operation_failed_error, ErrorCategory, SuccessHint,
@@ -94,46 +94,68 @@ pub async fn navigate_to_url(server: &BrowserServer, args: Value) -> Result<MCPR
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    let _suggestions = if result.contains("load wait timed out") {
-        vec![
-            "Navigation timed out waiting for page load. The page may still be usable.".to_string(),
-            "Try content to see if content is available despite the timeout.".to_string(),
-            "If the page is blank or broken, create a new session and try a different URL."
-                .to_string(),
-        ]
+    // Return HTTP-error-specific recovery guidance when navigation signals a problem.
+    // Only fall through to rich-response (title+URL page state) on genuine success.
+    if result.contains("load wait timed out") {
+        let hint = SuccessHint::new(
+            result,
+            vec![
+                "Navigation timed out waiting for page load. The page may still be usable."
+                    .to_string(),
+                "Try reading the page content to see if anything loaded despite the timeout."
+                    .to_string(),
+                "If the page is blank or broken, create a new session and try a different URL."
+                    .to_string(),
+            ],
+        );
+        return Ok(hint.to_mcp_result());
     } else if result.contains("(HTTP 403)") || result.contains("(HTTP 401)") {
-        vec![
-            "The page is blocking access (Forbidden/Unauthorized). Abandon this page.".to_string(),
-            "Do NOT try to login or bypass checks.".to_string(),
-            "Search for the information on a different, public website.".to_string(),
-        ]
+        let hint = SuccessHint::new(
+            result,
+            vec![
+                "This page is blocking automated access (Forbidden/Unauthorized). Abandon it."
+                    .to_string(),
+                "Do NOT attempt to log in or bypass the restriction.".to_string(),
+                "Search for the same information on a different, public website.".to_string(),
+            ],
+        );
+        return Ok(hint.to_mcp_result());
     } else if result.contains("(HTTP 404)") {
-        vec![
-            "The page was not found (404). Check the URL.".to_string(),
-            "Search for the content on the site's homepage or use a search engine.".to_string(),
-        ]
+        let hint = SuccessHint::new(
+            result,
+            vec![
+                "The page was not found (404). Verify the URL is correct.".to_string(),
+                "Search for the content on the site's homepage or use a search engine.".to_string(),
+            ],
+        );
+        return Ok(hint.to_mcp_result());
     } else if result.contains("(HTTP 5") {
-        // Covers 500, 502, 503, etc.
-        vec![
-            "The website is experiencing server errors (5xx). Abandon this page.".to_string(),
-            "Try finding the information on a different website.".to_string(),
-        ]
+        let hint = SuccessHint::new(
+            result,
+            vec![
+                "The website is experiencing server errors (5xx). Abandon this page.".to_string(),
+                "Try finding the same information on a different website.".to_string(),
+            ],
+        );
+        return Ok(hint.to_mcp_result());
     } else if result.contains("Network Error") {
-        vec![
-            "A network error occurred. Check the URL and internet connection.".to_string(),
-            "The site may be down or unreachable.".to_string(),
-        ]
+        let hint = SuccessHint::new(
+            result,
+            vec![
+                "A network error occurred. Verify the URL and internet connection.".to_string(),
+                "The site may be down or unreachable.".to_string(),
+            ],
+        );
+        return Ok(hint.to_mcp_result());
     } else if result.contains("(HTTP ") {
-        // Fallback for other HTTP errors (e.g. 418, 429)
-        vec!["The site returned an error. Consider finding an alternative source.".to_string()]
-    } else {
-        vec![
-            "Extract page content with content to see what's on the page".to_string(),
-            "List interactive elements with listInteractable".to_string(),
-        ]
-    };
+        let hint = SuccessHint::new(
+            result,
+            vec!["The site returned an unexpected HTTP error. Consider finding an alternative source.".to_string()],
+        );
+        return Ok(hint.to_mcp_result());
+    }
 
-    // ✅ Success: Return Rich Response
+    // Genuine success: return live page state (title + URL) as verification.
     create_rich_response(&service, &browser_session_id, &result).await
 }
 
@@ -182,7 +204,6 @@ pub async fn navigate_back(server: &BrowserServer, _args: Value) -> Result<MCPRe
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    // ✅ Success: Return Rich Response
     create_rich_response(&service, &browser_session_id, &result).await
 }
 
@@ -231,7 +252,6 @@ pub async fn navigate_forward(server: &BrowserServer, _args: Value) -> Result<MC
     // Invalidate cache after navigation
     server.invalidate_cache();
 
-    // ✅ Success: Return Rich Response
     create_rich_response(&service, &browser_session_id, &result).await
 }
 
@@ -283,7 +303,7 @@ pub async fn get_current_url(server: &BrowserServer, _args: Value) -> Result<MCP
 
     let hint = SuccessHint::new(
         result,
-        vec!["Navigate to a different URL with goto if needed".to_string()],
+        vec!["Navigate to a different URL with `goto` if needed".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -323,7 +343,7 @@ pub async fn get_page_title(server: &BrowserServer, _args: Value) -> Result<MCPR
 
     let hint = SuccessHint::new(
         result,
-        vec!["Extract full page content with content to see what's on this page".to_string()],
+        vec!["Extract full page content with `content` to see what's on this page".to_string()],
     );
     Ok(hint.to_mcp_result())
 }

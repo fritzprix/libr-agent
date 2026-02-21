@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { ServiceConfig } from '@/context/SettingsContext';
 import { Input } from '@/components/ui';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
-import { ProviderList } from '../components/ProviderList';
+import { ProviderCard } from '../components/ProviderCard';
 
 interface AIModelsTabProps {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
@@ -30,14 +30,42 @@ function AIModelsTabComponent({
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
 
+  // Memoize provider names to prevent recalculation on every render
+  const providerNames = useMemo(() => {
+    return providerEntries.reduce(
+      (acc, provider) => {
+        acc[provider] = provider.charAt(0).toUpperCase() + provider.slice(1);
+        return acc;
+      },
+      {} as Record<AIServiceProvider, string>,
+    );
+  }, [providerEntries]);
+
   return (
     <div className="space-y-8">
       {/* API Keys Section */}
-      <ProviderList
-        serviceConfigs={serviceConfigs}
-        providerEntries={providerEntries}
-        onPendingChange={onPendingChange}
-      />
+      <div className="space-y-4">
+        <h3 className="text-lg font-medium text-foreground">
+          {t('settings.aiModels.apiKeys', 'Provider API Keys')}
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {providerEntries.map((provider) => {
+            const cfg = serviceConfigs[provider] || {};
+            return (
+              <ProviderCard
+                key={provider}
+                provider={provider}
+                providerName={providerNames[provider]}
+                apiKey={cfg.apiKey || ''}
+                baseUrl={cfg.baseUrl}
+                use3rdParty={cfg.use3rdParty}
+                customModelId={cfg.customModelId}
+                onPendingChange={onPendingChange}
+              />
+            );
+          })}
+        </div>
+      </div>
 
       {/* Model Preference Section */}
       <div className="space-y-4">
@@ -83,4 +111,13 @@ function AIModelsTabComponent({
   );
 }
 
-export default React.memo(AIModelsTabComponent);
+export default React.memo(AIModelsTabComponent, (prev, next) => {
+  return (
+    prev.localPreferredModel.provider === next.localPreferredModel.provider &&
+    prev.localPreferredModel.model === next.localPreferredModel.model &&
+    prev.localAgentHubUrl === next.localAgentHubUrl &&
+    prev.onPendingChange === next.onPendingChange &&
+    prev.onPreferredModelChange === next.onPreferredModelChange &&
+    prev.onAgentHubUrlChange === next.onAgentHubUrlChange
+  );
+});

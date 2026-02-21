@@ -55,14 +55,11 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                 let suggestions = suggest_selectors(&service, &browser_session_id).await;
                 return Ok(operation_failed_error(
                     "Click element",
-                    &format!(
-                        "Element with selector '{}' not found. {}",
-                        selector, suggestions
-                    ),
+                    &format!("Element with selector '{}' not found{}", selector, suggestions),
                     vec![
-                        "Check the 'Did you mean?' suggestions in the error message".to_string(),
-                        "Use listInteractable to see all available elements".to_string(),
                         "Verify the selector is correct CSS syntax".to_string(),
+                        "The element might be lazy-loaded. Use `scroll` to load more content down the page.".to_string(),
+                        "Use listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -73,14 +70,14 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                     &format!("Element with selector '{}' is not visible", selector),
                     vec![
                         "The element exists but is hidden. Use `content` to analyze the page structure and find a parent container or toggle button.".to_string(),
-                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                        "The element might be lazy-loaded or off-screen. Use `scroll` to potentially trigger its visibility.".to_string(),
                         "Use `listInteractable` to find visible elements that might reveal this target.".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
             }
 
-            // ✅ Success: Return Rich Response
+            // ✅ Success: Return rich response with page state
             create_rich_response(&service, &browser_session_id, "Clicked element").await
         }
         Err(e) => {
@@ -90,7 +87,7 @@ pub async fn click_element(server: &BrowserServer, args: Value) -> Result<MCPRes
                 &e,
                 vec![
                     "Verify the selector is correct CSS syntax".to_string(),
-                    "Try using scrollPage to reveal lazy-loaded elements".to_string(),
+                    "Try using `scroll` to reveal lazy-loaded elements".to_string(),
                     "Use listInteractable to find valid selectors".to_string(),
                 ],
                 ToolGroup::Browser,
@@ -174,13 +171,11 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                 let suggestions = suggest_selectors(&service, &browser_session_id).await;
                 return Ok(operation_failed_error(
                     "Input text",
-                    &format!(
-                        "Element with selector '{}' not found. {}",
-                        selector, suggestions
-                    ),
+                    &format!("Element with selector '{}' not found{}", selector, suggestions),
                     vec![
-                        "Check the 'Did you mean?' suggestions in the error message".to_string(),
-                        "Use listInteractable with filterType='semantic_input'".to_string(),
+                        "Verify the selector targets an input/textarea element".to_string(),
+                        "The element might be lazy-loaded. Use `scroll` to load more content down the page.".to_string(),
+                        "Use listInteractable to find valid selectors".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
@@ -191,14 +186,14 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                     &format!("Element with selector '{}' is not visible", selector),
                     vec![
                         "The input is hidden. Use `content` to find the form section or toggle that contains it.".to_string(),
-                        "The element might be lazy-loaded or off-screen. Use `scrollPage` to potentially trigger its visibility.".to_string(),
+                        "The element might be lazy-loaded or off-screen. Use `scroll` to potentially trigger its visibility.".to_string(),
                         "Use `click` on the parent container or toggle to reveal the input.".to_string(),
                     ],
                     ToolGroup::Browser,
                 ));
             }
 
-            // ✅ Success: Return Rich Response
+            // ✅ Success: Return rich response with page state
             create_rich_response(&service, &browser_session_id, "Input successful").await
         }
         Err(e) => {
@@ -208,7 +203,7 @@ pub async fn input_text(server: &BrowserServer, args: Value) -> Result<MCPResult
                 &e,
                 vec![
                     "Verify the selector targets an input/textarea element".to_string(),
-                    "Try using scrollPage to reveal lazy-loaded elements".to_string(),
+                    "Try using `scroll` to reveal lazy-loaded elements".to_string(),
                     "Use listInteractable with filterType='semantic_input'".to_string(),
                 ],
                 ToolGroup::Browser,
@@ -334,7 +329,7 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 vec![
                     "Verify the browser session is active".to_string(),
                     "Ensure the page has fully loaded".to_string(),
-                    "Try content first to see page structure".to_string(),
+                    "Try `content` first to see page structure".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -350,8 +345,8 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
                 &e,
                 vec![
                     "The page may have returned unexpected data".to_string(),
-                    "Try refreshing the page with goto".to_string(),
-                    "Use content to verify page structure".to_string(),
+                    "Try refreshing the page with `goto`".to_string(),
+                    "Use `content` to verify page structure".to_string(),
                 ],
                 ToolGroup::Browser,
             ))
@@ -362,8 +357,7 @@ pub async fn list_interactable(server: &BrowserServer, args: Value) -> Result<MC
         formatted_text,
         vec![
             "Use `click` with the selector or index.".to_string(),
-            "If the target is off-screen, use `scrollPage` to bring it into the viewport."
-                .to_string(),
+            "If the target is off-screen, use `scroll` to bring it into the viewport.".to_string(),
             "Use `content` to see the full page structure regardless of scroll position."
                 .to_string(),
         ],
@@ -549,69 +543,53 @@ fn format_interactive_elements(
     Ok(output)
 }
 
-/// Start a browser session (Alias: launch)
+/// Post-action rich response: captures page title + URL to confirm result
 pub async fn create_rich_response(
     service: &crate::services::InteractiveBrowserServer,
     session_id: &str,
     action_result: &str,
 ) -> Result<MCPResult, String> {
-    // 1. Get Page Title
-    let title_script = "document.title";
     let title = service
-        .execute_script(session_id, title_script)
+        .execute_script(session_id, "document.title")
         .await
         .unwrap_or_else(|_| "Unknown Title".to_string());
-
-    // 2. Get URL
-    let url_script = "window.location.href";
     let url = service
-        .execute_script(session_id, url_script)
+        .execute_script(session_id, "window.location.href")
         .await
         .unwrap_or_else(|_| "Unknown URL".to_string());
-
-    // 3. Construct Rich Formatting (mimicking Playwright MCP)
     let summary = format!(
         "Status: Success\nAction: {}\n\n--- Page State ---\nTitle: {}\nURL: {}\n",
         action_result, title, url
     );
-
     let hint = SuccessHint::new(
         summary,
         vec![
-            "Use `content` (content) to read the full page content.".to_string(),
-            "Use `click` (click) to interact with elements.".to_string(),
-            "Use `fill` (fill) to type into forms.".to_string(),
+            "Use `content` to read the full page content.".to_string(),
+            "Use `click` to interact with elements.".to_string(),
+            "Use `fill` to type into forms.".to_string(),
         ],
     );
-
     Ok(hint.to_mcp_result())
 }
 
-/// Helper to suggest alternative selectors when an element is not found
+/// Suggest alternative selectors when element is not found
 async fn suggest_selectors(
     service: &crate::services::InteractiveBrowserServer,
     session_id: &str,
 ) -> String {
     let script = r#"(function() {
-        // Find visible interactive elements
         const candidates = Array.from(document.querySelectorAll('button, input, a[href], [role="button"]'));
-        
         function isVisible(el) {
             const style = window.getComputedStyle(el);
             return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
         }
-
-        return candidates.filter(isVisible)
-            .slice(0, 5)
-            .map(el => {
-                let id = el.id ? '#' + el.id : '';
-                // Take first class only to keep it short
-                let cls = el.classList.length > 0 ? '.' + el.classList[0] : '';
-                let text = (el.innerText || el.value || '').substring(0, 20).replace(/\s+/g, ' ').trim();
-                return `${el.tagName.toLowerCase()}${id}${cls} (text: "${text}")`;
-            });
+        return candidates.filter(isVisible).slice(0, 5).map(el => {
+            let id = el.id ? '#' + el.id : '';
+            let cls = el.classList.length > 0 ? '.' + el.classList[0] : '';
+            let text = (el.innerText || el.value || '').substring(0, 20).replace(/\s+/g, ' ').trim();
+            return `${el.tagName.toLowerCase()}${id}${cls} (text: "${text}")`;
+        });
     })()"#;
-
     match service.execute_script(session_id, script).await {
         Ok(json_str) => match serde_json::from_str::<Vec<String>>(&json_str) {
             Ok(suggestions) if !suggestions.is_empty() => {

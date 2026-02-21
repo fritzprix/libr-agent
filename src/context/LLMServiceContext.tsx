@@ -121,13 +121,15 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   }, []);
 
   // Use extracted hooks
-  const { executeCompletionRequest } = useLLMExecution({
-    settingsRef,
-    streamingMessages,
-    setStreamingMessages,
-    updateSessionStatus,
-    sessionAgentModes,
-  });
+  const { executeCompletionRequest, cancelCompletionRequest } = useLLMExecution(
+    {
+      settingsRef,
+      streamingMessages,
+      setStreamingMessages,
+      updateSessionStatus,
+      sessionAgentModes,
+    },
+  );
 
   useLLMListener({
     settingsRef,
@@ -140,6 +142,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     getSessionStatus,
     clearStreamingMessage,
     executeCompletionRequest,
+    cancelCompletionRequest,
     setAgentMode,
     getAgentMode,
   };

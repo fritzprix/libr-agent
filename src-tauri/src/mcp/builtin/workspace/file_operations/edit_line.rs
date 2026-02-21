@@ -1,28 +1,72 @@
 use super::super::utils::get_diff_context_lines;
 use super::super::WorkspaceServer;
-use super::utils::read_file_as_string;
+use super::utils::{compute_line_hash, read_file_as_string};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
-use std::collections::HashSet;
 
+/// A single edit operation.
+///
+/// Replace mode (default): replaces line(s) [start_line..end_line] with new_value.
+///   - Single-line (end_line == start_line): new_value must not contain `\n`
+///   - Range (end_line > start_line): new_value may contain `\n`
+///   - Empty new_value → deletion
+///   - start_hash / end_hash validate staleness
+///
+/// Insert-after mode (insert_after = true):
+///   - Inserts new_value AFTER start_line without touching the anchor line itself
+///   - new_value may contain `\n` (becomes multiple inserted lines)
+///   - start_hash validates the anchor line for staleness
+///   - end_line / end_hash / old_value are ignored
 #[derive(Debug, Clone)]
 struct LineEdit {
-    line: usize,
-    old_value: Option<String>,
+    start_line: usize,
+    end_line: usize,
     new_value: String,
-    expected_hash: String, // Now mandatory
+    old_value: Option<String>,
+    start_hash: Option<String>,
+    end_hash: Option<String>,
+    insert_after: bool,
+}
+
+impl LineEdit {
+    fn is_range(&self) -> bool {
+        !self.insert_after && self.end_line > self.start_line
+    }
+}
+
+/// Pure apply function — applies sorted edits (high → low) to a slice of lines.
+/// Extracted for testability; used by `handle_replace_lines`.
+fn apply_edits(orig_lines: &[&str], edits: &[LineEdit]) -> Vec<String> {
+    let mut modified: Vec<String> = orig_lines.iter().map(|&s| s.to_string()).collect();
+    let mut sorted = edits.to_vec();
+    sorted.sort_by(|a, b| b.start_line.cmp(&a.start_line)); // high → low to preserve indices
+
+    for edit in &sorted {
+        let start_idx = edit.start_line - 1; // 0-based
+        let replacement: Vec<String> = edit.new_value.lines().map(|s| s.to_string()).collect();
+
+        if edit.insert_after {
+            // Insert-after: splice at anchor+1 without touching the anchor line
+            let insert_idx = (start_idx + 1).min(modified.len());
+            modified.splice(insert_idx..insert_idx, replacement);
+        } else {
+            // Replace / delete: splice replaces [start..end]
+            modified.splice(start_idx..edit.end_line, replacement);
+        }
+    }
+    modified
 }
 
 impl WorkspaceServer {
-    pub async fn handle_edit_line_in_file(
+    pub async fn handle_replace_lines(
         &self,
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        // Layer 1: Parameter extraction
+        // --- Parameter extraction ---
         let path_str = match args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Ok(missing_param_error("path", ToolGroup::Workspace)),
@@ -37,11 +81,10 @@ impl WorkspaceServer {
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "Provide an array of edit objects: [{line, old_value?, new_value}, ...]"
-                        .to_string(),
-                    "Use searchLineInFile to find line numbers first".to_string(),
-                    "Example: {\"edits\": [{\"line\": 10, \"new_value\": \"updated text\"}]}"
-                        .to_string(),
+                    "Replace:      [{\"line\": 10, \"line_hash\": \"a3\", \"new_value\": \"text\"}]".to_string(),
+                    "Insert-after: [{\"line\": 10, \"line_hash\": \"a3\", \"insertAfter\": true, \"new_value\": \"new line\"}]".to_string(),
+                    "Range:        [{\"line\": 10, \"endLine\": 15, \"new_value\": \"line1\\nline2\"}]".to_string(),
+                    "Use readFile(showLineHashes=true) to get line + hash values first".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -53,16 +96,12 @@ impl WorkspaceServer {
                 "Parameter 'edits' cannot be empty",
                 ToolGroup::Workspace,
             )
-            .guidance(vec![
-                "Provide at least one edit operation".to_string(),
-                "For single edits, consider using editFile instead".to_string(),
-            ])
+            .guidance(vec!["Provide at least one edit operation".to_string()])
             .to_mcp_result());
         }
 
-        // Parse edit operations
-        let mut edits = Vec::new();
-        let mut line_numbers = HashSet::new();
+        // --- Parse each edit item ---
+        let mut edits: Vec<LineEdit> = Vec::with_capacity(edits_array.len());
 
         for (idx, edit_obj) in edits_array.iter().enumerate() {
             let edit_obj = match edit_obj.as_object() {
@@ -74,31 +113,24 @@ impl WorkspaceServer {
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Each edit must be an object with 'line' and 'new_value' fields"
+                        "Single-line: {\"line\": 10, \"new_value\": \"text\"}".to_string(),
+                        "Range:       {\"line\": 10, \"endLine\": 15, \"new_value\": \"...\"}"
                             .to_string(),
-                        "Example: {\"line\": 10, \"new_value\": \"updated text\"}".to_string(),
                     ])
                     .to_mcp_result());
                 }
             };
 
-            // Extract line number (1-based)
-            let line = match edit_obj.get("line").and_then(|v| v.as_u64()) {
+            // `line` — start line (1-based, required)
+            let start_line = match edit_obj.get("line").and_then(|v| v.as_u64()) {
                 Some(n) if n > 0 => n as usize,
                 Some(0) => {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
-                        format!(
-                            "Edit at index {}: Line numbers must be 1-based (starting from 1)",
-                            idx
-                        ),
+                        format!("Edit at index {}: 'line' must be ≥ 1 (1-based)", idx),
                         ToolGroup::Workspace,
                     )
-                    .guidance(vec![
-                        "The map is not the territory. Line numbers start at 1.".to_string(),
-                        "Your index is off by one. Adjust your coordinates.".to_string(),
-                        "Use searchLineInFile to verify the terrain before striking.".to_string(),
-                    ])
+                    .guidance(vec!["Line numbers start at 1".to_string()])
                     .to_mcp_result());
                 }
                 _ => {
@@ -109,39 +141,53 @@ impl WorkspaceServer {
                     )
                     .guidance(vec![
                         "Provide line number as integer (e.g., \"line\": 10)".to_string(),
-                        "Use searchLineInFile to find line numbers".to_string(),
+                        "Use readFile(showLineHashes=true) to get line numbers".to_string(),
                     ])
                     .to_mcp_result());
                 }
             };
 
-            // Check for duplicate line numbers
-            if !line_numbers.insert(line) {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!("Duplicate line number {} - each line can only be edited once per operation", line),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Remove duplicate line numbers from edits array".to_string(),
-                    "Combine multiple changes to the same line into one edit".to_string(),
-                ])
-                .to_mcp_result());
-            }
+            // `endLine` — end of range (optional; defaults to start_line for single-line mode)
+            let end_line = match edit_obj.get("endLine").and_then(|v| v.as_u64()) {
+                Some(n) if n >= start_line as u64 => n as usize,
+                Some(n) => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Edit at index {}: 'endLine' ({}) must be ≥ 'line' ({})",
+                            idx, n, start_line
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec!["endLine must be ≥ line".to_string()])
+                    .to_mcp_result());
+                }
+                None => start_line, // single-line mode
+            };
 
-            // Extract new_value (required, must be single-line)
+            // `insertAfter` — insert mode flag (optional, default false)
+            let insert_after = edit_obj
+                .get("insertAfter")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            // `new_value` — replacement/insertion content (required)
             let new_value = match edit_obj.get("new_value").and_then(|v| v.as_str()) {
                 Some(s) => {
-                    if s.contains('\n') {
+                    // Forbid \n in single-line replace mode only
+                    // (range mode and insert_after both allow \n)
+                    if !insert_after && end_line == start_line && s.contains('\n') {
                         return Ok(guided_error(
                             ErrorCategory::InvalidInput,
-                            format!("Edit at index {}: new_value must be single-line (no newline characters)", idx),
+                            format!(
+                                "Edit at index {}: single-line replace cannot contain \\n",
+                                idx
+                            ),
                             ToolGroup::Workspace,
                         )
                         .guidance(vec![
-                            "One line at a time. Simplicity is key.".to_string(),
-                            "This tool handles single lines only. Remove the newline characters.".to_string(),
-                            "For heavier lifting (multi-line changes), use editFile instead.".to_string(),
+                            "To replace multiple lines: add 'endLine'".to_string(),
+                            "To insert new lines after a line: add 'insertAfter': true".to_string(),
                         ])
                         .to_mcp_result());
                     }
@@ -150,44 +196,76 @@ impl WorkspaceServer {
                 None => {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
-                        format!("Edit at index {}: 'new_value' field is required", idx),
+                        format!("Edit at index {}: 'new_value' is required", idx),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Provide new_value as string (e.g., \"new_value\": \"updated text\")"
-                            .to_string(),
+                        "Provide replacement/insertion content as a string".to_string()
                     ])
                     .to_mcp_result());
                 }
             };
 
-            // Extract old_value (optional validation)
+            // Optional fields
             let old_value = edit_obj
                 .get("old_value")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            // Extract expected_hash (MANDATORY)
-            let expected_hash = edit_obj
-                .get("expected_hash")
+            // `line_hash` (canonical) or `startHash` alias
+            let start_hash = edit_obj
+                .get("line_hash")
+                .or_else(|| edit_obj.get("startHash"))
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| {
-                    format!(
-                        "Missing 'expected_hash' for line {}. You MUST read the file with `showHash: true` first.",
-                        line
-                    )
-                })?
-                .to_string();
+                .map(|s| s.to_string());
+
+            let end_hash = edit_obj
+                .get("endHash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
 
             edits.push(LineEdit {
-                line,
-                old_value,
+                start_line,
+                end_line,
                 new_value,
-                expected_hash,
+                old_value,
+                start_hash,
+                end_hash,
+                insert_after,
             });
         }
 
-        // Validate path and read file
+        // --- Overlap detection: sort by start, ensure no ranges overlap ---
+        {
+            let mut sorted_ranges: Vec<(usize, usize, usize)> = edits
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (e.start_line, e.end_line, i))
+                .collect();
+            sorted_ranges.sort_by_key(|&(s, _, _)| s);
+
+            for window in sorted_ranges.windows(2) {
+                let (_, end_a, idx_a) = window[0];
+                let (start_b, _, idx_b) = window[1];
+                if start_b <= end_a {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        format!(
+                            "Overlapping edits: edit #{} (ends at line {}) overlaps with edit #{} (starts at line {})",
+                            idx_a, end_a, idx_b, start_b
+                        ),
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec![
+                        "Each line can only be covered by one edit per operation".to_string(),
+                        "Ensure line ranges in 'edits' do not overlap".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            }
+        }
+
+        // --- Read file ---
         let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
 
         let original_content = match read_file_as_string(&safe_path).await {
@@ -201,16 +279,14 @@ impl WorkspaceServer {
                 .guidance(vec![
                     "Verify the file exists with listDirectory".to_string(),
                     "Check file permissions".to_string(),
-                    "Ensure the path is correct".to_string(),
                 ])
                 .to_mcp_result());
             }
         };
 
-        let lines: Vec<&str> = original_content.lines().collect();
-        let line_count = lines.len();
+        let orig_lines: Vec<&str> = original_content.lines().collect();
+        let line_count = orig_lines.len();
 
-        // Check line count limit (10,000 lines)
         const MAX_LINES: usize = 10_000;
         if line_count > MAX_LINES {
             return Ok(guided_error(
@@ -222,138 +298,200 @@ impl WorkspaceServer {
                 ToolGroup::Workspace,
             )
             .guidance(vec![
-                "Files exceeding 10,000 lines are beyond practical LLM context windows".to_string(),
-                "Consider splitting the file into smaller modules".to_string(),
-                "Use editFile for smaller, targeted changes instead".to_string(),
+                "Consider splitting the file into smaller modules".to_string()
             ])
             .to_mcp_result());
         }
 
-        // Validate all line numbers exist
+        // --- Validate all edits against file content ---
         for edit in &edits {
-            if edit.line > line_count {
+            // Bounds check: anchor line must exist in the file
+            if edit.start_line > line_count {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
                     format!(
                         "Line {} does not exist (file has {} lines)",
-                        edit.line, line_count
+                        edit.start_line, line_count
                     ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    format!("Valid line range: 1-{}", line_count),
-                    "Use searchLineInFile to find correct line numbers".to_string(),
-                    "Use readFile to see file structure".to_string(),
+                    format!("Valid range: 1-{}", line_count),
+                    format!(
+                        "To append at end: use line: {}, insertAfter: true",
+                        line_count
+                    ),
                 ])
                 .to_mcp_result());
             }
+            if edit.end_line > line_count + 1 {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "endLine {} does not exist (file has {} lines)",
+                        edit.end_line, line_count
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![format!("Valid range: 1-{}", line_count)])
+                .to_mcp_result());
+            }
 
-            // Validate old_value if provided
-            if let Some(ref expected) = edit.old_value {
-                let actual = lines[edit.line - 1]; // Convert to 0-based
-                if actual != expected {
+            // old_value validation (single-line only)
+            if !edit.is_range() {
+                if let Some(ref expected) = edit.old_value {
+                    let actual = orig_lines[edit.start_line - 1];
+                    if actual != expected {
+                        let actual_hash = compute_line_hash(actual);
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
+                            format!(
+                                "CONTENT MISMATCH on line {} — current: \"{}\" (hash: {})\n  your old_value was: \"{}\"",
+                                edit.start_line, actual, actual_hash, expected
+                            ),
+                            ToolGroup::Workspace,
+                        )
+                        .guidance(vec![
+                            format!("→ If this IS still the right line: update old_value to match current content, or switch to line_hash: '{}'", actual_hash),
+                            "→ If the target moved: use searchLines to find it".to_string(),
+                            "→ Do NOT call readFile — current content is already shown above".to_string(),
+                        ])
+                        .to_mcp_result());
+                    }
+                }
+            }
+
+            // start_hash validation
+            if let Some(ref expected) = edit.start_hash {
+                let actual = orig_lines[edit.start_line - 1];
+                let actual_hash = compute_line_hash(actual);
+                if actual_hash != *expected {
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!(
-                            "Line {} content mismatch:\nExpected: \"{}\"\nActual: \"{}\"",
-                            edit.line, expected, actual
+                            "STALE HASH on line {} — retry with line_hash: '{}'\n  (your hash '{}' is outdated)\n  current line: {}:{}|{}",
+                            edit.start_line, actual_hash, expected, edit.start_line, actual_hash, actual
                         ),
                         ToolGroup::Workspace,
                     )
                     .guidance(vec![
-                        "Call readFile FIRST to get current line content".to_string(),
-                        "Use exact text from readFile response for old_value".to_string(),
-                        "File may have been modified since last read".to_string(),
+                        format!("→ If current content matches your intent: just swap line_hash to '{}' and retry NOW", actual_hash),
+                        "→ If content changed unexpectedly: use searchLines to locate where your target moved".to_string(),
+                        "→ Do NOT call readFile — everything you need is shown above".to_string(),
                     ])
                     .to_mcp_result());
                 }
             }
 
-            // Validate expected_hash (MANDATORY HashLine mechanism)
-            let actual_line = lines[edit.line - 1]; // Convert to 0-based
-            let actual_hash = super::utils::compute_line_hash(actual_line);
-
-            if actual_hash != edit.expected_hash {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!(
-                        "Line {} hash mismatch:\nExpected: \"{}\"\nActual: \"{}\"",
-                        edit.line, edit.expected_hash, actual_hash
-                    ),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "The line content has changed since you last read it.".to_string(),
-                    "Race condition detected! Aborting to prevent data corruption.".to_string(),
-                    "Re-read the file with `readFile` (and `showHash: true`) to get updated hashes.".to_string(),
-                ])
-                .to_mcp_result());
+            // end_hash validation (range mode only)
+            if edit.is_range() {
+                if let Some(ref expected) = edit.end_hash {
+                    let actual = orig_lines[edit.end_line - 1];
+                    let actual_hash = compute_line_hash(actual);
+                    if actual_hash != *expected {
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
+                            format!(
+                                "STALE HASH on endLine {} — retry with endHash: '{}'\n  (your hash '{}' is outdated)\n  current line: {}:{}|{}",
+                                edit.end_line, actual_hash, expected, edit.end_line, actual_hash, actual
+                            ),
+                            ToolGroup::Workspace,
+                        )
+                        .guidance(vec![
+                            format!("→ If this is still the correct range boundary: swap endHash to '{}' and retry NOW", actual_hash),
+                            "→ If boundary moved: use searchLines to find the new end line".to_string(),
+                            "→ Do NOT call readFile — the current hash is already shown above".to_string(),
+                        ])
+                        .to_mcp_result());
+                    }
+                }
             }
         }
 
-        // Apply edits (in reverse order to maintain line stability)
-        let mut modified_lines: Vec<String> = lines.iter().map(|&s| s.to_string()).collect();
-        let mut sorted_edits = edits.clone();
-        sorted_edits.sort_by(|a, b| b.line.cmp(&a.line)); // High to low
-
-        for edit in sorted_edits {
-            modified_lines[edit.line - 1] = edit.new_value; // Convert to 0-based
-        }
+        // --- Apply edits in reverse order (preserves line indices for subsequent edits) ---
+        let modified_lines = apply_edits(&orig_lines, &edits);
 
         let new_content = modified_lines.join("\n");
-
-        // Preserve trailing newline if original had one
         let new_content = if original_content.ends_with('\n') && !new_content.ends_with('\n') {
             format!("{}\n", new_content)
         } else {
             new_content
         };
 
-        // Generate diff with context
+        // --- Generate diff ---
         let context_lines = get_diff_context_lines().await;
-        let orig_lines: Vec<&str> = original_content.lines().collect();
-        let new_lines: Vec<&str> = new_content.lines().collect();
         let mut diff_output = String::new();
 
-        // Identify changed line indices (0-based)
-        let changed_indices: HashSet<usize> = edits.iter().map(|e| e.line - 1).collect();
+        // Collect context windows around each changed region (in original line space)
+        let mut regions: Vec<(usize, usize)> = edits
+            .iter()
+            .map(|e| {
+                (
+                    e.start_line.saturating_sub(1 + context_lines),
+                    (e.end_line + context_lines).min(line_count),
+                )
+            })
+            .collect();
+        regions.sort_by_key(|&(s, _)| s);
 
-        // Calculate lines to show
-        let mut lines_to_show: Vec<usize> = Vec::new();
-        for &idx in &changed_indices {
-            let start = idx.saturating_sub(context_lines);
-            let end = (idx + context_lines).min(orig_lines.len().saturating_sub(1));
-            for i in start..=end {
-                lines_to_show.push(i);
+        // Merge overlapping regions
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (s, e) in regions {
+            if let Some(last) = merged.last_mut() {
+                if s <= last.1 {
+                    last.1 = last.1.max(e);
+                    continue;
+                }
             }
+            merged.push((s, e));
         }
-        lines_to_show.sort_unstable();
-        lines_to_show.dedup();
 
-        // Generate diff
-        let mut prev_idx: Option<usize> = None;
-        for &idx in &lines_to_show {
-            if let Some(prev) = prev_idx {
-                if idx > prev + 1 {
+        // Build a set of original line indices that are REPLACED (not insert_after anchors)
+        let changed_orig_indices: std::collections::HashSet<usize> = edits
+            .iter()
+            .filter(|e| !e.insert_after)
+            .flat_map(|e| (e.start_line - 1)..e.end_line)
+            .collect();
+
+        let mut show_lines: Vec<usize> = merged.iter().flat_map(|&(s, e)| s..e).collect();
+        show_lines.sort_unstable();
+        show_lines.dedup();
+
+        let mut prev_shown: Option<usize> = None;
+        for orig_idx in &show_lines {
+            let orig_idx = *orig_idx;
+            if let Some(prev) = prev_shown {
+                if orig_idx > prev + 1 {
                     diff_output.push_str("...\n");
                 }
             }
-            prev_idx = Some(idx);
+            prev_shown = Some(orig_idx);
 
-            let line_num = idx + 1;
-            if changed_indices.contains(&idx) {
-                if idx < orig_lines.len() {
-                    diff_output.push_str(&format!("-{}: {}\n", line_num, orig_lines[idx]));
-                }
-                if idx < new_lines.len() {
-                    diff_output.push_str(&format!("+{}: {}\n", line_num, new_lines[idx]));
-                }
-            } else if idx < orig_lines.len() {
-                diff_output.push_str(&format!("  {}: {}\n", line_num, orig_lines[idx]));
+            let line_num = orig_idx + 1;
+            if changed_orig_indices.contains(&orig_idx) {
+                diff_output.push_str(&format!("-{}: {}\n", line_num, orig_lines[orig_idx]));
+            } else {
+                diff_output.push_str(&format!("  {}: {}\n", line_num, orig_lines[orig_idx]));
             }
         }
 
-        // Write file using file manager
+        // Show added lines for each changed region
+        for edit in &edits {
+            if !edit.new_value.is_empty() {
+                // insert_after: new lines sit after the anchor (start_line+1, start_line+2, ...)
+                // replace:      new lines start at start_line
+                let first_new_line = if edit.insert_after {
+                    edit.start_line + 1
+                } else {
+                    edit.start_line
+                };
+                for (i, new_line) in edit.new_value.lines().enumerate() {
+                    diff_output.push_str(&format!("+{}: {}\n", first_new_line + i, new_line));
+                }
+            }
+        }
+
+        // --- Write file ---
         let file_manager = self.get_file_manager(session_id.clone());
         if let Err(e) = file_manager.write_file_string(path_str, &new_content).await {
             return Ok(
@@ -361,38 +499,297 @@ impl WorkspaceServer {
                     .guidance(vec![
                         "Check file permissions".to_string(),
                         "Ensure sufficient disk space".to_string(),
-                        "Verify the file is not locked by another process".to_string(),
                     ])
                     .to_mcp_result(),
             );
         }
 
-        // Invalidate service context cache
         self.invalidate_context_cache().await;
 
-        // Success response
+        // --- Success response ---
         let edit_summary = edits
             .iter()
-            .map(|e| format!("  Line {}: \"{}\"", e.line, e.new_value))
+            .map(|e| {
+                if e.insert_after {
+                    format!(
+                        "  Insert after line {}: {} line(s)",
+                        e.start_line,
+                        e.new_value.lines().count()
+                    )
+                } else if e.is_range() {
+                    format!(
+                        "  Lines {}-{}: {} line(s) → {} line(s)",
+                        e.start_line,
+                        e.end_line,
+                        e.end_line - e.start_line + 1,
+                        e.new_value.lines().count()
+                    )
+                } else if e.new_value.is_empty() {
+                    format!("  Line {}: deleted", e.start_line)
+                } else {
+                    format!("  Line {}: \"{}\"", e.start_line, e.new_value)
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
+        // Compute new hashlines for edited regions so the agent can immediately
+        // do follow-up edits without a readFile roundtrip.
+        let new_content_lines: Vec<&str> = new_content.lines().collect();
+        let total_new_lines = new_content_lines.len();
+
+        // Process edits in ascending order to track line-number deltas.
+        let mut sorted_asc = edits.clone();
+        sorted_asc.sort_by_key(|e| e.start_line);
+
+        let mut new_hash_sections: Vec<String> = Vec::new();
+        let mut line_delta: i64 = 0;
+
+        for edit in &sorted_asc {
+            let new_line_count = edit
+                .new_value
+                .lines()
+                .count()
+                .max(if edit.new_value.is_empty() { 0 } else { 1 });
+
+            if edit.insert_after {
+                // Inserted lines sit immediately after the (unchanged) anchor line
+                // anchor line in new file: (start_line + line_delta)
+                let anchor_new = (edit.start_line as i64 + line_delta) as usize; // 1-based
+                let insert_start = anchor_new; // 0-based index of first inserted line
+                let section_end = (insert_start + new_line_count).min(total_new_lines);
+
+                let section: Vec<String> = new_content_lines[insert_start..section_end]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, line)| {
+                        let line_num = insert_start + i + 1;
+                        let hash = compute_line_hash(line);
+                        format!("{}:{}|{}", line_num, hash, line)
+                    })
+                    .collect();
+
+                new_hash_sections.push(section.join("\n"));
+                line_delta += new_line_count as i64;
+            } else {
+                let actual_start = ((edit.start_line as i64 - 1) + line_delta) as usize; // 0-based
+                let section_end = (actual_start + new_line_count).min(total_new_lines);
+
+                let section: Vec<String> = new_content_lines[actual_start..section_end]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, line)| {
+                        let line_num = actual_start + i + 1;
+                        let hash = compute_line_hash(line);
+                        format!("{}:{}|{}", line_num, hash, line)
+                    })
+                    .collect();
+
+                new_hash_sections.push(section.join("\n"));
+                let orig_range = (edit.end_line - edit.start_line + 1) as i64;
+                line_delta += new_line_count as i64 - orig_range;
+            }
+        }
+
+        let new_hashlines_block = new_hash_sections.join("\n...\n");
+
         let hint = SuccessHint::new(
             format!(
-                "✓ Applied {} line edit(s) to '{}'\n\n\
-                Changes:\n{}\n\n\
-                Diff:\n```diff\n{}\n```",
+                "✓ Applied {} edit(s) to '{}'\n\nChanges:\n{}\n\nDiff:\n```diff\n{}\n```\n\nNew hashlines (ready for next replaceLines — no re-read needed):\n```\n{}\n```",
                 edits.len(),
                 path_str,
                 edit_summary,
-                diff_output.trim()
+                diff_output.trim(),
+                new_hashlines_block
             ),
             vec![
-                "Use readFile to verify the changes".to_string(),
-                "Use searchLineInFile to find other lines to edit".to_string(),
+                "Hashes above are current — use directly in the next replaceLines call".to_string(),
+                "Use readFile only if you need broader context beyond the edited lines".to_string(),
+                "Use searchLines to locate other lines to edit".to_string(),
             ],
         );
 
         Ok(hint.to_mcp_result())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- helpers ---
+
+    fn make_edit(line: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: line,
+            end_line: line,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: false,
+        }
+    }
+
+    fn make_range_edit(start: usize, end: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: start,
+            end_line: end,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: false,
+        }
+    }
+
+    fn make_insert_after(line: usize, new_value: &str) -> LineEdit {
+        LineEdit {
+            start_line: line,
+            end_line: line,
+            new_value: new_value.to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: true,
+        }
+    }
+
+    fn lines(s: &str) -> Vec<&str> {
+        s.lines().collect()
+    }
+
+    // --- replace ---
+
+    #[test]
+    fn test_replace_single_line() {
+        let orig = lines("line1\nline2\nline3");
+        let result = apply_edits(&orig, &[make_edit(2, "replaced")]);
+        assert_eq!(result, vec!["line1", "replaced", "line3"]);
+    }
+
+    #[test]
+    fn test_replace_range_with_fewer_lines() {
+        let orig = lines("a\nb\nc\nd\ne");
+        // Replace lines 2-4 with a single line
+        let result = apply_edits(&orig, &[make_range_edit(2, 4, "merged")]);
+        assert_eq!(result, vec!["a", "merged", "e"]);
+    }
+
+    #[test]
+    fn test_replace_range_with_more_lines() {
+        let orig = lines("a\nb\nc");
+        // Replace line 2 range (2-2) with two lines
+        let result = apply_edits(&orig, &[make_range_edit(2, 2, "x\ny")]);
+        assert_eq!(result, vec!["a", "x", "y", "c"]);
+    }
+
+    // --- delete ---
+
+    #[test]
+    fn test_delete_single_line() {
+        let orig = lines("line1\nline2\nline3");
+        let result = apply_edits(&orig, &[make_edit(2, "")]);
+        assert_eq!(result, vec!["line1", "line3"]);
+    }
+
+    #[test]
+    fn test_delete_range() {
+        let orig = lines("a\nb\nc\nd\ne");
+        let result = apply_edits(&orig, &[make_range_edit(2, 4, "")]);
+        assert_eq!(result, vec!["a", "e"]);
+    }
+
+    #[test]
+    fn test_delete_first_line() {
+        let orig = lines("first\nsecond\nthird");
+        let result = apply_edits(&orig, &[make_edit(1, "")]);
+        assert_eq!(result, vec!["second", "third"]);
+    }
+
+    #[test]
+    fn test_delete_last_line() {
+        let orig = lines("first\nsecond\nlast");
+        let result = apply_edits(&orig, &[make_edit(3, "")]);
+        assert_eq!(result, vec!["first", "second"]);
+    }
+
+    // --- insert_after ---
+
+    #[test]
+    fn test_insert_after_middle_line() {
+        let orig = lines("a\nb\nc");
+        let result = apply_edits(&orig, &[make_insert_after(2, "inserted")]);
+        assert_eq!(result, vec!["a", "b", "inserted", "c"]);
+    }
+
+    #[test]
+    fn test_insert_after_anchor_line_is_untouched() {
+        // The anchor line must survive intact
+        let orig = lines("fn foo() {\n    // body\n}");
+        let result = apply_edits(&orig, &[make_insert_after(1, "// new comment")]);
+        assert_eq!(result[0], "fn foo() {");
+        assert_eq!(result[1], "// new comment");
+        assert_eq!(result[2], "    // body");
+    }
+
+    #[test]
+    fn test_insert_after_last_line_appends() {
+        let orig = lines("first\nlast");
+        let result = apply_edits(&orig, &[make_insert_after(2, "appended")]);
+        assert_eq!(result, vec!["first", "last", "appended"]);
+    }
+
+    #[test]
+    fn test_insert_after_multiline_new_value() {
+        let orig = lines("a\nb");
+        let result = apply_edits(&orig, &[make_insert_after(1, "x\ny\nz")]);
+        assert_eq!(result, vec!["a", "x", "y", "z", "b"]);
+    }
+
+    // --- multiple edits ---
+
+    #[test]
+    fn test_multiple_edits_high_to_low_applied_correctly() {
+        // Delete line 3, replace line 1 — both should apply independently
+        let orig = lines("a\nb\nc\nd");
+        let edits = vec![make_edit(1, "A"), make_edit(3, "")];
+        let result = apply_edits(&orig, &edits);
+        assert_eq!(result, vec!["A", "b", "d"]);
+    }
+
+    #[test]
+    fn test_delete_then_insert_after_independent_regions() {
+        let orig = lines("a\nb\nc\nd\ne");
+        // delete line 4, insert after line 1
+        let edits = vec![make_edit(4, ""), make_insert_after(1, "inserted")];
+        let result = apply_edits(&orig, &edits);
+        assert_eq!(result, vec!["a", "inserted", "b", "c", "e"]);
+    }
+
+    // --- is_range ---
+
+    #[test]
+    fn test_is_range_false_for_single_line() {
+        assert!(!make_edit(5, "x").is_range());
+    }
+
+    #[test]
+    fn test_is_range_true_for_span() {
+        assert!(make_range_edit(3, 7, "x").is_range());
+    }
+
+    #[test]
+    fn test_is_range_false_for_insert_after_even_with_span() {
+        let e = LineEdit {
+            start_line: 1,
+            end_line: 5,
+            new_value: "x".to_string(),
+            old_value: None,
+            start_hash: None,
+            end_hash: None,
+            insert_after: true,
+        };
+        assert!(!e.is_range(), "insert_after is never a range");
     }
 }

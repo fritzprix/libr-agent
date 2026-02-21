@@ -11,7 +11,7 @@ pub struct MCPServerPreset {
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<Value>,
-    pub variable_definitions: Option<Value>, // New field for schema
+    pub variable_definitions: Option<Value>,
     pub url: Option<String>,
 }
 
@@ -22,13 +22,12 @@ struct RawPresetConfig {
     env: Option<Value>,
     #[serde(default, rename = "variableDefinitions")]
     variable_definitions: Option<Value>,
-    description: Option<String>, // User added this
+    description: Option<String>,
 }
 
 pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
     let json_content = include_str!("../../../mcp-server.json");
 
-    // Deserialize into a breakdown of HashMap<String, Value> to handle individual errors
     #[derive(Deserialize)]
     struct RawPresetsMap {
         #[serde(rename = "mcpServers")]
@@ -46,7 +45,6 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
     let mut presets = Vec::new();
 
     for (key, value) in raw.mcp_servers {
-        // Try to parse the individual value into RawPresetConfig
         let config: RawPresetConfig = match serde_json::from_value(value) {
             Ok(c) => c,
             Err(e) => {

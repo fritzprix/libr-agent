@@ -116,8 +116,6 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
 
     if let Some(allowed_aliases) = &agent_config.allowed_built_in_service_aliases {
         if allowed_aliases.is_empty() {
-            // Even with empty config, session_api is a fundamental right
-            tool_ids.push("session_api".to_string());
             return tool_ids;
         }
 
@@ -133,7 +131,8 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
                 "ui" => tool_ids.push("ui".to_string()),
                 "browser" => tool_ids.push("browser".to_string()),
                 "mcp_manager" => tool_ids.push("mcp_manager".to_string()),
-                "session_api" => tool_ids.push("session_api".to_string()),
+                "session_api" | "swarm" => tool_ids.push("swarm".to_string()),
+                "skills" => tool_ids.push("skills".to_string()),
                 _ => {
                     log::warn!("Unknown builtin service alias: {}", alias);
                 }
@@ -151,14 +150,8 @@ pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec
         tool_ids.push("ui".to_string());
         tool_ids.push("browser".to_string());
         tool_ids.push("mcp_manager".to_string());
-        tool_ids.push("session_api".to_string());
-    }
-
-    // CRITICAL: session_api is a fundamental right for AI collaboration
-    // User's ultimate control is app termination, not micro-permission management
-    if !tool_ids.contains(&"session_api".to_string()) {
-        log::info!("session_api not in config, enforcing as fundamental right");
-        tool_ids.push("session_api".to_string());
+        tool_ids.push("swarm".to_string());
+        tool_ids.push("skills".to_string());
     }
 
     tool_ids

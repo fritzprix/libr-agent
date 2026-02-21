@@ -209,6 +209,24 @@ impl SecureFileManager {
 
         // Open the existing file and append content
         use tokio::io::AsyncWriteExt;
+
+        // Security check: verify that appending won't exceed file size limit.
+        // Keep arithmetic in u64 to avoid truncation on 32-bit targets.
+        let current_size: u64 = fs::metadata(&safe_path)
+            .await
+            .map_err(|e| format!("Failed to get file metadata: {e}"))?
+            .len();
+
+        let max_size = crate::config::max_file_size() as u64;
+        let append_size = content.len() as u64;
+
+        if current_size.saturating_add(append_size) > max_size {
+            return Err(format!(
+                "File exceeds the maximum allowed size of {} bytes (current: {}, append: {})",
+                max_size, current_size, append_size
+            ));
+        }
+
         let mut file = tokio::fs::OpenOptions::new()
             .append(true)
             .open(&safe_path)

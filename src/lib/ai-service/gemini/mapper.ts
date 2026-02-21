@@ -224,7 +224,7 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
           m.thinkingSignature ?? GEMINI_DUMMY_THOUGHT_SIGNATURE;
 
         if (!m.thinkingSignature) {
-          logger.warn(
+          logger.debug(
             'Missing thinking signature for assistant tool calls; applying Gemini dummy signature fallback',
             {
               toolCallsCount: m.tool_calls.length,
@@ -323,7 +323,7 @@ export function convertSingleMessage(message: Message): unknown {
         message.thinkingSignature ?? GEMINI_DUMMY_THOUGHT_SIGNATURE;
 
       if (!message.thinkingSignature) {
-        logger.warn(
+        logger.debug(
           'convertSingleMessage: missing thinking signature for assistant tool calls; applying Gemini dummy signature fallback',
           {
             toolCallsCount: message.tool_calls.length,

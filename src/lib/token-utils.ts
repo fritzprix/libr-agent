@@ -1,4 +1,4 @@
-import { get_encoding } from '@dqbd/tiktoken';
+import { get_encoding, type Tiktoken } from '@dqbd/tiktoken';
 import type { Message } from '@/models/chat';
 import { MCPTextContent } from '@/lib/mcp';
 import { llmConfigManager } from './llm-config-manager';
@@ -6,6 +6,23 @@ import { getLogger } from './logger';
 import { AIServiceProvider } from './ai-service/types';
 
 const logger = getLogger('token-utils');
+
+/**
+ * Singleton tiktoken encoder for cl100k_base.
+ * Creating/freeing a WASM instance on every call causes synchronous GC pressure
+ * and main-thread jank. We keep one instance alive for the app lifetime.
+ */
+let _sharedEncoder: Tiktoken | null = null;
+
+function getSharedEncoder(): Tiktoken | null {
+  if (_sharedEncoder !== null) return _sharedEncoder;
+  try {
+    _sharedEncoder = get_encoding('cl100k_base');
+    return _sharedEncoder;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Estimates the token count for arbitrary text using the `cl100k_base`
@@ -17,10 +34,12 @@ const logger = getLogger('token-utils');
  */
 export function estimateTextTokens(text: string): number {
   try {
-    const encoding = get_encoding('cl100k_base');
-    const tokens = encoding.encode(text);
-    encoding.free();
-    return tokens.length;
+    const encoder = getSharedEncoder();
+    if (encoder) {
+      return encoder.encode(text).length;
+    }
+    // Fallback if WASM failed to initialize
+    return Math.ceil(text.length / 4);
   } catch (error) {
     // Fallback: Use character-based estimation (~4 chars per token, conservative OpenAI estimate)
     // This handles cases where tiktoken WASM fails (e.g., Ollama models, WASM compatibility issues)

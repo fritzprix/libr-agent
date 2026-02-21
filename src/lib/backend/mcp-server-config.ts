@@ -139,7 +139,7 @@ export interface MCPServerPreset {
   transportType: 'stdio' | 'sse';
   command?: string;
   args?: string[];
-  env?: Record<string, unknown>;
+  env?: Record<string, string>;
   variableDefinitions?: Record<
     string,
     {
