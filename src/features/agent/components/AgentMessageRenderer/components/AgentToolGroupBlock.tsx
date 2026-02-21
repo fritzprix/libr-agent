@@ -2,6 +2,7 @@ import React, { memo, useMemo } from 'react';
 import type { Message } from '@/models/chat';
 import type { MCPToolCallContent } from '@/lib/mcp';
 import { AgentToolCallGroup } from '../../AgentToolCallGroup';
+import { useSettings } from '@/hooks/use-settings';
 
 interface AgentToolGroupBlockProps {
   message: Message;
@@ -19,6 +20,9 @@ const AgentToolGroupBlockImpl: React.FC<AgentToolGroupBlockProps> = ({
   toolResultsMap,
   isLast,
 }) => {
+  const {
+    value: { toolCallGroupVisibleCount },
+  } = useSettings();
   const toolGroupCalls = useMemo(
     () =>
       groupBlock.items.map((tc) => ({
@@ -45,7 +49,7 @@ const AgentToolGroupBlockImpl: React.FC<AgentToolGroupBlockProps> = ({
       toolGroup={toolGroup}
       toolResults={toolGroupResults}
       isLast={isLast}
-      visibleCount={999}
+      visibleCount={toolCallGroupVisibleCount}
     />
   );
 };
