@@ -73,8 +73,8 @@ use commands::skill_commands::{
     scan_skills_directory,
 };
 use commands::skill_management::{
-    copy_global_to_assistant, delete_assistant_skill, download_global_skills,
-    import_assistant_skills, reset_assistant_skills,
+    copy_global_to_assistant, delete_assistant_skill, import_assistant_skills,
+    reset_assistant_skills,
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
@@ -262,7 +262,6 @@ pub fn run() {
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
                 get_aggregated_skills,
-                download_global_skills,
                 copy_global_to_assistant,
                 delete_assistant_skill,
                 import_assistant_skills,
