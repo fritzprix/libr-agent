@@ -6,9 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### 🚀 Features
 
-- **Browser `fetch` Tool**: New headless content extraction tool that lets agents fetch URLs and download files without opening a visible browser session. Supports a `visible` parameter to opt into a full browser session when interactivity is needed — giving agents a lightweight scraping path alongside the existing interactive automation flow.
+- **Browser `fetch` Tool**: New headless content extraction tool that lets agents fetch URLs and download files without opening a visible browser session — giving agents a lightweight scraping path alongside the existing interactive automation flow.
 
-- **Declarative Builtin Service Registry**: `BUILTIN_SERVICE_REGISTRY` is now the single source of truth for all 12 builtin server names in both Rust (`agent/tools.rs`) and TypeScript (`runtime-builtins.ts`). Each server module declares `pub const NAME: &str` — the canonical name is defined exactly once and referenced everywhere, making name drift a compile-time error rather than a silent routing failure.
+- **Declarative Builtin Service Registry**: `BUILTIN_SERVICE_REGISTRY` is now the single source of truth for all 12 builtin server names in both Rust (`agent/tools.rs`) and TypeScript (`runtime-builtins.ts`). Each server module declares `pub const NAME: &str` — the canonical name is defined exactly once and referenced everywhere, making name drift fail fast via regression tests rather than a silent routing failure.
 
 - **Configurable Tool Call Detail Level**: Agent chat UI now supports user-selectable view modes for tool call rendering — Compact (simplified) and Developer (full arguments/results). Controlled per-session via settings.
 
@@ -32,7 +32,7 @@ All notable changes to this project will be documented in this file.
 
 - **Alias layer removed**: The entire builtin-service alias indirection has been eliminated. `canonicalize_builtin_service_alias` (Rust) and `canonicalizeAlias` (TypeScript) are now single-scan / O(1) Set lookups against the canonical name list. No more shadow name tables to keep in sync.
 
-- **4 registry regression tests** added to `agent/tools.rs` — `each_builtin_server_name_is_in_registry`, `builtin_server_names_are_unique`, `registry_has_no_duplicate_canonicals`, `registry_and_server_list_are_in_sync` — protecting against future name drift across all 12 builtin servers.
+- **4 registry regression tests** added to `tests/builtin_service_registry_tests.rs` — `each_builtin_server_name_is_in_registry`, `builtin_server_names_are_unique`, `registry_has_no_duplicate_canonicals`, `registry_and_server_list_are_in_sync` — protecting against future name drift across all 12 builtin servers. Tests run in CI via `cargo test --tests`.
 
 ### 📚 Docs
 
