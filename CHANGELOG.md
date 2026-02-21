@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.10] - 2026-02-21
+
+### 🚀 Features
+
+- **Declarative Builtin Service Registry**: `BUILTIN_SERVICE_REGISTRY` is now the single source of truth for all 12 builtin server names in both Rust (`agent/tools.rs`) and TypeScript (`runtime-builtins.ts`). Each server module declares `pub const NAME: &str` — the canonical name is defined exactly once and referenced everywhere, making name drift a compile-time error rather than a silent routing failure.
+
+- **Configurable Tool Call Detail Level**: Agent chat UI now supports user-selectable view modes for tool call rendering — Compact (simplified) and Developer (full arguments/results). Controlled per-session via settings.
+
+### 🐛 Fixes
+
+- **Circuit breaker consecutive-failure count was off-by-one**: The break trigger was firing one iteration late because the counter included the current (unsent) call in its total. `evaluate_circuit_breaker_count` now returns the historical failure count only; the break fires as soon as `consecutive >= 2`, matching original intent.
+
+- **`content_store` canonical name mismatch**: `ContentStoreServer::name()` was returning `"contentstore"` (no underscore), causing tool routing to silently fall back through the alias layer. Fixed to `"content_store"` — the alias system would have masked this forever without the new regression tests.
+
+### 🔧 Internal
+
+- **Circuit breaker refactored** (`agent/llm/response.rs`): Extracted `evaluate_circuit_breaker_count` from the pre-processing loop. `count_consecutive_failed_calls` is now generic over a predicate closure, covering both same-tool-name and same-signature (tool + args) detection without duplication. `build_tool_call_indices` builds both `call_name_by_id` and `call_signature_by_id` maps in a single pass.
+
+- **Alias layer removed**: The entire builtin-service alias indirection has been eliminated. `canonicalize_builtin_service_alias` (Rust) and `canonicalizeAlias` (TypeScript) are now single-scan / O(1) Set lookups against the canonical name list. No more shadow name tables to keep in sync.
+
+- **4 registry regression tests** added to `agent/tools.rs` — `each_builtin_server_name_is_in_registry`, `builtin_server_names_are_unique`, `registry_has_no_duplicate_canonicals`, `registry_and_server_list_are_in_sync` — protecting against future name drift across all 12 builtin servers.
+
+### 📚 Docs
+
+- Updated `create-builtin-tool` SKILL.md with the `pub const NAME` pattern, three-point registration checklist (`BUILTIN_SERVICE_REGISTRY` + regression test update + `mod.rs` wiring), and expanded Quality Gates.
+
 ## [0.5.9] - 2026-02-21
 
 ### 🚀 Features

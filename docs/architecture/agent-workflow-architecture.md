@@ -441,13 +441,14 @@ CREATE TABLE sessions (
 - ✅ Event-driven pattern prevents tight coupling
 - ✅ Session isolation enables multi-agent workflows
 - ✅ Streaming UX with optimistic updates
+- ✅ **Circuit breaker for agent tool loops** — predicate-based, dual-mode (same tool name ×2 consecutive failures OR same signature ×2), injected transparently pre-dispatch in `response.rs` (v0.5.9)
+- ✅ **Declarative builtin service registry** — `BUILTIN_SERVICE_REGISTRY` single source of truth in Rust and TypeScript; name drift is caught at compile time or by regression tests (v0.5.9)
 
 ### Identified Weaknesses
 
-- ❌ **Repeated DB queries** (54ms overhead per 3-tool workflow)
-- ❌ No timeout for long-running tools
-- ❌ No circuit breaker for failing tools
-- ❌ Memory usage not tracked
+- ⚠️ **Repeated DB queries** (54ms overhead per 3-tool workflow) — partially mitigated by in-memory cache
+- ⚠️ No timeout for long-running tools
+- ⚠️ Memory usage not tracked
 
 ### Optimization Impact
 
@@ -747,13 +748,92 @@ Before merging any Rust ↔ TypeScript integration changes:
 
 ---
 
-**Document Version**: 1.1
+## 11. Reliability Patterns (v0.5.9)
+
+### 11.1 Circuit Breaker for Tool Loops
+
+Agents occasionally get stuck in a loop calling the same tool repeatedly against an unresolvable error. The circuit breaker in `agent/llm/response.rs` intercepts the batch of tool calls the LLM wants to make **before** they are dispatched, and replaces a looping call with `builtin_ui__circuitBreak`.
+
+**Two trigger modes:**
+
+| Mode | Condition | Example |
+|---|---|---|
+| Same-tool-name | ≥2 consecutive failed results for the same tool | `clearScratchpad` fails with ID 191, 192, 193 … |
+| Same-signature | ≥2 consecutive failed results for exact tool+args combo | `readFile("/nonexistent")` called verbatim every turn |
+
+**Implementation sketch:**
+
+```rust
+// response.rs
+fn evaluate_circuit_breaker_count(
+    messages: &[Message],
+    tool_call: &ToolCall,
+    call_name_by_id: &HashMap<String, String>,
+    call_signature_by_id: &HashMap<String, String>,
+) -> Option<usize> {
+    if tool_name == "builtin_ui__circuitBreak" { return None; } // skip the breaker itself
+
+    let n = count_consecutive_failed_calls(messages, |id| {
+        call_name_by_id.get(id) == Some(tool_name)   // mode 1: same name
+    });
+    if n >= 2 { return Some(n + 1); }
+
+    let sig = format!("{}:{}", tool_name, args);
+    let m = count_consecutive_failed_calls(messages, |id| {
+        call_signature_by_id.get(id) == Some(&sig)   // mode 2: same signature
+    });
+    if m >= 2 { return Some(m + 1); }
+
+    None
+}
+```
+
+`count_consecutive_failed_calls` iterates the message history **backwards**, stopping at the first success or role boundary — so it counts only the current unbroken run of failures, not historical ones.
+
+---
+
+### 11.2 Declarative Builtin Service Registry
+
+Before v0.5.9, each builtin server's canonical name was a raw string literal in `fn name()`. Any typo (e.g. `"contentstore"` vs `"content_store"`) caused silent routing failures that were masked by an ever-growing alias table.
+
+**Current pattern:**
+
+```rust
+// src-tauri/src/mcp/builtin/content_store/mod.rs
+pub const NAME: &str = "content_store"; // single source of truth
+
+impl BuiltinMCPServer for ContentStoreServer {
+    fn name(&self) -> &str { NAME }      // reference, not literal
+}
+```
+
+```rust
+// src-tauri/src/agent/tools.rs  (also TypeScript mirror in runtime-builtins.ts)
+pub(crate) const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
+    BuiltinServiceEntry { canonical: planning::NAME,      optional: false },
+    BuiltinServiceEntry { canonical: content_store::NAME, optional: false },
+    // … all 12 servers
+];
+```
+
+**Regression tests** (in `agent/tools.rs`) enforce four invariants at every build:
+
+1. Every server's `NAME` const appears in `BUILTIN_SERVICE_REGISTRY`.
+2. No two servers share the same name.
+3. No duplicates in the registry itself.
+4. The registry entry count equals the number of concrete server implementations.
+
+Adding a new builtin server without updating the registry → test failure, not a production routing bug.
+
+---
+
+**Document Version**: 1.2  
 **Related Documents**:
 
 - [idea.md](../../idea.md) - High-level architecture vision
 - [elaborated_idea.md](../../elaborated_idea.md) - Dual-track migration strategy
 - [refactoring_20241228_2330.md](../history/refactoring_20241228_2330.md) - Implementation plan
 
-**Maintainer**: @fritzprix
-**Last Audit**: 2024-12-28
-**Last Updated**: 2024-12-28 (Added Section 10: Integration Guidelines)
+**Maintainer**: @fritzprix  
+**Last Audit**: 2024-12-28  
+**Last Updated**: 2026-02-21 (Section 9 circuit breaker + registry strengths; Section 11 added)
