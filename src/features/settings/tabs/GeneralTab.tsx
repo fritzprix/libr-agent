@@ -13,14 +13,9 @@ import {
 } from 'lucide-react';
 import { SkillsListModal } from '../components/SkillsListModal';
 import { getLogger } from '@/lib/logger';
+import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('GeneralTab');
-
-interface SkillMetadata {
-  name: string;
-  description: string;
-  path: string;
-}
 
 interface GeneralTabProps {
   localLanguage: string;
