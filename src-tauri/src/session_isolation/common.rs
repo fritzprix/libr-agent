@@ -1,4 +1,3 @@
-use crate::mcp::utils::command_helper::CommandExt;
 use crate::session_isolation::types::ShellType;
 use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
@@ -9,9 +8,7 @@ use tracing::warn;
 pub async fn is_command_available(command: &str) -> bool {
     // Use the async Tokio Command to avoid blocking the async runtime
     let mut cmd = if cfg!(target_os = "windows") {
-        let mut c = AsyncCommand::new("where");
-        c.silent();
-        c
+        AsyncCommand::new("where")
     } else {
         AsyncCommand::new("which")
     };

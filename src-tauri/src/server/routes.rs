@@ -48,6 +48,16 @@ pub fn get_routes(
         .and(warp::body::json())
         .and_then(handlers::send_message);
 
+    // POST /api/sessions/:id/resume
+    let resume_session = warp::post()
+        .and(warp::path("api"))
+        .and(warp::path("sessions"))
+        .and(warp::path::param())
+        .and(warp::path("resume"))
+        .and(warp::path::end())
+        .and(agent_manager.clone())
+        .and_then(handlers::resume_session_workflow);
+
     // POST /api/sessions/:id/terminate
     let terminate_session = warp::post()
         .and(warp::path("api"))
@@ -74,6 +84,14 @@ pub fn get_routes(
         .and(warp::path::end())
         .and_then(handlers::get_assistants);
 
+    // GET /api/assistants/:id
+    let get_assistant = warp::get()
+        .and(warp::path("api"))
+        .and(warp::path("assistants"))
+        .and(warp::path::param())
+        .and(warp::path::end())
+        .and_then(handlers::get_assistant);
+
     // GET /api/health
     let health = warp::get()
         .and(warp::path("api"))
@@ -90,9 +108,11 @@ pub fn get_routes(
         .or(get_session)
         .or(get_messages)
         .or(send_message)
+        .or(resume_session)
         .or(terminate_session)
         .or(get_child_sessions)
         .or(list_assistants)
+        .or(get_assistant)
         .or(health)
         .with(cors)
 }

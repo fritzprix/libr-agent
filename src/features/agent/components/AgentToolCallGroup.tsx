@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, memo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -9,15 +9,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  hasToolCallError,
-  parseToolName,
-  formatExecutionTime,
-  parseToolArguments,
-  formatToolArgumentsSummary,
-  hasUIResource,
-} from '@/lib/tool-call-utils';
-import { AgentToolCallDetails } from './AgentToolCallDetails';
+import { hasToolCallError } from '@/lib/tool-call-utils';
+import { ToolCallCompactItem } from './ToolCallCompactItem';
 
 interface AgentToolCallGroupProps {
   message: Message;
@@ -56,17 +49,6 @@ interface ExpandToggleProps {
   isExpanded: boolean;
   totalCalls: number;
   onToggle: () => void;
-}
-
-interface ToolCallCompactItemProps {
-  toolCall: ToolCall;
-  toolResult?: Message;
-  isLast?: boolean;
-}
-
-interface ToolStatusIconProps {
-  hasResult: boolean;
-  hasError: boolean;
 }
 
 /**
@@ -187,115 +169,6 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
 };
 
 /**
- * Status icon showing loading/error/success state
- */
-const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
-  hasResult,
-  hasError,
-}) => {
-  if (!hasResult) {
-    return (
-      <Loader2 className="w-3.5 h-3.5 text-primary animate-spin flex-shrink-0" />
-    );
-  }
-
-  if (hasError) {
-    return <XCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0" />;
-  }
-
-  return <CheckCircle className="w-3.5 h-3.5 text-success flex-shrink-0" />;
-};
-
-/**
- * Compact tool call item - no individual border, tight spacing
- */
-const ToolCallCompactItem: React.FC<ToolCallCompactItemProps> = ({
-  toolCall,
-  toolResult,
-  isLast = false,
-}) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // Parse tool name (remove server prefix)
-  const toolName = parseToolName(toolCall.function.name);
-
-  // Parse arguments for summary
-  const params = parseToolArguments(toolCall.function.arguments);
-  const paramSummary = formatToolArgumentsSummary(params);
-
-  // Check for error using utility function
-  const hasError = hasToolCallError(toolResult);
-  const hasResource = hasUIResource(toolResult);
-
-  // Get execution time
-  const executionTime = toolResult?.metadata?.executionTime;
-
-  // Auto-expand on error or if it's the last message with a UI resource
-  useEffect(() => {
-    if (hasError && !isExpanded) {
-      setIsExpanded(true);
-    } else if (hasResource) {
-      setIsExpanded(isLast);
-    }
-  }, [hasError, hasResource, isLast, isExpanded]);
-
-  return (
-    <div
-      className={cn(
-        'rounded px-3 py-2 text-sm transition-colors cursor-pointer',
-        hasError
-          ? 'bg-destructive/10 hover:bg-destructive/20'
-          : 'bg-background hover:bg-muted/50',
-      )}
-      onClick={() => setIsExpanded(!isExpanded)}
-    >
-      {/* Collapsed header line */}
-      <div className="flex items-center gap-2">
-        <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
-
-        {/* Tool name */}
-        <span className="flex-shrink-0 font-medium">{toolName}</span>
-
-        {/* Params Summary */}
-        {paramSummary && (
-          <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
-            {paramSummary}
-          </span>
-        )}
-        {!paramSummary && <span className="flex-1" />}
-
-        {/* Execution time */}
-        {executionTime !== undefined && (
-          <span className="text-xs text-muted-foreground flex-shrink-0">
-            {formatExecutionTime(executionTime)}
-          </span>
-        )}
-
-        {/* Expand indicator */}
-        <ChevronDown
-          className={cn(
-            'w-3.5 h-3.5 transition-transform flex-shrink-0 text-muted-foreground',
-            isExpanded && 'rotate-180',
-          )}
-        />
-      </div>
-
-      {/* Expanded details */}
-      {isExpanded && (
-        <div className="mt-3 pt-3 border-t border-muted/50 min-w-0">
-          <AgentToolCallDetails
-            toolCall={toolCall}
-            toolResult={toolResult}
-            hasError={hasError}
-            isLoading={!toolResult}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
-
-/**
  * Groups multiple tool calls into a single collapsible bubble for Agent V2.
  * Optimized with React.memo to prevent unnecessary re-renders during streaming or history updates.
  */
@@ -411,24 +284,34 @@ export function arePropsEqual(
   if (prev.visibleCount !== next.visibleCount) return false;
 
   // Check calls array content (length and content of items)
-  // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
-  if (prev.toolGroup.calls.length !== next.toolGroup.calls.length) return false;
-  for (let i = 0; i < prev.toolGroup.calls.length; i++) {
-    const prevCall = prev.toolGroup.calls[i];
-    const nextCall = next.toolGroup.calls[i];
-
-    if (prevCall.id !== nextCall.id) return false;
-    if (prevCall.type !== nextCall.type) return false;
-    if (prevCall.function.name !== nextCall.function.name) return false;
-    if (prevCall.function.arguments !== nextCall.function.arguments)
+  // Optimization: Check for reference equality first (for AgentToolGroupBlock support)
+  if (
+    prev.toolGroup !== next.toolGroup &&
+    prev.toolGroup.calls !== next.toolGroup.calls
+  ) {
+    // AgentMessageRenderer recreates toolCall objects on every render, so we must check content deeply.
+    if (prev.toolGroup.calls.length !== next.toolGroup.calls.length)
       return false;
+    for (let i = 0; i < prev.toolGroup.calls.length; i++) {
+      const prevCall = prev.toolGroup.calls[i];
+      const nextCall = next.toolGroup.calls[i];
+
+      if (prevCall.id !== nextCall.id) return false;
+      if (prevCall.type !== nextCall.type) return false;
+      if (prevCall.function.name !== nextCall.function.name) return false;
+      if (prevCall.function.arguments !== nextCall.function.arguments)
+        return false;
+    }
   }
 
   // Check toolResults array content (shallow comparison of Message objects)
-  // We assume Message objects are stable (from useAgentChatState)
-  if (prev.toolResults.length !== next.toolResults.length) return false;
-  for (let i = 0; i < prev.toolResults.length; i++) {
-    if (prev.toolResults[i] !== next.toolResults[i]) return false;
+  // Optimization: Check for reference equality first
+  if (prev.toolResults !== next.toolResults) {
+    // We assume Message objects are stable (from useAgentChatState)
+    if (prev.toolResults.length !== next.toolResults.length) return false;
+    for (let i = 0; i < prev.toolResults.length; i++) {
+      if (prev.toolResults[i] !== next.toolResults[i]) return false;
+    }
   }
 
   return true;

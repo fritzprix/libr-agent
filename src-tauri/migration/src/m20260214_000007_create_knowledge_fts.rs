@@ -1,5 +1,7 @@
-use sea_orm_migration::prelude::*;
+﻿use sea_orm_migration::prelude::*;
 use sea_orm_migration::sea_orm::Statement;
+
+use super::helpers;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -44,14 +46,20 @@ impl MigrationTrait for Migration {
         ))
         .await?;
 
-        // Populate FTS table with existing knowledge entries
-        db.execute(Statement::from_string(
-            db.get_database_backend(),
-            "INSERT INTO knowledge_fts(rowid, title, content, tags, source)
-             SELECT id, title, content, tags, source FROM knowledge;"
-                .to_owned(),
-        ))
-        .await?;
+        // ??IDEMPOTENT: Only populate FTS when it is empty.
+        // Without this guard, re-running the migration (e.g. after a reset that
+        // left seaql_migrations intact) would create duplicate FTS rows and
+        // cause relevance scores / result sets to be wrong.
+        let fts_count = helpers::count_rows(manager, Alias::new("knowledge_fts")).await?;
+        if fts_count == 0 {
+            db.execute(Statement::from_string(
+                db.get_database_backend(),
+                "INSERT INTO knowledge_fts(rowid, title, content, tags, source)
+                 SELECT id, title, content, tags, source FROM knowledge;"
+                    .to_owned(),
+            ))
+            .await?;
+        }
 
         Ok(())
     }

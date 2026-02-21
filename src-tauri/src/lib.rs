@@ -1,7 +1,7 @@
 use log::{error, warn};
 
-mod agent;
-mod commands;
+pub mod agent; // pub for integration tests (cancel_logic.rs)
+pub mod commands; // Make public for integration tests
 mod config;
 mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
@@ -19,6 +19,9 @@ pub mod utils;
 
 // Re-export migration for use in MCP modules
 pub use migration;
+
+// Re-export SecureFileManager for integration tests
+pub use services::SecureFileManager;
 
 use commands::agent_commands::{
     agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
@@ -53,7 +56,7 @@ use commands::mcp_commands::{
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
-    update_mcp_server_config,
+    list_mcp_server_presets, update_mcp_server_config,
 };
 use commands::messages_commands::{
     messages_delete, messages_delete_all_for_session, messages_get_page, messages_search,
@@ -244,7 +247,7 @@ pub fn run() {
                 update_mcp_server_config,
                 delete_mcp_server_config,
                 list_mcp_server_configs,
-                crate::commands::mcp_server_config_commands::list_mcp_server_presets,
+                list_mcp_server_presets,
                 create_playbook,
                 update_playbook,
                 delete_playbook,

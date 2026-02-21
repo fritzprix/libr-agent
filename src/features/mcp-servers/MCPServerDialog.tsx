@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
 import {
@@ -122,6 +122,7 @@ function MCPServerDialogComponent({
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const advancedPanelId = useId();
 
   const isNewServer = !server.createdAt || draft.name === '';
 
@@ -139,7 +140,6 @@ function MCPServerDialogComponent({
           ([key, def]) => {
             if (def.required) {
               // Check if it exists in envVars AND has a value
-              // (Note: envVars state is what we edit, draft is updated on save)
               const v = envVars.find((item) => item.key === key);
               return !v || !v.value.trim();
             }
@@ -433,15 +433,6 @@ function MCPServerDialogComponent({
                         .variableDefinitions || {},
                     ).map(([key, def]) => {
                       const envVar = envVars.find((v) => v.key === key);
-
-                      // Ensure the variable exists in state if it's defined
-                      if (!envVar) {
-                        // This logic is tricky inside render, but we relied on initial state.
-                        // If it's missing, the user might have deleted it.
-                        // We should probably rely on valid state.
-                        // For now, let's just render a controlled input that updates the envVars state.
-                      }
-
                       const val = envVar?.value || '';
 
                       return (
@@ -550,6 +541,7 @@ function MCPServerDialogComponent({
                             variant="ghost"
                             size="icon"
                             onClick={() => handleRemoveEnvVar(item.id)}
+                            aria-label="Remove environment variable"
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                             aria-label="Remove environment variable"
                           >
@@ -624,6 +616,8 @@ function MCPServerDialogComponent({
                 <button
                   type="button"
                   onClick={() => setShowAdvanced(!showAdvanced)}
+                  aria-expanded={showAdvanced}
+                  aria-controls={advancedPanelId}
                   className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
                 >
                   <span>Advanced Settings</span>
@@ -635,7 +629,10 @@ function MCPServerDialogComponent({
                 </button>
 
                 {showAdvanced && (
-                  <div className="p-4 pt-0 space-y-4 border-t">
+                  <div
+                    id={advancedPanelId}
+                    className="p-4 pt-0 space-y-4 border-t"
+                  >
                     {/* Custom Headers */}
                     <div className="space-y-2 mt-4">
                       <div className="flex items-center justify-between">
@@ -695,6 +692,7 @@ function MCPServerDialogComponent({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleRemoveHeader(header.id)}
+                                aria-label="Remove header"
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                                 aria-label="Remove header"
                               >
