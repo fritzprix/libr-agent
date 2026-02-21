@@ -46,3 +46,9 @@
 **Split:** `types.rs`, `constants.rs`, `utils.rs`, `id_gen.rs`, `mod.rs`
 **Result:** Reduced from ~845 lines to ~450 lines in the main module.
 **Improvement:** Decoupled types (`BrowserSession`), constants (`INIT_SCRIPT`), stateless utilities (`check_url_status`, `validate_and_normalize_url`), and ID generation from the main server logic. Improved readability and testability.
+
+## 2026-02-14 - src-tauri/src/agent/workflow.rs
+
+**Split:** `src-tauri/src/agent/workflow/` (`cancellation.rs`, `control.rs`, `start.rs`, `step.rs`, `mod.rs`)
+**Result:** Reduced monolithic `workflow.rs` (~25KB) into composed sub-modules.
+**Improvement:** Decoupled workflow control (start, pause, resume, cancel), step execution (continue after tool), and cancellation strategies. Improved maintainability and clear separation of concerns.
