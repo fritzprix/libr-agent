@@ -17,6 +17,11 @@ pub struct DocumentParser;
 impl DocumentParser {
     /// Parse a file based on its MIME type
     pub async fn parse_file(file_path: &Path, mime_type: &str) -> ParseResult {
+        // Enforce file size limit from configuration
+        if let Err(e) = Self::validate_file(file_path, crate::config::max_file_size() as u64).await {
+            return ParseResult::Error(e);
+        }
+
         match mime_type {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
                 Self::parse_docx(file_path).await
@@ -483,15 +488,15 @@ impl DocumentParser {
 
     /// Validate file before parsing
     #[allow(dead_code)]
-    pub async fn validate_file(file_path: &Path, max_size_mb: u64) -> Result<(), String> {
-        let max_size_bytes = max_size_mb * 1024 * 1024;
-
+    pub async fn validate_file(file_path: &Path, max_size_bytes: u64) -> Result<(), String> {
         match Self::get_file_size(file_path).await {
             Ok(size) => {
                 if size > max_size_bytes {
-                    let size_mb = size / (1024 * 1024);
+                    let size_mb = size as f64 / (1024.0 * 1024.0);
+                    let max_mb = max_size_bytes as f64 / (1024.0 * 1024.0);
                     return Err(format!(
-                        "File size {size_mb}MB exceeds maximum allowed size {max_size_mb}MB"
+                        "File size {:.2}MB exceeds maximum allowed size {:.2}MB",
+                        size_mb, max_mb
                     ));
                 }
                 Ok(())
@@ -532,8 +537,25 @@ mod tests {
         // Create a small file
         fs::write(&file_path, "test").await.unwrap();
 
-        // Should pass validation for 1MB limit
-        assert!(DocumentParser::validate_file(&file_path, 1).await.is_ok());
+        // Should pass validation for 1MB limit (1024*1024 bytes)
+        assert!(DocumentParser::validate_file(&file_path, 1024 * 1024).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_validation_exceeds() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test_large.txt");
+
+        // Create a file of 1.5MB
+        let content = vec![b'a'; (1.5 * 1024.0 * 1024.0) as usize];
+        fs::write(&file_path, content).await.unwrap();
+
+        // Limit to 1MB
+        let result = DocumentParser::validate_file(&file_path, 1024 * 1024).await;
+
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert_eq!(err, "File size 1.50MB exceeds maximum allowed size 1.00MB");
     }
 
     #[tokio::test]

@@ -79,3 +79,8 @@
 
 **Drift:** Linked to missing files `docs/architecture/chat-feature-architecture.md`, `docs/builtin-tools.md`, `docs/external-mcp-integration.md`.
 **Reality:** Updated links to point to `docs/architecture/agent-workflow-architecture.md`, `src-tauri/src/mcp/builtin/README.md`, and `docs/architecture/external-mcp-integration.md`.
+
+## 2026-03-03 - src-tauri/src/mcp/builtin/content_store/parsers.rs
+
+**Drift:** `DocumentParser::validate_file` expected MB and was not called in `parse_file`, bypassing security checks.
+**Reality:** Updated to accept bytes, enforce `crate::config::max_file_size()`, and format errors with 2 decimal places.
