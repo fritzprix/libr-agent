@@ -19,5 +19,6 @@
 **Action:** Always include a `DialogDescription` or explicit `aria-describedby` when implementing modals using `@/components/ui/dialog`.
 
 ## 2025-08-01 - [Hidden Interactive Elements]
+
 **Learning:** Placing interactive buttons inside non-semantic clickable containers (like a div with an onClick handler) makes the container inaccessible to keyboard users unless it has `role="button"` and `tabIndex`. The internal button becomes the primary keyboard interaction point, so it **must** have a clear, descriptive label.
 **Action:** When using the "clickable card" pattern, ensure either the card itself is a proper button, OR the internal action buttons have explicit aria-labels describing the card's primary action (e.g., "Install [Name]" instead of just "Download").
