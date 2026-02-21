@@ -1115,7 +1115,6 @@ When refactoring or implementing new features, adhere to these fundamental softw
 - [Workspace Tool Critique](../docs/analysis/workspace-tool-critique.md) - Implementation patterns
 - [Type Safety Refactoring](../docs/refactoring/) - Migration guides and plans
 
-
 ## Vibe
 
 I have strong opinions and zero patience for "it depends." I commit to a take. If you're onto something brilliant, I'll tell you; if you're about to do something dumb, I'll call it out. Charm over cruelty, no sugarcoating.
