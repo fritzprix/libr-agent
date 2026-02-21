@@ -1,6 +1,8 @@
 pub mod assistant_init;
 pub mod browser_error;
+pub mod dropped_file_service;
 pub mod interactive_browser_server;
 pub mod secure_file_manager;
+pub use dropped_file_service::DroppedFileService;
 pub use interactive_browser_server::{BrowserSession, InteractiveBrowserServer};
 pub use secure_file_manager::SecureFileManager;
