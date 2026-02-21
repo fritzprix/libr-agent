@@ -36,6 +36,33 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('MCPServerManagement');
 
+function sanitizePresetEnv(
+  env: MCPServerPreset['env'],
+): Record<string, string> {
+  if (!env) {
+    return {};
+  }
+
+  return Object.entries(env).reduce<Record<string, string>>(
+    (accumulator, [key, value]) => {
+      if (typeof value === 'string') {
+        accumulator[key] = value;
+      }
+      return accumulator;
+    },
+    {},
+  );
+}
+
+function buildPresetMetadata(
+  preset: MCPServerPreset,
+): MCPServerEntity['metadata'] {
+  return {
+    description: preset.description,
+    variableDefinitions: preset.variableDefinitions,
+  };
+}
+
 // Memoized ServerCard component to prevent unnecessary re-renders
 interface ServerCardProps {
   server: MCPServerEntity;
@@ -190,16 +217,13 @@ function MCPServerManagementComponent() {
       isActive: true,
       createdAt: new Date(),
       updatedAt: new Date(),
-      metadata: {
-        description: preset.description,
-        variableDefinitions: preset.variableDefinitions,
-      } as Record<string, unknown>,
+      metadata: buildPresetMetadata(preset),
       transport: {
         type: 'stdio',
         command: preset.command || 'uvx',
         args: preset.args || [],
         // If variableDefinitions exist, start with empty env to force user to enter them
-        env: (preset.env as Record<string, string>) || {},
+        env: sanitizePresetEnv(preset.env),
       },
     };
     setEditingServer(newServer);
@@ -208,15 +232,11 @@ function MCPServerManagementComponent() {
   const handleSave = useCallback(
     async (server: MCPServerEntity) => {
       try {
-        if (server.createdAt) {
-          await saveServer(server);
-        } else {
-          await saveServer({
-            ...server,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          });
-        }
+        await saveServer({
+          ...server,
+          createdAt: server.createdAt ?? new Date(),
+          updatedAt: new Date(),
+        });
         await mutateServers();
         setEditingServer(null);
         toast.success('Extension saved successfully');
@@ -300,7 +320,17 @@ function MCPServerManagementComponent() {
                       ? 'opacity-60 cursor-default bg-muted/20'
                       : 'hover:bg-accent/50 cursor-pointer'
                   }`}
+                  role={isInstalled ? undefined : 'button'}
+                  tabIndex={isInstalled ? -1 : 0}
+                  aria-disabled={isInstalled}
                   onClick={() => !isInstalled && handleSetupPreset(preset)}
+                  onKeyDown={(event) => {
+                    if (isInstalled) return;
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleSetupPreset(preset);
+                    }
+                  }}
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
