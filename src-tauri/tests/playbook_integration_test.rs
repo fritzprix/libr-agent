@@ -14,7 +14,7 @@ static TEST_DB: OnceCell<Arc<DatabaseConnection>> = OnceCell::const_new();
 async fn get_or_create_test_db() -> Arc<DatabaseConnection> {
     TEST_DB
         .get_or_init(|| async {
-            let db = Database::connect("sqlite::memory:")
+            let db = Database::connect("sqlite::file:playbook_tests?mode=memory&cache=shared")
                 .await
                 .expect("Failed to connect to in-memory database");
 
