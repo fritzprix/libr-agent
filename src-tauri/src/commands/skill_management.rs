@@ -157,8 +157,7 @@ pub async fn import_assistant_skills(
         return Err("Invalid source path".to_string());
     }
 
-    // 2. Scan for Skill Roots in Temp
-    // Logic similar to download_global_skills: find folders containing SKILL.md
+    // 2. Scan for Skill Roots in Temp: find folders containing SKILL.md
     info!(
         "Scanning for skill roots (SKILL.md) in import temp dir: {:?}",
         temp_dir
