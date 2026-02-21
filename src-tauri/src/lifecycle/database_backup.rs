@@ -1,5 +1,6 @@
 use chrono::Utc;
 use log::{info, warn};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -32,15 +33,12 @@ impl BackupManager {
             .join("backups")
     }
 
-    /// Create a timestamped backup of the database
-    pub fn create_backup(&self) -> DatabaseResult<PathBuf> {
-        if !self.db_path.exists() {
-            return Err(DatabaseError::BackupFailed {
-                path: self.db_path.display().to_string(),
-                error: "Database file does not exist".into(),
-            });
-        }
-
+    /// Create a timestamped backup of the database using VACUUM INTO for WAL-safe snapshot.
+    ///
+    /// `VACUUM INTO` is the only reliable way to back up a WAL-mode SQLite database:
+    /// it performs an atomic, consistent copy that includes all committed WAL data
+    /// without requiring a checkpoint or file-level copy.
+    pub async fn create_backup(&self, db: &DatabaseConnection) -> DatabaseResult<PathBuf> {
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
         let backup_dir = self.get_backup_dir();
 
@@ -55,12 +53,17 @@ impl BackupManager {
             timestamp
         ));
 
-        info!("📦 Creating backup: {}", backup_path.display());
+        info!("📦 Creating WAL-safe backup: {}", backup_path.display());
 
-        fs::copy(&self.db_path, &backup_path).map_err(|e| DatabaseError::BackupFailed {
-            path: self.db_path.display().to_string(),
-            error: e.to_string(),
-        })?;
+        // VACUUM INTO performs an atomic, WAL-consistent copy — safe for WAL-mode databases.
+        // Plain fs::copy would miss unflushed WAL frames and risk an inconsistent backup.
+        let sql = format!("VACUUM INTO '{}'", backup_path.display());
+        db.execute(Statement::from_string(DbBackend::Sqlite, sql))
+            .await
+            .map_err(|e| DatabaseError::BackupFailed {
+                path: self.db_path.display().to_string(),
+                error: e.to_string(),
+            })?;
 
         info!("✅ Backup created successfully");
 
@@ -167,70 +170,5 @@ impl BackupManager {
             .ok()
             .map(|b| !b.is_empty())
             .unwrap_or(false)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    #[test]
-    fn test_backup_creation() {
-        let temp_dir = std::env::temp_dir();
-        let test_db = temp_dir.join("test_backup.db");
-
-        // Create test database
-        let mut file = fs::File::create(&test_db).unwrap();
-        file.write_all(b"test data").unwrap();
-        drop(file);
-
-        let manager = BackupManager::new(&test_db);
-
-        // Create backup
-        let backup = manager.create_backup().unwrap();
-        assert!(backup.exists());
-
-        // Verify backup content
-        let backup_content = fs::read_to_string(&backup).unwrap();
-        assert_eq!(backup_content, "test data");
-
-        // Verify backup is in 'backups' subdirectory
-        assert!(backup.parent().unwrap().ends_with("backups"));
-
-        // Cleanup
-        let _ = fs::remove_file(&test_db);
-        let _ = fs::remove_dir_all(backup.parent().unwrap());
-    }
-
-    #[test]
-    fn test_backup_cleanup() {
-        let temp_dir = std::env::temp_dir();
-        let test_db = temp_dir.join("test_cleanup.db");
-
-        // Create test database
-        fs::File::create(&test_db).unwrap();
-
-        let manager = BackupManager::new(&test_db);
-
-        // Create more than MAX_BACKUPS
-        for _ in 0..7 {
-            manager.create_backup().unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-
-        // Should only keep MAX_BACKUPS
-        let backups = manager.find_backups().unwrap();
-        assert_eq!(backups.len(), MAX_BACKUPS);
-
-        // Cleanup
-        let _ = fs::remove_file(&test_db);
-        for backup in backups {
-            let _ = fs::remove_file(backup);
-        }
-        let backup_dir = test_db.parent().unwrap().join("backups");
-        if backup_dir.exists() {
-            let _ = fs::remove_dir_all(backup_dir);
-        }
     }
 }

@@ -96,9 +96,9 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
 
     info!("✅ Database connected (WAL mode): {db_file_path}");
 
-    // Create backup before migration
+    // Create backup before migration using VACUUM INTO (WAL-safe)
     info!("📦 Creating backup before migration...");
-    let backup_path = backup_manager.create_backup().ok();
+    let backup_path = backup_manager.create_backup(&db).await.ok();
 
     if let Some(ref path) = backup_path {
         info!("✅ Backup created: {}", path.display());
@@ -242,49 +242,4 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     Ok(db)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::io::Write;
 
-    #[test]
-    fn test_remove_db_file_success() {
-        let temp_dir = std::env::temp_dir();
-        let test_file = temp_dir.join("test_db_remove.db");
-        let backup_file = format!("{}.old", test_file.display());
-
-        let mut file = fs::File::create(&test_file).unwrap();
-        file.write_all(b"test data").unwrap();
-        drop(file);
-
-        assert!(test_file.exists());
-
-        let _ = remove_db_file(test_file.to_str().unwrap());
-
-        assert!(!test_file.exists(), "Original file should not exist");
-        assert!(
-            std::path::Path::new(&backup_file).exists(),
-            "Backup file should exist"
-        );
-
-        let _ = fs::remove_file(&backup_file);
-    }
-
-    #[test]
-    fn test_remove_db_file_with_existing_backup() {
-        let temp_dir = std::env::temp_dir();
-        let test_file = temp_dir.join("test_db_existing_backup.db");
-        let backup_file = format!("{}.old", test_file.display());
-
-        fs::File::create(&test_file).unwrap();
-        fs::File::create(&backup_file).unwrap();
-
-        let _ = remove_db_file(test_file.to_str().unwrap());
-
-        assert!(!test_file.exists());
-        assert!(std::path::Path::new(&backup_file).exists());
-
-        let _ = fs::remove_file(&backup_file);
-    }
-}

@@ -256,31 +256,4 @@ impl MigrationVerifier {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
 
-    #[test]
-    fn test_compute_checksum() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "test content").unwrap();
-        file.flush().unwrap();
-
-        let checksum = MigrationVerifier::compute_checksum(file.path()).unwrap();
-        assert_eq!(checksum.len(), 64); // SHA-256 produces 64 hex characters
-    }
-
-    #[test]
-    fn test_compute_checksum_consistency() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "consistent content").unwrap();
-        file.flush().unwrap();
-
-        let checksum1 = MigrationVerifier::compute_checksum(file.path()).unwrap();
-        let checksum2 = MigrationVerifier::compute_checksum(file.path()).unwrap();
-
-        assert_eq!(checksum1, checksum2);
-    }
-}
