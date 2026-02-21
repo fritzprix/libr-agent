@@ -12,6 +12,10 @@ export interface ServerMetadata {
   description?: string;
   vendor?: string;
   version?: string;
+  variableDefinitions?: Record<
+    string,
+    { label?: string; description?: string; required?: boolean; type?: string }
+  >;
 }
 
 /**

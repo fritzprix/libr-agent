@@ -2,6 +2,159 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.9] - 2026-02-21
+
+### 🚀 Features
+
+- **Configurable Tool Group Visibility in Agent Renderer**:
+  - `AgentToolGroupBlock` now respects the user setting `toolCallGroupVisibleCount` instead of hardcoded display limits.
+  - Preserves performance optimization from memoized tool-group rendering while restoring end-user control from Settings.
+
+- **Timeout Behavior Controls for MCP Execution**:
+  - Added support to disable MCP tool execution timeout by default.
+  - Added UI status indicator to make timeout mode visible to users.
+
+### 🐛 Fixes
+
+- **MCP Server Management Accessibility**:
+  - Fixed install action semantics in preset cards with explicit button interaction wiring.
+  - Added unique, descriptive `aria-label` text for environment variable/header removal buttons.
+  - Removed duplicate `aria-label` attributes introduced during prior edits.
+
+- **Database Backup Integrity in WAL Mode**:
+  - Backup flow now uses SQLite `VACUUM INTO` for consistent snapshot behavior in WAL mode.
+  - Eliminates risk of incomplete backups from plain file-copy approaches.
+
+- **Workspace/Browser Tool Guidance Corrections**:
+  - Browser `content` guidance strings updated to current parameter format.
+  - Workspace `replaceLines` documentation clarified to match actual append behavior constraints.
+
+- **Secure File Manager Size-Limit Enforcement**:
+  - Hardened append-path size checks to prevent overflow-based file-size-limit bypass.
+  - Added dedicated integration tests for append-limit scenarios.
+
+### ⚡ Performance
+
+- **Agent Chat Rendering Optimizations**:
+  - Reduced unnecessary re-renders in `AgentMessageRenderer`, `AgentMessageBubble`, `ToolCallCompactItem`, and tool group components.
+  - Memoization/comparator improvements lower UI work during streaming and tool-heavy sessions.
+
+### 🔧 Internal
+
+- Refactored agent LLM layer into focused submodules (`completion`, `prompt`, `response`, `types`) for maintainability.
+- Refactored interactive browser server into cleaner modular structure.
+- Removed obsolete lifecycle unit tests blocked by current crate test configuration and aligned lifecycle code cleanup.
+
+### 📚 Docs
+
+- Synced `README`, `CONTRIBUTING`, `agents.md`, and `CLAUDE.md` with current architecture and MCP behavior.
+- Updated builtin-tool documentation and internal project notes to reduce docs drift.
+
+## [0.5.8] - 2026-02-20
+
+### 🐛 Fixes
+
+- **Crash recovery: child agent session stuck as "paused" forever**: After a crash/restart, child agent sessions that were mid-execution would remain paused indefinitely and never resume. The awaitAgent tool now correctly resumes paused sessions through a new `POST /api/sessions/:id/resume` endpoint — no garbage messages are injected into the session history.
+- **Session history list not reflecting live status**: The start-view session card list was not updating when a child session transitioned from `paused` to `busy` during crash recovery. The `AgentSessionListContext` now subscribes directly to `statusChanged` events and patches session status in-place without a full reload.
+- **Garbage `[system] Resume after crash recovery.` message in child session**: The previous recovery mechanism injected a fake user message via `POST /messages`, polluting the session history and the LLM context. The new `/resume` endpoint triggers workflow continuation from existing messages without adding any new message.
+- **"Session not found" on crash recovery kick**: Paused sessions at startup were not loaded into `active_sessions` memory, causing `/messages` POST to fail. The new `/resume` endpoint calls `resume_session` first (loads session into memory, recreates MCP proxy) before triggering the workflow.
+- **Stale "Busy" in-memory status after crash recovery**: `recover_sessions` was inserting a stale `Busy` metadata snapshot for newly-recovered sessions, causing the next `start_workflow` call to see a busy session and silently queue rather than run.
+- **Orphaned tool call spinners after crash**: Tool calls that were in-flight at crash time left the UI with permanently spinning tool result indicators. Crash recovery now injects tombstone error results for all unresolved tool calls, allowing the UI to unblock.
+
+### 🔧 Internal
+
+- New `POST /api/sessions/:id/resume` HTTP endpoint (`resume_session_workflow` handler) that loads a session into memory and resumes the LLM workflow from existing message history.
+- `recover_sessions` explicitly sets `SessionStatus::Paused` on recovered metadata in both "new entry" and "already active" branches to prevent status snapshot race conditions.
+- `last_message_is_ui_resource()` helper in `formatting.rs` distinguishes intentional UI-pause (awaiting user interaction) from crash-pause, preventing spurious resume kicks on sessions waiting for a UI resource response.
+- Recovery tombstone messages tagged with `source: "recovery"` and filtered out from LLM context in `llm.rs` to avoid confusing the model.
+- Added 7 TypeScript unit tests for `statusChanged` in-place patching and 9 Rust unit tests for `last_message_is_ui_resource` / `is_terminal_status` in `formatting.rs`.
+
+## [0.5.7] - 2026-02-20
+
+### 🐛 Fixes
+
+- **Agent restart after cancel**: Fixed regression where cancelling an agent session permanently blocked subsequent messages. The workflow state machine now unconditionally resets the cancellation token on `start_workflow`, enabling cancel-then-continue as intended.
+- **LLM abort error detection**: `isAbortError` utility now correctly identifies `DOMException`-based abort errors (not just `Error` subclasses), preventing false `error` status transitions after user-initiated cancellation in all browser environments.
+- **Session status on abort**: Cancelled LLM requests now correctly transition session status to `idle` instead of `error`.
+
+### 🔧 Internal
+
+- Extracted shared `isAbortError()` utility from duplicated inline detection in `useLLMExecution` and `useLLMListener`.
+- Added comprehensive cancel state machine test suite: 13 Rust integration tests (`tests/cancel_logic.rs`) + 20 TypeScript unit tests (`cancel.test.ts`).
+- Rust cancel tests moved to integration test binary to avoid `STATUS_ENTRYPOINT_NOT_FOUND` DLL errors on Windows.
+
+## [0.5.6] - 2026-02-20
+
+### 🚀 Features
+
+- **MCP Server Presets**:
+  - New `MCPServerManagement` panel with curated preset catalog — one-click install for popular MCP servers (GitHub, Brave Search, Filesystem, etc.).
+  - `MCPServerDialog` now supports preset selection, variable substitution UI, and environment variable definitions.
+  - Backend `presets.rs` embeds `mcp-server.json` at compile time for zero-cost preset resolution.
+  - Dedicated `/mcp-servers` route and sidebar nav entry.
+
+- **Database Lifecycle Robustness**:
+  - WAL journal mode enabled by default for improved write throughput and crash safety (`SqliteJournalMode::Wal`).
+  - New `MigrationVerifier`: SHA-256 checksums over migration file list detect schema drift before startup.
+  - New `BackupManager`: timestamped SQLite backups before migrations, auto-pruning oldest beyond 5 kept.
+  - Structured `DatabaseError` enum replaces bare `String` errors across the lifecycle layer.
+  - New `retry_with_backoff` / `retry_with_backoff_async` utilities power a quarantine-and-retry pattern in `run_with_sqlite_sync`.
+  - New `SchemaVersionRecord` and schema info display for diagnostics.
+
+- **Browser Tools — Playwright-Style Aliases**:
+  - Short-name aliases now exposed: `goto`, `click`, `fill`, `type`, `content`, `back`, `forward`, `scroll`.
+  - `content` is a smart router: no args → extract fresh page content; `page` arg → read from cache. Replaces both `extractWebContent` and `readWebContent`.
+  - `create_rich_response`: all success paths now return live page title + URL as post-action verification.
+  - `suggest_selectors`: element-not-found errors now auto-suggest up to 5 visible candidate selectors from the live DOM.
+  - `all_tools()` now exposes the curated Playwright-style set only; legacy names remain routed for backward compatibility.
+
+### 🐛 Fixes
+
+- **`navigate_to_url` HTTP error routing**:
+  - HTTP 403/401/404/5xx/timeout/Network Error responses now return targeted, action-specific guidance instead of silently passing through to `create_rich_response`.
+
+- **`invalidate_cache` double write lock**:
+  - Removed duplicate `state_cache.write()` call in `BrowserServer::invalidate_cache()`.
+
+- **Browser tool description stale names**:
+  - `click_element_tool` schema and `extract_web_content_tool` description corrected to reference `content` instead of old names.
+
+## [0.5.5] - 2026-02-20
+
+### 🚀 Features
+
+- **MCP Server Presets**:
+  - New `MCPServerManagement` panel with curated preset catalog — one-click install for popular MCP servers (GitHub, Brave Search, Filesystem, etc.).
+  - `MCPServerDialog` now supports preset selection, variable substitution UI, and environment variable definitions.
+  - Backend `presets.rs` embeds `mcp-server.json` at compile time for zero-cost preset resolution.
+  - Dedicated `/mcp-servers` route and sidebar nav entry.
+
+- **Database Lifecycle Robustness**:
+  - WAL journal mode enabled by default for improved write throughput and crash safety (`SqliteJournalMode::Wal`).
+  - New `MigrationVerifier`: SHA-256 checksums over migration file list detect schema drift before startup.
+  - New `BackupManager`: timestamped SQLite backups before migrations, auto-pruning oldest beyond 5 kept.
+  - Structured `DatabaseError` enum replaces bare `String` errors across the lifecycle layer.
+  - New `retry_with_backoff` / `retry_with_backoff_async` utilities power a quarantine-and-retry pattern in `run_with_sqlite_sync`.
+  - New `SchemaVersionRecord` and schema info display for diagnostics.
+
+- **Browser Tools — Playwright-Style Aliases**:
+  - Short-name aliases now exposed: `goto`, `click`, `fill`, `type`, `content`, `back`, `forward`, `scroll`.
+  - `content` is a smart router: no args → extract fresh page content; `page` arg → read from cache. Replaces both `extractWebContent` and `readWebContent`.
+  - `create_rich_response`: all success paths now return live page title + URL as post-action verification, so agents can confirm the action result without an extra call.
+  - `suggest_selectors`: element-not-found errors now auto-suggest up to 5 visible candidate selectors from the live DOM.
+  - `all_tools()` now exposes the curated Playwright-style set only; legacy names remain routed for backward compatibility.
+
+### 🐛 Fixes
+
+- **`navigate_to_url` HTTP error routing**:
+  - HTTP 403/401/404/5xx/timeout/Network Error responses now return targeted, action-specific guidance (e.g., "Abandon this page" for 403) instead of silently passing through to `create_rich_response`.
+
+- **`invalidate_cache` double write lock**:
+  - Removed duplicate `state_cache.write()` call in `BrowserServer::invalidate_cache()` — redundant re-lock after first guard was dropped.
+
+- **Browser tool description stale names**:
+  - `click_element_tool` schema description still referenced `extractWebContent`; `extract_web_content_tool` description still referenced `readWebContent(page)`. Both corrected to `content`.
+
 ## [0.5.4] - 2026-02-19
 
 ### 🚀 Features

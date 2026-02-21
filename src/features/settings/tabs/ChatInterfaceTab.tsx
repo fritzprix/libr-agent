@@ -227,6 +227,46 @@ function ChatInterfaceTabComponent({
           </div>
         </div>
       </div>
+
+      <div className="border-t pt-6 mt-6">
+        <h3 className="text-lg font-medium text-foreground mb-4">
+          {t('settings.display.toolCallsTitle', 'Tool Calls')}
+        </h3>
+        <div className="min-w-0">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t('settings.display.toolDetailLevel', 'Tool Detail Level')}
+          </label>
+          <select
+            className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+            value={localDisplay.toolDetailLevel ?? 'simple'}
+            onChange={(e) =>
+              onDisplaySettingsChange(
+                'toolDetailLevel',
+                e.target.value as 'simple' | 'developer',
+              )
+            }
+          >
+            <option value="simple">
+              {t(
+                'settings.display.toolDetailSimple',
+                'Simple (tool name only)',
+              )}
+            </option>
+            <option value="developer">
+              {t(
+                'settings.display.toolDetailDeveloper',
+                'Developer (params, errors, timing)',
+              )}
+            </option>
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.display.toolDetailLevelDescription',
+              'Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time.',
+            )}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -244,6 +284,7 @@ export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
       next.localDisplay.prefillDisplayFormat &&
     prev.localDisplay.showTokenSpeed === next.localDisplay.showTokenSpeed &&
     prev.localDisplay.compactMetrics === next.localDisplay.compactMetrics &&
+    prev.localDisplay.toolDetailLevel === next.localDisplay.toolDetailLevel &&
     prev.onWindowSizeChange === next.onWindowSizeChange &&
     prev.onToolCallGroupVisibleCountChange ===
       next.onToolCallGroupVisibleCountChange &&

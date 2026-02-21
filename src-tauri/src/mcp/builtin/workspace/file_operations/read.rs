@@ -1,5 +1,5 @@
 use super::super::WorkspaceServer;
-use super::utils::{detect_language, format_file_size, LARGE_FILE_THRESHOLD};
+use super::utils::{compute_line_hash, detect_language, format_file_size, LARGE_FILE_THRESHOLD};
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
@@ -64,6 +64,10 @@ impl WorkspaceServer {
             .get("showLineNumbers")
             .and_then(|v| v.as_bool())
             .unwrap_or(false); // Default to false for cleaner raw content
+        let show_line_hashes = args
+            .get("showLineHashes")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true); // Default ON: agents always get stable hashes for replaceLines
 
         // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {
@@ -163,8 +167,14 @@ impl WorkspaceServer {
 
         // Use read_file_lines_range for all file reading to ensure consistent
         // handling of large files (spawn_blocking) and formatting.
-        let content =
-            read_file_lines_range(&safe_path, start_line, end_line, show_line_numbers).await;
+        let content = read_file_lines_range(
+            &safe_path,
+            start_line,
+            end_line,
+            show_line_numbers,
+            show_line_hashes,
+        )
+        .await;
 
         match content {
             Ok(content) => {
@@ -179,18 +189,21 @@ impl WorkspaceServer {
                 let line_count = content.lines().count();
 
                 // Format response for clean markdown rendering
-                let text_message = if show_line_numbers {
-                    // Line numbers mode: use plain code block
+                let text_message = if show_line_hashes {
+                    // Hashline mode: {N}:{hash}|{content} — stable anchors for replaceLines
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```\n{}\n```",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nHashline: `{{N}}:{{hash}}|{{content}}` — pass hash as `line_hash` in replaceLines",
+                        path_str, size_str, line_count, content
+                    )
+                } else if show_line_numbers {
+                    format!(
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```",
                         path_str, size_str, line_count, content
                     )
                 } else {
-                    // Auto-detect language from file extension for syntax highlighting
                     let language = detect_language(&safe_path);
-
                     format!(
-                        "📄 **File: `{}`**\n**Size:** {}\n**Lines:** {}\n\n```{}\n{}\n```",
+                        "📄 **`{}`** — {} / {} lines\n\n```{}\n{}\n```",
                         path_str, size_str, line_count, language, content
                     )
                 };
@@ -198,9 +211,9 @@ impl WorkspaceServer {
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "Use editFile for targeted changes".to_string(),
-                        "Use writeFile for full file updates".to_string(),
-                        "Use searchLineInFile to find specific text".to_string(),
+                        "replaceLines: copy line_hash from prefix (e.g. 'a3' from '42:a3|...')"
+                            .to_string(),
+                        "writeFile for full file replacement".to_string(),
                     ],
                 );
 
@@ -239,6 +252,7 @@ async fn read_file_lines_range(
     start_line: Option<usize>,
     end_line: Option<usize>,
     show_line_numbers: bool,
+    show_line_hashes: bool,
 ) -> Result<String, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -296,7 +310,11 @@ async fn read_file_lines_range(
                 ));
             }
 
-            Ok::<_, String>(format_lines_with_numbers(&result_lines, show_line_numbers))
+            Ok::<_, String>(format_lines_with_numbers(
+                &result_lines,
+                show_line_numbers,
+                show_line_hashes,
+            ))
         })
         .await
         .map_err(|e| format!("Task join error: {}", e))??;
@@ -346,7 +364,11 @@ async fn read_file_lines_range(
         ));
     }
 
-    Ok(format_lines_with_numbers(&result_lines, show_line_numbers))
+    Ok(format_lines_with_numbers(
+        &result_lines,
+        show_line_numbers,
+        show_line_hashes,
+    ))
 }
 
 /// Format lines with pipe-separated line numbers (LLM-friendly format)
@@ -359,9 +381,27 @@ async fn read_file_lines_range(
 /// ```
 ///
 /// Note: Preserves ALL empty lines for accurate indentation/structure visibility
-fn format_lines_with_numbers(lines: &[(usize, String)], show_line_numbers: bool) -> String {
+fn format_lines_with_numbers(
+    lines: &[(usize, String)],
+    show_line_numbers: bool,
+    show_hashes: bool,
+) -> String {
     if lines.is_empty() {
         return String::new();
+    }
+
+    if show_hashes {
+        // Hashline format: "{N}:{hash}|{content}"
+        // The hash is a stable 2-char FNV-1a fingerprint of the line content.
+        // Agents reference it in replaceLines via `line_hash` to detect staleness.
+        return lines
+            .iter()
+            .map(|(line_num, content)| {
+                let hash = compute_line_hash(content);
+                format!("{}:{}|{}", line_num, hash, content)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 
     if !show_line_numbers {
@@ -402,7 +442,7 @@ mod tests {
             (3, "int main() {".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, true);
+        let result = format_lines_with_numbers(&lines, true, false);
 
         assert!(result.contains("   1 | #include <stdio.h>"));
         assert!(result.contains("   2 | "));
@@ -425,7 +465,7 @@ mod tests {
             (11, "}".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, true);
+        let result = format_lines_with_numbers(&lines, true, false);
 
         // Should have pipe-separated format
         assert!(result.contains("   1 | #include <stdio.h>"));
@@ -445,11 +485,49 @@ mod tests {
     fn test_format_lines_includes_header_and_footer() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
 
-        let result = format_lines_with_numbers(&lines, true);
+        let result = format_lines_with_numbers(&lines, true, false);
 
         assert!(result.contains("[File Content"));
         assert!(result.contains("NOT part of the code"));
         assert!(result.contains("   1 | int main() {}"));
         assert!(result.contains("   2 | "));
+    }
+
+    #[test]
+    fn test_format_lines_hashline_format() {
+        let lines = vec![
+            (11, "function hello() {".to_string()),
+            (22, "  return \"world\";".to_string()),
+            (33, "}".to_string()),
+        ];
+
+        let result = format_lines_with_numbers(&lines, false, true);
+
+        // Each line must be {N}:{2-char-hex}|{content}
+        let result_lines: Vec<&str> = result.lines().collect();
+        assert_eq!(result_lines.len(), 3);
+
+        // Verify format: starts with line number, colon, 2 hex chars, pipe
+        for line in &result_lines {
+            let parts: Vec<&str> = line.splitn(2, '|').collect();
+            assert_eq!(parts.len(), 2, "Hashline must contain '|' separator");
+            let prefix = parts[0];
+            let colon_pos = prefix.find(':').expect("Hashline prefix must contain ':'");
+            let hash_part = &prefix[colon_pos + 1..];
+            assert_eq!(hash_part.len(), 2, "Hash must be 2 hex chars");
+            assert!(
+                hash_part.chars().all(|c| c.is_ascii_hexdigit()),
+                "Hash must be hex digits"
+            );
+        }
+
+        // Verify content is preserved after '|'
+        assert!(result_lines[0].ends_with("function hello() {"));
+        assert!(result_lines[1].ends_with("  return \"world\";"));
+        assert!(result_lines[2].ends_with('}'));
+
+        // Verify determinism: same content → same hash
+        let result2 = format_lines_with_numbers(&lines, false, true);
+        assert_eq!(result, result2);
     }
 }

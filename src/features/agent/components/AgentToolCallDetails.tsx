@@ -9,6 +9,8 @@ interface AgentToolCallDetailsProps {
   toolResult?: Message;
   hasError?: boolean;
   isLoading?: boolean;
+  /** When false, renders nothing. Used by Simple display mode to hide all detail. */
+  showDetails?: boolean;
 }
 
 /**
@@ -16,14 +18,17 @@ interface AgentToolCallDetailsProps {
  * Uses AgentMessageRenderer instead of legacy MessageRenderer.
  *
  * Displays tool call details (parameters and result/error).
- * Used by AgentToolCallGroup for consistency.
+ * showDetails=false collapses the panel entirely (Simple mode).
  */
 export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   toolCall,
   toolResult,
   hasError = false,
   isLoading = false,
+  showDetails = true,
 }) => {
+  if (!showDetails) return null;
+
   const params = parseToolArguments(toolCall.function.arguments);
   const hasParams = Object.keys(params).length > 0;
 

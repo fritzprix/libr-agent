@@ -34,6 +34,8 @@ export interface DisplaySettings {
   prefillDisplayFormat: 'time' | 'tokensPerSecond';
   showTokenSpeed: boolean;
   compactMetrics: boolean;
+  /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
+  toolDetailLevel: 'simple' | 'developer';
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -96,6 +98,7 @@ export const DEFAULT_SETTING: Settings = {
     prefillDisplayFormat: 'time',
     showTokenSpeed: true,
     compactMetrics: false,
+    toolDetailLevel: 'simple',
   },
   system: {
     maxFileUploadSizeMB: 50,
@@ -104,7 +107,7 @@ export const DEFAULT_SETTING: Settings = {
     httpServerPort: 3030,
     httpServerExpose: false,
     mcpServerStartupTimeoutSeconds: 60,
-    mcpToolTimeoutSeconds: 180,
+    mcpToolTimeoutSeconds: 0,
     searchIndexFrequencyMinutes: 5,
     activeSessionRetentionHours: 24,
     shellIsolationLevel: 'medium',

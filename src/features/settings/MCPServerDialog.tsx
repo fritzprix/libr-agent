@@ -11,6 +11,7 @@ import {
   Input,
   Textarea,
   Label,
+  LoadingSpinner,
 } from '@/components/ui';
 import {
   Select,
@@ -477,6 +478,8 @@ function MCPServerDialogComponent({
                 <button
                   type="button"
                   onClick={() => setShowAdvanced(!showAdvanced)}
+                  aria-expanded={showAdvanced}
+                  aria-controls="advanced-settings-panel"
                   className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
                 >
                   <span>Advanced Settings</span>
@@ -488,7 +491,10 @@ function MCPServerDialogComponent({
                 </button>
 
                 {showAdvanced && (
-                  <div className="p-4 pt-0 space-y-4 border-t">
+                  <div
+                    id="advanced-settings-panel"
+                    className="p-4 pt-0 space-y-4 border-t"
+                  >
                     {/* Custom Headers */}
                     <div className="space-y-2 mt-4">
                       <div className="flex items-center justify-between">
@@ -548,6 +554,7 @@ function MCPServerDialogComponent({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => handleRemoveHeader(header.id)}
+                                aria-label="Remove header"
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -587,7 +594,14 @@ function MCPServerDialogComponent({
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!isValid() || isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving ? (
+              <>
+                <LoadingSpinner size="sm" className="mr-2" />
+                Saving...
+              </>
+            ) : (
+              'Save'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

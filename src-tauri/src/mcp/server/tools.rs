@@ -472,7 +472,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             tool_count: mcp_manager::MCPManagerServer::new().tools().len(),
         },
         BuiltinServerInfo {
-            name: "session_api".to_string(),
+            name: "swarm".to_string(),
             metadata: session_api::SessionApiServer::metadata_static(),
             tool_count: session_api::SessionApiServer::tools_static().len(),
         },
@@ -640,7 +640,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         "bootstrap" => crate::mcp::builtin::bootstrap::tools::all_tools(),
         "ui" => crate::mcp::builtin::ui::tools::all_tools(),
         "mcp_manager" => crate::mcp::builtin::mcp_manager::tools::all_tools(),
-        "session_api" => crate::mcp::builtin::session_api::tools::all_tools(),
+        "swarm" => crate::mcp::builtin::session_api::tools::all_tools(),
         _ => Vec::new(),
     }
 }

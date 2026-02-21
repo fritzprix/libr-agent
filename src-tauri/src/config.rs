@@ -227,6 +227,17 @@ pub fn mcp_startup_timeout_seconds() -> u64 {
     DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
 }
 
+/// Get the MCP tool call timeout in seconds from environment variable or default.
+///
+/// Returns 0 by default, which means no timeout (disabled).
+/// Users can enable it via the settings UI (`mcpToolTimeoutSeconds`).
+pub fn mcp_tool_call_timeout_seconds() -> u64 {
+    std::env::var("LIBRAGENT_MCP_TOOL_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,12 +259,4 @@ mod tests {
         let default = default_execution_timeout();
         assert!(max >= default);
     }
-}
-
-/// Get the MCP tool call timeout in seconds from environment variable or default
-pub fn mcp_tool_call_timeout_seconds() -> u64 {
-    std::env::var("LIBRAGENT_MCP_TOOL_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(180)
 }

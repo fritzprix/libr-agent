@@ -508,8 +508,10 @@ export function AgentSessionProvider({
         sessionId: session.id,
       });
     } catch (err) {
+      // Log the error but do NOT discard the session reference.
+      // Clearing session here would orphan the backend session (still alive)
+      // while leaving the frontend with no handle to retry or cancel.
       logger.error('Failed to stop session', err);
-      setSession(null);
     }
   }, [session]);
 

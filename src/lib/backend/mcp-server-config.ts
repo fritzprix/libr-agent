@@ -132,3 +132,26 @@ export async function getMCPServer(
   const all = await listMCPServers();
   return all.find((s) => s.name === name);
 }
+
+export interface MCPServerPreset {
+  name: string;
+  description?: string;
+  transportType: 'stdio' | 'sse';
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  variableDefinitions?: Record<
+    string,
+    {
+      required?: boolean;
+      label?: string;
+      description?: string;
+      type?: 'text' | 'password';
+    }
+  >;
+  url?: string;
+}
+
+export async function listMCPServerPresets(): Promise<MCPServerPreset[]> {
+  return await safeInvoke<MCPServerPreset[]>('list_mcp_server_presets');
+}

@@ -39,7 +39,7 @@ async fn wait_until_session_terminal(
 
         if started_at.elapsed() >= Duration::from_secs(timeout_seconds) {
             return Err(format!(
-                "waitForSessionIdle timed out after {}s for session {}",
+                "awaitAgent timed out after {}s for session {}",
                 timeout_seconds, session_id
             ));
         }
@@ -61,7 +61,7 @@ pub async fn handle_tool_call(
                 data,
             ))
         }
-        "createChildSession" => {
+        "spawnAgent" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
             let request = read_required_string(&args, "request")?;
 
@@ -113,7 +113,7 @@ pub async fn handle_tool_call(
                 data,
             ))
         }
-        "getSession" => {
+        "getAgentStatus" => {
             let session_id = read_required_string(&args, "sessionId")?;
             let data = call_json(
                 Method::GET,
@@ -122,12 +122,17 @@ pub async fn handle_tool_call(
                 None,
             )
             .await?;
+            let status = extract_session_status(&data);
+            let name = data
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unnamed");
             Ok(success_result(
-                format!("Fetched session: {}", session_id),
+                format!("Session {} ({}): status={}", name, session_id, status),
                 data,
             ))
         }
-        "waitForSessionIdle" => {
+        "awaitAgent" => {
             let session_id = read_required_string(&args, "sessionId")?;
 
             let timeout_seconds = args
@@ -152,6 +157,68 @@ pub async fn handle_tool_call(
                 .and_then(|v| v.as_u64())
                 .map(|v| v.min(200000) as usize)
                 .filter(|v| *v > 0);
+
+            // Pre-check: if child is paused (crash recovery), auto-resume unless it's
+            // an intentional pause waiting for a UI resource interaction.
+            {
+                let initial_session = call_json(
+                    Method::GET,
+                    &format!("/api/sessions/{}", session_id),
+                    None,
+                    None,
+                )
+                .await
+                .unwrap_or_default();
+                if extract_session_status(&initial_session) == "paused" {
+                    let msgs_data = call_json(
+                        Method::GET,
+                        &format!("/api/sessions/{}/messages", session_id),
+                        None,
+                        Some(vec![("limit".to_string(), "5".to_string())]),
+                    )
+                    .await
+                    .unwrap_or_default();
+                    let msgs = msgs_data
+                        .get("messages")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+
+                    if last_message_is_ui_resource(&msgs) {
+                        log::info!(
+                            "awaitAgent: session '{}' is paused waiting for UI resource — leaving alone",
+                            session_id
+                        );
+                    } else {
+                        log::info!(
+                            "awaitAgent: session '{}' is paused from crash, resuming via /resume endpoint",
+                            session_id
+                        );
+                        // Use /resume instead of /messages to avoid injecting a garbage user message.
+                        // /resume loads the session into memory and triggers workflow from existing messages.
+                        match call_json(
+                            Method::POST,
+                            &format!("/api/sessions/{}/resume", session_id),
+                            None,
+                            None,
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                log::info!(
+                                    "awaitAgent: resume triggered for '{}', session now busy",
+                                    session_id
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("awaitAgent: resume failed for '{}': {}", session_id, e);
+                            }
+                        }
+                        // Brief pause to allow the session to transition to busy
+                        sleep(Duration::from_millis(500)).await;
+                    }
+                }
+            }
 
             let (session_data, poll_count) =
                 wait_until_session_terminal(&session_id, timeout_seconds, poll_interval_seconds)
@@ -215,7 +282,7 @@ pub async fn handle_tool_call(
                 }),
             ))
         }
-        "getMessages" => {
+        "getAgentLog" => {
             let target_session_id = read_required_string(&args, "sessionId")?;
 
             let requested_limit = args.get("limit").and_then(|v| v.as_u64());
@@ -277,7 +344,7 @@ pub async fn handle_tool_call(
 
             Ok(success_result(summary_text, data))
         }
-        "getChildSessions" => {
+        "getChildAgents" => {
             let parent_session_id = read_required_string(&args, "parentSessionId")?;
 
             let data = call_json(
@@ -325,7 +392,7 @@ pub async fn handle_tool_call(
 
             if rows.is_empty() {
                 message.push_str(
-                    "\n\nNo direct sub-agents online. Next step: createChildSession to deploy a worker.",
+                    "\n\nNo direct sub-agents online. Next step: spawnAgent to deploy a worker.",
                 );
             } else {
                 message.push_str("\n\nDirect unit roster:\n");
@@ -342,7 +409,7 @@ pub async fn handle_tool_call(
 
             Ok(success_result(message, data))
         }
-        "sendMessage" => {
+        "messageAgent" => {
             let session_id = read_required_string(&args, "sessionId")?;
             let content = read_required_string(&args, "content")?;
 
@@ -365,7 +432,7 @@ pub async fn handle_tool_call(
                 data,
             ))
         }
-        "terminateSession" => {
+        "terminateAgent" => {
             let session_id = read_required_string(&args, "sessionId")?;
             let data = call_json(
                 Method::POST,
@@ -380,7 +447,7 @@ pub async fn handle_tool_call(
                 data,
             ))
         }
-        "listAssistants" => {
+        "listAgentTypes" => {
             let data = call_json(Method::GET, "/api/assistants", None, None).await?;
 
             // Extract assistant details for text output (AI agents need to see this!)
@@ -401,16 +468,35 @@ pub async fn handle_tool_call(
                                 config.clone()
                             };
 
-                            // Extract description from config
                             let description = extract_assistant_description(&parsed_config);
 
+                            // Capability hints from enabled MCP server keys
+                            // (model is session-level, not stored in assistant config)
+                            let capabilities: Vec<&str> = parsed_config
+                                .get("mcpServers")
+                                .and_then(|v| v.as_object())
+                                .map(|obj| obj.keys().map(|k| k.as_str()).collect())
+                                .unwrap_or_default();
+
+                            let cap_hint = if capabilities.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" | {}", capabilities.join(", "))
+                            };
+
+                            let desc_line = if description == "No description" {
+                                String::new()
+                            } else {
+                                format!("\n  \"{}\"", description)
+                            };
+
                             Some(format!(
-                                "• {} [ID: {}]\n  Description: {}",
-                                name, id, description
+                                "• {} [ID: {}]{}{}\n",
+                                name, id, cap_hint, desc_line
                             ))
                         })
                         .collect::<Vec<_>>()
-                        .join("\n\n")
+                        .join("\n")
                 })
                 .unwrap_or_default();
 
@@ -437,7 +523,7 @@ pub async fn handle_tool_call(
 
             Ok(success_result(text, data))
         }
-        "getAssistant" => {
+        "getAgentConfig" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
             let data = call_json(
                 Method::GET,

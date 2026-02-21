@@ -13,6 +13,7 @@ pub mod builtin;
 pub mod error_normalization;
 pub mod keychain;
 pub mod oauth;
+pub mod presets;
 pub mod schema;
 pub mod server;
 pub mod server_utils;

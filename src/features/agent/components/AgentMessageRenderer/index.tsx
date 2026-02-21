@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useEffect, memo } from 'react';
-import { AgentToolCallGroup } from '../AgentToolCallGroup';
+import { AgentToolGroupBlock } from './components/AgentToolGroupBlock';
 import { ThinkingBubble } from '../shared';
 import type {
   MCPContent,
@@ -186,18 +186,10 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             type: 'tool_group_block';
             items: MCPToolCallContent[];
           };
-          const toolGroupCalls = groupBlock.items.map((tc) => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: { name: tc.name, arguments: tc.arguments },
-          }));
-          const toolGroupResults = toolGroupCalls.map((call) =>
-            toolResultsMap?.get(call.id),
-          );
 
           return (
             <div key={key} className="my-2">
-              <AgentToolCallGroup
+              <AgentToolGroupBlock
                 message={
                   message ||
                   ({
@@ -206,10 +198,9 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                     content: [],
                   } as unknown as Message)
                 }
-                toolGroup={{ calls: toolGroupCalls }}
-                toolResults={toolGroupResults}
+                groupBlock={groupBlock}
+                toolResultsMap={toolResultsMap}
                 isLast={index === renderItems.length - 1}
-                visibleCount={999}
               />
             </div>
           );

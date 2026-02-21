@@ -327,7 +327,7 @@ impl WorkspaceServer {
         }
     }
 
-    pub async fn handle_search_line_in_file(
+    pub async fn handle_search_lines(
         &self,
         args: Value,
         session_id: Option<String>,
@@ -513,7 +513,7 @@ impl WorkspaceServer {
             s.push_str(
                 "**Next Steps:**\n\
                 - Use readFile to see full file context\n\
-                - Use editFile to modify matched content\n\
+                - Use replaceLines to modify matched content\n\
                 - Refine search pattern for more specific results",
             );
 

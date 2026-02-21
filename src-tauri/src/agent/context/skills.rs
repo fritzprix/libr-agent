@@ -3,6 +3,19 @@
 
 use super::ContextProvider;
 use async_trait::async_trait;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// Process-level cache for skills XML (TTL: 60s)
+/// Skills change rarely; rescanning every LLM turn is wasteful.
+static SKILLS_CACHE: std::sync::OnceLock<Mutex<Option<(String, Instant)>>> =
+    std::sync::OnceLock::new();
+
+const SKILLS_CACHE_TTL: Duration = Duration::from_secs(60);
+
+fn get_or_init_cache() -> &'static Mutex<Option<(String, Instant)>> {
+    SKILLS_CACHE.get_or_init(|| Mutex::new(None))
+}
 
 /// Context provider for skills documentation
 ///
@@ -29,12 +42,7 @@ impl SkillsContextProvider {
             return String::new();
         }
 
-        let mut xml_parts = vec![
-            "<skills>".to_string(),
-            "Here is a list of skills that contain domain specific knowledge on a variety of topics.".to_string(),
-            "Each skill comes with a description of the topic and a file path that contains the detailed instructions.".to_string(),
-            "When a user asks you to perform a task that falls within the domain of a skill, use the 'read_file' tool to acquire the full instructions from the file URI.".to_string(),
-        ];
+        let mut xml_parts = vec!["<available_skills>".to_string()];
 
         for skill in skills {
             if let (Some(name), Some(description), Some(file_path)) = (
@@ -42,15 +50,15 @@ impl SkillsContextProvider {
                 skill.get("description").and_then(|v| v.as_str()),
                 skill.get("filePath").and_then(|v| v.as_str()),
             ) {
-                xml_parts.push("<skill>".to_string());
-                xml_parts.push(format!("<name>{}</name>", name));
-                xml_parts.push(format!("<description>{}</description>", description));
-                xml_parts.push(format!("<file>{}</file>", file_path));
-                xml_parts.push("</skill>".to_string());
+                xml_parts.push("  <skill>".to_string());
+                xml_parts.push(format!("    <name>{}</name>", name));
+                xml_parts.push(format!("    <description>{}</description>", description));
+                xml_parts.push(format!("    <location>{}</location>", file_path));
+                xml_parts.push("  </skill>".to_string());
             }
         }
 
-        xml_parts.push("</skills>".to_string());
+        xml_parts.push("</available_skills>".to_string());
         xml_parts.join("\n")
     }
 }
@@ -66,6 +74,20 @@ impl ContextProvider for SkillsContextProvider {
     }
 
     async fn get_context(&self, assistant_id: Option<&str>) -> Result<String, String> {
+        // Check cache first (TTL: 60s) — skip for assistant-specific skills
+        if assistant_id.is_none() {
+            let cached = {
+                let lock = get_or_init_cache().lock().map_err(|e| e.to_string())?;
+                lock.as_ref()
+                    .filter(|(_, ts)| ts.elapsed() < SKILLS_CACHE_TTL)
+                    .map(|(xml, _)| xml.clone())
+            };
+            if let Some(xml) = cached {
+                log::debug!("Skills context served from cache");
+                return Ok(xml);
+            }
+        }
+
         // Get global skills directory from settings
         let global_skills_dir = self.get_skills_directory().await?;
 
@@ -129,6 +151,13 @@ impl ContextProvider for SkillsContextProvider {
         // Build XML
         let xml = self.build_skills_xml(skills_json);
 
+        // Update cache (only for global skills, not assistant-specific)
+        if assistant_id.is_none() {
+            if let Ok(mut lock) = get_or_init_cache().lock() {
+                *lock = Some((xml.clone(), Instant::now()));
+            }
+        }
+
         Ok(xml)
     }
 
@@ -169,10 +198,10 @@ mod tests {
 
         let xml = provider.build_skills_xml(skills);
 
-        assert!(xml.contains("<skills>"));
+        assert!(xml.contains("<available_skills>"));
         assert!(xml.contains("<name>test-skill</name>"));
         assert!(xml.contains("<description>A test skill</description>"));
-        assert!(xml.contains("<file>/path/to/skill.md</file>"));
-        assert!(xml.contains("</skills>"));
+        assert!(xml.contains("<location>/path/to/skill.md</location>"));
+        assert!(xml.contains("</available_skills>"));
     }
 }
