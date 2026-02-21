@@ -2,22 +2,15 @@ import React, {
   createContext,
   useContext,
   useEffect,
-  useRef,
   useState,
   useCallback,
 } from 'react';
 import { getLogger } from '@/lib/logger';
 import { useSettings } from '@/hooks/use-settings';
 import { invoke } from '@tauri-apps/api/core';
-import { toast } from 'sonner';
+import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('SkillsContext');
-
-export interface SkillMetadata {
-  name: string;
-  description: string;
-  path: string;
-}
 
 interface SkillsContextType {
   skills: SkillMetadata[];
@@ -34,7 +27,6 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { value: settings, isLoading: settingsLoading } = useSettings();
-  const hasPromptedDownload = useRef(false);
 
   const fetchSkills = useCallback(async () => {
     setIsLoading(true);
@@ -81,32 +73,6 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
       fetchSkills();
     }
   }, [fetchSkills, settingsLoading]);
-
-  // After first fetch completes with 0 skills, offer to download the default set.
-  useEffect(() => {
-    if (isLoading || skills.length > 0 || hasPromptedDownload.current) return;
-    hasPromptedDownload.current = true;
-    toast('Global skills not found', {
-      description: 'Would you like to download the default skill set?',
-      action: {
-        label: 'Download',
-        onClick: () => {
-          const toastId = toast.loading('Downloading global skills...');
-          invoke<string>('download_global_skills')
-            .then(() => {
-              toast.success('Skills downloaded successfully', { id: toastId });
-              fetchSkills();
-            })
-            .catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err);
-              toast.error(`Download failed: ${msg}`, { id: toastId });
-            });
-        },
-      },
-      cancel: { label: 'Cancel', onClick: () => {} },
-      duration: Infinity,
-    });
-  }, [isLoading, skills.length, fetchSkills]);
 
   return (
     <SkillsContext.Provider

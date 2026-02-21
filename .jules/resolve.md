@@ -13,3 +13,5 @@
 **Solution:** Extracted `assistant_id` from `agent_config` in `create_session` and `send_message` functions and populated the `Message` struct to ensure proper assistant tracking.
 
 ## 2026-02-10 - [src-tauri/src/mcp/service_proxy_manager/mod.rs] **Debt Cleared:** `/// - External HTTP tools -> shared HTTP manager (TODO: Phase 3)` **Solution:** Verified that `HttpSessionManager` correctly implements session-isolated HTTP connections with `Mcp-Session-Id` header injection. Removed the stale TODO comment as the implementation is complete.
+
+## 2026-02-12 - [src-tauri/src/mcp/builtin/content_store/parsers.rs] **Debt Cleared:** Unused `validate_file` logic masked by `#[allow(dead_code)]` **Solution:** Activated file size validation in `parse_file` using `crate::config::max_file_size()`, updated function to accept bytes for precision, and improved error reporting.
