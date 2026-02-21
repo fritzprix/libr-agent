@@ -1,7 +1,33 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { formatRelativeTime, formatSessionTimestamp } from '../date-utils';
 
+// Lock Intl.RelativeTimeFormat to 'en' so assertions are locale-independent
+const OriginalRelativeTimeFormat = Intl.RelativeTimeFormat;
+
 describe('date-utils', () => {
+  beforeAll(() => {
+    Object.defineProperty(Intl, 'RelativeTimeFormat', {
+      value: class extends OriginalRelativeTimeFormat {
+        constructor(
+          _locale?: string | string[],
+          options?: Intl.RelativeTimeFormatOptions,
+        ) {
+          super('en', options);
+        }
+      },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(Intl, 'RelativeTimeFormat', {
+      value: OriginalRelativeTimeFormat,
+      writable: true,
+      configurable: true,
+    });
+  });
+
   describe('formatRelativeTime', () => {
     const reference = new Date('2023-01-01T12:00:00Z');
 
