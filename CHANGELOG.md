@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.9] - 2026-02-21
+
+### 🚀 Features
+
+- **Configurable Tool Group Visibility in Agent Renderer**:
+  - `AgentToolGroupBlock` now respects the user setting `toolCallGroupVisibleCount` instead of hardcoded display limits.
+  - Preserves performance optimization from memoized tool-group rendering while restoring end-user control from Settings.
+
+- **Timeout Behavior Controls for MCP Execution**:
+  - Added support to disable MCP tool execution timeout by default.
+  - Added UI status indicator to make timeout mode visible to users.
+
+### 🐛 Fixes
+
+- **MCP Server Management Accessibility**:
+  - Fixed install action semantics in preset cards with explicit button interaction wiring.
+  - Added unique, descriptive `aria-label` text for environment variable/header removal buttons.
+  - Removed duplicate `aria-label` attributes introduced during prior edits.
+
+- **Database Backup Integrity in WAL Mode**:
+  - Backup flow now uses SQLite `VACUUM INTO` for consistent snapshot behavior in WAL mode.
+  - Eliminates risk of incomplete backups from plain file-copy approaches.
+
+- **Workspace/Browser Tool Guidance Corrections**:
+  - Browser `content` guidance strings updated to current parameter format.
+  - Workspace `replaceLines` documentation clarified to match actual append behavior constraints.
+
+- **Secure File Manager Size-Limit Enforcement**:
+  - Hardened append-path size checks to prevent overflow-based file-size-limit bypass.
+  - Added dedicated integration tests for append-limit scenarios.
+
+### ⚡ Performance
+
+- **Agent Chat Rendering Optimizations**:
+  - Reduced unnecessary re-renders in `AgentMessageRenderer`, `AgentMessageBubble`, `ToolCallCompactItem`, and tool group components.
+  - Memoization/comparator improvements lower UI work during streaming and tool-heavy sessions.
+
+### 🔧 Internal
+
+- Refactored agent LLM layer into focused submodules (`completion`, `prompt`, `response`, `types`) for maintainability.
+- Refactored interactive browser server into cleaner modular structure.
+- Removed obsolete lifecycle unit tests blocked by current crate test configuration and aligned lifecycle code cleanup.
+
+### 📚 Docs
+
+- Synced `README`, `CONTRIBUTING`, `agents.md`, and `CLAUDE.md` with current architecture and MCP behavior.
+- Updated builtin-tool documentation and internal project notes to reduce docs drift.
+
 ## [0.5.8] - 2026-02-20
 
 ### 🐛 Fixes
