@@ -25,7 +25,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '@/hooks/use-settings';
-import type { SkillMetadata } from '../SkillsContext';
+import type { SkillMetadata } from '@/types/skills';
 
 const mockInvoke = vi.mocked(invoke);
 const mockUseSettings = vi.mocked(useSettings);

@@ -6,12 +6,7 @@ import {
 } from '@/components/ui';
 import { useTranslation } from 'react-i18next';
 import { Code, FileText } from 'lucide-react';
-
-interface SkillMetadata {
-  name: string;
-  description: string;
-  path: string;
-}
+import { SkillMetadata } from '@/types/skills';
 
 interface SkillsListModalProps {
   isOpen: boolean;
