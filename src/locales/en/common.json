@@ -51,11 +51,80 @@
     "disconnected": "disconnected",
     "unknown": "unknown"
   },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "restartNow": "Restart now"
+  },
   "settings": {
+    "title": "Settings",
+    "unsaved": "Unsaved",
+    "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
       "english": "English",
       "korean": "Korean"
+    },
+    "tabs": {
+      "general": "General",
+      "aiModels": "AI & Models",
+      "chatInterface": "Chat Interface",
+      "mcpServers": "MCP Servers",
+      "advanced": "Advanced"
+    },
+    "llmPreference": "Default LLM",
+    "messageWindowSize": "Message Window Size",
+    "general": {
+      "skillsDirectory": "Skills Directory"
+    },
+    "aiModels": {
+      "apiKeys": "Provider API Keys",
+      "preferences": "Model Preferences",
+      "agentHub": "Agent Hub"
+    },
+    "display": {
+      "metricsTitle": "Performance Metrics",
+      "metricDisplayMode": "Metric Display Mode",
+      "inline": "Inline (show in message)",
+      "tooltip": "Tooltip (hover to see)",
+      "showTokenSpeed": "Show Token Speed",
+      "compactMetrics": "Compact Metrics",
+      "toolCallsTitle": "Tool Calls",
+      "toolDetailLevel": "Tool Detail Level"
+    },
+    "advanced": {
+      "maxRetries": "Max Retry Attempts",
+      "retryDelay": "Retry Delay (ms)",
+      "circuitBreaker": "Tool Loop Threshold",
+      "shellIsolation": "Shell Isolation Level"
+    },
+    "system": {
+      "title": "System & Performance",
+      "network": "Network",
+      "httpServerPort": "HTTP Server Port",
+      "httpServerExpose": "Expose HTTP Server",
+      "fileWorkspace": "File & Workspace",
+      "backgroundTasks": "Background Tasks",
+      "mcpToolTimeoutDisabled": "Disabled",
+      "networkRestartFailed": "Failed to restart the app. Please restart manually.",
+      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
+    },
+    "factoryReset": {
+      "title": "Factory Reset",
+      "resetting": "Resetting...",
+      "success": "Factory reset complete. Restart required to fully apply changes.",
+      "error": "Failed to perform factory reset. See logs for details."
+    },
+    "dataReset": {
+      "title": "Data & Reset",
+      "deleting": "Deleting...",
+      "success": "All sessions have been deleted. Restart recommended.",
+      "error": "Failed to clear sessions."
+    },
+    "skills": {
+      "modalTitle": "Available Skills",
+      "noSkills": "No skills found."
     }
   }
 }

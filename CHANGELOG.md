@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.11] - 2026-02-21
+
+### 🚀 Features
+
+- **Browser `fetch` Tool**: New headless content extraction tool that lets agents fetch URLs and download files without opening a visible browser session. Supports a `visible` parameter to opt into a full browser session when interactivity is needed — giving agents a lightweight scraping path alongside the existing interactive automation flow.
+
 ## [0.5.10] - 2026-02-21
 
 ### 🚀 Features
