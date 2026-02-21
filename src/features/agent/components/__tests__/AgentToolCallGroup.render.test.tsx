@@ -18,7 +18,7 @@ vi.mock('../ToolCallCompactItem', () => ({
     toolResult,
   }: {
     toolCall: ToolCall;
-    toolResult: Message;
+    toolResult?: Message;
   }) => (
     <div data-testid="tool-item">
       <span data-testid="call-id">{toolCall.id}</span>
