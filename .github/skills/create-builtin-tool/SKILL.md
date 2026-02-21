@@ -999,10 +999,15 @@ export async function listYourResources(
 
 **Quality Gates:**
 
+- [ ] `pub const NAME: &str = "your_name";` declared in server module (not an inline literal in `fn name()`)
+- [ ] `fn name(&self)` returns `NAME` (the const), not a raw string
+- [ ] `BuiltinServiceEntry { canonical: "your_name", optional: … }` added to `BUILTIN_SERVICE_REGISTRY` in `agent/tools.rs`
+- [ ] `builtin::your_server::NAME` added to `all_names` in **all three** regression test functions in `agent/tools.rs`
+- [ ] `cargo test registry` passes (4/4 registry regression tests green)
 - [ ] All tests pass (unit + integration)
 - [ ] Manifesto compliance checklist complete
 - [ ] Frontend TypeScript wrappers added
-- [ ] Server registered in builtin registry
+- [ ] Server registered in builtin registry (`mod.rs` module decl + session instantiation match arm)
 - [ ] Documentation includes workflow examples
 
 **When in doubt:** Look at existing implementations (workspace, planning, knowledge) and follow their patterns for session management, error handling, and response formatting.
