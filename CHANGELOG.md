@@ -2,19 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.11] - 2026-02-21
+## [0.5.10] - 2026-02-21
 
 ### 🚀 Features
 
 - **Browser `fetch` Tool**: New headless content extraction tool that lets agents fetch URLs and download files without opening a visible browser session. Supports a `visible` parameter to opt into a full browser session when interactivity is needed — giving agents a lightweight scraping path alongside the existing interactive automation flow.
 
-## [0.5.10] - 2026-02-21
-
-### 🚀 Features
-
 - **Declarative Builtin Service Registry**: `BUILTIN_SERVICE_REGISTRY` is now the single source of truth for all 12 builtin server names in both Rust (`agent/tools.rs`) and TypeScript (`runtime-builtins.ts`). Each server module declares `pub const NAME: &str` — the canonical name is defined exactly once and referenced everywhere, making name drift a compile-time error rather than a silent routing failure.
 
 - **Configurable Tool Call Detail Level**: Agent chat UI now supports user-selectable view modes for tool call rendering — Compact (simplified) and Developer (full arguments/results). Controlled per-session via settings.
+
+- **Agent Start View Hub Layout**: Removed the inline session history panel from the start screen. Now a clean, centered assistant picker — history lives in the sidebar "Recent Sessions" and the dedicated History page where it belongs.
+
+- **Assistant Card Redesign**: `AssistantSelectionCard` gets rounded-2xl corners, a dedicated icon badge, and a subtle lift-on-hover effect. More visual breathing room, clearer hierarchy.
+
+- **Sidebar "See all sessions →"**: Recent Sessions section now has an explicit navigation item at the bottom of the list so users can reach the full History page without guessing.
 
 ### 🐛 Fixes
 
@@ -23,6 +25,8 @@ All notable changes to this project will be documented in this file.
 - **`content_store` canonical name mismatch**: `ContentStoreServer::name()` was returning `"contentstore"` (no underscore), causing tool routing to silently fall back through the alias layer. Fixed to `"content_store"` — the alias system would have masked this forever without the new regression tests.
 
 ### 🔧 Internal
+
+- **i18n Settings Coverage**: All `settings.*` and `common.*` keys used in the Settings page now have proper translations in both `en` and `ko` locales. Previously the entire Settings UI was falling back to hardcoded English strings regardless of language selection.
 
 - **Circuit breaker refactored** (`agent/llm/response.rs`): Extracted `evaluate_circuit_breaker_count` from the pre-processing loop. `count_consecutive_failed_calls` is now generic over a predicate closure, covering both same-tool-name and same-signature (tool + args) detection without duplication. `build_tool_call_indices` builds both `call_name_by_id` and `call_signature_by_id` maps in a single pass.
 
