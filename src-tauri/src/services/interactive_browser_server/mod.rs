@@ -100,6 +100,7 @@ impl InteractiveBrowserServer {
         &self,
         url: &str,
         title: Option<&str>,
+        visible: bool,
     ) -> Result<(String, String), String> {
         // Require URL parameter
         if url.trim().is_empty() {
@@ -148,8 +149,8 @@ impl InteractiveBrowserServer {
         .maximizable(true)
         .minimizable(true)
         .center()
-        .focused(true)
-        .visible(true)
+        .focused(visible)
+        .visible(visible)
         .devtools(cfg!(debug_assertions))
         .initialization_script(format!(
             "window.__LIBR_AGENT_SESSION_ID__ = '{}';\n{}",

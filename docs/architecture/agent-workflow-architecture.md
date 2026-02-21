@@ -756,9 +756,9 @@ Agents occasionally get stuck in a loop calling the same tool repeatedly against
 
 **Two trigger modes:**
 
-| Mode | Condition | Example |
-|---|---|---|
-| Same-tool-name | ≥2 consecutive failed results for the same tool | `clearScratchpad` fails with ID 191, 192, 193 … |
+| Mode           | Condition                                               | Example                                               |
+| -------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| Same-tool-name | ≥2 consecutive failed results for the same tool         | `clearScratchpad` fails with ID 191, 192, 193 …       |
 | Same-signature | ≥2 consecutive failed results for exact tool+args combo | `readFile("/nonexistent")` called verbatim every turn |
 
 **Implementation sketch:**

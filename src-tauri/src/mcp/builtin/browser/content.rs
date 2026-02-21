@@ -467,3 +467,213 @@ async fn save_raw_html_to_file(
 
     Ok(relative_path)
 }
+
+pub async fn fetch_url(
+    server: &BrowserServer,
+    args: Value,
+    session_id: Option<String>,
+) -> Result<MCPResult, String> {
+    let url = match args.get("url").and_then(|v| v.as_str()) {
+        Some(u) => u.to_string(),
+        Option::None => return Ok(missing_param_error("url", ToolGroup::Browser)),
+    };
+
+    let save_path = args
+        .get("savePath")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // 1. Send GET request to determine content type
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let get_res = client.get(&url).send().await;
+    let mut is_html = true;
+
+    if let Ok(res) = &get_res {
+        if res.status().is_success() {
+            if let Some(content_type) = res.headers().get(reqwest::header::CONTENT_TYPE) {
+                if let Ok(ct_str) = content_type.to_str() {
+                    let ct = ct_str.to_lowercase();
+                    if !ct.contains("text/html")
+                        && !ct.contains("text/plain")
+                        && !ct.contains("application/xhtml+xml")
+                    {
+                        is_html = false;
+                    }
+                }
+            }
+        }
+    }
+
+    if !is_html {
+        if let (Some(path), Ok(res)) = (save_path.as_ref(), get_res) {
+            // Read bytes directly from response
+            let bytes = match res.bytes().await {
+                Ok(b) => b,
+                Err(e) => {
+                    return Ok(handle_browser_op_error(
+                        "Download File",
+                        e.to_string(),
+                        vec![],
+                    ));
+                }
+            };
+
+            return save_downloaded_file(&url, path, session_id.as_deref(), &bytes).await;
+        }
+    }
+
+    if !is_html && save_path.is_none() {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            "The URL points to a file, not a web page. A 'savePath' is required to download it.",
+            ToolGroup::Browser,
+        )
+        .guidance(vec![
+            "Provide a 'savePath' parameter to save the file.".to_string(),
+            "If you meant to read it, download it first, then use workspace tools to read the file.".to_string()
+        ])
+        .to_mcp_result());
+    }
+
+    // HTML fallback: use InteractiveBrowserServer headless
+    let service = server.get_browser_service()?;
+
+    let session_id_result = service
+        .create_browser_session(&url, Some("Fetch Tool Session"), false)
+        .await;
+
+    let (session_id, status_msg) = match session_id_result {
+        Ok(res) => res,
+        Err(e) => {
+            return Ok(handle_browser_op_error(
+                "Fetch URL",
+                e,
+                vec!["Check URL", "Try a different site"],
+            ));
+        }
+    };
+
+    // Check if error like 403 or network failure
+    if status_msg.contains("Network Error") || status_msg.contains("Failed") {
+        let _ = service.close_session(&session_id).await;
+        return Ok(handle_browser_op_error(
+            "Fetch URL",
+            status_msg,
+            vec!["Check URL", "Try a different site"],
+        ));
+    }
+
+    // Extract HTML
+    let raw_html = match extract_html_from_page(&service, &session_id).await {
+        Ok(html) => html,
+        Err(e) => {
+            let _ = service.close_session(&session_id).await;
+            return Ok(handle_browser_op_error("Extract HTML", e, vec![]));
+        }
+    };
+
+    let page_title = service
+        .execute_script(&session_id, "document.title")
+        .await
+        .unwrap_or_default();
+
+    // Close the session immediately
+    let _ = service.close_session(&session_id).await;
+
+    // Convert to markdown off-thread
+    let raw_html_clone = raw_html.clone();
+    let markdown_content = task::spawn_blocking(move || {
+        if raw_html_clone.len() > 10 * 1024 * 1024 {
+            return "**Error: Page content too large to process (exceeds 10MB limit).**"
+                .to_string();
+        }
+        convert_to_markdown(&raw_html_clone)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    let title = page_title.trim_matches('"');
+
+    // Build Response
+    let result_text = format!(
+        "Content fetched from {}\n\nPage Title: {}\n\n{}",
+        url, title, markdown_content
+    );
+
+    let structured_data = json!({
+         "url": url,
+         "title": title,
+         "content_length": markdown_content.len()
+    });
+
+    Ok(MCPResult::success_with_data(&result_text, structured_data))
+}
+
+pub(crate) async fn save_downloaded_file(
+    url: &str,
+    save_path: &str,
+    session_id: Option<&str>,
+    bytes: &[u8],
+) -> Result<MCPResult, String> {
+    let target_session_id = session_id.unwrap_or("default");
+    let session_manager = crate::session::get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(target_session_id);
+    let file_manager_state = crate::services::SecureFileManager::new_with_base_dir(workspace_dir);
+
+    match file_manager_state.write_file(save_path, bytes).await {
+        Ok(_) => {
+            let result_text = format!("File successfully downloaded to: {}", save_path);
+            let structured_data = json!({
+                "url": url,
+                "saved_path": save_path,
+                "bytes_downloaded": bytes.len()
+            });
+            Ok(MCPResult::success_with_data(&result_text, structured_data))
+        }
+        Err(e) => Ok(handle_browser_op_error(
+            "Save File",
+            e.to_string(),
+            vec!["Check the savePath and ensure it is valid within the workspace."],
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetch_download_workspace_isolation() {
+        let url = "https://example.com/dummy.pdf";
+        let save_path = "downloads/dummy.pdf";
+        let dummy_bytes = b"dummy content";
+        let test_session_id = "test-isolation-123";
+
+        // Call our extracted function
+        let result = save_downloaded_file(url, save_path, Some(test_session_id), dummy_bytes).await;
+
+        assert!(result.is_ok(), "Function should return Ok");
+        let mcp_res = result.unwrap();
+        assert!(
+            !mcp_res.is_error.unwrap_or(false),
+            "MCPResult should not be an error"
+        );
+
+        // Verify via the actual session manager
+        let actual_sm = crate::session::get_session_manager().unwrap();
+        let expected_workspace_dir = actual_sm.get_session_workspace_dir_by_id(test_session_id);
+        let expected_path = expected_workspace_dir.join(save_path);
+
+        assert!(
+            expected_path.exists(),
+            "File should be saved to the isolated workspace at {:?}",
+            expected_path
+        );
+        let saved_content = std::fs::read(&expected_path).unwrap();
+        assert_eq!(saved_content, dummy_bytes);
+    }
+}

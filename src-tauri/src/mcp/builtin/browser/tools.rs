@@ -299,6 +299,44 @@ pub fn content_tool() -> MCPTool {
     tool
 }
 
+/// Fetch URL content directly (headless browser or file download)
+pub fn fetch_tool() -> MCPTool {
+    let mut props = std::collections::HashMap::new();
+
+    props.insert(
+        "url".to_string(),
+        string_prop_required("URL to fetch (must start with http:// or https://)"),
+    );
+
+    props.insert(
+        "savePath".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Relative path to save the file to if it's not a web page (e.g., 'downloads/document.pdf')")
+        ),
+    );
+
+    MCPTool {
+        name: "fetch".to_string(),
+        title: Some("Fetch Content".to_string()),
+        description: "Extract markdown content from a URL or download a file in a single step without popping up a visible browser window.
+        
+WORKFLOW:
+1. Provide the URL to fetch.
+2. If it's a web page, the content will be extracted and returned as markdown.
+3. If it's a file (PDF, image, etc.) and savePath is provided, it will be downloaded.
+
+NEXT STEPS:
+- Process the returned markdown content.
+- If a file was saved, use workspace tools to interact with it."
+            .to_string(),
+        input_schema: object_schema(props, vec!["url".to_string()]),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 /// Alias for click_element_tool with short name "click"
 pub fn click_tool() -> MCPTool {
     let mut tool = click_element_tool();
@@ -355,6 +393,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         scroll_tool(), // Alias for scrollPage
         // --- Content ---
         content_tool(), // Merged alias for extractWebContent + readWebContent
+        fetch_tool(),   // Single-step fetch operation
         // --- Discovery ---
         list_interactable_tool(), // Useful for fallback element discovery
     ]

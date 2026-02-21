@@ -84,7 +84,11 @@ pub async fn create_session(server: &BrowserServer, args: Value) -> Result<MCPRe
     }
 
     let (id, status_msg) = match service
-        .create_browser_session(url, Some(&format!("Agent {}", server.agent_session_id)))
+        .create_browser_session(
+            url,
+            Some(&format!("Agent {}", server.agent_session_id)),
+            true,
+        )
         .await
     {
         Ok(res) => res,
