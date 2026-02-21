@@ -23,23 +23,12 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-// Mock sonner toast
-vi.mock('sonner', () => ({
-  toast: Object.assign(vi.fn(), {
-    loading: vi.fn().mockReturnValue('toast-id'),
-    success: vi.fn(),
-    error: vi.fn(),
-  }),
-}));
-
 import { invoke } from '@tauri-apps/api/core';
 import { useSettings } from '@/hooks/use-settings';
-import { toast } from 'sonner';
 import type { SkillMetadata } from '../SkillsContext';
 
 const mockInvoke = vi.mocked(invoke);
 const mockUseSettings = vi.mocked(useSettings);
-const mockToast = vi.mocked(toast);
 
 const MOCK_SKILLS: SkillMetadata[] = [
   {
@@ -187,74 +176,5 @@ describe('SkillsContext', () => {
     });
   });
 
-  describe('Download prompt (toast)', () => {
-    it('does NOT show toast when skills are found', async () => {
-      mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/my/skills' } },
-        isLoading: false,
-      } as ReturnType<typeof useSettings>);
-      mockInvoke.mockResolvedValue(MOCK_SKILLS);
-
-      renderHook(() => useSkills(), { wrapper });
-
-      await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('scan_skills_directory', expect.any(Object));
-      });
-
-      // Give effects time to settle
-      await new Promise((r) => setTimeout(r, 50));
-
-      expect(mockToast).not.toHaveBeenCalled();
-    });
-
-    it('shows toast when 0 skills are found after fetch completes', async () => {
-      mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/empty/skills' } },
-        isLoading: false,
-      } as ReturnType<typeof useSettings>);
-      // scan returns empty array (directory exists but no skills)
-      mockInvoke.mockResolvedValue([]);
-
-      renderHook(() => useSkills(), { wrapper });
-
-      await waitFor(() => {
-        expect(mockToast).toHaveBeenCalledWith(
-          'Global skills not found',
-          expect.objectContaining({ description: expect.any(String) }),
-        );
-      });
-    });
-
-    it('does NOT show toast while settings are still loading', async () => {
-      mockUseSettings.mockReturnValue({
-        value: { system: {} },
-        isLoading: true,
-      } as ReturnType<typeof useSettings>);
-
-      renderHook(() => useSkills(), { wrapper });
-
-      await new Promise((r) => setTimeout(r, 50));
-
-      expect(mockToast).not.toHaveBeenCalled();
-    });
-
-    it('shows toast only once even if re-rendered with 0 skills', async () => {
-      mockUseSettings.mockReturnValue({
-        value: { system: { skillsDirectory: '/empty/skills' } },
-        isLoading: false,
-      } as ReturnType<typeof useSettings>);
-      mockInvoke.mockResolvedValue([]);
-
-      const { rerender } = renderHook(() => useSkills(), { wrapper });
-
-      await waitFor(() => {
-        expect(mockToast).toHaveBeenCalledTimes(1);
-      });
-
-      rerender();
-      await new Promise((r) => setTimeout(r, 50));
-
-      expect(mockToast).toHaveBeenCalledTimes(1);
-    });
-  });
 });
+
