@@ -12,6 +12,92 @@ use tokio::sync::RwLock;
 
 use super::completion::request_llm_completion;
 
+fn is_tool_error_message(message: &Message) -> bool {
+    if message.role != "tool" {
+        return false;
+    }
+
+    let metadata_tool_error = message
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("toolError"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+
+    if metadata_tool_error {
+        return true;
+    }
+
+    message.content.iter().any(|content| {
+        matches!(
+            content,
+            crate::mcp::types::MCPContent::Text {
+                is_error: Some(true),
+                ..
+            }
+        )
+    })
+}
+
+fn build_tool_call_name_index(messages: &[Message]) -> HashMap<String, String> {
+    let mut call_name_by_id = HashMap::new();
+
+    for message in messages {
+        if let Some(tool_calls) = &message.tool_calls {
+            for tool_call in tool_calls {
+                call_name_by_id.insert(tool_call.id.clone(), tool_call.function.name.clone());
+            }
+        }
+    }
+
+    call_name_by_id
+}
+
+fn count_consecutive_failed_tool_calls_by_name(
+    messages: &[Message],
+    tool_name: &str,
+    call_name_by_id: &HashMap<String, String>,
+) -> usize {
+    let mut consecutive_failures = 0;
+    let mut saw_tool_result = false;
+
+    for message in messages.iter().rev() {
+        match message.role.as_str() {
+            "tool" => {
+                saw_tool_result = true;
+
+                if !is_tool_error_message(message) {
+                    break;
+                }
+
+                let Some(tool_call_id) = message.tool_call_id.as_deref() else {
+                    break;
+                };
+
+                let Some(previous_tool_name) = call_name_by_id.get(tool_call_id) else {
+                    break;
+                };
+
+                if previous_tool_name == tool_name {
+                    consecutive_failures += 1;
+                } else {
+                    break;
+                }
+            }
+            "assistant" => {
+                // Assistant messages often sit between tool results; skip them.
+            }
+            _ => {
+                if saw_tool_result {
+                    break;
+                }
+            }
+        }
+    }
+
+    consecutive_failures
+}
+
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
     session_repo: &Arc<dyn SessionRepository>,
@@ -97,6 +183,7 @@ pub async fn handle_llm_response(
             let sessions = active_sessions.read().await;
             if let Some(session) = sessions.get(&session_id) {
                 let messages = session.messages.read().await;
+                let call_name_by_id = build_tool_call_name_index(&messages);
 
                 for (i, tool_call) in tool_calls.iter().enumerate() {
                     let tool_name = &tool_call.function.name;
@@ -106,6 +193,27 @@ pub async fn handle_llm_response(
                     }
 
                     let args = &tool_call.function.arguments;
+
+                    // Circuit breaker rule #1:
+                    // Stop when the same tool has failed consecutively 2+ times in history,
+                    // regardless of changing arguments (e.g., clearScratchpad id=191,192,193...).
+                    let consecutive_failed_same_tool = count_consecutive_failed_tool_calls_by_name(
+                        &messages,
+                        tool_name,
+                        &call_name_by_id,
+                    );
+                    if consecutive_failed_same_tool >= 2 {
+                        break_index = Some(i);
+                        break_info = Some((
+                            tool_name.clone(),
+                            consecutive_failed_same_tool + 1,
+                            args.clone(),
+                        ));
+                        break;
+                    }
+
+                    // Circuit breaker rule #2:
+                    // Exact signature repetition (tool name + args) across history/current batch.
                     let current_signature = format!("{}:{}", tool_name, args);
 
                     let mut repetition_count = 0;
