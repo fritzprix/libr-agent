@@ -11,6 +11,7 @@ import {
   hasUIResource,
 } from '@/lib/tool-call-utils';
 import { AgentToolCallDetails } from './AgentToolCallDetails';
+import { useSettings } from '@/hooks/use-settings';
 
 export interface ToolCallCompactItemProps {
   toolCall: ToolCall;
@@ -44,13 +45,24 @@ export const ToolStatusIcon: React.FC<ToolStatusIconProps> = ({
 };
 
 /**
- * Compact tool call item - no individual border, tight spacing
+ * Compact tool call item - no individual border, tight spacing.
+ *
+ * Renders differently based on the `toolDetailLevel` display setting:
+ * - 'simple': shows only tool name + status icon. No params, no error text,
+ *             no background colour change on error, no expand capability.
+ * - 'developer': full detail view (current behaviour) with params summary,
+ *               execution time, error details, and expand/collapse.
  */
 const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   toolCall,
   toolResult,
   isLast = false,
 }) => {
+  const {
+    value: { display },
+  } = useSettings();
+  const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
+
   const [isExpanded, setIsExpanded] = useState(false);
   const previousHasError = useRef(false);
   const previousHasResource = useRef(false);
@@ -58,7 +70,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   // Parse tool name (remove server prefix)
   const toolName = parseToolName(toolCall.function.name);
 
-  // Parse arguments for summary
+  // Parse arguments for summary (developer mode only)
   const params = parseToolArguments(toolCall.function.arguments);
   const paramSummary = formatToolArgumentsSummary(params);
 
@@ -70,9 +82,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand only when transitioning to error/resource state.
-  // This preserves manual expand/collapse toggles from users.
+  // Auto-expand only in developer mode when transitioning to error/resource state.
   useEffect(() => {
+    if (isSimpleMode) return;
+
     const errorBecameVisible = !previousHasError.current && hasError;
     const resourceBecameVisible = !previousHasResource.current && hasResource;
 
@@ -84,8 +97,22 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
     previousHasError.current = hasError;
     previousHasResource.current = hasResource;
-  }, [hasError, hasResource, isLast]);
+  }, [hasError, hasResource, isLast, isSimpleMode]);
 
+  // ── Simple Mode ─────────────────────────────────────────────────────────
+  // Show only tool name + status icon. No colour change, no expand.
+  if (isSimpleMode) {
+    return (
+      <div className="rounded px-3 py-2 text-sm bg-background">
+        <div className="flex items-center gap-2">
+          <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
+          <span className="font-medium">{toolName}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Developer Mode ───────────────────────────────────────────────────────
   return (
     <div
       className={cn(
@@ -145,6 +172,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
             toolResult={toolResult}
             hasError={hasError}
             isLoading={!toolResult}
+            showDetails={true}
           />
         </div>
       )}

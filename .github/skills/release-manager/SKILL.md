@@ -61,6 +61,7 @@ cat CHANGELOG.md
   - _Do_ use emojis (🚀, 🐛, 🔧) consistent with the file style.
 
 **Versioning Rule**:
+
 - If releasing from current `x.y.z` with patch bump, prepare `x.y.(z+1)` section.
 - Example: if latest tag is `v0.5.8`, draft `## [0.5.9] - YYYY-MM-DD`.
 

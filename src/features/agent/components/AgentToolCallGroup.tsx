@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { hasToolCallError } from '@/lib/tool-call-utils';
 import { ToolCallCompactItem } from './ToolCallCompactItem';
+import { useSettings } from '@/hooks/use-settings';
 
 interface AgentToolCallGroupProps {
   message: Message;
@@ -52,11 +53,12 @@ interface ExpandToggleProps {
 }
 
 /**
- * Header section showing tool execution count and title
+ * Header section showing tool execution count, title, and status badges
  */
-const GroupHeader: React.FC<GroupHeaderProps> = ({
+const GroupHeader: React.FC<GroupHeaderProps & { isSimpleMode: boolean }> = ({
   totalCalls,
   statusSummary,
+  isSimpleMode,
 }) => {
   return (
     <div className="flex items-center justify-between p-3 border-b border-muted/20">
@@ -66,22 +68,24 @@ const GroupHeader: React.FC<GroupHeaderProps> = ({
           Tool Executions ({totalCalls} {totalCalls === 1 ? 'call' : 'calls'})
         </span>
       </div>
-      <StatusBadges {...statusSummary} />
+      <StatusBadges {...statusSummary} isSimpleMode={isSimpleMode} />
     </div>
   );
 };
 
 /**
- * Status badges showing running/success/error counts
+ * Status badges showing running/success/error counts.
+ * In simple mode only the error badge is shown (if any).
  */
-const StatusBadges: React.FC<StatusBadgesProps> = ({
+const StatusBadges: React.FC<StatusBadgesProps & { isSimpleMode: boolean }> = ({
   runningCount,
   successCount,
   errorCount,
+  isSimpleMode,
 }) => {
   return (
     <div className="flex items-center gap-2">
-      {runningCount > 0 && (
+      {!isSimpleMode && runningCount > 0 && (
         <Badge
           variant="outline"
           className="gap-1 border-primary text-primary bg-primary/10"
@@ -90,7 +94,7 @@ const StatusBadges: React.FC<StatusBadgesProps> = ({
           {runningCount}
         </Badge>
       )}
-      {successCount > 0 && (
+      {!isSimpleMode && successCount > 0 && (
         <Badge
           variant="outline"
           className="gap-1 border-success text-success bg-success/10"
@@ -179,6 +183,10 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   visibleCount = 3, // Default to 3 if not provided
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const {
+    value: { display },
+  } = useSettings();
+  const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   // Calculate status summary using passed toolResults
   const statusSummary: StatusSummary = useMemo(() => {
@@ -209,17 +217,23 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
 
   const hiddenCount = Math.max(0, toolGroup.calls.length - visibleCount);
 
-  // Container styling - using shadcn semantic colors
+  // Container styling — simple mode: always neutral, developer mode: colour-coded
   const hasAnyError = statusSummary.errorCount > 0;
   const isAnyRunning = statusSummary.runningCount > 0;
 
   const containerClass = cn(
     'rounded-lg border transition-all mb-2 hover:bg-accent/50 w-full max-w-full',
-    isAnyRunning && 'border-l-4 border-primary bg-primary/10',
-    !isAnyRunning &&
-      hasAnyError &&
-      'border-l-4 border-destructive bg-destructive/10',
-    !isAnyRunning && !hasAnyError && 'border-l-4 border-success bg-success/10',
+    isSimpleMode
+      ? 'border-l-4 border-muted'
+      : [
+          isAnyRunning && 'border-l-4 border-primary bg-primary/10',
+          !isAnyRunning &&
+            hasAnyError &&
+            'border-l-4 border-destructive bg-destructive/10',
+          !isAnyRunning &&
+            !hasAnyError &&
+            'border-l-4 border-success bg-success/10',
+        ],
   );
 
   return (
@@ -227,6 +241,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
       <GroupHeader
         totalCalls={toolGroup.calls.length}
         statusSummary={statusSummary}
+        isSimpleMode={isSimpleMode}
       />
 
       {!isExpanded && (

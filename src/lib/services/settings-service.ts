@@ -34,6 +34,8 @@ export interface DisplaySettings {
   prefillDisplayFormat: 'time' | 'tokensPerSecond';
   showTokenSpeed: boolean;
   compactMetrics: boolean;
+  /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
+  toolDetailLevel: 'simple' | 'developer';
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -96,6 +98,7 @@ export const DEFAULT_SETTING: Settings = {
     prefillDisplayFormat: 'time',
     showTokenSpeed: true,
     compactMetrics: false,
+    toolDetailLevel: 'simple',
   },
   system: {
     maxFileUploadSizeMB: 50,
