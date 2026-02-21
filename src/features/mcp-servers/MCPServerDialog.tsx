@@ -519,6 +519,7 @@ function MCPServerDialogComponent({
                                 )
                               }
                               className="h-8 text-sm font-mono"
+                              aria-label="Environment variable key"
                             />
                           </div>
                           <div className="flex-1">
@@ -534,6 +535,7 @@ function MCPServerDialogComponent({
                               }
                               type="password" // Mask values for security
                               className="h-8 text-sm font-mono"
+                              aria-label="Environment variable value"
                             />
                           </div>
                           <Button
@@ -621,7 +623,7 @@ function MCPServerDialogComponent({
                   onClick={() => setShowAdvanced(!showAdvanced)}
                   aria-expanded={showAdvanced}
                   aria-controls={advancedPanelId}
-                  className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none rounded-md"
                 >
                   <span>Advanced Settings</span>
                   {showAdvanced ? (
@@ -674,6 +676,7 @@ function MCPServerDialogComponent({
                                     )
                                   }
                                   className="h-8 text-sm"
+                                  aria-label="Custom header key"
                                 />
                               </div>
                               <div className="flex-1">
@@ -688,6 +691,7 @@ function MCPServerDialogComponent({
                                     )
                                   }
                                   className="h-8 text-sm"
+                                  aria-label="Custom header value"
                                 />
                               </div>
                               <Button

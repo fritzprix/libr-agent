@@ -315,7 +315,7 @@ function MCPServerManagementComponent() {
               return (
                 <div
                   key={preset.name}
-                  className={`group relative flex flex-col justify-between rounded-lg border bg-card p-4 transition-all ${
+                  className={`group relative flex flex-col justify-between rounded-lg border bg-card p-4 transition-all focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none ${
                     isInstalled
                       ? 'opacity-60 cursor-default bg-muted/20'
                       : 'hover:bg-accent/50 cursor-pointer'
