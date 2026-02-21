@@ -3,7 +3,6 @@ use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{error, info, warn};
 use std::fs::{self};
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -48,22 +47,7 @@ pub async fn download_global_skills() -> Result<String, String> {
         .unwrap()
         .progress_chars("#>-"));
 
-    let mut stream = response.bytes_stream();
-    let mut content = Vec::new();
-
-    while let Some(item) = stream.next().await {
-        let chunk = item.map_err(|e| {
-            error!("Error while streaming download: {}", e);
-            e.to_string()
-        })?;
-        content.extend_from_slice(&chunk);
-        pb.inc(chunk.len() as u64);
-    }
-
-    pb.finish_with_message("Download complete");
-    info!("Download complete. Received {} bytes", content.len());
-
-    // 2. Extract to temp directory
+    // 2. Prepare temp directory
     if temp_dir.exists() {
         info!("Cleaning up existing temp directory: {:?}", temp_dir);
         fs::remove_dir_all(&temp_dir).map_err(|e| {
@@ -76,9 +60,40 @@ pub async fn download_global_skills() -> Result<String, String> {
         e.to_string()
     })?;
 
+    let temp_zip_path = temp_dir.join("skills.zip");
+    let mut file = fs::File::create(&temp_zip_path).map_err(|e| {
+        error!("Failed to create temp zip file: {}", e);
+        e.to_string()
+    })?;
+
+    let mut stream = response.bytes_stream();
+    let mut downloaded_size = 0;
+
+    // Stream download to file
+    use std::io::Write;
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| {
+            error!("Error while streaming download: {}", e);
+            e.to_string()
+        })?;
+        file.write_all(&chunk).map_err(|e| {
+            error!("Error while writing to file: {}", e);
+            e.to_string()
+        })?;
+        downloaded_size += chunk.len() as u64;
+        pb.inc(chunk.len() as u64);
+    }
+
+    pb.finish_with_message("Download complete");
+    info!("Download complete. Received {} bytes", downloaded_size);
+
     info!("Extracting zip archive...");
-    let reader = Cursor::new(content);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+    let file = fs::File::open(&temp_zip_path).map_err(|e| {
+        error!("Failed to open temp zip file: {}", e);
+        e.to_string()
+    })?;
+
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
         error!("Failed to read zip archive: {}", e);
         e.to_string()
     })?;

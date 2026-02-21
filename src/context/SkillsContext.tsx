@@ -10,14 +10,9 @@ import { getLogger } from '@/lib/logger';
 import { useSettings } from '@/hooks/use-settings';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('SkillsContext');
-
-export interface SkillMetadata {
-  name: string;
-  description: string;
-  path: string;
-}
 
 interface SkillsContextType {
   skills: SkillMetadata[];
