@@ -84,6 +84,11 @@ pub async fn download_global_skills() -> Result<String, String> {
         pb.inc(chunk.len() as u64);
     }
 
+    file.flush().map_err(|e| {
+        error!("Failed to flush temp zip file: {}", e);
+        e.to_string()
+    })?;
+
     pb.finish_with_message("Download complete");
     info!("Download complete. Received {} bytes", downloaded_size);
 
