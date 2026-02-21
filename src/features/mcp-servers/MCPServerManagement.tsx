@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import useSWRInfinite from 'swr/infinite';
 import useSWRImmutable from 'swr/immutable';
 import { Plus, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { createId } from '@paralleldrive/cuid2';
 import { MCPServerEntity } from '@/models/chat';
 import { McpServerService } from '@/lib/services/mcp-server-service';
@@ -73,18 +74,20 @@ interface ServerCardProps {
 
 const ServerCard = React.memo(
   ({ server, onEdit, onDelete, onToggleActive }: ServerCardProps) => {
+    const { t } = useTranslation('common');
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex-1">
             <CardTitle className="text-base">
-              {server.name || 'Unnamed Server'}
+              {server.name || t('mcpServer.unnamed', 'Unnamed Server')}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {server.metadata?.description || 'No description'}
+              {server.metadata?.description ||
+                t('mcpServer.noDescription', 'No description')}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              Transport: {server.transport.type}
+              {t('mcpServer.transport', 'Transport')}: {server.transport.type}
               {server.transport.type === 'stdio' &&
                 ` • ${server.transport.command}`}
               {((server.transport.type as string) === 'http' ||
@@ -93,19 +96,26 @@ const ServerCard = React.memo(
             </p>
             {server.toolCount !== undefined && server.toolCount !== null && (
               <p className="text-xs text-muted-foreground mt-1">
-                {server.toolCount} tool{server.toolCount !== 1 ? 's' : ''}{' '}
-                available
+                {t('mcpServer.toolsAvailable', {
+                  count: server.toolCount,
+                  defaultValue: '{{count}} tool available',
+                })}
               </p>
             )}
             {(server.toolCount === undefined || server.toolCount === null) && (
               <p className="text-xs text-muted-foreground italic mt-1">
-                Tool count unknown (not yet verified)
+                {t(
+                  'mcpServer.toolCountUnknown',
+                  'Tool count unknown (not yet verified)',
+                )}
               </p>
             )}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end gap-1">
-              <span className="text-xs text-muted-foreground">Active</span>
+              <span className="text-xs text-muted-foreground">
+                {t('mcpServer.active', 'Active')}
+              </span>
               <Switch
                 checked={server.isActive}
                 onCheckedChange={(checked) => onToggleActive(server, checked)}
@@ -116,14 +126,14 @@ const ServerCard = React.memo(
         <CardContent>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => onEdit(server)}>
-              Edit
+              {t('mcpServer.edit', 'Edit')}
             </Button>
             <Button
               variant="destructive"
               size="sm"
               onClick={() => onDelete(server)}
             >
-              Delete
+              {t('mcpServer.delete', 'Delete')}
             </Button>
           </div>
         </CardContent>
@@ -145,7 +155,12 @@ const ServerCard = React.memo(
 
 ServerCard.displayName = 'ServerCard';
 
-function MCPServerManagementComponent() {
+interface MCPServerManagementProps {
+  service?: McpServerService;
+}
+
+function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
+  const { t } = useTranslation('common');
   const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
   const { value: settings } = useSettings();
 
@@ -156,8 +171,8 @@ function MCPServerManagementComponent() {
   );
 
   const mcpServerService = useMemo(() => {
-    return new McpServerService(settings.agentHubUrl);
-  }, [settings.agentHubUrl]);
+    return service || new McpServerService(settings.agentHubUrl);
+  }, [settings.agentHubUrl, service]);
 
   // Follow SessionContext pattern: useSWRInfinite + Page<T>
   const {
@@ -239,15 +254,22 @@ function MCPServerManagementComponent() {
         });
         await mutateServers();
         setEditingServer(null);
-        toast.success('Extension saved successfully');
+        toast.success(
+          t('mcpServer.toasts.saved', 'Extension saved successfully'),
+        );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
-        toast.error(`Failed to save extension: ${message}`);
+        toast.error(
+          t('mcpServer.toasts.saveFailed', {
+            error: message,
+            defaultValue: 'Failed to save extension: {{error}}',
+          }),
+        );
         logger.error('Failed to save extension', error);
       }
     },
-    [saveServer, mutateServers],
+    [saveServer, mutateServers, t],
   );
 
   const handleEdit = useCallback((server: MCPServerEntity) => {
@@ -264,39 +286,60 @@ function MCPServerManagementComponent() {
     try {
       await deleteServer(serverToDelete.id);
       await mutateServers();
-      toast.success('MCP server deleted successfully');
+      toast.success(
+        t('mcpServer.toasts.deleted', 'MCP server deleted successfully'),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to delete server: ${message}`);
+      toast.error(
+        t('mcpServer.toasts.deleteFailed', {
+          error: message,
+          defaultValue: 'Failed to delete server: {{error}}',
+        }),
+      );
       logger.error('Failed to delete MCP server', error);
     } finally {
       setServerToDelete(null);
     }
-  }, [serverToDelete, deleteServer, mutateServers]);
+  }, [serverToDelete, deleteServer, mutateServers, t]);
 
   const handleToggleActive = useCallback(
     async (server: MCPServerEntity, checked: boolean) => {
       try {
         await toggleActive(server.id, checked);
         await mutateServers();
-        toast.success(`MCP server ${checked ? 'activated' : 'deactivated'}`);
+        toast.success(
+          t('mcpServer.toasts.toggled', {
+            status: checked
+              ? t('mcpServer.toasts.activated', 'activated')
+              : t('mcpServer.toasts.deactivated', 'deactivated'),
+            defaultValue: 'MCP server {{status}}',
+          }),
+        );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unknown error';
-        toast.error(`Failed to toggle server: ${message}`);
+        toast.error(
+          t('mcpServer.toasts.toggleFailed', {
+            error: message,
+            defaultValue: 'Failed to toggle server: {{error}}',
+          }),
+        );
         logger.error('Failed to toggle MCP server active status', error);
       }
     },
-    [toggleActive, mutateServers],
+    [toggleActive, mutateServers, t],
   );
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Extensions</h2>
+        <h2 className="text-xl font-semibold">
+          {t('mcpServer.title', 'Extensions')}
+        </h2>
         <Button onClick={handleCreateNew}>
           <Plus className="w-4 h-4 mr-2" />
-          Add Extension
+          {t('mcpServer.addServer', 'Add Extension')}
         </Button>
       </div>
 
@@ -305,7 +348,7 @@ function MCPServerManagementComponent() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-medium text-muted-foreground">
-              Recommended Extensions
+              {t('mcpServer.recommended', 'Recommended Extensions')}
             </h3>
             <Separator className="flex-1" />
           </div>
@@ -339,7 +382,7 @@ function MCPServerManagementComponent() {
                       </h4>
                       {isInstalled ? (
                         <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
-                          Installed
+                          {t('mcpServer.installed', 'Installed')}
                         </span>
                       ) : (
                         <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
@@ -348,7 +391,8 @@ function MCPServerManagementComponent() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">
-                      {preset.description || 'No description available'}
+                      {preset.description ||
+                        t('mcpServer.noDescription', 'No description available')}
                     </p>
                   </div>
                   {!isInstalled && (
@@ -361,7 +405,10 @@ function MCPServerManagementComponent() {
                         size="icon"
                         variant="ghost"
                         className="h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary"
-                        aria-label={`Install ${preset.name} extension`}
+                        aria-label={t('mcpServer.installExtension', {
+                          name: preset.name,
+                          defaultValue: 'Install {{name}} extension',
+                        })}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleSetupPreset(preset);
@@ -382,12 +429,14 @@ function MCPServerManagementComponent() {
       <div className="space-y-4">
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">
-            Loading extensions...
+            {t('mcpServer.loading', 'Loading extensions...')}
           </div>
         ) : servers.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
-            No extensions installed. Add one or choose a recommended extension
-            above.
+            {t(
+              'mcpServer.noServers',
+              'No extensions installed. Add one or choose a recommended extension above.',
+            )}
           </div>
         ) : (
           <>
@@ -406,7 +455,7 @@ function MCPServerManagementComponent() {
             {isValidating && servers.length > 0 && (
               <div className="flex justify-center py-2">
                 <span className="text-xs text-muted-foreground">
-                  Updating...
+                  {t('mcpServer.updating', 'Updating...')}
                 </span>
               </div>
             )}
@@ -418,7 +467,9 @@ function MCPServerManagementComponent() {
                   disabled={isValidating}
                   onClick={() => setSize((s) => s + 1)}
                 >
-                  {isValidating ? 'Loading…' : 'Load more'}
+                  {isValidating
+                    ? t('mcpServer.loadingMore', 'Loading...')
+                    : t('mcpServer.loadMore', 'Load more')}
                 </Button>
               </div>
             )}
@@ -440,16 +491,23 @@ function MCPServerManagementComponent() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Extension</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('mcpServer.deleteDialog.title', 'Delete Extension')}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete &quot;{serverToDelete?.name}
-              &quot;? This action cannot be undone.
+              {t('mcpServer.deleteDialog.description', {
+                name: serverToDelete?.name,
+                defaultValue:
+                  'Are you sure you want to delete "{{name}}"? This action cannot be undone.',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              {t('mcpServer.deleteDialog.cancel', 'Cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete}>
-              Delete
+              {t('mcpServer.deleteDialog.confirm', 'Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
