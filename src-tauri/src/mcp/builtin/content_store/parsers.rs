@@ -4,8 +4,6 @@ use lopdf::Document;
 use std::path::Path;
 use tokio::fs;
 
-use crate::config;
-
 /// Result type for document parsing operations
 #[derive(Debug)]
 pub enum ParseResult {
@@ -19,7 +17,8 @@ pub struct DocumentParser;
 impl DocumentParser {
     /// Parse a file based on its MIME type
     pub async fn parse_file(file_path: &Path, mime_type: &str) -> ParseResult {
-        if let Err(e) = Self::validate_file(file_path, crate::config::max_file_size() as u64).await {
+        if let Err(e) = Self::validate_file(file_path, crate::config::max_file_size() as u64).await
+        {
             return ParseResult::Error(e);
         }
 
@@ -537,7 +536,27 @@ mod tests {
         fs::write(&file_path, "test").await.unwrap();
 
         // Should pass validation for 1MB limit
-        assert!(DocumentParser::validate_file(&file_path, 1 * 1024 * 1024).await.is_ok());
+        assert!(DocumentParser::validate_file(&file_path, 1 * 1024 * 1024)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_file_validation_oversized_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("oversized.txt");
+
+        fs::write(&file_path, vec![b'a'; 2]).await.unwrap();
+
+        let result = DocumentParser::validate_file(&file_path, 1).await;
+
+        match result {
+            Ok(_) => panic!("Expected validation to fail for oversized file"),
+            Err(message) => {
+                assert!(message.contains("File size"));
+                assert!(message.contains("exceeds maximum allowed size"));
+            }
+        }
     }
 
     #[tokio::test]
