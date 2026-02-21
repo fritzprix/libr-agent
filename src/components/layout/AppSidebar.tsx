@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   Bot,
   BrainCircuit,
@@ -27,7 +27,6 @@ import {
   useAgentSessionListState,
   useAgentSessionListActions,
 } from '@/context/AgentSessionListContext';
-import { useEffect } from 'react';
 
 /** Maps session status to a semantically meaningful dot */
 function StatusDot({ status }: { status: string }) {
