@@ -53,13 +53,14 @@ export function enforceRuntimeBuiltinAliases(
   const ordered = BUILTIN_SERVICE_REGISTRY.map((e) => e.canonical);
   const allowed = new Set<string>(CORE_BUILTIN_SERVICE_ALIASES);
 
-  if (aliases && aliases.length > 0) {
+  if (aliases !== undefined) {
+    // Explicit list: add only the canonicalized aliases (may be empty → core only)
     for (const alias of aliases) {
       const canonical = canonicalizeAlias(alias);
       if (canonical) allowed.add(canonical);
     }
   } else {
-    // No explicit list → all optional services are implicitly enabled
+    // No list at all → all optional services are implicitly enabled
     for (const alias of OPTIONAL_BUILTIN_SERVICE_ALIASES) {
       allowed.add(alias);
     }
