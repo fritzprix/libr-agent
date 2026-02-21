@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.11] - 2026-02-22
+
+### 🚀 Features
+
+- **Playbook Server & Skills IPC**:
+  - Added integration tests for PlaybookServer UI rendering and interaction flows.
+  - Unified `SkillMetadata` type across frontend and backend for 1:1 parity with Rust.
+  - Optimized `download_global_skills` Tauri command to stream download to file instead of memory.
+  - Ported bundled skills from `dev/0.4.0` to `dev/0.5.x`.
+- **Localization & Accessibility**: Localized MCP Server Management features (Korean and English) and enhanced a11y.
+- **Performance**: Optimized `AgentToolCallGroup` rendering.
+- **Security & Validation**: Enforced file size limits in `DocumentParser` and added validation tests for oversized files.
+- **Test Coverage**: Expanded tests for date utils (locale-independent relative time) and retry utils.
+
+### 🐛 Fixes
+
+- **CSS Hierarchy**: Moved Pretendard `@import url()` before tailwindcss imports.
+- **Cleanup**: Removed `download_global_skills` leftovers and related dead code from botched merge resolutions.
+- **Test Mocks**: Made `toolResult` prop optional in `ToolCallCompactItem` test mock.
+
+### 🔧 Internal
+
+- **CI & Formatting**: Added Rust integration tests, improved CI workflow, and cleaned up code formatting in tools/tests for better readability.
+- **Docs & Project Maintenance**:
+  - Created `SECURITY.md`.
+  - Added newline for better readability in Hermes's Journal.
+  - Removed unused dependencies (`unit-prefix`) and bumped various versions (tempfile, indicatif, futures, uuid, tauri-plugin-http, regex, anyhow, docx-rs).
+
 ## [0.5.10] - 2026-02-21
 
 ### 🚀 Features
