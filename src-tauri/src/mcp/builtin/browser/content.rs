@@ -131,7 +131,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     let mut response_text = if is_unchanged {
         // Return minimal response for unchanged content
         format!(
-            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using content(sessionId, page: 1).\n\nIf you need to interact with the page, use listInteractable.",
+            "[Content Unchanged]\nPage Title: {}\nURL: {}\n\nThe content of this page has not changed since the last extraction.\nYou can read the previously extracted content using content({{ page: 1 }}).\n\nIf you need to interact with the page, use listInteractable.",
             if page_title.is_empty() {
                 "N/A"
             } else {
@@ -221,7 +221,7 @@ pub async fn extract_web_content(server: &BrowserServer, args: Value) -> Result<
     // Add pagination footer
     if !auto_merged && total_pages > 1 {
         response_text.push_str(&format!(
-            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use content(sessionId, page) to read pages 2-{}.",
+            "\n\n--- End of Page 1 ---\nThere are {} pages in total. Use content({{ page: N }}) to read pages 2-{}.",
             total_pages,
             total_pages
         ));
