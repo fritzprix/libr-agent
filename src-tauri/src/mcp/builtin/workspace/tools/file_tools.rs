@@ -231,7 +231,7 @@ pub fn create_replace_lines_tool() -> MCPTool {
     );
     edit_item_props.insert(
         "line".to_string(),
-        integer_prop(Some(1), None, Some("Start line number (1-based, required). Use line = (total_lines + 1) to APPEND at end of file. For range edit this is the first line of the replaced range.")),
+        integer_prop(Some(1), None, Some("Start line number (1-based, required). Must reference an existing line. For range edit this is the first line of the replaced range. To append at end, use insertAfter=true with the current last line as anchor.")),
     );
     edit_item_props.insert(
         "endLine".to_string(),
