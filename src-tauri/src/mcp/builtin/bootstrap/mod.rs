@@ -230,10 +230,12 @@ impl Default for BootstrapServer {
     }
 }
 
+pub const NAME: &str = "bootstrap";
+
 #[async_trait]
 impl BuiltinMCPServer for BootstrapServer {
     fn name(&self) -> &str {
-        "bootstrap"
+        NAME
     }
 
     fn description(&self) -> &str {

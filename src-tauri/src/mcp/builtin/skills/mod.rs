@@ -55,10 +55,12 @@ impl SkillsServer {
     }
 }
 
+pub const NAME: &str = "skills";
+
 #[async_trait]
 impl BuiltinMCPServer for SkillsServer {
     fn name(&self) -> &str {
-        "skills"
+        NAME
     }
 
     fn description(&self) -> &str {

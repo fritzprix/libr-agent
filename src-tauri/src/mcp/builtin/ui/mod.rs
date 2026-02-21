@@ -609,10 +609,12 @@ impl UiServer {
     }
 }
 
+pub const NAME: &str = "ui";
+
 #[async_trait]
 impl BuiltinMCPServer for UiServer {
     fn name(&self) -> &str {
-        "ui"
+        NAME
     }
 
     fn description(&self) -> &str {

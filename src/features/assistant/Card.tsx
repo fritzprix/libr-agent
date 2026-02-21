@@ -1,10 +1,14 @@
 import { useAssistantContext } from '@/context/AssistantContext';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Assistant } from '../../models/chat';
 import { Badge, Button } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
 import AssistantEditor from './AssistantEditor';
 import { useTranslation } from 'react-i18next';
+import {
+  enforceRuntimeBuiltinAliases,
+  OPTIONAL_BUILTIN_SERVICE_ALIASES,
+} from '@/lib/assistant/runtime-builtins';
 
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { getLogger } from '@/lib/logger';
@@ -74,6 +78,22 @@ export default function AssistantCard({
   const handleDeleteCancel = useCallback(() => {
     setShowDeleteConfirm(false);
   }, []);
+
+  const effectiveBuiltinAliases = useMemo(
+    () => enforceRuntimeBuiltinAliases(assistant.allowedBuiltInServiceAliases),
+    [assistant.allowedBuiltInServiceAliases],
+  );
+
+  const enabledOptionalAliases = useMemo(
+    () =>
+      effectiveBuiltinAliases.filter((alias) =>
+        OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
+          alias as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
+        ),
+      ),
+    [effectiveBuiltinAliases],
+  );
+
   return (
     <EditorProvider initialValue={assistant} onFinalize={handleEditComplete}>
       <div className="border rounded p-3 transition-colors border-muted hover:border-accent">
@@ -164,21 +184,18 @@ export default function AssistantCard({
           })}
 
           {/* Built-in Tools - Green Badges */}
-          {assistant.allowedBuiltInServiceAliases === undefined ? (
-            <Badge variant="secondary" className="bg-success/10 text-success">
-              {t('assistant.card.allBuiltin')}
+          <Badge variant="secondary" className="bg-success/10 text-success">
+            {t('assistant.card.coreBuiltin')}
+          </Badge>
+          {enabledOptionalAliases.map((alias) => (
+            <Badge
+              key={alias}
+              variant="secondary"
+              className="bg-success/10 text-success"
+            >
+              {builtinToolsMap?.[alias] || alias}
             </Badge>
-          ) : (
-            assistant.allowedBuiltInServiceAliases.map((alias) => (
-              <Badge
-                key={alias}
-                variant="secondary"
-                className="bg-success/10 text-success"
-              >
-                {builtinToolsMap?.[alias] || alias}
-              </Badge>
-            ))
-          )}
+          ))}
         </div>
 
         <div className="flex flex-wrap gap-2">

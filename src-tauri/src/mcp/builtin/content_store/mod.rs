@@ -25,11 +25,13 @@ use super::BuiltinMCPServer;
 use crate::mcp::types::ServiceContext;
 use serde_json::Value;
 
+pub const NAME: &str = "content_store";
+
 // BuiltinMCPServer trait implementation
 #[async_trait]
 impl BuiltinMCPServer for ContentStoreServer {
     fn name(&self) -> &str {
-        "contentstore"
+        NAME
     }
 
     fn description(&self) -> &str {

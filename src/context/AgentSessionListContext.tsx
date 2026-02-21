@@ -15,6 +15,7 @@ import { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant } from '@/lib/backend/assistants';
 import { Assistant } from '@/models/chat';
 import { useSettings } from '@/context/SettingsContext';
+import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 
 const logger = getLogger('AgentSessionListContext');
 
@@ -218,6 +219,9 @@ export function AgentSessionListProvider({
           maxFanout?: number;
         } = {
           ...freshAssistant,
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            freshAssistant.allowedBuiltInServiceAliases,
+          ),
           ...(advanced.defaultSessionMaxDepth > 0
             ? { maxDepth: advanced.defaultSessionMaxDepth }
             : {}),

@@ -121,10 +121,12 @@ impl BrowserServer {
     }
 }
 
+pub const NAME: &str = "browser";
+
 #[async_trait]
 impl BuiltinMCPServer for BrowserServer {
     fn name(&self) -> &str {
-        "browser"
+        NAME
     }
 
     fn description(&self) -> &str {

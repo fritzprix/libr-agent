@@ -427,10 +427,12 @@ impl Drop for WorkspaceServer {
     }
 }
 
+pub const NAME: &str = "workspace";
+
 #[async_trait]
 impl BuiltinMCPServer for WorkspaceServer {
     fn name(&self) -> &str {
-        "workspace"
+        NAME
     }
 
     fn description(&self) -> &str {

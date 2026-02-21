@@ -40,10 +40,12 @@ impl MCPManagerServer {
     }
 }
 
+pub const NAME: &str = "mcp_manager";
+
 #[async_trait]
 impl BuiltinMCPServer for MCPManagerServer {
     fn name(&self) -> &str {
-        "mcp_manager"
+        NAME
     }
 
     fn description(&self) -> &str {

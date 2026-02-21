@@ -31,6 +31,7 @@
       "builtinCount": "내장 도구: {{count}}개",
       "builtinCountAll": "내장 도구: 전체",
       "allBuiltin": "모든 내장 도구",
+      "coreBuiltin": "기본 자동화",
       "edit": "편집",
       "checkStatus": "상태확인",
       "checking": "확인중...",

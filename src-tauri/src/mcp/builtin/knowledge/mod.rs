@@ -49,10 +49,12 @@ impl KnowledgeServer {
     }
 }
 
+pub const NAME: &str = "knowledge";
+
 #[async_trait]
 impl BuiltinMCPServer for KnowledgeServer {
     fn name(&self) -> &str {
-        "knowledge"
+        NAME
     }
 
     fn description(&self) -> &str {

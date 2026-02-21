@@ -31,6 +31,7 @@
       "builtinCount": "Built-in: {{count}}",
       "builtinCountAll": "Built-in: All",
       "allBuiltin": "All Built-in Tools",
+      "coreBuiltin": "Built-in Automation",
       "edit": "Edit",
       "checkStatus": "Check Status",
       "checking": "Checking...",

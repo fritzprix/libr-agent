@@ -23,6 +23,10 @@ import {
 import type { Assistant, Message } from '@/models/chat';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
+import {
+  enforceRuntimeBuiltinAliases,
+  OPTIONAL_BUILTIN_SERVICE_ALIASES,
+} from '@/lib/assistant/runtime-builtins';
 
 const logger = getLogger('AgentDraftChatView');
 
@@ -198,7 +202,9 @@ function DraftChatInner() {
           systemPrompt: baseSystemPrompt,
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            assistant.allowedBuiltInServiceAliases,
+          ),
           maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
           ...(settings?.advanced?.defaultSessionMaxDepth &&
           settings.advanced.defaultSessionMaxDepth > 0
@@ -262,6 +268,16 @@ function DraftChatInner() {
 
   if (!assistant) return null;
 
+  const effectiveBuiltinAliases = enforceRuntimeBuiltinAliases(
+    assistant.allowedBuiltInServiceAliases,
+  );
+
+  const enabledOptionalAliases = effectiveBuiltinAliases.filter((alias) =>
+    OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
+      alias as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
+    ),
+  );
+
   return (
     <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
       {/* Header */}
@@ -300,11 +316,16 @@ function DraftChatInner() {
 
         {/* Capabilities Grid */}
         <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
-          {/* Built-in Tools: If allowedBuiltInServiceAliases is undefined/null, it means ALL are allowed */}
-          {(
-            assistant.allowedBuiltInServiceAliases ||
-            builtinServices.map((s) => s.name)
-          )?.map((alias) => {
+          {/* Built-in Tools */}
+          <Badge
+            variant="secondary"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+            title="Built-in automation is always enabled"
+          >
+            <Square size={12} className="opacity-70" />
+            Built-in automation
+          </Badge>
+          {enabledOptionalAliases.map((alias) => {
             const info = builtinServices.find((s) => s.name === alias);
             const label = info?.metadata.displayName || alias;
             const Icon = getIconForService(info?.metadata.icon);
@@ -340,16 +361,15 @@ function DraftChatInner() {
             );
           })}
 
-          {/* Fallback if list is EXPLICITLY empty (not undefined, which means all) */}
-          {assistant.allowedBuiltInServiceAliases &&
-            assistant.allowedBuiltInServiceAliases.length === 0 &&
+          {/* Fallback if no optional/external tools are configured */}
+          {enabledOptionalAliases.length === 0 &&
             (!assistant.mcpServerIds ||
               assistant.mcpServerIds.length === 0) && (
               <Badge
                 variant="outline"
                 className="text-xs text-muted-foreground opacity-50"
               >
-                No specific tools enabled
+                Ready with built-in automation
               </Badge>
             )}
         </div>

@@ -2,10 +2,140 @@ use crate::agent::state::AgentSession;
 use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
+
+// ─── Single source of truth ──────────────────────────────────────────────────────────────────────────────
+// To add, rename, or change a service: edit ONE row here.
+// All other constants and functions below are derived automatically.
+
+pub(crate) struct BuiltinServiceEntry {
+    pub(crate) canonical: &'static str,
+    /// Falls back to enabled when agent has no explicit alias list
+    pub(crate) optional: bool,
+}
+
+pub(crate) const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
+    BuiltinServiceEntry {
+        canonical: "planning",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "workspace",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "knowledge",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "assistant",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "skills",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "playbook",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "content_store",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "swarm",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "ui",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "browser",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        canonical: "bootstrap",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        canonical: "mcp_manager",
+        optional: false,
+    },
+];
+
+// ─── Derived helpers ────────────────────────────────────────────────────────────────────
+
+pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 9] = [
+    "planning",
+    "workspace",
+    "knowledge",
+    "assistant",
+    "skills",
+    "playbook",
+    "content_store",
+    "swarm",
+    "ui",
+];
+
+pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
+    let normalized = alias.trim().to_lowercase();
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .find(|entry| entry.canonical == normalized.as_str())
+        .map(|entry| entry.canonical)
+}
+
+pub fn runtime_allowed_builtin_service_aliases(
+    agent_config: &crate::agent::AgentConfig,
+) -> Vec<String> {
+    let mut allowed: HashSet<String> = CORE_BUILTIN_SERVICE_ALIASES
+        .iter()
+        .map(|alias| alias.to_string())
+        .collect();
+
+    if let Some(configured_aliases) = &agent_config.allowed_built_in_service_aliases {
+        for alias in configured_aliases {
+            match canonicalize_builtin_service_alias(alias) {
+                Some(canonical) => {
+                    allowed.insert(canonical.to_string());
+                }
+                None => {
+                    log::warn!("Unknown builtin service alias: {}", alias);
+                }
+            }
+        }
+    } else {
+        // No explicit list → all optional services are implicitly enabled
+        for entry in BUILTIN_SERVICE_REGISTRY.iter().filter(|e| e.optional) {
+            allowed.insert(entry.canonical.to_string());
+        }
+    }
+
+    // Preserve canonical ordering from the registry
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .filter(|entry| allowed.contains(entry.canonical))
+        .map(|entry| entry.canonical.to_string())
+        .collect()
+}
+
+pub fn is_builtin_service_alias_enabled(
+    agent_config: &crate::agent::AgentConfig,
+    alias: &str,
+) -> bool {
+    let Some(target_alias) = canonicalize_builtin_service_alias(alias) else {
+        return false;
+    };
+
+    runtime_allowed_builtin_service_aliases(agent_config)
+        .iter()
+        .any(|current| current == target_alias)
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum ToolResultAcceptance {
@@ -112,49 +242,7 @@ pub async fn collect_available_tools(
 
 /// Extract builtin tool IDs from agent configuration
 pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<String> {
-    let mut tool_ids = Vec::new();
-
-    if let Some(allowed_aliases) = &agent_config.allowed_built_in_service_aliases {
-        if allowed_aliases.is_empty() {
-            return tool_ids;
-        }
-
-        for alias in allowed_aliases {
-            match alias.as_str() {
-                "bootstrap" => tool_ids.push("bootstrap".to_string()),
-                "knowledge" => tool_ids.push("knowledge".to_string()),
-                "planning" => tool_ids.push("planning".to_string()),
-                "playbook" => tool_ids.push("playbook".to_string()),
-                "assistant" => tool_ids.push("assistant".to_string()),
-                "workspace" => tool_ids.push("workspace".to_string()),
-                "content_store" | "contentstore" => tool_ids.push("content_store".to_string()),
-                "ui" => tool_ids.push("ui".to_string()),
-                "browser" => tool_ids.push("browser".to_string()),
-                "mcp_manager" => tool_ids.push("mcp_manager".to_string()),
-                "session_api" | "swarm" => tool_ids.push("swarm".to_string()),
-                "skills" => tool_ids.push("skills".to_string()),
-                _ => {
-                    log::warn!("Unknown builtin service alias: {}", alias);
-                }
-            }
-        }
-    } else {
-        // None = all builtin services allowed
-        tool_ids.push("bootstrap".to_string());
-        tool_ids.push("knowledge".to_string());
-        tool_ids.push("planning".to_string());
-        tool_ids.push("playbook".to_string());
-        tool_ids.push("assistant".to_string());
-        tool_ids.push("workspace".to_string());
-        tool_ids.push("content_store".to_string());
-        tool_ids.push("ui".to_string());
-        tool_ids.push("browser".to_string());
-        tool_ids.push("mcp_manager".to_string());
-        tool_ids.push("swarm".to_string());
-        tool_ids.push("skills".to_string());
-    }
-
-    tool_ids
+    runtime_allowed_builtin_service_aliases(agent_config)
 }
 
 /// Create a tool result message from successful tool execution
@@ -400,6 +488,26 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    fn mock_agent_config(aliases: Option<Vec<&str>>) -> crate::agent::AgentConfig {
+        crate::agent::AgentConfig {
+            id: Some("assistant-test".to_string()),
+            name: "Test Assistant".to_string(),
+            description: None,
+            system_prompt: "You are helpful".to_string(),
+            mcp_server_ids: Vec::new(),
+            local_services: Vec::new(),
+            allowed_built_in_service_aliases: aliases
+                .map(|values| values.into_iter().map(|value| value.to_string()).collect()),
+            temperature: 1.0,
+            max_tokens: None,
+            max_depth: None,
+            max_fanout: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+        }
+    }
+
     fn mock_pending_execution(
         expected: &[&str],
         completed: &[&str],
@@ -536,6 +644,135 @@ mod tests {
                 assert_eq!(text, "Second item");
             }
             _ => panic!("Expected text content"),
+        }
+    }
+
+    #[test]
+    fn extract_builtin_tool_ids_normalizes_legacy_aliases() {
+        let config = mock_agent_config(Some(vec!["session_api", "contentstore", "browser"]));
+        let tool_ids = extract_builtin_tool_ids(&config);
+
+        assert!(tool_ids.contains(&"swarm".to_string()));
+        assert!(tool_ids.contains(&"content_store".to_string()));
+        assert!(tool_ids.contains(&"browser".to_string()));
+    }
+
+    #[test]
+    fn extract_builtin_tool_ids_always_includes_core_aliases() {
+        let config = mock_agent_config(Some(vec!["browser"]));
+        let tool_ids = extract_builtin_tool_ids(&config);
+
+        for alias in CORE_BUILTIN_SERVICE_ALIASES {
+            assert!(tool_ids.contains(&alias.to_string()));
+        }
+        assert!(tool_ids.contains(&"browser".to_string()));
+    }
+
+    // ─── Server name / registry regression tests ─────────────────────────────
+    // Original bug: ContentStoreServer::name() returned "contentstore" while the
+    // registry had "content_store". All four tests below would have caught it.
+
+    /// Every concrete server NAME must be a recognised canonical in the registry.
+    #[test]
+    fn each_builtin_server_name_is_in_registry() {
+        use crate::mcp::builtin;
+        let all_names: &[&str] = &[
+            builtin::planning::NAME,
+            builtin::workspace::NAME,
+            builtin::knowledge::NAME,
+            builtin::assistant::NAME,
+            builtin::skills::NAME,
+            builtin::playbook::NAME,
+            builtin::content_store::NAME,
+            builtin::session_api::NAME,
+            builtin::ui::NAME,
+            builtin::browser::NAME,
+            builtin::bootstrap::NAME,
+            builtin::mcp_manager::NAME,
+        ];
+        for name in all_names {
+            assert!(
+                canonicalize_builtin_service_alias(name).is_some(),
+                "server NAME {name:?} is not in BUILTIN_SERVICE_REGISTRY – \
+                 fix the typo or add it to the registry",
+            );
+        }
+    }
+
+    /// No two servers may share the same canonical name.
+    #[test]
+    fn builtin_server_names_are_unique() {
+        use crate::mcp::builtin;
+        let all_names: &[&str] = &[
+            builtin::planning::NAME,
+            builtin::workspace::NAME,
+            builtin::knowledge::NAME,
+            builtin::assistant::NAME,
+            builtin::skills::NAME,
+            builtin::playbook::NAME,
+            builtin::content_store::NAME,
+            builtin::session_api::NAME,
+            builtin::ui::NAME,
+            builtin::browser::NAME,
+            builtin::bootstrap::NAME,
+            builtin::mcp_manager::NAME,
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for name in all_names {
+            assert!(seen.insert(*name), "duplicate server NAME {name:?}");
+        }
+    }
+
+    /// BUILTIN_SERVICE_REGISTRY must not contain duplicate canonical entries.
+    #[test]
+    fn registry_has_no_duplicate_canonicals() {
+        let mut seen = std::collections::HashSet::new();
+        for entry in BUILTIN_SERVICE_REGISTRY {
+            assert!(
+                seen.insert(entry.canonical),
+                "duplicate canonical {:?} in BUILTIN_SERVICE_REGISTRY",
+                entry.canonical,
+            );
+        }
+    }
+
+    /// Server list and registry must stay in sync.
+    /// Catches: registry entry added but no server implements it (or vice-versa).
+    #[test]
+    fn registry_and_server_list_are_in_sync() {
+        use crate::mcp::builtin;
+        let server_names: std::collections::HashSet<&str> = [
+            builtin::planning::NAME,
+            builtin::workspace::NAME,
+            builtin::knowledge::NAME,
+            builtin::assistant::NAME,
+            builtin::skills::NAME,
+            builtin::playbook::NAME,
+            builtin::content_store::NAME,
+            builtin::session_api::NAME,
+            builtin::ui::NAME,
+            builtin::browser::NAME,
+            builtin::bootstrap::NAME,
+            builtin::mcp_manager::NAME,
+        ]
+        .iter()
+        .copied()
+        .collect();
+
+        assert_eq!(
+            server_names.len(),
+            BUILTIN_SERVICE_REGISTRY.len(),
+            "server list ({}) and registry ({}) diverged – update both together",
+            server_names.len(),
+            BUILTIN_SERVICE_REGISTRY.len(),
+        );
+
+        for entry in BUILTIN_SERVICE_REGISTRY {
+            assert!(
+                server_names.contains(entry.canonical),
+                "registry canonical {:?} has no server NAME",
+                entry.canonical,
+            );
         }
     }
 }
