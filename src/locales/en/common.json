@@ -176,6 +176,8 @@
       "requiredConfig": "Required Configuration",
       "noCustomEnv": "No custom environment variables configured.",
       "customVarsLabel": "Custom Variables",
+      "envVarKeyPlaceholder": "Key (e.g. API_KEY)",
+      "envVarValuePlaceholder": "Value",
       "envVarDesc": "Environment variables passed to the process (e.g. API Keys).",
       "urlLabel": "URL",
       "urlPlaceholder": "https://api.example.com/mcp",
@@ -188,6 +190,8 @@
       "customHeadersLabel": "Custom Headers",
       "addHeader": "Add Header",
       "noCustomHeaders": "No custom headers configured.",
+      "headerKeyPlaceholder": "Key (e.g. User-Agent)",
+      "headerValuePlaceholder": "Value",
       "removeHeader": "Remove header {{key}}",
       "removeUnnamedHeader": "Remove unnamed header",
       "removeEnvVar": "Remove environment variable {{key}}",
@@ -201,10 +205,10 @@
     "toasts": {
       "saved": "Extension saved successfully",
       "saveFailed": "Failed to save extension: {{error}}",
-      "deleted": "MCP server deleted successfully",
-      "deleteFailed": "Failed to delete server: {{error}}",
-      "toggled": "MCP server {{status}}",
-      "toggleFailed": "Failed to toggle server: {{error}}",
+      "deleted": "Extension deleted successfully",
+      "deleteFailed": "Failed to delete extension: {{error}}",
+      "toggled": "Extension {{status}}",
+      "toggleFailed": "Failed to toggle extension: {{error}}",
       "activated": "activated",
       "deactivated": "deactivated"
     }

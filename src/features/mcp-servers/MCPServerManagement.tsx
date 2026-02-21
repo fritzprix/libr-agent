@@ -287,14 +287,14 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
       await deleteServer(serverToDelete.id);
       await mutateServers();
       toast.success(
-        t('mcpServer.toasts.deleted', 'MCP server deleted successfully'),
+        t('mcpServer.toasts.deleted', 'Extension deleted successfully'),
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error(
         t('mcpServer.toasts.deleteFailed', {
           error: message,
-          defaultValue: 'Failed to delete server: {{error}}',
+          defaultValue: 'Failed to delete extension: {{error}}',
         }),
       );
       logger.error('Failed to delete MCP server', error);
@@ -313,7 +313,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
             status: checked
               ? t('mcpServer.toasts.activated', 'activated')
               : t('mcpServer.toasts.deactivated', 'deactivated'),
-            defaultValue: 'MCP server {{status}}',
+            defaultValue: 'Extension {{status}}',
           }),
         );
       } catch (error) {
@@ -322,7 +322,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
         toast.error(
           t('mcpServer.toasts.toggleFailed', {
             error: message,
-            defaultValue: 'Failed to toggle server: {{error}}',
+            defaultValue: 'Failed to toggle extension: {{error}}',
           }),
         );
         logger.error('Failed to toggle MCP server active status', error);
@@ -392,7 +392,10 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {preset.description ||
-                        t('mcpServer.noDescription', 'No description available')}
+                        t(
+                          'mcpServer.noDescription',
+                          'No description available',
+                        )}
                     </p>
                   </div>
                   {!isInstalled && (

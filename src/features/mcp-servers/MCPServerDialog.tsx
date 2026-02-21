@@ -555,7 +555,10 @@ function MCPServerDialogComponent({
                 ) : (
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
-                      {t('mcpServer.dialog.customVarsLabel', 'Custom Variables')}
+                      {t(
+                        'mcpServer.dialog.customVarsLabel',
+                        'Custom Variables',
+                      )}
                     </Label>
                     {envVars
                       .filter(
@@ -567,7 +570,10 @@ function MCPServerDialogComponent({
                         <div key={item.id} className="flex gap-2 items-start">
                           <div className="flex-1">
                             <Input
-                              placeholder="Key (e.g. API_KEY)"
+                              placeholder={t(
+                                'mcpServer.dialog.envVarKeyPlaceholder',
+                                'Key (e.g. API_KEY)',
+                              )}
                               value={item.key}
                               onChange={(e) =>
                                 handleUpdateEnvVar(
@@ -581,7 +587,10 @@ function MCPServerDialogComponent({
                           </div>
                           <div className="flex-1">
                             <Input
-                              placeholder="Value"
+                              placeholder={t(
+                                'mcpServer.dialog.envVarValuePlaceholder',
+                                'Value',
+                              )}
                               value={item.value}
                               onChange={(e) =>
                                 handleUpdateEnvVar(
@@ -704,7 +713,10 @@ function MCPServerDialogComponent({
                   className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
                 >
                   <span>
-                    {t('mcpServer.dialog.advancedSettings', 'Advanced Settings')}
+                    {t(
+                      'mcpServer.dialog.advancedSettings',
+                      'Advanced Settings',
+                    )}
                   </span>
                   {showAdvanced ? (
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -755,7 +767,10 @@ function MCPServerDialogComponent({
                             >
                               <div className="flex-1">
                                 <Input
-                                  placeholder="Key (e.g. User-Agent)"
+                                  placeholder={t(
+                                    'mcpServer.dialog.headerKeyPlaceholder',
+                                    'Key (e.g. User-Agent)',
+                                  )}
                                   value={header.key}
                                   onChange={(e) =>
                                     handleUpdateHeader(
@@ -769,7 +784,10 @@ function MCPServerDialogComponent({
                               </div>
                               <div className="flex-1">
                                 <Input
-                                  placeholder="Value"
+                                  placeholder={t(
+                                    'mcpServer.dialog.headerValuePlaceholder',
+                                    'Value',
+                                  )}
                                   value={header.value}
                                   onChange={(e) =>
                                     handleUpdateHeader(
