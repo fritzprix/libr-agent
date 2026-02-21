@@ -19,6 +19,7 @@ import type { MCPTool } from '@/lib/mcp';
 import { useSettings } from '@/hooks/use-settings';
 import { AssistantService } from '@/lib/services/assistant-service';
 import { useBackendResource } from '@/context/GlobalEventContext';
+import { CORE_BUILTIN_SERVICE_ALIASES } from '@/lib/assistant/runtime-builtins';
 
 const logger = getLogger('AssistantContext');
 
@@ -128,6 +129,7 @@ export function getNewAssistantTemplate(): Assistant {
     systemPrompt:
       'You are a helpful AI assistant with access to various tools. Use the available tools to help users accomplish their tasks.',
     mcpServerIds: [], // No servers by default - user selects from Settings
+    allowedBuiltInServiceAliases: [...CORE_BUILTIN_SERVICE_ALIASES],
     createdAt: new Date(),
     updatedAt: new Date(),
     deletionProtected: false,

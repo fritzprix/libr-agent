@@ -50,10 +50,12 @@ impl PlanningServer {
     }
 }
 
+pub const NAME: &str = "planning";
+
 #[async_trait]
 impl BuiltinMCPServer for PlanningServer {
     fn name(&self) -> &str {
-        "planning"
+        NAME
     }
 
     fn description(&self) -> &str {

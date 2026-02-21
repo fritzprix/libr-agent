@@ -100,14 +100,33 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   }, [hasError, hasResource, isLast, isSimpleMode]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
-  // Show only tool name + status icon. No colour change, no expand.
+  // Shows tool name + status + brief param summary. No expand, no execution
+  // time. UI Resources (e.g. circuit break) are always rendered inline so
+  // they are never hidden from the user.
   if (isSimpleMode) {
     return (
       <div className="rounded px-3 py-2 text-sm bg-background">
         <div className="flex items-center gap-2">
           <ToolStatusIcon hasResult={!!toolResult} hasError={hasError} />
-          <span className="font-medium">{toolName}</span>
+          <span className="font-medium flex-shrink-0">{toolName}</span>
+          {paramSummary && (
+            <span className="flex-1 text-xs text-muted-foreground truncate font-mono opacity-70 min-w-0">
+              {paramSummary}
+            </span>
+          )}
         </div>
+        {/* Always show UI Resources inline (e.g. circuit break prompt) */}
+        {hasResource && toolResult && (
+          <div className="mt-2 pt-2 border-t border-muted/50">
+            <AgentToolCallDetails
+              toolCall={toolCall}
+              toolResult={toolResult}
+              hasError={hasError}
+              isLoading={false}
+              showDetails={true}
+            />
+          </div>
+        )}
       </div>
     );
   }

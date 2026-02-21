@@ -69,6 +69,9 @@ jobs:
       - name: 🦀 Check Rust
         run: cd src-tauri && cargo check
 
+      - name: 🧪 Run Rust integration tests
+        run: cd src-tauri && cargo test --tests -- --test-threads=1
+
       # Code Quality Checks (PR only)
       - name: 🦀 Install Clippy
         run: rustup component add clippy

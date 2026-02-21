@@ -8,6 +8,10 @@ import {
   listAvailableBuiltinServerDefinitions,
   BuiltinServerInfo,
 } from '@/features/mcp/api/mcp-server-registry';
+import {
+  CORE_BUILTIN_SERVICE_ALIASES,
+  OPTIONAL_BUILTIN_SERVICE_ALIASES,
+} from '@/lib/assistant/runtime-builtins';
 
 const logger = getLogger('BuiltIn');
 
@@ -50,6 +54,21 @@ export default function BuiltInToolsEditor() {
     [services],
   );
 
+  const optionalServices = useMemo(
+    () =>
+      services.filter((service) =>
+        OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
+          service.name as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
+        ),
+      ),
+    [services],
+  );
+
+  const optionalServiceAliases = useMemo(
+    () => optionalServices.map((service) => service.name),
+    [optionalServices],
+  );
+
   const sortAliases = useCallback(
     (aliases: string[]): string[] => {
       const orderMap = new Map(
@@ -69,36 +88,36 @@ export default function BuiltInToolsEditor() {
   const handleToggle = useCallback(
     (alias: string, enabled: boolean) => {
       update((draft) => {
-        const current = draft.allowedBuiltInServiceAliases;
+        const currentAliases = draft.allowedBuiltInServiceAliases;
+        const effectiveCurrentAliases = currentAliases ?? allServiceAliases;
 
-        if (!enabled) {
-          const next = current
-            ? current.filter((a) => a !== alias)
-            : allServiceAliases.filter((a) => a !== alias);
-          draft.allowedBuiltInServiceAliases = sortAliases(next);
-          return;
-        }
+        const currentlyEnabledOptional = optionalServiceAliases.filter((a) =>
+          effectiveCurrentAliases.includes(a),
+        );
+        const preservedNonConfigurable = effectiveCurrentAliases.filter(
+          (a) =>
+            !OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
+              a as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
+            ) &&
+            !CORE_BUILTIN_SERVICE_ALIASES.includes(
+              a as (typeof CORE_BUILTIN_SERVICE_ALIASES)[number],
+            ),
+        );
 
-        if (current === undefined) {
-          // Already enabled when restrictions are undefined
-          return;
-        }
+        const nextOptional = enabled
+          ? Array.from(new Set([...currentlyEnabledOptional, alias]))
+          : currentlyEnabledOptional.filter((a) => a !== alias);
 
-        if (current.includes(alias)) {
-          return;
-        }
+        const nextAliases = sortAliases([
+          ...CORE_BUILTIN_SERVICE_ALIASES,
+          ...preservedNonConfigurable,
+          ...nextOptional,
+        ]);
 
-        const next = sortAliases([...current, alias]);
-
-        if (next.length === allServiceAliases.length) {
-          draft.allowedBuiltInServiceAliases = undefined; // All enabled
-          return;
-        }
-
-        draft.allowedBuiltInServiceAliases = next;
+        draft.allowedBuiltInServiceAliases = nextAliases;
       });
     },
-    [allServiceAliases, sortAliases, update],
+    [allServiceAliases, optionalServiceAliases, sortAliases, update],
   );
 
   if (isLoading) {
@@ -121,19 +140,29 @@ export default function BuiltInToolsEditor() {
     );
   }
 
+  if (optionalServices.length === 0) {
+    return (
+      <div className="space-y-4">
+        <Label className="text-base font-semibold">Tool Access</Label>
+        <div className="text-sm text-muted-foreground">
+          Core built-in tools are managed automatically. There are no optional
+          built-in tools available in this environment.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <Label className="text-base font-semibold">Built-in Tools</Label>
+      <Label className="text-base font-semibold">Tool Access</Label>
 
       <div className="text-sm text-muted-foreground">
-        Assistants can use all built-in tools by default. Disable any services
-        you want to restrict for this assistant.
+        Core built-in tools are always enabled automatically. Only optional
+        tools are shown below.
       </div>
 
       <div className="space-y-3 border rounded-lg p-4">
-        {services.map((service) => {
-          // Empty array = all enabled, otherwise check if in list
-          // "name" from backend corresponds to "alias" in helper logic
+        {optionalServices.map((service) => {
           const isEnabled =
             allowedAliases === undefined ||
             allowedAliases.includes(service.name);

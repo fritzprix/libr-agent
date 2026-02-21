@@ -2,19 +2,149 @@ use crate::agent::state::AgentSession;
 use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
+// ─── Single source of truth ──────────────────────────────────────────────────────────────────────────────
+// To add, rename, or change a service: edit ONE row here.
+// All other constants and functions below are derived automatically.
+
+pub struct BuiltinServiceEntry {
+    pub canonical: &'static str,
+    /// Falls back to enabled when agent has no explicit alias list
+    pub optional: bool,
+}
+
+pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
+    BuiltinServiceEntry {
+        canonical: "planning",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "workspace",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "knowledge",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "assistant",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "skills",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "playbook",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "content_store",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "swarm",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "ui",
+        optional: false,
+    },
+    BuiltinServiceEntry {
+        canonical: "browser",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        canonical: "bootstrap",
+        optional: true,
+    },
+    BuiltinServiceEntry {
+        canonical: "mcp_manager",
+        optional: false,
+    },
+];
+
+// ─── Derived helpers ────────────────────────────────────────────────────────────────────
+
+pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 9] = [
+    "planning",
+    "workspace",
+    "knowledge",
+    "assistant",
+    "skills",
+    "playbook",
+    "content_store",
+    "swarm",
+    "ui",
+];
+
+pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
+    let normalized = alias.trim().to_lowercase();
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .find(|entry| entry.canonical == normalized.as_str())
+        .map(|entry| entry.canonical)
+}
+
+pub fn runtime_allowed_builtin_service_aliases(
+    agent_config: &crate::agent::AgentConfig,
+) -> Vec<String> {
+    let mut allowed: HashSet<String> = CORE_BUILTIN_SERVICE_ALIASES
+        .iter()
+        .map(|alias| alias.to_string())
+        .collect();
+
+    if let Some(configured_aliases) = &agent_config.allowed_built_in_service_aliases {
+        for alias in configured_aliases {
+            match canonicalize_builtin_service_alias(alias) {
+                Some(canonical) => {
+                    allowed.insert(canonical.to_string());
+                }
+                None => {
+                    log::warn!("Unknown builtin service alias: {}", alias);
+                }
+            }
+        }
+    } else {
+        // No explicit list → all optional services are implicitly enabled
+        for entry in BUILTIN_SERVICE_REGISTRY.iter().filter(|e| e.optional) {
+            allowed.insert(entry.canonical.to_string());
+        }
+    }
+
+    // Preserve canonical ordering from the registry
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .filter(|entry| allowed.contains(entry.canonical))
+        .map(|entry| entry.canonical.to_string())
+        .collect()
+}
+
+pub fn is_builtin_service_alias_enabled(
+    agent_config: &crate::agent::AgentConfig,
+    alias: &str,
+) -> bool {
+    let Some(target_alias) = canonicalize_builtin_service_alias(alias) else {
+        return false;
+    };
+
+    runtime_allowed_builtin_service_aliases(agent_config)
+        .iter()
+        .any(|current| current == target_alias)
+}
+
 #[derive(Debug, PartialEq, Eq)]
-enum ToolResultAcceptance {
+pub enum ToolResultAcceptance {
     Accept,
     Stale,
     Duplicate,
 }
 
-fn classify_tool_result(
+pub fn classify_tool_result(
     pending: &crate::agent::state::PendingToolExecution,
     tool_call_id: &str,
 ) -> ToolResultAcceptance {
@@ -112,49 +242,7 @@ pub async fn collect_available_tools(
 
 /// Extract builtin tool IDs from agent configuration
 pub fn extract_builtin_tool_ids(agent_config: &crate::agent::AgentConfig) -> Vec<String> {
-    let mut tool_ids = Vec::new();
-
-    if let Some(allowed_aliases) = &agent_config.allowed_built_in_service_aliases {
-        if allowed_aliases.is_empty() {
-            return tool_ids;
-        }
-
-        for alias in allowed_aliases {
-            match alias.as_str() {
-                "bootstrap" => tool_ids.push("bootstrap".to_string()),
-                "knowledge" => tool_ids.push("knowledge".to_string()),
-                "planning" => tool_ids.push("planning".to_string()),
-                "playbook" => tool_ids.push("playbook".to_string()),
-                "assistant" => tool_ids.push("assistant".to_string()),
-                "workspace" => tool_ids.push("workspace".to_string()),
-                "content_store" | "contentstore" => tool_ids.push("content_store".to_string()),
-                "ui" => tool_ids.push("ui".to_string()),
-                "browser" => tool_ids.push("browser".to_string()),
-                "mcp_manager" => tool_ids.push("mcp_manager".to_string()),
-                "session_api" | "swarm" => tool_ids.push("swarm".to_string()),
-                "skills" => tool_ids.push("skills".to_string()),
-                _ => {
-                    log::warn!("Unknown builtin service alias: {}", alias);
-                }
-            }
-        }
-    } else {
-        // None = all builtin services allowed
-        tool_ids.push("bootstrap".to_string());
-        tool_ids.push("knowledge".to_string());
-        tool_ids.push("planning".to_string());
-        tool_ids.push("playbook".to_string());
-        tool_ids.push("assistant".to_string());
-        tool_ids.push("workspace".to_string());
-        tool_ids.push("content_store".to_string());
-        tool_ids.push("ui".to_string());
-        tool_ids.push("browser".to_string());
-        tool_ids.push("mcp_manager".to_string());
-        tool_ids.push("swarm".to_string());
-        tool_ids.push("skills".to_string());
-    }
-
-    tool_ids
+    runtime_allowed_builtin_service_aliases(agent_config)
 }
 
 /// Create a tool result message from successful tool execution
@@ -393,149 +481,4 @@ pub async fn handle_tool_result(
 
     // If we're here, it means we haven't finished collecting all results yet
     Ok(None)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    fn mock_pending_execution(
-        expected: &[&str],
-        completed: &[&str],
-    ) -> crate::agent::state::PendingToolExecution {
-        crate::agent::state::PendingToolExecution {
-            message_id: "msg-1".to_string(),
-            total_expected: expected.len(),
-            results: Vec::new(),
-            tool_names: HashMap::new(),
-            expected_tool_call_ids: expected.iter().map(|id| (*id).to_string()).collect(),
-            completed_tool_call_ids: completed.iter().map(|id| (*id).to_string()).collect(),
-        }
-    }
-
-    #[test]
-    fn test_classify_tool_result_accepts_expected_unseen_id() {
-        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
-        let result = classify_tool_result(&pending, "call-2");
-        assert_eq!(result, ToolResultAcceptance::Accept);
-    }
-
-    #[test]
-    fn test_classify_tool_result_rejects_stale_id() {
-        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
-        let result = classify_tool_result(&pending, "call-999");
-        assert_eq!(result, ToolResultAcceptance::Stale);
-    }
-
-    #[test]
-    fn test_classify_tool_result_rejects_duplicate_id() {
-        let pending = mock_pending_execution(&["call-1", "call-2"], &["call-1"]);
-        let result = classify_tool_result(&pending, "call-1");
-        assert_eq!(result, ToolResultAcceptance::Duplicate);
-    }
-
-    #[test]
-    fn test_tool_result_with_structured_content() {
-        let session_id = "test-session";
-        let tool_call_id = "call-123";
-        let content = vec![MCPContent::Text {
-            text: "Test result".to_string(),
-            is_error: None,
-        }];
-
-        let message =
-            create_tool_result_message_with_content(session_id, tool_call_id, content.clone());
-
-        // Assert: No double wrapping
-        assert_eq!(message.content.len(), 1);
-        assert_eq!(message.role, "tool");
-        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
-
-        match &message.content[0] {
-            MCPContent::Text { text, .. } => {
-                assert_eq!(text, "Test result");
-                // Should NOT contain JSON string with "content" field
-                assert!(!text.contains("\"content\""));
-                assert!(!text.starts_with("{"));
-            }
-            _ => panic!("Expected text content"),
-        }
-    }
-
-    #[test]
-    fn test_tool_result_fallback_to_string() {
-        let session_id = "test-session";
-        let tool_call_id = "call-123";
-        let content_str = "Plain text result";
-
-        let message = create_tool_result_message(session_id, tool_call_id, content_str.to_string());
-
-        // Assert: Single text wrapper
-        assert_eq!(message.content.len(), 1);
-        assert_eq!(message.role, "tool");
-        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
-
-        match &message.content[0] {
-            MCPContent::Text { text, .. } => {
-                assert_eq!(text, content_str);
-            }
-            _ => panic!("Expected text content"),
-        }
-    }
-
-    #[test]
-    fn test_error_tool_result() {
-        let session_id = "test-session";
-        let tool_call_id = "call-123";
-        let error_msg = "Tool execution failed";
-
-        let message = create_error_tool_result(session_id, tool_call_id, error_msg);
-
-        assert_eq!(message.role, "tool");
-        assert_eq!(message.tool_call_id, Some(tool_call_id.to_string()));
-        assert_eq!(message.content.len(), 1);
-
-        match &message.content[0] {
-            MCPContent::Text { text, .. } => {
-                assert!(text.contains(error_msg));
-            }
-            _ => panic!("Expected text content"),
-        }
-    }
-
-    #[test]
-    fn test_multiple_content_items() {
-        let session_id = "test-session";
-        let tool_call_id = "call-123";
-        let content = vec![
-            MCPContent::Text {
-                text: "First item".to_string(),
-                is_error: None,
-            },
-            MCPContent::Text {
-                text: "Second item".to_string(),
-                is_error: None,
-            },
-        ];
-
-        let message =
-            create_tool_result_message_with_content(session_id, tool_call_id, content.clone());
-
-        assert_eq!(message.content.len(), 2);
-
-        match &message.content[0] {
-            MCPContent::Text { text, .. } => {
-                assert_eq!(text, "First item");
-            }
-            _ => panic!("Expected text content"),
-        }
-
-        match &message.content[1] {
-            MCPContent::Text { text, .. } => {
-                assert_eq!(text, "Second item");
-            }
-            _ => panic!("Expected text content"),
-        }
-    }
 }

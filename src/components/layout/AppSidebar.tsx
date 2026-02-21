@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react';
 import {
   Bot,
   BrainCircuit,
@@ -6,6 +7,7 @@ import {
   Users,
   BookOpen,
   Blocks,
+  Circle,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -21,15 +23,71 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '../ui/sidebar';
+import {
+  useAgentSessionListState,
+  useAgentSessionListActions,
+} from '@/context/AgentSessionListContext';
+
+/** Maps session status to a semantically meaningful dot */
+function StatusDot({ status }: { status: string }) {
+  if (status === 'busy') {
+    // Pulsing to signal active work
+    return (
+      <Circle
+        size={8}
+        className="fill-primary text-primary flex-shrink-0 animate-pulse"
+      />
+    );
+  }
+  if (status === 'error') {
+    return (
+      <Circle
+        size={8}
+        className="fill-destructive text-destructive flex-shrink-0"
+      />
+    );
+  }
+  // idle and paused: dimmed — just resting
+  return (
+    <Circle
+      size={8}
+      className="fill-muted-foreground text-muted-foreground flex-shrink-0 opacity-40"
+    />
+  );
+}
 
 export default function AppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
-  // modal state removed; settings is now a routed page
-
   const isCollapsed = state === 'collapsed';
 
-  // Keyboard shortcuts are handled by SidebarProvider's wrapper onKeyDown
+  const { sessions } = useAgentSessionListState();
+  const { loadSessions } = useAgentSessionListActions();
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  /** Show up to 5 sessions: busy first, then by most recent */
+  const recentSessions = useMemo(() => {
+    const statusPriority: Record<string, number> = {
+      busy: 1,
+      idle: 2,
+      paused: 3,
+      error: 4,
+    };
+    return [...sessions]
+      .sort((a, b) => {
+        const statusDiff =
+          (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9);
+        if (statusDiff !== 0) return statusDiff;
+        return (
+          (b.updatedAt ?? b.createdAt).getTime() -
+          (a.updatedAt ?? a.createdAt).getTime()
+        );
+      })
+      .slice(0, 5);
+  }, [sessions]);
 
   return (
     <Sidebar className="backdrop-blur-sm border-r shadow-xl" collapsible="icon">
@@ -48,7 +106,7 @@ export default function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className={`flex-1 overflow-y-auto  terminal-scrollbar`}>
+      <SidebarContent className={`flex-1 overflow-y-auto terminal-scrollbar`}>
         {/* Main Section */}
         <SidebarGroup>
           <SidebarGroupContent>
@@ -116,29 +174,71 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Activity Section */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Activity
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.pathname === '/history'}
-                  tooltip="History"
-                >
-                  <Link to="/history">
-                    <History size={16} />
-                    <span>History</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Recent Sessions – only visible when sidebar is expanded */}
+        {!isCollapsed && recentSessions.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
+              Recent Sessions
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {recentSessions.map((session) => (
+                  <SidebarMenuItem key={session.id}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === `/agent/${session.id}`}
+                      tooltip={session.name || session.id.slice(0, 8)}
+                    >
+                      <Link to={`/agent/${session.id}`} className="gap-2">
+                        <StatusDot status={session.status} />
+                        <span className="truncate text-xs">
+                          {session.name || `Session ${session.id.slice(0, 8)}`}
+                        </span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/history'}
+                    tooltip="All Sessions"
+                  >
+                    <Link
+                      to="/history"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <History size={14} />
+                      <span className="text-xs">See all sessions →</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {/* History icon visible when collapsed, so history is still reachable */}
+        {isCollapsed && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === '/history'}
+                    tooltip="History"
+                  >
+                    <Link to="/history">
+                      <History size={16} />
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
+
       <SidebarFooter className="border-t">
         <SidebarMenu>
           <SidebarMenuItem>

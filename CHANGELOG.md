@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.11] - 2026-02-22
+
+### 🚀 Features
+
+- **Playbook Server & Skills IPC**:
+  - Added integration tests for PlaybookServer UI rendering and interaction flows.
+  - Unified `SkillMetadata` type across frontend and backend for 1:1 parity with Rust.
+  - Optimized `download_global_skills` Tauri command to stream download to file instead of memory.
+  - Ported bundled skills from `dev/0.4.0` to `dev/0.5.x`.
+- **Localization & Accessibility**: Localized MCP Server Management features (Korean and English) and enhanced a11y.
+- **Performance**: Optimized `AgentToolCallGroup` rendering.
+- **Security & Validation**: Enforced file size limits in `DocumentParser` and added validation tests for oversized files.
+- **Test Coverage**: Expanded tests for date utils (locale-independent relative time) and retry utils.
+
+### 🐛 Fixes
+
+- **CSS Hierarchy**: Moved Pretendard `@import url()` before tailwindcss imports.
+- **Cleanup**: Removed `download_global_skills` leftovers and related dead code from botched merge resolutions.
+- **Test Mocks**: Made `toolResult` prop optional in `ToolCallCompactItem` test mock.
+
+### 🔧 Internal
+
+- **CI & Formatting**: Added Rust integration tests, improved CI workflow, and cleaned up code formatting in tools/tests for better readability.
+- **Docs & Project Maintenance**:
+  - Created `SECURITY.md`.
+  - Added newline for better readability in Hermes's Journal.
+  - Removed unused dependencies (`unit-prefix`) and bumped various versions (tempfile, indicatif, futures, uuid, tauri-plugin-http, regex, anyhow, docx-rs).
+
+## [0.5.10] - 2026-02-21
+
+### 🚀 Features
+
+- **Browser `fetch` Tool**: New headless content extraction tool that lets agents fetch URLs and download files without opening a visible browser session — giving agents a lightweight scraping path alongside the existing interactive automation flow.
+
+- **Declarative Builtin Service Registry**: `BUILTIN_SERVICE_REGISTRY` is now the single source of truth for all 12 builtin server names in both Rust (`agent/tools.rs`) and TypeScript (`runtime-builtins.ts`). Each server module declares `pub const NAME: &str` — the canonical name is defined exactly once and referenced everywhere, making name drift fail fast via regression tests rather than a silent routing failure.
+
+- **Configurable Tool Call Detail Level**: Agent chat UI now supports user-selectable view modes for tool call rendering — Compact (simplified) and Developer (full arguments/results). Controlled per-session via settings.
+
+- **Agent Start View Hub Layout**: Removed the inline session history panel from the start screen. Now a clean, centered assistant picker — history lives in the sidebar "Recent Sessions" and the dedicated History page where it belongs.
+
+- **Assistant Card Redesign**: `AssistantSelectionCard` gets rounded-2xl corners, a dedicated icon badge, and a subtle lift-on-hover effect. More visual breathing room, clearer hierarchy.
+
+- **Sidebar "See all sessions →"**: Recent Sessions section now has an explicit navigation item at the bottom of the list so users can reach the full History page without guessing.
+
+### 🐛 Fixes
+
+- **Circuit breaker consecutive-failure count was off-by-one**: The break trigger was firing one iteration late because the counter included the current (unsent) call in its total. `evaluate_circuit_breaker_count` now returns the historical failure count only; the break fires as soon as `consecutive >= 2`, matching original intent.
+
+- **`content_store` canonical name mismatch**: `ContentStoreServer::name()` was returning `"contentstore"` (no underscore), causing tool routing to silently fall back through the alias layer. Fixed to `"content_store"` — the alias system would have masked this forever without the new regression tests.
+
+### 🔧 Internal
+
+- **i18n Settings Coverage**: All `settings.*` and `common.*` keys used in the Settings page now have proper translations in both `en` and `ko` locales. Previously the entire Settings UI was falling back to hardcoded English strings regardless of language selection.
+
+- **Circuit breaker refactored** (`agent/llm/response.rs`): Extracted `evaluate_circuit_breaker_count` from the pre-processing loop. `count_consecutive_failed_calls` is now generic over a predicate closure, covering both same-tool-name and same-signature (tool + args) detection without duplication. `build_tool_call_indices` builds both `call_name_by_id` and `call_signature_by_id` maps in a single pass.
+
+- **Alias layer removed**: The entire builtin-service alias indirection has been eliminated. `canonicalize_builtin_service_alias` (Rust) and `canonicalizeAlias` (TypeScript) are now single-scan / O(1) Set lookups against the canonical name list. No more shadow name tables to keep in sync.
+
+- **4 registry regression tests** added to `tests/builtin_service_registry_tests.rs` — `each_builtin_server_name_is_in_registry`, `builtin_server_names_are_unique`, `registry_has_no_duplicate_canonicals`, `registry_and_server_list_are_in_sync` — protecting against future name drift across all 12 builtin servers. Tests run in CI via `cargo test --tests`.
+
+### 📚 Docs
+
+- Updated `create-builtin-tool` SKILL.md with the `pub const NAME` pattern, three-point registration checklist (`BUILTIN_SERVICE_REGISTRY` + regression test update + `mod.rs` wiring), and expanded Quality Gates.
+
 ## [0.5.9] - 2026-02-21
 
 ### 🚀 Features

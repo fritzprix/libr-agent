@@ -70,10 +70,12 @@ impl AssistantServer {
     }
 }
 
+pub const NAME: &str = "assistant";
+
 #[async_trait]
 impl BuiltinMCPServer for AssistantServer {
     fn name(&self) -> &str {
-        "assistant"
+        NAME
     }
 
     fn description(&self) -> &str {

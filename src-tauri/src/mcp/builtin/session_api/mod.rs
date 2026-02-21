@@ -36,10 +36,12 @@ impl SessionApiServer {
     }
 }
 
+pub const NAME: &str = "swarm";
+
 #[async_trait]
 impl BuiltinMCPServer for SessionApiServer {
     fn name(&self) -> &str {
-        "swarm"
+        NAME
     }
 
     fn description(&self) -> &str {

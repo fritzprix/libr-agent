@@ -34,7 +34,10 @@ pub async fn create_browser_session(
         return Err("The 'url' parameter is required".to_string());
     }
 
-    match server.create_browser_session(&url, title.as_deref()).await {
+    match server
+        .create_browser_session(&url, title.as_deref(), true)
+        .await
+    {
         Ok((session_id, message)) => {
             info!("Browser session created successfully: {session_id}");
             Ok(CreateSessionResponse {

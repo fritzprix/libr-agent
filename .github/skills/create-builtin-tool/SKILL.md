@@ -107,11 +107,18 @@ impl YourServer {
 
 ### Step 3: Implement BuiltinMCPServer Trait
 
+**Critical:** declare `pub const NAME` as the single source of truth for the server name.
+This constant is referenced by both `fn name()` and the regression tests in `agent/tools.rs`.
+A typo in a string literal would compile silently; a typo here breaks the build immediately.
+
 ```rust
+/// Canonical server name – must exactly match the entry in BUILTIN_SERVICE_REGISTRY.
+pub const NAME: &str = "your_server"; // lowercase_snake_case, no spaces
+
 #[async_trait]
 impl BuiltinMCPServer for YourServer {
     fn name(&self) -> &str {
-        "your_server"  // Lowercase, no spaces
+        NAME // ← reference the const, never a raw string literal
     }
 
     fn description(&self) -> &str {
@@ -521,43 +528,68 @@ fn generate_id() -> String {
 
 ### Step 6: Register Server in Global Registry
 
-**File:** `src-tauri/src/mcp/builtin/mod.rs`
+Registration requires **three** coordinated edits. Miss any one and the regression tests
+will fail immediately.
+
+#### 6a. Module declaration — `src-tauri/src/mcp/builtin/mod.rs`
 
 ```rust
-pub mod your_server;  // Add module declaration
+pub mod your_server; // Add this line
+```
 
-// In registry implementation:
-use your_server::YourServer;
+#### 6b. Service registry — `src-tauri/src/agent/tools.rs`
 
+This is the single source of truth for every service canonical name.
+
+```rust
+pub(crate) const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
+    // ... existing entries ...
+    BuiltinServiceEntry { canonical: "your_server", optional: false },
+    //                                ^^^^^^^^^^^^
+    //                                Must exactly match your_server::NAME
+];
+```
+
+Set `optional: true` if the service should only be enabled when the agent config
+explicitly lists it (e.g. `browser`, `bootstrap`). Core services use `false`.
+
+#### 6c. Regression test list — `src-tauri/src/agent/tools.rs` (tests module)
+
+```rust
+fn each_builtin_server_name_is_in_registry() {
+    use crate::mcp::builtin;
+    let all_names: &[&str] = &[
+        // ... existing entries ...
+        builtin::your_server::NAME, // ← add this
+    ];
+    // ...
+}
+// Also add to: builtin_server_names_are_unique, registry_and_server_list_are_in_sync
+```
+
+All four regression tests share the same `all_names` pattern. Update each one.
+
+#### 6d. Session instantiation — `src-tauri/src/mcp/builtin/mod.rs`
+
+```rust
 impl BuiltinServerRegistry {
     pub fn new_session_instance(
         &self,
         server_id: &str,
         session_id: String,
-        /* dependencies */
     ) -> Option<Arc<dyn BuiltinMCPServer>> {
         match server_id {
             // ... existing servers
-            "your_server" => Some(Arc::new(YourServer::new(
-                session_id,
-                // dependencies
-            ))),
+            "your_server" => Some(Arc::new(YourServer::new(session_id))),
             _ => None,
         }
     }
-
-    pub fn list_available_servers(&self) -> Vec<BuiltinServerDefinition> {
-        vec![
-            // ... existing servers
-            BuiltinServerDefinition {
-                name: "your_server".to_string(),
-                metadata: YourServer::metadata_static(),
-                tool_count: YourServer::tools_static().len(),
-            },
-        ]
-    }
 }
 ```
+
+> **Why three places?** `mod.rs` wires the module into the build; `BUILTIN_SERVICE_REGISTRY`
+> drives runtime routing and alias resolution; the regression test list enforces that every
+> registered canonical has a concrete server `NAME` backing it — and vice-versa.
 
 ### Step 7: Add Integration Tests
 
@@ -967,10 +999,15 @@ export async function listYourResources(
 
 **Quality Gates:**
 
+- [ ] `pub const NAME: &str = "your_name";` declared in server module (not an inline literal in `fn name()`)
+- [ ] `fn name(&self)` returns `NAME` (the const), not a raw string
+- [ ] `BuiltinServiceEntry { canonical: "your_name", optional: … }` added to `BUILTIN_SERVICE_REGISTRY` in `agent/tools.rs`
+- [ ] `builtin::your_server::NAME` added to `all_names` in **all three** regression test functions in `agent/tools.rs`
+- [ ] `cargo test registry` passes (4/4 registry regression tests green)
 - [ ] All tests pass (unit + integration)
 - [ ] Manifesto compliance checklist complete
 - [ ] Frontend TypeScript wrappers added
-- [ ] Server registered in builtin registry
+- [ ] Server registered in builtin registry (`mod.rs` module decl + session instantiation match arm)
 - [ ] Documentation includes workflow examples
 
 **When in doubt:** Look at existing implementations (workspace, planning, knowledge) and follow their patterns for session management, error handling, and response formatting.

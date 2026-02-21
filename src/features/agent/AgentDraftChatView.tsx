@@ -1,11 +1,18 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
-import { Button, Badge } from '@/components/ui';
+import {
+  Button,
+  Badge,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
 import { AgentModelPicker } from './components/AgentModelPicker';
 import {
@@ -23,6 +30,10 @@ import {
 import type { Assistant, Message } from '@/models/chat';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
+import {
+  enforceRuntimeBuiltinAliases,
+  OPTIONAL_BUILTIN_SERVICE_ALIASES,
+} from '@/lib/assistant/runtime-builtins';
 
 const logger = getLogger('AgentDraftChatView');
 
@@ -198,7 +209,9 @@ function DraftChatInner() {
           systemPrompt: baseSystemPrompt,
           mcpServerIds: assistant.mcpServerIds || [],
           localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: assistant.allowedBuiltInServiceAliases,
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            assistant.allowedBuiltInServiceAliases,
+          ),
           maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
           ...(settings?.advanced?.defaultSessionMaxDepth &&
           settings.advanced.defaultSessionMaxDepth > 0
@@ -262,6 +275,16 @@ function DraftChatInner() {
 
   if (!assistant) return null;
 
+  const effectiveBuiltinAliases = enforceRuntimeBuiltinAliases(
+    assistant.allowedBuiltInServiceAliases,
+  );
+
+  const enabledOptionalAliases = effectiveBuiltinAliases.filter((alias) =>
+    OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
+      alias as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
+    ),
+  );
+
   return (
     <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl flex-col">
       {/* Header */}
@@ -299,60 +322,92 @@ function DraftChatInner() {
         </div>
 
         {/* Capabilities Grid */}
-        <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
-          {/* Built-in Tools: If allowedBuiltInServiceAliases is undefined/null, it means ALL are allowed */}
-          {(
-            assistant.allowedBuiltInServiceAliases ||
-            builtinServices.map((s) => s.name)
-          )?.map((alias) => {
-            const info = builtinServices.find((s) => s.name === alias);
-            const label = info?.metadata.displayName || alias;
-            const Icon = getIconForService(info?.metadata.icon);
+        <TooltipProvider>
+          <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
+            {/* Built-in Tools */}
+            <Tooltip delayDuration={300}>
+              <TooltipTrigger asChild>
+                <div className="cursor-help">
+                  <Badge
+                    variant="secondary"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+                  >
+                    <Square size={12} className="opacity-70" />
+                    Basic Tools
+                  </Badge>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
+                <p>
+                  Includes core capabilities like reading files, managing tasks,
+                  and executing code. Always available to help you!
+                </p>
+              </TooltipContent>
+            </Tooltip>
 
-            return (
-              <Badge
-                key={alias}
-                variant="secondary"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
-                title={info?.metadata.description} // Tooltip showing description
-              >
-                <Icon size={12} className="opacity-70" />
-                {label}
-              </Badge>
-            );
-          })}
+            {enabledOptionalAliases.map((alias) => {
+              const info = builtinServices.find((s) => s.name === alias);
+              const label = info?.metadata.displayName || alias;
+              const Icon = getIconForService(info?.metadata.icon);
 
-          {/* External MCP Servers */}
-          {assistant.mcpServerIds?.map((serverId) => {
-            // Resolve display name from fetched MCP servers
-            const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
-            const label = serverConfig?.name || serverId;
+              return (
+                <Tooltip key={alias} delayDuration={300}>
+                  <TooltipTrigger asChild>
+                    <div className="cursor-help">
+                      <Badge
+                        variant="secondary"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+                      >
+                        <Icon size={12} className="opacity-70" />
+                        {label}
+                      </Badge>
+                    </div>
+                  </TooltipTrigger>
+                  {info?.metadata.description && (
+                    <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
+                      <p>{info.metadata.description}</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              );
+            })}
 
-            return (
-              <Badge
-                key={serverId}
-                variant="outline"
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
-              >
-                <Puzzle size={12} className="opacity-70" />
-                {label}
-              </Badge>
-            );
-          })}
+            {/* External MCP Servers */}
+            {assistant.mcpServerIds?.map((serverId) => {
+              // Resolve display name from fetched MCP servers
+              const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
+              const label = serverConfig?.name || serverId;
 
-          {/* Fallback if list is EXPLICITLY empty (not undefined, which means all) */}
-          {assistant.allowedBuiltInServiceAliases &&
-            assistant.allowedBuiltInServiceAliases.length === 0 &&
-            (!assistant.mcpServerIds ||
-              assistant.mcpServerIds.length === 0) && (
-              <Badge
-                variant="outline"
-                className="text-xs text-muted-foreground opacity-50"
-              >
-                No specific tools enabled
-              </Badge>
-            )}
-        </div>
+              return (
+                <Badge
+                  key={serverId}
+                  variant="outline"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
+                >
+                  <Puzzle size={12} className="opacity-70" />
+                  {label}
+                </Badge>
+              );
+            })}
+
+            {/* Add Tools Button - Always visible to encourage exploration */}
+            <Link to="/assistants">
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="outline"
+                    className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
+                  >
+                    + Add tools
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
+                  <p>Add more capabilities in the settings</p>
+                </TooltipContent>
+              </Tooltip>
+            </Link>
+          </div>
+        </TooltipProvider>
 
         {/* Configuration Footer */}
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">

@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { Bot } from 'lucide-react';
 import type { Assistant } from '@/models/chat';
 
 interface AssistantSelectionCardProps {
@@ -22,30 +23,45 @@ export function AssistantSelectionCard({
       aria-busy={isStarting}
       aria-disabled={disabled}
       className={cn(
-        'w-full p-4 text-left border rounded-xl transition-all',
-        'hover:shadow-md hover:bg-accent/50 focus:outline-none focus:ring-2 focus:ring-primary',
+        'group w-full p-5 text-left border rounded-2xl transition-all duration-200',
+        'flex flex-col gap-3',
+        'hover:shadow-lg hover:bg-accent/40 hover:-translate-y-0.5',
+        'focus:outline-none focus:ring-2 focus:ring-primary/50',
         disabled && !isStarting && 'opacity-50 cursor-not-allowed',
         isStarting && 'border-primary bg-primary/10 animate-pulse',
-        !disabled && !isStarting && 'hover:border-primary/50',
+        !disabled && !isStarting && 'hover:border-primary/40',
       )}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="font-semibold text-lg flex items-center gap-2">
+      {/* Icon + Name Row */}
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors',
+            isStarting
+              ? 'bg-primary/20 text-primary'
+              : 'bg-muted group-hover:bg-primary/10 group-hover:text-primary',
+          )}
+        >
+          <Bot size={20} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-base leading-tight truncate flex items-center gap-2">
             {assistant.name}
             {isStarting && (
-              <span className="text-sm text-primary font-normal">
+              <span className="text-xs text-primary font-normal animate-pulse">
                 Starting...
               </span>
             )}
           </div>
-          {assistant.systemPrompt && (
-            <p className="text-sm text-muted-foreground mt-2 line-clamp-3">
-              {assistant.systemPrompt}
-            </p>
-          )}
         </div>
       </div>
+
+      {/* Description */}
+      {assistant.description && (
+        <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2">
+          {assistant.description}
+        </p>
+      )}
     </button>
   );
 }

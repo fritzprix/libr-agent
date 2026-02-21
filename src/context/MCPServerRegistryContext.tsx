@@ -37,7 +37,7 @@ export interface MCPServerRegistryContextType {
   refreshAll: () => Promise<void>;
 }
 
-const MCPServerRegistryContext = createContext<
+export const MCPServerRegistryContext = createContext<
   MCPServerRegistryContextType | undefined
 >(undefined);
 

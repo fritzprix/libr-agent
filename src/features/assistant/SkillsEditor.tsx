@@ -25,13 +25,7 @@ import { RefreshCw, Copy, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
-
-interface SkillMetadata {
-  name: string;
-  description: string;
-  path: string;
-  source?: 'global' | 'assistant';
-}
+import { SkillMetadata } from '@/types/skills';
 
 export default function SkillsEditor() {
   const { t } = useTranslation('common');

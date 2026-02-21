@@ -62,6 +62,45 @@ Before declaring done:
 - Timeout defaults must match real-world execution times.
 - Prompt strategy should prefer capability-based guidance over brittle hardcoded tool naming.
 
+## Default Tool Baseline (Soul Core v1)
+
+To preserve autonomy while preventing tool thrash, new assistants should start with a focused builtin set instead of unconstrained-all.
+
+### Enabled by default
+
+- `planning` — mission structuring, progress tracking, and controlled recovery loops.
+- `workspace` — concrete file/workspace action and verification artifacts.
+- `knowledge` — persistent memory so failures become reusable learning.
+- `assistant` — assistant/session config introspection and controlled self-adjustment.
+- `skills` — capability routing without brittle prompt hardcoding.
+- `playbook` — repeatable winning patterns and team execution hygiene.
+- `content_store` — durable content evidence capture.
+- `swarm` — parent-child orchestration and session lineage continuity.
+- `ui` — circuit-break and interactive recovery UX.
+
+### Disabled by default (enable per mission)
+
+- `browser` — high-variance external I/O; enable only when web interaction is required.
+- `bootstrap` — environment setup utility; enable for installation/setup missions.
+
+### Reference config
+
+```json
+{
+  "allowedBuiltInServiceAliases": [
+    "planning",
+    "workspace",
+    "knowledge",
+    "assistant",
+    "skills",
+    "playbook",
+    "content_store",
+    "swarm",
+    "ui"
+  ]
+}
+```
+
 ## Product Promise
 
 LibrAgent does not worship control. It builds disciplined autonomy.

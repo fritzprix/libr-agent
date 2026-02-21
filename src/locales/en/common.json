@@ -31,6 +31,7 @@
       "builtinCount": "Built-in: {{count}}",
       "builtinCountAll": "Built-in: All",
       "allBuiltin": "All Built-in Tools",
+      "coreBuiltin": "Built-in Automation",
       "edit": "Edit",
       "checkStatus": "Check Status",
       "checking": "Checking...",
@@ -50,11 +51,166 @@
     "disconnected": "disconnected",
     "unknown": "unknown"
   },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "delete": "Delete",
+    "restartNow": "Restart now"
+  },
   "settings": {
+    "title": "Settings",
+    "unsaved": "Unsaved",
+    "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
       "english": "English",
       "korean": "Korean"
+    },
+    "tabs": {
+      "general": "General",
+      "aiModels": "AI & Models",
+      "chatInterface": "Chat Interface",
+      "mcpServers": "MCP Servers",
+      "advanced": "Advanced"
+    },
+    "llmPreference": "Default LLM",
+    "messageWindowSize": "Message Window Size",
+    "general": {
+      "skillsDirectory": "Skills Directory"
+    },
+    "aiModels": {
+      "apiKeys": "Provider API Keys",
+      "preferences": "Model Preferences",
+      "agentHub": "Agent Hub"
+    },
+    "display": {
+      "metricsTitle": "Performance Metrics",
+      "metricDisplayMode": "Metric Display Mode",
+      "inline": "Inline (show in message)",
+      "tooltip": "Tooltip (hover to see)",
+      "showTokenSpeed": "Show Token Speed",
+      "compactMetrics": "Compact Metrics",
+      "toolCallsTitle": "Tool Calls",
+      "toolDetailLevel": "Tool Detail Level"
+    },
+    "advanced": {
+      "maxRetries": "Max Retry Attempts",
+      "retryDelay": "Retry Delay (ms)",
+      "circuitBreaker": "Tool Loop Threshold",
+      "shellIsolation": "Shell Isolation Level"
+    },
+    "system": {
+      "title": "System & Performance",
+      "network": "Network",
+      "httpServerPort": "HTTP Server Port",
+      "httpServerExpose": "Expose HTTP Server",
+      "fileWorkspace": "File & Workspace",
+      "backgroundTasks": "Background Tasks",
+      "mcpToolTimeoutDisabled": "Disabled",
+      "networkRestartFailed": "Failed to restart the app. Please restart manually.",
+      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
+    },
+    "factoryReset": {
+      "title": "Factory Reset",
+      "resetting": "Resetting...",
+      "success": "Factory reset complete. Restart required to fully apply changes.",
+      "error": "Failed to perform factory reset. See logs for details."
+    },
+    "dataReset": {
+      "title": "Data & Reset",
+      "deleting": "Deleting...",
+      "success": "All sessions have been deleted. Restart recommended.",
+      "error": "Failed to clear sessions."
+    },
+    "skills": {
+      "modalTitle": "Available Skills",
+      "noSkills": "No skills found."
+    }
+  },
+  "mcpServer": {
+    "title": "Extensions",
+    "addServer": "Add Extension",
+    "recommended": "Recommended Extensions",
+    "installed": "Installed",
+    "installExtension": "Install {{name}} extension",
+    "loading": "Loading extensions...",
+    "noServers": "No extensions installed. Add one or choose a recommended extension above.",
+    "updating": "Updating...",
+    "unnamed": "Unnamed Server",
+    "noDescription": "No description",
+    "transport": "Transport",
+    "toolsAvailable_one": "{{count}} tool available",
+    "toolsAvailable_other": "{{count}} tools available",
+    "toolCountUnknown": "Tool count unknown (not yet verified)",
+    "active": "Active",
+    "edit": "Edit",
+    "delete": "Delete",
+    "loadMore": "Load more",
+    "loadingMore": "Loading...",
+    "deleteDialog": {
+      "title": "Delete Extension",
+      "description": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "dialog": {
+      "titleNew": "Add Extension",
+      "titleEdit": "Edit Extension: {{name}}",
+      "validationError": "Please fill in all required fields",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g., filesystem, github, sequential-thinking",
+      "nameDesc": "Unique identifier for this extension",
+      "descLabel": "Description",
+      "descPlaceholder": "Optional description for this extension",
+      "transportLabel": "Transport Type",
+      "transportStdio": "stdio (Local Process)",
+      "transportHttp": "HTTP (Remote Server)",
+      "commandLabel": "Command",
+      "commandPlaceholder": "e.g., npx, node, python",
+      "commandDesc": "Executable command to start the extension",
+      "argsLabel": "Arguments",
+      "argsPlaceholder": "e.g., -y @modelcontextprotocol/server-filesystem /tmp",
+      "argsDesc": "Space-separated command arguments. Multiple spaces will be normalized when saving.",
+      "envVarsLabel": "Environment Variables",
+      "addEnvVar": "Add Variable",
+      "requiredConfig": "Required Configuration",
+      "noCustomEnv": "No custom environment variables configured.",
+      "customVarsLabel": "Custom Variables",
+      "envVarKeyPlaceholder": "Key (e.g. API_KEY)",
+      "envVarValuePlaceholder": "Value",
+      "envVarDesc": "Environment variables passed to the process (e.g. API Keys).",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://api.example.com/mcp",
+      "urlDesc": "Full URL to the remote extension endpoint",
+      "apiKeyLabel": "API Key / Token",
+      "apiKeyOptional": "(Optional)",
+      "apiKeyPlaceholder": "Secret Token",
+      "apiKeyDesc": "Automatically adds 'Authorization: Bearer <token>' header.",
+      "advancedSettings": "Advanced Settings",
+      "customHeadersLabel": "Custom Headers",
+      "addHeader": "Add Header",
+      "noCustomHeaders": "No custom headers configured.",
+      "headerKeyPlaceholder": "Key (e.g. User-Agent)",
+      "headerValuePlaceholder": "Value",
+      "removeHeader": "Remove header {{key}}",
+      "removeUnnamedHeader": "Remove unnamed header",
+      "removeEnvVar": "Remove environment variable {{key}}",
+      "removeUnnamedEnvVar": "Remove unnamed environment variable",
+      "sseLabel": "Enable Server-Sent Events (SSE)",
+      "sseDesc": "Keep enabled for streaming responses. Disable for stateless HTTP.",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving..."
+    },
+    "toasts": {
+      "saved": "Extension saved successfully",
+      "saveFailed": "Failed to save extension: {{error}}",
+      "deleted": "Extension deleted successfully",
+      "deleteFailed": "Failed to delete extension: {{error}}",
+      "toggled": "Extension {{status}}",
+      "toggleFailed": "Failed to toggle extension: {{error}}",
+      "activated": "activated",
+      "deactivated": "deactivated"
     }
   }
 }

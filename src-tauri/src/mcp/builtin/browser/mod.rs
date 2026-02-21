@@ -121,10 +121,12 @@ impl BrowserServer {
     }
 }
 
+pub const NAME: &str = "browser";
+
 #[async_trait]
 impl BuiltinMCPServer for BrowserServer {
     fn name(&self) -> &str {
-        "browser"
+        NAME
     }
 
     fn description(&self) -> &str {
@@ -236,7 +238,7 @@ impl BuiltinMCPServer for BrowserServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
             "createSession" => session::create_session(self, args).await,
@@ -259,6 +261,7 @@ impl BuiltinMCPServer for BrowserServer {
             "type" => interaction::input_text(self, args).await,
             "content" => content::smart_content(self, args).await,
             "readPage" => content::read_web_content(self, args).await,
+            "fetch" => content::fetch_url(self, args, session_id).await,
             "back" => navigation::navigate_back(self, args).await,
             "forward" => navigation::navigate_forward(self, args).await,
             "scroll" => interaction::scroll_page(self, args).await,

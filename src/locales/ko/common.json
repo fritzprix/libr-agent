@@ -31,6 +31,7 @@
       "builtinCount": "내장 도구: {{count}}개",
       "builtinCountAll": "내장 도구: 전체",
       "allBuiltin": "모든 내장 도구",
+      "coreBuiltin": "기본 자동화",
       "edit": "편집",
       "checkStatus": "상태확인",
       "checking": "확인중...",
@@ -50,11 +51,166 @@
     "disconnected": "연결해제",
     "unknown": "알 수 없음"
   },
+  "common": {
+    "cancel": "취소",
+    "close": "닫기",
+    "delete": "삭제",
+    "restartNow": "지금 재시작"
+  },
   "settings": {
+    "title": "설정",
+    "unsaved": "미저장",
+    "applyChanges": "변경사항 적용",
     "language": {
       "label": "언어",
       "english": "영어",
       "korean": "한국어"
+    },
+    "tabs": {
+      "general": "일반",
+      "aiModels": "AI & 모델",
+      "chatInterface": "채팅 인터페이스",
+      "mcpServers": "MCP 서버",
+      "advanced": "고급"
+    },
+    "llmPreference": "기본 LLM",
+    "messageWindowSize": "메시지 윈도우 크기",
+    "general": {
+      "skillsDirectory": "스킬 디렉토리"
+    },
+    "aiModels": {
+      "apiKeys": "공급자 API 키",
+      "preferences": "모델 설정",
+      "agentHub": "에이전트 허브"
+    },
+    "display": {
+      "metricsTitle": "성능 지표",
+      "metricDisplayMode": "지표 표시 방식",
+      "inline": "인라인 (메시지에 표시)",
+      "tooltip": "툴팁 (호버 시 표시)",
+      "showTokenSpeed": "토큰 속도 표시",
+      "compactMetrics": "지표 간략 보기",
+      "toolCallsTitle": "도구 호출",
+      "toolDetailLevel": "도구 상세 수준"
+    },
+    "advanced": {
+      "maxRetries": "최대 재시도 횟수",
+      "retryDelay": "재시도 지연 (ms)",
+      "circuitBreaker": "도구 루프 임계값",
+      "shellIsolation": "셸 격리 수준"
+    },
+    "system": {
+      "title": "시스템 & 성능",
+      "network": "네트워크",
+      "httpServerPort": "HTTP 서버 포트",
+      "httpServerExpose": "HTTP 서버 외부 노출",
+      "fileWorkspace": "파일 & 워크스페이스",
+      "backgroundTasks": "백그라운드 작업",
+      "mcpToolTimeoutDisabled": "비활성화",
+      "networkRestartFailed": "앱 재시작에 실패했습니다. 수동으로 재시작해 주세요.",
+      "networkRestartNotice": "HTTP 서버 네트워크 설정 변경사항은 앱 재시작 후 적용됩니다."
+    },
+    "factoryReset": {
+      "title": "초기화",
+      "resetting": "초기화 중...",
+      "success": "초기화가 완료되었습니다. 변경사항을 완전히 적용하려면 재시작이 필요합니다.",
+      "error": "초기화에 실패했습니다. 로그를 확인해 주세요."
+    },
+    "dataReset": {
+      "title": "데이터 & 초기화",
+      "deleting": "삭제 중...",
+      "success": "모든 세션이 삭제되었습니다. 재시작을 권장합니다.",
+      "error": "세션 삭제에 실패했습니다."
+    },
+    "skills": {
+      "modalTitle": "사용 가능한 스킬",
+      "noSkills": "스킬을 찾을 수 없습니다."
+    }
+  },
+  "mcpServer": {
+    "title": "확장 기능",
+    "addServer": "확장 기능 추가",
+    "recommended": "추천 확장 기능",
+    "installed": "설치됨",
+    "installExtension": "{{name}} 확장 기능 설치",
+    "loading": "확장 기능 불러오는 중...",
+    "noServers": "설치된 확장 기능이 없습니다. 하나를 추가하거나 위의 추천 확장 기능을 선택하세요.",
+    "updating": "업데이트 중...",
+    "unnamed": "이름 없는 서버",
+    "noDescription": "설명 없음",
+    "transport": "전송 방식",
+    "toolsAvailable_one": "{{count}}개 도구 사용 가능",
+    "toolsAvailable_other": "{{count}}개 도구 사용 가능",
+    "toolCountUnknown": "도구 수를 확인할 수 없습니다(아직 검증되지 않음)",
+    "active": "활성",
+    "edit": "편집",
+    "delete": "삭제",
+    "loadMore": "더 보기",
+    "loadingMore": "로딩 중...",
+    "deleteDialog": {
+      "title": "확장 기능 삭제",
+      "description": "\"{{name}}\" 확장 기능을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+      "cancel": "취소",
+      "confirm": "삭제"
+    },
+    "dialog": {
+      "titleNew": "확장 기능 추가",
+      "titleEdit": "확장 기능 편집: {{name}}",
+      "validationError": "필수 항목을 모두 입력해 주세요",
+      "nameLabel": "이름",
+      "namePlaceholder": "예: filesystem, github, sequential-thinking",
+      "nameDesc": "이 확장 기능의 고유 식별자",
+      "descLabel": "설명",
+      "descPlaceholder": "이 확장 기능에 대한 선택적 설명",
+      "transportLabel": "전송 방식",
+      "transportStdio": "stdio (로컬 프로세스)",
+      "transportHttp": "HTTP (원격 서버)",
+      "commandLabel": "명령어",
+      "commandPlaceholder": "예: npx, node, python",
+      "commandDesc": "확장 기능을 시작할 실행 명령어",
+      "argsLabel": "인수",
+      "argsPlaceholder": "예: -y @modelcontextprotocol/server-filesystem /tmp",
+      "argsDesc": "공백으로 구분된 명령 인수입니다. 저장 시 연속 공백은 정규화됩니다.",
+      "envVarsLabel": "환경 변수",
+      "addEnvVar": "변수 추가",
+      "requiredConfig": "필수 설정",
+      "noCustomEnv": "사용자 지정 환경 변수가 없습니다.",
+      "customVarsLabel": "사용자 지정 변수",
+      "envVarKeyPlaceholder": "키 (예: API_KEY)",
+      "envVarValuePlaceholder": "값",
+      "envVarDesc": "프로세스에 전달할 환경 변수입니다(예: API 키).",
+      "urlLabel": "URL",
+      "urlPlaceholder": "https://api.example.com/mcp",
+      "urlDesc": "원격 확장 기능 엔드포인트의 전체 URL",
+      "apiKeyLabel": "API 키 / 토큰",
+      "apiKeyOptional": "(선택)",
+      "apiKeyPlaceholder": "비밀 토큰",
+      "apiKeyDesc": "자동으로 'Authorization: Bearer <token>' 헤더를 추가합니다.",
+      "advancedSettings": "고급 설정",
+      "customHeadersLabel": "사용자 지정 헤더",
+      "addHeader": "헤더 추가",
+      "noCustomHeaders": "사용자 지정 헤더가 없습니다.",
+      "headerKeyPlaceholder": "키 (예: User-Agent)",
+      "headerValuePlaceholder": "값",
+      "removeHeader": "헤더 {{key}} 제거",
+      "removeUnnamedHeader": "이름 없는 헤더 제거",
+      "removeEnvVar": "환경 변수 {{key}} 제거",
+      "removeUnnamedEnvVar": "이름 없는 환경 변수 제거",
+      "sseLabel": "서버 전송 이벤트(SSE) 활성화",
+      "sseDesc": "스트리밍 응답을 위해 활성화 상태를 유지하세요. 상태 비저장 HTTP에는 비활성화하세요.",
+      "cancel": "취소",
+      "save": "저장",
+      "saving": "저장 중..."
+    },
+    "toasts": {
+      "saved": "확장 기능이 저장되었습니다",
+      "saveFailed": "확장 기능 저장 실패: {{error}}",
+      "deleted": "확장 기능이 삭제되었습니다",
+      "deleteFailed": "확장 기능 삭제 실패: {{error}}",
+      "toggled": "확장 기능이 {{status}}되었습니다",
+      "toggleFailed": "확장 기능 상태 변경 실패: {{error}}",
+      "activated": "활성화",
+      "deactivated": "비활성화"
     }
   }
 }

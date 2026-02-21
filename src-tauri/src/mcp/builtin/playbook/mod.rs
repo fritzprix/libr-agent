@@ -61,10 +61,12 @@ impl PlaybookServer {
     }
 }
 
+pub const NAME: &str = "playbook";
+
 #[async_trait]
 impl BuiltinMCPServer for PlaybookServer {
     fn name(&self) -> &str {
-        "playbook"
+        NAME
     }
 
     fn description(&self) -> &str {
