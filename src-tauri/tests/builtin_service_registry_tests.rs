@@ -10,9 +10,8 @@ use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
 use tauri_mcp_agent_lib::agent::tools::{
     canonicalize_builtin_service_alias, classify_tool_result, create_error_tool_result,
-    create_tool_result_message, create_tool_result_message_with_content,
-    extract_builtin_tool_ids, ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY,
-    CORE_BUILTIN_SERVICE_ALIASES,
+    create_tool_result_message, create_tool_result_message_with_content, extract_builtin_tool_ids,
+    ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
@@ -39,10 +38,7 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
     }
 }
 
-fn mock_pending_execution(
-    expected: &[&str],
-    completed: &[&str],
-) -> PendingToolExecution {
+fn mock_pending_execution(expected: &[&str], completed: &[&str]) -> PendingToolExecution {
     PendingToolExecution {
         message_id: "msg-1".to_string(),
         total_expected: expected.len(),

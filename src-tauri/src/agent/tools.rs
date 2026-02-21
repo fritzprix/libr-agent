@@ -482,4 +482,3 @@ pub async fn handle_tool_result(
     // If we're here, it means we haven't finished collecting all results yet
     Ok(None)
 }
-
