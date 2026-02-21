@@ -82,13 +82,13 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(primary_tool.name, "runShell");
         #[cfg(windows)]
-        assert_eq!(primary_tool.name, "runPowerShell");
+        assert_eq!(primary_tool.name, "runShell");
 
         let persistent_tool = &tools[1];
         #[cfg(unix)]
         assert_eq!(persistent_tool.name, "runInPersistentShell");
         #[cfg(windows)]
-        assert_eq!(persistent_tool.name, "runInPersistentPowerShell");
+        assert_eq!(persistent_tool.name, "runInPersistentShell");
 
         // Verify async tool exists
         let async_tool = &tools[2];

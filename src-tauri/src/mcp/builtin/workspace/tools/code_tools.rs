@@ -221,7 +221,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "runPowerShell".to_string(),
+        name: "runShell".to_string(),
         title: Some("Run PowerShell Command (Isolated)".to_string()),
         description: "Execute a PowerShell command in an ISOLATED PowerShell session.\n\n\
                       ⚠️ PRIMARY TOOL: Use this for most PowerShell commands (90% of cases).\n\n\
@@ -243,7 +243,7 @@ pub fn create_run_powershell_tool() -> MCPTool {
                       - System info: Get-Location, whoami, Get-Process\n\
                       - Text processing: Select-String, ForEach-Object\n\n\
                       WHEN TO USE OTHER TOOLS:\n\
-                      - Need persistent state (Set-Location, $env:)? → Use runInPersistentPowerShell\n\
+                      - Need persistent state (Set-Location, $env:)? → Use runInPersistentShell\n\
                       - Long-running task (>30s)? → Use spawnProcess\n\n\
                       PLATFORM: Windows - uses PowerShell."
             .to_string(),
@@ -301,7 +301,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
     );
 
     MCPTool {
-        name: "runInPersistentPowerShell".to_string(),
+        name: "runInPersistentShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
         description: "Execute a PowerShell command in a PERSISTENT session.\n\
                       \n\
@@ -314,7 +314,7 @@ pub fn create_execute_shell_tool() -> MCPTool {
                       2. You need to set environment variables for subsequent commands.\n\
                       3. You need to run interactive commands.\n\
                       \n\
-                      For simple independent commands, use 'runPowerShell' instead."
+                      For simple independent commands, use 'runShell' instead."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -375,7 +375,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
                       - Any command expected to take >30 seconds\n\n\
                       ⚠️ NO INTERACTIVE INPUT:\n\
                       - Background processes cannot prompt for input\n\
-                      - For interactive commands, use runInPersistentPowerShell\n\n\
+                      - For interactive commands, use runInPersistentShell\n\n\
                       PLATFORM: Windows - uses PowerShell (powershell.exe)"
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
@@ -611,7 +611,7 @@ mod tests {
         assert_eq!(tool.name, "runInPersistentShell");
 
         #[cfg(windows)]
-        assert_eq!(tool.name, "runInPersistentPowerShell");
+        assert_eq!(tool.name, "runInPersistentShell");
     }
 
     #[test]

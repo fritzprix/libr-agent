@@ -38,10 +38,7 @@ impl ShellType {
 }
 
 // Platform-specific persistent shell tool name
-#[cfg(unix)]
 pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
-#[cfg(windows)]
-pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
 
 // Module imports
 pub mod code_execution;
@@ -618,17 +615,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             // agents from controlling isolation/permissions. Only shell
             // execution remains exposed below.
             // PRIMARY isolated shell execution tools (recommended)
-            #[cfg(unix)]
             "runShell" => self.handle_run_shell(args, &target_session_id).await,
-            #[cfg(windows)]
-            "runPowerShell" => self.handle_run_shell(args, &target_session_id).await,
             // ADVANCED persistent shell execution tools (for state preservation)
-            #[cfg(unix)]
             "runInPersistentShell" => self.handle_execute_shell(args, &target_session_id).await,
-            #[cfg(windows)]
-            "runInPersistentPowerShell" => {
-                self.handle_execute_shell(args, &target_session_id).await
-            }
             // CMD execution tools (Windows only, alternative to PowerShell)
             #[cfg(windows)]
             "runCmd" => self.handle_run_shell(args, &target_session_id).await,
