@@ -34,7 +34,10 @@ const AgentToolGroupBlockImpl: React.FC<AgentToolGroupBlockProps> = ({
     [toolGroupCalls, toolResultsMap],
   );
 
-  const toolGroup = useMemo(() => ({ calls: toolGroupCalls }), [toolGroupCalls]);
+  const toolGroup = useMemo(
+    () => ({ calls: toolGroupCalls }),
+    [toolGroupCalls],
+  );
 
   return (
     <AgentToolCallGroup
