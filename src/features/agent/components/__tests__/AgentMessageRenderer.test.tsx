@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { AgentMessageRenderer } from '../AgentMessageRenderer';
 import type { MCPContent } from '@/lib/mcp';
+import type { Message } from '@/models/chat';
 
 // Mock contexts and hooks
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -59,13 +60,33 @@ describe('AgentMessageRenderer', () => {
     render(<AgentMessageRenderer content={content} />);
 
     // Check if code block is rendered
-    // Since prism-react-renderer splits text into tokens, we might need to be flexible
-    // But usually "console" and "log" are tokens.
-
-    // We can just check that the container exists or some part of text exists.
     const codeElement = await screen.findByText('console');
     expect(codeElement).toBeInTheDocument();
 
     expect(screen.getByText(/hello/)).toBeInTheDocument();
+  });
+
+  it('renders tool groups correctly using AgentToolGroupBlock', () => {
+    const content: MCPContent[] = [
+      {
+        type: 'tool_call',
+        id: 'call-1',
+        name: 'test_tool',
+        arguments: '{}',
+      },
+    ];
+
+    const message = {
+      id: 'msg-1',
+      role: 'assistant',
+      content: [],
+    } as unknown as Message;
+
+    render(<AgentMessageRenderer content={content} message={message} />);
+
+    // Check if tool name is rendered
+    expect(screen.getByText('test_tool')).toBeInTheDocument();
+    // Check if "Tool Executions" header exists (from AgentToolCallGroup)
+    expect(screen.getByText(/Tool Executions/)).toBeInTheDocument();
   });
 });
