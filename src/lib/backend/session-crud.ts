@@ -112,6 +112,10 @@ export async function deleteSession(id: string): Promise<void> {
   await safeInvoke('agent_delete_session', { sessionId: id });
 }
 
+export async function deleteSessionOnly(id: string): Promise<void> {
+  await safeInvoke('agent_delete_session_only', { sessionId: id });
+}
+
 export async function getSessionsPage(
   page: number,
   pageSize: number,

@@ -21,6 +21,10 @@ interface SessionCardProps {
   lineageHint?: string;
   selectedLineageId?: string | null;
   onLineageSelect?: (lineageId: string) => void;
+  /** Number of descendant subagent sessions that will also be deleted (SP7). */
+  descendantCount?: number;
+  /** Delete only this session, promoting children to top-level (SP7). */
+  onDeleteOnly?: (sessionId: string) => void;
 }
 
 /**
@@ -37,6 +41,8 @@ export function SessionCard({
   lineageHint,
   selectedLineageId = null,
   onLineageSelect,
+  descendantCount = 0,
+  onDeleteOnly,
 }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -98,6 +104,22 @@ export function SessionCard({
       setShowConfirm(false);
     }
   }, [showConfirm, session.id, onDelete]);
+
+  const handleDeleteOnly = useCallback(async () => {
+    if (!onDeleteOnly) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteOnly(session.id);
+      logger.info('Session deleted (children orphaned)', {
+        sessionId: session.id,
+      });
+    } catch (err) {
+      logger.error('Failed to delete session only', err);
+    } finally {
+      setIsDeleting(false);
+      setShowConfirm(false);
+    }
+  }, [session.id, onDeleteOnly]);
 
   const handleCancelDelete = useCallback(() => {
     setShowConfirm(false);
@@ -244,17 +266,58 @@ export function SessionCard({
           </>
         ) : (
           <>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="flex-1"
-              aria-busy={isDeleting}
-              aria-label="Confirm deletion"
-            >
-              {isDeleting ? 'Deleting...' : 'Confirm Delete'}
-            </Button>
+            {descendantCount > 0 ? (
+              <>
+                <div className="flex w-full gap-2">
+                  <div className="flex flex-col flex-1 gap-0.5">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      className="w-full"
+                      aria-busy={isDeleting}
+                      aria-label="Delete this session and all subagent sessions"
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete all'}
+                    </Button>
+                    <p className="text-xs text-destructive text-center">
+                      +{descendantCount} subagent
+                      {descendantCount !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                  {onDeleteOnly && (
+                    <div className="flex flex-col flex-1 gap-0.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleDeleteOnly}
+                        disabled={isDeleting}
+                        className="w-full"
+                        aria-label="Delete only this session"
+                      >
+                        Delete only this
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center">
+                        Subagents kept
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1"
+                aria-busy={isDeleting}
+                aria-label="Confirm deletion"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

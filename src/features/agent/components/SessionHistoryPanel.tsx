@@ -18,6 +18,7 @@ interface SessionHistoryPanelProps {
   onRefresh: () => void;
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
+  onDeleteOnly?: (sessionId: string) => void;
   heading?: string;
   description?: string;
   searchPlaceholder?: string;
@@ -42,6 +43,7 @@ export function SessionHistoryPanel({
   onRefresh,
   onResume,
   onDelete,
+  onDeleteOnly,
   heading = 'Recent Sessions',
   description = 'Resume previous agent sessions',
   searchPlaceholder = 'Search sessions by name or ID...',
@@ -92,6 +94,28 @@ export function SessionHistoryPanel({
       setSelectedLineageId(null);
     }
   }, [sessions, selectedLineageId]);
+
+  // SP7: Precompute descendant counts for all sessions so SessionCard can warn
+  //      users about cascade deletes.  Uses the full (unfiltered) sessions list
+  //      so the count stays accurate even when a lineage filter is active.
+  const descendantCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    const count = (sessionId: string): number => {
+      if (counts.has(sessionId)) {
+        return counts.get(sessionId)!;
+      }
+      const children = sessions.filter((s) => s.parentSessionId === sessionId);
+      const total =
+        children.length +
+        children.reduce((sum, child) => sum + count(child.id), 0);
+      counts.set(sessionId, total);
+      return total;
+    };
+
+    sessions.forEach((s) => count(s.id));
+    return counts;
+  }, [sessions]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {
@@ -321,9 +345,11 @@ export function SessionHistoryPanel({
                   session={session}
                   onResume={onResume}
                   onDelete={onDelete}
+                  onDeleteOnly={onDeleteOnly}
                   nestingLevel={nestingLevel}
                   lineageHint={lineageHint}
                   selectedLineageId={selectedLineageId}
+                  descendantCount={descendantCounts.get(session.id) ?? 0}
                   onLineageSelect={(lineageId) =>
                     setSelectedLineageId((prev) =>
                       prev === lineageId ? null : lineageId,

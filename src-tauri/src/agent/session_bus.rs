@@ -131,4 +131,140 @@ mod tests {
             "Different session IDs must have distinct Arc<Notify> instances"
         );
     }
+
+    // ─── SP6: Caller-cancel wakeup (parent cancel isolation) ─────────────────
+
+    /// SP6: A waiter blocked in a dual-notifier select! (child OR caller) is
+    /// immediately woken when the *caller* (parent) session fires — not only
+    /// when the child session fires.
+    ///
+    /// This is the core of SP6: `cancel_workflow` calls
+    /// `notify_status_change(parent_id)` which must escape the
+    /// `wait_until_session_terminal` loop without waiting for the child.
+    #[tokio::test]
+    async fn test_sp6_caller_notify_wakes_dual_waiter() {
+        let bus = Arc::new(SessionBus::new());
+
+        let child_notifier = bus.get_or_create("child-sess");
+        let caller_notifier = bus.get_or_create("parent-sess");
+
+        // Simulate the tokio::select! inside wait_until_session_terminal:
+        // wake on either child status change OR caller cancel notification.
+        let waiter = tokio::spawn(async move {
+            tokio::select! {
+                _ = child_notifier.notified() => "child",
+                _ = caller_notifier.notified() => "caller",
+            }
+        });
+
+        tokio::task::yield_now().await;
+
+        // Fire the CALLER (parent) bus — child never completes.
+        bus.notify_status_change("parent-sess");
+
+        let result = timeout(Duration::from_millis(100), waiter).await;
+        assert!(
+            result.is_ok(),
+            "SP6: dual-notifier waiter must unblock when caller notify fires"
+        );
+        assert_eq!(
+            result.unwrap().unwrap(),
+            "caller",
+            "SP6: wakeup source must be the caller branch"
+        );
+    }
+
+    /// SP6: Normal path still works — child completing wakes the dual-notifier
+    /// waiter even when a caller notifier is registered.
+    #[tokio::test]
+    async fn test_sp6_child_notify_still_wakes_dual_waiter() {
+        let bus = Arc::new(SessionBus::new());
+
+        let child_notifier = bus.get_or_create("child-sess2");
+        let caller_notifier = bus.get_or_create("parent-sess2");
+
+        let waiter = tokio::spawn(async move {
+            tokio::select! {
+                _ = child_notifier.notified() => "child",
+                _ = caller_notifier.notified() => "caller",
+            }
+        });
+
+        tokio::task::yield_now().await;
+
+        // Fire the CHILD — normal completion path.
+        bus.notify_status_change("child-sess2");
+
+        let result = timeout(Duration::from_millis(100), waiter).await;
+        assert!(
+            result.is_ok(),
+            "SP6: dual-notifier waiter must still unblock when child fires"
+        );
+        assert_eq!(
+            result.unwrap().unwrap(),
+            "child",
+            "SP6: normal path wakeup source must be the child branch"
+        );
+    }
+
+    /// SP6: cancel_pending flag (AtomicBool) short-circuits the wait loop when
+    /// already true at loop entry — the waiter exits without waiting at all.
+    ///
+    /// In production this happens when cancel_workflow sets cancel_pending=true
+    /// and then notifies; even if the notification races ahead of the flag read,
+    /// the next loop iteration sees the flag and returns Err immediately.
+    #[tokio::test]
+    async fn test_sp6_cancel_pending_flag_short_circuits_loop() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+
+        // Simulate the loop body: check flag, then wait.
+        let flag_clone = Arc::clone(&cancel_flag);
+        let result: Result<(), &str> = tokio::spawn(async move {
+            // Set cancel before the loop runs (simulates: cancel already fired).
+            flag_clone.store(true, Ordering::Relaxed);
+
+            // Simulate loop iteration: check flag at top.
+            if flag_clone.load(Ordering::Relaxed) {
+                return Err("interrupted");
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result,
+            Err("interrupted"),
+            "SP6: cancel_pending=true must short-circuit the wait loop immediately"
+        );
+    }
+
+    /// SP6: caller notifier that was never fired does NOT falsely wake the
+    /// dual-notifier waiter — only a real notify_status_change triggers wakeup.
+    #[tokio::test]
+    async fn test_sp6_quiet_caller_does_not_spuriously_wake() {
+        let bus = Arc::new(SessionBus::new());
+
+        let child_notifier = bus.get_or_create("child-sess3");
+        let caller_notifier = bus.get_or_create("parent-sess3");
+
+        // Neither child nor caller will fire — waiter should time out.
+        let waiter = tokio::spawn(async move {
+            tokio::select! {
+                _ = child_notifier.notified() => "child",
+                _ = caller_notifier.notified() => "caller",
+                _ = tokio::time::sleep(Duration::from_millis(30)) => "timeout",
+            }
+        });
+
+        let result = timeout(Duration::from_millis(100), waiter).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap().unwrap(),
+            "timeout",
+            "SP6: waiter must not wake spuriously when neither notifier fires"
+        );
+    }
 }

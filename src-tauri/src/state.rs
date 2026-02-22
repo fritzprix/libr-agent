@@ -5,6 +5,7 @@
 /// database connection, and repositories.
 use crate::agent::concurrency::ConcurrencyGate;
 use crate::agent::session_bus::SessionBus;
+use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
@@ -12,8 +13,11 @@ use crate::repositories::{
     SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
 use tauri::AppHandle;
+use tokio::sync::RwLock as TokioRwLock;
 
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<Arc<MCPServiceProxyManager>> = OnceLock::new();
@@ -59,6 +63,11 @@ static SESSION_BUS: OnceLock<SessionBus> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized concurrency gate (SP2).
 static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized active sessions map (SP6).
+/// Shared Arc from AgentSessionManager so external subsystems (e.g. builtin MCP tools)
+/// can read per-session cancellation tokens without going through Tauri managed state.
+static ACTIVE_SESSIONS: OnceLock<Arc<TokioRwLock<HashMap<String, AgentSession>>>> = OnceLock::new();
 
 /// Initialize the global AppHandle
 /// Should be called once during application setup
@@ -371,4 +380,35 @@ pub fn get_concurrency_gate() -> &'static ConcurrencyGate {
     CONCURRENCY_GATE
         .get()
         .expect("ConcurrencyGate not initialized. Call init_concurrency_gate() first.")
+}
+
+// ── SP6: Active Sessions (for cancellation token access) ─────────────────────
+
+/// Store a shared Arc to the active sessions map so that builtin MCP tools
+/// can look up per-session cancellation tokens without Tauri managed-state access.
+/// Must be called once during application setup, immediately after the
+/// `AgentSessionManager` is created.
+pub fn init_active_sessions(sessions: Arc<TokioRwLock<HashMap<String, AgentSession>>>) {
+    if ACTIVE_SESSIONS.set(sessions).is_err() {
+        log::warn!("ACTIVE_SESSIONS already initialized");
+    }
+}
+
+/// Return a reference to the global active sessions map.
+///
+/// # Panics
+/// Panics if `init_active_sessions` has not been called yet.
+pub fn get_active_sessions() -> &'static Arc<TokioRwLock<HashMap<String, AgentSession>>> {
+    ACTIVE_SESSIONS
+        .get()
+        .expect("ACTIVE_SESSIONS not initialized. Call init_active_sessions() first.")
+}
+
+/// Retrieve the `cancel_pending` flag Arc for the given session, or `None` if the
+/// session is not currently active.  Holds the read-lock only for the duration of
+/// the clone — very cheap.  Callers can then poll the AtomicBool without holding
+/// any lock, making this safe to use inside hot async loops.
+pub async fn get_session_cancel_pending(session_id: &str) -> Option<Arc<AtomicBool>> {
+    let sessions = get_active_sessions().read().await;
+    sessions.get(session_id).map(|s| s.cancel_pending.clone())
 }

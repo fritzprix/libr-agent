@@ -419,6 +419,11 @@ pub async fn cancel_workflow(
         // after the agent stops, regardless of when the active tool batch
         // completes. The tool batch itself is still allowed to finish cleanly.
         discard_pending_events(active_sessions, &session_id).await;
+        // SP6: Wake any awaitAgent/pollProcess waiter that is suspended inside
+        // a tool call for THIS session. The deferred cancel only sets
+        // cancel_pending; without this notification the waiter would sleep up
+        // to 30 s before re-checking the flag.
+        crate::state::get_session_bus().notify_status_change(&session_id);
         return Ok(());
     }
 

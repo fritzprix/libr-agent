@@ -1,5 +1,7 @@
 use reqwest::Method;
 use serde_json::{json, Value};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
 
@@ -11,17 +13,50 @@ use super::client::call_json;
 use super::formatting::*;
 use super::utils::*;
 
+/// Wait until `session_id` reaches a terminal status.
+///
+/// # SP6 — Responsive parent cancellation
+/// When the Parent calls `cancel_workflow` while blocked here:
+/// - The *deferred* cancel path sets `cancel_pending = true` on the parent and
+///   calls `SessionBus::notify_status_change` on the parent's own bus entry.
+/// - This wakes the select! via the `caller_notifier` branch.
+/// - The next loop iteration checks `caller_cancel_pending.load(Relaxed)` and
+///   returns an error immediately, without waiting up to 30 s for the heartbeat.
+///
+/// The caller still calls `gate.resume_agent()` after this returns Err, so the
+/// suspended gate slot is always released correctly (no leak).
 async fn wait_until_session_terminal(
     session_id: &str,
     timeout_seconds: u64, // 0 = indefinite; otherwise clamped to 5..86400 s
+    caller_session_id: Option<&str>, // SP6: id of the parent/calling session
 ) -> Result<(Value, u64), String> {
     const HEARTBEAT: Duration = Duration::from_secs(30);
 
-    let notifier = crate::state::get_session_bus().get_or_create(session_id);
+    let bus = crate::state::get_session_bus();
+    let child_notifier = bus.get_or_create(session_id);
+    // Subscribe to the caller's bus so cancel_workflow's notify_status_change wakes us.
+    let caller_notifier = caller_session_id.map(|id| bus.get_or_create(id));
+    // Clone the cancel_pending Arc once — we can then poll it lock-free in the loop.
+    let caller_cancel_pending: Option<Arc<std::sync::atomic::AtomicBool>> = match caller_session_id
+    {
+        Some(id) => crate::state::get_session_cancel_pending(id).await,
+        None => None,
+    };
+
     let started_at = Instant::now();
     let mut wake_count: u64 = 0;
 
     loop {
+        // SP6: check before hitting the HTTP endpoint to short-circuit fast.
+        if let Some(ref flag) = caller_cancel_pending {
+            if flag.load(Ordering::Relaxed) {
+                return Err(format!(
+                    "awaitAgent interrupted: calling session was cancelled while waiting for '{}'",
+                    session_id
+                ));
+            }
+        }
+
         // Check current status first — avoids a spurious wait when the session
         // is already terminal by the time we arrive here.
         let session = call_json(
@@ -52,12 +87,18 @@ async fn wait_until_session_terminal(
             Some(limit - elapsed)
         };
 
-        // Sleep until notified, timed out, or heartbeat — whichever comes first.
-        // The heartbeat cap keeps the loop responsive for long-running indefinite waits.
+        // Sleep until notified by child status change, caller cancel, heartbeat,
+        // or hard deadline — whichever comes first.
         let sleep_cap = remaining.map(|r| r.min(HEARTBEAT)).unwrap_or(HEARTBEAT);
 
         tokio::select! {
-            _ = notifier.notified() => {} // Status changed — re-check immediately.
+            _ = child_notifier.notified() => {} // Child status changed — re-check.
+            _ = async {
+                match &caller_notifier {
+                    Some(n) => n.notified().await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {} // Caller was notified (cancel or status change) — check flag at loop top.
             _ = sleep(sleep_cap) => {}    // Heartbeat or deadline — re-check.
         }
     }
@@ -158,8 +199,12 @@ pub async fn handle_tool_call(
             let (session_data, poll_count) = {
                 let gate = crate::state::get_concurrency_gate();
                 gate.suspend_agent().await?; // active → suspended (frees slot for child)
-                let wait_result =
-                    wait_until_session_terminal(&child_id_owned, timeout_seconds).await;
+                let wait_result = wait_until_session_terminal(
+                    &child_id_owned,
+                    timeout_seconds,
+                    caller_session_id.as_deref(), // SP6
+                )
+                .await;
                 gate.resume_agent().await?; // suspended → active (always, even on timeout)
                 wait_result?
             };
@@ -342,9 +387,15 @@ pub async fn handle_tool_call(
                 // resume_agent() is called regardless of whether the wait succeeded or
                 // timed-out, so the parent always re-acquires its active slot before
                 // returning to the LLM loop.
+                //
                 let gate = crate::state::get_concurrency_gate();
                 gate.suspend_agent().await?; // active → suspended
-                let wait_result = wait_until_session_terminal(&session_id, timeout_seconds).await;
+                let wait_result = wait_until_session_terminal(
+                    &session_id,
+                    timeout_seconds,
+                    caller_session_id.as_deref(), // SP6
+                )
+                .await;
                 gate.resume_agent().await?; // suspended → active (always)
                 wait_result?
             };

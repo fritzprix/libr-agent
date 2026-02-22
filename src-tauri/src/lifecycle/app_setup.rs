@@ -176,6 +176,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     let agent_session_manager =
         agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc, session_repo_arc);
+
+    // SP6: Expose the shared sessions map globally so builtin MCP tools can read
+    //      per-session cancellation tokens without Tauri managed-state access.
+    crate::state::init_active_sessions(agent_session_manager.active_sessions_arc());
+
     app.manage(agent_session_manager);
 
     // SP1 + SP2: Initialize SessionBus and ConcurrencyGate from advanced settings.
