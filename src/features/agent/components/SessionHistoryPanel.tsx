@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search, History } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { filterSessions } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
@@ -213,16 +213,25 @@ export function SessionHistoryPanel({
   }, [baseSessions]);
 
   return (
-    <>
-      <div className="p-6 border-b">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-bold" id="session-heading">
-              {heading}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {description} ({displayRows.length}/{baseSessions.length})
-            </p>
+    <div className="p-6 h-full flex flex-col bg-background">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+              <History size={28} />
+            </div>
+            <div>
+              <h1
+                className="text-2xl text-foreground font-semibold tracking-tight"
+                id="session-heading"
+              >
+                {heading}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {description} ({displayRows.length}/{baseSessions.length})
+              </p>
+            </div>
           </div>
           <Button
             variant="ghost"
@@ -230,6 +239,7 @@ export function SessionHistoryPanel({
             onClick={onRefresh}
             disabled={isLoading}
             aria-label="Refresh sessions"
+            className="h-9 w-9"
           >
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           </Button>
@@ -284,83 +294,84 @@ export function SessionHistoryPanel({
             </Button>
           </div>
         )}
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {isLoading && sessions.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center text-muted-foreground">
-              <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-              <p className="text-sm">Loading sessions...</p>
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6">
+          {isLoading && sessions.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-muted-foreground">
+                <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
+                <p className="text-sm">Loading sessions...</p>
+              </div>
             </div>
-          </div>
-        ) : displayRows.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center text-muted-foreground">
-              {selectedLineageId ? (
-                <>
-                  <p className="text-sm">
-                    No sessions visible in lineage{' '}
-                    {selectedLineageId.slice(0, 8)}
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => setSelectedLineageId(null)}
-                    className="mt-2"
-                  >
-                    Clear lineage focus
-                  </Button>
-                </>
-              ) : searchQuery.trim() ? (
-                <>
-                  <p className="text-sm">
-                    No sessions found matching &quot;{searchQuery}&quot;
-                  </p>
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => onSearchQueryChange('')}
-                    className="mt-2"
-                  >
-                    Clear search
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm">{emptyStateTitle}</p>
-                  <p className="text-xs mt-2">{emptyStateSubtitle}</p>
-                </>
-              )}
+          ) : displayRows.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-muted-foreground">
+                {selectedLineageId ? (
+                  <>
+                    <p className="text-sm">
+                      No sessions visible in lineage{' '}
+                      {selectedLineageId.slice(0, 8)}
+                    </p>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => setSelectedLineageId(null)}
+                      className="mt-2"
+                    >
+                      Clear lineage focus
+                    </Button>
+                  </>
+                ) : searchQuery.trim() ? (
+                  <>
+                    <p className="text-sm">
+                      No sessions found matching &quot;{searchQuery}&quot;
+                    </p>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      onClick={() => onSearchQueryChange('')}
+                      className="mt-2"
+                    >
+                      Clear search
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm">{emptyStateTitle}</p>
+                    <p className="text-xs mt-2">{emptyStateSubtitle}</p>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <ul
-            className="grid grid-cols-1 gap-4 max-w-2xl list-none"
-            aria-labelledby="session-heading"
-          >
-            {displayRows.map(({ session, nestingLevel, lineageHint }) => (
-              <li key={session.id}>
-                <SessionCard
-                  session={session}
-                  onResume={onResume}
-                  onDelete={onDelete}
-                  onDeleteOnly={onDeleteOnly}
-                  nestingLevel={nestingLevel}
-                  lineageHint={lineageHint}
-                  selectedLineageId={selectedLineageId}
-                  descendantCount={descendantCounts.get(session.id) ?? 0}
-                  onLineageSelect={(lineageId) =>
-                    setSelectedLineageId((prev) =>
-                      prev === lineageId ? null : lineageId,
-                    )
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-        )}
+          ) : (
+            <ul
+              className="grid grid-cols-1 gap-4 max-w-2xl list-none"
+              aria-labelledby="session-heading"
+            >
+              {displayRows.map(({ session, nestingLevel, lineageHint }) => (
+                <li key={session.id}>
+                  <SessionCard
+                    session={session}
+                    onResume={onResume}
+                    onDelete={onDelete}
+                    onDeleteOnly={onDeleteOnly}
+                    nestingLevel={nestingLevel}
+                    lineageHint={lineageHint}
+                    selectedLineageId={selectedLineageId}
+                    descendantCount={descendantCounts.get(session.id) ?? 0}
+                    onLineageSelect={(lineageId) =>
+                      setSelectedLineageId((prev) =>
+                        prev === lineageId ? null : lineageId,
+                      )
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-    </>
+    </div>
   );
 }

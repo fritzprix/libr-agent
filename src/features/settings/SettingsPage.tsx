@@ -19,7 +19,6 @@ import {
   TabsTrigger,
 } from '@/components/ui';
 import { toast } from 'sonner';
-import { MCPServerManagement } from './MCPServerManagement';
 import { getLogger } from '@/lib/logger';
 import { dbUtils } from '@/lib/db/service';
 import { restartApp } from '@/lib/backend';
@@ -493,105 +492,112 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="p-6 text-muted-foreground min-h-screen">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <BrainCircuit size={32} className="text-primary" />
-          <div>
-            <h1 className="text-2xl text-foreground font-semibold">
-              {t('settings.title', 'Settings')}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              LibrAgent v{__APP_VERSION__}
-            </p>
+    <div className="p-6 h-full flex flex-col bg-background">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+              <BrainCircuit size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+                {t('settings.title', 'Settings')}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                LibrAgent v{__APP_VERSION__}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {pendingCount > 0 && (
+              <span className="text-sm text-warning font-medium">
+                {t('settings.unsaved', 'Unsaved')} ({pendingCount})
+              </span>
+            )}
+            <Button
+              onClick={() => navigate(-1)}
+              variant="ghost"
+              className="h-9"
+            >
+              {t('common.close', 'Close')}
+            </Button>
+            <Button
+              onClick={flushPending}
+              disabled={pendingCount === 0}
+              className="h-9 font-medium"
+            >
+              {t('settings.applyChanges', 'Apply Changes')}
+            </Button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {pendingCount > 0 && (
-            <span className="text-sm text-warning">
-              {t('settings.unsaved', 'Unsaved')} ({pendingCount})
-            </span>
-          )}
-          <Button onClick={() => navigate(-1)} variant="ghost">
-            {t('common.close', 'Close')}
-          </Button>
-          <Button onClick={flushPending} disabled={pendingCount === 0}>
-            {t('settings.applyChanges', 'Apply Changes')}
-          </Button>
+
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+          <Tabs defaultValue="general" className="flex flex-col">
+            <TabsList className="flex gap-2 overflow-x-auto mb-4">
+              <TabsTrigger value="general">
+                {t('settings.tabs.general', 'General')}
+              </TabsTrigger>
+              <TabsTrigger value="ai-models">
+                {t('settings.tabs.aiModels', 'AI & Models')}
+              </TabsTrigger>
+              <TabsTrigger value="chat-interface">
+                {t('settings.tabs.chatInterface', 'Chat Interface')}
+              </TabsTrigger>
+              <TabsTrigger value="advanced">
+                {t('settings.tabs.advanced', 'Advanced')}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="general">
+              <GeneralTab
+                localLanguage={localLanguage}
+                onChange={handleLanguageChange}
+                skillsDirectory={localSystemSettings.skillsDirectory}
+                onSkillsDirectoryChange={(path) =>
+                  handleSystemSettingsChange('skillsDirectory', path)
+                }
+              />
+            </TabsContent>
+
+            <TabsContent value="ai-models">
+              <AIModelsTab
+                serviceConfigs={serviceConfigs}
+                providerEntries={providerEntries}
+                localPreferredModel={localPreferredModel}
+                localAgentHubUrl={localAgentHubUrl}
+                onPendingChange={handlePendingChange}
+                onPreferredModelChange={handlePreferredModelChange}
+                onAgentHubUrlChange={handleAgentHubUrlChange}
+              />
+            </TabsContent>
+
+            <TabsContent value="chat-interface">
+              <ChatInterfaceTab
+                localWindowSize={localWindowSize}
+                localToolCallGroupVisibleCount={localToolCallGroupVisibleCount}
+                localAdvancedSettings={localAdvancedSettings}
+                localDisplay={localDisplay}
+                onWindowSizeChange={handleWindowSizeChange}
+                onToolCallGroupVisibleCountChange={
+                  handleToolCallGroupVisibleCountChange
+                }
+                onAdvancedSettingsChange={handleAdvancedSettingsChange}
+                onDisplaySettingsChange={handleDisplaySettingsChange}
+              />
+            </TabsContent>
+
+            <TabsContent value="advanced">
+              <AdvancedTab
+                localAdvancedSettings={localAdvancedSettings}
+                onChange={handleAdvancedSettingsChange}
+                systemSettingsProps={systemSettingsProps}
+                dangerZoneProps={dangerZoneProps}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
-      </div>
-
-      <div className="max-w-5xl">
-        <Tabs defaultValue="general" className="flex flex-col">
-          <TabsList className="flex gap-2 overflow-x-auto mb-4">
-            <TabsTrigger value="general">
-              {t('settings.tabs.general', 'General')}
-            </TabsTrigger>
-            <TabsTrigger value="ai-models">
-              {t('settings.tabs.aiModels', 'AI & Models')}
-            </TabsTrigger>
-            <TabsTrigger value="chat-interface">
-              {t('settings.tabs.chatInterface', 'Chat Interface')}
-            </TabsTrigger>
-            <TabsTrigger value="mcp-servers">
-              {t('settings.tabs.mcpServers', 'MCP Servers')}
-            </TabsTrigger>
-            <TabsTrigger value="advanced">
-              {t('settings.tabs.advanced', 'Advanced')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="general">
-            <GeneralTab
-              localLanguage={localLanguage}
-              onChange={handleLanguageChange}
-              skillsDirectory={localSystemSettings.skillsDirectory}
-              onSkillsDirectoryChange={(path) =>
-                handleSystemSettingsChange('skillsDirectory', path)
-              }
-            />
-          </TabsContent>
-
-          <TabsContent value="ai-models">
-            <AIModelsTab
-              serviceConfigs={serviceConfigs}
-              providerEntries={providerEntries}
-              localPreferredModel={localPreferredModel}
-              localAgentHubUrl={localAgentHubUrl}
-              onPendingChange={handlePendingChange}
-              onPreferredModelChange={handlePreferredModelChange}
-              onAgentHubUrlChange={handleAgentHubUrlChange}
-            />
-          </TabsContent>
-
-          <TabsContent value="chat-interface">
-            <ChatInterfaceTab
-              localWindowSize={localWindowSize}
-              localToolCallGroupVisibleCount={localToolCallGroupVisibleCount}
-              localAdvancedSettings={localAdvancedSettings}
-              localDisplay={localDisplay}
-              onWindowSizeChange={handleWindowSizeChange}
-              onToolCallGroupVisibleCountChange={
-                handleToolCallGroupVisibleCountChange
-              }
-              onAdvancedSettingsChange={handleAdvancedSettingsChange}
-              onDisplaySettingsChange={handleDisplaySettingsChange}
-            />
-          </TabsContent>
-
-          <TabsContent value="mcp-servers">
-            <MCPServerManagement />
-          </TabsContent>
-
-          <TabsContent value="advanced">
-            <AdvancedTab
-              localAdvancedSettings={localAdvancedSettings}
-              onChange={handleAdvancedSettingsChange}
-              systemSettingsProps={systemSettingsProps}
-              dangerZoneProps={dangerZoneProps}
-            />
-          </TabsContent>
-        </Tabs>
       </div>
     </div>
   );

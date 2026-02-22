@@ -126,14 +126,14 @@ export default function AgentChatStartView() {
   );
 
   return (
-    <main className="h-full w-full flex flex-col items-center overflow-y-auto font-mono">
-      <div className="w-full max-w-4xl px-6 py-12 flex flex-col gap-10">
+    <main className="h-full w-full flex flex-col items-center overflow-y-auto bg-background">
+      <div className="w-full max-w-4xl px-6 py-16 flex flex-col gap-12">
         {/* Hero Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">
+        <div className="text-center space-y-3">
+          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
             What would you like to do today?
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-base">
             Select an assistant to begin a new session.
           </p>
         </div>

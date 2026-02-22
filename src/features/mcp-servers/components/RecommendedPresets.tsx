@@ -55,7 +55,9 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-semibold tracking-tight">{preset.name}</h4>
+                  <h4 className="font-semibold tracking-tight">
+                    {preset.name}
+                  </h4>
                   {isInstalled ? (
                     <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
                       {t('mcpServer.installed', 'Installed')}
