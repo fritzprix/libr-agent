@@ -5,7 +5,6 @@
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::process::Command;
 use tokio::fs;
 
@@ -115,7 +114,9 @@ pub async fn list_workspace_files(
         let relative_path = if target_path == "." {
             name.clone()
         } else {
-            format!("{target_path}/{name}").replace("//", "/")
+            // Atlas: Use PathBuf for robust path construction, then normalize to forward slashes for frontend consistency
+            let path = PathBuf::from(&target_path).join(&name);
+            path.to_string_lossy().replace("\\", "/")
         };
 
         items.push(WorkspaceFileItem {
@@ -257,8 +258,63 @@ pub async fn open_workspace_in_terminal(session_id: String) -> Result<(), String
 
     #[cfg(target_os = "linux")]
     {
+        let path_str = workspace_path.to_string_lossy();
+
+        // Try gnome-terminal
+        if Command::new("gnome-terminal")
+            .arg("--working-directory")
+            .arg(&*path_str)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        // Try konsole
+        if Command::new("konsole")
+            .arg("--workdir")
+            .arg(&*path_str)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        // Try xfce4-terminal
+        if Command::new("xfce4-terminal")
+            .arg("--working-directory")
+            .arg(&*path_str)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        // Try x-terminal-emulator (best effort fallback)
+        // Note: x-terminal-emulator is a symlink. If it points to xterm, this flag might fail silently.
+        // We try it after specific ones to maximize success chance.
+        if Command::new("x-terminal-emulator")
+            .arg("--working-directory")
+            .arg(&*path_str)
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        // Try xterm (secure launch)
+        // Use sh to handle cd command safely without injection risk
+        if Command::new("xterm")
+            .args(&["-e", "sh", "-c", "cd \"$1\" && exec $SHELL", "--", &path_str])
+            .spawn()
+            .is_ok()
+        {
+            return Ok(());
+        }
+
         Err(format!(
-            "Terminal launch not supported on Linux. No standard command available. \
+            "Terminal launch not supported on Linux. No supported terminal emulator found \
+             (tried x-terminal-emulator, gnome-terminal, konsole, xfce4-terminal, xterm). \
              Open a terminal manually and navigate to: {}",
             workspace_path.display()
         ))
