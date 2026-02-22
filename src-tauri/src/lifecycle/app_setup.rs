@@ -3,7 +3,7 @@ use crate::lifecycle::settings::SystemSettings;
 use crate::logger;
 use crate::repositories;
 use crate::repositories::settings_repository::SettingsRepository;
-use crate::services::{InteractiveBrowserServer, SecureFileManager};
+use crate::services::{DroppedFileService, InteractiveBrowserServer, SecureFileManager};
 use crate::state;
 use log::info;
 #[cfg(target_os = "linux")]
@@ -131,6 +131,11 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
     app.manage(file_manager);
     info!("✅ SecureFileManager initialized");
+
+    // Initialize DroppedFileService
+    let dropped_file_service = DroppedFileService::new();
+    app.manage(dropped_file_service);
+    info!("✅ DroppedFileService initialized");
 
     // Copy bundled skills to AppData/skills if not already present
     tauri::async_runtime::block_on(async {
