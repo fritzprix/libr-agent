@@ -83,7 +83,10 @@ setSessions((prev) => {
   while (frontier.length > 0) {
     const next: string[] = [];
     for (const s of prev) {
-      if (s.parentSessionId !== undefined && frontier.includes(s.parentSessionId)) {
+      if (
+        s.parentSessionId !== undefined &&
+        frontier.includes(s.parentSessionId)
+      ) {
         toRemove.add(s.id);
         next.push(s.id);
       }
@@ -112,23 +115,31 @@ setSessions((prev) =>
 ### `SessionCard` Conditional UI
 
 ```tsx
-{descendantCount === 0 ? (
-  <Button variant="destructive" onClick={handleConfirmDelete}>
-    Confirm Delete
-  </Button>
-) : (
-  <div className="flex gap-2 w-full">
-    <div className="flex flex-col items-center gap-1">
-      <Button variant="destructive" onClick={handleConfirmDelete}>Delete all</Button>
-      <p className="text-xs text-red-400">+{descendantCount} subagents</p>
+{
+  descendantCount === 0 ? (
+    <Button variant="destructive" onClick={handleConfirmDelete}>
+      Confirm Delete
+    </Button>
+  ) : (
+    <div className="flex gap-2 w-full">
+      <div className="flex flex-col items-center gap-1">
+        <Button variant="destructive" onClick={handleConfirmDelete}>
+          Delete all
+        </Button>
+        <p className="text-xs text-red-400">+{descendantCount} subagents</p>
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <Button variant="outline" onClick={handleDeleteOnly}>
+          Delete only this
+        </Button>
+        <p className="text-xs text-muted-foreground">Subagents kept</p>
+      </div>
     </div>
-    <div className="flex flex-col items-center gap-1">
-      <Button variant="outline" onClick={handleDeleteOnly}>Delete only this</Button>
-      <p className="text-xs text-muted-foreground">Subagents kept</p>
-    </div>
-  </div>
-)}
-<Button variant="ghost" onClick={() => setShowConfirm(false)}>Cancel</Button>
+  );
+}
+<Button variant="ghost" onClick={() => setShowConfirm(false)}>
+  Cancel
+</Button>;
 ```
 
 ## Regression Tests
@@ -136,25 +147,25 @@ setSessions((prev) =>
 Location: `src/context/__tests__/AgentSessionListContext.test.tsx`
 Describe block: `AgentSessionListContext – SP7 session delete options`
 
-| Test | Assertion |
-|------|-----------|
-| `deleteSession: BFS removes parent AND direct child from UI` | 2-node tree → both removed after cascade delete |
-| `deleteSession: BFS removes entire 3-level tree` | grandparent → parent → child: all 3 removed |
-| `deleteSessionOnly: removes parent, direct child becomes top-level` | child survives with `parentSessionId: undefined` |
+| Test                                                                        | Assertion                                                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `deleteSession: BFS removes parent AND direct child from UI`                | 2-node tree → both removed after cascade delete                                |
+| `deleteSession: BFS removes entire 3-level tree`                            | grandparent → parent → child: all 3 removed                                    |
+| `deleteSessionOnly: removes parent, direct child becomes top-level`         | child survives with `parentSessionId: undefined`                               |
 | `deleteSessionOnly: grandchild still linked to its own parent after orphan` | deleting middle node: child orphaned, grandchild's `parentSessionId` unchanged |
 
 ## Related Files
 
-| File | Change |
-|------|--------|
-| `src-tauri/src/repositories/session_repository.rs` | `orphan_and_delete_session` trait + SQLite impl |
-| `src-tauri/src/repositories/in_memory_session_repository.rs` | in-memory impl |
-| `src-tauri/src/agent/session_manager.rs` | `delete_session_only` |
-| `src-tauri/src/commands/agent_commands.rs` | `agent_delete_session_only` command |
-| `src-tauri/src/lib.rs` | command registration |
-| `src/lib/backend/session-crud.ts` | `deleteSessionOnly` wrapper |
-| `src/context/AgentSessionListContext.tsx` | BFS cascade fix + `deleteSessionOnly` |
-| `src/features/agent/components/SessionCard.tsx` | conditional confirm UI |
-| `src/features/agent/components/SessionHistoryPanel.tsx` | `onDeleteOnly` prop |
-| `src/features/history/History.tsx` | `handleDeleteSessionOnly` wiring |
-| `src/context/__tests__/AgentSessionListContext.test.tsx` | SP7 regression tests |
+| File                                                         | Change                                          |
+| ------------------------------------------------------------ | ----------------------------------------------- |
+| `src-tauri/src/repositories/session_repository.rs`           | `orphan_and_delete_session` trait + SQLite impl |
+| `src-tauri/src/repositories/in_memory_session_repository.rs` | in-memory impl                                  |
+| `src-tauri/src/agent/session_manager.rs`                     | `delete_session_only`                           |
+| `src-tauri/src/commands/agent_commands.rs`                   | `agent_delete_session_only` command             |
+| `src-tauri/src/lib.rs`                                       | command registration                            |
+| `src/lib/backend/session-crud.ts`                            | `deleteSessionOnly` wrapper                     |
+| `src/context/AgentSessionListContext.tsx`                    | BFS cascade fix + `deleteSessionOnly`           |
+| `src/features/agent/components/SessionCard.tsx`              | conditional confirm UI                          |
+| `src/features/agent/components/SessionHistoryPanel.tsx`      | `onDeleteOnly` prop                             |
+| `src/features/history/History.tsx`                           | `handleDeleteSessionOnly` wiring                |
+| `src/context/__tests__/AgentSessionListContext.test.tsx`     | SP7 regression tests                            |

@@ -16,7 +16,7 @@ for up to 30 seconds.
 
 `cancel_workflow` already calls `SessionBus::notify_status_change` for the
 child session when the child's status changes. SP6 extends this: when the
-*parent* is cancelled, `cancel_workflow` also calls
+_parent_ is cancelled, `cancel_workflow` also calls
 `notify_status_change(parent_session_id)`. The waiter subscribes to **both**
 the child's and the caller's bus entries, so whichever fires first wins.
 
@@ -100,19 +100,19 @@ cancel_workflow()
 
 Location: `src-tauri/src/agent/session_bus.rs` — `#[cfg(test)] mod tests`
 
-| Test | Assertion |
-|------|-----------|
-| `test_sp6_caller_notify_wakes_dual_waiter` | Firing `notify_status_change(parent)` wakes the dual-notifier `select!` via the caller branch |
-| `test_sp6_child_notify_still_wakes_dual_waiter` | Normal child-completion path still works with dual notifiers registered |
-| `test_sp6_cancel_pending_flag_short_circuits_loop` | `AtomicBool = true` causes immediate `Err` return at loop entry |
-| `test_sp6_quiet_caller_does_not_spuriously_wake` | No spurious wakeup when neither notifier fires; hits heartbeat/timeout branch |
+| Test                                               | Assertion                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `test_sp6_caller_notify_wakes_dual_waiter`         | Firing `notify_status_change(parent)` wakes the dual-notifier `select!` via the caller branch |
+| `test_sp6_child_notify_still_wakes_dual_waiter`    | Normal child-completion path still works with dual notifiers registered                       |
+| `test_sp6_cancel_pending_flag_short_circuits_loop` | `AtomicBool = true` causes immediate `Err` return at loop entry                               |
+| `test_sp6_quiet_caller_does_not_spuriously_wake`   | No spurious wakeup when neither notifier fires; hits heartbeat/timeout branch                 |
 
 ## Related Files
 
-| File | Change |
-|------|--------|
-| `src-tauri/src/state.rs` | `ACTIVE_SESSIONS` global, `init_active_sessions`, `get_session_cancel_pending` |
-| `src-tauri/src/lifecycle/app_setup.rs` | `init_active_sessions(manager.active_sessions_arc())` |
-| `src-tauri/src/agent/workflow.rs` | `notify_status_change(session_id)` in deferred cancel path |
-| `src-tauri/src/mcp/builtin/session_api/handlers.rs` | dual-notifier `wait_until_session_terminal` |
-| `src-tauri/src/agent/session_bus.rs` | SP6 regression tests |
+| File                                                | Change                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `src-tauri/src/state.rs`                            | `ACTIVE_SESSIONS` global, `init_active_sessions`, `get_session_cancel_pending` |
+| `src-tauri/src/lifecycle/app_setup.rs`              | `init_active_sessions(manager.active_sessions_arc())`                          |
+| `src-tauri/src/agent/workflow.rs`                   | `notify_status_change(session_id)` in deferred cancel path                     |
+| `src-tauri/src/mcp/builtin/session_api/handlers.rs` | dual-notifier `wait_until_session_terminal`                                    |
+| `src-tauri/src/agent/session_bus.rs`                | SP6 regression tests                                                           |
