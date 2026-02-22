@@ -51,10 +51,17 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
       const call = async () => {
         lastCall = Date.now();
         timeout = null;
+
+        const argsToUse = pendingArgs || args;
+        const resolveToUse = pendingResolve || resolve;
+
         pendingArgs = null;
         pendingResolve = null;
-        const result = await fn(...args);
-        resolve(result);
+
+        const result = await fn(...argsToUse);
+        if (resolveToUse) {
+          resolveToUse(result);
+        }
       };
       if (now - lastCall >= wait) {
         call();
@@ -64,7 +71,7 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
         if (!timeout) {
           timeout = setTimeout(
             () => {
-              if (pendingArgs && pendingResolve) {
+              if (pendingArgs) {
                 call();
               }
             },
