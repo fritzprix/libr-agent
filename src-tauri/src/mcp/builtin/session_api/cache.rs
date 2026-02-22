@@ -294,7 +294,10 @@ mod tests {
 
         for i in 0..2 {
             let res = min_interval_notice(Some(caller), session, None, opts).await;
-            assert!(res.is_none(), "call {i} before threshold must not carry hint");
+            assert!(
+                res.is_none(),
+                "call {i} before threshold must not carry hint"
+            );
         }
 
         let hint = min_interval_notice(Some(caller), session, None, opts).await;
