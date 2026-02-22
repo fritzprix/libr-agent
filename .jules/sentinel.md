@@ -21,3 +21,9 @@
 **Vulnerability:** The `append_file_string` function in `SecureFileManager` did not check if appending content would exceed the configured maximum file size, allowing unbounded file growth beyond `LIBRAGENT_MAX_FILE_SIZE`.
 **Learning:** Append operations must validate the _resulting_ file size (current size + append size), not just the size of the chunk being appended.
 **Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. Use `saturating_add` to prevent integer overflow during size calculation.
+
+## 2026-02-23 - Session ID Path Traversal
+
+**Vulnerability:** `SessionManager` used `session_id` directly in file path construction via `join()`, allowing path traversal (e.g., `../../etc`) to access files outside the workspace directory.
+**Learning:** Identifiers used in file paths must be treated as untrusted input and strictly validated or sanitized, even if they seem internal.
+**Prevention:** Sanitize all session IDs to a safe charset (alphanumeric + `-_`) before using them in file operations. Treat `PathBuf::join` as unsafe when dealing with user input.

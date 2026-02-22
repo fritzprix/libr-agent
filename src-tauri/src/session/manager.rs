@@ -24,6 +24,22 @@ impl SessionManager {
         Self::new_with_base_dir(base_data_dir)
     }
 
+    /// Sanitize session ID to prevent path traversal
+    /// Only allows alphanumeric characters, hyphens, and underscores.
+    /// Everything else (including path separators) is replaced with '_'.
+    fn sanitize_session_id(session_id: &str) -> String {
+        session_id
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect()
+    }
+
     pub fn new_with_base_dir(base_data_dir: PathBuf) -> Result<Self, String> {
         // Create base directory structure
         fs::create_dir_all(base_data_dir.join("workspaces"))
@@ -105,12 +121,13 @@ echo "Available tools: python3, typescript/deno, shell commands"
     /// Fast session creation using template workspace
     /// Async session workspace creation
     async fn create_session_workspace_async(&self, session_id: &str) -> Result<PathBuf, String> {
-        let session_dir = self.base_data_dir.join("workspaces").join(session_id);
+        let safe_session_id = Self::sanitize_session_id(session_id);
+        let session_dir = self.base_data_dir.join("workspaces").join(&safe_session_id);
 
         // Create directory structure asynchronously
         async_fs::create_dir_all(&session_dir)
             .await
-            .map_err(|e| format!("Failed to create session directory '{session_id}': {e}"))?;
+            .map_err(|e| format!("Failed to create session directory '{safe_session_id}': {e}"))?;
 
         // Copy from template if available (async)
         let template_path_option = {
@@ -130,7 +147,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
 
         // Add to workspace pool
         let workspace_info = SessionWorkspaceInfo {
-            session_id: session_id.to_string(),
+            session_id: safe_session_id.clone(),
             workspace_path: session_dir.clone(),
             workspace_override: None,
             created_at: Instant::now(),
@@ -143,7 +160,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
-            pool.insert(session_id.to_string(), workspace_info);
+            pool.insert(safe_session_id, workspace_info);
         }
 
         Ok(session_dir)
@@ -181,9 +198,12 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
-        // Try to find in pool first to see if there is an override
+        let safe_session_id = Self::sanitize_session_id(session_id);
+
+        // Try to find in pool first using sanitized ID
+        // Note: We check the pool with the sanitized ID because all entries are stored sanitized
         if let Ok(pool) = self.workspace_pool.read() {
-            if let Some(info) = pool.get(session_id) {
+            if let Some(info) = pool.get(&safe_session_id) {
                 if let Some(override_path) = &info.workspace_override {
                     return override_path.clone();
                 }
@@ -192,7 +212,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             }
         }
 
-        let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
+        let workspace_dir = self.base_data_dir.join("workspaces").join(&safe_session_id);
 
         // Ensure directory exists
         let final_dir = if let Err(e) = fs::create_dir_all(&workspace_dir) {
@@ -210,7 +230,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
         // Lazy load: Add to pool if missing
         if let Ok(mut pool) = self.workspace_pool.write() {
             // Double check inside write lock
-            if let Some(info) = pool.get(session_id) {
+            if let Some(info) = pool.get(&safe_session_id) {
                 if let Some(override_path) = &info.workspace_override {
                     return override_path.clone();
                 }
@@ -218,15 +238,15 @@ echo "Available tools: python3, typescript/deno, shell commands"
             }
 
             let workspace_info = SessionWorkspaceInfo {
-                session_id: session_id.to_string(),
+                session_id: safe_session_id.clone(),
                 workspace_path: final_dir.clone(),
                 workspace_override: None,
                 created_at: Instant::now(),
                 last_accessed: Instant::now(),
                 is_template: false,
             };
-            pool.insert(session_id.to_string(), workspace_info);
-            info!("Lazy loaded workspace info for session: {}", session_id);
+            pool.insert(safe_session_id.clone(), workspace_info);
+            info!("Lazy loaded workspace info for session: {}", safe_session_id);
         }
 
         final_dir
@@ -296,8 +316,9 @@ echo "Available tools: python3, typescript/deno, shell commands"
 
     /// Get specific session info
     pub fn get_session_info(&self, session_id: &str) -> Option<SessionWorkspaceInfo> {
+        let safe_session_id = Self::sanitize_session_id(session_id);
         let pool = self.workspace_pool.read().ok()?;
-        pool.get(session_id).cloned()
+        pool.get(&safe_session_id).cloned()
     }
 
     /// Pre-allocate sessions for faster switching
@@ -363,6 +384,9 @@ echo "Available tools: python3, typescript/deno, shell commands"
         old_session_id: &str,
         new_session_id: &str,
     ) -> Result<(), String> {
+        let safe_old_id = Self::sanitize_session_id(old_session_id);
+        let safe_new_id = Self::sanitize_session_id(new_session_id);
+
         // Extract session info from pool first
         let (old_path, mut session_info) = {
             let mut pool = self
@@ -370,9 +394,9 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if let Some(mut session_info) = pool.remove(old_session_id) {
+            if let Some(mut session_info) = pool.remove(&safe_old_id) {
                 let old_path = session_info.workspace_path.clone();
-                session_info.session_id = new_session_id.to_string();
+                session_info.session_id = safe_new_id.clone();
                 session_info.last_accessed = Instant::now();
                 (old_path, session_info)
             } else {
@@ -384,7 +408,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
         let new_path = old_path
             .parent()
             .ok_or("Invalid workspace path")?
-            .join(new_session_id);
+            .join(&safe_new_id);
 
         async_fs::rename(&old_path, &new_path)
             .await
@@ -398,10 +422,10 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
-            pool.insert(new_session_id.to_string(), session_info);
+            pool.insert(safe_new_id.clone(), session_info);
         }
 
-        info!("Renamed session '{old_session_id}' to '{new_session_id}'");
+        info!("Renamed session '{safe_old_id}' to '{safe_new_id}'");
 
         Ok(())
     }
@@ -412,33 +436,35 @@ echo "Available tools: python3, typescript/deno, shell commands"
         session_id: &str,
         override_path: PathBuf,
     ) -> Result<(), String> {
+        let safe_session_id = Self::sanitize_session_id(session_id);
         let mut pool = self
             .workspace_pool
             .write()
             .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-        if let Some(session_info) = pool.get_mut(session_id) {
+        if let Some(session_info) = pool.get_mut(&safe_session_id) {
             session_info.workspace_override = Some(override_path);
             session_info.last_accessed = Instant::now();
             Ok(())
         } else {
-            Err(format!("Session '{session_id}' not found"))
+            Err(format!("Session '{safe_session_id}' not found"))
         }
     }
 
     /// Remove a workspace override path for a session
     pub async fn remove_workspace_override(&self, session_id: &str) -> Result<(), String> {
+        let safe_session_id = Self::sanitize_session_id(session_id);
         let mut pool = self
             .workspace_pool
             .write()
             .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-        if let Some(session_info) = pool.get_mut(session_id) {
+        if let Some(session_info) = pool.get_mut(&safe_session_id) {
             session_info.workspace_override = None;
             session_info.last_accessed = Instant::now();
             Ok(())
         } else {
-            Err(format!("Session '{session_id}' not found"))
+            Err(format!("Session '{safe_session_id}' not found"))
         }
     }
 
@@ -448,20 +474,21 @@ echo "Available tools: python3, typescript/deno, shell commands"
         session_id: &str,
         override_path: PathBuf,
     ) -> Result<(), String> {
+        let safe_session_id = Self::sanitize_session_id(session_id);
         let mut pool = self
             .workspace_pool
             .write()
             .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
         // Check if session already exists
-        if let Some(session_info) = pool.get_mut(session_id) {
+        if let Some(session_info) = pool.get_mut(&safe_session_id) {
             // Update existing override
             session_info.workspace_override = Some(override_path);
             session_info.last_accessed = Instant::now();
         } else {
             // Register new override for future session
             let workspace_info = SessionWorkspaceInfo {
-                session_id: session_id.to_string(),
+                session_id: safe_session_id.clone(),
                 // Use override path as base path too, though get_session_workspace_dir_by_id checks override first
                 workspace_path: override_path.clone(),
                 workspace_override: Some(override_path),
@@ -469,10 +496,10 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 last_accessed: Instant::now(),
                 is_template: false,
             };
-            pool.insert(session_id.to_string(), workspace_info);
+            pool.insert(safe_session_id.clone(), workspace_info);
         }
 
-        info!("Registered workspace override for session '{}'", session_id);
+        info!("Registered workspace override for session '{}'", safe_session_id);
         Ok(())
     }
 
@@ -517,16 +544,17 @@ echo "Available tools: python3, typescript/deno, shell commands"
 
     /// Remove a specific session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
+        let safe_session_id = Self::sanitize_session_id(session_id);
         let workspace_path = {
             let mut pool = self
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if let Some(session_info) = pool.remove(session_id) {
+            if let Some(session_info) = pool.remove(&safe_session_id) {
                 session_info.workspace_path
             } else {
-                return Err(format!("Session '{session_id}' not found in pool"));
+                return Err(format!("Session '{safe_session_id}' not found in pool"));
             }
         };
 
@@ -537,7 +565,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
 
-        info!("Removed session '{session_id}' and its workspace");
+        info!("Removed session '{safe_session_id}' and its workspace");
         Ok(())
     }
 

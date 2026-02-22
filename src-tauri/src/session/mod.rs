@@ -93,4 +93,44 @@ mod tests {
             .contains("workspaces/default"));
         assert!(path_default.exists());
     }
+
+    #[test]
+    fn test_path_traversal_prevention() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let base_path = temp_dir.path().to_path_buf();
+        let session_manager =
+            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
+
+        // Attempt path traversal with ".." and "/"
+        // This should be sanitized to "______vulnerable"
+        let malicious_id = "../../vulnerable";
+        let safe_path = session_manager.get_session_workspace_dir_by_id(malicious_id);
+
+        let workspaces_dir = base_path.join("workspaces");
+
+        // Verify the path is strictly within workspaces
+        assert!(safe_path.starts_with(&workspaces_dir));
+
+        // Verify the sanitized name
+        // ".." -> "__" (dot is not alphanumeric)
+        // "/" -> "_"
+        // So "../../vulnerable" -> "______vulnerable"
+        let path_str = safe_path.to_string_lossy();
+        assert!(path_str.contains("______vulnerable"));
+        assert!(!path_str.contains(".."));
+
+        // Verify another case with weird characters
+        let weird_id = "foo/bar\\baz@qux";
+        let safe_weird_path = session_manager.get_session_workspace_dir_by_id(weird_id);
+
+        // "foo/bar\baz@qux" -> "foo_bar_baz_qux" (assuming \ is treated as char, wait backslash is replaced too? No, backslash is not alphanumeric)
+        // sanitize_session_id replaces non-alphanumeric with _
+        // so / -> _
+        // \ -> _
+        // @ -> _
+        // so foo_bar_baz_qux
+
+        let weird_path_str = safe_weird_path.to_string_lossy();
+        assert!(weird_path_str.contains("foo_bar_baz_qux"));
+    }
 }
