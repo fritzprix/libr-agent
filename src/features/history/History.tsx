@@ -13,7 +13,8 @@ const logger = getLogger('History');
 export default function History() {
   const navigate = useNavigate();
   const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { loadSessions, deleteSession } = useAgentSessionListActions();
+  const { loadSessions, deleteSession, deleteSessionOnly } =
+    useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -41,6 +42,19 @@ export default function History() {
     [deleteSession],
   );
 
+  const handleDeleteSessionOnly = useCallback(
+    async (sessionId: string) => {
+      try {
+        await deleteSessionOnly(sessionId);
+        toast.success('Session deleted');
+      } catch (error) {
+        logger.error('Failed to delete session only', error);
+        toast.error('Failed to delete session');
+      }
+    },
+    [deleteSessionOnly],
+  );
+
   const handleRefreshSessions = useCallback(() => {
     loadSessions();
   }, [loadSessions]);
@@ -57,6 +71,7 @@ export default function History() {
         onRefresh={handleRefreshSessions}
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
+        onDeleteOnly={handleDeleteSessionOnly}
         heading="Session History"
         description="Browse and manage your conversation sessions"
         emptyStateTitle="No sessions yet"

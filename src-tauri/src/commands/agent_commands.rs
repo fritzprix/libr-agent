@@ -477,6 +477,21 @@ pub async fn agent_delete_session(
     })
 }
 
+/// Delete only this session, orphaning its direct children as top-level sessions
+#[command]
+pub async fn agent_delete_session_only(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.delete_session_only(session_id.clone()).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Session deleted (children orphaned): {}", session_id),
+        data: None,
+    })
+}
+
 /// Get available tools for a specific agent session
 /// Returns the filtered tool list based on agent configuration
 /// This ensures UI displays the same tools that LLM can actually use

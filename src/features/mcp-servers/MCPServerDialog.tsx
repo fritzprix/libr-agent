@@ -1,4 +1,5 @@
 import React, { useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
 import {
@@ -49,6 +50,7 @@ function MCPServerDialogComponent({
   onSave,
   onCancel,
 }: MCPServerDialogProps) {
+  const { t } = useTranslation('common');
   const [draft, setDraft] = useState(server);
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -203,7 +205,12 @@ function MCPServerDialogComponent({
 
   const handleSave = async () => {
     if (!isValid()) {
-      setValidationError('Please fill in all required fields');
+      setValidationError(
+        t(
+          'mcpServer.dialog.validationError',
+          'Please fill in all required fields',
+        ),
+      );
       return;
     }
 
@@ -273,7 +280,12 @@ function MCPServerDialogComponent({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isNewServer ? 'Add Extension' : `Edit Extension: ${server.name}`}
+            {isNewServer
+              ? t('mcpServer.dialog.titleNew', 'Add Extension')
+              : t('mcpServer.dialog.titleEdit', {
+                  name: server.name,
+                  defaultValue: 'Edit Extension: {{name}}',
+                })}
           </DialogTitle>
         </DialogHeader>
 
@@ -288,22 +300,31 @@ function MCPServerDialogComponent({
           {/* Server Name */}
           <div className="space-y-2">
             <Label htmlFor="server-name">
-              Name <span className="text-destructive">*</span>
+              {t('mcpServer.dialog.nameLabel', 'Name')}{' '}
+              <span className="text-destructive">*</span>
             </Label>
             <Input
               id="server-name"
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              placeholder="e.g., filesystem, github, sequential-thinking"
+              placeholder={t(
+                'mcpServer.dialog.namePlaceholder',
+                'e.g., filesystem, github, sequential-thinking',
+              )}
             />
             <p className="text-xs text-muted-foreground">
-              Unique identifier for this extension
+              {t(
+                'mcpServer.dialog.nameDesc',
+                'Unique identifier for this extension',
+              )}
             </p>
           </div>
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="server-description">Description</Label>
+            <Label htmlFor="server-description">
+              {t('mcpServer.dialog.descLabel', 'Description')}
+            </Label>
             <Textarea
               id="server-description"
               value={draft.metadata?.description || ''}
@@ -313,7 +334,10 @@ function MCPServerDialogComponent({
                   metadata: { ...draft.metadata, description: e.target.value },
                 })
               }
-              placeholder="Optional description for this extension"
+              placeholder={t(
+                'mcpServer.dialog.descPlaceholder',
+                'Optional description for this extension',
+              )}
               rows={2}
             />
           </div>
@@ -321,7 +345,8 @@ function MCPServerDialogComponent({
           {/* Transport Type */}
           <div className="space-y-2">
             <Label htmlFor="transport-type">
-              Transport Type <span className="text-destructive">*</span>
+              {t('mcpServer.dialog.transportLabel', 'Transport Type')}{' '}
+              <span className="text-destructive">*</span>
             </Label>
             <Select
               value={
@@ -349,8 +374,15 @@ function MCPServerDialogComponent({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="stdio">stdio (Local Process)</SelectItem>
-                <SelectItem value="http">HTTP (Remote Server)</SelectItem>
+                <SelectItem value="stdio">
+                  {t(
+                    'mcpServer.dialog.transportStdio',
+                    'stdio (Local Process)',
+                  )}
+                </SelectItem>
+                <SelectItem value="http">
+                  {t('mcpServer.dialog.transportHttp', 'HTTP (Remote Server)')}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -360,7 +392,8 @@ function MCPServerDialogComponent({
             <>
               <div className="space-y-2">
                 <Label htmlFor="stdio-command">
-                  Command <span className="text-destructive">*</span>
+                  {t('mcpServer.dialog.commandLabel', 'Command')}{' '}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="stdio-command"
@@ -382,15 +415,23 @@ function MCPServerDialogComponent({
                       });
                     }
                   }}
-                  placeholder="e.g., npx, node, python"
+                  placeholder={t(
+                    'mcpServer.dialog.commandPlaceholder',
+                    'e.g., npx, node, python',
+                  )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Executable command to start the extension
+                  {t(
+                    'mcpServer.dialog.commandDesc',
+                    'Executable command to start the extension',
+                  )}
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="stdio-args">Arguments</Label>
+                <Label htmlFor="stdio-args">
+                  {t('mcpServer.dialog.argsLabel', 'Arguments')}
+                </Label>
                 <Input
                   id="stdio-args"
                   value={argsText}
@@ -398,18 +439,28 @@ function MCPServerDialogComponent({
                     setArgsText(e.target.value);
                     if (validationError) setValidationError(null);
                   }}
-                  placeholder="e.g., -y @modelcontextprotocol/server-filesystem /tmp"
+                  placeholder={t(
+                    'mcpServer.dialog.argsPlaceholder',
+                    'e.g., -y @modelcontextprotocol/server-filesystem /tmp',
+                  )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Space-separated command arguments. Multiple spaces will be
-                  normalized when saving.
+                  {t(
+                    'mcpServer.dialog.argsDesc',
+                    'Space-separated command arguments. Multiple spaces will be normalized when saving.',
+                  )}
                 </p>
               </div>
 
               {/* Environment Variables List */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label>Environment Variables</Label>
+                  <Label>
+                    {t(
+                      'mcpServer.dialog.envVarsLabel',
+                      'Environment Variables',
+                    )}
+                  </Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -417,7 +468,8 @@ function MCPServerDialogComponent({
                     onClick={handleAddEnvVar}
                     className="h-7 text-xs"
                   >
-                    <Plus className="w-3 h-3 mr-1" /> Add Variable
+                    <Plus className="w-3 h-3 mr-1" />{' '}
+                    {t('mcpServer.dialog.addEnvVar', 'Add Variable')}
                   </Button>
                 </div>
 
@@ -426,7 +478,10 @@ function MCPServerDialogComponent({
                   ?.variableDefinitions && (
                   <div className="space-y-4 mb-4 p-4 border rounded-md bg-muted/10">
                     <h4 className="text-sm font-medium mb-2">
-                      Required Configuration
+                      {t(
+                        'mcpServer.dialog.requiredConfig',
+                        'Required Configuration',
+                      )}
                     </h4>
                     {Object.entries(
                       (server.metadata as MCPServerMetadata)
@@ -491,13 +546,19 @@ function MCPServerDialogComponent({
                   !(server.metadata as MCPServerMetadata | undefined)
                     ?.variableDefinitions && (
                     <div className="text-xs text-muted-foreground italic py-2 border rounded-md border-dashed text-center bg-muted/20">
-                      No custom environment variables configured.
+                      {t(
+                        'mcpServer.dialog.noCustomEnv',
+                        'No custom environment variables configured.',
+                      )}
                     </div>
                   )
                 ) : (
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">
-                      Custom Variables
+                      {t(
+                        'mcpServer.dialog.customVarsLabel',
+                        'Custom Variables',
+                      )}
                     </Label>
                     {envVars
                       .filter(
@@ -509,7 +570,10 @@ function MCPServerDialogComponent({
                         <div key={item.id} className="flex gap-2 items-start">
                           <div className="flex-1">
                             <Input
-                              placeholder="Key (e.g. API_KEY)"
+                              placeholder={t(
+                                'mcpServer.dialog.envVarKeyPlaceholder',
+                                'Key (e.g. API_KEY)',
+                              )}
                               value={item.key}
                               onChange={(e) =>
                                 handleUpdateEnvVar(
@@ -519,11 +583,15 @@ function MCPServerDialogComponent({
                                 )
                               }
                               className="h-8 text-sm font-mono"
+                              aria-label="Environment variable key"
                             />
                           </div>
                           <div className="flex-1">
                             <Input
-                              placeholder="Value"
+                              placeholder={t(
+                                'mcpServer.dialog.envVarValuePlaceholder',
+                                'Value',
+                              )}
                               value={item.value}
                               onChange={(e) =>
                                 handleUpdateEnvVar(
@@ -534,6 +602,7 @@ function MCPServerDialogComponent({
                               }
                               type="password" // Mask values for security
                               className="h-8 text-sm font-mono"
+                              aria-label="Environment variable value"
                             />
                           </div>
                           <Button
@@ -543,8 +612,15 @@ function MCPServerDialogComponent({
                             onClick={() => handleRemoveEnvVar(item.id)}
                             aria-label={
                               item.key
-                                ? `Remove environment variable ${item.key}`
-                                : 'Remove unnamed environment variable'
+                                ? t('mcpServer.dialog.removeEnvVar', {
+                                    key: item.key,
+                                    defaultValue:
+                                      'Remove environment variable {{key}}',
+                                  })
+                                : t(
+                                    'mcpServer.dialog.removeUnnamedEnvVar',
+                                    'Remove unnamed environment variable',
+                                  )
                             }
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                           >
@@ -555,7 +631,10 @@ function MCPServerDialogComponent({
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Environment variables passed to the process (e.g. API Keys).
+                  {t(
+                    'mcpServer.dialog.envVarDesc',
+                    'Environment variables passed to the process (e.g. API Keys).',
+                  )}
                 </p>
               </div>
             </>
@@ -567,7 +646,8 @@ function MCPServerDialogComponent({
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="http-url">
-                  URL <span className="text-destructive">*</span>
+                  {t('mcpServer.dialog.urlLabel', 'URL')}{' '}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="http-url"
@@ -587,18 +667,24 @@ function MCPServerDialogComponent({
                       } as TransportConfig,
                     });
                   }}
-                  placeholder="https://api.example.com/mcp"
+                  placeholder={t(
+                    'mcpServer.dialog.urlPlaceholder',
+                    'https://api.example.com/mcp',
+                  )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Full URL to the remote extension endpoint
+                  {t(
+                    'mcpServer.dialog.urlDesc',
+                    'Full URL to the remote extension endpoint',
+                  )}
                 </p>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="http-api-key">
-                  API Key / Token{' '}
+                  {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
                   <span className="text-muted-foreground text-xs">
-                    (Optional)
+                    {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
                   </span>
                 </Label>
                 <Input
@@ -606,11 +692,16 @@ function MCPServerDialogComponent({
                   type="password"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Secret Token"
+                  placeholder={t(
+                    'mcpServer.dialog.apiKeyPlaceholder',
+                    'Secret Token',
+                  )}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Automatically adds &apos;Authorization: Bearer
-                  &lt;token&gt;&apos; header.
+                  {t(
+                    'mcpServer.dialog.apiKeyDesc',
+                    "Automatically adds 'Authorization: Bearer <token>' header.",
+                  )}
                 </p>
               </div>
 
@@ -621,9 +712,14 @@ function MCPServerDialogComponent({
                   onClick={() => setShowAdvanced(!showAdvanced)}
                   aria-expanded={showAdvanced}
                   aria-controls={advancedPanelId}
-                  className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors"
+                  className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none rounded-md"
                 >
-                  <span>Advanced Settings</span>
+                  <span>
+                    {t(
+                      'mcpServer.dialog.advancedSettings',
+                      'Advanced Settings',
+                    )}
+                  </span>
                   {showAdvanced ? (
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
                   ) : (
@@ -639,7 +735,12 @@ function MCPServerDialogComponent({
                     {/* Custom Headers */}
                     <div className="space-y-2 mt-4">
                       <div className="flex items-center justify-between">
-                        <Label>Custom Headers</Label>
+                        <Label>
+                          {t(
+                            'mcpServer.dialog.customHeadersLabel',
+                            'Custom Headers',
+                          )}
+                        </Label>
                         <Button
                           type="button"
                           variant="outline"
@@ -647,13 +748,17 @@ function MCPServerDialogComponent({
                           onClick={handleAddHeader}
                           className="h-7 text-xs"
                         >
-                          <Plus className="w-3 h-3 mr-1" /> Add Header
+                          <Plus className="w-3 h-3 mr-1" />{' '}
+                          {t('mcpServer.dialog.addHeader', 'Add Header')}
                         </Button>
                       </div>
 
                       {customHeaders.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic py-1">
-                          No custom headers configured.
+                          {t(
+                            'mcpServer.dialog.noCustomHeaders',
+                            'No custom headers configured.',
+                          )}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -664,7 +769,10 @@ function MCPServerDialogComponent({
                             >
                               <div className="flex-1">
                                 <Input
-                                  placeholder="Key (e.g. User-Agent)"
+                                  placeholder={t(
+                                    'mcpServer.dialog.headerKeyPlaceholder',
+                                    'Key (e.g. User-Agent)',
+                                  )}
                                   value={header.key}
                                   onChange={(e) =>
                                     handleUpdateHeader(
@@ -674,11 +782,15 @@ function MCPServerDialogComponent({
                                     )
                                   }
                                   className="h-8 text-sm"
+                                  aria-label="Custom header key"
                                 />
                               </div>
                               <div className="flex-1">
                                 <Input
-                                  placeholder="Value"
+                                  placeholder={t(
+                                    'mcpServer.dialog.headerValuePlaceholder',
+                                    'Value',
+                                  )}
                                   value={header.value}
                                   onChange={(e) =>
                                     handleUpdateHeader(
@@ -688,6 +800,7 @@ function MCPServerDialogComponent({
                                     )
                                   }
                                   className="h-8 text-sm"
+                                  aria-label="Custom header value"
                                 />
                               </div>
                               <Button
@@ -697,8 +810,14 @@ function MCPServerDialogComponent({
                                 onClick={() => handleRemoveHeader(header.id)}
                                 aria-label={
                                   header.key
-                                    ? `Remove header ${header.key}`
-                                    : 'Remove unnamed header'
+                                    ? t('mcpServer.dialog.removeHeader', {
+                                        key: header.key,
+                                        defaultValue: 'Remove header {{key}}',
+                                      })
+                                    : t(
+                                        'mcpServer.dialog.removeUnnamedHeader',
+                                        'Remove unnamed header',
+                                      )
                                 }
                                 className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               >
@@ -714,11 +833,16 @@ function MCPServerDialogComponent({
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
                         <Label htmlFor="enable-sse">
-                          Enable Server-Sent Events (SSE)
+                          {t(
+                            'mcpServer.dialog.sseLabel',
+                            'Enable Server-Sent Events (SSE)',
+                          )}
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Keep enabled for streaming responses. Disable for
-                          stateless HTTP.
+                          {t(
+                            'mcpServer.dialog.sseDesc',
+                            'Keep enabled for streaming responses. Disable for stateless HTTP.',
+                          )}
                         </p>
                       </div>
                       <Switch
@@ -736,10 +860,12 @@ function MCPServerDialogComponent({
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={isSaving}>
-            Cancel
+            {t('mcpServer.dialog.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSave} disabled={!isValid() || isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
+            {isSaving
+              ? t('mcpServer.dialog.saving', 'Saving...')
+              : t('mcpServer.dialog.save', 'Save')}
           </Button>
         </DialogFooter>
       </DialogContent>

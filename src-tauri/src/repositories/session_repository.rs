@@ -1,6 +1,7 @@
 use super::error::DbError;
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::sea_query::Expr;
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -114,6 +115,9 @@ pub trait SessionRepository: Send + Sync {
 
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
+
+    /// Delete only this session, orphaning its direct children (set their parent_session_id to NULL)
+    async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -255,6 +259,22 @@ impl SessionRepository for SqliteSessionRepository {
     }
 
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError> {
+        Session::delete_by_id(session_id).exec(&self.db).await?;
+        Ok(())
+    }
+
+    async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError> {
+        // Nullify parent_session_id for direct children
+        session::Entity::update_many()
+            .col_expr(
+                session::Column::ParentSessionId,
+                Expr::value(Option::<String>::None),
+            )
+            .filter(session::Column::ParentSessionId.eq(session_id.to_string()))
+            .exec(&self.db)
+            .await?;
+
+        // Delete only this session (children are now top-level orphans)
         Session::delete_by_id(session_id).exec(&self.db).await?;
         Ok(())
     }

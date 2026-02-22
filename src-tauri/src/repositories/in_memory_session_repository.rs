@@ -184,6 +184,18 @@ impl SessionRepository for InMemorySessionRepository {
         );
         Ok(())
     }
+
+    async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        // Nullify parent_session_id for direct children
+        for s in sessions.values_mut() {
+            if s.parent_session_id.as_deref() == Some(session_id) {
+                s.parent_session_id = None;
+            }
+        }
+        sessions.remove(session_id);
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {

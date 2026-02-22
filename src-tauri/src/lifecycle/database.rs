@@ -12,42 +12,6 @@ use std::time::{Duration, Instant};
 use super::database_backup::BackupManager;
 use super::database_error::{DatabaseError, DatabaseResult};
 use super::migration_verifier::MigrationVerifier;
-#[cfg(test)]
-use super::retry_utils::retry_with_backoff;
-
-/// Helper function to safely remove database file by renaming it
-#[cfg(test)]
-fn remove_db_file(file_path: &str) -> DatabaseResult<()> {
-    let backup = format!("{}.old", file_path);
-
-    // Try to remove existing backup first
-    if std::path::Path::new(&backup).exists() {
-        if let Err(e) = std::fs::remove_file(&backup) {
-            warn!("⚠️ Failed to remove existing backup: {}", e);
-        }
-    }
-
-    // Try to rename with retry and exponential backoff
-    retry_with_backoff(
-        || std::fs::rename(file_path, &backup),
-        5,   // 5 attempts
-        100, // Start with 100ms
-    )
-    .map_err(|e| {
-        // Check for Windows file locking (error code 32)
-        if e.raw_os_error() == Some(32) || e.kind() == std::io::ErrorKind::PermissionDenied {
-            DatabaseError::FileLocked {
-                path: file_path.to_string(),
-                attempts: 5,
-            }
-        } else {
-            DatabaseError::IoError(e)
-        }
-    })?;
-
-    info!("✅ Database file moved to: {}", backup);
-    Ok(())
-}
 
 /// Extract the filesystem path from a `sqlite://` URL, stripping any query parameters.
 ///

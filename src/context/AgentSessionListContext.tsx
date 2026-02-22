@@ -45,6 +45,11 @@ interface AgentSessionListActionsContextValue {
    * Delete an agent session
    */
   deleteSession: (sessionId: string) => Promise<void>;
+
+  /**
+   * Delete only this session, orphaning its direct children as top-level sessions
+   */
+  deleteSessionOnly: (sessionId: string) => Promise<void>;
 }
 
 const AgentSessionListActionsContext = createContext<
@@ -293,7 +298,7 @@ export function AgentSessionListProvider({
   );
 
   /**
-   * Delete an agent session
+   * Delete an agent session (cascade: removes all descendants too)
    */
   const deleteSession = useCallback(async (sessionId: string) => {
     logger.info('Deleting agent session', { sessionId });
@@ -301,12 +306,57 @@ export function AgentSessionListProvider({
     try {
       await invoke('agent_delete_session', { sessionId });
 
-      // Remove from sessions list
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      // Remove the session and ALL its descendants from the UI
+      setSessions((prev) => {
+        // Collect all descendant IDs via BFS
+        const toRemove = new Set<string>([sessionId]);
+        let frontier = [sessionId];
+        while (frontier.length > 0) {
+          const next: string[] = [];
+          for (const s of prev) {
+            if (
+              s.parentSessionId !== undefined &&
+              frontier.includes(s.parentSessionId)
+            ) {
+              toRemove.add(s.id);
+              next.push(s.id);
+            }
+          }
+          frontier = next;
+        }
+        return prev.filter((s) => !toRemove.has(s.id));
+      });
 
       logger.info('Session deleted successfully', { sessionId });
     } catch (err) {
       logger.error('Failed to delete session', err);
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Delete only this session, orphaning direct children as top-level sessions
+   */
+  const deleteSessionOnly = useCallback(async (sessionId: string) => {
+    logger.info('Deleting session only (orphaning children)', { sessionId });
+
+    try {
+      await invoke('agent_delete_session_only', { sessionId });
+
+      // Remove the session; update direct children to have no parent
+      setSessions((prev) =>
+        prev
+          .filter((s) => s.id !== sessionId)
+          .map((s) =>
+            s.parentSessionId === sessionId
+              ? { ...s, parentSessionId: undefined }
+              : s,
+          ),
+      );
+
+      logger.info('Session deleted (children orphaned)', { sessionId });
+    } catch (err) {
+      logger.error('Failed to delete session only', err);
       throw err;
     }
   }, []);
@@ -369,8 +419,9 @@ export function AgentSessionListProvider({
       createSession,
       loadSessions,
       deleteSession,
+      deleteSessionOnly,
     }),
-    [createSession, loadSessions, deleteSession],
+    [createSession, loadSessions, deleteSession, deleteSessionOnly],
   );
 
   return (

@@ -314,6 +314,36 @@ pub async fn update_session_status(
     session_id: &str,
     status: SessionStatus,
 ) -> Result<(), String> {
+    // SP2: Acquire/release active-agent slot based on the status transition direction.
+    //
+    // Rules:
+    //  • {Idle|Error|Paused} → Busy   : acquire slot (blocks if all slots taken)
+    //  • Busy → {Idle|Error|Paused}   : release slot
+    //  • Busy → Busy (re-entrancy)    : no-op (already holding a slot)
+    //  • non-Busy → non-Busy          : no-op
+    //
+    // We read prev_status from the in-memory map before the write lock so that the
+    // semaphore operation (which may await) doesn't happen while holding the write lock.
+    let prev_status = {
+        let active = active_sessions.read().await;
+        active.get(session_id).map(|s| s.metadata.status.clone())
+    };
+    let is_prev_busy = matches!(prev_status, Some(SessionStatus::Busy));
+    let is_next_busy = status == SessionStatus::Busy;
+
+    let gate = crate::state::get_concurrency_gate();
+    match (is_prev_busy, is_next_busy) {
+        (false, true) => {
+            // Entering Busy: acquire an active-agent slot (blocks until one is free).
+            gate.acquire_active_agent().await?;
+        }
+        (true, false) => {
+            // Leaving Busy: release the slot so another session can run.
+            gate.release_active_agent();
+        }
+        _ => {} // re-entrancy (Busy→Busy) or non-Busy→non-Busy: no-op
+    }
+
     session_repo
         .update_status(session_id, status.clone())
         .await
@@ -324,6 +354,10 @@ pub async fn update_session_status(
     if let Some(session) = active.get_mut(session_id) {
         session.metadata.status = status.clone();
     }
+    drop(active); // Release write lock before waking waiters.
+
+    // SP1: Wake any tasks sleeping on this session's status change (e.g. awaitAgent).
+    crate::state::get_session_bus().notify_status_change(session_id);
 
     // Emit status changed event
     let event = crate::agent::events::AgentEvent::StatusChanged {

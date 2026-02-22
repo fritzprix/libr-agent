@@ -196,6 +196,124 @@ function AdvancedTabComponent({
         </p>
       </div>
 
+      {/* SP2: Global Concurrency Control */}
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.maxConcurrentActiveSessions',
+            'Max Concurrent Agent Sessions',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="e.g., 4"
+          min={1}
+          max={32}
+          step={1}
+          value={localAdvancedSettings.maxConcurrentActiveSessions ?? 4}
+          onChange={(e) =>
+            onChange(
+              'maxConcurrentActiveSessions',
+              parseInt(e.target.value, 10) || 4,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.maxConcurrentActiveSessionsDescription',
+            'Maximum number of agent sessions running their LLM loop simultaneously. Higher values use more API quota and memory.',
+          )}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.maxSuspendedSessions',
+            'Max Suspended Agent Sessions',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="e.g., 8"
+          min={1}
+          max={64}
+          step={1}
+          value={localAdvancedSettings.maxSuspendedSessions ?? 8}
+          onChange={(e) =>
+            onChange('maxSuspendedSessions', parseInt(e.target.value, 10) || 8)
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.maxSuspendedSessionsDescription',
+            'Maximum number of agent sessions that can be paused waiting for a child agent to complete. Should be ≥ active sessions.',
+          )}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.maxConcurrentActiveProcesses',
+            'Max Concurrent Shell Processes',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="e.g., 10"
+          min={1}
+          max={64}
+          step={1}
+          value={localAdvancedSettings.maxConcurrentActiveProcesses ?? 10}
+          onChange={(e) =>
+            onChange(
+              'maxConcurrentActiveProcesses',
+              parseInt(e.target.value, 10) || 10,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.maxConcurrentActiveProcessesDescription',
+            'Maximum number of shell/code processes running simultaneously across all agent sessions.',
+          )}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t(
+            'settings.advanced.maxSuspendedProcesses',
+            'Max Suspended Shell Processes',
+          )}
+        </label>
+        <Input
+          type="number"
+          placeholder="e.g., 20"
+          min={1}
+          max={128}
+          step={1}
+          value={localAdvancedSettings.maxSuspendedProcesses ?? 20}
+          onChange={(e) =>
+            onChange(
+              'maxSuspendedProcesses',
+              parseInt(e.target.value, 10) || 20,
+            )
+          }
+          className="bg-background border text-foreground w-full max-w-xs"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          {t(
+            'settings.advanced.maxSuspendedProcessesDescription',
+            'Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.',
+          )}
+        </p>
+      </div>
+
       <div className="min-w-0">
         <label className="block text-muted-foreground mb-2 font-medium">
           {t('settings.advanced.shellIsolation', 'Shell Isolation Level')}
@@ -242,6 +360,14 @@ export default React.memo(AdvancedTabComponent, (prev, next) => {
       next.localAdvancedSettings.defaultSessionMaxDepth &&
     prev.localAdvancedSettings.defaultSessionMaxFanout ===
       next.localAdvancedSettings.defaultSessionMaxFanout &&
+    prev.localAdvancedSettings.maxConcurrentActiveSessions ===
+      next.localAdvancedSettings.maxConcurrentActiveSessions &&
+    prev.localAdvancedSettings.maxSuspendedSessions ===
+      next.localAdvancedSettings.maxSuspendedSessions &&
+    prev.localAdvancedSettings.maxConcurrentActiveProcesses ===
+      next.localAdvancedSettings.maxConcurrentActiveProcesses &&
+    prev.localAdvancedSettings.maxSuspendedProcesses ===
+      next.localAdvancedSettings.maxSuspendedProcesses &&
     prev.onChange === next.onChange &&
     prev.systemSettingsProps.localSystemSettings ===
       next.systemSettingsProps.localSystemSettings &&

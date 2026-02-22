@@ -165,159 +165,174 @@ export default function PlaybookList() {
   // Render list regardless of session state
 
   return (
-    <div className="container mx-auto p-6 h-full flex flex-col min-h-0 bg-background">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Playbooks</h1>
-          <p className="text-muted-foreground mt-1">
-            Browse and execute automated workflows
-          </p>
-        </div>
+    <div className="p-6 h-full flex flex-col bg-background">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+              <PlaybookIcon size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+                Playbooks
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Browse and execute automated workflows
+              </p>
+            </div>
+          </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => fetchData()}
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-          <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search playbooks..."
-              className="pl-8"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => fetchData()}
+              disabled={loading}
+              className="h-9 w-9"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
+            </Button>
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search playbooks..."
+                className="pl-8 h-9"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <SortControls
+              sortMode={sortMode}
+              setSortMode={setSortMode}
+              sortOrder={sortOrder}
+              setSortOrder={setSortOrder}
+              groupMode={groupMode}
+              setGroupMode={setGroupMode}
+              bookmarkFirst={bookmarkFirst}
+              onBookmarkFirstToggle={() => setBookmarkFirst(!bookmarkFirst)}
             />
           </div>
-          <SortControls
-            sortMode={sortMode}
-            setSortMode={setSortMode}
-            sortOrder={sortOrder}
-            setSortOrder={setSortOrder}
-            groupMode={groupMode}
-            setGroupMode={setGroupMode}
-            bookmarkFirst={bookmarkFirst}
-            onBookmarkFirstToggle={() => setBookmarkFirst(!bookmarkFirst)}
-          />
         </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 pr-1">
-        {loading && playbooks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
-            <Loader2 className="h-10 w-10 animate-spin mb-4" />
-            <p>Loading playbooks...</p>
-          </div>
-        ) : processedPlaybooks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto">
-            <Card className="w-full bg-card/50 backdrop-blur-sm border-dashed">
-              <CardHeader>
-                <div className="mx-auto bg-primary/10 p-4 rounded-full mb-4 w-16 h-16 flex items-center justify-center">
-                  <PlaybookIcon className="w-8 h-8 text-primary" />
-                </div>
-                <CardTitle className="text-2xl font-bold">
-                  플레이북(Playbook) 시작하기
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6 text-muted-foreground">
-                <p>
-                  플레이북은 Agent가 성공적으로 실행한 복잡한 요청을 다시할 수
-                  있도록 기록한 것입니다.
-                </p>
-                <div className="grid gap-4 text-left p-4 bg-muted/50 rounded-lg">
-                  <div className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      1
-                    </span>
-                    <p className="text-sm">
-                      Agent에게{' '}
-                      <span className="font-semibold text-foreground">
-                        &quot;플레이북을 만들어줘&quot;
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+          {loading && playbooks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
+              <Loader2 className="h-10 w-10 animate-spin mb-4" />
+              <p>Loading playbooks...</p>
+            </div>
+          ) : processedPlaybooks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto">
+              <Card className="w-full bg-card/50 backdrop-blur-sm border-dashed">
+                <CardHeader>
+                  <div className="mx-auto bg-primary/10 p-4 rounded-full mb-4 w-16 h-16 flex items-center justify-center">
+                    <PlaybookIcon className="w-8 h-8 text-primary" />
+                  </div>
+                  <CardTitle className="text-2xl font-bold">
+                    플레이북(Playbook) 시작하기
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6 text-muted-foreground">
+                  <p>
+                    플레이북은 Agent가 성공적으로 실행한 복잡한 요청을 다시할 수
+                    있도록 기록한 것입니다.
+                  </p>
+                  <div className="grid gap-4 text-left p-4 bg-muted/50 rounded-lg">
+                    <div className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                        1
                       </span>
-                      라고 이야기하여 생성할 수 있습니다.
-                    </p>
+                      <p className="text-sm">
+                        Agent에게{' '}
+                        <span className="font-semibold text-foreground">
+                          &quot;플레이북을 만들어줘&quot;
+                        </span>
+                        라고 이야기하여 생성할 수 있습니다.
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                        2
+                      </span>
+                      <p className="text-sm">
+                        생성된 Playbook을 활용하면 복잡한 프롬프트를 다시
+                        입력하지 않아도, 복잡한 작업을 반복적으로 실행할 수
+                        있습니다.
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex gap-3">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      2
-                    </span>
-                    <p className="text-sm">
-                      생성된 Playbook을 활용하면 복잡한 프롬프트를 다시 입력하지
-                      않아도, 복잡한 작업을 반복적으로 실행할 수 있습니다.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <div className="space-y-8 pb-8">
-            {groupMode === 'none' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {processedPlaybooks.map((playbook) => (
-                  <PlaybookCard
-                    key={playbook.id}
-                    playbook={playbook}
-                    assistantName={
-                      assistants[playbook.agentId]?.name || 'Unknown'
-                    }
-                    onBookmarkToggle={(id, val) =>
-                      handleBookmarkToggle(id, val, playbook.agentId)
-                    }
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            ) : (
-              groupKeys.map(
-                (key) =>
-                  groups &&
-                  groups[key] && (
-                    <PlaybookGroup
-                      key={key}
-                      title={key}
-                      playbooks={groups[key]}
-                      assistantMap={assistants}
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="space-y-8 pb-8">
+              {groupMode === 'none' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {processedPlaybooks.map((playbook) => (
+                    <PlaybookCard
+                      key={playbook.id}
+                      playbook={playbook}
+                      assistantName={
+                        assistants[playbook.agentId]?.name || 'Unknown'
+                      }
                       onBookmarkToggle={(id, val) =>
-                        handleBookmarkToggle(
-                          id,
-                          val,
-                          groups[key].find((p) => p.id === id)?.agentId || '',
-                        )
+                        handleBookmarkToggle(id, val, playbook.agentId)
                       }
                       onDelete={handleDelete}
                     />
-                  ),
-              )
-            )}
-          </div>
-        )}
-      </div>
+                  ))}
+                </div>
+              ) : (
+                groupKeys.map(
+                  (key) =>
+                    groups &&
+                    groups[key] && (
+                      <PlaybookGroup
+                        key={key}
+                        title={key}
+                        playbooks={groups[key]}
+                        assistantMap={assistants}
+                        onBookmarkToggle={(id, val) =>
+                          handleBookmarkToggle(
+                            id,
+                            val,
+                            groups[key].find((p) => p.id === id)?.agentId || '',
+                          )
+                        }
+                        onDelete={handleDelete}
+                      />
+                    ),
+                )
+              )}
+            </div>
+          )}
+        </div>
 
-      <AlertDialog
-        open={!!playbookToDelete}
-        onOpenChange={(open) => !open && setPlaybookToDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Playbook</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;{playbookToDelete?.goal}
-              &quot;? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog
+          open={!!playbookToDelete}
+          onOpenChange={(open) => !open && setPlaybookToDelete(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Playbook</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete &quot;{playbookToDelete?.goal}
+                &quot;? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmDelete}>
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

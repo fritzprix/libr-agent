@@ -14,7 +14,11 @@ static TEST_DB: OnceCell<Arc<DatabaseConnection>> = OnceCell::const_new();
 async fn get_or_create_test_db() -> Arc<DatabaseConnection> {
     TEST_DB
         .get_or_init(|| async {
-            let db = Database::connect("sqlite::memory:")
+            use sea_orm::ConnectOptions;
+            let mut opt =
+                ConnectOptions::new("sqlite::file:playbook_tests?mode=memory&cache=shared");
+            opt.min_connections(1);
+            let db = Database::connect(opt)
                 .await
                 .expect("Failed to connect to in-memory database");
 
@@ -48,7 +52,6 @@ async fn get_or_create_test_db() -> Arc<DatabaseConnection> {
         .clone()
 }
 
-#[tokio::test(flavor = "multi_thread")]
 async fn test_playbook_ui_rendering_integration() {
     // Setup shared in-memory database
     let db = get_or_create_test_db().await;
@@ -198,7 +201,6 @@ async fn test_playbook_ui_rendering_integration() {
     assert_eq!(structured["page"]["items"].as_array().unwrap().len(), 2);
 }
 
-#[tokio::test(flavor = "multi_thread")]
 async fn test_playbook_ui_interaction_flow() {
     // Setup
     let db = get_or_create_test_db().await;
@@ -324,4 +326,11 @@ async fn test_playbook_ui_interaction_flow() {
 
     let structured = final_list.structured_content.unwrap();
     assert_eq!(structured["page"]["totalItems"], 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_playbook_integration_suite() {
+    // Run sequentially to avoid race condition on shared memory DB and global repositories
+    test_playbook_ui_interaction_flow().await;
+    test_playbook_ui_rendering_integration().await;
 }

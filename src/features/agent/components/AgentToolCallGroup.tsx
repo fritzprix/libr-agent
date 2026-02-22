@@ -210,10 +210,15 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
     return { successCount: success, errorCount: error, runningCount: running };
   }, [toolResults]);
 
-  // Determine visible items
+  // Determine visible items and their corresponding results
+  // We slice both arrays identically to ensure index alignment without O(N) searching
   const visibleCalls = isExpanded
     ? toolGroup.calls
     : toolGroup.calls.slice(-visibleCount);
+
+  const visibleResults = isExpanded
+    ? toolResults
+    : toolResults.slice(-visibleCount);
 
   const hiddenCount = Math.max(0, toolGroup.calls.length - visibleCount);
 
@@ -255,13 +260,8 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
       {/* Tool Call List - Compact items without individual borders */}
       <div className="px-2 py-2 space-y-0.5">
         {visibleCalls.map((toolCall, index) => {
-          // Find the corresponding result.
-          // Since visibleCalls is a slice, we need the original index for toolResults lookup.
-          // However, we can also just find it, but toolResults is 1:1.
-          // A safer way if slicing is involved is to find index in original calls.
-          const originalIndex = toolGroup.calls.indexOf(toolCall);
-          const toolResult = toolResults[originalIndex];
-
+          // Optimization: Access result directly by parallel index instead of O(N) indexOf search
+          const toolResult = visibleResults[index];
           const isLastItem = isLast && index === visibleCalls.length - 1;
 
           return (

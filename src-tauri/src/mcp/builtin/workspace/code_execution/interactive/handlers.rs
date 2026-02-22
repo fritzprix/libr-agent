@@ -573,8 +573,8 @@ impl WorkspaceServer {
                 ),
                 vec![
                     format!(
-                        "Use pollProcess(\"{}\") to check status and completion",
-                        process_id
+                        "Use waitForProcess(\"{}\", 0) to check status, or waitForProcess(\"{}\") to block until done",
+                        process_id, process_id
                     ),
                     "If status is 'failed', use readProcessOutput with 'stderr' to view errors"
                         .to_string(),

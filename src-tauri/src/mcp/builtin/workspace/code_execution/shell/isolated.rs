@@ -398,7 +398,7 @@ impl WorkspaceServer {
                         timeout_secs
                     ));
                     guidance.push("Use spawnProcess for long-running background tasks".to_string());
-                    guidance.push("Use pollProcess to check status of async commands".to_string());
+                    guidance.push("Use waitForProcess(processId, 0) to check status, or waitForProcess(processId) to block until done".to_string());
                 }
 
                 Ok(
