@@ -42,7 +42,9 @@ class ErrorBoundary extends Component<Props, State> {
               {t('error.title')}
             </h1>
             <details className="text-left">
-              <summary className="cursor-pointer mb-2">{t('error.details')}</summary>
+              <summary className="cursor-pointer mb-2">
+                {t('error.details')}
+              </summary>
               <pre className="mt-2 p-4 bg-muted rounded overflow-auto max-w-2xl">
                 {this.state.error?.message}
                 {'\n\n'}

@@ -211,7 +211,9 @@ export default function AppSidebar() {
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <History size={14} />
-                      <span className="text-xs">{t('sidebar.seeAllSessions')}</span>
+                      <span className="text-xs">
+                        {t('sidebar.seeAllSessions')}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
