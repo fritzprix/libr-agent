@@ -481,11 +481,24 @@ export function AgentSessionProvider({
         };
 
         const rustMessage: RustMessage = {
-          ...message,
-          toolCalls: undefined,
-          toolCallId: undefined,
+          id: message.id,
+          sessionId: message.sessionId,
+          role: message.role,
+          content: message.content,
+          toolCalls: message.tool_calls,
+          toolCallId: message.tool_call_id,
+          isStreaming: message.isStreaming,
+          thinking: message.thinking,
+          thinkingSignature: message.thinkingSignature,
+          thinkingTime: message.thinkingTime,
+          assistantId: message.assistantId,
+          attachments: message.attachments,
+          toolUse: message.tool_use,
           createdAt: now.getTime(),
           updatedAt: now.getTime(),
+          source: message.source,
+          error: message.error,
+          metadata: message.metadata,
         };
 
         const request: SendUserMessageRequest = {

@@ -132,6 +132,8 @@ export interface AgentSessionMetadata {
   parentSessionId?: string;
   lineageId?: string;
   depth?: number;
+  maxDepth?: number;
+  maxFanout?: number;
   createdAt: number;
   updatedAt?: number;
 }
