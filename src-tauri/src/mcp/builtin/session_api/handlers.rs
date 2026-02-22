@@ -464,28 +464,19 @@ pub async fn handle_tool_call(
             let requested_limit = args.get("limit").and_then(|v| v.as_u64());
             let options = read_message_summary_options(&args);
 
-            if options.skip_if_unchanged {
-                if let Some(wait_notice) = min_interval_notice(
+            // Enforce rate-limit delay; returns Some(hint) when rapid-poll
+            // threshold was hit, so we can nudge the agent toward awaitAgent.
+            let rapid_poll_hint = if options.skip_if_unchanged {
+                min_interval_notice(
                     caller_session_id.as_deref(),
                     &target_session_id,
                     requested_limit,
                     options,
                 )
                 .await
-                {
-                    return Ok(success_result(
-                        wait_notice,
-                        json!({
-                            "sessionId": target_session_id,
-                            "skipped": true,
-                            "reason": "min_interval",
-                            "minIntervalSeconds": options.min_interval_seconds,
-                            "forcedRestSeconds": options.forced_rest_seconds,
-                            "rapidCallThreshold": options.rapid_call_threshold
-                        }),
-                    ));
-                }
-            }
+            } else {
+                None
+            };
 
             let query = requested_limit.map(|v| vec![("limit".to_string(), v.to_string())]);
 
@@ -518,7 +509,13 @@ pub async fn handle_tool_call(
 
             let summary_text = build_messages_summary(&messages, &target_session_id, options);
 
-            Ok(success_result(summary_text, data))
+            // Prepend awaitAgent hint if rapid polling was severe enough.
+            let final_text = match rapid_poll_hint {
+                Some(hint) => format!("{}\n\n---\n\n{}", hint, summary_text),
+                None => summary_text,
+            };
+
+            Ok(success_result(final_text, data))
         }
         "getChildAgents" => {
             let parent_session_id = read_required_string(&args, "parentSessionId")?;

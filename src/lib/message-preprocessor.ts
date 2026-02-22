@@ -29,13 +29,23 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
   try {
     // Generate attachment content blocks
     const attachmentContents = message.attachments.map((attachment, i) => {
+      // Generate tool-call hints based on whether the file is in the Content Store or workspace-only
+      const accessHints = attachment.contentId
+        ? `To read the full content of this file, use:
+- readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
+- For keyword-based similarity search: keywordSimilaritySearch(sessionId: "${attachment.sessionId}", query: "your search query")
+- For file list: listContent(sessionId: "${attachment.sessionId}")`
+        : attachment.workspacePath
+          ? `This file is in your workspace (may not be indexed in content store yet):
+- To read it via workspace: builtin_workspace__readFile(path: "${attachment.workspacePath}")
+- To check if it has been indexed: listContent(sessionId: "${attachment.sessionId}")
+- If listed, use readContent(sessionId: "${attachment.sessionId}", contentId: <id from listContent>)`
+          : `File metadata only — use listContent(sessionId: "${attachment.sessionId}") to find available files`;
+
       return `<attachment_${i}>
 ${JSON.stringify(attachment, null, 2)}
 <!--
-To read the full content of this file, use:
-- readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
-- For keyword-based similarity search: keywordSimilaritySearch(sessionId: "${attachment.sessionId}", query: "your search query")
-- For file list: listContent(sessionId: "${attachment.sessionId}")
+${accessHints}
 -->
 </attachment_${i}>`;
     });
