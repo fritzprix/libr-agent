@@ -15,6 +15,11 @@ import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';
 import type { Message, RustMessage } from '@/models/chat';
+import type {
+  SendUserMessageRequest,
+  InjectMessagesRequest,
+  AgentResponse,
+} from '@/models/agent-ipc';
 
 const logger = getLogger('AgentChatContext');
 
@@ -183,12 +188,12 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
                 now,
         };
 
-        await invoke('agent_send_message', {
-          request: {
-            sessionId: session.id,
-            message: messageForRust,
-          },
-        });
+        const request: SendUserMessageRequest = {
+          sessionId: session.id,
+          message: messageForRust,
+        };
+
+        await invoke<AgentResponse>('agent_send_message', { request });
 
         addMessage(message);
       } catch (err) {
@@ -365,13 +370,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
                   now,
           };
 
-          await invoke('agent_inject_messages', {
-            request: {
-              sessionId: session.id,
-              messages: [messageForRust],
-              triggerWorkflow: false, // Backend will include in next automatic LLM call
-            },
-          });
+          const request: InjectMessagesRequest = {
+            sessionId: session.id,
+            messages: [messageForRust],
+            triggerWorkflow: false, // Backend will include in next automatic LLM call
+          };
+
+          await invoke<AgentResponse>('agent_inject_messages', { request });
 
           // Keep in pending queue for UI display purposes
           // Will be removed when backend processes and emits MessageAdded event
@@ -446,13 +451,13 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
                 now,
         }));
 
-        await invoke('agent_inject_messages', {
-          request: {
-            sessionId: session.id,
-            messages: messagesForRust,
-            triggerWorkflow,
-          },
-        });
+        const request: InjectMessagesRequest = {
+          sessionId: session.id,
+          messages: messagesForRust,
+          triggerWorkflow,
+        };
+
+        await invoke<AgentResponse>('agent_inject_messages', { request });
         // Events will update the UI
       } catch (err) {
         logger.error('Failed to inject messages', err);
@@ -482,7 +487,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // 3. Inform Rust backend to cancel the workflow loop
     try {
-      await invoke('agent_cancel_workflow', {
+      await invoke<AgentResponse>('agent_cancel_workflow', {
         sessionId: session.id,
       });
       // Status update will come via event
