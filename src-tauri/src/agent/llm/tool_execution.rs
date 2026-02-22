@@ -60,24 +60,46 @@ pub async fn execute_tool_calls(
         };
 
         // Call tool
-        let result = match proxy_manager
-            .call_tool(&session_id, &tool_name, args)
-            .await
-        {
+        let result = match proxy_manager.call_tool(&session_id, &tool_name, args).await {
             Ok(response) => {
-                let mcp_content = crate::agent::tools::convert_mcp_response_content(
-                    response.result.clone(),
-                );
-
-                // For logging/debugging only (not used in tool messages)
-                let debug_content = response
-                    .result
-                    .as_ref()
-                    .and_then(|r| serde_json::to_string_pretty(r).ok())
-                    .unwrap_or_else(|| "{}".to_string());
-
-                let is_error = response.error.is_some();
+                // Derive is_error from both the JSON-RPC protocol error AND the
+                // tool-level MCPResult.is_error / MCPContent error flag, so
+                // builtin tool failures are not silently reported as success.
+                let protocol_error = response.error.is_some();
+                let tool_level_error = match &response.result {
+                    Some(crate::mcp::types::MCPResponseResult::ToolCall(mcp_result)) => {
+                        mcp_result.is_error == Some(true)
+                            || mcp_result.content.as_ref().is_some_and(|content| {
+                                content.iter().any(|c| {
+                                    matches!(
+                                        c,
+                                        crate::mcp::types::MCPContent::Text {
+                                            is_error: Some(true),
+                                            ..
+                                        }
+                                    )
+                                })
+                            })
+                    }
+                    _ => false,
+                };
+                let is_error = protocol_error || tool_level_error;
                 let error_msg = response.error.map(|e| e.message);
+
+                // Avoid expensive pretty-serialization unless needed (no mcp_content present)
+                // or when debug logging is enabled.
+                let debug_content = if log::log_enabled!(log::Level::Debug) {
+                    response
+                        .result
+                        .as_ref()
+                        .and_then(|r| serde_json::to_string_pretty(r).ok())
+                        .unwrap_or_else(|| "{}".to_string())
+                } else {
+                    String::new()
+                };
+
+                let mcp_content =
+                    crate::agent::tools::convert_mcp_response_content(response.result);
 
                 crate::commands::agent_commands::ToolExecutionResult {
                     success: !is_error,
