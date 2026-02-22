@@ -143,8 +143,11 @@
     "toolsAvailable_other": "{{count}}개 도구 사용 가능",
     "toolCountUnknown": "도구 수를 확인할 수 없습니다(아직 검증되지 않음)",
     "active": "활성",
+    "toggleActive": "{{name}} 활성화 상태 전환",
     "edit": "편집",
+    "editServer": "{{name}} 편집",
     "delete": "삭제",
+    "deleteServer": "{{name}} 삭제",
     "loadMore": "더 보기",
     "loadingMore": "로딩 중...",
     "deleteDialog": {

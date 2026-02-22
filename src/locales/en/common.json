@@ -143,8 +143,11 @@
     "toolsAvailable_other": "{{count}} tools available",
     "toolCountUnknown": "Tool count unknown (not yet verified)",
     "active": "Active",
+    "toggleActive": "Toggle active state for {{name}}",
     "edit": "Edit",
+    "editServer": "Edit {{name}}",
     "delete": "Delete",
+    "deleteServer": "Delete {{name}}",
     "loadMore": "Load more",
     "loadingMore": "Loading...",
     "deleteDialog": {
