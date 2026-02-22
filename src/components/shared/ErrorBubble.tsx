@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+/* eslint-disable react/prop-types */
+import React, { memo, useState } from 'react';
 import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ interface ErrorBubbleProps {
   onRetry?: () => Promise<void>;
 }
 
-export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
+export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(({ error, onRetry }) => {
   const [retrying, setRetrying] = useState(false);
 
   const handleRetry = async () => {
@@ -131,4 +132,6 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = ({ error, onRetry }) => {
       </div>
     </BaseBubble>
   );
-};
+});
+
+ErrorBubble.displayName = 'ErrorBubble';

@@ -103,11 +103,6 @@ export function AgentChatMessages() {
     [session?.assistant?.name],
   );
 
-  // Adapter to satisfy ErrorBubble's onRetry signature
-  const handleRetry = async () => {
-    return retryMessage();
-  };
-
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
@@ -148,7 +143,7 @@ export function AgentChatMessages() {
               <div className="self-start my-2" key={groupedMessage.message.id}>
                 <ErrorBubble
                   error={groupedMessage.message.error}
-                  onRetry={handleRetry}
+                  onRetry={retryMessage}
                 />
               </div>
             );
@@ -191,7 +186,7 @@ export function AgentChatMessages() {
                 displayMessage: error,
                 recoverable: true,
               }}
-              onRetry={handleRetry}
+              onRetry={retryMessage}
             />
           </div>
         )}
@@ -205,7 +200,7 @@ export function AgentChatMessages() {
                 displayMessage: llmError,
                 recoverable: true,
               }}
-              onRetry={handleRetry}
+              onRetry={retryMessage}
             />
           </div>
         )}
