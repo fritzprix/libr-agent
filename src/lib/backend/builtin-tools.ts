@@ -91,28 +91,3 @@ export async function listAllToolsUnified(): Promise<MCPTool[]> {
   return safeInvoke<MCPTool[]>('list_all_tools_unified');
 }
 
-/**
- * Calls a tool from any available source using a unified interface.
- * The backend will resolve the correct server and tool to call.
- * @deprecated Use `agentCallTool` or `handleUserToolCall` for session-aware execution.
- * Only use this for legacy non-session contexts.
- * @param serverName The name of the server providing the tool.
- * @param toolName The name of the tool to call.
- * @param args The arguments to pass to the tool.
- * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
- * @returns A promise that resolves to an `MCPResponse`.
- */
-export async function callToolUnified(
-  serverName: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  requestId?: string,
-): Promise<MCPResponse<unknown>> {
-  const id = requestId ?? createId();
-  return safeInvoke<MCPResponse<unknown>>('call_tool_unified', {
-    serverName,
-    toolName,
-    arguments: args,
-    requestId: id,
-  });
-}

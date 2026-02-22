@@ -159,7 +159,6 @@ pub fn run() {
                 list_available_builtin_server_definitions,
                 call_builtin_tool,
                 list_all_tools_unified,
-                list_all_tools_unified,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -230,7 +229,6 @@ pub fn run() {
                 agent_resume_workflow,
                 agent_terminate_workflow,
                 agent_cancel_workflow,
-                agent_call_builtin_tool,
                 agent_call_builtin_tool,
                 agent_get_service_contexts,
                 agent_inject_messages,
