@@ -13,16 +13,17 @@ use super::utils::*;
 
 async fn wait_until_session_terminal(
     session_id: &str,
-    timeout_seconds: u64,
-    poll_interval_seconds: u64,
+    timeout_seconds: u64, // 0 = indefinite; otherwise clamped to 5..86400 s
 ) -> Result<(Value, u64), String> {
-    let timeout_seconds = timeout_seconds.clamp(5, 900);
-    let poll_interval_seconds = poll_interval_seconds.clamp(1, 30);
+    const HEARTBEAT: Duration = Duration::from_secs(30);
 
+    let notifier = crate::state::get_session_bus().get_or_create(session_id);
     let started_at = Instant::now();
-    let mut poll_count: u64 = 0;
+    let mut wake_count: u64 = 0;
 
     loop {
+        // Check current status first — avoids a spurious wait when the session
+        // is already terminal by the time we arrive here.
         let session = call_json(
             Method::GET,
             &format!("/api/sessions/{}", session_id),
@@ -31,20 +32,34 @@ async fn wait_until_session_terminal(
         )
         .await?;
 
-        poll_count = poll_count.saturating_add(1);
-        let status = extract_session_status(&session);
-        if is_terminal_status(&status) {
-            return Ok((session, poll_count));
+        wake_count = wake_count.saturating_add(1);
+        if is_terminal_status(&extract_session_status(&session)) {
+            return Ok((session, wake_count));
         }
 
-        if started_at.elapsed() >= Duration::from_secs(timeout_seconds) {
-            return Err(format!(
-                "awaitAgent timed out after {}s for session {}",
-                timeout_seconds, session_id
-            ));
-        }
+        // Determine remaining budget (None = indefinite).
+        let remaining = if timeout_seconds == 0 {
+            None
+        } else {
+            let limit = Duration::from_secs(timeout_seconds.clamp(5, 86_400));
+            let elapsed = started_at.elapsed();
+            if elapsed >= limit {
+                return Err(format!(
+                    "awaitAgent timed out after {}s for session {}",
+                    timeout_seconds, session_id
+                ));
+            }
+            Some(limit - elapsed)
+        };
 
-        sleep(Duration::from_secs(poll_interval_seconds)).await;
+        // Sleep until notified, timed out, or heartbeat — whichever comes first.
+        // The heartbeat cap keeps the loop responsive for long-running indefinite waits.
+        let sleep_cap = remaining.map(|r| r.min(HEARTBEAT)).unwrap_or(HEARTBEAT);
+
+        tokio::select! {
+            _ = notifier.notified() => {} // Status changed — re-check immediately.
+            _ = sleep(sleep_cap) => {}    // Heartbeat or deadline — re-check.
+        }
     }
 }
 
@@ -96,6 +111,29 @@ pub async fn handle_tool_call(
                 body["maxFanout"] = Value::Number(max_fanout.into());
             }
 
+            let await_completion = args
+                .get("awaitCompletion")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let timeout_seconds = args
+                .get("timeoutSeconds")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(180);
+            let include_last_assistant_message = args
+                .get("includeLastAssistantMessage")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let result_message_limit = args
+                .get("resultMessageLimit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v.clamp(1, 200))
+                .unwrap_or(20);
+            let assistant_message_max_chars = args
+                .get("assistantMessageMaxChars")
+                .and_then(|v| v.as_u64())
+                .map(|v| v.min(200000) as usize)
+                .filter(|v| *v > 0);
+
             let data = call_json(Method::POST, "/api/sessions", Some(body), None).await?;
 
             let child_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
@@ -105,12 +143,83 @@ pub async fn handle_tool_call(
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
 
-            Ok(success_result(
+            if !await_completion {
+                return Ok(success_result(
+                    format!(
+                        "Child session created: {} (parent: {}, depth: {}, lineage: {})\n\nUse awaitAgent(\"{}\") to wait for completion.",
+                        child_id, parent_session_id, depth, lineage, child_id
+                    ),
+                    data,
+                ));
+            }
+
+            // awaitCompletion=true: SP2 two-phase transition + SP1 push-notify wait.
+            let child_id_owned = child_id.to_string();
+            let (session_data, poll_count) = {
+                let gate = crate::state::get_concurrency_gate();
+                gate.suspend_agent().await?; // active → suspended (frees slot for child)
+                let wait_result =
+                    wait_until_session_terminal(&child_id_owned, timeout_seconds).await;
+                gate.resume_agent().await?; // suspended → active (always, even on timeout)
+                wait_result?
+            };
+
+            let final_status = extract_session_status(&session_data);
+
+            if !include_last_assistant_message {
+                return Ok(success_result(
+                    format!(
+                        "Child session {} (depth: {}, lineage: {}) reached terminal status '{}' after {} polls.",
+                        child_id_owned, depth, lineage, final_status, poll_count
+                    ),
+                    json!({
+                        "session": session_data,
+                        "status": final_status,
+                        "pollCount": poll_count,
+                        "messages": Value::Null
+                    }),
+                ));
+            }
+
+            let messages_data = call_json(
+                Method::GET,
+                &format!("/api/sessions/{}/messages", child_id_owned),
+                None,
+                Some(vec![(
+                    "limit".to_string(),
+                    result_message_limit.to_string(),
+                )]),
+            )
+            .await?;
+
+            let messages = messages_data
+                .get("messages")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let text = if let Some((message_id, assistant_text)) =
+                latest_assistant_message_text(&messages, assistant_message_max_chars)
+            {
                 format!(
-                    "Child session created: {} (parent: {}, depth: {}, lineage: {})",
-                    child_id, parent_session_id, depth, lineage
-                ),
-                data,
+                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls.\n\nLatest assistant result [{}]:\n{}",
+                    child_id_owned, depth, lineage, final_status, poll_count, message_id, assistant_text
+                )
+            } else {
+                format!(
+                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls.\n\nNo assistant text message found in the latest {} messages.",
+                    child_id_owned, depth, lineage, final_status, poll_count, result_message_limit
+                )
+            };
+
+            Ok(success_result(
+                text,
+                json!({
+                    "session": session_data,
+                    "status": final_status,
+                    "pollCount": poll_count,
+                    "messages": messages_data
+                }),
             ))
         }
         "getAgentStatus" => {
@@ -139,7 +248,9 @@ pub async fn handle_tool_call(
                 .get("timeoutSeconds")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(180);
-            let poll_interval_seconds = args
+            // pollIntervalSeconds is accepted for backward compatibility but ignored;
+            // awaitAgent now uses push notifications instead of polling.
+            let _poll_interval_seconds = args
                 .get("pollIntervalSeconds")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(3);
@@ -220,9 +331,23 @@ pub async fn handle_tool_call(
                 }
             }
 
-            let (session_data, poll_count) =
-                wait_until_session_terminal(&session_id, timeout_seconds, poll_interval_seconds)
-                    .await?;
+            let (session_data, poll_count) = {
+                // SP2: Two-phase slot transition.
+                //
+                // The calling (parent) session is currently holding an active-agent slot.
+                // Before we block waiting for the child, we swap: acquire a suspended slot
+                // and release the active slot so the child can run.  On wakeup we reverse
+                // the swap to re-enter the active pool.
+                //
+                // resume_agent() is called regardless of whether the wait succeeded or
+                // timed-out, so the parent always re-acquires its active slot before
+                // returning to the LLM loop.
+                let gate = crate::state::get_concurrency_gate();
+                gate.suspend_agent().await?; // active → suspended
+                let wait_result = wait_until_session_terminal(&session_id, timeout_seconds).await;
+                gate.resume_agent().await?; // suspended → active (always)
+                wait_result?
+            };
 
             let final_status = extract_session_status(&session_data);
 

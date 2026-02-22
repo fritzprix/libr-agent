@@ -178,6 +178,57 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         agent::AgentSessionManager::new(app.handle().clone(), proxy_manager_arc, session_repo_arc);
     app.manage(agent_session_manager);
 
+    // SP1 + SP2: Initialize SessionBus and ConcurrencyGate from advanced settings.
+    // Read values with fallback to hardcoded defaults when settings are absent.
+    tauri::async_runtime::block_on(async {
+        use crate::agent::concurrency::{
+            ConcurrencyGate, DEFAULT_MAX_ACTIVE_AGENTS, DEFAULT_MAX_ACTIVE_PROCESSES,
+            DEFAULT_MAX_SUSPENDED_AGENTS, DEFAULT_MAX_SUSPENDED_PROCESSES,
+        };
+        use crate::agent::session_bus::SessionBus;
+        use crate::state::get_settings_repository;
+
+        let (active_agents, suspended_agents, active_procs, suspended_procs) =
+            match get_settings_repository().get("advancedSettings").await {
+                Ok(Some(model)) => {
+                    let json: serde_json::Value =
+                        serde_json::from_str(&model.value).unwrap_or_default();
+                    let get_u32 = |key: &str, default: u32| -> u32 {
+                        json.get(key)
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v.clamp(1, 256) as u32)
+                            .unwrap_or(default)
+                    };
+                    (
+                        get_u32("maxConcurrentActiveSessions", DEFAULT_MAX_ACTIVE_AGENTS),
+                        get_u32("maxSuspendedSessions", DEFAULT_MAX_SUSPENDED_AGENTS),
+                        get_u32("maxConcurrentActiveProcesses", DEFAULT_MAX_ACTIVE_PROCESSES),
+                        get_u32("maxSuspendedProcesses", DEFAULT_MAX_SUSPENDED_PROCESSES),
+                    )
+                }
+                _ => (
+                    DEFAULT_MAX_ACTIVE_AGENTS,
+                    DEFAULT_MAX_SUSPENDED_AGENTS,
+                    DEFAULT_MAX_ACTIVE_PROCESSES,
+                    DEFAULT_MAX_SUSPENDED_PROCESSES,
+                ),
+            };
+
+        crate::state::init_session_bus(SessionBus::new());
+        crate::state::init_concurrency_gate(ConcurrencyGate::new(
+            active_agents,
+            suspended_agents,
+            active_procs,
+            suspended_procs,
+        ));
+
+        info!(
+            "✅ ConcurrencyGate initialized: active_agents={} suspended_agents={} \
+             active_processes={} suspended_processes={}",
+            active_agents, suspended_agents, active_procs, suspended_procs,
+        );
+    });
+
     // Initialize global AppHandle for event emission from builtin tools
     crate::state::init_app_handle(app.handle().clone());
     info!("✅ Global AppHandle initialized for event emission");

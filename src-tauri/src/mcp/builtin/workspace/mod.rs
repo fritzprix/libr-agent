@@ -231,8 +231,9 @@ impl WorkspaceServer {
 
         for id in to_remove {
             if let Some(entry) = reg.entries.remove(&id) {
-                // Remove cancellation token
+                // Remove cancellation token and completion notifier
                 reg.cancellation_tokens.remove(&id);
+                reg.completion_notifiers.remove(&id);
                 // Remove output directory
                 if let Some(parent) = std::path::PathBuf::from(&entry.stdout_path).parent() {
                     let _ = tokio::fs::remove_dir_all(parent).await;
@@ -271,8 +272,9 @@ impl WorkspaceServer {
             }
 
             if let Some(entry) = reg.entries.remove(&id) {
-                // Remove cancellation token
+                // Remove cancellation token and completion notifier
                 reg.cancellation_tokens.remove(&id);
+                reg.completion_notifiers.remove(&id);
 
                 // Kill running processes
                 if let Some(pid) = entry.pid {
@@ -657,6 +659,14 @@ impl BuiltinMCPServer for WorkspaceServer {
             "listProcesses" => self.handle_list_processes(args, &target_session_id).await,
             "stopProcess" => self.handle_stop_process(args, &target_session_id).await,
             "waitForProcess" => self.handle_wait_for_process(args, &target_session_id).await,
+            // Backward-compat alias: pollProcess was the old name for non-blocking status check.
+            // Always inject timeout=0 so semantics are preserved.
+            "pollProcess" => {
+                let mut poll_args = args.clone();
+                poll_args["timeout"] = serde_json::json!(0);
+                self.handle_wait_for_process(poll_args, &target_session_id)
+                    .await
+            }
 
             _ => Err(format!("Tool '{tool_name}' not found")),
         }

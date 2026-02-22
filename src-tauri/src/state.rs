@@ -3,6 +3,8 @@
 /// This module provides centralized access to application-wide state including
 /// the MCP service proxy manager, SQLite database URL,
 /// database connection, and repositories.
+use crate::agent::concurrency::ConcurrencyGate;
+use crate::agent::session_bus::SessionBus;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
@@ -51,6 +53,12 @@ static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new()
 
 /// A global, thread-safe, once-initialized Tauri AppHandle for event emission.
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized session event bus (SP1).
+static SESSION_BUS: OnceLock<SessionBus> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized concurrency gate (SP2).
+static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
 
 /// Initialize the global AppHandle
 /// Should be called once during application setup
@@ -318,4 +326,49 @@ pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
     PLANNING_REPOSITORY
         .get()
         .expect("Planning repository not initialized. Call set_planning_repository() first.")
+}
+
+// ── SP1: SessionBus ───────────────────────────────────────────────────────────
+
+/// Initialize the global `SessionBus`.  Called once during application setup.
+///
+/// # Panics
+/// Panics if the bus has already been initialized.
+pub fn init_session_bus(bus: SessionBus) {
+    if SESSION_BUS.set(bus).is_err() {
+        log::warn!("SessionBus already initialized");
+    }
+}
+
+/// Get a reference to the global `SessionBus`.
+///
+/// # Panics
+/// Panics if `init_session_bus` has not been called yet.
+pub fn get_session_bus() -> &'static SessionBus {
+    SESSION_BUS
+        .get()
+        .expect("SessionBus not initialized. Call init_session_bus() first.")
+}
+
+// ── SP2: ConcurrencyGate ──────────────────────────────────────────────────────
+
+/// Initialize the global `ConcurrencyGate`.  Called once during application setup
+/// with values read from the user's advanced settings.
+///
+/// # Panics
+/// Panics if the gate has already been initialized.
+pub fn init_concurrency_gate(gate: ConcurrencyGate) {
+    if CONCURRENCY_GATE.set(gate).is_err() {
+        log::warn!("ConcurrencyGate already initialized");
+    }
+}
+
+/// Get a reference to the global `ConcurrencyGate`.
+///
+/// # Panics
+/// Panics if `init_concurrency_gate` has not been called yet.
+pub fn get_concurrency_gate() -> &'static ConcurrencyGate {
+    CONCURRENCY_GATE
+        .get()
+        .expect("ConcurrencyGate not initialized. Call init_concurrency_gate() first.")
 }

@@ -166,6 +166,10 @@ export default function SettingsPage() {
         defaultMaxOutputTokens: 8192,
         defaultSessionMaxDepth: 0,
         defaultSessionMaxFanout: 0,
+        maxConcurrentActiveSessions: 4,
+        maxSuspendedSessions: 8,
+        maxConcurrentActiveProcesses: 10,
+        maxSuspendedProcesses: 20,
       },
     );
   const [localDisplay, setLocalDisplay] = useState<DisplaySettings>(
