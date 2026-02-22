@@ -171,24 +171,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         updatedAt: new Date(),
       };
 
-      const supportedFiles = attachedFileRefs.filter(
-        (f) => f.status !== 'workspace-only',
-      );
-      const workspaceFiles = attachedFileRefs.filter(
-        (f) => f.status === 'workspace-only',
-      );
-
-      if (supportedFiles.length > 0) {
-        userMessage.attachments = supportedFiles;
-      }
-
-      if (workspaceFiles.length > 0) {
-        const fileList = workspaceFiles.map((f) => f.filename).join(', ');
-        const notice = `I have uploaded the following files to the workspace: ${fileList}`;
-        const originalText = (userMessage.content[0] as { text: string }).text;
-        const separator = originalText ? '\n\n' : '';
-        (userMessage.content[0] as { text: string }).text =
-          `${originalText}${separator}${notice}`;
+      // Include ALL attachments (committed + workspace-only) so message-preprocessor
+      // can generate correct tool-call hints for each status.
+      // workspace-only binary files stay as-is; the preprocessor emits readFile hints.
+      if (attachedFileRefs.length > 0) {
+        userMessage.attachments = attachedFileRefs;
       }
 
       setIsSubmitting(true);
