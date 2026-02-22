@@ -58,11 +58,14 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
         session_id: Option<String>
     ) -> Result<MCPResult, String>;
 
-    // Returns the service context (optional)
+    // Returns a markdown-formatted string describing the server's current status and context.
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
-        // Default implementation
         ServiceContext {
-            context_prompt: String::new(),
+            context_prompt: format!(
+                "## {}\n**Description**: {}",
+                self.display_name(),
+                self.description()
+            ),
             structured_state: None,
         }
     }
@@ -79,7 +82,7 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 
 ### Step 1: Create a New Server File
 
-Example: Create `example.rs`.
+Example: Create a new file, e.g., `src-tauri/src/mcp/builtin/example.rs`.
 
 ```rust
 // src-tauri/src/mcp/builtin/example.rs

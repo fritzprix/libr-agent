@@ -25,7 +25,7 @@ LibrAgent is a next-generation desktop AI agent platform that combines the light
 
 **Feature-Based Organization:**
 
-- Each feature in `src/features/` contains components, hooks, and README documentation
+- Each feature in `src/features/` typically contains components, hooks, and logic specific to that feature (complex features may include `README.md`)
 - Compound component patterns (e.g., `Chat.Header`, `Chat.Messages`, `Chat.Input`)
 - React Context providers for state sharing (`ChatProvider`, `AgentSessionProvider`, `AgentChatProvider`)
 
@@ -546,7 +546,8 @@ pub struct ServiceContext {
 1. **Backend (Rust)** - Builtin servers implement `get_service_context()`:
 
    ```rust
-   // Example: browser/mod.rs
+   // Example: browser/mod.rs (Simplified for illustration)
+   // Note: The actual implementation handles caching, error handling, and session management.
    async fn get_service_context(&self) -> ServiceContext {
        ServiceContext {
            context_prompt: "## Browser\n\nSession abc123: https://example.com",
