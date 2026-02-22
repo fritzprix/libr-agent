@@ -117,7 +117,8 @@ impl DroppedFileService {
 
             if !guard.remove(&resolved_path_str) {
                 return Err(
-                    "Access denied: File path was not provided by an OS file-drop event".to_string(),
+                    "Access denied: File path was not provided by an OS file-drop event"
+                        .to_string(),
                 );
             }
         }
@@ -266,7 +267,11 @@ mod tests {
         let result = service
             .read_dropped_file(normal_file.to_string_lossy().to_string())
             .await;
-        assert!(result.is_ok(), "Normal file should be accepted: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Normal file should be accepted: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
