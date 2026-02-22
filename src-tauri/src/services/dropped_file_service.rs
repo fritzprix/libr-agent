@@ -135,25 +135,6 @@ impl DroppedFileService {
             }
         }
 
-        // Check extension
-        let allowed_extensions = ["txt", "md", "json", "pdf", "docx", "xlsx"];
-        let extension = resolved_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_lowercase());
-
-        match extension {
-            Some(ext) if allowed_extensions.contains(&ext.as_str()) => {
-                // Allowed
-            }
-            _ => {
-                return Err(format!(
-                    "File type not allowed. Supported: {}",
-                    allowed_extensions.join(", ")
-                ));
-            }
-        }
-
         // Read file
         let file = fs::File::open(&resolved_path)
             .await
