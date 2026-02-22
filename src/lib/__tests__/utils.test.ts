@@ -20,8 +20,10 @@ describe('utils', () => {
     });
 
     it('should handle conditional classes', () => {
-      expect(cn('class1', false && 'class2', 'class3')).toBe('class1 class3');
-      expect(cn('class1', true && 'class2')).toBe('class1 class2');
+      const shouldInclude = false;
+      const shouldInclude2 = true;
+      expect(cn('class1', shouldInclude && 'class2', 'class3')).toBe('class1 class3');
+      expect(cn('class1', shouldInclude2 && 'class2')).toBe('class1 class2');
     });
 
     it('should merge Tailwind classes (override previous classes)', () => {
@@ -76,11 +78,13 @@ describe('utils', () => {
       const fn = vi.fn(async (arg) => arg);
       const throttled = throttlePromise(fn, 1000);
 
-      throttled(1);
-      throttled(2);
-      throttled(3);
+      const p1 = throttled(1);
+      const p2 = throttled(2);
+      const p3 = throttled(3);
 
-      expect(fn).toHaveBeenCalledTimes(1); // Only the first call executed immediately
+      // First call executes immediately
+      await expect(p1).resolves.toBe(1);
+      expect(fn).toHaveBeenCalledTimes(1);
       expect(fn).toHaveBeenCalledWith(1);
 
       // Fast-forward time by 500ms (less than wait)
@@ -89,25 +93,36 @@ describe('utils', () => {
 
       // Fast-forward another 500ms (total 1000ms)
       await vi.advanceTimersByTimeAsync(500);
-      expect(fn).toHaveBeenCalledTimes(2); // The last call (3) should be executed now
+      expect(fn).toHaveBeenCalledTimes(2);
       expect(fn).toHaveBeenLastCalledWith(3);
+
+      // Verify pending promises resolve with the final result
+      await expect(p2).resolves.toBe(3);
+      await expect(p3).resolves.toBe(3);
     });
 
     it('should execute the last call after the wait period', async () => {
       const fn = vi.fn(async (arg) => arg);
       const throttled = throttlePromise(fn, 100);
 
-      throttled('first');
-      throttled('second');
-      throttled('third');
+      const p1 = throttled('first');
+      const p2 = throttled('second');
+      const p3 = throttled('third');
 
+      // First call executes immediately
+      await expect(p1).resolves.toBe('first');
       expect(fn).toHaveBeenCalledTimes(1);
       expect(fn).toHaveBeenCalledWith('first');
 
+      // Advance timer to trigger trailing call
       await vi.advanceTimersByTimeAsync(100);
 
       expect(fn).toHaveBeenCalledTimes(2);
-      expect(fn).toHaveBeenLastCalledWith('third'); // 'second' is skipped
+      expect(fn).toHaveBeenLastCalledWith('third');
+
+      // Verify pending promises resolve with the final result
+      await expect(p2).resolves.toBe('third');
+      await expect(p3).resolves.toBe('third');
     });
   });
 });

@@ -8,35 +8,46 @@ import {
   formatToolArgumentsSummary,
 } from '../tool-call-utils';
 import type { Message } from '@/models/chat';
-import type { MCPContent } from '@/lib/mcp/protocol/content';
+
+// Test helper: Create minimal valid Message objects for testing
+function createTestMessage(overrides: Partial<Message> = {}): Message {
+  return {
+    id: 'test-id',
+    sessionId: 'test-session',
+    threadId: 'test-thread',
+    role: 'assistant',
+    content: [],
+    ...overrides,
+  } as Message;
+}
 
 describe('tool-call-utils', () => {
   describe('hasToolCallError', () => {
     it('should return true if toolResult.error is present', () => {
-      const message = {
+      const message = createTestMessage({
         error: {
           displayMessage: 'Error',
           type: 'TOOL_EXECUTION_ERROR',
           recoverable: false,
         },
-      } as unknown as Message;
+      });
       expect(hasToolCallError(message)).toBe(true);
     });
 
     it('should return true if toolResult.content contains an item with isError: true', () => {
-      const message = {
+      const message = createTestMessage({
         content: [
           { type: 'text', text: 'Some text' },
           { type: 'text', text: 'Error', isError: true },
         ],
-      } as unknown as Message;
+      });
       expect(hasToolCallError(message)).toBe(true);
     });
 
     it('should return false if neither error property nor error content exists', () => {
-      const message = {
+      const message = createTestMessage({
         content: [{ type: 'text', text: 'Success' }],
-      } as unknown as Message;
+      });
       expect(hasToolCallError(message)).toBe(false);
     });
 
@@ -47,33 +58,34 @@ describe('tool-call-utils', () => {
 
   describe('hasUIResource', () => {
     it("should return true if content has type 'resource' and mimeType is present", () => {
-      const message = {
+      const message = createTestMessage({
         content: [
           {
             type: 'resource',
-            resource: { mimeType: 'image/png', uri: 'file://test.png' },
+            resource: { mimeType: 'text/html', uri: 'ui://test', text: '<p>test</p>' },
           },
         ],
-      } as unknown as Message;
+      });
       expect(hasUIResource(message)).toBe(true);
     });
 
     it("should return false if content has type 'resource' but no mimeType", () => {
-      const message = {
+      const message = createTestMessage({
         content: [
           {
             type: 'resource',
-            resource: { uri: 'file://test.png' },
+            // Intentionally missing mimeType to test runtime absence detection
+            resource: { uri: 'ui://test', text: '' } as unknown as { mimeType: 'text/html'; uri: `ui://${string}`; text: string },
           },
         ],
-      } as unknown as Message;
+      });
       expect(hasUIResource(message)).toBe(false);
     });
 
     it("should return false if content does not have type 'resource'", () => {
-      const message = {
+      const message = createTestMessage({
         content: [{ type: 'text', text: 'Hello' }],
-      } as unknown as Message;
+      });
       expect(hasUIResource(message)).toBe(false);
     });
 

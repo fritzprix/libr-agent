@@ -43,7 +43,7 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
   let lastCall = 0;
   let timeout: ReturnType<typeof setTimeout> | null = null;
   let pendingArgs: Args | null = null;
-  let pendingResolve: ((value: Return) => void) | null = null;
+  let pendingResolvers: Array<(value: Return) => void> = [];
 
   return (...args: Args): Promise<Return> => {
     const now = Date.now();
@@ -53,21 +53,21 @@ export function throttlePromise<Args extends readonly unknown[], Return>(
         timeout = null;
 
         const argsToUse = pendingArgs || args;
-        const resolveToUse = pendingResolve || resolve;
+        const resolversToUse =
+          pendingResolvers.length > 0 ? pendingResolvers : [resolve];
 
         pendingArgs = null;
-        pendingResolve = null;
+        pendingResolvers = [];
 
         const result = await fn(...argsToUse);
-        if (resolveToUse) {
-          resolveToUse(result);
-        }
+        // Resolve all pending promises with the same result
+        resolversToUse.forEach((r) => r(result));
       };
       if (now - lastCall >= wait) {
         call();
       } else {
         pendingArgs = args;
-        pendingResolve = resolve;
+        pendingResolvers.push(resolve);
         if (!timeout) {
           timeout = setTimeout(
             () => {
