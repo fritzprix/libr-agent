@@ -85,7 +85,10 @@ function GeneralTabComponent({
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: 'Select Skills Directory',
+        title: t(
+          'settings.general.skillsDirectorySelectTitle',
+          'Select Skills Directory',
+        ),
       });
 
       if (selected && typeof selected === 'string') {
@@ -140,15 +143,21 @@ function GeneralTabComponent({
             <Input
               value={skillsDirectory || ''}
               onChange={(e) => onSkillsDirectoryChange(e.target.value)}
-              placeholder="Select a directory for local skills..."
+              placeholder={t(
+                'settings.general.skillsDirectoryPlaceholder',
+                'Select a directory for local skills...',
+              )}
               className="bg-background border text-foreground flex-1"
             />
             <Button
               variant="outline"
               onClick={handleBrowseEvents}
-              title="Browse"
+              title={t('settings.general.browse', 'Browse')}
               className="px-3"
-              aria-label="Browse skills directory"
+              aria-label={t(
+                'settings.general.browseAriaLabel',
+                'Browse skills directory',
+              )}
             >
               <FolderOpen className="w-4 h-4" />
             </Button>
@@ -156,7 +165,7 @@ function GeneralTabComponent({
               <Button
                 variant="outline"
                 onClick={handleOpenDirectory}
-                title="Open in Explorer"
+                title={t('settings.general.openInExplorer', 'Open in Explorer')}
                 className="px-3"
               >
                 <FolderOutput className="w-4 h-4" />
@@ -169,7 +178,9 @@ function GeneralTabComponent({
             {verificationStatus === 'loading' && (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                <span className="text-muted-foreground">Verifying...</span>
+                <span className="text-muted-foreground">
+                  {t('settings.general.verifying', 'Verifying...')}
+                </span>
               </>
             )}
             {verificationStatus === 'success' && (
@@ -179,7 +190,10 @@ function GeneralTabComponent({
               >
                 <CheckCircle className="w-4 h-4 text-success" />
                 <span className="text-success">
-                  Found {skills.length} skill{skills.length !== 1 ? 's' : ''}
+                  {t('settings.general.skillsFound', {
+                    count: skills.length,
+                    defaultValue: 'Found {{count}} skill',
+                  })}
                 </span>
               </button>
             )}
@@ -187,7 +201,8 @@ function GeneralTabComponent({
               <>
                 <AlertCircle className="w-4 h-4 text-destructive" />
                 <span className="text-destructive">
-                  {errorMessage || 'Invalid directory'}
+                  {errorMessage ||
+                    t('settings.general.invalidDirectory', 'Invalid directory')}
                 </span>
               </>
             )}

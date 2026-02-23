@@ -164,11 +164,17 @@ pub async fn list_assistants(
                         offset + assistants.len() as u64,
                         assistants_text
                     )
+                } else if assistants.is_empty() {
+                    format!(
+                        "No more assistants at offset {} (total: {}).",
+                        offset, total_count
+                    )
                 } else {
+                    let returned = assistants.len();
                     format!(
                         "Found {} {}:\n\n{}",
-                        total_count,
-                        if total_count == 1 {
+                        returned,
+                        if returned == 1 {
                             "assistant"
                         } else {
                             "assistants"
@@ -181,6 +187,11 @@ pub async fn list_assistants(
                         "Use limit={} offset={} to see more assistants",
                         limit,
                         offset + limit
+                    )]
+                } else if assistants.is_empty() && total_count > 0 {
+                    vec![format!(
+                        "Offset {} is past the end (total: {}). Use offset=0 to list from the beginning.",
+                        offset, total_count
                     )]
                 } else if total_count > 0 {
                     vec!["Use builtin_assistant__getAssistant to view details".to_string()]

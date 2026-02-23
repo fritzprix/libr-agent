@@ -136,6 +136,7 @@ export async function getMCPServer(
 export interface MCPServerPreset {
   name: string;
   description?: string;
+  logo?: string;
   transportType: 'stdio' | 'sse';
   command?: string;
   args?: string[];
@@ -147,6 +148,7 @@ export interface MCPServerPreset {
       label?: string;
       description?: string;
       type?: 'text' | 'password';
+      target?: 'env' | 'header' | 'bearer-token' | 'url-param';
     }
   >;
   url?: string;

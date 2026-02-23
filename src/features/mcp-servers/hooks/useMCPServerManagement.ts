@@ -84,6 +84,16 @@ export function useMCPServerManagement(service?: McpServerService) {
   }, []);
 
   const handleSetupPreset = useCallback((preset: MCPServerPreset) => {
+    const transport: MCPServerEntity['transport'] =
+      preset.transportType === 'sse' && preset.url
+        ? { type: 'http-sse', url: preset.url }
+        : {
+            type: 'stdio',
+            command: preset.command || 'uvx',
+            args: preset.args || [],
+            env: sanitizePresetEnv(preset.env),
+          };
+
     const newServer: MCPServerEntity = {
       id: createId(),
       name: preset.name,
@@ -91,13 +101,7 @@ export function useMCPServerManagement(service?: McpServerService) {
       createdAt: new Date(),
       updatedAt: new Date(),
       metadata: buildPresetMetadata(preset),
-      transport: {
-        type: 'stdio',
-        command: preset.command || 'uvx',
-        args: preset.args || [],
-        // If variableDefinitions exist, start with empty env to force user to enter them
-        env: sanitizePresetEnv(preset.env),
-      },
+      transport,
     };
     setEditingServer(newServer);
   }, []);
