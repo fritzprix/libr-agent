@@ -208,18 +208,6 @@ impl MCPServerManager {
         tools::list_all_tools_unified(self).await
     }
 
-    /// Calls a tool, automatically routing the request to either a built-in or an
-    /// external server based on the server name prefix.
-    pub async fn call_tool_unified(
-        &self,
-        server_name: &str,
-        tool_name: &str,
-        args: serde_json::Value,
-        request_id: Option<serde_json::Value>,
-    ) -> MCPResponse {
-        tools::call_tool_unified(self, server_name, tool_name, args, request_id).await
-    }
-
     /// Gets the service context for a given server, checking built-in servers first.
     pub async fn get_service_context(
         &self,

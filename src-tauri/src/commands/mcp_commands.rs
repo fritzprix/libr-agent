@@ -334,31 +334,6 @@ pub async fn list_all_tools_unified() -> Result<Vec<MCPTool>, String> {
     )
 }
 
-/// Calls a tool on either a built-in or external MCP server, determined by the server name.
-///
-/// ⚠️ DEPRECATED: Use session-specific tool execution through MCPServiceProxyManager.
-#[tauri::command]
-#[allow(dead_code)]
-pub async fn call_tool_unified(
-    _server_name: String,
-    _tool_name: String,
-    _arguments: serde_json::Value,
-    _request_id: Option<String>,
-) -> MCPResponse {
-    log::warn!("call_tool_unified: Using deprecated global MCP manager.");
-    MCPResponse {
-        jsonrpc: "2.0".to_string(),
-        id: None,
-        result: None,
-        error: Some(crate::mcp::types::MCPError {
-            code: -32603,
-            message: "Global tool execution is deprecated. Use session-specific proxies."
-                .to_string(),
-            data: None,
-        }),
-    }
-}
-
 // ============================================================================
 // Service Context Commands (Session-Agnostic)
 // ============================================================================
