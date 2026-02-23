@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.16] - 2026-02-24
+
+### 🐛 Fixes
+
+- **Tool failure message now shows actual error**: When a tool call fails, the `guided_error` content from the tool result is now surfaced to the user instead of a generic "Unknown error" message, making debugging dramatically more actionable.
+- **RecommendedPresets nested interactive controls**: Refactored `RecommendedPresets` to eliminate nested `<button>` / interactive element violations that caused broken click behavior in the MCP server preset UI.
+- **Localized string defaults**: `SkillsListModal` and `GeneralTab` now fall back to sensible default values when i18n strings are missing, preventing blank labels in non-Korean locales.
+
+### ⚡ Performance
+
+- **`useMessageGrouping` text validation**: Whitespace detection in the message grouping hook is now short-circuit optimized, reducing unnecessary re-computation on large conversation threads.
+
+### 🔧 Internal
+
+- **`MCPServiceProxyManager` modularization**: The monolithic proxy manager is split into focused submodules (`caching`, `cleanup`, `creation`, `management`) with session locking via `creation_guards`, improving concurrency safety and testability.
+- **`command_exists` extracted to shared platform utils**: Duplicate platform-detection logic consolidated into `src-tauri/src/utils/platform.rs` with tests, eliminating copy-paste across builtin server modules.
+- **Built-in server definitions migrated**: Preset and skill resolution logic migrated to the new `mcp/presets.rs` backend structure for cleaner separation of concerns.
+
 ## [0.5.15] - 2026-02-23
 
 ### 🚀 Features
