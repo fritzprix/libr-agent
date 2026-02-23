@@ -14,6 +14,7 @@ jobs:
   release:
     permissions:
       contents: write
+    environment: copilot
     strategy:
       fail-fast: false
       matrix:
