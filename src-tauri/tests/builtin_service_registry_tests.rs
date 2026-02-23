@@ -212,6 +212,35 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
     );
 }
 
+/// Regression: mcp_manager was registered as optional:false but omitted from
+/// CORE_BUILTIN_SERVICE_ALIASES, so assistants with an explicit alias list
+/// couldn't call mcp_manager tools ("Built-in server 'mcp_manager' not enabled").
+/// This test ensures mcp_manager is always available even when only a single
+/// unrelated optional service is requested.
+#[test]
+fn mcp_manager_is_always_enabled_for_any_explicit_alias_list() {
+    // Only "browser" explicitly requested — mcp_manager must still be present
+    // because it is a core alias.
+    let config = mock_agent_config(Some(vec!["browser"]));
+    let tool_ids = extract_builtin_tool_ids(&config);
+    assert!(
+        tool_ids.contains(&"mcp_manager".to_string()),
+        "mcp_manager must always be present (it is a core alias), \
+         but was missing when only 'browser' was in allowedBuiltInServiceAliases"
+    );
+}
+
+#[test]
+fn mcp_manager_is_enabled_even_with_empty_alias_list() {
+    // Empty explicit list → only core aliases should be enabled.
+    let config = mock_agent_config(Some(vec![]));
+    let tool_ids = extract_builtin_tool_ids(&config);
+    assert!(
+        tool_ids.contains(&"mcp_manager".to_string()),
+        "mcp_manager must be present even when allowedBuiltInServiceAliases is empty"
+    );
+}
+
 // ─── Server name / registry regression tests ─────────────────────────────────
 // Original bug: ContentStoreServer::name() returned "contentstore" while the
 // registry had "content_store". All four tests below would have caught it.
