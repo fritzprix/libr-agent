@@ -62,6 +62,21 @@ export default function AssistantEditor() {
           />
 
           <TextareaWithLabel
+            label={t('assistant.descriptionLabel', 'Description')}
+            value={draft?.description || ''}
+            onChange={(e) =>
+              update((draft) => {
+                draft.description = e.target.value || undefined;
+              })
+            }
+            placeholder={t(
+              'assistant.descriptionPlaceholder',
+              'Brief description of what this assistant does...',
+            )}
+            className="min-h-16"
+          />
+
+          <TextareaWithLabel
             label={t('assistant.systemPromptLabel')}
             value={draft?.systemPrompt || ''}
             onChange={(e) =>

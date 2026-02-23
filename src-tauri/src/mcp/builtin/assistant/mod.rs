@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 mod operations;
 mod queries;
-mod tools;
+pub mod tools;
 
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
