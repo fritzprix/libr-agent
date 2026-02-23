@@ -50,11 +50,11 @@ pub fn open_in_terminal(path: &Path) -> Result<(), String> {
 
     #[cfg(target_os = "linux")]
     {
-        return Err(format!(
+        Err(format!(
             "Terminal launch not supported on Linux. No standard command available. \
              Open a terminal manually and navigate to: {}",
             path.display()
-        ));
+        ))
     }
 
     // For Windows and macOS, the terminal was already launched above

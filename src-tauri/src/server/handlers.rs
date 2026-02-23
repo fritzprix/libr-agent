@@ -166,8 +166,17 @@ pub async fn create_session(
     // 4. Create Session
     let session_id = format!("session-{}", Uuid::new_v4());
 
-    // Use provided name or default to Assistant name
-    let session_name = body.name.or(Some(assistant.name.clone()));
+    // Use provided name, or generate a descriptive default from the request preview
+    let session_name = body.name.or_else(|| {
+        let short_id = &session_id[session_id.len().saturating_sub(6)..];
+        let preview: String = body.request.chars().take(40).collect();
+        let trimmed = preview.trim();
+        if trimmed.is_empty() {
+            Some(format!("{} #{}", assistant.name, short_id))
+        } else {
+            Some(format!("{}: {} #{}", assistant.name, trimmed, short_id))
+        }
+    });
 
     let lineage_meta = if let Some(parent_id) = parent_session_id.clone() {
         let store = lineage_store().read().await;
