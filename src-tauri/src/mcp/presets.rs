@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub struct MCPServerPreset {
     pub name: String,
     pub description: Option<String>,
+    pub logo: Option<String>,
     pub transport_type: String, // "stdio" or "sse"
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
@@ -17,12 +18,18 @@ pub struct MCPServerPreset {
 
 #[derive(Deserialize)]
 struct RawPresetConfig {
-    command: String,
+    // stdio fields
+    command: Option<String>,
+    #[serde(default)]
     args: Vec<String>,
     env: Option<Value>,
     #[serde(default, rename = "variableDefinitions")]
     variable_definitions: Option<Value>,
+    // http fields
+    url: Option<String>,
+    // common
     description: Option<String>,
+    logo: Option<String>,
 }
 
 pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
@@ -53,15 +60,25 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
             }
         };
 
+        let (transport_type, command, args, url) = if config.url.is_some() {
+            ("sse".to_string(), None, None, config.url)
+        } else {
+            ("stdio".to_string(), config.command, Some(config.args), None)
+        };
+
+        // Merge headers into variableDefinitions for HTTP servers if needed
+        let variable_definitions = config.variable_definitions;
+
         presets.push(MCPServerPreset {
             name: key,
             description: config.description,
-            transport_type: "stdio".to_string(),
-            command: Some(config.command),
-            args: Some(config.args),
+            logo: config.logo,
+            transport_type,
+            command,
+            args,
             env: config.env,
-            variable_definitions: config.variable_definitions,
-            url: None,
+            variable_definitions,
+            url,
         });
     }
 
@@ -69,4 +86,49 @@ pub fn get_recommended_servers() -> Vec<MCPServerPreset> {
     presets.sort_by(|a, b| a.name.cmp(&b.name));
 
     presets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: HTTP-only presets (no command) must not be silently skipped.
+    #[test]
+    fn test_http_preset_is_parsed() {
+        let presets = get_recommended_servers();
+        // exa is an HTTP preset with url-param auth - must be present
+        let exa = presets.iter().find(|p| p.name == "exa");
+        assert!(exa.is_some(), "exa preset must be present");
+        let exa = exa.unwrap();
+        assert_eq!(exa.transport_type, "sse");
+        assert!(exa.url.is_some(), "exa must have a url");
+        assert!(exa.command.is_none(), "exa must not have a command");
+    }
+
+    /// Regression: stdlib stdio presets must still parse correctly after making command Optional.
+    #[test]
+    fn test_stdio_preset_is_parsed() {
+        let presets = get_recommended_servers();
+        let ddg = presets.iter().find(|p| p.name == "ddg-search");
+        assert!(ddg.is_some(), "ddg-search preset must be present");
+        let ddg = ddg.unwrap();
+        assert_eq!(ddg.transport_type, "stdio");
+        assert!(ddg.command.is_some(), "ddg-search must have a command");
+        assert!(ddg.url.is_none());
+    }
+
+    /// All presets in mcp-server.json must parse without panicking.
+    #[test]
+    fn test_all_presets_parse() {
+        let presets = get_recommended_servers();
+        assert!(!presets.is_empty(), "at least one preset must exist");
+        for p in &presets {
+            assert!(!p.name.is_empty(), "preset name must not be empty");
+            assert!(
+                p.transport_type == "stdio" || p.transport_type == "sse",
+                "transport_type must be stdio or sse, got: {}",
+                p.transport_type
+            );
+        }
+    }
 }
