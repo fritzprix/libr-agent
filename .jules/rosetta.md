@@ -5,3 +5,9 @@
 **Extracted:** ~50
 **Languages updated:** [EN, KO]
 **Notes:** Localized MCP Server Management (Extensions) and Dialog. Added `mcpServer` namespace to `common.json`. Used English strings for Korean as placeholders.
+
+## 2024-05-25 - [App Shell & Error Boundary]
+
+**Extracted:** 13
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AppSidebar`, `ThemeToggle`, and `ErrorBoundary`. Added `sidebar`, `theme`, and `error` namespaces to `common.json`.

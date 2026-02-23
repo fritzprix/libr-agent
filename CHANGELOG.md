@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🏗️ Refactor
+
+- **Nexus: Workspace Command Decoupling**: Extracted all business logic from the monolithic `workspace_commands.rs` Tauri handler into two dedicated modules — `services::WorkspaceService` (file listing, override management) and `utils::terminal` (cross-platform terminal launch). Command handlers now delegate to these services, enforcing the Nexus architectural pattern of zero domain logic in the command layer.
+
+### 🐛 Fixes
+
+- **Workspace file listing error handling**: Improved resilience when listing directory contents — individual entry errors are now handled gracefully instead of aborting the entire listing operation.
+
+- **`mcp_manager` always enabled**: The `mcp_manager` built-in service was registered as `optional: false` in the registry but absent from `CORE_BUILTIN_SERVICE_ALIASES`, causing agents with an explicit alias list to receive "Built-in server 'mcp_manager' not enabled in this session" errors. Fixed in both the Rust registry array and the TypeScript `ServiceCategory` classification.
+
+- **Assistant description silently lost on save**: `upsertAssistant()` manually assembled the save object but omitted `description`, `avatar`, and `disabledSkills` fields — every save (including toggling an MCP server) discarded them. All three fields are now preserved. Added a `TextareaWithLabel` description input to `AssistantEditor` General tab so users can actually set the field from the UI.
+
+- **AI agents unable to set assistant description via MCP tools**: `createAssistant` and `updateAssistant` MCP tool schemas were missing the `description` parameter entirely, making it impossible for agents to populate or update assistant descriptions. Both schemas now declare the field.
+
+### 🔧 Internal
+
+- **Regression tests — `mcp_manager` core alias**: Two `#[test]` cases in `builtin_service_registry_tests.rs` guard against re-introduction of the "mcp_manager not enabled" regression for any explicit or empty alias list.
+- **Regression tests — assistant tool schemas**: Two `#[test]` cases assert that `createAssistant` and `updateAssistant` input schemas include a `"description"` property, preventing silent schema omissions.
+- **Regression tests — assistant serialization round-trip**: Vitest suite in `src/models/__tests__/validation.assistant.test.ts` covers `parseAssistant` field preservation (description, avatar, disabledSkills, mcpServerIds, allowedBuiltInServiceAliases) and round-trip survival through `upsertAssistant`-style serialization, including a named regression case "adding an MCP server does not wipe description."
+
+## [0.5.13] - 2026-02-23
+
+### 🚀 Features
+
+- **Background Tool Loading Readiness Signal**: MCP servers now emit a readiness signal after background tool registration completes. HTTP client timeout extended to accommodate slower server startups, reducing false-negative tool-not-found errors when agents start immediately after session creation.
+
+- **Agent Topology Controls**: `AgentSessionMetadata` gains `maxDepth` and `maxFanout` fields for fine-grained control over sub-agent spawning limits. `RustMessage` structure enhanced with additional fields for richer IPC payloads between frontend and backend.
+
+- **Accessibility**: Added accessible labels to `ServerCard` action buttons, improving screen-reader support across the MCP server management UI.
+
+- **Localization**: `AppSidebar`, `ThemeToggle`, and `ErrorBoundary` are now fully localized (Korean + English), closing the remaining hardcoded-string gaps in the main shell UI.
+
+### 🐛 Fixes
+
+- **`ThrottlePromise` memory leak**: Multiple pending resolutions were not being flushed correctly, causing the queue to grow unbounded under rapid polling. Refactored to drain all waiting resolvers on each settled result.
+
+- **Tool-level error silently reported as success**: `ToolExecutionResult.is_error` was derived only from the JSON-RPC protocol error field, meaning builtin tools that signal failure via `MCPResult.is_error` or `MCPContent::Text { is_error: Some(true) }` were emitting `ToolExecutionCompleted success=true`. Now checks all three failure signals.
+
+### 🔧 Internal
+
+- **`agent/llm/response.rs` fractal split**: The 1100-line response handler is split into three focused modules — `circuit_breaker.rs` (loop detection + tests), `tool_execution.rs` (sequential async tool dispatch), and the slimmed `response.rs` (orchestration only). No behavior change from the user's perspective.
+- **Lazy `debug_content` serialization**: `serde_json::to_string_pretty` on tool results is now gated behind `log::log_enabled!(Debug)`, eliminating O(n) JSON serialization overhead on every tool call in release builds.
+- **Agent IPC strict typing**: `agent_commands` optimized with strict TypeScript + Rust types — fewer `unknown` / `string` roundtrips across the IPC boundary.
+- **Rate-limiting + session poll hints**: Session API rate-limiter improved with backoff hints for rapid-polling consumers.
+- **MCP server management UI cleanup**: Removed stale dialog components superseded by the new MCP management flow.
+- **Expanded test coverage**: `src/lib` utilities gain additional Vitest cases; `DroppedFileService` tests refactored with consistent formatting.
+
 ## [0.5.12] - 2026-02-22
 
 ### 🚀 Features

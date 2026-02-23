@@ -1,4 +1,4 @@
-﻿use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -37,6 +37,17 @@ pub async fn start_workflow(
     session_id: String,
     user_message: Message,
 ) -> Result<(), String> {
+    // Wait for background tool loading to complete before starting the LLM workflow.
+    // Prevents the agent from starting with an empty tool list when external MCP servers
+    // are still being discovered (spawned asynchronously inside create_proxy).
+    if let Err(e) = proxy_manager.wait_until_proxy_ready(&session_id, 60).await {
+        log::warn!(
+            "Tool readiness wait failed for session {}: {}. Proceeding anyway.",
+            session_id,
+            e
+        );
+    }
+
     // Check status, deduplicate, and queue if busy (Atomic Check-and-Act)
     let should_queue = {
         let active = active_sessions.read().await;

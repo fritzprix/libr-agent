@@ -13,6 +13,7 @@ const AssistantConfigSchema = z
     mcpServerIds: z.array(z.string()).optional(),
     localServices: z.array(z.string()).optional(),
     allowedBuiltInServiceAliases: z.array(z.string()).optional(),
+    disabledSkills: z.array(z.string()).optional(),
     deletionProtected: z.boolean().default(false),
   })
   .passthrough();
@@ -64,6 +65,7 @@ export const parseAssistant = (data: unknown): Assistant => {
     mcpServerIds: config.mcpServerIds,
     localServices: config.localServices,
     allowedBuiltInServiceAliases: config.allowedBuiltInServiceAliases,
+    disabledSkills: config.disabledSkills,
     deletionProtected: config.deletionProtected ?? false,
   };
 };
