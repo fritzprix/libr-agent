@@ -80,7 +80,7 @@ export default function SkillsEditor() {
           );
 
           try {
-            await invoke('import_assistant_skills', {
+            await invoke<string>('import_assistant_skills', {
               assistantId: draft.id,
               filePath,
             });
@@ -109,7 +109,7 @@ export default function SkillsEditor() {
   const handleOverride = async (skillName: string) => {
     if (!draft?.id) return;
     try {
-      await invoke('copy_global_to_assistant', {
+      await invoke<string>('copy_global_to_assistant', {
         assistantId: draft.id,
         skillName,
       });
@@ -126,7 +126,7 @@ export default function SkillsEditor() {
   const handleRevert = async (skillName: string) => {
     if (!draft?.id) return;
     try {
-      await invoke('delete_assistant_skill', {
+      await invoke<string>('delete_assistant_skill', {
         assistantId: draft.id,
         skillName,
       });
@@ -166,7 +166,7 @@ export default function SkillsEditor() {
     if (!draft?.id) return;
 
     try {
-      await invoke('reset_assistant_skills', { assistantId: draft.id });
+      await invoke<string>('reset_assistant_skills', { assistantId: draft.id });
       toast.success(
         t('skills.resetSuccess', 'Assistant skills reset successfully'),
       );

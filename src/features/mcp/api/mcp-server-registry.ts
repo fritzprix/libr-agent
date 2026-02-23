@@ -19,5 +19,7 @@ export interface BuiltinServerInfo {
 export async function listAvailableBuiltinServerDefinitions(): Promise<
   BuiltinServerInfo[]
 > {
-  return invoke('list_available_builtin_server_definitions');
+  return invoke<BuiltinServerInfo[]>(
+    'list_available_builtin_server_definitions',
+  );
 }
