@@ -11,7 +11,7 @@ interface UseFileRefetcherProps {
 export function useFileRefetcher({
   messages,
   refetchSessionFiles,
-  throttleMs = 2000
+  throttleMs = 2000,
 }: UseFileRefetcherProps) {
   // Throttle the refetch function to prevent excessive backend calls
   const throttledRefetch = useThrottle(() => {
