@@ -90,4 +90,3 @@ export async function callBuiltinTool(
 export async function listAllToolsUnified(): Promise<MCPTool[]> {
   return safeInvoke<MCPTool[]>('list_all_tools_unified');
 }
-
