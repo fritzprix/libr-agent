@@ -46,3 +46,9 @@
 **Split:** `types.rs`, `constants.rs`, `utils.rs`, `id_gen.rs`, `mod.rs`
 **Result:** Reduced from ~845 lines to ~450 lines in the main module.
 **Improvement:** Decoupled types (`BrowserSession`), constants (`INIT_SCRIPT`), stateless utilities (`check_url_status`, `validate_and_normalize_url`), and ID generation from the main server logic. Improved readability and testability.
+
+## 2026-03-01 - src-tauri/src/mcp/service_proxy_manager/mod.rs
+
+**Split:** `creation.rs`, `management.rs`, `cleanup.rs`, `caching.rs`, `test_helpers.rs`, `mod.rs`
+**Result:** Reduced from 998 lines to ~100 lines (struct definition and re-exports).
+**Improvement:** Decoupled session-specific proxy management logic (creation, lifecycle, cleanup) from the main struct definition. Separated background task logic and test helpers into dedicated modules, improving readability and maintainability.
