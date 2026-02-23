@@ -42,13 +42,9 @@ impl WorkspaceService {
             .map_err(|e| format!("Invalid path: {}", e))?;
 
         // Read directory entries
-        let mut entries = fs::read_dir(&full_path).await.map_err(|e| {
-            format!(
-                "Failed to read directory '{}': {}",
-                full_path.display(),
-                e
-            )
-        })?;
+        let mut entries = fs::read_dir(&full_path)
+            .await
+            .map_err(|e| format!("Failed to read directory '{}': {}", full_path.display(), e))?;
 
         let mut items = Vec::new();
 
