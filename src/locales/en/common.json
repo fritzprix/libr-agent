@@ -95,7 +95,17 @@
     "llmPreference": "Default LLM",
     "messageWindowSize": "Message Window Size",
     "general": {
-      "skillsDirectory": "Skills Directory"
+      "skillsDirectory": "Skills Directory",
+      "skillsDirectorySelectTitle": "Select Skills Directory",
+      "skillsDirectoryPlaceholder": "Select a directory for local skills...",
+      "browse": "Browse",
+      "browseAriaLabel": "Browse skills directory",
+      "openInExplorer": "Open in Explorer",
+      "verifying": "Verifying...",
+      "skillsFound_one": "Found {{count}} skill",
+      "skillsFound_other": "Found {{count}} skills",
+      "invalidDirectory": "Invalid directory",
+      "skillsDirectoryDescription": "Directory containing Agent Skills (folders with SKILL.md). New skills will be discovered automatically."
     },
     "aiModels": {
       "apiKeys": "Provider API Keys",
@@ -142,7 +152,7 @@
       "error": "Failed to clear sessions."
     },
     "skills": {
-      "modalTitle": "Available Skills",
+      "modalTitle": "Available Skills ({{count}})",
       "noSkills": "No skills found."
     }
   },
