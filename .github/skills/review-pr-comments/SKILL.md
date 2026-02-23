@@ -1,4 +1,3 @@
-````skill
 ---
 name: review-pr-comments
 description: Review and triage PR review comments (from Copilot, bots, or human reviewers) against the actual codebase. Use when a user wants to evaluate the validity, priority, or accuracy of PR review comments before deciding which ones to act on. Also handles applying approved fixes. Triggers on requests like "review all comments in this PR", "evaluate PR feedback", "which PR comments are valid", "apply the PR suggestions".
@@ -15,6 +14,7 @@ Systematically pull, evaluate, and optionally apply review comments from a pull 
 Use `github-pull-request_activePullRequest` (or `github-pull-request_openPullRequest` if not checked out).
 
 Extract from the result:
+
 - `comments[]` — inline review comments (attached to files/lines)
 - `timelineComments[]` — general PR comments (overviews, bots, etc.)
 - `changes[]` — the actual diff
@@ -31,12 +31,12 @@ If a comment references another file as a "pattern" or "example," read that file
 
 For every comment assess:
 
-| Dimension | Questions |
-|-----------|-----------|
-| **Valid?** | Does the issue actually exist in the current code? Has it already been fixed? |
-| **Accurate?** | Are file paths, line numbers, and named references correct? |
-| **Priority** | Would ignoring it cause a bug / bad UX / policy violation (High), a maintainability issue (Medium), or is it purely stylistic (Low)? |
-| **Action** | Apply immediately / Apply optionally / Skip with reason |
+| Dimension     | Questions                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Valid?**    | Does the issue actually exist in the current code? Has it already been fixed?                                                        |
+| **Accurate?** | Are file paths, line numbers, and named references correct?                                                                          |
+| **Priority**  | Would ignoring it cause a bug / bad UX / policy violation (High), a maintainability issue (Medium), or is it purely stylistic (Low)? |
+| **Action**    | Apply immediately / Apply optionally / Skip with reason                                                                              |
 
 ### 4. Report
 
@@ -58,22 +58,26 @@ When the user confirms, apply all approved changes using targeted edits (not who
 ## Evaluation Heuristics
 
 **Mark as High priority if:**
+
 - Missing fallback/defaultValue on i18n keys that could surface raw key strings to users
 - Type safety violations (unsafe casts, missing validation)
 - Logic bugs or race conditions
 - Accessibility regressions
 
 **Mark as Medium priority if:**
+
 - Inconsistency with an established codebase pattern
 - Missing error handling that degrades gracefully
 - Performance issues under realistic load
 
 **Mark as Low / Optional if:**
+
 - Purely cosmetic or stylistic (matches one valid style but not the only one)
 - Suggestion is already covered by a neighboring line or fallback
 - The referenced "pattern" doesn't actually match the claim
 
 **Mark as Invalid if:**
+
 - The issue no longer exists in the current file state
 - The suggestion would introduce a regression
 - The referenced example file/line doesn't exist or doesn't demonstrate what is claimed
@@ -83,4 +87,3 @@ When the user confirms, apply all approved changes using targeted edits (not who
 - Bot reviewers (Copilot, Jules, etc.) often reference incorrect line numbers — always verify against the actual file.
 - `defaultValue` in i18next `t()` matters most for **plural keys** (`_one`/`_other` suffix). For simple interpolation keys that exist in all locale files, it is optional.
 - When a comment says "follow the pattern in X:Y-Z", read those lines to confirm the pattern actually exists there before accepting the claim.
-````
