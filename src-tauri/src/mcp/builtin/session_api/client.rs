@@ -14,7 +14,9 @@ static BASE_URL: OnceCell<String> = OnceCell::const_new();
 pub fn http_client() -> Result<&'static Client, String> {
     Ok(HTTP_CLIENT.get_or_init(|| {
         Client::builder()
-            .timeout(Duration::from_secs(20))
+            // Extended timeout to accommodate child session creation latency:
+            // external MCP server startup (stdio spawn + tool discovery) can take 10-30s.
+            .timeout(Duration::from_secs(120))
             .build()
             .expect("Failed to build HTTP client")
     }))

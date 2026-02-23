@@ -14,6 +14,7 @@ use tauri_mcp_agent_lib::agent::tools::{
     ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -212,6 +213,35 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
     );
 }
 
+/// Regression: mcp_manager was registered as optional:false but omitted from
+/// CORE_BUILTIN_SERVICE_ALIASES, so assistants with an explicit alias list
+/// couldn't call mcp_manager tools ("Built-in server 'mcp_manager' not enabled").
+/// This test ensures mcp_manager is always available even when only a single
+/// unrelated optional service is requested.
+#[test]
+fn mcp_manager_is_always_enabled_for_any_explicit_alias_list() {
+    // Only "browser" explicitly requested — mcp_manager must still be present
+    // because it is a core alias.
+    let config = mock_agent_config(Some(vec!["browser"]));
+    let tool_ids = extract_builtin_tool_ids(&config);
+    assert!(
+        tool_ids.contains(&"mcp_manager".to_string()),
+        "mcp_manager must always be present (it is a core alias), \
+         but was missing when only 'browser' was in allowedBuiltInServiceAliases"
+    );
+}
+
+#[test]
+fn mcp_manager_is_enabled_even_with_empty_alias_list() {
+    // Empty explicit list → only core aliases should be enabled.
+    let config = mock_agent_config(Some(vec![]));
+    let tool_ids = extract_builtin_tool_ids(&config);
+    assert!(
+        tool_ids.contains(&"mcp_manager".to_string()),
+        "mcp_manager must be present even when allowedBuiltInServiceAliases is empty"
+    );
+}
+
 // ─── Server name / registry regression tests ─────────────────────────────────
 // Original bug: ContentStoreServer::name() returned "contentstore" while the
 // registry had "content_store". All four tests below would have caught it.
@@ -323,4 +353,47 @@ fn registry_and_server_list_are_in_sync() {
             entry.canonical,
         );
     }
+}
+
+// ─── Assistant tool schema regression tests ──────────────────────────────────
+// Regression: createAssistant and updateAssistant tool schemas were missing the
+// `description` field, so AI agents had no way to set assistant descriptions
+// via MCP tools.
+
+/// Extracts the properties map from an object-type `JSONSchema`, panicking
+/// with a helpful message if the schema is not an Object variant.
+fn extract_object_properties(
+    schema: &tauri_mcp_agent_lib::mcp::schema::JSONSchema,
+    context: &str,
+) -> std::collections::HashMap<String, tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
+    match &schema.schema_type {
+        tauri_mcp_agent_lib::mcp::schema::JSONSchemaType::Object { properties, .. } => properties
+            .clone()
+            .unwrap_or_else(|| panic!("{context}: input_schema has no properties")),
+        other => panic!("{context}: expected Object schema, got {other:?}"),
+    }
+}
+
+#[test]
+fn create_assistant_tool_schema_includes_description_field() {
+    let tool = assistant_tools::create_assistant_tool();
+    let props = extract_object_properties(&tool.input_schema, "createAssistant");
+    assert!(
+        props.contains_key("description"),
+        "createAssistant input_schema must include a 'description' property; \
+         found keys: {:?}",
+        props.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn update_assistant_tool_schema_includes_description_field() {
+    let tool = assistant_tools::update_assistant_tool();
+    let props = extract_object_properties(&tool.input_schema, "updateAssistant");
+    assert!(
+        props.contains_key("description"),
+        "updateAssistant input_schema must include a 'description' property; \
+         found keys: {:?}",
+        props.keys().collect::<Vec<_>>()
+    );
 }

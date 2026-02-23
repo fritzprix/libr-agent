@@ -599,3 +599,186 @@ async fn test_empty_mcp_server_ids_means_no_external_servers() {
     // Cleanup
     manager.destroy_proxy(&session_id).await;
 }
+
+// ── Regression tests for proxy_readiness / wait_until_proxy_ready ─────────────
+
+/// Regression: builtin-only sessions must be considered immediately ready.
+///
+/// Before the fix, if `start_workflow` called `wait_until_proxy_ready` for a
+/// session with no external servers it would find "no entry" in the map.
+/// The method should treat that as ready and return `Ok(())` without blocking.
+#[tokio::test]
+async fn test_proxy_ready_immediately_for_builtin_only_sessions() {
+    let manager = create_test_manager().await;
+    let session_id = "readiness-builtin-only";
+
+    let new_session = session::ActiveModel {
+        id: Set(session_id.to_string()),
+        created_at: Set(chrono::Utc::now().timestamp()),
+        updated_at: Set(0),
+        status: Set("idle".to_string()),
+        ..Default::default()
+    };
+    session::Entity::insert(new_session)
+        .exec(&*manager.db)
+        .await
+        .unwrap();
+
+    // No external MCP server IDs → background task is never spawned.
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["bootstrap".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    // Must resolve within a tight wall-clock budget (100 ms) — it should be instant.
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(100),
+        manager.wait_until_proxy_ready(session_id, 10),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "wait_until_proxy_ready must not block for builtin-only sessions"
+    );
+    assert!(
+        result.unwrap().is_ok(),
+        "wait_until_proxy_ready must succeed"
+    );
+
+    // No entry should exist in the readiness map.
+    assert_eq!(
+        manager.readiness_entry_count().await,
+        0,
+        "Builtin-only sessions must not add an entry to proxy_readiness"
+    );
+
+    manager.destroy_proxy(session_id).await;
+}
+
+/// Regression: proxy_readiness entry must be removed in destroy_proxy.
+///
+/// Before the readiness cleanup was added, destroying a session left a stale
+/// Sender in the map. After fix, wait_until_proxy_ready on a destroyed session
+/// must return immediately (no entry = ready).
+#[tokio::test]
+async fn test_proxy_readiness_entry_removed_after_destroy() {
+    let manager = create_test_manager().await;
+    let session_id = "readiness-destroy-cleanup";
+
+    let new_session = session::ActiveModel {
+        id: Set(session_id.to_string()),
+        created_at: Set(chrono::Utc::now().timestamp()),
+        updated_at: Set(0),
+        status: Set("idle".to_string()),
+        ..Default::default()
+    };
+    session::Entity::insert(new_session)
+        .exec(&*manager.db)
+        .await
+        .unwrap();
+
+    manager
+        .create_proxy(
+            session_id.to_string(),
+            vec!["bootstrap".to_string()],
+            vec![],
+            None,
+        )
+        .await
+        .unwrap();
+
+    manager.destroy_proxy(session_id).await;
+
+    // After destroy the entry must be gone.
+    assert_eq!(
+        manager.readiness_entry_count().await,
+        0,
+        "proxy_readiness must be empty after destroy_proxy"
+    );
+
+    // Calling wait_until_proxy_ready on a destroyed session must not block.
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(100),
+        manager.wait_until_proxy_ready(session_id, 10),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "wait_until_proxy_ready must not block after destroy"
+    );
+    assert!(
+        result.unwrap().is_ok(),
+        "wait_until_proxy_ready must succeed after destroy"
+    );
+}
+
+/// Regression: wait_until_proxy_ready must block until the background signal fires.
+///
+/// This verifies the core race-condition fix: a session with external MCP servers
+/// has a pending readiness entry. start_workflow must wait until tool loading
+/// completes before proceeding.
+#[tokio::test]
+async fn test_wait_blocks_until_ready_signal_fires() {
+    let manager = create_test_manager().await;
+    let session_id = "readiness-signal-test";
+
+    // Inject a pending (false) entry simulating a session with external servers
+    // whose background loading has not finished yet.
+    let tx = manager.inject_pending_readiness_for_test(session_id).await;
+
+    assert_eq!(
+        manager.readiness_entry_count().await,
+        1,
+        "Pending readiness entry should exist"
+    );
+
+    // Spawn a task that signals ready after a short delay.
+    let tx_bg = tx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        let _ = tx_bg.send(true);
+    });
+
+    let start = std::time::Instant::now();
+    let result = manager.wait_until_proxy_ready(session_id, 5).await;
+    let elapsed = start.elapsed();
+
+    assert!(
+        result.is_ok(),
+        "wait_until_proxy_ready must succeed after signal"
+    );
+    assert!(
+        elapsed >= std::time::Duration::from_millis(40),
+        "Must have waited for the signal (elapsed: {:?})",
+        elapsed
+    );
+}
+
+/// Regression: wait_until_proxy_ready must return an error if the signal never fires.
+///
+/// Guards against the case where an external MCP server hangs indefinitely
+/// during tool discovery — the workflow start must not block forever.
+#[tokio::test]
+async fn test_wait_times_out_if_never_signaled() {
+    let manager = create_test_manager().await;
+    let session_id = "readiness-timeout-test";
+
+    // Inject a pending entry but intentionally never send true.
+    let _tx = manager.inject_pending_readiness_for_test(session_id).await;
+
+    // Use a 1-second timeout so the test doesn't hang.
+    let result = manager.wait_until_proxy_ready(session_id, 1).await;
+
+    assert!(result.is_err(), "Must return an error when timed out");
+    assert!(
+        result.unwrap_err().contains("timed out"),
+        "Error message must mention timeout"
+    );
+}
