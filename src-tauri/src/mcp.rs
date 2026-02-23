@@ -24,8 +24,5 @@ pub mod session_isolation_config;
 pub mod types;
 pub mod utils;
 
-#[cfg(test)]
-mod integration_tests;
-
 // This file now serves as a re-export hub for backward compatibility
 // All implementation details have been moved to separate modules

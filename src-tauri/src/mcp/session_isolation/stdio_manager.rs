@@ -57,6 +57,16 @@ impl SessionMCPManager {
         self.server_configs.contains_key(server_name)
     }
 
+    /// Get the number of active processes (for testing/diagnostics)
+    pub async fn active_process_count(&self) -> usize {
+        self.active_processes.read().await.len()
+    }
+
+    /// Check if a process is active for a server (for testing/diagnostics)
+    pub async fn is_process_active(&self, server_name: &str) -> bool {
+        self.active_processes.read().await.contains_key(server_name)
+    }
+
     /// Creates a new SessionMCPManager for the given session.
     pub fn new(
         session_id: String,
@@ -629,10 +639,12 @@ mod tests {
 
         let source = include_str!("./stdio_manager.rs");
 
-        // Verify that env_clear() is NOT present in the spawn logic
+        // Verify that env_clear is NOT present in the spawn logic
+        // We split the string to avoid matching this test code itself
+        let target = format!("env_{}()", "clear");
         assert!(
-            !source.contains("env_clear()"),
-            "stdio_manager should NOT call env_clear() - system PATH must be inherited"
+            !source.contains(&target),
+            "stdio_manager should NOT call env_clear - system PATH must be inherited"
         );
 
         // Verify that cmd.env() is used (which preserves inheritance)

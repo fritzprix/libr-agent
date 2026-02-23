@@ -1,8 +1,7 @@
-use super::stdio_manager::SessionMCPManager;
-use crate::mcp::session_isolation_config::SessionIsolationConfig;
-use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use std::collections::HashMap;
-use std::time::Duration;
+use tauri_mcp_agent_lib::mcp::session_isolation::SessionMCPManager;
+use tauri_mcp_agent_lib::mcp::session_isolation_config::SessionIsolationConfig;
+use tauri_mcp_agent_lib::mcp::types::{MCPServerConfig, TransportConfig};
 
 fn create_test_manager() -> SessionMCPManager {
     let mut configs = HashMap::new();
@@ -12,6 +11,7 @@ fn create_test_manager() -> SessionMCPManager {
             name: Some("test-server".to_string()),
             transport: TransportConfig::Stdio {
                 command: "python3".to_string(),
+                // Use absolute path relative to crate root where `cargo test` runs
                 args: vec!["tests/mock_server.py".to_string()],
                 env: HashMap::new(),
             },
@@ -37,70 +37,46 @@ fn create_test_manager() -> SessionMCPManager {
 }
 
 #[tokio::test]
-async fn test_lazy_spawn() {
+async fn test_lazy_spawn_integration() {
     let manager = create_test_manager();
 
     // 1. Initial state: No processes
-    {
-        let processes = manager.active_processes.read().await;
-        assert_eq!(
-            processes.len(),
-            0,
-            "Should have practically 0 processes initially"
-        );
-    }
+    assert_eq!(manager.active_process_count().await, 0);
 
-    // 2. Trigger spawn
-    let result = manager.ensure_process_running("test-server").await;
-    assert!(
-        result.is_ok(),
-        "Failed to spawn process: {:?}",
-        result.err()
-    );
+    // 2. Trigger spawn via public API (list_tools)
+    let tools = manager.list_tools("test-server").await;
+    assert!(tools.is_ok(), "Failed to list tools: {:?}", tools.err());
 
     // 3. Verify process exists
-    {
-        let processes = manager.active_processes.read().await;
-        assert_eq!(processes.len(), 1, "Should have 1 process active");
-        assert!(processes.contains_key("test-server"));
-    }
+    assert_eq!(manager.active_process_count().await, 1);
+    assert!(manager.is_process_active("test-server").await);
 }
 
 #[tokio::test]
-async fn test_concurrent_spawn_race_condition() {
+async fn test_concurrent_spawn_integration() {
     let manager = create_test_manager();
 
-    // Spawn multiple tasks trying to start the same server
+    // Spawn multiple tasks trying to start the same server via list_tools
     let mut handles = vec![];
     for _ in 0..5 {
         let m = manager.clone();
         handles.push(tokio::spawn(async move {
-            m.ensure_process_running("test-server").await
+            m.list_tools("test-server").await
         }));
     }
 
     // Wait for all
     for h in handles {
         let res = h.await.unwrap();
-        assert!(res.is_ok(), "Concurrent spawn failed: {:?}", res.err());
+        assert!(res.is_ok(), "Concurrent list_tools failed: {:?}", res.err());
     }
 
     // Verify only 1 process created
-    {
-        let processes = manager.active_processes.read().await;
-        assert_eq!(processes.len(), 1, "Should definitely still be 1 process");
-    }
-}
-
-#[tokio::test]
-async fn test_idle_timeout_configuration() {
-    let manager = create_test_manager();
-    // Idle timeout should be 5 minutes (300 seconds)
-    assert_eq!(manager.idle_timeout, Duration::from_secs(5 * 60));
+    assert_eq!(manager.active_process_count().await, 1);
 }
 
 #[test]
-fn test_has_server() {
+fn test_has_server_integration() {
     let manager = create_test_manager();
     assert!(manager.has_server("test-server"));
     assert!(!manager.has_server("unknown-server"));

@@ -90,7 +90,8 @@ pub use state::{
     get_message_repository, get_playbook_repository, get_session_repository, get_sqlite_db_url,
     set_assistant_repository, set_content_store_repository, set_database_connection,
     set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
-    set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
+    set_message_repository, set_planning_repository, set_playbook_repository,
+    set_session_repository, set_settings_repository, set_sqlite_db_url,
 };
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.

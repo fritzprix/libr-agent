@@ -13,10 +13,13 @@ def main():
             except json.JSONDecodeError:
                 continue
 
-            if request.get("method") == "initialize":
+            method = request.get("method")
+            msg_id = request.get("id")
+
+            if method == "initialize":
                 response = {
                     "jsonrpc": "2.0",
-                    "id": request.get("id"),
+                    "id": msg_id,
                     "result": {
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
@@ -28,6 +31,28 @@ def main():
                 }
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
+            elif method == "tools/list":
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": "test_tool",
+                                "description": "A test tool",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {}
+                                }
+                            }
+                        ]
+                    }
+                }
+                sys.stdout.write(json.dumps(response) + "\n")
+                sys.stdout.flush()
+            elif method == "notifications/initialized":
+                 # Just ignore initialized notification
+                 pass
             
             # Keep the process alive for other messages or just idle
         except KeyboardInterrupt:

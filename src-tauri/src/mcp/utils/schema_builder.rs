@@ -236,7 +236,11 @@ pub fn object_prop(
     JSONSchema {
         schema_type: JSONSchemaType::Object {
             properties: Some(props),
-            required: Some(required),
+            required: if required.is_empty() {
+                None
+            } else {
+                Some(required)
+            },
             additional_properties: Some(false),
             min_properties: None,
             max_properties: None,
