@@ -91,7 +91,21 @@ impl PersistentShell {
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
     ) -> Result<Self> {
         #[cfg(unix)]
-        let mut cmd = Command::new("bash");
+        let mut cmd = {
+            // Verify bash exists
+            if !std::process::Command::new("sh")
+                .arg("-c")
+                .arg("command -v bash")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Err(anyhow::anyhow!(
+                    "Bash shell not found. Please install bash to use persistent shell features."
+                ));
+            }
+            Command::new("bash")
+        };
         #[cfg(unix)]
         {
             cmd.arg("--norc");
