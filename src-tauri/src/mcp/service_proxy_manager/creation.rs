@@ -1,7 +1,7 @@
-use super::MCPServiceProxyManager;
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::super::session_isolation_config::SessionIsolationConfig;
+use super::MCPServiceProxyManager;
 use crate::agent::events::InitializationStatus;
 use crate::repositories::settings_repository::SettingsRepository;
 use crate::session::SessionManager;
@@ -44,6 +44,7 @@ impl MCPServiceProxyManager {
             cleanup_shutdown: Arc::new(AtomicBool::new(false)),
             config,
             proxy_readiness: Arc::new(RwLock::new(HashMap::new())),
+            creation_guards: Arc::new(Mutex::new(HashMap::new())),
         };
 
         manager.start_cleanup_task();
@@ -109,12 +110,24 @@ impl MCPServiceProxyManager {
             }
         };
 
-        // CRITICAL: Check if already exists (prevent race conditions)
+        // Acquire a per-session creation lock to serialize concurrent create_proxy calls
+        // for the same session_id (singleflight). The second caller blocks here until the
+        // first finishes; the re-check below then returns the already-created proxy.
+        let session_guard = {
+            let mut guards = self.creation_guards.lock().await;
+            guards
+                .entry(session_id.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _session_lock = session_guard.lock().await;
+
+        // Re-check after acquiring the per-session lock: a concurrent caller may have
+        // already created the proxy while we were waiting.
         {
             let proxies = self.proxies.read().await;
             if let Some(existing) = proxies.get(&session_id) {
                 log::debug!("Proxy already exists for session: {}", session_id);
-                // Even if exists, we can emit complete (idempotent for UI)
                 emit_status("Session services ready", InitializationStatus::Complete);
                 return Ok(existing.clone());
             }

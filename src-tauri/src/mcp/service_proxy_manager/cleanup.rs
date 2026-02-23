@@ -7,7 +7,7 @@ impl MCPServiceProxyManager {
     ///
     /// This task runs periodically to clean up idle MCP server processes
     /// across all active sessions.
-    pub(crate) fn start_cleanup_task(&self) {
+    pub(super) fn start_cleanup_task(&self) {
         let managers = self.session_stdio_managers.clone();
         let shutdown = self.cleanup_shutdown.clone();
         let interval_secs = self.config.cleanup_interval_minutes * 60;

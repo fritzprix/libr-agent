@@ -10,12 +10,12 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::session_isolation_config::SessionIsolationConfig;
 use crate::session::SessionManager;
 
-pub mod caching;
-pub(crate) mod cleanup;
-pub(crate) mod creation;
-pub(crate) mod management;
+mod caching;
+mod cleanup;
+mod creation;
+mod management;
 #[cfg(test)]
-pub(crate) mod test_helpers;
+mod test_helpers;
 #[cfg(test)]
 mod tests;
 
@@ -32,32 +32,37 @@ pub use caching::spawn_tool_cache_update;
 /// - **HTTP servers**: Shared connections with session ID injection via HttpSessionManager
 pub struct MCPServiceProxyManager {
     /// Map of session_id to session-specific proxy instances
-    pub(crate) proxies: Arc<RwLock<HashMap<String, Arc<MCPServiceProxy>>>>,
+    proxies: Arc<RwLock<HashMap<String, Arc<MCPServiceProxy>>>>,
 
     /// Session-specific stdio MCP server managers (lazy-spawned per session)
-    pub(crate) session_stdio_managers: Arc<RwLock<HashMap<String, SessionMCPManager>>>,
+    session_stdio_managers: Arc<RwLock<HashMap<String, SessionMCPManager>>>,
 
     /// Session-specific HTTP MCP server managers (shared connections with session headers)
-    pub(crate) session_http_managers: Arc<RwLock<HashMap<String, HttpSessionManager>>>,
+    session_http_managers: Arc<RwLock<HashMap<String, HttpSessionManager>>>,
 
     /// Shared SeaORM database connection for all sessions
-    pub(crate) db: Arc<DatabaseConnection>,
+    db: Arc<DatabaseConnection>,
 
     /// Shared SessionManager for workspace/content_store servers
-    pub(crate) session_manager: Arc<SessionManager>,
+    session_manager: Arc<SessionManager>,
 
     /// Background cleanup task handle
-    pub(crate) cleanup_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    cleanup_task: Arc<Mutex<Option<JoinHandle<()>>>>,
 
     /// Signal to stop the cleanup task
-    pub(crate) cleanup_shutdown: Arc<AtomicBool>,
+    cleanup_shutdown: Arc<AtomicBool>,
 
     /// Session isolation configuration
-    pub(crate) config: SessionIsolationConfig,
+    config: SessionIsolationConfig,
 
     /// Readiness signal per session: true when background tool loading is complete.
     /// Sessions with no external servers are considered immediately ready (no entry).
-    pub(crate) proxy_readiness: Arc<RwLock<HashMap<String, Arc<tokio::sync::watch::Sender<bool>>>>>,
+    proxy_readiness: Arc<RwLock<HashMap<String, Arc<tokio::sync::watch::Sender<bool>>>>>,
+
+    /// Per-session creation lock to prevent duplicate proxy creation under concurrent calls.
+    /// Two concurrent `create_proxy` calls for the same session_id will serialize here;
+    /// the second caller blocks until the first finishes and then hits the idempotency re-check.
+    creation_guards: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
 impl std::fmt::Debug for MCPServiceProxyManager {

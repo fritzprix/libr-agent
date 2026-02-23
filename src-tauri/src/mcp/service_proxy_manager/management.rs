@@ -1,6 +1,6 @@
-use super::MCPServiceProxyManager;
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
+use super::MCPServiceProxyManager;
 use std::sync::Arc;
 
 impl MCPServiceProxyManager {
@@ -39,6 +39,9 @@ impl MCPServiceProxyManager {
 
         // 4. Remove HTTP session manager (HTTP connections are shared, just remove the manager)
         self.session_http_managers.write().await.remove(session_id);
+
+        // 5. Remove per-session creation guard (allows future re-creation of same session_id)
+        self.creation_guards.lock().await.remove(session_id);
 
         if proxy_removed {
             log::info!("Destroyed all resources for session: {}", session_id);
@@ -130,22 +133,21 @@ impl MCPServiceProxyManager {
     ) -> Result<MCPResponse, String> {
         // Builtin tools route through proxy
         if tool_name.starts_with("builtin_") {
-            let proxy = self.get_proxy(session_id).await.ok_or_else(|| {
-                let active_sessions = futures::executor::block_on(async {
-                    self.proxies
-                        .read()
-                        .await
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                });
-                log::error!(
-                    "No proxy found for session: {}. Active sessions: {:?}",
-                    session_id,
-                    active_sessions
-                );
-                format!("Session context not found or expired (ID: {})", session_id)
-            })?;
+            let proxy = match self.get_proxy(session_id).await {
+                Some(proxy) => proxy,
+                None => {
+                    let active_sessions = self.list_sessions().await;
+                    log::error!(
+                        "No proxy found for session: {}. Active sessions: {:?}",
+                        session_id,
+                        active_sessions
+                    );
+                    return Err(format!(
+                        "Session context not found or expired (ID: {})",
+                        session_id
+                    ));
+                }
+            };
             return proxy.call_tool(tool_name, args).await;
         }
 
