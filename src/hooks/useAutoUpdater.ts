@@ -72,10 +72,9 @@ async function installUpdate(
 ): Promise<void> {
   if (!update) return;
 
-  const toastId = toast.loading(
-    `Downloading LibrAgent ${update.version}…`,
-    { duration: Infinity },
-  );
+  const toastId = toast.loading(`Downloading LibrAgent ${update.version}…`, {
+    duration: Infinity,
+  });
 
   try {
     let downloaded = 0;
@@ -105,7 +104,10 @@ async function installUpdate(
       }
     });
 
-    toast.success('Update installed! Restarting…', { id: toastId, duration: 2000 });
+    toast.success('Update installed! Restarting…', {
+      id: toastId,
+      duration: 2000,
+    });
 
     // Restart the app via the existing restart_app Tauri command.
     await safeInvoke('restart_app');
