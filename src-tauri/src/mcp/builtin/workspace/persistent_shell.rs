@@ -92,14 +92,8 @@ impl PersistentShell {
     ) -> Result<Self> {
         #[cfg(unix)]
         let mut cmd = {
-            // Verify bash exists
-            if !std::process::Command::new("sh")
-                .arg("-c")
-                .arg("command -v bash")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
+            // Verify bash exists using the shared utility
+            if !crate::utils::platform::command_exists("bash") {
                 return Err(anyhow::anyhow!(
                     "Bash shell not found. Please install bash to use persistent shell features."
                 ));
@@ -585,6 +579,21 @@ impl std::fmt::Debug for PersistentShell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verify that bash is available in the test environment.
+    ///
+    /// This covers the "bash present" path of the existence check added to
+    /// `PersistentShell::new`.  The complementary "bash not found" path
+    /// requires a container/environment without bash and is validated in CI
+    /// through the platform-specific skipped-test mechanism.
+    #[test]
+    #[cfg(unix)]
+    fn test_bash_exists_for_persistent_shell() {
+        assert!(
+            crate::utils::platform::command_exists("bash"),
+            "bash must be present for persistent shell tests to run"
+        );
+    }
 
     #[tokio::test]
     async fn test_basic_command() -> Result<()> {

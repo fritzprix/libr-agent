@@ -1,30 +1,7 @@
 use std::path::Path;
 use std::process::Command;
 
-/// Check if a command exists in PATH (cross-platform)
-fn command_exists(cmd: &str) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        Command::new("where")
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg(cmd)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(windows))]
-    {
-        Command::new("sh")
-            .arg("-c")
-            .arg(format!("command -v {}", cmd))
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-}
+use super::platform::command_exists;
 
 /// Construct the terminal launch command for the current platform
 fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
@@ -154,12 +131,74 @@ mod tests {
         {
             assert!(command_exists("sh"), "sh should exist on Linux");
             assert!(command_exists("ls"), "ls should exist on Linux");
-            assert!(!command_exists("nonexistent_command_12345"), "nonexistent command should return false");
+            assert!(
+                !command_exists("nonexistent_command_12345"),
+                "nonexistent command should return false"
+            );
         }
         #[cfg(target_os = "windows")]
         {
             assert!(command_exists("cmd"), "cmd should exist on Windows");
-            assert!(!command_exists("nonexistent_command_12345"), "nonexistent command should return false");
+            assert!(
+                !command_exists("nonexistent_command_12345"),
+                "nonexistent command should return false"
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert!(command_exists("sh"), "sh should exist on macOS");
+            assert!(
+                !command_exists("nonexistent_command_12345"),
+                "nonexistent command should return false"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_macos_get_terminal_command_with_special_chars() {
+        // Paths with single quotes exercise the AppleScript shell-escaping logic
+        let path = PathBuf::from("/Users/test/My Project 'Quoted' & $pecial");
+        let (prog, args) = get_terminal_command(&path).unwrap();
+        assert_eq!(prog, "osascript");
+        assert!(!args.is_empty(), "osascript arguments should not be empty");
+        let script = args.join(" ");
+        assert!(
+            script.contains("tell application \"Terminal\""),
+            "should generate AppleScript"
+        );
+        assert!(script.contains("cd "), "script should contain a cd command");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_linux_get_terminal_command_smoke() {
+        // Returns a valid terminal command or a descriptive error when none is installed
+        let path = PathBuf::from("/tmp/test workspace with spaces");
+        let result = get_terminal_command(&path);
+        match result {
+            Ok((prog, args)) => {
+                assert!(
+                    !prog.is_empty(),
+                    "terminal program name should not be empty"
+                );
+                assert!(!args.is_empty(), "arguments should not be empty");
+                let joined = args.join(" ");
+                let path_str = path.to_str().unwrap();
+                assert!(
+                    joined.contains(path_str) || joined.contains("cd "),
+                    "args should reference the working directory directly or via cd, got: {}",
+                    joined
+                );
+            }
+            Err(msg) => {
+                // Acceptable on headless CI without any terminal emulator installed
+                assert!(
+                    msg.contains("No supported terminal emulator found"),
+                    "error should indicate no terminal was found, got: {}",
+                    msg
+                );
+            }
         }
     }
 }
