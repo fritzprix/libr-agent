@@ -267,10 +267,13 @@ export const AssistantContextProvider = ({
         const assistantToSave: Assistant = {
           id: assistantId,
           name: editingAssistant.name,
+          description: editingAssistant.description,
+          avatar: editingAssistant.avatar,
           systemPrompt,
           mcpServerIds: editingAssistant.mcpServerIds,
           deletionProtected: editingAssistant.deletionProtected ?? false,
           localServices: editingAssistant.localServices ?? [],
+          disabledSkills: editingAssistant.disabledSkills,
           createdAt: assistantCreatedAt || new Date(),
           updatedAt: new Date(),
         };

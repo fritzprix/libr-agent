@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Bot,
   BrainCircuit,
@@ -57,6 +58,7 @@ function StatusDot({ status }: { status: string }) {
 }
 
 export default function AppSidebar() {
+  const { t } = useTranslation();
   const { state } = useSidebar();
   const location = useLocation();
   const isCollapsed = state === 'collapsed';
@@ -115,11 +117,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname.startsWith('/agent')}
-                  tooltip="Chat"
+                  tooltip={t('sidebar.chat')}
                 >
                   <Link to="/agent">
                     <Bot size={16} />
-                    <span>Chat</span>
+                    <span>{t('sidebar.chat')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -130,7 +132,7 @@ export default function AppSidebar() {
         {/* Library Section */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-            Library
+            {t('sidebar.library')}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -138,11 +140,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname === '/assistants'}
-                  tooltip="Assistants"
+                  tooltip={t('sidebar.assistants')}
                 >
                   <Link to="/assistants">
                     <Users size={16} />
-                    <span>Assistants</span>
+                    <span>{t('sidebar.assistants')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -150,11 +152,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname === '/playbooks'}
-                  tooltip="Playbooks"
+                  tooltip={t('sidebar.playbooks')}
                 >
                   <Link to="/playbooks">
                     <BookOpen size={16} />
-                    <span>Playbooks</span>
+                    <span>{t('sidebar.playbooks')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -162,11 +164,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname === '/mcp-servers'}
-                  tooltip="Extensions"
+                  tooltip={t('sidebar.extensions')}
                 >
                   <Link to="/mcp-servers">
                     <Blocks size={16} />
-                    <span>Extensions</span>
+                    <span>{t('sidebar.extensions')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -178,7 +180,7 @@ export default function AppSidebar() {
         {!isCollapsed && recentSessions.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-sm font-semibold uppercase tracking-wide mb-2">
-              Recent Sessions
+              {t('sidebar.recentSessions')}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -202,14 +204,16 @@ export default function AppSidebar() {
                   <SidebarMenuButton
                     asChild
                     isActive={location.pathname === '/history'}
-                    tooltip="All Sessions"
+                    tooltip={t('sidebar.history')}
                   >
                     <Link
                       to="/history"
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <History size={14} />
-                      <span className="text-xs">See all sessions →</span>
+                      <span className="text-xs">
+                        {t('sidebar.seeAllSessions')}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -226,7 +230,7 @@ export default function AppSidebar() {
                   <SidebarMenuButton
                     asChild
                     isActive={location.pathname === '/history'}
-                    tooltip="History"
+                    tooltip={t('sidebar.history')}
                   >
                     <Link to="/history">
                       <History size={16} />
@@ -244,13 +248,13 @@ export default function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              tooltip="Settings"
+              tooltip={t('sidebar.settings')}
               className={`transition-all duration-200`}
               isActive={location.pathname === '/settings'}
             >
               <Link to="/settings">
                 <Settings size={16} />
-                {!isCollapsed && <span>Settings</span>}
+                {!isCollapsed && <span>{t('sidebar.settings')}</span>}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

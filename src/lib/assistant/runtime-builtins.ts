@@ -3,7 +3,7 @@
 // CORE_BUILTIN_SERVICE_ALIASES, OPTIONAL_BUILTIN_SERVICE_ALIASES, and
 // canonicalizeAlias() are all derived from this registry automatically.
 
-type ServiceCategory = 'core' | 'optional' | 'internal';
+type ServiceCategory = 'core' | 'optional';
 
 interface BuiltinServiceEntry {
   readonly canonical: string;
@@ -22,7 +22,7 @@ const BUILTIN_SERVICE_REGISTRY: readonly BuiltinServiceEntry[] = [
   { canonical: 'ui', category: 'core' },
   { canonical: 'browser', category: 'optional' },
   { canonical: 'bootstrap', category: 'optional' },
-  { canonical: 'mcp_manager', category: 'internal' },
+  { canonical: 'mcp_manager', category: 'core' },
 ];
 
 // ─── Derived constants (do not edit directly) ──────────────────────────────────

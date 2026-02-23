@@ -1,35 +1,25 @@
-use crate::session_isolation::common::get_shell_command;
 use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
-use base64::{engine::general_purpose, Engine as _};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
+
+/// Monotonic counter for unique script filenames within a process lifetime.
+static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Basic isolation: environment variables and working directory
 pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
 ) -> Result<AsyncCommand, String> {
-    // Detect if this is a direct PowerShell/executable command (Windows-specific)
-    let (shell_cmd, use_shell_wrapper) = {
-        let cmd_lower = config.command.to_lowercase();
-        if cmd_lower.starts_with("powershell") || cmd_lower.starts_with("pwsh") {
-            // Direct PowerShell execution - don't wrap with cmd.exe
-            info!("Detected PowerShell command, executing directly without cmd.exe wrapper");
-            (
-                config
-                    .command
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("powershell")
-                    .to_string(),
-                false,
-            )
-        } else {
-            (get_shell_command(config.shell_type).to_string(), true)
-        }
-    };
+    // All commands are written to a temp .ps1 file and executed with `powershell -File`.
+    // This avoids two classes of bugs:
+    //   1. Naive split_whitespace arg-passing broke `powershell -Command "..."` patterns.
+    //   2. Base64+Invoke-Expression (a previous fix attempt) triggers AV heuristics because
+    //      it matches common malware obfuscation patterns.
+    // Writing a plain .ps1 file is readable by AV scanners and handles any command string
+    // without fragmentation or encoding.
 
-    let mut cmd = AsyncCommand::new(&shell_cmd);
+    let mut cmd = AsyncCommand::new("powershell");
 
     // Suppress console window on Windows (prevents terminal flashing)
     #[cfg(target_os = "windows")]
@@ -44,14 +34,14 @@ pub async fn create_basic_isolated_command(
     let detected_python = detect_python_path().await;
     let python_path_str = detected_python.as_ref().map(|p| p.to_string_lossy());
 
-    // Configure base environment (applied to both wrapper and direct execution)
+    // Configure base environment
     // Windows: DO NOT use env_clear() as it breaks process execution
     cmd.env("USERPROFILE", &config.workspace_path);
     cmd.env("HOME", &config.workspace_path);
     cmd.env("TEMP", config.workspace_path.join("tmp"));
     cmd.env("TMP", config.workspace_path.join("tmp"));
 
-    // Add user-specified environment variables (applies to all platforms)
+    // Add user-specified environment variables
     for (key, value) in &config.env_vars {
         cmd.env(key, value);
     }
@@ -83,146 +73,89 @@ pub async fn create_basic_isolated_command(
         }
     }
 
-    // Set PATH on the command
     cmd.env("PATH", &new_path);
 
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
-    // Additional env diagnostic info to help diagnose missing output on Windows
     let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
     let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());
     info!("Windows env snapshot (for debugging): PATH.len={}, SystemRoot={}, COMSPEC={}, PSModulePath.present={}", path_len, system_root, comspec, !psmodulepath.is_empty());
 
-    // Set command arguments based on platform and shell type
-    if !use_shell_wrapper {
-        // Direct PowerShell execution: parse and pass arguments directly
-        // Extract PowerShell args from the command string
-        let parts: Vec<&str> = config.command.split_whitespace().collect();
-        if parts.len() > 1 {
-            // Pass all arguments after "powershell"/"pwsh"
-            cmd.args(&parts[1..]);
-        }
-        // Add any additional args
-        if !config.args.is_empty() {
-            cmd.args(&config.args);
-        }
-        info!(
-            "PowerShell direct execution configured: {} with args: {:?}",
-            shell_cmd,
-            parts.get(1..).unwrap_or(&[])
-        );
-        info!(
-            "PowerShell direct exec: command='{}' args={:?} workspace_dir={}",
-            shell_cmd,
-            parts.get(1..).unwrap_or(&[]),
-            config.workspace_path.display()
-        );
+    // Build the full command string (binary + any extra args from config).
+    // Args are single-quoted for PowerShell to handle spaces/special chars.
+    let quote_arg = |arg: &str| -> String { format!("'{}'", arg.replace("'", "''")) };
+    let args_str = config
+        .args
+        .iter()
+        .map(|a| quote_arg(a))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let full_command = if args_str.is_empty() {
+        config.command.clone()
     } else {
-        // Windows: Use PowerShell instead of cmd.exe for better quote handling
-        // We override cmd to be "powershell" here, which REPLACES the previous AsyncCommand::new(&shell_cmd)
-        // So we must re-apply environment variables!
+        format!("{} {}", config.command, args_str)
+    };
 
-        // However, instead of recreating `cmd`, we can just ensure `shell_cmd` was "powershell" to begin with.
-        // `get_shell_command` returns "powershell" or "cmd".
-        // If we are here, `use_shell_wrapper` is true.
-        // The original code re-created `cmd` which wiped out envs.
-        // Let's modify logic to NOT recreate `cmd` if possible, or re-apply envs.
+    // Write the command to a temp .ps1 file so AV can inspect it in plaintext.
+    // Base64+Invoke-Expression was flagged as malware obfuscation; plain .ps1 is not.
+    let tmp_dir = config.workspace_path.join("tmp");
+    tokio::fs::create_dir_all(&tmp_dir)
+        .await
+        .map_err(|e| format!("Failed to create tmp dir: {}", e))?;
 
-        // But `cmd` struct doesn't allow changing the program once created.
-        // So we MUST create a new command if we switch to PowerShell wrapper logic.
+    // Monotonic counter avoids collisions when multiple commands fire within the same millisecond.
+    let seq = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let script_path = tmp_dir.join(format!("cmd_{}_{}.ps1", config.session_id, seq));
 
-        // Refactor: We create the correct command initially.
-        // But wait, `get_shell_command` returns "powershell" by default on Windows.
-        // So `shell_cmd` is likely already "powershell".
-        // The only case where it might be "cmd" is if ShellType::Cmd was requested explicitly.
-        // But the wrapper logic forces "powershell" usage anyway: `cmd = AsyncCommand::new("powershell")`.
-        // So effectively, `shell_cmd` is ignored in this branch!
+    // Plain readable script — no obfuscation, AV-friendly
+    let script_content = format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
+         try {{\n\
+             {}\n\
+         }} catch {{\n\
+             [Console]::Error.WriteLine($_.Exception.Message)\n\
+             [Console]::Error.WriteLine($_.ScriptStackTrace)\n\
+             exit 1\n\
+         }}\n",
+        full_command
+    );
 
-        // So, let's fix the initial creation to use "powershell" directly if wrapper is needed.
-        // Actually, let's just create a NEW command here and re-apply envs properly.
+    tokio::fs::write(&script_path, &script_content)
+        .await
+        .map_err(|e| format!("Failed to write command script: {}", e))?;
 
-        let mut wrapped_cmd = AsyncCommand::new("powershell");
+    let script_path_str = script_path
+        .to_str()
+        .ok_or_else(|| "Script path contains invalid UTF-8".to_string())?
+        .to_string();
 
-        // Suppress console window on Windows (prevents terminal flashing)
-        #[cfg(target_os = "windows")]
-        {
-            wrapped_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
+    // Wrap with a cleanup script: run the target .ps1, then delete it regardless of outcome.
+    // This prevents accumulation of temp files in the workspace tmp/ directory.
+    let self_deleting_wrapper = format!(
+        "try {{ & '{}' }} finally {{ Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue }}",
+        script_path_str.replace("'", "''"),
+        script_path_str.replace("'", "''")
+    );
 
-        wrapped_cmd.current_dir(&config.workspace_path);
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &self_deleting_wrapper,
+    ]);
 
-        // Re-apply envs
-        wrapped_cmd.env("USERPROFILE", &config.workspace_path);
-        wrapped_cmd.env("HOME", &config.workspace_path);
-        wrapped_cmd.env("TEMP", config.workspace_path.join("tmp"));
-        wrapped_cmd.env("TMP", config.workspace_path.join("tmp"));
-        for (key, value) in &config.env_vars {
-            wrapped_cmd.env(key, value);
-        }
-        wrapped_cmd.env("PATH", &new_path); // Use the computed PATH with Python
-
-        // Now handle the command wrapping
-        // We need to construct the command string carefully.
-        // Joining with spaces is risky if args contain spaces.
-        // We should quote arguments.
-
-        // Helper to quote arguments for PowerShell
-        let quote_arg = |arg: &str| -> String {
-            // Simple quoting: wrap in single quotes, escape single quotes inside
-            format!("'{}'", arg.replace("'", "''"))
-        };
-
-        // Wait, if we run `python file.py`, we want `python 'file.py'`.
-        // If we run `"C:\Program Files\Python\python.exe" file.py`, we want `'C:\Program Files\Python\python.exe' 'file.py'`.
-        // PowerShell handles `& 'path' args` syntax.
-        // Invoke-Expression expects a string.
-
-        // Let's use simple space joining for the binary (assuming it's simple) and quoted args.
-        // Ideally we should use `&` operator in PowerShell if the command is quoted.
-        // e.g. `& 'C:\Path\To\Exe' 'arg1' 'arg2'`
-
-        let binary = &config.command;
-        let args_str = config
-            .args
-            .iter()
-            .map(|a| quote_arg(a))
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        let full_command = if args_str.is_empty() {
-            binary.clone()
-        } else {
-            format!("{} {}", binary, args_str)
-        };
-
-        let encoded_command = general_purpose::STANDARD.encode(&full_command);
-        let wrapped_command = format!(
-            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-            encoded_command
-        );
-
-        wrapped_cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &wrapped_command,
-        ]);
-
-        info!("Windows PowerShell execution with proper argument escaping and error redirection");
-
-        // Replace `cmd` with `wrapped_cmd`
-        cmd = wrapped_cmd;
-
-        // Log environment snapshot
-        let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
-        let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
-        let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
-        info!(
-            "PowerShell wrapper env snapshot: PATH.len={}, SystemRoot={}, COMSPEC={}",
-            path_len, system_root, comspec
-        );
-    }
+    info!(
+        "Windows: wrote command script to {:?}, executing with self-cleanup wrapper",
+        script_path
+    );
+    info!(
+        "PowerShell env snapshot: PATH.len={}, SystemRoot={}, COMSPEC={}",
+        path_len, system_root, comspec
+    );
 
     info!(
         "Isolated command created for session {} with isolation level {:?}",
@@ -345,56 +278,134 @@ async fn detect_python_path() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// Mirrors the script content format used by `create_basic_isolated_command`.
+    fn build_script_content(full_command: &str) -> String {
+        format!(
+            "$ErrorActionPreference = 'Stop'\n\
+             [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'\n\
+             try {{\n\
+                 {}\n\
+             }} catch {{\n\
+                 [Console]::Error.WriteLine($_.Exception.Message)\n\
+                 [Console]::Error.WriteLine($_.ScriptStackTrace)\n\
+                 exit 1\n\
+             }}\n",
+            full_command
+        )
+    }
+
+    /// Mirrors the self-deleting wrapper format used by `create_basic_isolated_command`.
+    fn build_cleanup_wrapper(script_path: &str) -> String {
+        let escaped = script_path.replace("'", "''");
+        format!(
+            "try {{ & '{}' }} finally {{ Remove-Item -LiteralPath '{}' -Force -ErrorAction SilentlyContinue }}",
+            escaped, escaped
+        )
+    }
+
+    // ── Script content tests ────────────────────────────────────────────────
+
     #[test]
-    fn test_powershell_error_wrapping() {
-        // Test that the wrapped command includes error handling and base64 encoding
-        let test_command = "Remove-Item -Path \"C:\\test\" -Recurse -Force";
-        let encoded = general_purpose::STANDARD.encode(test_command);
-        let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-            encoded
-        );
-
-        // Verify the wrapped command contains key elements
-        assert!(wrapped.contains("$ErrorActionPreference = 'Stop'"));
-        assert!(wrapped.contains("FromBase64String"));
-        assert!(wrapped.contains("Invoke-Expression $cmd"));
-        assert!(wrapped.contains("exit 1"));
-
-        // Extract Base64 and verify
-        let start_marker = "FromBase64String('";
-        let end_marker = "'));";
-        let start = wrapped.find(start_marker).unwrap() + start_marker.len();
-        let end = wrapped.find(end_marker).unwrap();
-        let extracted_b64 = &wrapped[start..end];
-
-        let decoded_bytes = general_purpose::STANDARD.decode(extracted_b64).unwrap();
-        let decoded_str = String::from_utf8(decoded_bytes).unwrap();
-
-        assert_eq!(decoded_str, test_command);
+    fn test_script_content_has_error_handling() {
+        // Script must stop on first error, report it to stderr, and exit non-zero.
+        let script = build_script_content("Remove-Item -Path 'C:\\test' -Recurse -Force");
+        assert!(script.contains("$ErrorActionPreference = 'Stop'"));
+        assert!(script.contains("try {"));
+        assert!(script.contains("} catch {"));
+        assert!(script.contains("[Console]::Error.WriteLine"));
+        assert!(script.contains("exit 1"));
     }
 
     #[test]
-    fn test_powershell_quote_preservation() {
-        // Test that double quotes are preserved correctly through Base64 roundtrip
-        let test_command = "Write-Host \"Hello World\"";
-        let encoded = general_purpose::STANDARD.encode(test_command);
-
-        let wrapped = format!(
-            "$ErrorActionPreference = 'Stop'; [System.Threading.Thread]::CurrentThread.CurrentUICulture = 'en-US'; $cmd = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')); try {{ Invoke-Expression $cmd }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); [Console]::Error.WriteLine($_.ScriptStackTrace); exit 1 }}",
-            encoded
+    fn test_script_content_no_obfuscation() {
+        // REGRESSION: Base64+Invoke-Expression triggered AV heuristics (malware obfuscation pattern).
+        // The .ps1 file must be plaintext-readable so AV can scan it.
+        let script = build_script_content("Some-Command -Arg value");
+        assert!(
+            !script.contains("Invoke-Expression"),
+            "Script must not use Invoke-Expression (AV red-flag)"
         );
+        assert!(
+            !script.contains("FromBase64String"),
+            "Script must not use Base64 decoding (AV red-flag)"
+        );
+        assert!(
+            !script.contains("EncodedCommand"),
+            "Script must not use -EncodedCommand (AV red-flag)"
+        );
+    }
 
-        // Verify Base64 contains the command with quotes intact
-        let start_marker = "FromBase64String('";
-        let end_marker = "'));";
-        let start = wrapped.find(start_marker).unwrap() + start_marker.len();
-        let end = wrapped.find(end_marker).unwrap();
-        let extracted_b64 = &wrapped[start..end];
+    #[test]
+    fn test_script_content_preserves_double_quotes() {
+        // REGRESSION: split_whitespace fragmented quoted args like `"Expand-Archive` into
+        // a string literal that PowerShell echoed and exited 0 without executing.
+        // .ps1 file approach passes the command verbatim — no fragmentation possible.
+        let cmd = "Write-Host \"Hello World\"";
+        let script = build_script_content(cmd);
+        assert!(
+            script.contains("Write-Host \"Hello World\""),
+            "Double quotes must survive into the .ps1 file unchanged"
+        );
+    }
 
-        let decoded_bytes = general_purpose::STANDARD.decode(extracted_b64).unwrap();
-        let decoded_str = String::from_utf8(decoded_bytes).unwrap();
+    #[test]
+    fn test_script_content_preserves_expand_archive_pattern() {
+        // REGRESSION: The exact command that triggered the original split_whitespace bug.
+        // `powershell -Command "Expand-Archive ..."` was split on whitespace, making the
+        // leading `"` turn `"Expand-Archive` into a string literal evaluated by PowerShell.
+        // The process exited 0 with no output and no side effects — completely silent failure.
+        let cmd = "Expand-Archive -Path \"attachments/foo.zip\" -DestinationPath \".\"";
+        let script = build_script_content(cmd);
+        assert!(script.contains("Expand-Archive"));
+        assert!(script.contains("attachments/foo.zip"));
+        assert!(script.contains("-DestinationPath \".\""));
+    }
 
-        assert_eq!(decoded_str, test_command);
+    #[test]
+    fn test_script_content_powershell_command_pattern() {
+        // REGRESSION: `powershell -Command "..."` passed as a command string used to break
+        // because split_whitespace would pass `-Command` and `"..."` as separate args.
+        let cmd = "powershell -Command \"Get-Process\"";
+        let script = build_script_content(cmd);
+        assert!(script.contains("powershell -Command \"Get-Process\""));
+    }
+
+    // ── Cleanup wrapper tests ───────────────────────────────────────────────
+
+    #[test]
+    fn test_cleanup_wrapper_calls_script_and_deletes() {
+        // Wrapper must invoke the script AND delete it in a finally block (runs on success/failure).
+        let wrapper = build_cleanup_wrapper("C:\\workspace\\tmp\\cmd_abc_0.ps1");
+        assert!(wrapper.contains("& 'C:\\workspace\\tmp\\cmd_abc_0.ps1'"));
+        assert!(wrapper.contains("Remove-Item"));
+        assert!(wrapper.contains("-LiteralPath"));
+        assert!(wrapper.contains("finally"));
+        assert!(wrapper.contains("-ErrorAction SilentlyContinue"));
+    }
+
+    #[test]
+    fn test_cleanup_wrapper_escapes_single_quotes_in_path() {
+        // If the path contains a single quote, it must be doubled to avoid PS injection.
+        let path_with_quote = "C:\\work's\\tmp\\cmd.ps1";
+        let wrapper = build_cleanup_wrapper(path_with_quote);
+        assert!(
+            wrapper.contains("C:\\work''s\\tmp\\cmd.ps1"),
+            "Single quotes in path must be escaped as '' for PowerShell"
+        );
+        assert!(
+            !wrapper.contains("work's"),
+            "Unescaped single quote must not appear in wrapper"
+        );
+    }
+
+    // ── Counter uniqueness tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_script_counter_is_monotonic() {
+        // Counter must strictly increase so concurrent commands never share a filename.
+        let a = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let b = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let c = SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        assert!(a < b && b < c, "SCRIPT_COUNTER must be strictly monotonic");
     }
 }

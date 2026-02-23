@@ -52,6 +52,8 @@ export default [
     files: ['**/*.ts', '**/*.tsx'],
     rules: {
       'no-undef': 'off',
+      // TypeScript interfaces provide compile-time prop validation; runtime PropTypes are unnecessary.
+      'react/prop-types': 'off',
     },
   },
 ];
