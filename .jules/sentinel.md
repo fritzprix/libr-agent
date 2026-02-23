@@ -21,3 +21,9 @@
 **Vulnerability:** The `append_file_string` function in `SecureFileManager` did not check if appending content would exceed the configured maximum file size, allowing unbounded file growth beyond `LIBRAGENT_MAX_FILE_SIZE`.
 **Learning:** Append operations must validate the _resulting_ file size (current size + append size), not just the size of the chunk being appended.
 **Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. Use `saturating_add` to prevent integer overflow during size calculation.
+
+## 2026-03-23 - Environment Variable Leakage in Isolated Shell
+
+**Vulnerability:** The Unix implementation of `create_basic_isolated_command` inherited the parent process's environment variables by default, exposing sensitive secrets (e.g., API keys, internal paths) to the "isolated" shell.
+**Learning:** `std::process::Command` (and `tokio::process::Command`) inherits environment variables by default. "Isolation" requires explicit clearance using `env_clear()`.
+**Prevention:** Always call `cmd.env_clear()` when spawning isolated processes, then explicitly re-inherit only necessary variables (like `PATH`, `TERM`) to follow the principle of least privilege.
