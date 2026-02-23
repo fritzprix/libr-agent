@@ -536,22 +536,6 @@ pub async fn list_all_tools_unified(manager: &MCPServerManager) -> Result<Vec<MC
     Ok(all_tools)
 }
 
-pub async fn call_tool_unified(
-    manager: &MCPServerManager,
-    server_name: &str,
-    tool_name: &str,
-    args: serde_json::Value,
-    request_id: Option<serde_json::Value>,
-) -> MCPResponse {
-    // Check if it's a builtin server (starts with "builtin.")
-    if server_name.starts_with("builtin.") {
-        let normalized_server_name = server_name.strip_prefix("builtin.").unwrap_or(server_name);
-        call_builtin_tool(manager, normalized_server_name, tool_name, args, request_id).await
-    } else {
-        call_tool(manager, server_name, tool_name, args, request_id).await
-    }
-}
-
 pub async fn get_service_context(
     manager: &MCPServerManager,
     server_name: &str,

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
+import { useChatScroll } from '@/features/agent/hooks/useChatScroll';
+import { useFileRefetcher } from '@/features/agent/hooks/useFileRefetcher';
 import { useMessageGrouping } from '@/hooks/useMessageGrouping';
-import { useThrottle } from '@/hooks/useThrottle';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
@@ -22,11 +23,9 @@ export function AgentChatMessages() {
   const { session } = useAgentSessionState();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
-  // Keep track of previous message count to determine scroll behavior
-  const prevMessagesLength = useRef(messages.length);
+  // Use custom hooks for side effects
+  const { messagesEndRef, scrollContainerRef } = useChatScroll({ messages });
+  useFileRefetcher({ messages, refetchSessionFiles });
 
   // Group messages for display
   const { groupedMessages, toolResultsMap } = useMessageGrouping(messages);
@@ -38,59 +37,7 @@ export function AgentChatMessages() {
     [pendingMessages],
   );
 
-  // Only auto-scroll if enabled
-  useEffect(() => {
-    if (autoScrollEnabled) {
-      // If we have a NEW message, smooth scroll.
-      // If we are just streaming (same message count), jump to bottom (auto) to avoid jank.
-      const isNewMessage = messages.length > prevMessagesLength.current;
-      const behavior = isNewMessage ? 'smooth' : 'auto';
-
-      messagesEndRef.current?.scrollIntoView({ behavior });
-    }
-    prevMessagesLength.current = messages.length;
-  }, [messages, autoScrollEnabled]);
-
-  // Throttle the refetch function to prevent excessive backend calls
-  const throttledRefetch = useThrottle(() => {
-    refetchSessionFiles();
-  }, 2000);
-
-  // Refetch session files when message stack updates
-  // This ensures SessionFilesPopover reflects any files added by agent tool calls
-  useEffect(() => {
-    if (messages.length > 0) {
-      // Check if last message contains tool results (file operations)
-      const lastMessage = messages[messages.length - 1];
-      // Only refetch when we have a tool result (role === 'tool').
-      // We do NOT refetch on 'assistant' messages with tool_calls, as the files
-      // are only created after the tool execution is complete.
-      if (lastMessage.role === 'tool') {
-        throttledRefetch();
-      }
-    }
-  }, [messages, throttledRefetch]);
-
-  // Detect user scroll position with throttling to improve performance
-  const handleScroll = useThrottle(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    // If user is at the bottom, enable auto-scroll
-    const { scrollTop, scrollHeight, clientHeight } = container;
-    const atBottom = scrollHeight - scrollTop - clientHeight < 10;
-    setAutoScrollEnabled(atBottom);
-  }, 100);
-
   const lastMessageWho = messages[messages.length - 1]?.role;
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [handleScroll]);
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const getAssistantNameForMessage = useCallback(
@@ -103,10 +50,30 @@ export function AgentChatMessages() {
     [session?.assistant?.name],
   );
 
-  // Adapter to satisfy ErrorBubble's onRetry signature
-  const handleRetry = async () => {
-    return retryMessage();
-  };
+  // Memoize error objects so ErrorBubble memo stays effective during streaming re-renders
+  const agentError = useMemo(
+    () =>
+      error
+        ? ({
+            type: 'AI_SERVICE_ERROR' as const,
+            displayMessage: error,
+            recoverable: true,
+          } satisfies NonNullable<Message['error']>)
+        : null,
+    [error],
+  );
+
+  const agentLlmError = useMemo(
+    () =>
+      llmError
+        ? ({
+            type: 'MALFORMED_FUNCTION_CALL' as const,
+            displayMessage: llmError,
+            recoverable: true,
+          } satisfies NonNullable<Message['error']>)
+        : null,
+    [llmError],
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -148,7 +115,7 @@ export function AgentChatMessages() {
               <div className="self-start my-2" key={groupedMessage.message.id}>
                 <ErrorBubble
                   error={groupedMessage.message.error}
-                  onRetry={handleRetry}
+                  onRetry={retryMessage}
                 />
               </div>
             );
@@ -183,30 +150,16 @@ export function AgentChatMessages() {
         })}
 
         {/* Global (top-level) error: render aligned with assistant bubbles */}
-        {error && (
+        {agentError && (
           <div className="self-start mt-2">
-            <ErrorBubble
-              error={{
-                type: 'AI_SERVICE_ERROR',
-                displayMessage: error,
-                recoverable: true,
-              }}
-              onRetry={handleRetry}
-            />
+            <ErrorBubble error={agentError} onRetry={retryMessage} />
           </div>
         )}
 
         {/* LLM specific error (e.g. malformed function call) */}
-        {llmError && (
+        {agentLlmError && (
           <div className="self-start mt-2">
-            <ErrorBubble
-              error={{
-                type: 'MALFORMED_FUNCTION_CALL',
-                displayMessage: llmError,
-                recoverable: true,
-              }}
-              onRetry={handleRetry}
-            />
+            <ErrorBubble error={agentLlmError} onRetry={retryMessage} />
           </div>
         )}
         {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming/meaningful yet */}
