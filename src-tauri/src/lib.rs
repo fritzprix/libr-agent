@@ -11,7 +11,7 @@ pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
 pub mod server;
-mod services;
+pub mod services;
 pub mod session;
 mod session_isolation;
 mod state;

@@ -7,7 +7,7 @@
 /// - Results are sorted by name
 use std::fs;
 use std::path::Path;
-use tauri_mcp_agent_lib::commands::skill_commands::resolve_skills;
+use tauri_mcp_agent_lib::services::skill_service::resolve_skills;
 use tempfile::TempDir;
 
 /// Helper: create a SKILL.md with valid frontmatter at `dir/subdir/SKILL.md`
