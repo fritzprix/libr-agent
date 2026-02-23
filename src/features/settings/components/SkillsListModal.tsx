@@ -26,8 +26,7 @@ export function SkillsListModal({
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>
-            {t('settings.skills.modalTitle', 'Available Skills')} (
-            {skills.length})
+            {t('settings.skills.modalTitle', { count: skills.length })}
           </DialogTitle>
         </DialogHeader>
 
