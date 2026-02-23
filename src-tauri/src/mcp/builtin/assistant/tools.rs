@@ -21,6 +21,10 @@ pub fn create_assistant_tool() -> MCPTool {
                     string_prop_required("Assistant name (Must be unique)"),
                 ),
                 (
+                    "description".to_string(),
+                    string_prop(None, None, Some("Short description shown on the assistant selection card (1-2 sentences)")),
+                ),
+                (
                     "systemPrompt".to_string(),
                     string_prop(None, None, Some("System prompt for the assistant")),
                 ),
@@ -68,6 +72,10 @@ pub fn update_assistant_tool() -> MCPTool {
                 (
                     "name".to_string(),
                     string_prop(None, None, Some("New name")),
+                ),
+                (
+                    "description".to_string(),
+                    string_prop(None, None, Some("Short description shown on the assistant selection card (1-2 sentences)")),
                 ),
                 (
                     "systemPrompt".to_string(),
