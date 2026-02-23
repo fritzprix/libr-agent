@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🏗️ Refactor
+
+- **Nexus: Workspace Command Decoupling**: Extracted all business logic from the monolithic `workspace_commands.rs` Tauri handler into two dedicated modules — `services::WorkspaceService` (file listing, override management) and `utils::terminal` (cross-platform terminal launch). Command handlers now delegate to these services, enforcing the Nexus architectural pattern of zero domain logic in the command layer.
+
+### 🐛 Fixes
+
+- **Workspace file listing error handling**: Improved resilience when listing directory contents — individual entry errors are now handled gracefully instead of aborting the entire listing operation.
+
+- **`mcp_manager` always enabled**: The `mcp_manager` built-in service was registered as `optional: false` in the registry but absent from `CORE_BUILTIN_SERVICE_ALIASES`, causing agents with an explicit alias list to receive "Built-in server 'mcp_manager' not enabled in this session" errors. Fixed in both the Rust registry array and the TypeScript `ServiceCategory` classification.
+
+- **Assistant description silently lost on save**: `upsertAssistant()` manually assembled the save object but omitted `description`, `avatar`, and `disabledSkills` fields — every save (including toggling an MCP server) discarded them. All three fields are now preserved. Added a `TextareaWithLabel` description input to `AssistantEditor` General tab so users can actually set the field from the UI.
+
+- **AI agents unable to set assistant description via MCP tools**: `createAssistant` and `updateAssistant` MCP tool schemas were missing the `description` parameter entirely, making it impossible for agents to populate or update assistant descriptions. Both schemas now declare the field.
+
+### 🔧 Internal
+
+- **Regression tests — `mcp_manager` core alias**: Two `#[test]` cases in `builtin_service_registry_tests.rs` guard against re-introduction of the "mcp_manager not enabled" regression for any explicit or empty alias list.
+- **Regression tests — assistant tool schemas**: Two `#[test]` cases assert that `createAssistant` and `updateAssistant` input schemas include a `"description"` property, preventing silent schema omissions.
+- **Regression tests — assistant serialization round-trip**: Vitest suite in `src/models/__tests__/validation.assistant.test.ts` covers `parseAssistant` field preservation (description, avatar, disabledSkills, mcpServerIds, allowedBuiltInServiceAliases) and round-trip survival through `upsertAssistant`-style serialization, including a named regression case "adding an MCP server does not wipe description."
+
 ## [0.5.13] - 2026-02-23
 
 ### 🚀 Features

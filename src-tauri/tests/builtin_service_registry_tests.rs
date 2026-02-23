@@ -14,6 +14,7 @@ use tauri_mcp_agent_lib::agent::tools::{
     ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -352,4 +353,47 @@ fn registry_and_server_list_are_in_sync() {
             entry.canonical,
         );
     }
+}
+
+// ─── Assistant tool schema regression tests ──────────────────────────────────
+// Regression: createAssistant and updateAssistant tool schemas were missing the
+// `description` field, so AI agents had no way to set assistant descriptions
+// via MCP tools.
+
+/// Extracts the properties map from an object-type `JSONSchema`, panicking
+/// with a helpful message if the schema is not an Object variant.
+fn extract_object_properties(
+    schema: &tauri_mcp_agent_lib::mcp::schema::JSONSchema,
+    context: &str,
+) -> std::collections::HashMap<String, tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
+    match &schema.schema_type {
+        tauri_mcp_agent_lib::mcp::schema::JSONSchemaType::Object { properties, .. } => properties
+            .clone()
+            .unwrap_or_else(|| panic!("{context}: input_schema has no properties")),
+        other => panic!("{context}: expected Object schema, got {other:?}"),
+    }
+}
+
+#[test]
+fn create_assistant_tool_schema_includes_description_field() {
+    let tool = assistant_tools::create_assistant_tool();
+    let props = extract_object_properties(&tool.input_schema, "createAssistant");
+    assert!(
+        props.contains_key("description"),
+        "createAssistant input_schema must include a 'description' property; \
+         found keys: {:?}",
+        props.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn update_assistant_tool_schema_includes_description_field() {
+    let tool = assistant_tools::update_assistant_tool();
+    let props = extract_object_properties(&tool.input_schema, "updateAssistant");
+    assert!(
+        props.contains_key("description"),
+        "updateAssistant input_schema must include a 'description' property; \
+         found keys: {:?}",
+        props.keys().collect::<Vec<_>>()
+    );
 }

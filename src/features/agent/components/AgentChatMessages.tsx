@@ -50,10 +50,30 @@ export function AgentChatMessages() {
     [session?.assistant?.name],
   );
 
-  // Adapter to satisfy ErrorBubble's onRetry signature
-  const handleRetry = async () => {
-    return retryMessage();
-  };
+  // Memoize error objects so ErrorBubble memo stays effective during streaming re-renders
+  const agentError = useMemo(
+    () =>
+      error
+        ? ({
+            type: 'AI_SERVICE_ERROR' as const,
+            displayMessage: error,
+            recoverable: true,
+          } satisfies NonNullable<Message['error']>)
+        : null,
+    [error],
+  );
+
+  const agentLlmError = useMemo(
+    () =>
+      llmError
+        ? ({
+            type: 'MALFORMED_FUNCTION_CALL' as const,
+            displayMessage: llmError,
+            recoverable: true,
+          } satisfies NonNullable<Message['error']>)
+        : null,
+    [llmError],
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -95,7 +115,7 @@ export function AgentChatMessages() {
               <div className="self-start my-2" key={groupedMessage.message.id}>
                 <ErrorBubble
                   error={groupedMessage.message.error}
-                  onRetry={handleRetry}
+                  onRetry={retryMessage}
                 />
               </div>
             );
@@ -130,30 +150,16 @@ export function AgentChatMessages() {
         })}
 
         {/* Global (top-level) error: render aligned with assistant bubbles */}
-        {error && (
+        {agentError && (
           <div className="self-start mt-2">
-            <ErrorBubble
-              error={{
-                type: 'AI_SERVICE_ERROR',
-                displayMessage: error,
-                recoverable: true,
-              }}
-              onRetry={handleRetry}
-            />
+            <ErrorBubble error={agentError} onRetry={retryMessage} />
           </div>
         )}
 
         {/* LLM specific error (e.g. malformed function call) */}
-        {llmError && (
+        {agentLlmError && (
           <div className="self-start mt-2">
-            <ErrorBubble
-              error={{
-                type: 'MALFORMED_FUNCTION_CALL',
-                displayMessage: llmError,
-                recoverable: true,
-              }}
-              onRetry={handleRetry}
-            />
+            <ErrorBubble error={agentLlmError} onRetry={retryMessage} />
           </div>
         )}
         {/* Global/Bottom AnalysisLoader: Show when busy but nothing is streaming/meaningful yet */}
