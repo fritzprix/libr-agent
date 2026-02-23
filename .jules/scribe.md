@@ -84,3 +84,8 @@
 
 **Drift:** `agents.md` claimed uniform feature structure and used a simplified `get_service_context` example. `builtin/README.md` showed an outdated `get_service_context` default implementation.
 **Reality:** Features structure varies; `BrowserServer` context logic is complex; `BuiltinMCPServer` trait returns a formatted default string. Updated docs to reflect reality.
+
+## 2026-03-03 - src-tauri/src/mcp/builtin/README.md / src/lib/utils.ts
+
+**Drift:** `README.md` claimed frontend uses simple tool names. `utils.ts` had implicit documentation on naming.
+**Reality:** Agent/Proxy interactions require `builtin_{server}__{tool}` prefix. Updated docs to distinguish between internal (simple) and external (prefixed) naming conventions.
