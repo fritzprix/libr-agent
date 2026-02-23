@@ -70,7 +70,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
 
 // ─── Derived helpers ────────────────────────────────────────────────────────────────────
 
-pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 9] = [
+pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
     "planning",
     "workspace",
     "knowledge",
@@ -80,6 +80,7 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 9] = [
     "content_store",
     "swarm",
     "ui",
+    "mcp_manager",
 ];
 
 pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
