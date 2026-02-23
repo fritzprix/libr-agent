@@ -15,7 +15,7 @@ import { Search, X, Users, Plus } from 'lucide-react';
 
 const logger = getLogger('AssistantList');
 
-import { listAvailableBuiltinServerDefinitions } from '@/features/mcp/api/mcp-server-registry';
+import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
 import { dbUtils } from '@/lib/db/service';
 
 export default function AssistantList() {
