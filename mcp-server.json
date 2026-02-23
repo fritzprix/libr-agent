@@ -2,21 +2,125 @@
   "mcpServers": {
     "mcp-hn": {
       "description": "Read top stories from Hacker News.",
+      "logo": "https://news.ycombinator.com/favicon.ico",
       "command": "uvx",
       "args": ["mcp-hn"]
     },
     "yfinance": {
       "description": "Get real-time stock market data and financial news.",
+      "logo": "https://s.yimg.com/rz/p/yahoo_finance_en-US_h_p_finance_2.png",
       "command": "uvx",
       "args": ["yfin-mcp"]
     },
     "ddg-search": {
       "description": "Search the web privately using DuckDuckGo.",
+      "logo": "https://duckduckgo.com/favicon.ico",
       "command": "uvx",
       "args": ["duckduckgo-mcp-server"]
     },
+    "context7": {
+      "description": "Access up-to-date documentation for any library via Context7.",
+      "logo": "https://context7.com/favicon.ico",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "YOUR_API_KEY"
+      },
+      "variableDefinitions": {
+        "CONTEXT7_API_KEY": {
+          "required": true,
+          "label": "Context7 API Key",
+          "description": "Get your API key from https://context7.com",
+          "type": "password",
+          "target": "header"
+        }
+      }
+    },
+    "serena": {
+      "description": "Semantic coding agent with symbol-level code understanding and editing.",
+      "logo": "https://oraios.github.io/serena/_static/serena-icon-32.png",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server"
+      ]
+    },
+    "github": {
+      "description": "Interact with GitHub repositories, issues, PRs, and code search.",
+      "logo": "https://github.com/favicon.ico",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer YOUR_GITHUB_PAT"
+      },
+      "variableDefinitions": {
+        "GITHUB_PAT": {
+          "required": true,
+          "label": "GitHub Personal Access Token",
+          "description": "Generate a PAT from https://github.com/settings/tokens",
+          "type": "password",
+          "target": "bearer-token"
+        }
+      }
+    },
+    "jules": {
+      "description": "Google Jules — autonomous coding agent for GitHub tasks.",
+      "logo": "https://jules.google.com/favicon.ico",
+      "command": "npx",
+      "args": ["-y", "jules-mcp"],
+      "env": {
+        "JULES_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "JULES_API_KEY": {
+          "required": true,
+          "label": "Jules API Key",
+          "description": "Get your API key from https://jules.google.com",
+          "type": "password"
+        }
+      }
+    },
+    "brave-search": {
+      "description": "Search the web with Brave Search API.",
+      "logo": "https://brave.com/favicon.ico",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "BRAVE_API_KEY",
+        "docker.io/mcp/brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "BRAVE_API_KEY": {
+          "required": true,
+          "label": "Brave Search API Key",
+          "description": "Get your API key from https://brave.com/search/api",
+          "type": "password"
+        }
+      }
+    },
+    "exa": {
+      "description": "AI-powered web search and content retrieval via Exa.",
+      "logo": "https://exa.ai/favicon.ico",
+      "url": "https://mcp.exa.ai/mcp",
+      "variableDefinitions": {
+        "exaApiKey": {
+          "required": true,
+          "label": "Exa API Key",
+          "description": "Get your API key from https://dashboard.exa.ai",
+          "type": "password",
+          "target": "url-param"
+        }
+      }
+    },
     "fred": {
       "description": "Access economic data from the Federal Reserve (FRED).",
+      "logo": "https://fred.stlouisfed.org/favicon.ico",
       "command": "uvx",
       "args": ["fred-data-mcp"],
       "env": {
