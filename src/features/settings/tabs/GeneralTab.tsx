@@ -190,7 +190,10 @@ function GeneralTabComponent({
               >
                 <CheckCircle className="w-4 h-4 text-success" />
                 <span className="text-success">
-                  {t('settings.general.skillsFound', { count: skills.length })}
+                  {t('settings.general.skillsFound', {
+                    count: skills.length,
+                    defaultValue: 'Found {{count}} skill',
+                  })}
                 </span>
               </button>
             )}
