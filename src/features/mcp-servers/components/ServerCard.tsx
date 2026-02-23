@@ -1,4 +1,5 @@
 import React from 'react';
+import { Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import {
@@ -25,36 +26,61 @@ export const ServerCard = React.memo(
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <div className="flex-1">
-            <CardTitle className="text-base">{serverName}</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              {server.metadata?.description ||
-                t('mcpServer.noDescription', 'No description')}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('mcpServer.transport', 'Transport')}: {server.transport.type}
-              {server.transport.type === 'stdio' &&
-                ` • ${server.transport.command}`}
-              {((server.transport.type as string) === 'http' ||
-                server.transport.type === 'http-sse') &&
-                ` • ${(server.transport as { url: string }).url}`}
-            </p>
-            {server.toolCount !== undefined && server.toolCount !== null && (
+          <div className="flex gap-3 items-start flex-1">
+            {/* Server logo */}
+            <div className="w-8 h-8 rounded-md overflow-hidden flex-shrink-0 mt-0.5 border border-border/50">
+              {server.metadata?.logo ? (
+                <img
+                  src={server.metadata.logo}
+                  alt={serverName}
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      'none';
+                    (
+                      e.currentTarget.nextElementSibling as HTMLElement | null
+                    )?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <div
+                className={`w-full h-full bg-muted flex items-center justify-center ${server.metadata?.logo ? 'hidden' : ''}`}
+              >
+                <Server className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <CardTitle className="text-base">{serverName}</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {server.metadata?.description ||
+                  t('mcpServer.noDescription', 'No description')}
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {t('mcpServer.toolsAvailable', {
-                  count: server.toolCount,
-                  defaultValue: '{{count}} tool available',
-                })}
+                {t('mcpServer.transport', 'Transport')}: {server.transport.type}
+                {server.transport.type === 'stdio' &&
+                  ` • ${server.transport.command}`}
+                {((server.transport.type as string) === 'http' ||
+                  server.transport.type === 'http-sse') &&
+                  ` • ${(server.transport as { url: string }).url}`}
               </p>
-            )}
-            {(server.toolCount === undefined || server.toolCount === null) && (
-              <p className="text-xs text-muted-foreground italic mt-1">
-                {t(
-                  'mcpServer.toolCountUnknown',
-                  'Tool count unknown (not yet verified)',
-                )}
-              </p>
-            )}
+              {server.toolCount !== undefined && server.toolCount !== null && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('mcpServer.toolsAvailable', {
+                    count: server.toolCount,
+                    defaultValue: '{{count}} tool available',
+                  })}
+                </p>
+              )}
+              {(server.toolCount === undefined ||
+                server.toolCount === null) && (
+                <p className="text-xs text-muted-foreground italic mt-1">
+                  {t(
+                    'mcpServer.toolCountUnknown',
+                    'Tool count unknown (not yet verified)',
+                  )}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end gap-1">

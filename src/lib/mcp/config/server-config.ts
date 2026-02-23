@@ -10,11 +10,19 @@ import type { TransportConfig, OAuthConfig } from './transport';
  */
 export interface ServerMetadata {
   description?: string;
+  logo?: string;
   vendor?: string;
   version?: string;
   variableDefinitions?: Record<
     string,
-    { label?: string; description?: string; required?: boolean; type?: string }
+    {
+      label?: string;
+      description?: string;
+      required?: boolean;
+      type?: string;
+      /** Where the value goes: env var (default), raw header, or Authorization Bearer token */
+      target?: 'env' | 'header' | 'bearer-token' | 'url-param';
+    }
   >;
 }
 

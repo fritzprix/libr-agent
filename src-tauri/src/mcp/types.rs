@@ -18,6 +18,8 @@ pub enum TransportConfig {
         env: HashMap<String, String>,
     },
     /// HTTP/HTTPS transport for remote MCP servers (Streamable HTTP)
+    /// `http-sse` is accepted as an alias for backward compatibility with frontend-saved records
+    #[serde(alias = "http-sse")]
     Http {
         url: String,
         #[serde(default = "default_protocol_version")]
@@ -608,5 +610,30 @@ mod tests {
         assert_eq!(deserialized.name.as_deref(), Some("oauth-server"));
         assert!(deserialized.authentication.is_some());
         assert!(deserialized.metadata.is_some());
+    }
+
+    /// Regression: frontend saves transport type as "http-sse", Rust must accept it via alias.
+    /// Previously caused a panic in queries.rs when listing external servers.
+    #[test]
+    fn test_http_sse_alias_deserializes_as_http() {
+        let json = r#"{"type":"http-sse","url":"https://mcp.exa.ai/mcp?exaApiKey=test","protocol_version":"2025-06-18"}"#;
+        let transport: TransportConfig = serde_json::from_str(json).unwrap();
+        match transport {
+            TransportConfig::Http { url, .. } => {
+                assert_eq!(url, "https://mcp.exa.ai/mcp?exaApiKey=test");
+            }
+            _ => panic!("Expected Http transport for 'http-sse' type tag"),
+        }
+    }
+
+    /// Regression: MCPServerConfig with "http-sse" type must not panic during deserialization.
+    #[test]
+    fn test_mcp_config_http_sse_roundtrip() {
+        let raw = r#"{"transport":{"type":"http-sse","url":"https://api.example.com/mcp","protocol_version":"2025-06-18"}}"#;
+        let config: MCPServerConfig = serde_json::from_str(raw).unwrap();
+        match config.transport {
+            TransportConfig::Http { url, .. } => assert_eq!(url, "https://api.example.com/mcp"),
+            _ => panic!("Expected Http transport"),
+        }
     }
 }

@@ -11,3 +11,9 @@
 **Extracted:** 13
 **Languages updated:** [EN, KO]
 **Notes:** Localized `AppSidebar`, `ThemeToggle`, and `ErrorBoundary`. Added `sidebar`, `theme`, and `error` namespaces to `common.json`.
+
+## 2026-02-23 - [Settings/GeneralTab]
+
+**Extracted:** 10
+**Languages updated:** [EN, KO]
+**Notes:** Localized `GeneralTab` and `SkillsListModal`. Added `settings.general` keys and updated `settings.skills.modalTitle` with pluralization support.
