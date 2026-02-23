@@ -3,7 +3,9 @@ import { Download, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
-import { Button, Separator } from '@/components/ui';
+import { Separator } from '@/components/ui';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
@@ -44,6 +46,14 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
               role={isInstalled ? undefined : 'button'}
               tabIndex={isInstalled ? -1 : 0}
               aria-disabled={isInstalled}
+              aria-label={
+                !isInstalled
+                  ? t('mcpServer.installExtension', {
+                      name: preset.name,
+                      defaultValue: 'Install {{name}} extension',
+                    })
+                  : undefined
+              }
               onClick={() => !isInstalled && onSetupPreset(preset)}
               onKeyDown={(event) => {
                 if (isInstalled) return;
@@ -103,22 +113,15 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
                   </code>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary"
-                    aria-label={t('mcpServer.installExtension', {
-                      name: preset.name,
-                      defaultValue: 'Install {{name}} extension',
-                    })}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSetupPreset(preset);
-                    }}
+                  <div
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
+                    )}
+                    aria-hidden="true"
                   >
                     <Download className="w-3.5 h-3.5" />
-                  </Button>
+                  </div>
                 </div>
               )}
             </div>
