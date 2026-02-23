@@ -18,3 +18,28 @@ pub fn is_macos() -> bool {
 pub fn is_linux() -> bool {
     cfg!(target_os = "linux")
 }
+
+/// Check if a command exists in PATH (cross-platform).
+pub fn command_exists(cmd: &str) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        std::process::Command::new("where")
+            .creation_flags(CREATE_NO_WINDOW)
+            .arg(cmd)
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("command -v {}", cmd))
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+}

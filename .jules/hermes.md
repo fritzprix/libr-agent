@@ -17,3 +17,11 @@
 
 - **Type Sync:** Created `src/models/agent-ipc.ts` to strictly mirror Rust structs (`AgentConfig`, `CreateAgentSessionRequest`, `SendUserMessageRequest`, etc.) from `agent_commands.rs`.
 - **Refactor:** Updated `AgentChatContext`, `AgentSessionContext`, and `AgentSessionListContext` to use strict TypeScript interfaces for all IPC calls, ensuring 1:1 type synchronization.
+
+## 2025-05-25 - MCP & Skills IPC Type Boundary
+
+**Problem:** Untyped `invoke` calls in `mcp-server-registry.ts` and `SkillsEditor.tsx` defaulting to `any`, risking runtime errors and payload mismatches.
+
+**Action:**
+
+- **Type Sync:** Enforced strict generic types for `list_available_builtin_server_definitions` (`invoke<BuiltinServerInfo[]>`) and skill management commands (`invoke<string>`), ensuring compile-time safety and 1:1 Rust-TS synchronization.
