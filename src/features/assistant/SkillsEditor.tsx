@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
 import { useDnDContext } from '@/context/DnDContext';
+import {
+  getAggregatedSkills,
+  importAssistantSkills,
+  copyGlobalToAssistant,
+  deleteAssistantSkill,
+  resetAssistantSkills,
+} from '@/lib/backend/skills';
 import {
   Button,
   Card,
@@ -41,9 +47,7 @@ export default function SkillsEditor() {
     if (!draft?.id) return;
     setIsLoading(true);
     try {
-      const result = await invoke<SkillMetadata[]>('get_aggregated_skills', {
-        assistantId: draft.id,
-      });
+      const result = await getAggregatedSkills(draft.id);
       setSkills(result);
     } catch (error) {
       console.error('Failed to fetch skills:', error);
@@ -80,10 +84,7 @@ export default function SkillsEditor() {
           );
 
           try {
-            await invoke<string>('import_assistant_skills', {
-              assistantId: draft.id,
-              filePath,
-            });
+            await importAssistantSkills(draft.id, filePath);
             toast.success(
               t('skills.importSuccess', 'Skills imported successfully'),
               { id: toastId },
@@ -109,10 +110,7 @@ export default function SkillsEditor() {
   const handleOverride = async (skillName: string) => {
     if (!draft?.id) return;
     try {
-      await invoke<string>('copy_global_to_assistant', {
-        assistantId: draft.id,
-        skillName,
-      });
+      await copyGlobalToAssistant(draft.id, skillName);
       toast.success(
         t('skills.overrideSuccess', 'Skill overridden successfully'),
       );
@@ -126,10 +124,7 @@ export default function SkillsEditor() {
   const handleRevert = async (skillName: string) => {
     if (!draft?.id) return;
     try {
-      await invoke<string>('delete_assistant_skill', {
-        assistantId: draft.id,
-        skillName,
-      });
+      await deleteAssistantSkill(draft.id, skillName);
       toast.success(
         t('skills.revertSuccess', 'Skill reverted to global version'),
       );
@@ -166,7 +161,7 @@ export default function SkillsEditor() {
     if (!draft?.id) return;
 
     try {
-      await invoke<string>('reset_assistant_skills', { assistantId: draft.id });
+      await resetAssistantSkills(draft.id);
       toast.success(
         t('skills.resetSuccess', 'Assistant skills reset successfully'),
       );
