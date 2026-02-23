@@ -507,7 +507,8 @@ mod tests {
     /// always called create_error_tool_result, discarding mcp_content entirely.
     #[test]
     fn test_error_with_mcp_content_preserves_guided_error_text() {
-        let guided_text = "STALE HASH on line 28 — retry with line_hash: 'ab'\n  → swap hash and retry NOW";
+        let guided_text =
+            "STALE HASH on line 28 — retry with line_hash: 'ab'\n  → swap hash and retry NOW";
         let content = vec![MCPContent::Text {
             text: guided_text.to_string(),
             is_error: Some(true),
