@@ -493,3 +493,68 @@ pub async fn handle_tool_result(
     // If we're here, it means we haven't finished collecting all results yet
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::types::MCPContent;
+
+    /// Regression: builtin tools that return is_error=true WITH mcp_content
+    /// (e.g. guided_error from replaceLines) must surface that content to the
+    /// agent — NOT collapse it to the bare "Unknown error" fallback.
+    ///
+    /// Root cause was that handle_tool_result only checked `result.is_error` and
+    /// always called create_error_tool_result, discarding mcp_content entirely.
+    #[test]
+    fn test_error_with_mcp_content_preserves_guided_error_text() {
+        let guided_text = "STALE HASH on line 28 — retry with line_hash: 'ab'\n  → swap hash and retry NOW";
+        let content = vec![MCPContent::Text {
+            text: guided_text.to_string(),
+            is_error: Some(true),
+        }];
+
+        // This is the branch now taken when is_error=true AND mcp_content is Some
+        let msg = create_tool_result_message_with_content("sess1", "tc1", content);
+
+        // The agent must see the full guided error, not a bare "Unknown error"
+        assert!(
+            msg.content.iter().any(|c| matches!(c,
+                MCPContent::Text { text, .. } if text.contains("STALE HASH")
+            )),
+            "guided_error text must be preserved in the tool message"
+        );
+        // toolError metadata must still be set so the UI marks it as failed
+        assert_eq!(
+            msg.metadata
+                .as_ref()
+                .and_then(|m| m.get("toolError"))
+                .and_then(|v| v.as_bool()),
+            Some(true),
+            "toolError metadata must be set when content carries is_error:true"
+        );
+    }
+
+    /// When is_error=true but mcp_content is None (e.g. JSON-RPC protocol error
+    /// or arg-parse failure), the fallback path must still produce a message.
+    /// "Unknown error" is acceptable here because there is literally no content.
+    #[test]
+    fn test_error_without_mcp_content_falls_back_to_error_string() {
+        // Explicit error message
+        let msg = create_error_tool_result("sess1", "tc1", "Failed to parse args: EOF");
+        assert!(
+            msg.content.iter().any(|c| matches!(c,
+                MCPContent::Text { text, .. } if text.contains("Failed to parse args")
+            )),
+            "explicit error string must appear in the message"
+        );
+
+        // No error message → "Unknown error" fallback
+        let fallback = create_error_tool_result("sess1", "tc1", "Unknown error");
+        assert!(
+            fallback.content.iter().any(|c| matches!(c,
+                MCPContent::Text { text, .. } if text.contains("Unknown error")
+            )),
+            "Unknown error fallback must appear when no message is available"
+        );
+    }
+}
