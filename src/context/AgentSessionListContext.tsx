@@ -16,6 +16,12 @@ import { getAssistant } from '@/lib/backend/assistants';
 import { Assistant } from '@/models/chat';
 import { useSettings } from '@/context/SettingsContext';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
+import type {
+  AgentSessionMetadata,
+  CreateAgentSessionRequest,
+  AgentResponse,
+  AgentConfig,
+} from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionListContext');
 
@@ -45,6 +51,11 @@ interface AgentSessionListActionsContextValue {
    * Delete an agent session
    */
   deleteSession: (sessionId: string) => Promise<void>;
+
+  /**
+   * Delete only this session, orphaning its direct children as top-level sessions
+   */
+  deleteSessionOnly: (sessionId: string) => Promise<void>;
 }
 
 const AgentSessionListActionsContext = createContext<
@@ -79,21 +90,9 @@ export function AgentSessionListProvider({
 
     try {
       // Call Rust backend to get all sessions
-      const response = await invoke<
-        Array<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          model: string;
-          provider: string;
-          agentConfig?: string;
-          parentSessionId?: string;
-          lineageId?: string;
-          depth?: number;
-          createdAt: number;
-          updatedAt?: number;
-        }>
-      >('agent_get_all_sessions');
+      const response = await invoke<AgentSessionMetadata[]>(
+        'agent_get_all_sessions',
+      );
 
       const sessionList: AgentSession[] = response.map((s) => {
         let assistant: Assistant | undefined;
@@ -214,14 +213,20 @@ export function AgentSessionListProvider({
         });
 
         // Build agent config from fresh assistant data
-        const agentConfig: Assistant & {
-          maxDepth?: number;
-          maxFanout?: number;
-        } = {
-          ...freshAssistant,
+        // Explicitly casting to AgentConfig (IPC) to ensure compatibility
+        const agentConfig: AgentConfig = {
+          // Map Assistant fields to AgentConfig fields
+          id: freshAssistant.id,
+          assistantId: freshAssistant.id,
+          name: freshAssistant.name,
+          description: freshAssistant.description,
+          systemPrompt: freshAssistant.systemPrompt,
+          mcpServerIds: freshAssistant.mcpServerIds || [],
+          localServices: freshAssistant.localServices || [],
           allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
             freshAssistant.allowedBuiltInServiceAliases,
           ),
+          temperature: 1.0, // Default, not in Assistant model yet
           ...(advanced.defaultSessionMaxDepth > 0
             ? { maxDepth: advanced.defaultSessionMaxDepth }
             : {}),
@@ -234,25 +239,26 @@ export function AgentSessionListProvider({
         const { createId } = await import('@paralleldrive/cuid2');
         const sessionId = createId();
 
+        const request: CreateAgentSessionRequest = {
+          sessionId,
+          name: name || `Conversation with ${assistant.name}`,
+          model: modelId,
+          provider: provider,
+          agentConfig,
+        };
+
         // Call Rust backend to create session
-        const response = await invoke<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          model: string;
-          provider: string;
-          parentSessionId?: string;
-          lineageId?: string;
-          depth?: number;
-          createdAt: number;
-          updatedAt?: number;
-        }>('agent_create_session', {
-          request: {
-            sessionId,
-            name: name || `Conversation with ${assistant.name}`,
-            agentConfig,
-          },
-        });
+        const response = await invoke<AgentSessionMetadata>(
+          'agent_create_session',
+          { request },
+        );
+
+        // Map back to internal AgentSession model (which uses Assistant type for config)
+        // We use the sent agentConfig as the assistant base since we just built it
+        const sessionAssistant: Assistant = {
+          ...freshAssistant,
+          // Re-apply runtime overrides if needed
+        };
 
         const session: AgentSession = {
           id: response.id,
@@ -260,7 +266,7 @@ export function AgentSessionListProvider({
           status: response.status,
           model: response.model,
           provider: response.provider,
-          assistant: agentConfig,
+          assistant: sessionAssistant,
           parentSessionId: response.parentSessionId,
           lineageId:
             response.lineageId || response.parentSessionId || response.id,
@@ -293,20 +299,65 @@ export function AgentSessionListProvider({
   );
 
   /**
-   * Delete an agent session
+   * Delete an agent session (cascade: removes all descendants too)
    */
   const deleteSession = useCallback(async (sessionId: string) => {
     logger.info('Deleting agent session', { sessionId });
 
     try {
-      await invoke('agent_delete_session', { sessionId });
+      await invoke<AgentResponse>('agent_delete_session', { sessionId });
 
-      // Remove from sessions list
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      // Remove the session and ALL its descendants from the UI
+      setSessions((prev) => {
+        // Collect all descendant IDs via BFS
+        const toRemove = new Set<string>([sessionId]);
+        let frontier = [sessionId];
+        while (frontier.length > 0) {
+          const next: string[] = [];
+          for (const s of prev) {
+            if (
+              s.parentSessionId !== undefined &&
+              frontier.includes(s.parentSessionId)
+            ) {
+              toRemove.add(s.id);
+              next.push(s.id);
+            }
+          }
+          frontier = next;
+        }
+        return prev.filter((s) => !toRemove.has(s.id));
+      });
 
       logger.info('Session deleted successfully', { sessionId });
     } catch (err) {
       logger.error('Failed to delete session', err);
+      throw err;
+    }
+  }, []);
+
+  /**
+   * Delete only this session, orphaning direct children as top-level sessions
+   */
+  const deleteSessionOnly = useCallback(async (sessionId: string) => {
+    logger.info('Deleting session only (orphaning children)', { sessionId });
+
+    try {
+      await invoke<AgentResponse>('agent_delete_session_only', { sessionId });
+
+      // Remove the session; update direct children to have no parent
+      setSessions((prev) =>
+        prev
+          .filter((s) => s.id !== sessionId)
+          .map((s) =>
+            s.parentSessionId === sessionId
+              ? { ...s, parentSessionId: undefined }
+              : s,
+          ),
+      );
+
+      logger.info('Session deleted (children orphaned)', { sessionId });
+    } catch (err) {
+      logger.error('Failed to delete session only', err);
       throw err;
     }
   }, []);
@@ -369,8 +420,9 @@ export function AgentSessionListProvider({
       createSession,
       loadSessions,
       deleteSession,
+      deleteSessionOnly,
     }),
-    [createSession, loadSessions, deleteSession],
+    [createSession, loadSessions, deleteSession, deleteSessionOnly],
   );
 
   return (

@@ -1,4 +1,5 @@
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -136,8 +137,15 @@ impl WorkspaceServer {
             }
         };
 
+        // Acquire a global active-process slot (SP2).  Called after all early-return
+        // guards so no registry cleanup is needed if this blocks or fails.
+        crate::state::get_concurrency_gate()
+            .acquire_active_process()
+            .await?;
+
         // Register process in registry (Starting status)
         let cancel_token = CancellationToken::new();
+        let completion_notifier = Arc::new(tokio::sync::Notify::new());
 
         let entry = terminal_manager::ProcessEntry {
             id: process_id.clone(),
@@ -166,6 +174,9 @@ impl WorkspaceServer {
             registry
                 .cancellation_tokens
                 .insert(process_id.clone(), cancel_token.clone());
+            registry
+                .completion_notifiers
+                .insert(process_id.clone(), completion_notifier.clone());
         }
 
         // Spawn monitoring task using hybrid streaming
@@ -229,11 +240,24 @@ impl WorkspaceServer {
             // Remove cancellation token (keep streaming handle for 5 minutes)
             reg.cancellation_tokens.remove(&pid_copy);
 
+            // Extract notifier before dropping write lock, then wake waiters.
+            let notifier = reg.completion_notifiers.get(&pid_copy).cloned();
+
             info!(
                 "Process {} completed with status: {:?}",
                 pid_copy,
                 reg.entries.get(&pid_copy).map(|e| &e.status)
             );
+            drop(reg);
+
+            // Wake any handle_wait_for_process callers blocked on this process.
+            if let Some(n) = notifier {
+                n.notify_waiters();
+            }
+
+            // Release the global active-process slot (SP2) now that the process
+            // has reached a terminal state (Finished / Failed / cancelled).
+            crate::state::get_concurrency_gate().release_active_process();
         });
 
         // Wait briefly to detect immediate failures

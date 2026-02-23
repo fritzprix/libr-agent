@@ -79,3 +79,8 @@
 
 **Drift:** Linked to missing files `docs/architecture/chat-feature-architecture.md`, `docs/builtin-tools.md`, `docs/external-mcp-integration.md`.
 **Reality:** Updated links to point to `docs/architecture/agent-workflow-architecture.md`, `src-tauri/src/mcp/builtin/README.md`, and `docs/architecture/external-mcp-integration.md`.
+
+## 2026-03-02 - agents.md / src-tauri/src/mcp/builtin/README.md
+
+**Drift:** `agents.md` claimed uniform feature structure and used a simplified `get_service_context` example. `builtin/README.md` showed an outdated `get_service_context` default implementation.
+**Reality:** Features structure varies; `BrowserServer` context logic is complex; `BuiltinMCPServer` trait returns a formatted default string. Updated docs to reflect reality.

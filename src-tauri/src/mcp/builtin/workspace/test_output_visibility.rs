@@ -36,9 +36,13 @@ mod tests {
 
         let mut finished = false;
         for _ in 0..20 {
-            let poll_args = json!({ "processId": process_id });
+            let poll_args = json!({ "processId": process_id, "timeout": 0 });
             let poll_res = server
-                .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
+                .call_tool(
+                    "waitForProcess",
+                    poll_args,
+                    Some("test-session".to_string()),
+                )
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -97,9 +101,13 @@ mod tests {
         // Wait for finish
         let mut finished = false;
         for _ in 0..20 {
-            let poll_args = json!({ "processId": process_id });
+            let poll_args = json!({ "processId": process_id, "timeout": 0 });
             let poll_res = server
-                .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
+                .call_tool(
+                    "waitForProcess",
+                    poll_args,
+                    Some("test-session".to_string()),
+                )
                 .await
                 .expect("Poll failed");
             let poll_data = poll_res.structured_content.as_ref().unwrap();
@@ -111,16 +119,19 @@ mod tests {
         }
         assert!(finished, "Process did not finish in time");
 
-        let poll_args = json!({
+        let read_args = json!({
             "processId": process_id,
-            "tail": {
-                "n": 5,
-                "src": "stdout"
-            }
+            "stream": "stdout",
+            "mode": "tail",
+            "lines": 5
         });
 
         let poll_res = server
-            .call_tool("pollProcess", poll_args, Some("test-session".to_string()))
+            .call_tool(
+                "readProcessOutput",
+                read_args,
+                Some("test-session".to_string()),
+            )
             .await
             .expect("Poll failed");
 

@@ -70,6 +70,15 @@ impl AgentSessionManager {
         }
     }
 
+    /// Return an owned clone of the `Arc` wrapping the active sessions map.
+    ///
+    /// Used at startup to register a shared reference in the global `state`
+    /// module so that builtin MCP tools can look up per-session cancellation
+    /// tokens without going through Tauri managed state.
+    pub fn active_sessions_arc(&self) -> Arc<RwLock<HashMap<String, AgentSession>>> {
+        self.active_sessions.clone()
+    }
+
     /// Clone self for use in async tasks
     /// This creates a new instance with shared Arc references
     pub fn clone_for_task(&self) -> Self {
@@ -535,6 +544,45 @@ impl AgentSessionManager {
             "✅ Deleted agent session: {} (cascade removed {} descendants)",
             session_id,
             descendant_ids.len()
+        );
+        Ok(())
+    }
+
+    /// Delete only this session, leaving children as orphaned top-level sessions.
+    ///
+    /// - Direct children have their `parent_session_id` set to NULL (become top-level)
+    /// - Only this session's workspace and search index are removed
+    /// - No cascade to descendants
+    pub async fn delete_session_only(&self, session_id: String) -> Result<(), String> {
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        // 1. Terminate workflow if running (this session only)
+        let _ = self.terminate_session(session_id.clone()).await;
+
+        // 2. Remove from active sessions map
+        self.active_sessions.write().await.remove(&session_id);
+
+        // 3. Delete workspace and search index for this session only
+        self.delete_session_workspace(&session_id).await?;
+
+        if let Err(e) = crate::search::index_storage::delete_index(&session_id) {
+            log::warn!(
+                "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        // 4. Orphan direct children and delete from DB
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .orphan_and_delete_session(&session_id)
+            .await
+            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+
+        log::info!(
+            "✅ Deleted session only (children orphaned): {}",
+            session_id
         );
         Ok(())
     }

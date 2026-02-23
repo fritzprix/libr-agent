@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
 import { invoke } from '@tauri-apps/api/core';
@@ -26,16 +26,34 @@ import {
   FolderOpen,
   MapPin,
   Puzzle,
+  Paperclip,
+  X,
 } from 'lucide-react';
 import type { Assistant, Message } from '@/models/chat';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
+import { cn } from '@/lib/utils';
 import {
   enforceRuntimeBuiltinAliases,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
+import { workspaceWriteFile } from '@/lib/backend/workspace';
+import { generateWorkspacePath } from '@/lib/workspace-sync-service';
+import type { AttachmentReference } from '@/models/chat';
+import {
+  useDnDContext,
+  type DragAndDropEvent,
+  type DragAndDropPayload,
+} from '@/context/DnDContext';
+import { useRustBackend } from '@/hooks/use-rust-backend';
+import { saveAgentFile } from '@/features/agent/api/agent-backend';
+import type { ContentStoreItem } from '@/models/content-store';
 
 const logger = getLogger('AgentDraftChatView');
+
+// File extensions treated as plain text for Content Store indexing
+const TEXT_EXTENSIONS_DRAFT =
+  /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto)$/i;
 
 interface BuiltinServerInfo {
   name: string; // This is the ID
@@ -99,6 +117,111 @@ function DraftChatInner() {
   );
   const [mcpServers, setMcpServers] = useState<MCPServerDto[]>([]);
 
+  // Pre-session file attachments (written to workspace before session creation)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+    'none',
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const rustBackend = useRustBackend();
+  const { subscribe } = useDnDContext();
+
+  const getMimeType = useCallback((filename: string): string => {
+    const ext = filename.toLowerCase().split('.').pop();
+    switch (ext) {
+      case 'txt':
+        return 'text/plain';
+      case 'md':
+        return 'text/markdown';
+      case 'json':
+        return 'application/json';
+      case 'pdf':
+        return 'application/pdf';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'xlsx':
+        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      default:
+        return 'application/octet-stream';
+    }
+  }, []);
+
+  const addFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...files]);
+  }, []);
+
+  const handleFileAdd = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      addFiles(Array.from(e.target.files ?? []));
+      e.target.value = '';
+    },
+    [addFiles],
+  );
+
+  const handleFileRemove = useCallback((index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Drag-and-drop: read dropped paths via Rust backend, build File objects
+  useEffect(() => {
+    const processDroppedPaths = (paths: string[]) => {
+      // Fire-and-forget: errors handled internally
+      const run = async () => {
+        // Must register paths with Tauri security layer before reading
+        try {
+          await rustBackend.registerDroppedFiles(paths);
+        } catch (err) {
+          logger.error('Failed to register dropped files', err);
+          toast.error('Failed to register dropped files');
+          return;
+        }
+        const files: File[] = [];
+        for (const filePath of paths) {
+          try {
+            const fileData = await rustBackend.readDroppedFile(filePath);
+            const filename =
+              filePath.split('/').pop() ??
+              filePath.split('\\').pop() ??
+              'unknown';
+            const mimeType = getMimeType(filename);
+            files.push(
+              new File([new Uint8Array(fileData)], filename, {
+                type: mimeType,
+              }),
+            );
+          } catch (err) {
+            logger.error('Failed to read dropped file', { filePath, err });
+            toast.error(`Failed to read: ${filePath.split(/[\\/]/).pop()}`);
+          }
+        }
+        addFiles(files);
+      };
+      void run();
+    };
+
+    const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+      if (event === 'drag-over') {
+        setDragState(
+          payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
+        );
+      } else if (event === 'leave') {
+        setDragState('none');
+      } else if (event === 'drop') {
+        setDragState('none');
+        if (payload.paths && payload.paths.length > 0) {
+          processDroppedPaths(payload.paths);
+        }
+      }
+    };
+
+    const unsub = subscribe(formRef as React.RefObject<HTMLElement>, handler, {
+      priority: 5,
+    });
+    return () => unsub();
+  }, [subscribe, rustBackend, getMimeType, addFiles]);
+
   useEffect(() => {
     const loadMetadata = async () => {
       try {
@@ -148,7 +271,12 @@ function DraftChatInner() {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!input.trim() || !assistant || isSubmitting) return;
+      if (
+        (!input.trim() && pendingFiles.length === 0) ||
+        !assistant ||
+        isSubmitting
+      )
+        return;
 
       setIsSubmitting(true);
       const newSessionId = createId();
@@ -178,6 +306,47 @@ function DraftChatInner() {
           }
         });
 
+        // Write pending files to workspace before session creation.
+        // The workspace directory is created on demand by session_id — no active session needed.
+        const attachments: AttachmentReference[] = [];
+        for (const file of pendingFiles) {
+          try {
+            const workspacePath = generateWorkspacePath(file.name);
+            const arrayBuffer = await file.arrayBuffer();
+            const bytes = Array.from(new Uint8Array(arrayBuffer));
+            await workspaceWriteFile(workspacePath, bytes, newSessionId);
+            // Count lines for text-based files so the bubble displays correctly.
+            // file.type is unreliable for many extensions (e.g. .md, .ts → ''),
+            // so fall back to filename extension check.
+            let lineCount = 0;
+            const isText =
+              /^text\/|\/(json|xml|javascript|typescript)/.test(file.type) ||
+              TEXT_EXTENSIONS_DRAFT.test(file.name);
+            if (isText) {
+              try {
+                const text = await file.text();
+                lineCount = text.split('\n').length;
+              } catch {
+                // non-critical, leave as 0
+              }
+            }
+            attachments.push({
+              sessionId: newSessionId,
+              filename: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              size: file.size,
+              lineCount,
+              preview: file.name,
+              uploadedAt: now.toISOString(),
+              status: 'workspace-only',
+              workspacePath,
+            });
+          } catch (err) {
+            logger.error('Failed to write pre-session attachment', err);
+            toast.error(`Failed to attach: ${file.name}`);
+          }
+        }
+
         // Prepare message
         const initialMessage: Message = {
           id: createId(),
@@ -187,6 +356,7 @@ function DraftChatInner() {
           content: [{ type: 'text', text: input.trim() }],
           createdAt: now,
           updatedAt: now,
+          ...(attachments.length > 0 ? { attachments } : {}),
         };
 
         // Prepare Rust-compatible message
@@ -225,8 +395,8 @@ function DraftChatInner() {
 
         if (!toastId) toastId = toast.loading('Creating session...');
 
-        // Atomic Create + Send
-        await invoke('agent_create_session_with_initial_message', {
+        // Step 1: Create session — this initializes MCPServiceProxy + Content Store
+        await invoke('agent_create_session', {
           request: {
             sessionId: newSessionId,
             name: shortName,
@@ -236,7 +406,53 @@ function DraftChatInner() {
               settings?.preferredModel?.provider ||
               'openai',
             agentConfig,
-            message: rustMessage,
+            isEphemeral: false,
+          },
+        });
+
+        // Step 2: Commit text files to Content Store now that session is initialized
+        for (let i = 0; i < pendingFiles.length; i++) {
+          const file = pendingFiles[i];
+          const isTextFile =
+            TEXT_EXTENSIONS_DRAFT.test(file.name) || /^text\//.test(file.type);
+          if (isTextFile) {
+            try {
+              const content = await file.text();
+              const result = (await saveAgentFile(newSessionId, file.name, {
+                content,
+                metadata: {
+                  mimeType: file.type || 'text/plain',
+                  size: file.size,
+                  uploadedAt: now.toISOString(),
+                  filename: file.name,
+                },
+              })) as ContentStoreItem;
+              if (result?.contentId) {
+                attachments[i] = {
+                  ...attachments[i],
+                  status: 'committed',
+                  contentId: result.contentId,
+                  lineCount: result.lineCount ?? attachments[i].lineCount,
+                };
+              }
+            } catch (commitErr) {
+              logger.warn(
+                'Failed to commit file to Content Store, keeping workspace-only',
+                { filename: file.name, error: commitErr },
+              );
+            }
+          }
+        }
+
+        // Step 3: Send initial message with final (possibly committed) attachment refs
+        const finalRustMessage = {
+          ...rustMessage,
+          ...(attachments.length > 0 ? { attachments } : {}),
+        };
+        await invoke('agent_send_message', {
+          request: {
+            sessionId: newSessionId,
+            message: finalRustMessage,
           },
         });
 
@@ -262,6 +478,7 @@ function DraftChatInner() {
       settings,
       overrideModel,
       overrideProvider,
+      pendingFiles,
     ],
   );
 
@@ -439,14 +656,67 @@ function DraftChatInner() {
 
       {/* Simplified Input Area */}
       <div className="p-4 border-t">
+        {/* Pending file chips */}
+        {pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 px-1 pb-2">
+            {pendingFiles.map((file, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-1 text-xs bg-muted rounded px-2 py-1 max-w-[200px]"
+              >
+                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => handleFileRemove(index)}
+                  className="shrink-0 text-muted-foreground hover:text-foreground ml-0.5"
+                  aria-label={`Remove ${file.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
-          className="flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20"
+          className={cn(
+            'flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20',
+            dragState === 'valid' && 'bg-success/10 border-success',
+            dragState === 'invalid' && 'bg-destructive/10 border-destructive',
+          )}
         >
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileAdd}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isSubmitting}
+            className="mb-1 h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+            title="Attach files"
+            aria-label="Attach files"
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={`Message ${assistant.name}...`}
+            placeholder={
+              dragState === 'valid'
+                ? 'Drop files here...'
+                : dragState === 'invalid'
+                  ? 'Unsupported file!'
+                  : `Message ${assistant.name}...`
+            }
             className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -459,7 +729,9 @@ function DraftChatInner() {
           <Button
             type="submit"
             size="icon"
-            disabled={!input.trim() || isSubmitting}
+            disabled={
+              (!input.trim() && pendingFiles.length === 0) || isSubmitting
+            }
             className="mb-1"
           >
             {isSubmitting ? (

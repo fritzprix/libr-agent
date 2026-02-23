@@ -6,21 +6,25 @@ export default function MCPServerPage() {
   const { t } = useTranslation('common');
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <div className="flex items-center gap-3 mb-6">
-        <Blocks size={32} className="text-primary" />
-        <div>
-          <h1 className="text-2xl text-foreground font-semibold">
-            {t('settings.tabs.extensions', 'Extensions')}
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Manage your AI extensions and tools
-          </p>
+    <div className="p-6 h-full flex flex-col bg-background">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
+          <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+            <Blocks size={28} />
+          </div>
+          <div>
+            <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+              {t('settings.tabs.extensions', 'Extensions')}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Manage your AI extensions and tools
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl">
+        {/* Content */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
           <MCPServerManagement />
         </div>
       </div>

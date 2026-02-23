@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.13] - 2026-02-23
+
+### 🚀 Features
+
+- **Background Tool Loading Readiness Signal**: MCP servers now emit a readiness signal after background tool registration completes. HTTP client timeout extended to accommodate slower server startups, reducing false-negative tool-not-found errors when agents start immediately after session creation.
+
+- **Agent Topology Controls**: `AgentSessionMetadata` gains `maxDepth` and `maxFanout` fields for fine-grained control over sub-agent spawning limits. `RustMessage` structure enhanced with additional fields for richer IPC payloads between frontend and backend.
+
+- **Accessibility**: Added accessible labels to `ServerCard` action buttons, improving screen-reader support across the MCP server management UI.
+
+- **Localization**: `AppSidebar`, `ThemeToggle`, and `ErrorBoundary` are now fully localized (Korean + English), closing the remaining hardcoded-string gaps in the main shell UI.
+
+### 🐛 Fixes
+
+- **`ThrottlePromise` memory leak**: Multiple pending resolutions were not being flushed correctly, causing the queue to grow unbounded under rapid polling. Refactored to drain all waiting resolvers on each settled result.
+
+- **Tool-level error silently reported as success**: `ToolExecutionResult.is_error` was derived only from the JSON-RPC protocol error field, meaning builtin tools that signal failure via `MCPResult.is_error` or `MCPContent::Text { is_error: Some(true) }` were emitting `ToolExecutionCompleted success=true`. Now checks all three failure signals.
+
+### 🔧 Internal
+
+- **`agent/llm/response.rs` fractal split**: The 1100-line response handler is split into three focused modules — `circuit_breaker.rs` (loop detection + tests), `tool_execution.rs` (sequential async tool dispatch), and the slimmed `response.rs` (orchestration only). No behavior change from the user's perspective.
+- **Lazy `debug_content` serialization**: `serde_json::to_string_pretty` on tool results is now gated behind `log::log_enabled!(Debug)`, eliminating O(n) JSON serialization overhead on every tool call in release builds.
+- **Agent IPC strict typing**: `agent_commands` optimized with strict TypeScript + Rust types — fewer `unknown` / `string` roundtrips across the IPC boundary.
+- **Rate-limiting + session poll hints**: Session API rate-limiter improved with backoff hints for rapid-polling consumers.
+- **MCP server management UI cleanup**: Removed stale dialog components superseded by the new MCP management flow.
+- **Expanded test coverage**: `src/lib` utilities gain additional Vitest cases; `DroppedFileService` tests refactored with consistent formatting.
+
+## [0.5.12] - 2026-02-22
+
+### 🚀 Features
+
+- **Blocking Process & Agent Waits (SP1)**: `waitForProcess` replaces the old polling-based `pollProcess` for long-running shell commands — agents now block on a `tokio::sync::Notify` and wake the instant the process finishes, eliminating redundant LLM round-trips and context-window bloat from status-polling loops. `awaitAgent` gains an indefinite-timeout mode (`timeout_seconds: 0`) for the same reason.
+
+- **Max Concurrency Control (SP2)**: `ConcurrencyGate` enforces hard limits on parallel agent sessions (default: 4 active) and shell processes (default: 10). When a parent agent blocks on a child via `awaitAgent`, it suspends its active slot so the child can acquire one — preventing deadlocks. Limits are configurable in Settings → Advanced. Process completion now uses a push-notify system rather than fixed-interval polling.
+
+- **Parent Session Cancel Isolation (SP6)**: Cancelling a parent session while it blocks waiting for a subagent now returns immediately instead of waiting up to 30 seconds for the next heartbeat. `cancel_workflow` fires a `SessionBus` notification on the parent's own bus entry; the `wait_until_session_terminal` loop subscribes to both the child and caller bus entries via a dual-notifier `tokio::select!`, so whichever fires first wins. Parent's concurrency slot is always released correctly even on the fast-cancel path.
+
+- **Session Delete Options (SP7)**: Deleting a session with subagents now offers a choice instead of silently orphaning children:
+  - **Delete all** — cascade-deletes the full descendant tree (BFS traversal).
+  - **Delete only this** — removes the selected session and promotes its direct children to top-level sessions.
+  - Single sessions (no children) see the original single-button confirm — no extra clicks.
+
+### 🔧 Internal
+
+- **Trace Analyzer Skill + `trace_dump.py`**: New dev tooling for analyzing agent session trace files — reports tool call frequency, concurrency patterns, and session outcomes directly from `.trace.json` files.
+- **SP6 + SP7 Regression Tests**: `session_bus.rs` gains 4 `#[tokio::test]` cases covering dual-notifier wakeup, cancel flag short-circuit, and spurious-wake prevention. Frontend context tests add 4 Vitest cases covering BFS cascade removal and orphan promotion.
+
 ## [0.5.11] - 2026-02-22
 
 ### 🚀 Features

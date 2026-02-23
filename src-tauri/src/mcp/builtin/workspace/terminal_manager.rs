@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex, Notify, RwLock};
 use tokio_util::sync::CancellationToken;
 
 /// Process status enumeration
@@ -126,6 +126,9 @@ pub struct ProcessRegistryData {
     pub entries: HashMap<String, ProcessEntry>,
     pub cancellation_tokens: HashMap<String, CancellationToken>,
     pub streaming_handles: HashMap<String, Arc<StreamingHandle>>,
+    /// Push-notification bus: fires when a process reaches a terminal state.
+    /// Allows `waitForProcess` to block efficiently instead of busy-polling every 100ms.
+    pub completion_notifiers: HashMap<String, Arc<Notify>>,
 }
 
 pub type ProcessRegistry = Arc<RwLock<ProcessRegistryData>>;
@@ -136,6 +139,7 @@ pub fn create_process_registry() -> ProcessRegistry {
         entries: HashMap::new(),
         cancellation_tokens: HashMap::new(),
         streaming_handles: HashMap::new(),
+        completion_notifiers: HashMap::new(),
     }))
 }
 
@@ -568,5 +572,73 @@ mod tests {
         assert_eq!(entry.consecutive_running_polls, 0); // Default value
         assert!(entry.last_poll_at.is_none()); // Default value
         assert!(entry.first_running_poll_at.is_none()); // Default value
+    }
+
+    // ── SP1: Process completion notifier regression tests ─────────────────
+
+    /// SP1: A freshly created process registry has an empty completion_notifiers map.
+    #[test]
+    fn test_sp1_sp2_fresh_registry_has_empty_notifiers() {
+        let registry_arc = create_process_registry();
+        // Use try_read to avoid async — we just need to inspect the field.
+        let registry = registry_arc.try_read().unwrap();
+        assert!(
+            registry.completion_notifiers.is_empty(),
+            "New registry should have no completion notifiers"
+        );
+    }
+
+    /// SP1: A notifier inserted into the registry wakes a waiting task when fired.
+    #[tokio::test]
+    async fn test_sp1_sp2_completion_notifier_wakes_waiter() {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+        use tokio::time::{timeout, Duration};
+
+        let notifier = Arc::new(Notify::new());
+        let notifier_for_waiter = Arc::clone(&notifier);
+
+        // Spawn a task that waits on the notifier.
+        let waiter = tokio::spawn(async move {
+            notifier_for_waiter.notified().await;
+        });
+
+        // Yield to let the waiter register before firing.
+        tokio::task::yield_now().await;
+
+        // Fire — simulates what async_exec / handle_stop_process does on completion.
+        notifier.notify_waiters();
+
+        let result = timeout(Duration::from_millis(100), waiter).await;
+        assert!(
+            result.is_ok(),
+            "Waiter should wake within 100ms when completion notifier fires"
+        );
+    }
+
+    /// SP1: notify_waiters fired BEFORE a waiter registers does not unblock it
+    /// (non-persistent — tokio::Notify semantics validated here).
+    #[tokio::test]
+    async fn test_sp1_sp2_stale_notify_does_not_wake_late_waiter() {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+        use tokio::time::{timeout, Duration};
+
+        let notifier = Arc::new(Notify::new());
+
+        // Fire BEFORE anyone waits.
+        notifier.notify_waiters();
+
+        // A waiter registering AFTER the fire should NOT immediately unblock.
+        let notifier_clone = Arc::clone(&notifier);
+        let blocked = timeout(Duration::from_millis(20), async move {
+            notifier_clone.notified().await;
+        })
+        .await;
+
+        assert!(
+            blocked.is_err(),
+            "notify_waiters() (non-persistent) must not unblock a future waiter"
+        );
     }
 }

@@ -31,7 +31,7 @@ pub fn create_child_session_tool() -> MCPTool {
     MCPTool {
         name: "spawnAgent".to_string(),
         title: Some("Spawn Agent".to_string()),
-        description: "Spawn a child agent with a specific task. The child runs autonomously; wait for it to finish and collect the result. Caller is always the parent."
+        description: "Spawn a child agent with a specific task. Set awaitCompletion=true to block until the child finishes and return its final result in a single call. With awaitCompletion=false (default) the call returns immediately and you must call awaitAgent separately."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -73,6 +73,38 @@ pub fn create_child_session_tool() -> MCPTool {
                         Some(1),
                         None,
                         Some("Optional max direct children per parent session (None = unlimited)"),
+                    ),
+                ),
+                (
+                    "awaitCompletion".to_string(),
+                    boolean_prop(Some("If true, block until the child session reaches a terminal state and return its final result. Default: false")),
+                ),
+                (
+                    "timeoutSeconds".to_string(),
+                    integer_prop(
+                        Some(1),
+                        None,
+                        Some("Maximum seconds to wait when awaitCompletion=true. Default: 180"),
+                    ),
+                ),
+                (
+                    "includeLastAssistantMessage".to_string(),
+                    boolean_prop(Some("When awaitCompletion=true, include last assistant message text in the result. Default: true")),
+                ),
+                (
+                    "resultMessageLimit".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(200),
+                        Some("Max number of messages to return when awaitCompletion=true. Default: 20"),
+                    ),
+                ),
+                (
+                    "assistantMessageMaxChars".to_string(),
+                    integer_prop(
+                        Some(1),
+                        Some(200000),
+                        Some("Truncate returned assistant message text to this length. Default: no limit"),
                     ),
                 ),
             ],

@@ -11,7 +11,7 @@ import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
-import { Search, X } from 'lucide-react';
+import { Search, X, Users, Plus } from 'lucide-react';
 
 const logger = getLogger('AssistantList');
 
@@ -168,112 +168,134 @@ export default function AssistantList() {
   const showPagination = !searchResults && totalPages > 1;
 
   return (
-    <div className="w-full border-r border-muted flex flex-col h-full">
-      {/* Button - Fixed at top */}
-      <div className="p-4 border-b border-muted flex-shrink-0">
-        <Button
-          variant="default"
-          className="w-full"
-          onClick={() => setCreateNew(true)}
-        >
-          {t('assistant.list.create')}
-        </Button>
-      </div>
+    <div className="p-6 h-full flex flex-col bg-background">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+              <Users size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+                {t('assistant.list.title', 'Assistants')}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Manage your customized AI agents
+              </p>
+            </div>
+          </div>
 
-      {/* Search bar */}
-      <div className="p-4 border-b border-muted flex-shrink-0">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder="Search assistants..."
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-9 pr-9"
-            aria-label="Search assistants"
-          />
-          {searchQuery && (
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder={t(
+                  'assistant.list.searchPlaceholder',
+                  'Search assistants...',
+                )}
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="pl-9 pr-9 h-9"
+                aria-label="Search assistants"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={handleClearSearch}
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
             <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-              onClick={handleClearSearch}
-              aria-label="Clear search"
+              variant="default"
+              onClick={() => setCreateNew(true)}
+              className="h-9 whitespace-nowrap"
             >
-              <X className="h-4 w-4" />
+              <Plus size={16} className="mr-2" />
+              {t('assistant.list.create', 'Create New')}
             </Button>
-          )}
+          </div>
         </div>
+
         {isSearching && (
-          <div className="text-sm text-muted-foreground mt-2">Searching...</div>
+          <div className="text-sm text-muted-foreground mb-4">Searching...</div>
         )}
         {searchResults !== null && !isSearching && (
-          <div className="text-sm text-muted-foreground mt-2">
+          <div className="text-sm text-muted-foreground mb-4">
             Found {searchResults.length} results for &quot;{searchQuery}&quot;
           </div>
         )}
-      </div>
 
-      {/* Scrollable assistants list */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {displayedAssistants.length === 0 ? (
-          <div className="text-center text-muted-foreground py-8">
-            {searchResults !== null
-              ? 'No assistants found matching your search'
-              : 'No assistants available'}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {displayedAssistants.map((assistant) => (
-              <AssistantCard
-                key={assistant.id}
-                assistant={assistant}
-                isExpanded={expandedId === assistant.id}
-                onToggle={() => handleToggleExpand(assistant.id)}
-                builtinToolsMap={builtinToolsMap}
-                mcpServersMap={mcpServersMap}
-              />
-            ))}
+        {/* Scrollable assistants list */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+          {displayedAssistants.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              {searchResults !== null
+                ? 'No assistants found matching your search'
+                : 'No assistants available'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {displayedAssistants.map((assistant) => (
+                <AssistantCard
+                  key={assistant.id}
+                  assistant={assistant}
+                  isExpanded={expandedId === assistant.id}
+                  onToggle={() => handleToggleExpand(assistant.id)}
+                  builtinToolsMap={builtinToolsMap}
+                  mcpServersMap={mcpServersMap}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination controls */}
+        {showPagination && (
+          <div className="p-4 border-t border-muted flex-shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+                <span className="ml-2">
+                  ({assistants.length} of {totalAssistants} assistants)
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
           </div>
         )}
+
+        <EditorProvider
+          initialValue={getNewAssistantTemplate()}
+          onFinalize={handleCreateComplete}
+        >
+          <AssistantEditor.Dialog
+            open={createNew}
+            onOpenChange={setCreateNew}
+          />
+        </EditorProvider>
       </div>
-
-      {/* Pagination controls */}
-      {showPagination && (
-        <div className="p-4 border-t border-muted flex-shrink-0">
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(currentPage - 1)}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <div className="text-sm text-muted-foreground">
-              Page {currentPage} of {totalPages}
-              <span className="ml-2">
-                ({assistants.length} of {totalAssistants} assistants)
-              </span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(currentPage + 1)}
-              disabled={currentPage >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <EditorProvider
-        initialValue={getNewAssistantTemplate()}
-        onFinalize={handleCreateComplete}
-      >
-        <AssistantEditor.Dialog open={createNew} onOpenChange={setCreateNew} />
-      </EditorProvider>
     </div>
   );
 }

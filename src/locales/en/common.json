@@ -57,6 +57,25 @@
     "delete": "Delete",
     "restartNow": "Restart now"
   },
+  "error": {
+    "title": "Something went wrong",
+    "details": "Error Details",
+    "reload": "Reload Application"
+  },
+  "theme": {
+    "toggle": "Toggle theme"
+  },
+  "sidebar": {
+    "library": "Library",
+    "chat": "Chat",
+    "assistants": "Assistants",
+    "playbooks": "Playbooks",
+    "extensions": "Extensions",
+    "recentSessions": "Recent Sessions",
+    "seeAllSessions": "See all sessions →",
+    "settings": "Settings",
+    "history": "History"
+  },
   "settings": {
     "title": "Settings",
     "unsaved": "Unsaved",
@@ -143,8 +162,11 @@
     "toolsAvailable_other": "{{count}} tools available",
     "toolCountUnknown": "Tool count unknown (not yet verified)",
     "active": "Active",
+    "toggleActive": "Toggle active state for {{name}}",
     "edit": "Edit",
+    "editServer": "Edit {{name}}",
     "delete": "Delete",
+    "deleteServer": "Delete {{name}}",
     "loadMore": "Load more",
     "loadingMore": "Loading...",
     "deleteDialog": {

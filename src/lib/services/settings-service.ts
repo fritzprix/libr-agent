@@ -27,6 +27,11 @@ export interface AdvancedSettings {
   defaultMaxOutputTokens: number;
   defaultSessionMaxDepth: number;
   defaultSessionMaxFanout: number;
+  // SP2: Global concurrent execution limits (runtime semaphores, not per-parent counts)
+  maxConcurrentActiveSessions: number; // default 4 — simultaneous LLM loops
+  maxSuspendedSessions: number; // default 8 — sessions blocked on awaitAgent
+  maxConcurrentActiveProcesses: number; // default 10 — simultaneous shell processes
+  maxSuspendedProcesses: number; // default 20 — processes blocked on pollProcess
 }
 
 export interface DisplaySettings {
@@ -92,6 +97,10 @@ export const DEFAULT_SETTING: Settings = {
     defaultMaxOutputTokens: 8192,
     defaultSessionMaxDepth: 0,
     defaultSessionMaxFanout: 0,
+    maxConcurrentActiveSessions: 4,
+    maxSuspendedSessions: 8,
+    maxConcurrentActiveProcesses: 10,
+    maxSuspendedProcesses: 20,
   },
   display: {
     metricDisplayMode: 'inline',

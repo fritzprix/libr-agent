@@ -13,6 +13,11 @@ import type { Message, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
+import type {
+  AgentSessionMetadata,
+  AgentResponse,
+  SendUserMessageRequest,
+} from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionContext');
 
@@ -333,7 +338,7 @@ export function AgentSessionProvider({
                 // We use setTimeout to allow the UI to render the thinking bubble state first
                 // and to avoid immediate state thrashing
                 setTimeout(() => {
-                  invoke('agent_resume_workflow', {
+                  invoke<AgentResponse>('agent_resume_workflow', {
                     sessionId,
                   }).catch((err) => {
                     logger.error(
@@ -372,18 +377,12 @@ export function AgentSessionProvider({
         });
 
         // 1. Get session metadata
-        const response = await invoke<{
-          id: string;
-          name?: string;
-          status: 'idle' | 'busy' | 'paused' | 'error';
-          model: string;
-          provider: string;
-          agentConfig?: string;
-          createdAt: number;
-          updatedAt?: number;
-        } | null>('agent_get_session', {
-          sessionId,
-        });
+        const response = await invoke<AgentSessionMetadata | null>(
+          'agent_get_session',
+          {
+            sessionId,
+          },
+        );
 
         if (!response) {
           throw new Error(`Session not found: ${sessionId}`);
@@ -418,10 +417,14 @@ export function AgentSessionProvider({
 
         // 2. Resume session in Rust backend (ensure active in memory)
         // This triggers proxy creation which emits InitializationStep events
-        await invoke('agent_resume_session', { sessionId });
+        await invoke<AgentSessionMetadata>('agent_resume_session', {
+          sessionId,
+        });
 
         // 3. Initialize session cache with messages in Rust
-        await invoke('agent_init_session_with_messages', { sessionId });
+        await invoke<AgentResponse>('agent_init_session_with_messages', {
+          sessionId,
+        });
 
         // 4. Load messages
         await loadMessages(sessionId);
@@ -477,18 +480,33 @@ export function AgentSessionProvider({
           updatedAt: now,
         };
 
-        const rustMessage = {
-          ...message,
+        const rustMessage: RustMessage = {
+          id: message.id,
+          sessionId: message.sessionId,
+          role: message.role,
+          content: message.content,
+          toolCalls: message.tool_calls,
+          toolCallId: message.tool_call_id,
+          isStreaming: message.isStreaming,
+          thinking: message.thinking,
+          thinkingSignature: message.thinkingSignature,
+          thinkingTime: message.thinkingTime,
+          assistantId: message.assistantId,
+          attachments: message.attachments,
+          toolUse: message.tool_use,
           createdAt: now.getTime(),
           updatedAt: now.getTime(),
+          source: message.source,
+          error: message.error,
+          metadata: message.metadata,
         };
 
-        await invoke('agent_send_message', {
-          request: {
-            sessionId: session.id,
-            message: rustMessage,
-          },
-        });
+        const request: SendUserMessageRequest = {
+          sessionId: session.id,
+          message: rustMessage,
+        };
+
+        await invoke<AgentResponse>('agent_send_message', { request });
       } catch (err) {
         logger.error('Failed to send message', err);
         throw err;
@@ -504,7 +522,7 @@ export function AgentSessionProvider({
     if (!session) return;
 
     try {
-      await invoke('agent_terminate_workflow', {
+      await invoke<AgentResponse>('agent_terminate_workflow', {
         sessionId: session.id,
       });
     } catch (err) {
@@ -519,7 +537,7 @@ export function AgentSessionProvider({
     if (!session) return;
 
     try {
-      await invoke('agent_resume_workflow', {
+      await invoke<AgentResponse>('agent_resume_workflow', {
         sessionId: session.id,
       });
       // Status update will come via event
