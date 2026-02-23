@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.15] - 2026-02-23
+
+### 🚀 Features
+
+- **OTA Auto-Updater**: LibrAgent now checks for new releases in the background on startup. When an update is available, a non-blocking toast notification appears with "Install" / "Later" options. Updates download and install automatically; the app restarts on completion. Powered by `tauri-plugin-updater` against GitHub Releases.
+
+### ⚡ Performance
+
+- **Parallel MCP server initialization**: External stdio and HTTP MCP servers are now initialized concurrently using `JoinSet` instead of sequentially. With N servers configured, startup time now equals the slowest single server rather than N × slowest — a significant improvement once you start stacking up MCP servers.
+
 ## [0.5.14] - 2026-02-23
 
 ### 🚀 Features

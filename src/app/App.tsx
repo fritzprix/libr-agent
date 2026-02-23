@@ -15,6 +15,7 @@ import { DnDContextProvider } from '@/context/DnDContext';
 import { LLMServiceProvider } from '@/context/LLMServiceContext';
 import { AgentSessionListProvider } from '@/context/AgentSessionListContext';
 import { GlobalEventProvider } from '@/context/GlobalEventContext';
+import { useAutoUpdater } from '@/hooks/useAutoUpdater';
 import '../styles/globals.css';
 import './App.css';
 
@@ -31,6 +32,8 @@ const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
 );
 function App() {
+  useAutoUpdater();
+
   return (
     <div className="h-screen w-full">
       <SettingsProvider>

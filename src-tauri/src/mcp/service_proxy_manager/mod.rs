@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::{Mutex, RwLock};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 use super::service_proxy::MCPServiceProxy;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
@@ -438,80 +438,109 @@ impl MCPServiceProxyManager {
                     }
                 };
 
-                // Load stdio server tools
+                // Wrap shared lookup map in Arc so parallel tasks can share it cheaply.
+                let server_name_to_id_arc = Arc::new(server_name_to_id_bg);
+
+                // Load stdio server tools — all servers spawned concurrently.
                 if !stdio_configs_bg.is_empty() {
                     log::info!(
-                        "[bg] Loading tools for {} stdio servers (session: {})",
+                        "[bg] Loading tools for {} stdio servers in parallel (session: {})",
                         stdio_configs_bg.len(),
                         session_id_bg
                     );
+                    emit_bg(
+                        &format!("Connecting to {} stdio servers", stdio_configs_bg.len()),
+                        InitializationStatus::Running,
+                    );
                 }
 
-                for (i, server_name) in stdio_configs_bg.keys().enumerate() {
-                    let step_msg = format!(
-                        "Loading tools from {} ({}/{})",
-                        server_name,
-                        i + 1,
-                        stdio_configs_bg.len()
-                    );
-                    emit_bg(&step_msg, InitializationStatus::Running);
-
-                    log::debug!(
-                        "[bg] Fetching tools from stdio server '{}' for session '{}'",
-                        server_name,
-                        session_id_bg
-                    );
-
-                    match stdio_manager_bg.list_tools(server_name).await {
-                        Ok(tools) => {
-                            log::info!(
-                                "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}'",
-                                tools.len(),
-                                server_name,
-                                session_id_bg
-                            );
-
-                            if let Some(server_id) = server_name_to_id_bg.get(server_name) {
-                                let repo = crate::state::get_mcp_server_repository();
+                let mut stdio_tasks: JoinSet<()> = JoinSet::new();
+                for server_name in stdio_configs_bg.keys() {
+                    let mgr = stdio_manager_bg.clone();
+                    let proxy = proxy_bg.clone();
+                    let id_map = server_name_to_id_arc.clone();
+                    let session_id = session_id_bg.clone();
+                    let app = app_handle_bg.clone();
+                    let server_name = server_name.clone();
+                    stdio_tasks.spawn(async move {
+                        let emit = |step: &str, status: InitializationStatus| {
+                            if let Some(app_h) = &app {
+                                let event = crate::agent::events::AgentEvent::InitializationStep {
+                                    session_id: session_id.clone(),
+                                    step: step.to_string(),
+                                    status,
+                                };
                                 if let Err(e) =
-                                    repo.update_tool_count(server_id, tools.len() as i32).await
+                                    crate::agent::events::emit_agent_event(app_h, event)
                                 {
-                                    log::warn!(
-                                        "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
-                                        server_name,
-                                        server_id,
-                                        e
-                                    );
+                                    log::warn!("Failed to emit initialization status: {}", e);
                                 }
                             }
-
-                            let prefixed_tools: Vec<_> = tools
-                                .into_iter()
-                                .map(|mut tool| {
-                                    tool.name = format!("{}__{}", server_name, tool.name);
-                                    tool
-                                })
-                                .collect();
-
-                            proxy_bg
-                                .set_session_stdio_tools(server_name.clone(), prefixed_tools)
-                                .await;
+                        };
+                        emit(
+                            &format!("Connecting to {}", server_name),
+                            InitializationStatus::Running,
+                        );
+                        log::debug!(
+                            "[bg] Fetching tools from stdio server '{}' for session '{}'",
+                            server_name,
+                            session_id
+                        );
+                        match mgr.list_tools(&server_name).await {
+                            Ok(tools) => {
+                                log::info!(
+                                    "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}'",
+                                    tools.len(),
+                                    server_name,
+                                    session_id
+                                );
+                                if let Some(server_id) = id_map.get(&server_name) {
+                                    let repo = crate::state::get_mcp_server_repository();
+                                    if let Err(e) =
+                                        repo.update_tool_count(server_id, tools.len() as i32)
+                                            .await
+                                    {
+                                        log::warn!(
+                                            "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
+                                            server_name,
+                                            server_id,
+                                            e
+                                        );
+                                    }
+                                }
+                                let prefixed_tools: Vec<_> = tools
+                                    .into_iter()
+                                    .map(|mut tool| {
+                                        tool.name = format!("{}__{}", server_name, tool.name);
+                                        tool
+                                    })
+                                    .collect();
+                                proxy
+                                    .set_session_stdio_tools(server_name.clone(), prefixed_tools)
+                                    .await;
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "[bg] ❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
+                                    server_name,
+                                    session_id,
+                                    e
+                                );
+                            }
                         }
-                        Err(e) => {
-                            log::error!(
-                                "[bg] ❌ Failed to fetch tools from stdio server '{}' for session '{}': {:?}",
-                                server_name,
-                                session_id_bg,
-                                e
-                            );
-                        }
+                    });
+                }
+                // Await all stdio init tasks before proceeding.
+                while let Some(res) = stdio_tasks.join_next().await {
+                    if let Err(e) = res {
+                        log::error!("[bg] stdio server init task panicked: {:?}", e);
                     }
                 }
 
-                // Load HTTP server tools
+                // Load HTTP server tools — all servers spawned concurrently.
                 if !http_configs_bg.is_empty() {
                     log::info!(
-                        "[bg] Loading tools for {} HTTP servers (session: {})",
+                        "[bg] Loading tools for {} HTTP servers in parallel (session: {})",
                         http_configs_bg.len(),
                         session_id_bg
                     );
@@ -521,65 +550,75 @@ impl MCPServiceProxyManager {
                     );
                 }
 
+                let mut http_tasks: JoinSet<()> = JoinSet::new();
                 for server_name in http_configs_bg.keys() {
-                    let has_cache = proxy_bg.has_http_tools_cached(server_name).await;
-                    if has_cache {
-                        log::info!(
-                            "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
-                            server_name
-                        );
-                        continue;
-                    }
-
-                    log::debug!(
-                        "[bg] Fetching tools from HTTP server '{}' for session '{}'",
-                        server_name,
-                        session_id_bg
-                    );
-
-                    match http_manager_bg.list_tools(server_name).await {
-                        Ok(tools) => {
+                    let mgr = http_manager_bg.clone();
+                    let proxy = proxy_bg.clone();
+                    let id_map = server_name_to_id_arc.clone();
+                    let session_id = session_id_bg.clone();
+                    let server_name = server_name.clone();
+                    http_tasks.spawn(async move {
+                        let has_cache = proxy.has_http_tools_cached(&server_name).await;
+                        if has_cache {
                             log::info!(
-                                "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}'",
-                                tools.len(),
-                                server_name,
-                                session_id_bg
+                                "[bg] ⚡ Skipping HTTP server '{}' - tools already cached",
+                                server_name
                             );
-
-                            if let Some(server_id) = server_name_to_id_bg.get(server_name) {
-                                let repo = crate::state::get_mcp_server_repository();
-                                if let Err(e) =
-                                    repo.update_tool_count(server_id, tools.len() as i32).await
-                                {
-                                    log::warn!(
-                                        "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
-                                        server_name,
-                                        server_id,
-                                        e
-                                    );
+                            return;
+                        }
+                        log::debug!(
+                            "[bg] Fetching tools from HTTP server '{}' for session '{}'",
+                            server_name,
+                            session_id
+                        );
+                        match mgr.list_tools(&server_name).await {
+                            Ok(tools) => {
+                                log::info!(
+                                    "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}'",
+                                    tools.len(),
+                                    server_name,
+                                    session_id
+                                );
+                                if let Some(server_id) = id_map.get(&server_name) {
+                                    let repo = crate::state::get_mcp_server_repository();
+                                    if let Err(e) =
+                                        repo.update_tool_count(server_id, tools.len() as i32)
+                                            .await
+                                    {
+                                        log::warn!(
+                                            "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
+                                            server_name,
+                                            server_id,
+                                            e
+                                        );
+                                    }
                                 }
+                                let prefixed_tools: Vec<_> = tools
+                                    .into_iter()
+                                    .map(|mut tool| {
+                                        tool.name = format!("{}__{}", server_name, tool.name);
+                                        tool
+                                    })
+                                    .collect();
+                                proxy
+                                    .set_session_http_tools(server_name.clone(), prefixed_tools)
+                                    .await;
                             }
-
-                            let prefixed_tools: Vec<_> = tools
-                                .into_iter()
-                                .map(|mut tool| {
-                                    tool.name = format!("{}__{}", server_name, tool.name);
-                                    tool
-                                })
-                                .collect();
-
-                            proxy_bg
-                                .set_session_http_tools(server_name.clone(), prefixed_tools)
-                                .await;
+                            Err(e) => {
+                                log::error!(
+                                    "[bg] ❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
+                                    server_name,
+                                    session_id,
+                                    e
+                                );
+                            }
                         }
-                        Err(e) => {
-                            log::error!(
-                                "[bg] ❌ Failed to fetch tools from HTTP server '{}' for session '{}': {:?}",
-                                server_name,
-                                session_id_bg,
-                                e
-                            );
-                        }
+                    });
+                }
+                // Await all HTTP init tasks before signalling readiness.
+                while let Some(res) = http_tasks.join_next().await {
+                    if let Err(e) = res {
+                        log::error!("[bg] HTTP server init task panicked: {:?}", e);
                     }
                 }
 
