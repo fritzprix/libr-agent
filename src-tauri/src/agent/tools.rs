@@ -420,11 +420,21 @@ pub async fn handle_tool_result(
 
                 // Create Tool Message using helper methods
                 let message = if result.is_error {
-                    create_error_tool_result(
-                        &session_id,
-                        &tool_call_id,
-                        result.error.as_deref().unwrap_or("Unknown error"),
-                    )
+                    if let Some(mcp_content) = result.mcp_content {
+                        // Prefer structured content (guided_error) over bare error string —
+                        // the content array carries the full diagnosis the agent needs.
+                        create_tool_result_message_with_content(
+                            &session_id,
+                            &tool_call_id,
+                            mcp_content,
+                        )
+                    } else {
+                        create_error_tool_result(
+                            &session_id,
+                            &tool_call_id,
+                            result.error.as_deref().unwrap_or("Unknown error"),
+                        )
+                    }
                 } else if let Some(mcp_content) = result.mcp_content {
                     // ✅ ALWAYS use structured content for successful tool calls
                     create_tool_result_message_with_content(&session_id, &tool_call_id, mcp_content)
