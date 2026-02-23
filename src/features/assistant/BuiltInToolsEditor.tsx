@@ -4,10 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { getLogger } from '@/lib/logger';
-import {
-  listAvailableBuiltinServerDefinitions,
-  BuiltinServerInfo,
-} from '@/features/mcp/api/mcp-server-registry';
+import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
+import type { BuiltinServerInfo } from '@/lib/backend/types';
 import {
   CORE_BUILTIN_SERVICE_ALIASES,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,

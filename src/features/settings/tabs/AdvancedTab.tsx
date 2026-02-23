@@ -5,6 +5,7 @@ import { IsolationLevel } from '@/lib/services/settings-service';
 import { Input } from '@/components/ui';
 import { SystemPerformanceSettings } from '../components/SystemPerformanceSettings';
 import { DangerZoneSettings } from '../components/DangerZoneSettings';
+import { AboutSection } from '../components/AboutSection';
 
 interface AdvancedTabProps {
   localAdvancedSettings: AdvancedSettings;
@@ -341,6 +342,7 @@ function AdvancedTabComponent({
       </div>
 
       <SystemPerformanceSettings {...systemSettingsProps} />
+      <AboutSection />
       <DangerZoneSettings {...dangerZoneProps} />
     </div>
   );

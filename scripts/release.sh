@@ -1,10 +1,22 @@
 #!/bin/bash
 set -e
 
-if [ -z "$1" ]; then
-  echo "Usage: $0 <patch|minor|major|version>"
+# Parse args: version is the first non-flag arg; -y/--yes skips the confirmation prompt.
+YES=false
+VERSION_ARG=""
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) YES=true ;;
+    *) VERSION_ARG="$arg" ;;
+  esac
+done
+
+if [ -z "$VERSION_ARG" ]; then
+  echo "Usage: $0 <patch|minor|major|version> [-y]"
   exit 1
 fi
+
+set -- "$VERSION_ARG"
 
 # Check for clean git state
 if [ -n "$(git status --porcelain)" ]; then
@@ -30,11 +42,15 @@ echo "Verifying Backend Compilation..."
 (cd src-tauri && cargo check)
 
 echo ">>> Final Verification passed."
-read -p ">>> Ready to bump version to next '$1' and publish? (y/n) " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborted."
-    exit 1
+if [ "$YES" = true ]; then
+    echo ">>> Ready to bump version to next '$1' and publish? (y/n) y (auto-confirmed)"
+else
+    read -p ">>> Ready to bump version to next '$1' and publish? (y/n) " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
 fi
 
 echo ">>> Bumping version..."

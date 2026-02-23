@@ -22,3 +22,8 @@
 
 **Learning:** Placing interactive buttons inside non-semantic clickable containers (like a div with an onClick handler) makes the container inaccessible to keyboard users unless it has `role="button"` and `tabIndex`. The internal button becomes the primary keyboard interaction point, so it **must** have a clear, descriptive label.
 **Action:** When using the "clickable card" pattern, ensure either the card itself is a proper button, OR the internal action buttons have explicit aria-labels describing the card's primary action (e.g., "Install [Name]" instead of just "Download").
+
+## 2026-02-23 - [Nested Interactive Controls]
+
+**Learning:** Nesting interactive elements (like a `button` inside a `div role="button"`) creates accessibility barriers. Screen readers may ignore the inner control.
+**Action:** When a card acts as a single button but contains a visual "action button", make the container the interactive element (`role="button"`) and replace the inner button with a visual-only element (`div` with button styles + `aria-hidden="true"`).

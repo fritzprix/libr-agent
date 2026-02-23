@@ -28,6 +28,7 @@ import {
   useAgentSessionListState,
   useAgentSessionListActions,
 } from '@/context/AgentSessionListContext';
+import { useUpdateContext } from '@/context/UpdateContext';
 
 /** Maps session status to a semantically meaningful dot */
 function StatusDot({ status }: { status: string }) {
@@ -62,6 +63,8 @@ export default function AppSidebar() {
   const { state } = useSidebar();
   const location = useLocation();
   const isCollapsed = state === 'collapsed';
+  const { status: updateStatus } = useUpdateContext();
+  const hasUpdate = updateStatus === 'available';
 
   const { sessions } = useAgentSessionListState();
   const { loadSessions } = useAgentSessionListActions();
@@ -252,8 +255,11 @@ export default function AppSidebar() {
               className={`transition-all duration-200`}
               isActive={location.pathname === '/settings'}
             >
-              <Link to="/settings">
+              <Link to="/settings" className="relative">
                 <Settings size={16} />
+                {hasUpdate && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-destructive" />
+                )}
                 {!isCollapsed && <span>{t('sidebar.settings')}</span>}
               </Link>
             </SidebarMenuButton>

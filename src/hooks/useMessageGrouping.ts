@@ -35,18 +35,21 @@ export interface MessageGroupingResult {
   toolResultsMap: Map<string, Message>;
 }
 
+// Optimization: Use regex to check for non-whitespace characters to avoid string allocation from trim()
+const NOT_WHITESPACE = /\S/;
+
 function validText(c: MCPContent) {
   if (c.type === 'text') {
-    return c.text && c.text.trim().length > 0;
+    return c.text && NOT_WHITESPACE.test(c.text);
   } else if (c.type === 'thinking') {
-    return c.thinking && c.thinking.trim().length > 0;
+    return c.thinking && NOT_WHITESPACE.test(c.thinking);
   }
 }
 
 // Helper: Check if message has text content
 const hasTextContent = (msg: Message): boolean => {
   // Check for thinking content
-  if (msg.thinking && msg.thinking.trim().length > 0) {
+  if (msg.thinking && NOT_WHITESPACE.test(msg.thinking)) {
     return true;
   }
 

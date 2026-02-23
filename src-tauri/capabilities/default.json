@@ -12,6 +12,7 @@
     "opener:allow-open-path",
     "log:default",
     "dialog:default",
+    "updater:default",
     {
       "identifier": "http:default",
       "allow": [

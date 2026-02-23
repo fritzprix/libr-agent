@@ -9,3 +9,9 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 ## 2025-05-23 - [src-tauri/src/services/workspace_service.rs] **Platform Bug:** Manual string concatenation for paths `format!("{}/{}", path, name)` **Resolved:** Replaced with `PathBuf::join` for cross-platform correctness.
 
 ## 2025-05-23 - [src-tauri/src/mcp/builtin/workspace/persistent_shell.rs] **Robustness:** Manual `PATH` string concatenation. **Resolved:** Updated to use `std::env::join_paths` and `std::env::split_paths` for OS-correct separator handling.
+
+## 2025-05-24 - [src-tauri/src/utils/terminal.rs] **Platform Bug:** Missing terminal emulator support on Linux **Resolved:** Implemented prioritized fallback strategy for `gnome-terminal`, `konsole`, `xfce4-terminal`, `x-terminal-emulator`, and `xterm`.
+
+## 2025-05-24 - [src-tauri/src/utils/terminal.rs] **Platform Bug:** Windows paths in `cmd` arguments using forward slashes **Resolved:** Normalized paths to force backslashes for `cmd`.
+
+## 2025-05-24 - [src-tauri/src/mcp/builtin/workspace/persistent_shell.rs] **Robustness:** Unchecked dependency on `bash` **Resolved:** Added explicit existence check (`command -v bash`) before spawning.
