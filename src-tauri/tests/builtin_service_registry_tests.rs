@@ -13,8 +13,8 @@ use tauri_mcp_agent_lib::agent::tools::{
     create_tool_result_message, create_tool_result_message_with_content, extract_builtin_tool_ids,
     ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
-use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -367,11 +367,9 @@ fn extract_object_properties(
     context: &str,
 ) -> std::collections::HashMap<String, tauri_mcp_agent_lib::mcp::schema::JSONSchema> {
     match &schema.schema_type {
-        tauri_mcp_agent_lib::mcp::schema::JSONSchemaType::Object { properties, .. } => {
-            properties
-                .clone()
-                .unwrap_or_else(|| panic!("{context}: input_schema has no properties"))
-        }
+        tauri_mcp_agent_lib::mcp::schema::JSONSchemaType::Object { properties, .. } => properties
+            .clone()
+            .unwrap_or_else(|| panic!("{context}: input_schema has no properties")),
         other => panic!("{context}: expected Object schema, got {other:?}"),
     }
 }
