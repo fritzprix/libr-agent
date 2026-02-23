@@ -48,15 +48,26 @@ impl WorkspaceService {
 
         let mut items = Vec::new();
 
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| format!("Failed to read directory entry: {e}"))?
-        {
-            let metadata = entry
-                .metadata()
-                .await
-                .map_err(|e| format!("Failed to read metadata: {e}"))?;
+        loop {
+            let entry = match entries.next_entry().await {
+                Ok(Some(e)) => e,
+                Ok(None) => break,
+                Err(e) => {
+                    log::warn!("Skipping unreadable directory entry: {e}");
+                    continue;
+                }
+            };
+
+            let metadata = match entry.metadata().await {
+                Ok(m) => m,
+                Err(e) => {
+                    log::warn!(
+                        "Skipping '{}': failed to read metadata: {e}",
+                        entry.file_name().to_string_lossy()
+                    );
+                    continue;
+                }
+            };
 
             let name = entry.file_name().to_string_lossy().to_string();
             let is_directory = metadata.is_dir();
@@ -81,7 +92,10 @@ impl WorkspaceService {
             let relative_path = if target_path == "." {
                 name.clone()
             } else {
-                format!("{target_path}/{name}").replace("//", "/")
+                PathBuf::from(&target_path)
+                    .join(&name)
+                    .to_string_lossy()
+                    .replace('\\', "/")
             };
 
             items.push(WorkspaceFileItem {
