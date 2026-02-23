@@ -61,7 +61,7 @@ dashmap = "5.5"
 regex = "1"
 cuid2 = "0.1.4"
 dirs = "5.0"
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
+zip = { version = "8.1", default-features = false, features = ["deflate"] }
 handlebars = "6.4"
 
 # Windows-only: decode process output captured from stdio pipes using the system ANSI code page
