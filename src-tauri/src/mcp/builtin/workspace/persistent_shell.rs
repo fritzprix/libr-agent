@@ -114,7 +114,7 @@ impl PersistentShell {
                         }
                     }
                 } else {
-                    cmd.env("PATH", local_bin);
+                    cmd.env("PATH", &local_bin);
                 }
             }
 
