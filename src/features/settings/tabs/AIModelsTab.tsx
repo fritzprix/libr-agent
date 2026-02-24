@@ -92,7 +92,7 @@ function AIModelsTabComponent({
         </h3>
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            Agent Hub URL
+            {t('settings.aiModels.agentHubUrlLabel', 'Agent Hub URL')}
           </label>
           <Input
             type="url"
@@ -102,8 +102,10 @@ function AIModelsTabComponent({
             className="bg-background border text-foreground w-full"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            URL of the remote Agent Hub server. If set, assistants will be
-            synced with this server.
+            {t(
+              'settings.aiModels.agentHubUrlDescription',
+              'URL of the remote Agent Hub server. If set, assistants will be synced with this server.',
+            )}
           </p>
         </div>
       </div>
