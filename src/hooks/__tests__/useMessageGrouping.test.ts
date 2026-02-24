@@ -1,25 +1,8 @@
 import { renderHook } from '@testing-library/react';
 import { useMessageGrouping } from '../useMessageGrouping';
-import type { Message, ToolCall } from '@/models/chat';
+import type { Message } from '@/models/chat';
 import { describe, it, expect } from 'vitest';
-
-const createMessage = (
-  id: string,
-  role: 'user' | 'assistant' | 'tool',
-  content: string = '',
-  toolCalls?: ToolCall[],
-  toolCallId?: string,
-  metadata?: Message['metadata']
-): Message => ({
-  id,
-  sessionId: 'session-1',
-  threadId: 'session-1',
-  role,
-  content: [{ type: 'text', text: content }],
-  tool_calls: toolCalls,
-  tool_call_id: toolCallId,
-  metadata,
-});
+import { createMessage } from './helpers';
 
 describe('useMessageGrouping', () => {
   it('groups assistant messages with tool calls and populates toolMap', () => {

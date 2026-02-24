@@ -1,9 +1,11 @@
 import React from 'react';
-import { Download } from 'lucide-react';
+import { Download, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
-import { Button, Separator } from '@/components/ui';
+import { Separator } from '@/components/ui';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface RecommendedPresetsProps {
   presets: MCPServerPreset[] | undefined;
@@ -44,6 +46,14 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
               role={isInstalled ? undefined : 'button'}
               tabIndex={isInstalled ? -1 : 0}
               aria-disabled={isInstalled}
+              aria-label={
+                !isInstalled
+                  ? t('mcpServer.installExtension', {
+                      name: preset.name,
+                      defaultValue: 'Install {{name}} extension',
+                    })
+                  : undefined
+              }
               onClick={() => !isInstalled && onSetupPreset(preset)}
               onKeyDown={(event) => {
                 if (isInstalled) return;
@@ -55,9 +65,34 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
             >
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-semibold tracking-tight">
-                    {preset.name}
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded overflow-hidden flex-shrink-0 border border-border/50">
+                      {preset.logo ? (
+                        <img
+                          src={preset.logo}
+                          alt={preset.name}
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            (
+                              e.currentTarget as HTMLImageElement
+                            ).style.display = 'none';
+                            (
+                              e.currentTarget
+                                .nextElementSibling as HTMLElement | null
+                            )?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        className={`w-full h-full bg-muted flex items-center justify-center ${preset.logo ? 'hidden' : ''}`}
+                      >
+                        <Server className="w-3 h-3 text-muted-foreground" />
+                      </div>
+                    </div>
+                    <h4 className="font-semibold tracking-tight">
+                      {preset.name}
+                    </h4>
+                  </div>
                   {isInstalled ? (
                     <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium flex items-center gap-1">
                       {t('mcpServer.installed', 'Installed')}
@@ -78,22 +113,15 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                   <code className="text-[10px] bg-muted px-1 py-0.5 rounded font-mono text-muted-foreground">
                     {preset.command} {preset.args?.[0]}
                   </code>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary"
-                    aria-label={t('mcpServer.installExtension', {
-                      name: preset.name,
-                      defaultValue: 'Install {{name}} extension',
-                    })}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSetupPreset(preset);
-                    }}
+                  <div
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'h-6 w-6 rounded-full hover:bg-primary/10 hover:text-primary',
+                    )}
+                    aria-hidden="true"
                   >
                     <Download className="w-3.5 h-3.5" />
-                  </Button>
+                  </div>
                 </div>
               )}
             </div>

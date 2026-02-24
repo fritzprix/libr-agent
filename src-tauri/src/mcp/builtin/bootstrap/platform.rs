@@ -21,6 +21,7 @@
 //!   - Unix: `command -v <tool>`
 //! - Gracefully handles missing tools and features on each platform
 
+use crate::utils::platform::command_exists;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -221,31 +222,6 @@ fn detect_installed_tools() -> HashMap<String, ToolInfo> {
 }
 
 /// Check if a command exists in PATH (cross-platform)
-fn command_exists(cmd: &str) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // Windows: Use 'where' command
-        Command::new("where")
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg(cmd)
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
-    #[cfg(not(windows))]
-    {
-        // Unix-like: Use 'command -v'
-        Command::new("sh")
-            .arg("-c")
-            .arg(format!("command -v {}", cmd))
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-}
-
 /// Get the version of a tool
 fn get_tool_version(tool: &str) -> Option<String> {
     #[cfg(windows)]

@@ -74,9 +74,8 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
 
 ### Tool Naming Conventions
 
-- **Internal**: Use simple names (e.g., `"echo"`, `"readFile"`).
-- **Registry**: Tools are exposed directly with their internal names. Ensure uniqueness across servers if necessary, though current implementations use distinct names naturally.
-- **Frontend**: Call tools using the simple name, e.g., `"echo"` or `"runCommand"`.
+- **Internal (Rust Module)**: Use simple names (e.g., `"echo"`, `"readFile"`). The server implementation expects these.
+- **External (Agent/Frontend via Proxy)**: Tools are exposed and called with the `builtin_{server}__{tool}` prefix (e.g., `builtin_example__echo`). The `MCPServiceProxy` handles routing and strips the prefix before invoking the internal tool.
 
 ## 🚀 Step-by-Step Guide to Adding a New MCP Server Module
 
@@ -190,16 +189,28 @@ registry.register_server(Box::new(example::ExampleServer::new()));
 
 ### Automatic Tool Detection
 
-The frontend automatically detects new tools exposed by the registry.
+The frontend automatically detects new tools exposed by the registry via `MCPServiceProxy`. The proxy exposes tools with the format `builtin_{server}__{tool}`.
 
 ### Tool Call Example
+
+If you are calling the tool via `agentCallBuiltinTool` (which wraps the Rust backend call):
+
+```typescript
+const response = await agentCallBuiltinTool(
+  sessionId,
+  'builtin_example__echo', // Must use the prefixed name for routing
+  { text: "Hello, LibrAgent!" }
+);
+```
+
+Or if executing a tool call object (e.g. from LLM response):
 
 ```typescript
 const toolCall = {
   id: "req-123",
   type: "function",
   function: {
-    name: "echo",
+    name: "builtin_example__echo", // Prefixed name required by proxy
     arguments: JSON.stringify({ text: "Hello, LibrAgent!" })
   }
 };
@@ -210,7 +221,7 @@ const response = await executeToolCall(toolCall);
 ## 🛡️ Security Considerations
 
 - Validate all inputs.
-- Use `SecurityValidator` (if available) for file system operations.
+- Use `crate::mcp::builtin::utils::SecurityValidator` for file system operations.
 - Ensure proper error handling and logging using `tracing`.
 
 ---
