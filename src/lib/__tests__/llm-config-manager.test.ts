@@ -63,20 +63,20 @@ vi.mock('../../config/llm-config.json', () => ({
         },
       },
       groq: {
-          name: 'Groq',
-          apiKeyEnvVar: 'GROQ_API_KEY',
-          baseUrl: 'https://api.groq.com/openai/v1',
-          models: {
-            'llama3-8b-8192': {
-                name: 'Llama 3 8B',
-                contextWindow: 8192,
-                supportReasoning: false,
-                supportTools: true,
-                supportStreaming: true,
-                cost: { input: 0.00005, output: 0.0001 },
-                description: 'Fast open source model'
-            }
-          }
+        name: 'Groq',
+        apiKeyEnvVar: 'GROQ_API_KEY',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        models: {
+          'llama3-8b-8192': {
+            name: 'Llama 3 8B',
+            contextWindow: 8192,
+            supportReasoning: false,
+            supportTools: true,
+            supportStreaming: true,
+            cost: { input: 0.00005, output: 0.0001 },
+            description: 'Fast open source model',
+          },
+        },
       }
     },
   },
