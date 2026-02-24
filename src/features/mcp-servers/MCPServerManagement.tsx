@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpServerService } from '@/lib/services/mcp-server-service';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Button } from '@/components/ui';
 import {
   AlertDialog,
@@ -36,6 +37,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
     handleCreateNew,
     handleSetupPreset,
     handleSave,
@@ -125,7 +127,10 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
       <AlertDialog
         open={!!serverToDelete}
-        onOpenChange={(open) => !open && setServerToDelete(null)}
+        onOpenChange={(open) => {
+          if (isDeleting) return;
+          if (!open) setServerToDelete(null);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -141,11 +146,24 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
               {t('mcpServer.deleteDialog.cancel', 'Cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
-              {t('mcpServer.deleteDialog.confirm', 'Delete')}
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <LoadingSpinner size="sm" className="mr-2" />
+                  {t('mcpServer.deleteDialog.deleting', 'Deleting...')}
+                </>
+              ) : (
+                t('mcpServer.deleteDialog.confirm', 'Delete')
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

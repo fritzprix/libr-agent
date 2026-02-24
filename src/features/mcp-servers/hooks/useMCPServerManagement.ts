@@ -66,6 +66,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   const [serverToDelete, setServerToDelete] = useState<MCPServerEntity | null>(
     null,
   );
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleCreateNew = useCallback(() => {
     const newServer: MCPServerEntity = {
@@ -141,12 +142,14 @@ export function useMCPServerManagement(service?: McpServerService) {
   const confirmDelete = useCallback(async () => {
     if (!serverToDelete) return;
 
+    setIsDeleting(true);
     try {
       await deleteServer(serverToDelete.id);
       await mutateServers();
       toast.success(
         t('mcpServer.toasts.deleted', 'Extension deleted successfully'),
       );
+      setServerToDelete(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error(
@@ -157,15 +160,39 @@ export function useMCPServerManagement(service?: McpServerService) {
       );
       logger.error('Failed to delete MCP server', error);
     } finally {
-      setServerToDelete(null);
+      setIsDeleting(false);
     }
   }, [serverToDelete, deleteServer, mutateServers, t]);
 
   const handleToggleActive = useCallback(
     async (server: MCPServerEntity, checked: boolean) => {
+      const updateData = (
+        currentData:
+          | { items: MCPServerEntity[]; hasNextPage: boolean }[]
+          | undefined,
+      ) => {
+        if (!currentData) return [];
+        return currentData.map((page) => ({
+          ...page,
+          items: page.items.map((item) =>
+            item.id === server.id ? { ...item, isActive: checked } : item,
+          ),
+        }));
+      };
+
       try {
-        await toggleActive(server.id, checked);
-        await mutateServers();
+        await mutateServers(
+          async (currentData) => {
+            await toggleActive(server.id, checked);
+            return updateData(currentData);
+          },
+          {
+            optimisticData: (currentData) => updateData(currentData),
+            rollbackOnError: true,
+            revalidate: false,
+          },
+        );
+
         toast.success(
           t('mcpServer.toasts.toggled', {
             status: checked
@@ -200,6 +227,7 @@ export function useMCPServerManagement(service?: McpServerService) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
     handleCreateNew,
     handleSetupPreset,
     handleSave,
