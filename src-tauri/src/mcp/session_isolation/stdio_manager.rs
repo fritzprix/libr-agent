@@ -625,7 +625,10 @@ mod tests {
         if let Err(e) = &result {
             let err_msg = format!("{:?}", e);
             if err_msg.contains("No such file") || err_msg.contains("not found") {
-                println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
+                println!(
+                    "Skipping integration test: python3 or mock_server.py not found/executable: {}",
+                    err_msg
+                );
                 return;
             }
         }
@@ -664,7 +667,7 @@ mod tests {
             if let Err(e) = &res {
                 let err_msg = format!("{:?}", e);
                 if err_msg.contains("No such file") || err_msg.contains("not found") {
-                     println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
+                    println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
                     continue;
                 }
             }
