@@ -581,6 +581,24 @@ export function AgentWorkspacePanel() {
     }
   };
 
+  const handleUploadClick = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        title: 'Select files to upload',
+      });
+
+      if (selected) {
+        const files = Array.isArray(selected) ? selected : [selected];
+        // handleWorkspaceFileDrop expects string[]
+        await handleWorkspaceFileDrop(files);
+      }
+    } catch (error) {
+      logger.error('Failed to open file dialog', error);
+      toast.error(`Failed to select files: ${error}`);
+    }
+  };
+
   // Open file with system default app
   const handleOpenFile = useCallback(
     async (node: FileNode) => {
@@ -636,6 +654,7 @@ export function AgentWorkspacePanel() {
                 onClick={handleOpenInExplorer}
                 className="h-6 px-2 text-xs"
                 title="Open in Explorer"
+                aria-label="Open in Explorer"
               >
                 <Folder className="w-3 h-3" />
               </Button>
@@ -645,6 +664,7 @@ export function AgentWorkspacePanel() {
                 onClick={handleOpenInTerminal}
                 className="h-6 px-2 text-xs"
                 title="Open in Terminal"
+                aria-label="Open in Terminal"
               >
                 <Terminal className="w-3 h-3" />
               </Button>
@@ -654,6 +674,7 @@ export function AgentWorkspacePanel() {
                 onClick={() => loadDirectory(rootPath)}
                 className="h-6 w-6 p-0"
                 title="Refresh"
+                aria-label="Refresh workspace files"
               >
                 <RefreshCw
                   className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
@@ -672,6 +693,7 @@ export function AgentWorkspacePanel() {
                 readOnly
                 className="h-7 text-xs flex-1"
                 disabled={isOverrideActive}
+                aria-label="Workspace override path"
               />
               {!isOverrideActive && (
                 <Button
@@ -751,9 +773,21 @@ export function AgentWorkspacePanel() {
           )}
         </CardContent>
 
-        <div className="border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors">
+        <div
+          role="button"
+          tabIndex={0}
+          className="border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50"
+          onClick={handleUploadClick}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleUploadClick();
+            }
+          }}
+          aria-label="Upload files to workspace"
+        >
           <Upload className="w-4 h-4 mx-auto mb-1" />
-          Drop files here to upload
+          Drop files here or click to upload
         </div>
       </Card>
     </div>
