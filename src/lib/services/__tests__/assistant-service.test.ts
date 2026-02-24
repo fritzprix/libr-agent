@@ -13,6 +13,7 @@ vi.mock('../rust-assistant-service', () => {
 
 describe('AssistantService', () => {
   let service: AssistantService;
+  let mockFetch: Mock;
   let mockLocalService: {
     getAll: Mock;
     getList: Mock;
@@ -41,7 +42,8 @@ describe('AssistantService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubGlobal('fetch', vi.fn());
+    mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
 
     // Define mock methods
     mockLocalService = {
@@ -56,7 +58,9 @@ describe('AssistantService', () => {
     };
 
     // Set implementation for the class constructor mock
-    (RustAssistantService as unknown as Mock).mockImplementation(() => mockLocalService);
+    vi.mocked(RustAssistantService).mockImplementation(
+      () => mockLocalService as unknown as InstanceType<typeof RustAssistantService>,
+    );
   });
 
   afterEach(() => {
@@ -65,16 +69,16 @@ describe('AssistantService', () => {
   });
 
   describe('Constructor', () => {
-    it('should initialize with local service only when no URL is provided', () => {
+    it('should initialize local service when no URL is provided without triggering remote fetch', () => {
       service = new AssistantService();
-      expect((service as any).remoteService).toBeNull();
-      expect((service as any).localService).toBeDefined();
+      expect(RustAssistantService).toHaveBeenCalledTimes(1);
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    it('should initialize with remote service when URL is provided', () => {
+    it('should initialize services when URL is provided without triggering fetch on construction', () => {
       service = new AssistantService(agentHubUrl);
-      expect((service as any).remoteService).toBeDefined();
-      expect((service as any).localService).toBeDefined();
+      expect(RustAssistantService).toHaveBeenCalledTimes(1);
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 
@@ -87,14 +91,14 @@ describe('AssistantService', () => {
 
       expect(result).toEqual(mockAssistants);
       expect(mockLocalService.getAll).toHaveBeenCalled();
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('should fetch from remote and sync to local when remote service exists', async () => {
       service = new AssistantService(agentHubUrl);
 
       // Mock remote fetch success
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockAssistants,
       });
@@ -105,7 +109,7 @@ describe('AssistantService', () => {
       const result = await service.getAll();
 
       expect(result).toEqual(mockAssistants);
-      expect(global.fetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`);
+      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`);
       expect(mockLocalService.saveAll).toHaveBeenCalledWith(mockAssistants);
     });
 
@@ -113,7 +117,7 @@ describe('AssistantService', () => {
       service = new AssistantService(agentHubUrl);
 
       // Mock remote fetch failure
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
       });
@@ -124,25 +128,25 @@ describe('AssistantService', () => {
       const result = await service.getAll();
 
       expect(result).toEqual(mockAssistants);
-      expect(global.fetch).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalled();
       expect(mockLocalService.getAll).toHaveBeenCalled();
     });
 
     it('should fallback to local when remote fetch throws', async () => {
-        service = new AssistantService(agentHubUrl);
+      service = new AssistantService(agentHubUrl);
 
-        // Mock remote fetch throw
-        (global.fetch as any).mockRejectedValue(new Error('Network error'));
+      // Mock remote fetch throw
+      mockFetch.mockRejectedValue(new Error('Network error'));
 
-        // Mock local getAll success
-        mockLocalService.getAll.mockResolvedValue(mockAssistants);
+      // Mock local getAll success
+      mockLocalService.getAll.mockResolvedValue(mockAssistants);
 
-        const result = await service.getAll();
+      const result = await service.getAll();
 
-        expect(result).toEqual(mockAssistants);
-        expect(global.fetch).toHaveBeenCalled();
-        expect(mockLocalService.getAll).toHaveBeenCalled();
-      });
+      expect(result).toEqual(mockAssistants);
+      expect(mockFetch).toHaveBeenCalled();
+      expect(mockLocalService.getAll).toHaveBeenCalled();
+    });
   });
 
   describe('getList', () => {
@@ -160,15 +164,15 @@ describe('AssistantService', () => {
     it('should fetch from remote when available', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockAssistants,
       });
 
-      const result = await service.getList(params);
+      await service.getList(params);
 
       // Verify remote fetch was called
-      expect(global.fetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`);
+      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`);
       // Verify local sync was NOT called (based on previous investigation of code)
       expect(mockLocalService.saveAll).not.toHaveBeenCalled();
     });
@@ -176,7 +180,7 @@ describe('AssistantService', () => {
     it('should fallback to local when remote fails', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockRejectedValue(new Error('Fail'));
+      mockFetch.mockRejectedValue(new Error('Fail'));
       mockLocalService.getList.mockResolvedValue(mockPage);
 
       const result = await service.getList(params);
@@ -192,7 +196,7 @@ describe('AssistantService', () => {
     it('should fetch from remote when available', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockAssistant,
       });
@@ -200,13 +204,13 @@ describe('AssistantService', () => {
       const result = await service.getById('1');
 
       expect(result).toEqual(mockAssistant);
-      expect(global.fetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants/1`);
+      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants/1`);
     });
 
     it('should fallback to local when remote fails', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockRejectedValue(new Error('Fail'));
+      mockFetch.mockRejectedValue(new Error('Fail'));
       mockLocalService.getById.mockResolvedValue(mockAssistant);
 
       const result = await service.getById('1');
@@ -216,19 +220,19 @@ describe('AssistantService', () => {
     });
 
     it('should return undefined if remote returns 404', async () => {
-        service = new AssistantService(agentHubUrl);
+      service = new AssistantService(agentHubUrl);
 
-        // Remote returns 404
-        (global.fetch as any).mockResolvedValue({
-          ok: false,
-          status: 404,
-        });
-
-        const result = await service.getById('1');
-
-        expect(result).toBeUndefined();
-        expect(mockLocalService.getById).not.toHaveBeenCalled();
+      // Remote returns 404
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 404,
       });
+
+      const result = await service.getById('1');
+
+      expect(result).toBeUndefined();
+      expect(mockLocalService.getById).not.toHaveBeenCalled();
+    });
   });
 
   describe('save', () => {
@@ -237,7 +241,7 @@ describe('AssistantService', () => {
     it('should save to remote and sync to local', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => newAssistant,
       });
@@ -246,7 +250,7 @@ describe('AssistantService', () => {
       const result = await service.save(newAssistant);
 
       expect(result).toEqual(newAssistant);
-      expect(global.fetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`, expect.objectContaining({
+      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`, expect.objectContaining({
         method: 'POST',
         body: JSON.stringify(newAssistant),
       }));
@@ -256,7 +260,7 @@ describe('AssistantService', () => {
     it('should save to local only if remote fails', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockRejectedValue(new Error('Fail'));
+      mockFetch.mockRejectedValue(new Error('Fail'));
       mockLocalService.save.mockResolvedValue(newAssistant);
 
       const result = await service.save(newAssistant);
@@ -270,13 +274,13 @@ describe('AssistantService', () => {
     it('should delete from remote and local', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
       });
 
       await service.delete('1');
 
-      expect(global.fetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants/1`, expect.objectContaining({
+      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants/1`, expect.objectContaining({
         method: 'DELETE',
       }));
       expect(mockLocalService.delete).toHaveBeenCalledWith('1');
@@ -285,7 +289,7 @@ describe('AssistantService', () => {
     it('should delete from local if remote fails', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockRejectedValue(new Error('Fail'));
+      mockFetch.mockRejectedValue(new Error('Fail'));
 
       await service.delete('1');
 
@@ -297,7 +301,7 @@ describe('AssistantService', () => {
     it('should search remote when available', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockResolvedValue({
+      mockFetch.mockResolvedValue({
         ok: true,
         json: async () => mockAssistants,
       });
@@ -305,13 +309,13 @@ describe('AssistantService', () => {
       const result = await service.search('query');
 
       expect(result).toEqual(mockAssistants);
-      expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/assistants/search?q=query'));
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/assistants/search?q=query'));
     });
 
     it('should fallback to local search on failure', async () => {
       service = new AssistantService(agentHubUrl);
 
-      (global.fetch as any).mockRejectedValue(new Error('Fail'));
+      mockFetch.mockRejectedValue(new Error('Fail'));
       mockLocalService.search.mockResolvedValue(mockAssistants);
 
       const result = await service.search('query');
@@ -322,17 +326,17 @@ describe('AssistantService', () => {
   });
 
   describe('onRevalidate', () => {
-      it('should delegate to local service', () => {
-          service = new AssistantService();
-          const callback = vi.fn();
-          const unsubscribe = vi.fn();
+    it('should delegate to local service', () => {
+      service = new AssistantService();
+      const callback = vi.fn();
+      const unsubscribe = vi.fn();
 
-          mockLocalService.onRevalidate.mockReturnValue(unsubscribe);
+      mockLocalService.onRevalidate.mockReturnValue(unsubscribe);
 
-          const result = service.onRevalidate(callback);
+      const result = service.onRevalidate(callback);
 
-          expect(mockLocalService.onRevalidate).toHaveBeenCalledWith(callback);
-          expect(result).toBe(unsubscribe);
-      });
+      expect(mockLocalService.onRevalidate).toHaveBeenCalledWith(callback);
+      expect(result).toBe(unsubscribe);
+    });
   });
 });
