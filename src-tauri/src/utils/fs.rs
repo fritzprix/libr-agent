@@ -139,8 +139,22 @@ pub fn extract_zip_secure<R: std::io::Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     target_dir: &Path,
 ) -> Result<(), String> {
+    // Canonicalize target_dir so that starts_with checks are robust against
+    // symlinks present in the target directory path itself
+    let canonical_target_dir = target_dir.canonicalize().map_err(|e| e.to_string())?;
+
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+
+        // Reject symlink entries — extracting them can create symbolic links pointing
+        // outside the target directory, bypassing path validation entirely
+        #[cfg(unix)]
+        if file
+            .unix_mode()
+            .map_or(false, |mode| (mode & 0o170000) == 0o120000)
+        {
+            continue;
+        }
 
         // Use enclosed_name() to validate path against Zip Slip
         let outpath = match file.enclosed_name() {
@@ -151,10 +165,10 @@ pub fn extract_zip_secure<R: std::io::Read + std::io::Seek>(
             }
         };
 
-        let full_path = target_dir.join(&outpath);
+        let full_path = canonical_target_dir.join(&outpath);
 
-        // Double verification: ensure resolved path is within target_dir
-        if !full_path.starts_with(target_dir) {
+        // Double verification: ensure resolved path is within canonical target_dir
+        if !full_path.starts_with(&canonical_target_dir) {
             return Err(format!(
                 "Security violation: Path traversal detected: {}",
                 outpath.display()
