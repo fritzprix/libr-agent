@@ -13,79 +13,15 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 
-#[derive(Debug, PartialEq)]
-enum ToolRouting {
-    Builtin {
-        server_id: String,
-        tool_name: String,
-    },
-    External {
-        server_name: String,
-        tool_name: String,
-    },
-}
+pub mod routing;
+pub mod types;
+pub mod builder;
+pub mod factory;
 
-fn route_tool(tool_name: &str) -> Result<ToolRouting, String> {
-    if tool_name.starts_with("builtin_") {
-        let suffix = tool_name.strip_prefix("builtin_").unwrap();
-        let (tool_id, real_tool_name) = suffix.split_once("__").ok_or_else(|| {
-            format!(
-                "Invalid builtin tool name format (missing '__'): {}",
-                tool_name
-            )
-        })?;
-
-        if tool_id.is_empty() {
-            return Err(format!("Invalid builtin tool ID (empty): {}", tool_name));
-        }
-
-        Ok(ToolRouting::Builtin {
-            server_id: tool_id.to_string(),
-            tool_name: real_tool_name.to_string(),
-        })
-    } else if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
-        Ok(ToolRouting::External {
-            server_name: server_name.to_string(),
-            tool_name: real_tool_name.to_string(),
-        })
-    } else {
-        Err(format!(
-            "Invalid tool name format (expected server__tool): {}",
-            tool_name
-        ))
-    }
-}
-
-/// Configuration for creating an MCPServiceProxy
-#[derive(Debug)]
-pub struct ProxyConfig {
-    /// Unique identifier for the agent session
-    pub session_id: String,
-    /// List of builtin tool IDs to initialize
-    pub tool_ids: Vec<String>,
-    /// Optional Tauri app handle for builtin servers
-    pub app_handle: Option<AppHandle>,
-}
-
-/// Shared manager dependencies for MCPServiceProxy
-#[derive(Debug, Clone)]
-pub struct SharedManagers {
-    /// Shared manager for external MCP servers
-    pub external_mcp: Arc<MCPServerManager>,
-    /// Shared SeaORM database connection
-    pub db: Arc<DatabaseConnection>,
-    /// Shared SessionManager for workspace/content_store
-    pub session_manager: Arc<SessionManager>,
-}
-
-/// Session-specific manager dependencies
-#[derive(Debug, Clone)]
-pub struct SessionManagers {
-    /// Session-specific HTTP manager
-    pub http: Arc<HttpSessionManager>,
-    /// Session-specific Stdio manager
-    pub stdio: Arc<SessionMCPManager>,
-}
+use routing::{route_tool, ToolRouting};
+pub use types::{ProxyConfig, SessionManagers, SharedManagers};
+pub use builder::MCPServiceProxyBuilder;
+use factory::create_builtin_server;
 
 /// Session-specific MCP service proxy
 ///
@@ -118,91 +54,6 @@ pub struct MCPServiceProxy {
     tool_timeout_seconds: u64,
 }
 
-/// Builder for MCPServiceProxy
-pub struct MCPServiceProxyBuilder {
-    session_id: String,
-    tool_ids: Vec<String>,
-    // external_mcp_manager: Arc<MCPServerManager>, // Removed as we use session isolation
-    db: Arc<DatabaseConnection>,
-    session_manager: Arc<SessionManager>,
-    app_handle: Option<AppHandle>,
-    http_manager: Arc<HttpSessionManager>,
-    stdio_manager: Arc<SessionMCPManager>,
-}
-
-impl MCPServiceProxyBuilder {
-    /// Create a new builder with required fields
-    pub fn new(
-        session_id: String,
-        db: Arc<DatabaseConnection>,
-        session_manager: Arc<SessionManager>,
-        http_manager: Arc<HttpSessionManager>,
-        stdio_manager: Arc<SessionMCPManager>,
-    ) -> Self {
-        Self {
-            session_id,
-            tool_ids: Vec::new(),
-            db,
-            session_manager,
-            app_handle: None,
-            http_manager,
-            stdio_manager,
-        }
-    }
-
-    /// Set the tool IDs to initialize
-    pub fn with_tool_ids(mut self, tool_ids: Vec<String>) -> Self {
-        self.tool_ids = tool_ids;
-        self
-    }
-
-    /// Set the app handle
-    pub fn with_app_handle(mut self, app_handle: Option<AppHandle>) -> Self {
-        self.app_handle = app_handle;
-        self
-    }
-
-    /// Build the MCPServiceProxy
-    pub async fn build(self) -> Result<MCPServiceProxy, String> {
-        // Fetch system settings to get timeout configuration
-        let timeout = Self::fetch_tool_timeout().await;
-
-        MCPServiceProxy::create(
-            self.session_id,
-            self.tool_ids,
-            self.db,
-            self.session_manager,
-            self.app_handle,
-            self.http_manager,
-            self.stdio_manager,
-            timeout,
-        )
-        .await
-    }
-
-    /// Helper to fetch tool timeout from system settings in DB
-    async fn fetch_tool_timeout() -> u64 {
-        use crate::repositories::settings_repository::SettingsRepository;
-        use crate::state::get_settings_repository;
-
-        // Use the repository via dependency injection if possible, or global state as fallback
-        // Since we have db connection, we could query directly, but using repo is cleaner.
-        // However, repo requires global state access or instantiation.
-        // Let's use the global repo getter since it's available in this context usually.
-        let repo = get_settings_repository();
-
-        match repo.get("systemSettings").await {
-            Ok(Some(model)) => match serde_json::from_str::<serde_json::Value>(&model.value) {
-                Ok(json) => json
-                    .get("mcpToolTimeoutSeconds")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or_else(crate::config::mcp_tool_call_timeout_seconds),
-                Err(_) => crate::config::mcp_tool_call_timeout_seconds(),
-            },
-            _ => crate::config::mcp_tool_call_timeout_seconds(),
-        }
-    }
-}
 
 impl MCPServiceProxy {
     /// Create a new session-bound proxy using builder
@@ -229,7 +80,7 @@ impl MCPServiceProxy {
 
     /// Internal method to create the proxy (used by builder)
     #[allow(clippy::too_many_arguments)]
-    async fn create(
+    pub(crate) async fn create(
         session_id: String,
         tool_ids: Vec<String>,
         db: Arc<DatabaseConnection>,
@@ -720,142 +571,5 @@ impl MCPServiceProxy {
         );
 
         contexts
-    }
-}
-
-/// Factory function to create session-bound builtin server instances
-///
-/// This function is called during proxy initialization to create dedicated
-/// server instances for the session.
-///
-/// # Arguments
-/// * `tool_id` - The builtin tool identifier (e.g., "knowledge", "planning")
-/// * `session_id` - The session to bind the server to
-/// * `db` - Shared SeaORM database connection
-///
-/// # Returns
-/// * `Ok(Some(Box<dyn BuiltinMCPServer>))` - Server instance
-/// * `Ok(None)` - Unknown tool ID, skip
-/// * `Err(String)` - Server initialization failed
-async fn create_builtin_server(
-    tool_id: &str,
-    _session_id: String,
-    _db: Arc<DatabaseConnection>,
-    _session_manager: Arc<SessionManager>,
-    app_handle: Option<AppHandle>,
-) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
-    match tool_id {
-        "bootstrap" => Ok(Some(Box::new(
-            crate::mcp::builtin::bootstrap::BootstrapServer::new(),
-        ))),
-        "knowledge" => {
-            let assistant_id = get_assistant_id_from_session(&_session_id).await?;
-            Ok(Some(Box::new(
-                crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
-            )))
-        }
-        "planning" => Ok(Some(Box::new(
-            crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
-        ))),
-        "playbook" => Ok(Some(Box::new(
-            crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db).await?,
-        ))),
-        "assistant" => Ok(Some(Box::new(
-            crate::mcp::builtin::assistant::AssistantServer::new(_db).await?,
-        ))),
-        "workspace" => Ok(Some(Box::new(
-            crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
-        ))),
-        "content_store" | "contentstore" => Ok(Some(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(
-                _session_id,
-                _session_manager,
-            ),
-        ))),
-        "ui" => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
-        "browser" => {
-            if let Some(handle) = app_handle {
-                Ok(Some(Box::new(
-                    crate::mcp::builtin::browser::BrowserServer::new(handle, _session_id),
-                )))
-            } else {
-                log::warn!("Browser tool requested but no AppHandle provided (skipping)");
-                Ok(None)
-            }
-        }
-        "mcp_manager" => Ok(Some(Box::new(
-            crate::mcp::builtin::mcp_manager::MCPManagerServer::new(),
-        ))),
-        "swarm" => Ok(Some(Box::new(
-            crate::mcp::builtin::session_api::SessionApiServer::new(),
-        ))),
-        "skills" => Ok(Some(Box::new(
-            crate::mcp::builtin::skills::SkillsServer::new(_session_id),
-        ))),
-        _ => Ok(None), // Unknown tool, skip
-    }
-}
-
-async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-    let session = crate::get_session_repository()
-        .get_session(session_id)
-        .await
-        .map_err(|e| format!("Database error fetching session: {}", e))?
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-    let config_str = session
-        .agent_config
-        .clone()
-        .ok_or_else(|| "Session has no config".to_string())?;
-
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| format!("Invalid session config JSON: {}", e))?;
-
-    config
-        .get("assistant_id")
-        .or_else(|| config.get("assistantId"))
-        .or_else(|| config.get("id"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "No assistant ID in session config".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_builtin_tool_routing() {
-        let tool_name = "builtin_content_store__addContent";
-        let routing = route_tool(tool_name).expect("Parsing failed");
-
-        assert_eq!(
-            routing,
-            ToolRouting::Builtin {
-                server_id: "content_store".to_string(),
-                tool_name: "addContent".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn test_external_tool_routing() {
-        let tool_name = "weather_server__get_forecast";
-        let routing = route_tool(tool_name).expect("Parsing failed");
-
-        assert_eq!(
-            routing,
-            ToolRouting::External {
-                server_name: "weather_server".to_string(),
-                tool_name: "get_forecast".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn test_invalid_tool_name() {
-        assert!(route_tool("builtin_").is_err());
-        assert!(route_tool("builtin_no_separator").is_err());
-        assert!(route_tool("no_separator").is_err());
     }
 }
