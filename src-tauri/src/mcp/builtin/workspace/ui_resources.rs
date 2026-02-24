@@ -35,6 +35,8 @@ pub fn create_html_export_ui(
         .collect::<Vec<_>>()
         .join("");
 
+    let js_file_path = serde_json::to_string(download_path).unwrap_or_else(|_| "''".to_string());
+
     format!(
         r#"<!DOCTYPE html>
 <html>
@@ -143,7 +145,7 @@ pub fn create_html_export_ui(
                     payload: {{
                         toolName: 'tauri:downloadWorkspaceFile',
                         params: {{
-                            filePath: '{}'
+                            filePath: {}
                         }}
                     }}
                 }}, '*');
@@ -192,6 +194,6 @@ pub fn create_html_export_ui(
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
         files.len(),
         files_list,
-        html_escape::encode_text(download_path)
+        js_file_path
     )
 }

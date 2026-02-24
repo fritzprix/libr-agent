@@ -25,3 +25,12 @@
 **Action:**
 
 - **Type Sync:** Enforced strict generic types for `list_available_builtin_server_definitions` (`invoke<BuiltinServerInfo[]>`) and skill management commands (`invoke<string>`), ensuring compile-time safety and 1:1 Rust-TS synchronization.
+
+## 2026-02-24 - Settings IPC Batching
+
+**Problem:** Chatty `updateSettings` calls in `rust-settings-service.ts` triggering multiple parallel `invoke("set_setting")` calls for a single user action, increasing IPC overhead.
+
+**Action:**
+
+- **Batching:** Implemented `update_settings` Tauri command accepting `HashMap<String, Value>` to process multiple setting updates in a single transaction.
+- **Refactor:** Updated `src/lib/services/rust-settings-service.ts` to accumulate changes and send a single `invoke("update_settings")` payload.
