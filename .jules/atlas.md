@@ -15,3 +15,9 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 ## 2025-05-24 - [src-tauri/src/utils/terminal.rs] **Platform Bug:** Windows paths in `cmd` arguments using forward slashes **Resolved:** Normalized paths to force backslashes for `cmd`.
 
 ## 2025-05-24 - [src-tauri/src/mcp/builtin/workspace/persistent_shell.rs] **Robustness:** Unchecked dependency on `bash` **Resolved:** Added explicit existence check (`command -v bash`) before spawning.
+
+## 2026-02-24 - [src-tauri/src/mcp/builtin/workspace/export_operations.rs] **Platform Bug:** Hardcoded forward slashes in path construction. **Resolved:** Replaced string formatting with `PathBuf::join` to respect OS-specific path separators.
+
+## 2026-02-24 - [src-tauri/src/mcp/builtin/workspace/ui_resources.rs] **Platform Bug:** Windows file paths with backslashes caused syntax errors when injected into JavaScript. **Resolved:** Implemented `serde_json::to_string` serialization for safe path injection.
+
+## 2026-02-24 - [src-tauri/src/utils/fs.rs] **Platform Bug:** Linux file manager detection ignored user preference. **Resolved:** Reordered priority to try `xdg-open` first, respecting the desktop environment's default application.
