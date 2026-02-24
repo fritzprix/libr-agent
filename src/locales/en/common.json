@@ -79,6 +79,7 @@
   "settings": {
     "title": "Settings",
     "unsaved": "Unsaved",
+    "saved": "Settings saved successfully",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
