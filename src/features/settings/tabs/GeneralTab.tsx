@@ -202,7 +202,10 @@ function GeneralTabComponent({
                 <span className="text-destructive">
                   {errorMessage
                     ? t('settings.general.error', { message: errorMessage })
-                    : t('settings.general.invalidDirectory', 'Invalid directory')}
+                    : t(
+                        'settings.general.invalidDirectory',
+                        'Invalid directory',
+                      )}
                 </span>
               </>
             )}
