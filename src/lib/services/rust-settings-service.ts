@@ -103,8 +103,8 @@ export class RustSettingsService implements ISettingsService {
 
   async updateSettings(settings: Partial<Settings>): Promise<Settings> {
     try {
-      // We need to save each field individually as per the backend design
-      const promises: Promise<void>[] = [];
+      // Collect all changes into a single object
+      const changes: Record<string, SettingValue> = {};
 
       if (settings.serviceConfigs) {
         // For serviceConfigs, we need to merge with existing
@@ -117,88 +117,46 @@ export class RustSettingsService implements ISettingsService {
           ...currentSettings.serviceConfigs,
           ...settings.serviceConfigs,
         };
-
-        promises.push(
-          invoke('set_setting', {
-            key: 'serviceConfigs',
-            value: newServiceConfigs,
-          }),
-        );
+        changes['serviceConfigs'] = newServiceConfigs;
       }
 
       if (settings.preferredModel) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'preferredModel',
-            value: settings.preferredModel,
-          }),
-        );
+        changes['preferredModel'] = settings.preferredModel;
       }
 
       if (settings.windowSize != null) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'windowSize',
-            value: settings.windowSize,
-          }),
-        );
+        changes['windowSize'] = settings.windowSize;
       }
 
       if (settings.uiLanguage != null) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'uiLanguage',
-            value: settings.uiLanguage,
-          }),
-        );
+        changes['uiLanguage'] = settings.uiLanguage;
       }
 
       if (settings.toolCallGroupVisibleCount != null) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'toolCallGroupVisibleCount',
-            value: settings.toolCallGroupVisibleCount,
-          }),
-        );
+        changes['toolCallGroupVisibleCount'] =
+          settings.toolCallGroupVisibleCount;
       }
 
       if (settings.agentHubUrl != null) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'agentHubUrl',
-            value: settings.agentHubUrl,
-          }),
-        );
+        changes['agentHubUrl'] = settings.agentHubUrl;
       }
 
       if (settings.advanced) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'advancedSettings',
-            value: settings.advanced,
-          }),
-        );
+        changes['advancedSettings'] = settings.advanced;
       }
 
       if (settings.display) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'displaySettings',
-            value: settings.display,
-          }),
-        );
+        changes['displaySettings'] = settings.display;
       }
 
       if (settings.system) {
-        promises.push(
-          invoke('set_setting', {
-            key: 'systemSettings',
-            value: settings.system,
-          }),
-        );
+        changes['systemSettings'] = settings.system;
       }
 
-      await Promise.all(promises);
+      // Perform a single batch update
+      if (Object.keys(changes).length > 0) {
+        await invoke('update_settings', { settings: changes });
+      }
 
       // Return updated settings
       return this.getSettings();
