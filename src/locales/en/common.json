@@ -80,6 +80,8 @@
     "title": "Settings",
     "unsaved": "Unsaved",
     "saved": "Settings saved successfully",
+    "saving": "Saving...",
+    "saveFailed": "Failed to save settings",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",

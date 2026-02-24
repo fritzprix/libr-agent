@@ -5,9 +5,7 @@ import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import type {
-  ServiceConfig,
-} from '@/context/SettingsContext';
+import type { ServiceConfig } from '@/context/SettingsContext';
 import {
   Button,
   Tabs,
@@ -172,7 +170,7 @@ export default function SettingsPage() {
       toast.success(t('settings.saved', 'Settings saved successfully'));
     } catch (e) {
       logger.error('Failed to save settings', e);
-      toast.error(t('common.error', 'Failed to save settings'));
+      toast.error(t('settings.saveFailed', 'Failed to save settings'));
     } finally {
       setIsSaving(false);
     }
@@ -278,7 +276,9 @@ export default function SettingsPage() {
               disabled={!isDirty || isSaving}
               className="h-9 font-medium"
             >
-              {isSaving ? 'Saving...' : t('settings.applyChanges', 'Apply Changes')}
+              {isSaving
+                ? t('settings.saving', 'Saving...')
+                : t('settings.applyChanges', 'Apply Changes')}
             </Button>
           </div>
         </div>

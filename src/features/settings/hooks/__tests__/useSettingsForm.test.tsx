@@ -15,12 +15,6 @@ vi.mock('@/hooks/use-settings', () => ({
   }),
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
-
 describe('useSettingsForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -97,5 +91,27 @@ describe('useSettingsForm', () => {
     expect(mockUpdateGlobal).toHaveBeenCalledWith(expect.objectContaining({
       windowSize: 50
     }));
+  });
+
+  it('should update display settings', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateDisplay('metricDisplayMode', 'tooltip');
+    });
+
+    expect(result.current.formState.display.metricDisplayMode).toBe('tooltip');
+    expect(result.current.isDirty).toBe(true);
+  });
+
+  it('should update system settings', () => {
+    const { result } = renderHook(() => useSettingsForm());
+
+    act(() => {
+      result.current.updateSystem('maxFileUploadSizeMB', 100);
+    });
+
+    expect(result.current.formState.system.maxFileUploadSizeMB).toBe(100);
+    expect(result.current.isDirty).toBe(true);
   });
 });

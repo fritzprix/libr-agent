@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
-import {
-  AIServiceProvider,
+import { AIServiceProvider } from '@/lib/ai-service';
+import type {
   ServiceConfig,
   AdvancedSettings,
   DisplaySettings,
