@@ -38,6 +38,32 @@ export class RemoteAssistantService implements IAssistantService {
     return response.json();
   }
 
+  private isAssistant(obj: unknown): obj is Assistant {
+    return (
+      typeof obj === 'object' &&
+      obj !== null &&
+      'id' in obj &&
+      typeof obj.id === 'string' &&
+      'name' in obj &&
+      typeof obj.name === 'string'
+    );
+  }
+
+  private isPageResponse(data: unknown): data is Page<Assistant> {
+    return (
+      typeof data === 'object' &&
+      data !== null &&
+      'items' in data &&
+      Array.isArray(data.items) &&
+      'page' in data &&
+      typeof data.page === 'number' &&
+      'pageSize' in data &&
+      typeof data.pageSize === 'number' &&
+      'totalItems' in data &&
+      typeof data.totalItems === 'number'
+    );
+  }
+
   async getList(params: PaginationParams): Promise<Page<Assistant>> {
     const url = `${this.baseUrl}/assistants?page=${params.page}&pageSize=${params.pageSize}`;
     const response = await fetch(url);
@@ -47,6 +73,9 @@ export class RemoteAssistantService implements IAssistantService {
     // If the remote API returns a Page<Assistant> shaped object, use it directly.
     // If it returns a plain array (older servers), wrap it into a Page ourselves.
     if (Array.isArray(data)) {
+      if (!data.every((item) => this.isAssistant(item))) {
+        throw new Error('Invalid assistant data in response array');
+      }
       const items = data as Assistant[];
       return {
         items,
@@ -57,6 +86,10 @@ export class RemoteAssistantService implements IAssistantService {
         hasNextPage: false,
         hasPreviousPage: params.page > 1,
       };
+    }
+
+    if (!this.isPageResponse(data)) {
+      throw new Error('Invalid response format from remote server');
     }
 
     // Expect a Page<Assistant> shaped response

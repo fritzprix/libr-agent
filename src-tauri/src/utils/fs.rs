@@ -91,7 +91,8 @@ pub fn open_in_file_manager<P: AsRef<Path>>(path: P) -> Result<(), String> {
 
     #[cfg(target_os = "linux")]
     {
-        let file_managers = ["nautilus", "dolphin", "thunar", "pcmanfm", "xdg-open"];
+        // Prioritize xdg-open which respects the user's default file manager
+        let file_managers = ["xdg-open", "nautilus", "dolphin", "thunar", "pcmanfm"];
         let mut opened = false;
         let mut errors: Vec<String> = Vec::new();
 

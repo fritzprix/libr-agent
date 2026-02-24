@@ -329,9 +329,24 @@ function AdvancedTabComponent({
           }
           className="bg-background border text-foreground w-full max-w-xs p-2 rounded"
         >
-          <option value="basic">Basic - Full PATH access (less secure)</option>
-          <option value="medium">Medium - Restricted PATH (balanced)</option>
-          <option value="high">High - Sandboxed (most secure)</option>
+          <option value="basic">
+            {t(
+              'settings.advanced.shellIsolationModes.basic',
+              'Basic - Full PATH access (less secure)',
+            )}
+          </option>
+          <option value="medium">
+            {t(
+              'settings.advanced.shellIsolationModes.medium',
+              'Medium - Restricted PATH (balanced)',
+            )}
+          </option>
+          <option value="high">
+            {t(
+              'settings.advanced.shellIsolationModes.high',
+              'High - Sandboxed (most secure)',
+            )}
+          </option>
         </select>
         <p className="text-xs text-muted-foreground mt-1">
           {t(
