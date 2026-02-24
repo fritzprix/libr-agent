@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AgentWorkspacePanel } from '../AgentWorkspacePanel';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom';
+import { open } from '@tauri-apps/plugin-dialog';
 
 // Mock dependencies
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -98,36 +99,48 @@ describe('AgentWorkspacePanel', () => {
   });
 
   it('triggers file upload dialog on click', async () => {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-        expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
     });
 
     const uploadZone = screen.getByLabelText('Upload files to workspace');
     fireEvent.click(uploadZone);
 
-    expect(open).toHaveBeenCalledWith({
+    expect(vi.mocked(open)).toHaveBeenCalledWith({
       multiple: true,
       title: 'Select files to upload',
     });
   });
 
   it('triggers file upload dialog on Enter key', async () => {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-        expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
     });
 
     const uploadZone = screen.getByLabelText('Upload files to workspace');
     fireEvent.keyDown(uploadZone, { key: 'Enter' });
 
-    expect(open).toHaveBeenCalledWith({
+    expect(vi.mocked(open)).toHaveBeenCalledWith({
+      multiple: true,
+      title: 'Select files to upload',
+    });
+  });
+
+  it('triggers file upload dialog on Space key', async () => {
+    render(<AgentWorkspacePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+    });
+
+    const uploadZone = screen.getByLabelText('Upload files to workspace');
+    fireEvent.keyDown(uploadZone, { key: ' ' });
+
+    expect(vi.mocked(open)).toHaveBeenCalledWith({
       multiple: true,
       title: 'Select files to upload',
     });

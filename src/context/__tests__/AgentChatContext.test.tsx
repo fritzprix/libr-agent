@@ -255,7 +255,7 @@ describe('AgentChatContext', () => {
 
       // SettingsProvider calls list_settings on initialization
       // But submit should not call any agent-related commands
-      expect(invoke).toHaveBeenCalledWith('list_settings');
+      expect(invoke).toHaveBeenCalledWith('list_settings', {});
       expect(invoke).not.toHaveBeenCalledWith(
         expect.stringMatching(/^agent_/),
         expect.anything(),
@@ -400,7 +400,7 @@ describe('AgentChatContext', () => {
       // and agent_get_service_contexts (from useEffect initialization)
       // retryMessage should not trigger any additional calls
       expect(invoke).toHaveBeenCalledTimes(2);
-      expect(invoke).toHaveBeenCalledWith('list_settings');
+      expect(invoke).toHaveBeenCalledWith('list_settings', {});
       expect(invoke).toHaveBeenCalledWith('agent_get_service_contexts', {
         sessionId: 'test-session',
       });
