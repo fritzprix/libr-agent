@@ -571,17 +571,113 @@ mod tests {
         }
     }
 
+    /// Helper to create a test manager that can run real processes
+    fn create_integration_manager() -> SessionMCPManager {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "test-server".to_string(),
+            MCPServerConfig {
+                name: Some("test-server".to_string()),
+                transport: TransportConfig::Stdio {
+                    command: "python3".to_string(),
+                    args: vec!["tests/mock_server.py".to_string()],
+                    env: HashMap::new(),
+                },
+                authentication: None,
+                metadata: None,
+            },
+        );
+
+        let config = SessionIsolationConfig {
+            idle_timeout_minutes: 5,
+            cleanup_interval_minutes: 5,
+            process_startup_timeout_seconds: 30,
+            max_restart_attempts: 0,
+            http_connection_pool_size: 10,
+        };
+
+        SessionMCPManager::new(
+            "test-session".to_string(),
+            configs,
+            config,
+            std::env::current_dir().unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_lazy_spawn() {
+        let manager = create_integration_manager();
+
+        // 1. Initial state: No processes
+        {
+            let processes = manager.active_processes.read().await;
+            assert_eq!(
+                processes.len(),
+                0,
+                "Should have practically 0 processes initially"
+            );
+        }
+
+        // 2. Trigger spawn
+        let result = manager.ensure_process_running("test-server").await;
+
+        // Skip if python3 or script is missing in environment (CI/CD safety)
+        if let Err(e) = &result {
+            let err_msg = format!("{:?}", e);
+            if err_msg.contains("No such file") || err_msg.contains("not found") {
+                println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
+                return;
+            }
+        }
+
+        assert!(
+            result.is_ok(),
+            "Failed to spawn process: {:?}",
+            result.err()
+        );
+
+        // 3. Verify process exists
+        {
+            let processes = manager.active_processes.read().await;
+            assert_eq!(processes.len(), 1, "Should have 1 process active");
+            assert!(processes.contains_key("test-server"));
+        }
+    }
+
     #[tokio::test]
     async fn test_multiple_spawn_attempts_are_serialized() {
-        // This test verifies that concurrent spawn attempts are properly serialized
-        // and only one process is created
-        let manager = create_test_manager();
+        let manager = create_integration_manager();
 
-        // Check that spawn locks are created per server
-        assert_eq!(manager.spawn_locks.len(), 0);
+        // Spawn multiple tasks trying to start the same server
+        let mut handles = vec![];
+        for _ in 0..5 {
+            let m = manager.clone();
+            handles.push(tokio::spawn(async move {
+                m.ensure_process_running("test-server").await
+            }));
+        }
 
-        // The spawn_locks should be populated on demand during ensure_process_running
-        // This test just verifies the initial state
+        // Wait for all
+        for h in handles {
+            let res = h.await.unwrap();
+            // Skip assertions if environment is missing
+            if let Err(e) = &res {
+                let err_msg = format!("{:?}", e);
+                if err_msg.contains("No such file") || err_msg.contains("not found") {
+                     println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
+                    continue;
+                }
+            }
+            assert!(res.is_ok(), "Concurrent spawn failed: {:?}", res.err());
+        }
+
+        // Verify only 1 process created (if any succeeded)
+        {
+            let processes = manager.active_processes.read().await;
+            if !processes.is_empty() {
+                assert_eq!(processes.len(), 1, "Should definitely still be 1 process");
+            }
+        }
     }
 
     #[test]
