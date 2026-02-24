@@ -68,7 +68,15 @@ pub async fn probe_mcp_server(server_id: String) -> Result<Vec<MCPTool>, String>
         );
     }
 
-    // 7. Disconnect — probe_manager drops here, killing the subprocess automatically
+    // 7. Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
+    if let Err(e) = probe_manager.stop_server(&server_name).await {
+        log::warn!(
+            "[probe] Failed to stop MCP server '{}' cleanly: {}",
+            server_name,
+            e
+        );
+    }
+
     Ok(tools)
 }
 
