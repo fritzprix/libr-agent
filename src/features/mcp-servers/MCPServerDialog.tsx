@@ -107,8 +107,18 @@ function MCPServerDialogComponent({
       'headers' in server.transport &&
       server.transport.headers
     ) {
+      // Keys managed by variableDefinitions (bearer-token uses Authorization, header uses its key)
+      const managedKeys = new Set<string>(['Authorization']);
+      const varDefs = (server.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (varDefs) {
+        Object.entries(varDefs).forEach(([key, def]) => {
+          const target = def.target ?? 'env';
+          if (target === 'header') managedKeys.add(key);
+        });
+      }
       return Object.entries(server.transport.headers)
-        .filter(([key]) => key !== 'Authorization') // Exclude auth header managed by apiKey field
+        .filter(([key]) => !managedKeys.has(key))
         .map(([key, value]) => ({
           id: createId(),
           key,
@@ -851,30 +861,35 @@ function MCPServerDialogComponent({
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="http-api-key">
-                  {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
-                  <span className="text-muted-foreground text-xs">
-                    {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
-                  </span>
-                </Label>
-                <Input
-                  id="http-api-key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={t(
-                    'mcpServer.dialog.apiKeyPlaceholder',
-                    'Secret Token',
-                  )}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'mcpServer.dialog.apiKeyDesc',
-                    "Automatically adds 'Authorization: Bearer <token>' header.",
-                  )}
-                </p>
-              </div>
+              {/* Only show the generic API Key field if no variableDefinitions are defined for this server.
+                  When variableDefinitions exist, all credentials are handled through that section above. */}
+              {!(server.metadata as MCPServerMetadata | undefined)
+                ?.variableDefinitions && (
+                <div className="space-y-2">
+                  <Label htmlFor="http-api-key">
+                    {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
+                    <span className="text-muted-foreground text-xs">
+                      {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
+                    </span>
+                  </Label>
+                  <Input
+                    id="http-api-key"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={t(
+                      'mcpServer.dialog.apiKeyPlaceholder',
+                      'Secret Token',
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'mcpServer.dialog.apiKeyDesc',
+                      "Automatically adds 'Authorization: Bearer <token>' header.",
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* Advanced Settings */}
               <div className="border rounded-md">

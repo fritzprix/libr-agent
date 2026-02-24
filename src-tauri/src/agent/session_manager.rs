@@ -609,6 +609,21 @@ impl AgentSessionManager {
 
         drop(active); // Release the read lock before async call
 
+        // Wait for background tool loading to finish (stdio/HTTP servers are spawned
+        // asynchronously during proxy creation). Up to 60 s to accommodate slow servers.
+        if let Err(e) = self
+            .proxy_manager
+            .wait_until_proxy_ready(session_id, 60)
+            .await
+        {
+            log::warn!(
+                "Proxy readiness wait failed for session '{}': {}",
+                session_id,
+                e
+            );
+            // Continue anyway – partial tool list is better than no list.
+        }
+
         // Use existing collect_available_tools function (same as LLM request)
         crate::agent::tools::collect_available_tools(session_id, &agent_config, &self.proxy_manager)
             .await
