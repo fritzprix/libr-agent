@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.17] - 2026-02-24
+
+### 🚀 Features
+
+- **Assistant session ID propagation**: Update and delete operations on assistants now correctly carry the session ID through the MCP builtin layer, enabling proper per-session assistant state management.
+- **`SkillService` as a standalone service**: Skill resolution, metadata parsing, and CRUD management are now fully extracted into `services/skill_service.rs` — callable without a Tauri app context and independently testable.
+- **Terminal command existence guard**: The terminal launch utility now proactively checks whether the target terminal command exists before spawning, producing a clear error instead of a silent failure.
+
+### 🐛 Fixes
+
+- **MCP server verification robustness**: The server management and verification flow has been refactored to eliminate race conditions and incorrect state transitions during server startup checks.
+- **Download event type corrected**: `UpdateContext` was using a mismatched event type for download progress events, causing update notifications to behave incorrectly in certain cases.
+
+### 🔧 Internal
+
+- **Skill resolution refactored**: Scanning and resolution logic cleaned up for clarity and correctness, with new integration-level tests in `tests/skill_resolution_test.rs` and `tests/skill_parsing_test.rs`.
+- **MCP server management modularized**: `mcp_commands.rs` and related management code restructured to separate concerns between command dispatch, connection lifecycle, and server registry.
+- **`AssistantService` test hardening**: Comprehensive test suite added covering fallback scenarios, pagination edge cases, and mock fetch handling — including coverage for the new session ID paths.
+
 ## [0.5.16] - 2026-02-24
 
 ### 🐛 Fixes
