@@ -571,17 +571,120 @@ mod tests {
         }
     }
 
+    /// Helper to create a test manager that can run real processes
+    fn create_integration_manager() -> SessionMCPManager {
+        let mut configs = HashMap::new();
+        configs.insert(
+            "test-server".to_string(),
+            MCPServerConfig {
+                name: Some("test-server".to_string()),
+                transport: TransportConfig::Stdio {
+                    command: "python3".to_string(),
+                    args: vec!["tests/mock_server.py".to_string()],
+                    env: HashMap::new(),
+                },
+                authentication: None,
+                metadata: None,
+            },
+        );
+
+        let config = SessionIsolationConfig {
+            idle_timeout_minutes: 5,
+            cleanup_interval_minutes: 5,
+            process_startup_timeout_seconds: 30,
+            max_restart_attempts: 0,
+            http_connection_pool_size: 10,
+        };
+
+        SessionMCPManager::new(
+            "test-session".to_string(),
+            configs,
+            config,
+            std::env::current_dir().unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_lazy_spawn() {
+        // Skip if python3 is not available in this environment (CI/CD safety).
+        // Using an upfront check avoids silently passing after all assertions are skipped.
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("Skipping integration test: python3 not available");
+            return;
+        }
+
+        let manager = create_integration_manager();
+
+        // 1. Initial state: No processes
+        {
+            let processes = manager.active_processes.read().await;
+            assert_eq!(
+                processes.len(),
+                0,
+                "Should have practically 0 processes initially"
+            );
+        }
+
+        // 2. Trigger spawn
+        let result = manager.ensure_process_running("test-server").await;
+        assert!(
+            result.is_ok(),
+            "Failed to spawn process: {:?}",
+            result.err()
+        );
+
+        // 3. Verify process exists
+        {
+            let processes = manager.active_processes.read().await;
+            assert_eq!(processes.len(), 1, "Should have 1 process active");
+            assert!(processes.contains_key("test-server"));
+        }
+    }
+
     #[tokio::test]
     async fn test_multiple_spawn_attempts_are_serialized() {
-        // This test verifies that concurrent spawn attempts are properly serialized
-        // and only one process is created
-        let manager = create_test_manager();
+        // Skip if python3 is not available. Checking upfront ensures that if the
+        // dependency is missing, the test skips cleanly rather than silently passing
+        // after all 5 concurrent spawn attempts fail inside the loop.
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            eprintln!("Skipping integration test: python3 not available");
+            return;
+        }
 
-        // Check that spawn locks are created per server
-        assert_eq!(manager.spawn_locks.len(), 0);
+        let manager = create_integration_manager();
 
-        // The spawn_locks should be populated on demand during ensure_process_running
-        // This test just verifies the initial state
+        // Spawn multiple tasks concurrently trying to start the same server
+        let mut handles = vec![];
+        for _ in 0..5 {
+            let m = manager.clone();
+            handles.push(tokio::spawn(async move {
+                m.ensure_process_running("test-server").await
+            }));
+        }
+
+        // All tasks must succeed — python3 is confirmed available above
+        for h in handles {
+            let res = h.await.unwrap();
+            assert!(res.is_ok(), "Concurrent spawn failed: {:?}", res.err());
+        }
+
+        // Verify serialization: exactly 1 process created despite 5 concurrent attempts
+        {
+            let processes = manager.active_processes.read().await;
+            assert_eq!(
+                processes.len(),
+                1,
+                "Should have exactly 1 process despite concurrent spawn attempts"
+            );
+        }
     }
 
     #[test]
