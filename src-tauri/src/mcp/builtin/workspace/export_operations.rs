@@ -103,7 +103,9 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let relative_path = PathBuf::from("exports").join("files").join(&export_filename);
+        let relative_path = PathBuf::from("exports")
+            .join("files")
+            .join(&export_filename);
         let relative_path_str = relative_path.to_string_lossy();
         let source_path_str = path;
 
@@ -356,7 +358,9 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let relative_path = PathBuf::from("exports").join("packages").join(&zip_filename);
+        let relative_path = PathBuf::from("exports")
+            .join("packages")
+            .join(&zip_filename);
         let relative_path_str = relative_path.to_string_lossy();
 
         let uid = cuid2::create_id();
