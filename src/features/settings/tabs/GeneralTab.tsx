@@ -72,7 +72,7 @@ function GeneralTabComponent({
       } catch (error) {
         logger.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
-        setErrorMessage(String(error));
+        setErrorMessage(error instanceof Error ? error.message : String(error));
         setSkills([]);
       }
     }
