@@ -1,6 +1,6 @@
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::session::get_session_manager;
 use crate::state::get_settings_repository;
-use crate::repositories::settings_repository::SettingsRepository;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -80,7 +80,13 @@ pub async fn resolve_skills(
     Ok(global_skills)
 }
 
-pub async fn scan_skills_internal(
+/// Public entry point for scanning a directory without a source tag.
+/// Prefer this over calling `scan_skills_internal` directly from command handlers.
+pub async fn scan_skills_directory(directory: &Path) -> Result<Vec<SkillMetadata>, String> {
+    scan_skills_internal(directory, None).await
+}
+
+pub(crate) async fn scan_skills_internal(
     root_path: &Path,
     source_tag: Option<String>,
 ) -> Result<Vec<SkillMetadata>, String> {
@@ -256,16 +262,27 @@ pub async fn import_assistant_skills(
         .join("assistants")
         .join(&assistant_id)
         .join("skills");
+    let temp_dir = session_manager
+        .get_base_data_dir()
+        .join("temp_import_skills");
 
+    tokio::task::spawn_blocking(move || {
+        import_assistant_skills_blocking(assistant_skills_dir, temp_dir, file_path)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Synchronous implementation of skill import, safe to run inside spawn_blocking.
+fn import_assistant_skills_blocking(
+    assistant_skills_dir: PathBuf,
+    temp_dir: PathBuf,
+    file_path: String,
+) -> Result<String, String> {
     // Ensure assistant skills directory exists
     if !assistant_skills_dir.exists() {
         fs::create_dir_all(&assistant_skills_dir).map_err(|e| e.to_string())?;
     }
-
-    // Use a temp directory for extraction/copying
-    let temp_dir = session_manager
-        .get_base_data_dir()
-        .join("temp_import_skills");
 
     if temp_dir.exists() {
         fs::remove_dir_all(&temp_dir).map_err(|e| e.to_string())?;

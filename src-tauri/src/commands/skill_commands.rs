@@ -52,12 +52,5 @@ pub async fn get_aggregated_skills(
 
 #[tauri::command]
 pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadata>, String> {
-    skill_service::scan_skills_internal(&PathBuf::from(directory), None).await
-}
-
-pub async fn resolve_skills(
-    global_dir: PathBuf,
-    assistant_dir: Option<PathBuf>,
-) -> Result<Vec<SkillMetadata>, String> {
-    skill_service::resolve_skills(global_dir, assistant_dir).await
+    skill_service::scan_skills_directory(&PathBuf::from(directory)).await
 }

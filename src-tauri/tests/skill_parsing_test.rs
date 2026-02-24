@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::Write;
-use tempfile::TempDir;
 use tauri_mcp_agent_lib::services::skill_service::parse_skill_metadata;
+use tempfile::TempDir;
 
 #[test]
 fn test_parse_skill_metadata_valid() {

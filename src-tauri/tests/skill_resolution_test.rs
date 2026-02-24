@@ -152,3 +152,36 @@ async fn test_resolve_skills_multiple_assistant_skills_override_all_global() {
         .iter()
         .all(|s| s.source.as_deref() == Some("assistant")));
 }
+
+#[tokio::test]
+async fn test_resolve_skills_same_name_collision_prefers_assistant() {
+    // When both global and assistant define a skill with identical names,
+    // the override-only semantics must surface the assistant version exclusively.
+    let global = TempDir::new().unwrap();
+    let assistant = TempDir::new().unwrap();
+
+    // Global "Shared Skill"
+    create_skill(
+        global.path(),
+        "shared-skill",
+        "Shared Skill",
+        "Global version",
+    );
+    // Assistant "Shared Skill" — same name, different description
+    create_skill(
+        assistant.path(),
+        "shared-skill",
+        "Shared Skill",
+        "Assistant version",
+    );
+
+    let result = resolve_skills(global.path().to_owned(), Some(assistant.path().to_owned()))
+        .await
+        .unwrap();
+
+    // Override-only: only the assistant copy should appear
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].name, "Shared Skill");
+    assert_eq!(result[0].description, "Assistant version");
+    assert_eq!(result[0].source.as_deref(), Some("assistant"));
+}

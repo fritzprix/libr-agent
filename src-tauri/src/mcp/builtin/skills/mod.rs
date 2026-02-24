@@ -128,7 +128,7 @@ impl BuiltinMCPServer for SkillsServer {
             debug!("Using assistant skills directory: {:?}", dir);
         }
 
-        let mut skills = match crate::commands::skill_commands::resolve_skills(
+        let mut skills = match crate::services::skill_service::resolve_skills(
             global_skills_dir,
             assistant_skills_dir,
         )
