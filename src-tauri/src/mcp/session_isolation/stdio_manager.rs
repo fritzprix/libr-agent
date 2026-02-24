@@ -606,6 +606,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_lazy_spawn() {
+        // Skip if python3 is not available in this environment (CI/CD safety).
+        // Using an upfront check avoids silently passing after all assertions are skipped.
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            println!("Skipping integration test: python3 not available");
+            return;
+        }
+
         let manager = create_integration_manager();
 
         // 1. Initial state: No processes
@@ -620,19 +631,6 @@ mod tests {
 
         // 2. Trigger spawn
         let result = manager.ensure_process_running("test-server").await;
-
-        // Skip if python3 or script is missing in environment (CI/CD safety)
-        if let Err(e) = &result {
-            let err_msg = format!("{:?}", e);
-            if err_msg.contains("No such file") || err_msg.contains("not found") {
-                println!(
-                    "Skipping integration test: python3 or mock_server.py not found/executable: {}",
-                    err_msg
-                );
-                return;
-            }
-        }
-
         assert!(
             result.is_ok(),
             "Failed to spawn process: {:?}",
@@ -649,9 +647,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_spawn_attempts_are_serialized() {
+        // Skip if python3 is not available. Checking upfront ensures that if the
+        // dependency is missing, the test skips cleanly rather than silently passing
+        // after all 5 concurrent spawn attempts fail inside the loop.
+        if std::process::Command::new("python3")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            println!("Skipping integration test: python3 not available");
+            return;
+        }
+
         let manager = create_integration_manager();
 
-        // Spawn multiple tasks trying to start the same server
+        // Spawn multiple tasks concurrently trying to start the same server
         let mut handles = vec![];
         for _ in 0..5 {
             let m = manager.clone();
@@ -660,26 +670,20 @@ mod tests {
             }));
         }
 
-        // Wait for all
+        // All tasks must succeed — python3 is confirmed available above
         for h in handles {
             let res = h.await.unwrap();
-            // Skip assertions if environment is missing
-            if let Err(e) = &res {
-                let err_msg = format!("{:?}", e);
-                if err_msg.contains("No such file") || err_msg.contains("not found") {
-                    println!("Skipping integration test: python3 or mock_server.py not found/executable: {}", err_msg);
-                    continue;
-                }
-            }
             assert!(res.is_ok(), "Concurrent spawn failed: {:?}", res.err());
         }
 
-        // Verify only 1 process created (if any succeeded)
+        // Verify serialization: exactly 1 process created despite 5 concurrent attempts
         {
             let processes = manager.active_processes.read().await;
-            if !processes.is_empty() {
-                assert_eq!(processes.len(), 1, "Should definitely still be 1 process");
-            }
+            assert_eq!(
+                processes.len(),
+                1,
+                "Should have exactly 1 process despite concurrent spawn attempts"
+            );
         }
     }
 
