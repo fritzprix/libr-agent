@@ -191,6 +191,7 @@ export class LLMConfigManager {
       anthropic: 'anthropic',
       groq: 'groq',
       google: 'google-genai',
+      gemini: 'google-genai',
     };
 
     const langchainProvider = providerMap[providerId];
