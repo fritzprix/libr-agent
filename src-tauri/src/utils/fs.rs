@@ -123,6 +123,68 @@ pub fn open_in_file_manager<P: AsRef<Path>>(path: P) -> Result<(), String> {
     Ok(())
 }
 
+/// Securely extracts a ZIP archive to a target directory, protecting against Zip Slip.
+///
+/// This function iterates through the archive and uses `enclosed_name()` to ensure
+/// that file paths are safe and do not escape the target directory.
+///
+/// # Arguments
+/// * `archive` - The source ZIP archive.
+/// * `target_dir` - The destination directory.
+///
+/// # Returns
+/// * `Result<(), String>` - Ok if extraction succeeds, Err if any error occurs.
+pub fn extract_zip_secure<R: std::io::Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    target_dir: &Path,
+) -> Result<(), String> {
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+
+        // Use enclosed_name() to validate path against Zip Slip
+        let outpath = match file.enclosed_name() {
+            Some(path) => path.to_owned(),
+            None => {
+                // Skip invalid paths (containing .. or absolute paths)
+                continue;
+            }
+        };
+
+        let full_path = target_dir.join(&outpath);
+
+        // Double verification: ensure resolved path is within target_dir
+        if !full_path.starts_with(target_dir) {
+            return Err(format!(
+                "Security violation: Path traversal detected: {}",
+                outpath.display()
+            ));
+        }
+
+        if file.name().ends_with('/') {
+            std::fs::create_dir_all(&full_path).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(p) = full_path.parent() {
+                if !p.exists() {
+                    std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
+                }
+            }
+            let mut outfile = std::fs::File::create(&full_path).map_err(|e| e.to_string())?;
+            std::io::copy(&mut file, &mut outfile).map_err(|e| e.to_string())?;
+        }
+
+        // Restore permissions on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Some(mode) = file.unix_mode() {
+                std::fs::set_permissions(&full_path, std::fs::Permissions::from_mode(mode))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
