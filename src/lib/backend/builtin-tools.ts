@@ -1,7 +1,6 @@
 import { safeInvoke } from './core';
-import type { MCPTool, MCPResponse } from '@/lib/mcp';
+import type { MCPTool } from '@/lib/mcp';
 import type { BuiltinServerInfo } from './types';
-import { createId } from '@paralleldrive/cuid2';
 
 // ========================================
 // Built-in Tools
@@ -53,40 +52,4 @@ export async function listAvailableBuiltinServerDefinitions(): Promise<
   return safeInvoke<BuiltinServerInfo[]>(
     'list_available_builtin_server_definitions',
   );
-}
-
-/**
- * Calls a tool on a built-in server.
- * @param serverName The name of the built-in server.
- * @param toolName The name of the tool to call.
- * @param args The arguments to pass to the tool.
- * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
- * @returns A promise that resolves to an `MCPResponse`.
- */
-export async function callBuiltinTool(
-  serverName: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  requestId?: string,
-): Promise<MCPResponse<unknown>> {
-  const id = requestId ?? createId();
-  return safeInvoke<MCPResponse<unknown>>('call_builtin_tool', {
-    serverName,
-    toolName,
-    arguments: args,
-    requestId: id,
-  });
-}
-
-// ========================================
-// Unified Tools API
-// ========================================
-
-/**
- * Lists all tools from all available sources (MCP servers, built-in, etc.)
- * in a unified list.
- * @returns A promise that resolves to a single array of all `MCPTool` objects.
- */
-export async function listAllToolsUnified(): Promise<MCPTool[]> {
-  return safeInvoke<MCPTool[]>('list_all_tools_unified');
 }

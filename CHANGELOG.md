@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.17] - 2026-02-24
+
+### 🚀 Features
+
+- **Assistant session ID propagation**: Update and delete operations on assistants now correctly carry the session ID through the MCP builtin layer, enabling proper per-session assistant state management.
+- **`SkillService` as a standalone service**: Skill resolution, metadata parsing, and CRUD management are now fully extracted into `services/skill_service.rs` — callable without a Tauri app context and independently testable.
+- **Terminal command existence guard**: The terminal launch utility now proactively checks whether the target terminal command exists before spawning, producing a clear error instead of a silent failure.
+
+### 🐛 Fixes
+
+- **MCP server verification robustness**: The server management and verification flow has been refactored to eliminate race conditions and incorrect state transitions during server startup checks.
+- **Download event type corrected**: `UpdateContext` was using a mismatched event type for download progress events, causing update notifications to behave incorrectly in certain cases.
+
+### 🔧 Internal
+
+- **Skill resolution refactored**: Scanning and resolution logic cleaned up for clarity and correctness, with new integration-level tests in `tests/skill_resolution_test.rs` and `tests/skill_parsing_test.rs`.
+- **MCP server management modularized**: `mcp_commands.rs` and related management code restructured to separate concerns between command dispatch, connection lifecycle, and server registry.
+- **`AssistantService` test hardening**: Comprehensive test suite added covering fallback scenarios, pagination edge cases, and mock fetch handling — including coverage for the new session ID paths.
+
 ## [0.5.16] - 2026-02-24
 
 ### 🐛 Fixes
@@ -18,6 +37,8 @@ All notable changes to this project will be documented in this file.
 
 - **`MCPServiceProxyManager` modularization**: The monolithic proxy manager is split into focused submodules (`caching`, `cleanup`, `creation`, `management`) with session locking via `creation_guards`, improving concurrency safety and testability.
 - **`command_exists` extracted to shared platform utils**: Duplicate platform-detection logic consolidated into `src-tauri/src/utils/platform.rs` with tests, eliminating copy-paste across builtin server modules.
+- **Skill resolution is now override-only (breaking change)**: `resolve_skills` previously merged global and assistant skills; it now returns _only_ assistant skills when an assistant has any, with a full fallback to global when none exist. Mixed/merged skill sets are no longer produced.
+- **`SkillService` extraction**: Domain logic for skill resolution, metadata parsing, and management moved from `skill_commands.rs`/`skill_management.rs` into `services/skill_service.rs`, making it testable in isolation without a Tauri app context.
 - **Built-in server definitions migrated**: Preset and skill resolution logic migrated to the new `mcp/presets.rs` backend structure for cleaner separation of concerns.
 
 ## [0.5.15] - 2026-02-23

@@ -56,11 +56,8 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
   const [serverStatus, setServerStatus] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | undefined>(undefined);
   const availableToolsRef = useRef(availableTools);
-  const {
-    getConnectedServers,
-    callMCPTool,
-    sampleFromModel: rustSampleFromModel,
-  } = useRustBackend();
+  const { callMCPTool, sampleFromModel: rustSampleFromModel } =
+    useRustBackend();
 
   const [{ loading: isLoading }, connectServers] = useAsyncFn(
     async (mcpConfig: MCPConfig) => {
@@ -106,12 +103,9 @@ export const MCPServerProvider: React.FC<{ children: ReactNode }> = ({
 
         setAvailableTools(availableTools);
 
-        const connectedServers = await getConnectedServers();
-        for (const serverName of connectedServers) {
-          if (Object.prototype.hasOwnProperty.call(serverStatus, serverName)) {
-            serverStatus[serverName] = true;
-          }
-        }
+        // Server status tracking via getConnectedServers was removed
+        // (deprecated command). rawToolsByServer is always empty in legacy V1,
+        // so all servers remain in their initial false state.
         setServerStatus({ ...serverStatus });
         logger.debug(
           `Total tools loaded: ${availableTools.length} across ${Object.keys(rawToolsByServer).length} servers`,

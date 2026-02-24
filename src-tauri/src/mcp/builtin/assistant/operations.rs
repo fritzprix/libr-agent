@@ -4,7 +4,7 @@ use crate::mcp::builtin::error_guidance::{
     SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::{AssistantRepository, MCPServerRepository};
+use crate::repositories::{AssistantRepository, MCPServerRepository, SessionRepository};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -69,12 +69,16 @@ struct ConfigMergeParams<'a> {
     mcp_servers: Option<&'a Vec<String>>,
 }
 
-/// Merge config from request fields into JSON object
-/// Handles both flat fields and nested config, with legacy v2 field mapping
+/// Merge config from request fields into JSON object.
+/// Handles both flat fields and nested config, with legacy v2 field mapping.
+///
+/// Note: `allowedBuiltInServiceAliases` IS merged here. The self-modification
+/// guard in `update_assistant` / `delete_assistant` is the actual privilege
+/// boundary — an agent can set this field on OTHER assistants (creation /
+/// therapy), just not on itself.
 fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
     let mut config = params.base_config.unwrap_or_else(|| json!({}));
 
-    // Map flat fields to config
     if let Some(v) = params.system_prompt {
         config["systemPrompt"] = json!(v);
     }
@@ -82,20 +86,20 @@ fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
         config["description"] = json!(v);
     }
 
-    // Handle tools (v2) -> allowedBuiltInServiceAliases
+    // Handle tools (v2 legacy) -> allowedBuiltInServiceAliases
     if let Some(v) = params.tools {
         config["allowedBuiltInServiceAliases"] = json!(v);
     }
-    // Handle allowedBuiltInServiceAliases (v1) - takes precedence
+    // allowedBuiltInServiceAliases (v1) takes precedence
     if let Some(v) = params.allowed_builtin_service_aliases {
         config["allowedBuiltInServiceAliases"] = json!(v);
     }
 
-    // Handle mcpServers (v2) and mcpServerIds (v1)
+    // Handle mcpServers (v2 legacy) and mcpServerIds (v1)
     if let Some(v) = params.mcp_servers {
         config["mcpServerIds"] = json!(v);
     }
-    // mcpServerIds (v1) - takes precedence
+    // mcpServerIds (v1) takes precedence
     if let Some(v) = params.mcp_server_ids {
         config["mcpServerIds"] = json!(v);
     }
@@ -249,7 +253,11 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
 }
 
 /// Update an existing assistant
-pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
+pub async fn update_assistant(
+    server: &AssistantServer,
+    args: Value,
+    caller_session_id: Option<String>,
+) -> Result<MCPResult, String> {
     // Parse request with type safety
     let request: UpdateAssistantRequest = serde_json::from_value(args).map_err(|e| {
         log::error!("Failed to parse UpdateAssistantRequest: {}", e);
@@ -278,6 +286,27 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
             ToolGroup::Assistant,
         ));
     };
+
+    // Self-modification guard: an AI agent must not modify the assistant it is
+    // currently running as. That would let it rewrite its own identity and
+    // constraints mid-session.
+    if let Some(ref sid) = caller_session_id {
+        if let Ok(caller_assistant_id) = get_caller_assistant_id(sid).await {
+            if caller_assistant_id == request.id {
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Self-modification is not allowed: an agent cannot update the assistant configuration it is currently running as.",
+                    ToolGroup::Assistant,
+                )
+                .with_guidance(vec![
+                    "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
+                    "If this task requires a different assistant configuration, delegate it: use spawnAgent with the assistantId of an assistant that has the required permissions.".to_string(),
+                    "Use listAssistants to find an assistant suited for this task, then call spawnAgent to hand off the work.".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        }
+    }
 
     // Update name if provided
     if let Some(ref n) = request.name {
@@ -374,8 +403,40 @@ pub async fn update_assistant(server: &AssistantServer, args: Value) -> Result<M
     }
 }
 
+/// Look up which assistant ID is associated with the given session.
+///
+/// Used by the self-modification and self-deletion guards. Returns an error
+/// if the session doesn't exist or has no assistant binding — callers treat
+/// that as "no guard needed" (fail-open is intentional: a session without a
+/// known assistant_id should not be blocked).
+async fn get_caller_assistant_id(session_id: &str) -> Result<String, String> {
+    let session = crate::get_session_repository()
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+    let config_str = session
+        .agent_config
+        .ok_or_else(|| "Session has no agent_config".to_string())?;
+
+    let config: serde_json::Value =
+        serde_json::from_str(&config_str).map_err(|e| format!("Invalid config JSON: {}", e))?;
+
+    config
+        .get("assistant_id")
+        .or_else(|| config.get("assistantId"))
+        .or_else(|| config.get("id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No assistant_id in session config".to_string())
+}
 /// Delete an assistant
-pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<MCPResult, String> {
+pub async fn delete_assistant(
+    server: &AssistantServer,
+    args: Value,
+    caller_session_id: Option<String>,
+) -> Result<MCPResult, String> {
     // Parse request with type safety
     let request: DeleteAssistantRequest = serde_json::from_value(args).map_err(|e| {
         log::error!("Failed to parse DeleteAssistantRequest: {}", e);
@@ -384,6 +445,25 @@ pub async fn delete_assistant(server: &AssistantServer, args: Value) -> Result<M
 
     // Use repository from server's db connection
     let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+
+    // Self-deletion guard: an AI agent must not delete the assistant it is running as.
+    if let Some(ref sid) = caller_session_id {
+        if let Ok(caller_assistant_id) = get_caller_assistant_id(sid).await {
+            if caller_assistant_id == request.id {
+                return Ok(guided_error(
+                    ErrorCategory::PermissionDenied,
+                    "Self-deletion is not allowed: an agent cannot delete the assistant configuration it is currently running as.",
+                    ToolGroup::Assistant,
+                )
+                .with_guidance(vec![
+                    "This restriction prevents an agent from removing its own identity during an active session.".to_string(),
+                    "If this task genuinely requires deleting this assistant, delegate it: use spawnAgent with the assistantId of an assistant that has the required permissions.".to_string(),
+                    "Use listAssistants to find an assistant suited for this task, then call spawnAgent to hand off the work.".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        }
+    }
 
     // Hallucination Firewall: Check existence first
     let exists = repo

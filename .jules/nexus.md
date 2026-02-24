@@ -7,3 +7,9 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** The `workspace_commands.rs` module contained significant business logic for listing files, managing workspace overrides, and platform-specific terminal launching.
 - **Action:** Extracted `WorkspaceService` to handle workspace logic and `utils::terminal` to handle platform-specific terminal operations.
 - **Result:** `workspace_commands.rs` now delegates to these services, adhering to the Single Responsibility Principle.
+
+## 2026-02-23 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** The `skill_commands.rs` and `skill_management.rs` modules contained significant business logic for skill resolution, file system operations, and frontmatter parsing, violating the Separation of Concerns principle.
+- **Action:** Extracted `SkillService` (`src-tauri/src/services/skill_service.rs`) to encapsulate skill-related business logic, including metadata parsing, resolution, and management.
+- **Result:** Command handlers are now thin wrappers delegating to `SkillService`, making the logic testable in isolation and reusable. Integration tests were moved to `src-tauri/tests/` to comply with the library configuration.
