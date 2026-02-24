@@ -365,6 +365,8 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
 
         await waitFor(() => {
+            expect(result.current.sessions).toHaveLength(1);
+            expect(result.current.sessions[0].status).toBe('paused');
             expect(agentEventHandler).toBeDefined();
         });
 
