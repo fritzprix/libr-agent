@@ -79,6 +79,9 @@
   "settings": {
     "title": "설정",
     "unsaved": "미저장",
+    "saved": "설정이 저장되었습니다",
+    "saving": "저장 중...",
+    "saveFailed": "설정 저장에 실패했습니다",
     "applyChanges": "변경사항 적용",
     "language": {
       "label": "언어",

@@ -89,3 +89,13 @@
 
 **Drift:** `README.md` claimed frontend uses simple tool names. `utils.ts` had implicit documentation on naming.
 **Reality:** Agent/Proxy interactions require `builtin_{server}__{tool}` prefix. Updated docs to distinguish between internal (simple) and external (prefixed) naming conventions.
+
+## 2026-03-03 - src/lib/llm-config-manager.ts
+
+**Drift:** Provider map in `getLangchainModelId` missed `gemini` mapping, despite `AIServiceProvider` supporting it.
+**Reality:** Added `gemini: 'google-genai'` mapping to align with type definitions.
+
+## 2026-03-03 - README.md
+
+**Drift:** "Key Built-in Tools" list was missing "Content Store".
+**Reality:** Added "Content Store" to the list of key built-in tools.

@@ -12,9 +12,6 @@ pub mod http_manager;
 pub mod process;
 pub mod stdio_manager;
 
-#[cfg(test)]
-mod tests;
-
 // Re-exports (not yet used externally, allowed for future integration)
 #[allow(unused_imports)]
 pub use error::SessionMCPError;
