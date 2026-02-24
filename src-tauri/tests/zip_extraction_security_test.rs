@@ -94,7 +94,10 @@ fn test_secure_zip_extraction_malicious_path_ignored() {
 
     // Verify the valid file was extracted
     let good_path = temp_dir_path.join("good.txt");
-    assert!(good_path.exists(), "good.txt should exist inside extraction directory");
+    assert!(
+        good_path.exists(),
+        "good.txt should exist inside extraction directory"
+    );
     assert_eq!(fs::read_to_string(&good_path).unwrap(), "Good content");
 
     // Verify the malicious path did NOT create a file outside the extraction directory
