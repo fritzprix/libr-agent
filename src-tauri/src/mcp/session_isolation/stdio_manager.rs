@@ -613,7 +613,7 @@ mod tests {
             .output()
             .is_err()
         {
-            println!("Skipping integration test: python3 not available");
+            eprintln!("Skipping integration test: python3 not available");
             return;
         }
 
@@ -655,7 +655,7 @@ mod tests {
             .output()
             .is_err()
         {
-            println!("Skipping integration test: python3 not available");
+            eprintln!("Skipping integration test: python3 not available");
             return;
         }
 
