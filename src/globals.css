@@ -44,13 +44,14 @@
   --color-sidebar-ring: var(--sidebar-ring);
   /* Progress bar slide animation for MCP server verification */
   --animate-slide: slide 1.2s ease-in-out infinite;
-  @keyframes slide {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(300%);
-    }
+}
+
+@keyframes slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
   }
 }
 
