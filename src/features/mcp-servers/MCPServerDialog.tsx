@@ -38,9 +38,16 @@ interface KeyValuePair {
 
 interface MCPServerMetadata {
   description?: string;
+  logo?: string;
   variableDefinitions?: Record<
     string,
-    { label?: string; description?: string; required?: boolean; type?: string }
+    {
+      label?: string;
+      description?: string;
+      required?: boolean;
+      type?: string;
+      target?: 'env' | 'header' | 'bearer-token' | 'url-param';
+    }
   >;
   [key: string]: unknown;
 }
@@ -100,8 +107,18 @@ function MCPServerDialogComponent({
       'headers' in server.transport &&
       server.transport.headers
     ) {
+      // Keys managed by variableDefinitions (bearer-token uses Authorization, header uses its key)
+      const managedKeys = new Set<string>(['Authorization']);
+      const varDefs = (server.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (varDefs) {
+        Object.entries(varDefs).forEach(([key, def]) => {
+          const target = def.target ?? 'env';
+          if (target === 'header') managedKeys.add(key);
+        });
+      }
       return Object.entries(server.transport.headers)
-        .filter(([key]) => key !== 'Authorization') // Exclude auth header managed by apiKey field
+        .filter(([key]) => !managedKeys.has(key))
         .map(([key, value]) => ({
           id: createId(),
           key,
@@ -121,6 +138,28 @@ function MCPServerDialogComponent({
       return server.transport.enableSSE;
     }
     return true; // Default to true
+  });
+
+  // URL query params state (for url-param variableDefinitions)
+  const [urlParams, setUrlParams] = useState<Record<string, string>>(() => {
+    try {
+      if (
+        ((server.transport.type as string) === 'http' ||
+          server.transport.type === 'http-sse') &&
+        'url' in server.transport &&
+        server.transport.url
+      ) {
+        const urlObj = new URL(server.transport.url);
+        const params: Record<string, string> = {};
+        urlObj.searchParams.forEach((value, key) => {
+          params[key] = value;
+        });
+        return params;
+      }
+    } catch {
+      // invalid URL, ignore
+    }
+    return {};
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -156,7 +195,24 @@ function MCPServerDialogComponent({
       (draft.transport.type as string) === 'http' ||
       draft.transport.type === 'http-sse'
     ) {
-      return !!draft.transport.url.trim();
+      if (!draft.transport.url.trim()) return false;
+      const httpDefs = (server.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (httpDefs) {
+        const missingRequired = Object.entries(httpDefs).some(([key, def]) => {
+          if (!def.required) return false;
+          const target = def.target ?? 'env';
+          if (target === 'bearer-token') return !apiKey.trim();
+          if (target === 'header') {
+            const h = customHeaders.find((c) => c.key === key);
+            return !h || !h.value.trim();
+          }
+          if (target === 'url-param') return !urlParams[key]?.trim();
+          return false;
+        });
+        if (missingRequired) return false;
+      }
+      return true;
     }
 
     return false;
@@ -258,11 +314,24 @@ function MCPServerDialogComponent({
           }
         });
 
+        // Inject url-param values into the URL
+        let finalUrl = (draft.transport as { url: string }).url;
+        try {
+          const urlObj = new URL(finalUrl);
+          Object.entries(urlParams).forEach(([key, val]) => {
+            if (val.trim()) urlObj.searchParams.set(key, val.trim());
+          });
+          finalUrl = urlObj.toString();
+        } catch {
+          // keep original URL if invalid
+        }
+
         const updatedDraft: MCPServerEntity = {
           ...draft,
           transport: {
             ...draft.transport,
             type: 'http-sse',
+            url: finalUrl,
             headers,
             enableSSE: enableSSE,
           } as TransportConfig,
@@ -340,6 +409,36 @@ function MCPServerDialogComponent({
               )}
               rows={2}
             />
+          </div>
+
+          {/* Logo URL */}
+          <div className="space-y-2">
+            <Label htmlFor="server-logo">
+              {t('mcpServer.dialog.logoLabel', 'Logo URL')}
+            </Label>
+            <Input
+              id="server-logo"
+              value={draft.metadata?.logo || ''}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  metadata: {
+                    ...draft.metadata,
+                    logo: e.target.value || undefined,
+                  },
+                })
+              }
+              placeholder={t(
+                'mcpServer.dialog.logoPlaceholder',
+                'https://example.com/logo.png',
+              )}
+            />
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'mcpServer.dialog.logoDesc',
+                'Optional icon URL displayed on the server card',
+              )}
+            </p>
           </div>
 
           {/* Transport Type */}
@@ -680,30 +779,117 @@ function MCPServerDialogComponent({
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="http-api-key">
-                  {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
-                  <span className="text-muted-foreground text-xs">
-                    {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
-                  </span>
-                </Label>
-                <Input
-                  id="http-api-key"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={t(
-                    'mcpServer.dialog.apiKeyPlaceholder',
-                    'Secret Token',
-                  )}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'mcpServer.dialog.apiKeyDesc',
-                    "Automatically adds 'Authorization: Bearer <token>' header.",
-                  )}
-                </p>
-              </div>
+              {/* Required Configuration for HTTP (from variableDefinitions) */}
+              {(server.metadata as MCPServerMetadata | undefined)
+                ?.variableDefinitions && (
+                <div className="space-y-4 p-4 border rounded-md bg-muted/10">
+                  <h4 className="text-sm font-medium">
+                    {t(
+                      'mcpServer.dialog.requiredConfig',
+                      'Required Configuration',
+                    )}
+                  </h4>
+                  {Object.entries(
+                    (server.metadata as MCPServerMetadata)
+                      .variableDefinitions || {},
+                  ).map(([key, def]) => {
+                    const target = def.target ?? 'env';
+                    let currentValue = '';
+                    if (target === 'bearer-token') {
+                      currentValue = apiKey;
+                    } else if (target === 'header') {
+                      currentValue =
+                        customHeaders.find((h) => h.key === key)?.value || '';
+                    } else if (target === 'url-param') {
+                      currentValue = urlParams[key] || '';
+                    }
+                    return (
+                      <div key={key} className="space-y-2">
+                        <Label
+                          htmlFor={`http-var-${key}`}
+                          className="flex gap-1 items-center"
+                        >
+                          {def.label || key}
+                          {def.required && (
+                            <span className="text-destructive">*</span>
+                          )}
+                        </Label>
+                        <Input
+                          id={`http-var-${key}`}
+                          type={def.type === 'password' ? 'password' : 'text'}
+                          value={currentValue}
+                          placeholder={def.label}
+                          onChange={(e) => {
+                            if (target === 'bearer-token') {
+                              setApiKey(e.target.value);
+                            } else if (target === 'header') {
+                              const existing = customHeaders.find(
+                                (h) => h.key === key,
+                              );
+                              if (existing) {
+                                handleUpdateHeader(
+                                  existing.id,
+                                  'value',
+                                  e.target.value,
+                                );
+                              } else {
+                                setCustomHeaders((prev) => [
+                                  ...prev,
+                                  {
+                                    id: createId(),
+                                    key,
+                                    value: e.target.value,
+                                  },
+                                ]);
+                              }
+                            } else if (target === 'url-param') {
+                              setUrlParams((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }));
+                            }
+                          }}
+                        />
+                        {def.description && (
+                          <p className="text-xs text-muted-foreground">
+                            {def.description}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Only show the generic API Key field if no variableDefinitions are defined for this server.
+                  When variableDefinitions exist, all credentials are handled through that section above. */}
+              {!(server.metadata as MCPServerMetadata | undefined)
+                ?.variableDefinitions && (
+                <div className="space-y-2">
+                  <Label htmlFor="http-api-key">
+                    {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
+                    <span className="text-muted-foreground text-xs">
+                      {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
+                    </span>
+                  </Label>
+                  <Input
+                    id="http-api-key"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={t(
+                      'mcpServer.dialog.apiKeyPlaceholder',
+                      'Secret Token',
+                    )}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      'mcpServer.dialog.apiKeyDesc',
+                      "Automatically adds 'Authorization: Bearer <token>' header.",
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* Advanced Settings */}
               <div className="border rounded-md">

@@ -13,12 +13,20 @@ pub fn create_assistant_tool() -> MCPTool {
 2. Verify 'name' is unique
 3. Then call this tool to create
 
-❌ NEVER create without checking for duplicates first".to_string(),
+❌ NEVER create without checking for duplicates first
+
+🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
+session). You can freely create and configure OTHER assistants, including
+setting their 'allowedBuiltInServiceAliases'.".to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "name".to_string(),
                     string_prop_required("Assistant name (Must be unique)"),
+                ),
+                (
+                    "description".to_string(),
+                    string_prop(None, None, Some("Short description shown on the assistant selection card (1-2 sentences)")),
                 ),
                 (
                     "systemPrompt".to_string(),
@@ -28,7 +36,7 @@ pub fn create_assistant_tool() -> MCPTool {
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of allowed built-in service aliases (e.g., 'mcp_manager', 'workspace', 'browser')"),
+                        Some("List of allowed built-in service aliases (e.g., 'workspace', 'browser', 'planning').\nControls which built-in tools this assistant can access."),
                     ),
                 ),
                 (
@@ -58,7 +66,10 @@ pub fn update_assistant_tool() -> MCPTool {
 1. Call getAssistant(id) FIRST to get current config
 2. Extract exact 'id' from response
 3. Include ONLY fields you want to change
-4. Update 'allowedBuiltInServiceAliases' to enable/disable builtin tools".to_string(),
+
+🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
+session). You can freely update ANY OTHER assistant, including setting its
+'allowedBuiltInServiceAliases'.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -70,6 +81,10 @@ pub fn update_assistant_tool() -> MCPTool {
                     string_prop(None, None, Some("New name")),
                 ),
                 (
+                    "description".to_string(),
+                    string_prop(None, None, Some("Short description shown on the assistant selection card (1-2 sentences)")),
+                ),
+                (
                     "systemPrompt".to_string(),
                     string_prop(None, None, Some("New system prompt")),
                 ),
@@ -77,7 +92,7 @@ pub fn update_assistant_tool() -> MCPTool {
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update list of allowed built-in service aliases"),
+                        Some("Update the list of allowed built-in service aliases.\nControls which built-in tools this assistant can access."),
                     ),
                 ),
                 (

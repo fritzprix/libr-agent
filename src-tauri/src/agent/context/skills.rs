@@ -116,7 +116,7 @@ impl ContextProvider for SkillsContextProvider {
         };
 
         // Use resolve_skills to get the correct skills (override-only logic)
-        let skills = crate::commands::skill_commands::resolve_skills(
+        let skills = crate::services::skill_service::resolve_skills(
             std::path::PathBuf::from(global_skills_dir.clone()),
             assistant_skills_dir,
         )

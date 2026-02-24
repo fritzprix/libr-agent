@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 mod operations;
 mod queries;
-mod tools;
+pub mod tools;
 
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -90,7 +90,7 @@ impl BuiltinMCPServer for AssistantServer {
         &self,
         tool_name: &str,
         args: Value,
-        _session_id: Option<String>,
+        session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         log::debug!("Assistant server tool called: {}", tool_name);
 
@@ -98,8 +98,8 @@ impl BuiltinMCPServer for AssistantServer {
 
         match tool_name {
             "createAssistant" => operations::create_assistant(self, args).await,
-            "updateAssistant" => operations::update_assistant(self, args).await,
-            "deleteAssistant" => operations::delete_assistant(self, args).await,
+            "updateAssistant" => operations::update_assistant(self, args, session_id).await,
+            "deleteAssistant" => operations::delete_assistant(self, args, session_id).await,
             "listAssistants" => queries::list_assistants(db, args).await,
             "getAssistant" => queries::get_assistant(db, args).await,
             "searchAssistant" => queries::search_assistant(db, args).await,

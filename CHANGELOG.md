@@ -2,6 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.17] - 2026-02-24
+
+### 🚀 Features
+
+- **Assistant session ID propagation**: Update and delete operations on assistants now correctly carry the session ID through the MCP builtin layer, enabling proper per-session assistant state management.
+- **`SkillService` as a standalone service**: Skill resolution, metadata parsing, and CRUD management are now fully extracted into `services/skill_service.rs` — callable without a Tauri app context and independently testable.
+- **Terminal command existence guard**: The terminal launch utility now proactively checks whether the target terminal command exists before spawning, producing a clear error instead of a silent failure.
+
+### 🐛 Fixes
+
+- **MCP server verification robustness**: The server management and verification flow has been refactored to eliminate race conditions and incorrect state transitions during server startup checks.
+- **Download event type corrected**: `UpdateContext` was using a mismatched event type for download progress events, causing update notifications to behave incorrectly in certain cases.
+
+### 🔧 Internal
+
+- **Skill resolution refactored**: Scanning and resolution logic cleaned up for clarity and correctness, with new integration-level tests in `tests/skill_resolution_test.rs` and `tests/skill_parsing_test.rs`.
+- **MCP server management modularized**: `mcp_commands.rs` and related management code restructured to separate concerns between command dispatch, connection lifecycle, and server registry.
+- **`AssistantService` test hardening**: Comprehensive test suite added covering fallback scenarios, pagination edge cases, and mock fetch handling — including coverage for the new session ID paths.
+
+## [0.5.16] - 2026-02-24
+
+### 🐛 Fixes
+
+- **Tool failure message now shows actual error**: When a tool call fails, the `guided_error` content from the tool result is now surfaced to the user instead of a generic "Unknown error" message, making debugging dramatically more actionable.
+- **RecommendedPresets nested interactive controls**: Refactored `RecommendedPresets` to eliminate nested `<button>` / interactive element violations that caused broken click behavior in the MCP server preset UI.
+- **Localized string defaults**: `SkillsListModal` and `GeneralTab` now fall back to sensible default values when i18n strings are missing, preventing blank labels in non-Korean locales.
+
+### ⚡ Performance
+
+- **`useMessageGrouping` text validation**: Whitespace detection in the message grouping hook is now short-circuit optimized, reducing unnecessary re-computation on large conversation threads.
+
+### 🔧 Internal
+
+- **`MCPServiceProxyManager` modularization**: The monolithic proxy manager is split into focused submodules (`caching`, `cleanup`, `creation`, `management`) with session locking via `creation_guards`, improving concurrency safety and testability.
+- **`command_exists` extracted to shared platform utils**: Duplicate platform-detection logic consolidated into `src-tauri/src/utils/platform.rs` with tests, eliminating copy-paste across builtin server modules.
+- **Skill resolution is now override-only (breaking change)**: `resolve_skills` previously merged global and assistant skills; it now returns _only_ assistant skills when an assistant has any, with a full fallback to global when none exist. Mixed/merged skill sets are no longer produced.
+- **`SkillService` extraction**: Domain logic for skill resolution, metadata parsing, and management moved from `skill_commands.rs`/`skill_management.rs` into `services/skill_service.rs`, making it testable in isolation without a Tauri app context.
+- **Built-in server definitions migrated**: Preset and skill resolution logic migrated to the new `mcp/presets.rs` backend structure for cleaner separation of concerns.
+
+## [0.5.15] - 2026-02-23
+
+### 🚀 Features
+
+- **OTA Auto-Updater**: LibrAgent now checks for new releases in the background on startup. When an update is available, a non-blocking toast notification appears with "Install" / "Later" options. Updates download and install automatically; the app restarts on completion. Powered by `tauri-plugin-updater` against GitHub Releases.
+
+### ⚡ Performance
+
+- **Parallel MCP server initialization**: External stdio and HTTP MCP servers are now initialized concurrently using `JoinSet` instead of sequentially. With N servers configured, startup time now equals the slowest single server rather than N × slowest — a significant improvement once you start stacking up MCP servers.
+
+## [0.5.14] - 2026-02-23
+
+### 🚀 Features
+
+- **Compass: Cross-platform terminal & path standardization**: Unified terminal launch and `PATH` environment variable handling across Windows, macOS, and Linux in the Workspace built-in server — eliminating `local_bin` resolution bugs on non-standard setups.
+- **Session name previews the request**: Session name generation now incorporates a short preview of the initial user request, making session history far easier to scan at a glance.
+
+### 🐛 Fixes
+
+- **`mcp_manager` always enabled**: The `mcp_manager` built-in service was registered as `optional: false` in the registry but absent from `CORE_BUILTIN_SERVICE_ALIASES`, causing agents with an explicit alias list to receive "Built-in server 'mcp_manager' not enabled in this session" errors. Fixed in both the Rust registry array and the TypeScript `ServiceCategory` classification.
+- **Assistant description silently lost on save**: `upsertAssistant()` manually assembled the save object but omitted `description`, `avatar`, and `disabledSkills` fields — every save (including toggling an MCP server) discarded them. All three fields are now preserved. Added a `TextareaWithLabel` description input to `AssistantEditor` General tab so users can set the field directly from the UI.
+- **AI agents unable to set assistant description via MCP tools**: `createAssistant` and `updateAssistant` MCP tool schemas were missing the `description` parameter entirely. Both schemas now declare the field.
+- **Workspace file listing resilience**: Individual entry errors during directory listing are now handled gracefully instead of aborting the entire operation.
+- **Assistant validation schema**: `disabledSkills` is now correctly recognized as an optional field, preventing spurious validation errors when loading existing assistants.
+
+### 🔧 Internal
+
+- **Workspace command decoupling**: Business logic extracted from monolithic `workspace_commands.rs` into `services::WorkspaceService` (file listing, override management) and `utils::terminal` (cross-platform terminal launch). Command handlers now hold zero domain logic.
+- **`AgentChatMessages` hook extraction**: Scroll management and file-refetching logic split into dedicated `useChatScroll` and `useFileRefetcher` hooks, reducing component complexity.
+- **`ErrorBubble` memoization**: Component memoized with a stable `onRetry` callback to prevent unnecessary re-renders in `AgentChatMessages`.
+- **Deprecated `call_tool_unified` removed**: Cleaned up the deprecated unified tool routing path and duplicate MCP tool registrations.
+- **Regression tests**: Added `#[test]` cases for `mcp_manager` core alias correctness, assistant tool schema completeness (`createAssistant`/`updateAssistant`), and assistant serialization round-trip field preservation.
+
 ## [0.5.13] - 2026-02-23
 
 ### 🚀 Features

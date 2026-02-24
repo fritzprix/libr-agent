@@ -91,7 +91,15 @@ impl PersistentShell {
         #[cfg_attr(unix, allow(unused_variables))] shell_type: ShellType,
     ) -> Result<Self> {
         #[cfg(unix)]
-        let mut cmd = Command::new("bash");
+        let mut cmd = {
+            // Verify bash exists using the shared utility
+            if !crate::utils::platform::command_exists("bash") {
+                return Err(anyhow::anyhow!(
+                    "Bash shell not found. Please install bash to use persistent shell features."
+                ));
+            }
+            Command::new("bash")
+        };
         #[cfg(unix)]
         {
             cmd.arg("--norc");
@@ -100,15 +108,21 @@ impl PersistentShell {
             // Fix: Add ~/.local/bin to PATH as it's often missing in non-interactive shells
             // This is critical for pip installed binaries
             if let Ok(home) = std::env::var("HOME") {
-                let local_bin = format!("{}/.local/bin", home);
-                if let Ok(path) = std::env::var("PATH") {
-                    if !path.contains(&local_bin) {
-                        // Prepend to prioritize local binaries
-                        let new_path = format!("{}:{}", local_bin, path);
-                        cmd.env("PATH", new_path);
+                let local_bin = PathBuf::from(home).join(".local").join("bin");
+                let local_bin_str = local_bin.to_string_lossy();
+
+                if let Some(path_os) = std::env::var_os("PATH") {
+                    let path_lossy = path_os.to_string_lossy();
+                    if !path_lossy.contains(local_bin_str.as_ref()) {
+                        // Prepend to prioritize local binaries using standard path manipulation
+                        let mut paths = std::env::split_paths(&path_os).collect::<Vec<_>>();
+                        paths.insert(0, local_bin.clone());
+                        if let Ok(new_path) = std::env::join_paths(paths) {
+                            cmd.env("PATH", new_path);
+                        }
                     }
                 } else {
-                    cmd.env("PATH", local_bin);
+                    cmd.env("PATH", &local_bin);
                 }
             }
 
@@ -565,6 +579,21 @@ impl std::fmt::Debug for PersistentShell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verify that bash is available in the test environment.
+    ///
+    /// This covers the "bash present" path of the existence check added to
+    /// `PersistentShell::new`.  The complementary "bash not found" path
+    /// requires a container/environment without bash and is validated in CI
+    /// through the platform-specific skipped-test mechanism.
+    #[test]
+    #[cfg(unix)]
+    fn test_bash_exists_for_persistent_shell() {
+        assert!(
+            crate::utils::platform::command_exists("bash"),
+            "bash must be present for persistent shell tests to run"
+        );
+    }
 
     #[tokio::test]
     async fn test_basic_command() -> Result<()> {

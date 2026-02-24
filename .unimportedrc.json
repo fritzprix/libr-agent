@@ -47,7 +47,8 @@
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
-    "src/test/setup.ts"
+    "src/test/setup.ts",
+    "src/hooks/__tests__/helpers.ts"
   ],
   "ignoreDependencies": ["handlebars"]
 }

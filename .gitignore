@@ -38,6 +38,9 @@ log_*.txt
 target
 .mcp.json
 
+# Local machine-specific Cargo config (e.g. memory/codegen tuning for low-RAM machines)
+src-tauri/.cargo/
+
 # Additional ignores added on review (caches, local env, coverage, editor/runtime artifacts)
 
 # dotenv files (local/specific env files)

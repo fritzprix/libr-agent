@@ -162,7 +162,10 @@ export function toValidJsName(name: string): string {
 
 /**
  * Extracts the service alias from a built-in tool name.
- * Built-in tools follow the format: `builtin_<alias>__<toolname>`
+ * Parses the proxy-namespaced format: `builtin_<alias>__<toolname>`
+ *
+ * This format is used by `MCPServiceProxy` to route tool calls to the appropriate
+ * session-isolated built-in server instance.
  *
  * IMPORTANT: Service aliases (names) can contain single underscores (e.g., `mcp_manager`, `content_store`)
  * but MUST NOT contain double underscores (`__`) as that is the delimiter between alias and tool name.

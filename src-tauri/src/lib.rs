@@ -11,7 +11,7 @@ pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
 pub mod server;
-mod services;
+pub mod services;
 pub mod session;
 mod session_isolation;
 mod state;
@@ -46,13 +46,9 @@ use commands::log_commands::{
     log_info, log_trace, log_warn,
 };
 use commands::mcp_commands::{
-    call_builtin_tool, call_mcp_tool, check_all_servers_status, check_server_status,
-    complete_oauth_flow, get_connected_servers, get_oauth_token, get_service_context,
-    get_validated_tools, has_oauth_token, list_all_tools, list_all_tools_unified,
-    list_available_builtin_server_definitions, list_builtin_servers,
-    list_builtin_servers_with_metadata, list_builtin_tools, list_mcp_tools, list_tools_from_config,
-    revoke_oauth_token, sample_from_mcp_server, start_mcp_server, start_oauth_flow,
-    stop_mcp_server, validate_tool_schema,
+    get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
+    list_builtin_servers, list_builtin_servers_with_metadata, list_builtin_tools, probe_mcp_server,
+    revoke_oauth_token, validate_tool_schema,
 };
 use commands::mcp_server_config_commands::{
     create_mcp_server_config, delete_mcp_server_config, list_mcp_server_configs,
@@ -137,29 +133,17 @@ pub fn run() {
             .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_updater::Builder::new().build())
             .invoke_handler(tauri::generate_handler![
                 greet,
                 restart_app,
                 list_workspace_files,
-                start_mcp_server,
-                stop_mcp_server,
-                call_mcp_tool,
-                sample_from_mcp_server,
-                list_mcp_tools,
-                list_tools_from_config,
-                get_connected_servers,
-                check_server_status,
-                check_all_servers_status,
-                list_all_tools,
-                get_validated_tools,
+                probe_mcp_server,
                 validate_tool_schema,
                 list_builtin_servers,
                 list_builtin_tools,
                 list_builtin_servers_with_metadata,
                 list_available_builtin_server_definitions,
-                call_builtin_tool,
-                list_all_tools_unified,
-                list_all_tools_unified,
                 // Download commands
                 download_workspace_file,
                 export_and_download_zip,
@@ -198,10 +182,7 @@ pub fn run() {
                 execute_script,
                 navigate_back,
                 navigate_forward,
-                get_service_context,
                 // OAuth 2.1 Authentication commands
-                start_oauth_flow,
-                complete_oauth_flow,
                 has_oauth_token,
                 get_oauth_token,
                 revoke_oauth_token,
@@ -230,7 +211,6 @@ pub fn run() {
                 agent_resume_workflow,
                 agent_terminate_workflow,
                 agent_cancel_workflow,
-                agent_call_builtin_tool,
                 agent_call_builtin_tool,
                 agent_get_service_contexts,
                 agent_inject_messages,
