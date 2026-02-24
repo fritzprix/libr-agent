@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import { getLogger } from '@/lib/logger';
 import {
   DEFAULT_SETTING,
@@ -35,7 +35,7 @@ interface SettingDto {
 export class RustSettingsService implements ISettingsService {
   async getSettings(): Promise<Settings> {
     try {
-      const dtos = await invoke<SettingDto[]>('list_settings');
+      const dtos = await safeInvoke<SettingDto[]>('list_settings');
 
       // Convert list of settings to Settings object
       const settingsMap = new Map<string, SettingValue>();
@@ -155,7 +155,7 @@ export class RustSettingsService implements ISettingsService {
 
       // Perform a single batch update
       if (Object.keys(changes).length > 0) {
-        await invoke('update_settings', { settings: changes });
+        await safeInvoke('update_settings', { settings: changes });
       }
 
       // Return updated settings
