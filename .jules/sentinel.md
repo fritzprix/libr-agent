@@ -1,23 +1,5 @@
-## 2025-05-21 - PowerShell Wrapper Injection
+## 2025-05-24 - Zip Slip in Skill Import
 
-**Vulnerability:** Command injection in PowerShell error handling wrapper due to unsafe string interpolation allowed attackers to escape the try/catch block.
-**Learning:** String interpolation of code into other code (metaprogramming) is inherently unsafe without strict escaping or encoding.
-**Prevention:** Use Base64 encoding to encapsulate dynamic code blocks when passing them to interpreters like PowerShell, preventing syntax manipulation.
-
-## 2025-05-23 - Unrestricted File Read Exposure
-
-**Vulnerability:** The `read_file` Tauri command, exposed to the frontend, allowed arbitrary file reads (absolute paths) without workspace restriction. Although unused, it presented a high-risk attack surface if XSS occurred.
-**Learning:** Dead code in security-sensitive areas (IPC commands) is a latent vulnerability. If a command is not used, it should not be exposed.
-**Prevention:** Audit all exposed IPC commands against actual frontend usage. Deprecate and remove unused commands. Harden `read_dropped_file` to reject hidden files/directories as a heuristic for sensitive configuration.
-
-## 2025-05-22 - Unbounded File Read DoS & TOCTOU
-
-**Vulnerability:** `tokio::fs::read` reads entire files into memory without size checks, enabling DoS. Checking metadata size before reading introduces a TOCTOU race condition if the file grows between check and read.
-**Learning:** Metadata checks are insufficient for limiting resource usage during file I/O because file state is mutable.
-**Prevention:** Use `File::open` combined with `take(limit)` (or `read_to_end` with a capped buffer) to strictly enforce read limits at the I/O operation level.
-
-## 2026-02-19 - File Size Limit Bypass via Append
-
-**Vulnerability:** The `append_file_string` function in `SecureFileManager` did not check if appending content would exceed the configured maximum file size, allowing unbounded file growth beyond `LIBRAGENT_MAX_FILE_SIZE`.
-**Learning:** Append operations must validate the _resulting_ file size (current size + append size), not just the size of the chunk being appended.
-**Prevention:** Always check `current_size + append_size <= max_size` before performing append operations. Use `saturating_add` to prevent integer overflow during size calculation.
+**Vulnerability:** Zip Slip vulnerability in `skill_service.rs` allowed arbitrary file write via malicious ZIP archives during skill import. The `zip::ZipArchive::extract` method (v0.6) does not sanitize paths by default.
+**Learning:** Libraries like `zip` (before recent versions or specific APIs) often default to unsafe behavior for convenience. Always verify if extraction methods sanitize paths.
+**Prevention:** Use `zip::ZipFile::enclosed_name()` to validate paths before extraction. Added `extract_zip_secure` helper in `utils/fs.rs` for safe extraction.
