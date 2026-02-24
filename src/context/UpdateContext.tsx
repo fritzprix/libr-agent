@@ -8,7 +8,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { check, type Update } from '@tauri-apps/plugin-updater';
+import {
+  check,
+  type Update,
+  type DownloadEvent,
+} from '@tauri-apps/plugin-updater';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { safeInvoke } from '@/lib/backend/core';
@@ -134,7 +138,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       let downloaded = 0;
       let total: number | undefined;
 
-      await update.downloadAndInstall((event) => {
+      await update.downloadAndInstall((event: DownloadEvent) => {
         switch (event.event) {
           case 'Started':
             total = event.data.contentLength ?? undefined;
