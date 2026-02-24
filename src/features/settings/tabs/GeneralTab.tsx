@@ -192,7 +192,6 @@ function GeneralTabComponent({
                 <span className="text-success">
                   {t('settings.general.skillsFound', {
                     count: skills.length,
-                    defaultValue: 'Found {{count}} skill',
                   })}
                 </span>
               </button>
@@ -201,8 +200,9 @@ function GeneralTabComponent({
               <>
                 <AlertCircle className="w-4 h-4 text-destructive" />
                 <span className="text-destructive">
-                  {errorMessage ||
-                    t('settings.general.invalidDirectory', 'Invalid directory')}
+                  {errorMessage
+                    ? t('settings.general.error', { message: errorMessage })
+                    : t('settings.general.invalidDirectory', 'Invalid directory')}
                 </span>
               </>
             )}

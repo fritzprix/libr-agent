@@ -86,7 +86,7 @@ function ChatInterfaceTabComponent({
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            Diff Context Lines
+            {t('settings.chatInterface.diffContextLines', 'Diff Context Lines')}
           </label>
           <Input
             type="number"
@@ -103,7 +103,10 @@ function ChatInterfaceTabComponent({
             className="bg-background border text-foreground w-full max-w-xs"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            Number of context lines to show in file edit diffs (1-10).
+            {t(
+              'settings.chatInterface.diffContextLinesDescription',
+              'Number of context lines to show in file edit diffs (1-10).',
+            )}
           </p>
         </div>
       </div>
