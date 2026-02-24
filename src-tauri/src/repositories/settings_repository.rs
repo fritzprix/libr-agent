@@ -15,8 +15,10 @@ pub trait SettingsRepository: Send + Sync {
     async fn set(&self, key: &str, value: Value) -> Result<settings::Model, DbError>;
 
     /// Set multiple settings in a batch (insert or update)
-    async fn set_many(&self, settings: HashMap<String, Value>)
-        -> Result<Vec<settings::Model>, DbError>;
+    async fn set_many(
+        &self,
+        settings: HashMap<String, Value>,
+    ) -> Result<Vec<settings::Model>, DbError>;
 
     /// Delete a setting by key
     async fn delete(&self, key: &str) -> Result<(), DbError>;
