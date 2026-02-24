@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BrainCircuit } from 'lucide-react';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import type {
-  ServiceConfig,
-  AdvancedSettings,
-  DisplaySettings,
-  SystemSettings,
-} from '@/context/SettingsContext';
+import type { ServiceConfig } from '@/context/SettingsContext';
 import {
   Button,
   Tabs,
@@ -26,6 +21,7 @@ import {
   factoryReset as backendFactoryReset,
   clearAllSessions as backendClearAllSessions,
 } from '@/lib/backend/sessions';
+import { useSettingsForm } from './hooks/useSettingsForm';
 import GeneralTab from './tabs/GeneralTab';
 import AIModelsTab from './tabs/AIModelsTab';
 import ChatInterfaceTab from './tabs/ChatInterfaceTab';
@@ -35,35 +31,24 @@ const logger = getLogger('SettingsPage');
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const {
-    value: {
-      serviceConfigs,
-      windowSize,
-      uiLanguage,
-      toolCallGroupVisibleCount,
-      agentHubUrl,
-      advanced,
-      display,
-      system,
-      preferredModel,
-    },
-    update,
-  } = useSettings();
+  // We still need global settings to detect network changes
+  const { value: globalSettings } = useSettings();
   const { t } = useTranslation('common');
 
-  // Store serviceConfigs in ref to avoid callback recreation
-  const serviceConfigsRef = useRef(serviceConfigs);
-  useEffect(() => {
-    serviceConfigsRef.current = serviceConfigs;
-  }, [serviceConfigs]);
+  const {
+    formState,
+    update,
+    updateServiceConfig,
+    updateAdvanced,
+    updateDisplay,
+    updateSystem,
+    save,
+    isDirty,
+  } = useSettingsForm();
 
-  // pending updates are collected here without causing re-renders
-  const pendingRef = useRef<Partial<Record<AIServiceProvider, ServiceConfig>>>(
-    {},
-  );
-  const [pendingCount, setPendingCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const triggerAppRestart = useCallback(() => {
     if (import.meta.env.DEV) {
@@ -149,292 +134,24 @@ export default function SettingsPage() {
     }
   };
 
-  // Local state for window size and language to prevent immediate context updates
-  const [localWindowSize, setLocalWindowSize] = useState(windowSize);
-  const [localLanguage, setLocalLanguage] = useState(uiLanguage);
-  const [localToolCallGroupVisibleCount, setLocalToolCallGroupVisibleCount] =
-    useState(toolCallGroupVisibleCount);
-  const [localAgentHubUrl, setLocalAgentHubUrl] = useState(agentHubUrl || '');
-  const [localAdvancedSettings, setLocalAdvancedSettings] =
-    useState<AdvancedSettings>(
-      advanced || {
-        maxRetries: 1,
-        retryDelay: 5000,
-        circuitBreakerThreshold: 3,
-        diffContextLines: 3,
-        defaultMaxOutputTokens: 8192,
-        defaultSessionMaxDepth: 0,
-        defaultSessionMaxFanout: 0,
-        maxConcurrentActiveSessions: 4,
-        maxSuspendedSessions: 8,
-        maxConcurrentActiveProcesses: 10,
-        maxSuspendedProcesses: 20,
-      },
-    );
-  const [localDisplay, setLocalDisplay] = useState<DisplaySettings>(
-    display || {
-      metricDisplayMode: 'inline',
-      prefillDisplayFormat: 'time',
-      showTokenSpeed: true,
-      compactMetrics: false,
-    },
-  );
-  const [localSystemSettings, setLocalSystemSettings] =
-    useState<SystemSettings>(
-      system || {
-        maxFileUploadSizeMB: 50,
-        workspaceCapacityMB: 10,
-        webActionTimeoutSeconds: 30,
-        httpServerPort: 3030,
-        httpServerExpose: false,
-        searchIndexFrequencyMinutes: 5,
-        activeSessionRetentionHours: 24,
-      },
-    );
+  const handleSave = async () => {
+    if (!isDirty) return;
 
-  const [localPreferredModel, setLocalPreferredModel] = useState<{
-    provider: AIServiceProvider;
-    model: string;
-  }>(
-    preferredModel || {
-      provider: AIServiceProvider.OpenAI,
-      model: 'gpt-4o',
-    },
-  );
-
-  const otherPendingRef = useRef<{
-    windowSize?: number;
-    uiLanguage?: string;
-    toolCallGroupVisibleCount?: number;
-    agentHubUrl?: string;
-    advanced?: AdvancedSettings;
-    display?: DisplaySettings;
-    system?: SystemSettings;
-    preferredModel?: { provider: AIServiceProvider; model: string };
-  }>({});
-
-  // Sync local state with context when context changes (e.g., after Apply or external updates)
-  useEffect(() => {
-    setLocalWindowSize(windowSize);
-  }, [windowSize]);
-
-  useEffect(() => {
-    setLocalLanguage(uiLanguage);
-  }, [uiLanguage]);
-
-  useEffect(() => {
-    setLocalToolCallGroupVisibleCount(toolCallGroupVisibleCount);
-  }, [toolCallGroupVisibleCount]);
-
-  useEffect(() => {
-    setLocalDisplay(display);
-  }, [display]);
-
-  useEffect(() => {
-    if (system) {
-      setLocalSystemSettings(system);
-    }
-  }, [system]);
-
-  useEffect(() => {
-    setLocalAgentHubUrl(agentHubUrl || '');
-  }, [agentHubUrl]);
-
-  useEffect(() => {
-    if (advanced) {
-      setLocalAdvancedSettings(advanced);
-    }
-  }, [advanced]);
-
-  useEffect(() => {
-    if (preferredModel) {
-      setLocalPreferredModel(preferredModel);
-    }
-  }, [preferredModel]);
-
-  const handlePendingChange = useCallback(
-    (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
-      const currentConfig = serviceConfigsRef.current[provider] || {};
-      pendingRef.current = {
-        ...(pendingRef.current || {}),
-        [provider]: {
-          ...(pendingRef.current[provider] || currentConfig),
-          ...patch,
-        },
-      } as Partial<Record<AIServiceProvider, ServiceConfig>>;
-      setPendingCount(
-        Object.keys(pendingRef.current).length +
-          Object.keys(otherPendingRef.current).length,
-      );
-    },
-    [], // No dependencies - using refs
-  );
-
-  const handleWindowSizeChange = useCallback((value: number) => {
-    setLocalWindowSize(value);
-    otherPendingRef.current = {
-      ...otherPendingRef.current,
-      windowSize: value,
-    };
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  }, []);
-
-  const handleLanguageChange = useCallback((lang: string) => {
-    setLocalLanguage(lang);
-    otherPendingRef.current.uiLanguage = lang;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  }, []);
-
-  const handleToolCallGroupVisibleCountChange = useCallback((count: number) => {
-    setLocalToolCallGroupVisibleCount(count);
-    otherPendingRef.current.toolCallGroupVisibleCount = count;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  }, []);
-
-  const handleAgentHubUrlChange = useCallback((url: string) => {
-    setLocalAgentHubUrl(url);
-    otherPendingRef.current.agentHubUrl = url;
-    setPendingCount(
-      Object.keys(pendingRef.current).length +
-        Object.keys(otherPendingRef.current).length,
-    );
-  }, []);
-
-  const handleAdvancedSettingsChange = useCallback(
-    (key: keyof AdvancedSettings, value: number) => {
-      setLocalAdvancedSettings((prev) => {
-        const newSettings = { ...prev, [key]: value };
-        otherPendingRef.current.advanced = newSettings;
-        setPendingCount(
-          Object.keys(pendingRef.current).length +
-            Object.keys(otherPendingRef.current).length,
-        );
-        return newSettings;
-      });
-    },
-    [],
-  );
-
-  const handleDisplaySettingsChange = useCallback(
-    (key: keyof DisplaySettings, value: string | boolean) => {
-      setLocalDisplay((prev) => {
-        const newSettings = { ...prev, [key]: value };
-        otherPendingRef.current.display = newSettings;
-        setPendingCount(
-          Object.keys(pendingRef.current).length +
-            Object.keys(otherPendingRef.current).length,
-        );
-        return newSettings;
-      });
-    },
-    [],
-  );
-
-  const handleSystemSettingsChange = useCallback(
-    (key: keyof SystemSettings, value: number | string | boolean) => {
-      setLocalSystemSettings((prev) => {
-        const newSettings = { ...prev, [key]: value };
-        otherPendingRef.current.system = newSettings;
-        setPendingCount(
-          Object.keys(pendingRef.current).length +
-            Object.keys(otherPendingRef.current).length,
-        );
-        return newSettings;
-      });
-    },
-    [],
-  );
-
-  const handlePreferredModelChange = useCallback(
-    (model: string, provider: string) => {
-      const newVal = { provider: provider as AIServiceProvider, model };
-      setLocalPreferredModel(newVal);
-      otherPendingRef.current.preferredModel = newVal;
-      setPendingCount(
-        Object.keys(pendingRef.current).length +
-          Object.keys(otherPendingRef.current).length,
-      );
-    },
-    [],
-  );
-
-  const flushPending = useCallback(async () => {
-    const pending = pendingRef.current;
-    const otherPending = otherPendingRef.current;
-    if (
-      (!pending || Object.keys(pending).length === 0) &&
-      (!otherPending || Object.keys(otherPending).length === 0)
-    ) {
-      return;
-    }
+    setIsSaving(true);
     try {
-      let networkSettingsChanged = false;
+      // Detect changes that require restart
+      const networkSettingsChanged =
+        formState.system.httpServerPort !==
+          globalSettings.system.httpServerPort ||
+        formState.system.httpServerExpose !==
+          globalSettings.system.httpServerExpose;
 
-      const updates: Partial<{
-        serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
-        windowSize: number;
-        uiLanguage: string;
-        toolCallGroupVisibleCount: number;
-        advanced: AdvancedSettings;
-        display: DisplaySettings;
-        system: SystemSettings;
-        preferredModel: { provider: AIServiceProvider; model: string };
-      }> = {};
-
-      // Merge pending service configs
-      if (pending && Object.keys(pending).length > 0) {
-        const merged: Record<AIServiceProvider, ServiceConfig> = {
-          ...(serviceConfigsRef.current || {}),
-        } as Record<AIServiceProvider, ServiceConfig>;
-
-        for (const k of Object.keys(pending) as Array<AIServiceProvider>) {
-          merged[k] = {
-            ...(merged[k] || {}),
-            ...(pending[k] as ServiceConfig),
-          };
-        }
-        updates.serviceConfigs = merged;
+      // Apply language change side effect
+      if (formState.uiLanguage !== globalSettings.uiLanguage) {
+        i18n.changeLanguage(formState.uiLanguage);
       }
 
-      // Add other pending changes
-      if (otherPending.windowSize !== undefined) {
-        updates.windowSize = otherPending.windowSize;
-      }
-      if (otherPending.uiLanguage !== undefined) {
-        updates.uiLanguage = otherPending.uiLanguage;
-        // Apply i18n language change when applying settings
-        i18n.changeLanguage(otherPending.uiLanguage);
-      }
-      if (otherPending.toolCallGroupVisibleCount !== undefined) {
-        updates.toolCallGroupVisibleCount =
-          otherPending.toolCallGroupVisibleCount;
-      }
-      if (otherPending.advanced) {
-        updates.advanced = otherPending.advanced;
-      }
-      if (otherPending.display) {
-        updates.display = otherPending.display;
-      }
-      if (otherPending.system) {
-        updates.system = otherPending.system;
-        networkSettingsChanged =
-          otherPending.system.httpServerPort !== system.httpServerPort ||
-          otherPending.system.httpServerExpose !== system.httpServerExpose;
-      }
-      if (otherPending.preferredModel) {
-        updates.preferredModel = otherPending.preferredModel;
-      }
-
-      await update(updates);
+      await save();
 
       if (networkSettingsChanged) {
         toast.info(
@@ -450,35 +167,61 @@ export default function SettingsPage() {
           },
         );
       }
-
-      pendingRef.current = {};
-      otherPendingRef.current = {};
-      setPendingCount(0);
+      toast.success(t('settings.saved', 'Settings saved successfully'));
     } catch (e) {
-      logger.error('Failed to apply pending settings', e);
-      throw e;
+      logger.error('Failed to save settings', e);
+      toast.error(t('settings.saveFailed', 'Failed to save settings'));
+    } finally {
+      setIsSaving(false);
     }
-  }, [
-    system.httpServerExpose,
-    system.httpServerPort,
-    t,
-    triggerAppRestart,
-    update,
-  ]);
+  };
 
-  const providerEntries = useMemo(() => {
-    return Object.values(AIServiceProvider).filter(
-      (p) => p !== AIServiceProvider.Empty,
-    ) as AIServiceProvider[];
-  }, []);
+  // Adapters for Tab callbacks
+  const handlePendingChange = useCallback(
+    (provider: AIServiceProvider, patch: Partial<ServiceConfig>) => {
+      updateServiceConfig(provider, patch);
+    },
+    [updateServiceConfig],
+  );
 
-  // Memoize stable props objects to prevent child re-renders
+  const handlePreferredModelChange = useCallback(
+    (model: string, provider: string) => {
+      update('preferredModel', {
+        provider: provider as AIServiceProvider,
+        model,
+      });
+    },
+    [update],
+  );
+
+  const handleWindowSizeChange = useCallback(
+    (value: number) => update('windowSize', value),
+    [update],
+  );
+  const handleToolCallGroupVisibleCountChange = useCallback(
+    (count: number) => update('toolCallGroupVisibleCount', count),
+    [update],
+  );
+  const handleAgentHubUrlChange = useCallback(
+    (url: string) => update('agentHubUrl', url),
+    [update],
+  );
+  const handleLanguageChange = useCallback(
+    (lang: string) => update('uiLanguage', lang),
+    [update],
+  );
+  const handleSkillsDirectoryChange = useCallback(
+    (path: string) => updateSystem('skillsDirectory', path),
+    [updateSystem],
+  );
+
+  // Memoize stable props objects
   const systemSettingsProps = useMemo(
     () => ({
-      localSystemSettings,
-      onChange: handleSystemSettingsChange,
+      localSystemSettings: formState.system,
+      onChange: updateSystem,
     }),
-    [localSystemSettings, handleSystemSettingsChange],
+    [formState.system, updateSystem],
   );
 
   const dangerZoneProps = useMemo(
@@ -490,6 +233,12 @@ export default function SettingsPage() {
     }),
     [isDeleting, isResetting],
   );
+
+  const providerEntries = useMemo(() => {
+    return Object.values(AIServiceProvider).filter(
+      (p) => p !== AIServiceProvider.Empty,
+    ) as AIServiceProvider[];
+  }, []);
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
@@ -510,9 +259,9 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {pendingCount > 0 && (
+            {isDirty && (
               <span className="text-sm text-warning font-medium">
-                {t('settings.unsaved', 'Unsaved')} ({pendingCount})
+                {t('settings.unsaved', 'Unsaved')}
               </span>
             )}
             <Button
@@ -523,11 +272,13 @@ export default function SettingsPage() {
               {t('common.close', 'Close')}
             </Button>
             <Button
-              onClick={flushPending}
-              disabled={pendingCount === 0}
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
               className="h-9 font-medium"
             >
-              {t('settings.applyChanges', 'Apply Changes')}
+              {isSaving
+                ? t('settings.saving', 'Saving...')
+                : t('settings.applyChanges', 'Apply Changes')}
             </Button>
           </div>
         </div>
@@ -552,21 +303,19 @@ export default function SettingsPage() {
 
             <TabsContent value="general">
               <GeneralTab
-                localLanguage={localLanguage}
+                localLanguage={formState.uiLanguage}
                 onChange={handleLanguageChange}
-                skillsDirectory={localSystemSettings.skillsDirectory}
-                onSkillsDirectoryChange={(path) =>
-                  handleSystemSettingsChange('skillsDirectory', path)
-                }
+                skillsDirectory={formState.system.skillsDirectory}
+                onSkillsDirectoryChange={handleSkillsDirectoryChange}
               />
             </TabsContent>
 
             <TabsContent value="ai-models">
               <AIModelsTab
-                serviceConfigs={serviceConfigs}
+                serviceConfigs={formState.serviceConfigs}
                 providerEntries={providerEntries}
-                localPreferredModel={localPreferredModel}
-                localAgentHubUrl={localAgentHubUrl}
+                localPreferredModel={formState.preferredModel}
+                localAgentHubUrl={formState.agentHubUrl || ''}
                 onPendingChange={handlePendingChange}
                 onPreferredModelChange={handlePreferredModelChange}
                 onAgentHubUrlChange={handleAgentHubUrlChange}
@@ -575,23 +324,25 @@ export default function SettingsPage() {
 
             <TabsContent value="chat-interface">
               <ChatInterfaceTab
-                localWindowSize={localWindowSize}
-                localToolCallGroupVisibleCount={localToolCallGroupVisibleCount}
-                localAdvancedSettings={localAdvancedSettings}
-                localDisplay={localDisplay}
+                localWindowSize={formState.windowSize}
+                localToolCallGroupVisibleCount={
+                  formState.toolCallGroupVisibleCount
+                }
+                localAdvancedSettings={formState.advanced}
+                localDisplay={formState.display}
                 onWindowSizeChange={handleWindowSizeChange}
                 onToolCallGroupVisibleCountChange={
                   handleToolCallGroupVisibleCountChange
                 }
-                onAdvancedSettingsChange={handleAdvancedSettingsChange}
-                onDisplaySettingsChange={handleDisplaySettingsChange}
+                onAdvancedSettingsChange={updateAdvanced}
+                onDisplaySettingsChange={updateDisplay}
               />
             </TabsContent>
 
             <TabsContent value="advanced">
               <AdvancedTab
-                localAdvancedSettings={localAdvancedSettings}
-                onChange={handleAdvancedSettingsChange}
+                localAdvancedSettings={formState.advanced}
+                onChange={updateAdvanced}
                 systemSettingsProps={systemSettingsProps}
                 dangerZoneProps={dangerZoneProps}
               />

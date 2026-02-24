@@ -16,7 +16,7 @@ interface ChatInterfaceTabProps {
   ) => void;
   onDisplaySettingsChange: (
     key: keyof DisplaySettings,
-    value: string | boolean,
+    value: DisplaySettings[keyof DisplaySettings],
   ) => void;
 }
 
