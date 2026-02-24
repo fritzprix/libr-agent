@@ -1,5 +1,6 @@
 import { MCPServerEntity } from '@/models/chat';
 import { dbService, dbUtils } from '@/lib/db/service';
+import { upsertMCPServer } from '@/lib/backend/mcp-server-config';
 import { getLogger } from '@/lib/logger';
 import { Page } from '@/lib/db/types';
 
@@ -47,16 +48,18 @@ export class LocalMcpServerService implements IMcpServerService {
   }
 
   async save(server: MCPServerEntity): Promise<MCPServerEntity> {
-    await dbService.mcpServers.upsert(server);
+    // upsertMCPServer returns the saved entity with the DB-assigned ID
+    // (important for new servers where create_mcp_server_config issues a new CUID)
+    const saved = await upsertMCPServer(server);
 
     // Emit revalidation event
     this.emitRevalidate({
       entity: 'mcpServers',
       action: 'save',
-      entityId: server.id,
+      entityId: saved.id,
     });
 
-    return server;
+    return saved;
   }
 
   async saveAll(servers: MCPServerEntity[]): Promise<MCPServerEntity[]> {

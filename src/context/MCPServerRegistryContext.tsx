@@ -31,7 +31,7 @@ export interface MCPServerRegistryContextType {
   error?: string;
 
   // Actions
-  saveServer: (server: MCPServerEntity) => Promise<void>;
+  saveServer: (server: MCPServerEntity) => Promise<MCPServerEntity>;
   deleteServer: (id: string) => Promise<void>;
   toggleActive: (id: string, active: boolean) => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -99,12 +99,14 @@ export const MCPServerRegistryProvider = ({
    * Triggers cache invalidation and change broadcast
    */
   const saveServer = useCallback(
-    async (server: MCPServerEntity) => {
+    async (server: MCPServerEntity): Promise<MCPServerEntity> => {
       try {
-        await mcpServerService.save(server);
+        // save() returns the entity with the DB-assigned ID (crucial for new servers)
+        const saved = await mcpServerService.save(server);
         // No need to manually call refreshAll - event listener will handle it
         await invalidateMCPServerPages();
-        logger.info(`MCP server "${server.name}" saved successfully`);
+        logger.info(`MCP server "${saved.name}" saved successfully`);
+        return saved;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         logger.error('Failed to save MCP server', err);

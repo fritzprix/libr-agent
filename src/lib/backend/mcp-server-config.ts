@@ -80,14 +80,17 @@ export async function listMCPServers(): Promise<MCPServerEntity[]> {
   return dtos.map(deserializeMCPServer);
 }
 
-export async function upsertMCPServer(server: MCPServerEntity): Promise<void> {
+export async function upsertMCPServer(
+  server: MCPServerEntity,
+): Promise<MCPServerEntity> {
   const all = await listMCPServers();
   const exists = all.find((s) => s.name === server.name);
 
   if (exists) {
-    await updateMCPServer(server);
+    return updateMCPServer(server);
   } else {
-    await createMCPServer(server);
+    // createMCPServer returns the DB-assigned ID — must propagate it back
+    return createMCPServer(server);
   }
 }
 
