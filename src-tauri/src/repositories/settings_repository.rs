@@ -1,8 +1,9 @@
 use super::error::DbError;
 use crate::entity::settings;
 use async_trait::async_trait;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set, TransactionTrait};
 use serde_json::Value;
+use std::collections::HashMap;
 
 /// Settings repository trait for abstraction and testability
 #[async_trait]
@@ -12,6 +13,12 @@ pub trait SettingsRepository: Send + Sync {
 
     /// Set a setting (insert or update)
     async fn set(&self, key: &str, value: Value) -> Result<settings::Model, DbError>;
+
+    /// Set multiple settings in a batch (insert or update)
+    async fn set_many(
+        &self,
+        settings: HashMap<String, Value>,
+    ) -> Result<Vec<settings::Model>, DbError>;
 
     /// Delete a setting by key
     async fn delete(&self, key: &str) -> Result<(), DbError>;
@@ -62,6 +69,40 @@ impl SettingsRepository for SqliteSettingsRepository {
         };
 
         Ok(model)
+    }
+
+    async fn set_many(
+        &self,
+        settings: HashMap<String, Value>,
+    ) -> Result<Vec<settings::Model>, DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let txn = self.db.begin().await?;
+
+        let mut results = Vec::new();
+
+        for (key, value) in settings {
+            // Check if exists within transaction
+            let existing = settings::Entity::find_by_id(&key).one(&txn).await?;
+
+            let model = if let Some(existing_model) = existing {
+                let mut active: settings::ActiveModel = existing_model.into();
+                active.value = Set(value.to_string());
+                active.updated_at = Set(now);
+                active.update(&txn).await?
+            } else {
+                let active = settings::ActiveModel {
+                    key: Set(key.to_string()),
+                    value: Set(value.to_string()),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                };
+                active.insert(&txn).await?
+            };
+            results.push(model);
+        }
+
+        txn.commit().await?;
+        Ok(results)
     }
 
     async fn delete(&self, key: &str) -> Result<(), DbError> {
@@ -169,5 +210,35 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].key, "a");
         assert_eq!(list[1].key, "b");
+    }
+
+    #[tokio::test]
+    async fn test_set_many_settings() {
+        let repo = setup_test_db().await;
+
+        let mut settings = std::collections::HashMap::new();
+        settings.insert("key1".to_string(), serde_json::json!("value1"));
+        settings.insert("key2".to_string(), serde_json::json!("value2"));
+
+        let results = repo.set_many(settings).await.expect("Failed to set many");
+        assert_eq!(results.len(), 2);
+
+        // Verify key1
+        let val1 = repo.get("key1").await.expect("Failed to get key1");
+        assert!(val1.is_some());
+        assert_eq!(val1.unwrap().value, "\"value1\"");
+
+        // Verify key2
+        let val2 = repo.get("key2").await.expect("Failed to get key2");
+        assert!(val2.is_some());
+        assert_eq!(val2.unwrap().value, "\"value2\"");
+
+        // Update existing via set_many
+        let mut updates = std::collections::HashMap::new();
+        updates.insert("key1".to_string(), serde_json::json!("updated_value1"));
+        repo.set_many(updates).await.expect("Failed to update many");
+
+        let val1_updated = repo.get("key1").await.expect("Failed to get updated key1");
+        assert_eq!(val1_updated.unwrap().value, "\"updated_value1\"");
     }
 }

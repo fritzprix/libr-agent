@@ -103,7 +103,10 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let relative_path = format!("exports/files/{export_filename}");
+        let relative_path = PathBuf::from("exports")
+            .join("files")
+            .join(&export_filename);
+        let relative_path_str = relative_path.to_string_lossy();
         let source_path_str = path;
 
         let uid = cuid2::create_id();
@@ -116,7 +119,7 @@ impl WorkspaceServer {
             &format!("File Export: {display_name}"),
             &[source_path_str.to_string()],
             "Single File",
-            &relative_path,
+            &relative_path_str,
             &display_name,
         );
 
@@ -125,7 +128,7 @@ impl WorkspaceServer {
             &format!("File Export: {display_name}"),
             &[source_path_str.to_string()],
             "Single File",
-            &relative_path,
+            &relative_path_str,
             html_content,
         );
 
@@ -355,7 +358,10 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let relative_path = format!("exports/packages/{zip_filename}");
+        let relative_path = PathBuf::from("exports")
+            .join("packages")
+            .join(&zip_filename);
+        let relative_path_str = relative_path.to_string_lossy();
 
         let uid = cuid2::create_id();
         let ui_request_id: u64 = uid
@@ -367,7 +373,7 @@ impl WorkspaceServer {
             &format!("ZIP Package: {package_name}"),
             &processed_files,
             "ZIP Package",
-            &relative_path,
+            &relative_path_str,
             &zip_filename,
         );
 
@@ -376,7 +382,7 @@ impl WorkspaceServer {
             &format!("ZIP Package: {package_name}"),
             &processed_files,
             "ZIP Package",
-            &relative_path,
+            &relative_path_str,
             html_content,
         );
 
