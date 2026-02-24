@@ -39,20 +39,29 @@ export class RemoteAssistantService implements IAssistantService {
   }
 
   async getList(params: PaginationParams): Promise<Page<Assistant>> {
-    // Remote API might not support pagination same way, fallback to getAll or implement if API supports
-    // For now assuming getAll and client side pagination or simple proxy
-    // Actually, let's just fetch all for now as remote usually returns all
-    void params; // Explicitly mark as unused but required by interface
-    const all = await this.getAll();
-    return {
-      items: all,
-      page: 1,
-      pageSize: all.length,
-      totalItems: all.length,
-      totalPages: 1,
-      hasNextPage: false,
-      hasPreviousPage: false,
-    };
+    const url = `${this.baseUrl}/assistants?page=${params.page}&pageSize=${params.pageSize}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to fetch assistants page');
+    const data: unknown = await response.json();
+
+    // If the remote API returns a Page<Assistant> shaped object, use it directly.
+    // If it returns a plain array (older servers), wrap it into a Page ourselves.
+    if (Array.isArray(data)) {
+      const items = data as Assistant[];
+      return {
+        items,
+        page: params.page,
+        pageSize: params.pageSize,
+        totalItems: items.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: params.page > 1,
+      };
+    }
+
+    // Expect a Page<Assistant> shaped response
+    const page = data as Page<Assistant>;
+    return page;
   }
 
   async search(query: string, limit = 10): Promise<Assistant[]> {

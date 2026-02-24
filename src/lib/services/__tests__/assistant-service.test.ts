@@ -147,6 +147,30 @@ describe('AssistantService', () => {
       expect(mockFetch).toHaveBeenCalled();
       expect(mockLocalService.getAll).toHaveBeenCalled();
     });
+
+    it('should fallback to local getAll when remote succeeds but local saveAll fails', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      // Remote fetch succeeds
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => mockAssistants,
+      });
+
+      // Local saveAll throws — simulates a DB write failure
+      mockLocalService.saveAll.mockRejectedValue(new Error('DB write error'));
+
+      // Local getAll returns stale data as fallback
+      const staleAssistants = [createMockAssistant('0', 'Stale Assistant')];
+      mockLocalService.getAll.mockResolvedValue(staleAssistants);
+
+      const result = await service.getAll();
+
+      // Returns stale local data, NOT the fresh remote data
+      expect(result).toEqual(staleAssistants);
+      expect(mockLocalService.saveAll).toHaveBeenCalledWith(mockAssistants);
+      expect(mockLocalService.getAll).toHaveBeenCalled();
+    });
   });
 
   describe('getList', () => {
@@ -171,10 +195,41 @@ describe('AssistantService', () => {
 
       await service.getList(params);
 
-      // Verify remote fetch was called
-      expect(mockFetch).toHaveBeenCalledWith(`${agentHubUrl}/assistants`);
-      // Verify local sync was NOT called (based on previous investigation of code)
+      // Verify pagination params are passed as query string to remote
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${agentHubUrl}/assistants?page=${params.page}&pageSize=${params.pageSize}`,
+      );
+      // No local sync for getList
       expect(mockLocalService.saveAll).not.toHaveBeenCalled();
+    });
+
+    it('should return Page-shaped response when remote returns a Page object', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => mockPage,
+      });
+
+      const result = await service.getList(params);
+
+      expect(result).toEqual(mockPage);
+    });
+
+    it('should wrap plain array response into a Page when remote returns an array', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      // Older remote servers may return a plain array instead of a Page object
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => mockAssistants,
+      });
+
+      const result = await service.getList(params);
+
+      expect(result.items).toEqual(mockAssistants);
+      expect(result.page).toBe(params.page);
+      expect(result.pageSize).toBe(params.pageSize);
     });
 
     it('should fallback to local when remote fails', async () => {
@@ -233,6 +288,23 @@ describe('AssistantService', () => {
       expect(result).toBeUndefined();
       expect(mockLocalService.getById).not.toHaveBeenCalled();
     });
+
+    it('should fallback to local when remote returns non-404 error status', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      // Remote returns 500 — RemoteAssistantService throws, AssistantService catches and falls back
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      mockLocalService.getById.mockResolvedValue(mockAssistant);
+
+      const result = await service.getById('1');
+
+      expect(result).toEqual(mockAssistant);
+      expect(mockLocalService.getById).toHaveBeenCalledWith('1');
+    });
   });
 
   describe('save', () => {
@@ -270,6 +342,48 @@ describe('AssistantService', () => {
     });
   });
 
+  describe('saveAll', () => {
+    it('should save all to local when no remote service', async () => {
+      service = new AssistantService();
+      mockLocalService.saveAll.mockResolvedValue(mockAssistants);
+
+      const result = await service.saveAll(mockAssistants);
+
+      expect(result).toEqual(mockAssistants);
+      expect(mockLocalService.saveAll).toHaveBeenCalledWith(mockAssistants);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('should save all to remote and sync to local on success', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      // RemoteAssistantService.saveAll calls save() sequentially — mock each POST
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => mockAssistants[0],
+      });
+      mockLocalService.saveAll.mockResolvedValue(mockAssistants);
+
+      const result = await service.saveAll(mockAssistants);
+
+      expect(mockFetch).toHaveBeenCalled();
+      expect(mockLocalService.saveAll).toHaveBeenCalled();
+      expect(result).toBeDefined();
+    });
+
+    it('should fallback to local saveAll when remote fails', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      mockFetch.mockRejectedValue(new Error('Fail'));
+      mockLocalService.saveAll.mockResolvedValue(mockAssistants);
+
+      const result = await service.saveAll(mockAssistants);
+
+      expect(result).toEqual(mockAssistants);
+      expect(mockLocalService.saveAll).toHaveBeenCalledWith(mockAssistants);
+    });
+  });
+
   describe('delete', () => {
     it('should delete from remote and local', async () => {
       service = new AssistantService(agentHubUrl);
@@ -293,6 +407,24 @@ describe('AssistantService', () => {
 
       await service.delete('1');
 
+      expect(mockLocalService.delete).toHaveBeenCalledWith('1');
+    });
+
+    it('should still delete from local when remote succeeds but local delete fails', async () => {
+      service = new AssistantService(agentHubUrl);
+
+      // Remote delete succeeds
+      mockFetch.mockResolvedValue({ ok: true });
+
+      // Local delete fails on first call (after remote), succeeds on retry (in catch)
+      mockLocalService.delete
+        .mockRejectedValueOnce(new Error('Local DB error'))
+        .mockResolvedValueOnce(undefined);
+
+      await service.delete('1');
+
+      // delete was called twice: once in try block, once in catch block
+      expect(mockLocalService.delete).toHaveBeenCalledTimes(2);
       expect(mockLocalService.delete).toHaveBeenCalledWith('1');
     });
   });
