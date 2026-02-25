@@ -52,3 +52,8 @@
 **Split:** `creation.rs`, `management.rs`, `cleanup.rs`, `caching.rs`, `test_helpers.rs`, `mod.rs`
 **Result:** Reduced from 998 lines to ~100 lines (struct definition and re-exports).
 **Improvement:** Decoupled session-specific proxy management logic (creation, lifecycle, cleanup) from the main struct definition. Separated background task logic and test helpers into dedicated modules, improving readability and maintainability.
+
+## 2026-03-02 - src-tauri/src/mcp/service_proxy.rs
+
+**Split:** `src-tauri/src/mcp/service_proxy/` (`routing.rs`, `types.rs`, `builder.rs`, `factory.rs`, `mod.rs`)
+**Improvement:** Decoupled routing logic, configuration types, builder pattern, and factory creation from the main proxy logic. Reduced the main file size significantly and improved modularity and testability.

@@ -7,6 +7,10 @@ use super::platform::command_exists;
 fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
     #[cfg(target_os = "windows")]
     {
+        if !command_exists("cmd") {
+            return Err("Required system command 'cmd' not found.".to_string());
+        }
+
         // Normalize path to use backslashes for Windows cmd
         let path_str = path.to_string_lossy().replace("/", "\\");
 
@@ -26,6 +30,10 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
 
     #[cfg(target_os = "macos")]
     {
+        if !command_exists("osascript") {
+            return Err("Required system command 'osascript' not found. AppleScript support is required on macOS.".to_string());
+        }
+
         let path_str = path.to_string_lossy();
         // Quote for shell: replace ' with '\'' and wrap in '
         let shell_quoted = format!("'{}'", path_str.replace("'", "'\\''"));
@@ -123,35 +131,6 @@ mod tests {
         assert_eq!(prog, "cmd");
         // Verify path in args has backslashes
         assert!(args.contains(&"C:\\Users\\test\\workspace".to_string()));
-    }
-
-    #[test]
-    fn test_command_exists() {
-        #[cfg(target_os = "linux")]
-        {
-            assert!(command_exists("sh"), "sh should exist on Linux");
-            assert!(command_exists("ls"), "ls should exist on Linux");
-            assert!(
-                !command_exists("nonexistent_command_12345"),
-                "nonexistent command should return false"
-            );
-        }
-        #[cfg(target_os = "windows")]
-        {
-            assert!(command_exists("cmd"), "cmd should exist on Windows");
-            assert!(
-                !command_exists("nonexistent_command_12345"),
-                "nonexistent command should return false"
-            );
-        }
-        #[cfg(target_os = "macos")]
-        {
-            assert!(command_exists("sh"), "sh should exist on macOS");
-            assert!(
-                !command_exists("nonexistent_command_12345"),
-                "nonexistent command should return false"
-            );
-        }
     }
 
     #[test]

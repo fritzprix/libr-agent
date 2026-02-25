@@ -35,22 +35,11 @@ export {
 
 // MCP server management
 export {
-  startServer,
-  stopServer,
   callTool,
-  listTools,
-  listToolsFromConfig,
-  startOAuthFlow,
-  completeOAuthFlow,
   hasOAuthToken,
   getOAuthToken,
   revokeOAuthToken,
-  getConnectedServers,
-  checkServerStatus,
-  checkAllServersStatus,
   sampleFromModel,
-  listAllTools,
-  getValidatedTools,
   validateToolSchema,
 } from './mcp-server';
 
@@ -60,8 +49,6 @@ export {
   listBuiltinTools,
   listBuiltinServersWithMetadata,
   listAvailableBuiltinServerDefinitions,
-  callBuiltinTool,
-  listAllToolsUnified,
 } from './builtin-tools';
 
 // Browser operations

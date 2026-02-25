@@ -2,6 +2,7 @@ use crate::repositories::settings_repository::SettingsRepository;
 use crate::state::get_settings_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use tauri::command;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +33,16 @@ pub async fn set_setting(key: String, value: Value) -> Result<SettingDto, String
         .await
         .map_err(|e| format!("Failed to set setting: {}", e))?;
     Ok(model.into())
+}
+
+#[command]
+pub async fn update_settings(settings: HashMap<String, Value>) -> Result<Vec<SettingDto>, String> {
+    let repo = get_settings_repository();
+    let models = repo
+        .set_many(settings)
+        .await
+        .map_err(|e| format!("Failed to update settings: {}", e))?;
+    Ok(models.into_iter().map(|s| s.into()).collect())
 }
 
 #[command]

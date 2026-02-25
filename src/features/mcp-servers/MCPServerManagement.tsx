@@ -36,6 +36,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    verificationStatus,
     handleCreateNew,
     handleSetupPreset,
     handleSave,
@@ -86,6 +87,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                   onEdit={setEditingServer}
                   onDelete={handleDelete}
                   onToggleActive={handleToggleActive}
+                  verificationStatus={verificationStatus[server.id]}
                 />
               ))}
             </div>

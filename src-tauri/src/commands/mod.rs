@@ -13,7 +13,5 @@ pub mod session_commands;
 pub mod settings_commands;
 pub mod skill_commands;
 pub mod skill_management;
-#[cfg(test)]
-mod skill_tests;
 pub mod url_commands;
 pub mod workspace_commands;

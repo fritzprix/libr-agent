@@ -219,11 +219,8 @@ pub async fn handle_llm_response(
     });
 
     // Parse tool calls
-    let tool_calls: Vec<ToolCall> = if let Some(tool_calls_vec) = &assistant_message.tool_calls {
-        tool_calls_vec.clone()
-    } else {
-        Vec::new()
-    };
+    // ⚡ Bolt: Use take() to move the vector out of the struct instead of cloning it, saving a deep copy.
+    let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
         // Check if content is also empty (abnormal empty response)
@@ -439,8 +436,8 @@ pub async fn handle_llm_response(
         let app_handle_clone = app_handle.clone();
         let proxy_manager_clone = proxy_manager.clone();
         let session_id_clone = session_id.clone();
-        let tool_calls_clone = tool_calls.clone();
 
+        // ⚡ Bolt: Move tool_calls into the async block instead of cloning it.
         tokio::spawn(async move {
             tool_execution::execute_tool_calls(
                 session_repo_clone,
@@ -448,7 +445,7 @@ pub async fn handle_llm_response(
                 proxy_manager_clone,
                 app_handle_clone,
                 session_id_clone,
-                tool_calls_clone,
+                tool_calls,
             )
             .await;
         });

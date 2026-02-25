@@ -1,17 +1,7 @@
 import * as client from '@/lib/backend';
-import type {
-  MCPTool,
-  MCPServerConfig,
-  MCPConfig,
-  SamplingOptions,
-  SamplingResponse,
-} from '@/lib/mcp';
+import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import type { MCPResponse } from '@/lib/mcp/protocol';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
-import type {
-  ServiceContext,
-  ServiceContextOptions,
-} from '@/features/mcp/types';
 
 // Workspace types
 export type { WorkspaceFileItem } from '@/lib/backend';
@@ -42,23 +32,12 @@ export interface RustBackendAPI {
   ) => Promise<void>;
 
   // MCP Server Management
-  startMCPServer: (config: MCPServerConfig) => Promise<string>;
-  stopMCPServer: (serverName: string) => Promise<void>;
   callMCPTool: (
     serverName: string,
     toolName: string,
     args: Record<string, unknown>,
     requestId?: string,
   ) => Promise<MCPResponse<unknown>>;
-  listMCPTools: (serverName: string) => Promise<MCPTool[]>;
-  listToolsFromConfig: (
-    config: MCPConfig,
-  ) => Promise<Record<string, MCPTool[]>>;
-  getConnectedServers: () => Promise<string[]>;
-  checkServerStatus: (serverName: string) => Promise<boolean>;
-  checkAllServersStatus: () => Promise<Record<string, boolean>>;
-  listAllTools: () => Promise<MCPTool[]>;
-  getValidatedTools: (serverName: string) => Promise<MCPTool[]>;
   validateToolSchema: (tool: MCPTool) => Promise<void>;
 
   // Built-in Tools
@@ -68,14 +47,6 @@ export interface RustBackendAPI {
   listAvailableBuiltinServerDefinitions: () => Promise<
     client.BuiltinServerInfo[]
   >;
-  callBuiltinTool: (
-    serverName: string,
-    toolName: string,
-    args: Record<string, unknown>,
-  ) => Promise<MCPResponse<unknown>>;
-
-  // Unified Tools API
-  listAllToolsUnified: () => Promise<MCPTool[]>;
 
   // File System Operations (returns number[] representing bytes)
   registerDroppedFiles: (paths: string[]) => Promise<void>;
@@ -101,12 +72,6 @@ export interface RustBackendAPI {
     packageName: string,
     sessionId: string,
   ) => Promise<string>;
-
-  // Service Context
-  getServiceContext: (
-    serverId: string,
-    options?: ServiceContextOptions,
-  ) => Promise<ServiceContext<unknown>>;
 
   // Utility
   greet: (name: string) => Promise<string>;
@@ -136,16 +101,7 @@ const backendAPI: RustBackendAPI = {
   openWorkspaceFileWithDefaultApp: client.openWorkspaceFileWithDefaultApp,
 
   // MCP Server Management
-  startMCPServer: client.startServer,
-  stopMCPServer: client.stopServer,
   callMCPTool: client.callTool,
-  listMCPTools: client.listTools,
-  listToolsFromConfig: client.listToolsFromConfig,
-  getConnectedServers: client.getConnectedServers,
-  checkServerStatus: client.checkServerStatus,
-  checkAllServersStatus: client.checkAllServersStatus,
-  listAllTools: client.listAllTools,
-  getValidatedTools: client.getValidatedTools,
   validateToolSchema: client.validateToolSchema,
 
   // Built-in Tools
@@ -154,10 +110,6 @@ const backendAPI: RustBackendAPI = {
   listBuiltinServersWithMetadata: client.listBuiltinServersWithMetadata,
   listAvailableBuiltinServerDefinitions:
     client.listAvailableBuiltinServerDefinitions,
-  callBuiltinTool: client.callBuiltinTool,
-
-  // Unified Tools API
-  listAllToolsUnified: client.listAllToolsUnified,
 
   // File System Operations
   registerDroppedFiles: client.registerDroppedFiles,
@@ -176,9 +128,6 @@ const backendAPI: RustBackendAPI = {
   // File Download Operations
   downloadWorkspaceFile: client.downloadWorkspaceFile,
   exportAndDownloadZip: client.exportAndDownloadZip,
-
-  // Service Context
-  getServiceContext: client.getServiceContext,
 
   // Utility
   greet: client.greet,
