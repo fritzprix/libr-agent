@@ -1,4 +1,4 @@
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig, ShellType};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::process::Command as AsyncCommand;
@@ -11,6 +11,12 @@ static SCRIPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
 ) -> Result<AsyncCommand, String> {
+    let shell_type = config.shell_type.unwrap_or(ShellType::PowerShell);
+
+    if shell_type == ShellType::Cmd {
+        return Err("Isolated execution for Cmd shell is not yet implemented on Windows. Use PowerShell or Persistent Shell.".to_string());
+    }
+
     // All commands are written to a temp .ps1 file and executed with `powershell -File`.
     // This avoids two classes of bugs:
     //   1. Naive split_whitespace arg-passing broke `powershell -Command "..."` patterns.
@@ -19,7 +25,7 @@ pub async fn create_basic_isolated_command(
     // Writing a plain .ps1 file is readable by AV scanners and handles any command string
     // without fragmentation or encoding.
 
-    let mut cmd = AsyncCommand::new("powershell");
+    let mut cmd = AsyncCommand::new(shell_type.command());
 
     // Suppress console window on Windows (prevents terminal flashing)
     #[cfg(target_os = "windows")]

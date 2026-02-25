@@ -1,5 +1,4 @@
-use crate::session_isolation::common::get_shell_command;
-use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig};
+use crate::session_isolation::types::{IsolatedProcessConfig, IsolationConfig, ShellType};
 use tokio::process::Command as AsyncCommand;
 use tracing::{info, warn};
 
@@ -8,8 +7,8 @@ pub async fn create_basic_isolated_command(
     config: IsolatedProcessConfig,
 ) -> Result<AsyncCommand, String> {
     // Unix-like logic from original create_basic_isolated_command
-    let shell_cmd = get_shell_command(None);
-    let mut cmd = AsyncCommand::new(shell_cmd);
+    let shell_type = config.shell_type.unwrap_or(ShellType::Bash);
+    let mut cmd = AsyncCommand::new(shell_type.command());
 
     // Set working directory
     cmd.current_dir(&config.workspace_path);
