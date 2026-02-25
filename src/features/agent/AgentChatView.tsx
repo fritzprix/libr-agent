@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { agentCallBuiltinTool } from '@/lib/backend/agent-commands';
 import { createId } from '@paralleldrive/cuid2';
@@ -69,6 +69,7 @@ function AgentChatInner() {
   const { injectMessages } = useAgentChatActions();
   const { workflowStatus } = useAgentChatState();
   const hasExecutedPlaybookRef = useRef(false);
+  const [isInitializingPlaybook, setIsInitializingPlaybook] = useState(false);
 
   useEffect(() => {
     const playbookId = searchParams.get('playbookId');
@@ -97,6 +98,7 @@ function AgentChatInner() {
     if (!session?.id) return;
     logger.info('Auto-executing playbook', { playbookId });
 
+    setIsInitializingPlaybook(true);
     try {
       const result = await agentCallBuiltinTool<{ content: MCPContent[] }>(
         session.id,
@@ -122,13 +124,22 @@ function AgentChatInner() {
       logger.error('Failed to auto-select playbook', error);
       toast.error('Failed to start playbook workflow');
     } finally {
-      // No-op
+      setIsInitializingPlaybook(false);
     }
   };
 
   return (
     <>
-      <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl">
+      <div className="h-full w-full font-mono flex rounded-lg overflow-hidden shadow-2xl relative">
+        {isInitializingPlaybook && (
+          <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+            <LoadingSpinner size="lg" />
+            <p className="text-muted-foreground font-medium animate-pulse">
+              Initializing Playbook...
+            </p>
+          </div>
+        )}
+
         {/* Workspace side panel */}
         {showWorkspacePanel && <AgentWorkspacePanel />}
 

@@ -21,7 +21,13 @@ import {
   SelectItem,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+} from 'lucide-react';
 import { createId } from '@paralleldrive/cuid2';
 
 interface MCPServerDialogProps {
@@ -1049,6 +1055,7 @@ function MCPServerDialogComponent({
             {t('mcpServer.dialog.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSave} disabled={!isValid() || isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSaving
               ? t('mcpServer.dialog.saving', 'Saving...')
               : t('mcpServer.dialog.save', 'Save')}

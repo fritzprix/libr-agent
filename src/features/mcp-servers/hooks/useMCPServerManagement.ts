@@ -75,6 +75,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   const [serverToDelete, setServerToDelete] = useState<MCPServerEntity | null>(
     null,
   );
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleCreateNew = useCallback(() => {
     const newServer: MCPServerEntity = {
@@ -177,12 +178,14 @@ export function useMCPServerManagement(service?: McpServerService) {
   const confirmDelete = useCallback(async () => {
     if (!serverToDelete) return;
 
+    setIsDeleting(true);
     try {
       await deleteServer(serverToDelete.id);
       await mutateServers();
       toast.success(
         t('mcpServer.toasts.deleted', 'Extension deleted successfully'),
       );
+      setServerToDelete(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error(
@@ -192,8 +195,9 @@ export function useMCPServerManagement(service?: McpServerService) {
         }),
       );
       logger.error('Failed to delete MCP server', error);
+      // Keep dialog open on error so user can retry or cancel
     } finally {
-      setServerToDelete(null);
+      setIsDeleting(false);
     }
   }, [serverToDelete, deleteServer, mutateServers, t]);
 
@@ -236,6 +240,7 @@ export function useMCPServerManagement(service?: McpServerService) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
     verificationStatus,
     handleCreateNew,
     handleSetupPreset,

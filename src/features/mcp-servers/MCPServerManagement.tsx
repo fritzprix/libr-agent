@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpServerService } from '@/lib/services/mcp-server-service';
 import { Button } from '@/components/ui';
@@ -16,6 +16,7 @@ import {
 import { MCPServerDialog } from './MCPServerDialog';
 import { useMCPServerManagement } from './hooks/useMCPServerManagement';
 import { ServerCard } from './components/ServerCard';
+import { ServerCardSkeleton } from './components/ServerCardSkeleton';
 import { RecommendedPresets } from './components/RecommendedPresets';
 
 interface MCPServerManagementProps {
@@ -36,6 +37,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
     verificationStatus,
     handleCreateNew,
     handleSetupPreset,
@@ -48,9 +50,14 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">
-          {t('mcpServer.title', 'Extensions')}
-        </h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-semibold">
+            {t('mcpServer.title', 'Extensions')}
+          </h2>
+          {isValidating && (
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          )}
+        </div>
         <Button onClick={handleCreateNew}>
           <Plus className="w-4 h-4 mr-2" />
           {t('mcpServer.addServer', 'Add Extension')}
@@ -67,8 +74,10 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
       {/* Existing Servers List */}
       <div className="space-y-4">
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            {t('mcpServer.loading', 'Loading extensions...')}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <ServerCardSkeleton key={i} />
+            ))}
           </div>
         ) : servers.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -91,14 +100,6 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                 />
               ))}
             </div>
-
-            {isValidating && servers.length > 0 && (
-              <div className="flex justify-center py-2">
-                <span className="text-xs text-muted-foreground">
-                  {t('mcpServer.updating', 'Updating...')}
-                </span>
-              </div>
-            )}
 
             {hasNextPage && (
               <div className="flex justify-center pt-2">
@@ -127,7 +128,9 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
       <AlertDialog
         open={!!serverToDelete}
-        onOpenChange={(open) => !open && setServerToDelete(null)}
+        onOpenChange={(open) =>
+          !open && !isDeleting && setServerToDelete(null)
+        }
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -143,10 +146,17 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
               {t('mcpServer.deleteDialog.cancel', 'Cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {t('mcpServer.deleteDialog.confirm', 'Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
