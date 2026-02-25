@@ -99,3 +99,8 @@
 
 **Drift:** "Key Built-in Tools" list was missing "Content Store".
 **Reality:** Added "Content Store" to the list of key built-in tools.
+
+## 2026-02-25 - src/lib/llm-config-manager.ts / src-tauri
+
+**Drift:** `getLangchainModelId` missing mappings for Ollama, Cerebras, Fireworks. Rust types `AgentMessageDto` and command `switch_session` were deprecated but not marked as such in code.
+**Reality:** Added missing provider mappings. Added `#[deprecated]` attributes to Rust code and updated comments.
