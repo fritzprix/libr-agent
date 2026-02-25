@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input, Label } from '@/components/ui';
 import { Plus, Trash2 } from 'lucide-react';
@@ -28,6 +28,23 @@ export function EnvVarsForm({
   handleUpdateEnvVar,
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
+  const prevEnvVarsLength = useRef(envVars.length);
+
+  // Auto-focus new environment variable input when added
+  useEffect(() => {
+    if (envVars.length > prevEnvVarsLength.current) {
+      // Find the last added variable (assuming append behavior)
+      const lastVar = envVars[envVars.length - 1];
+      if (lastVar) {
+        // Use a small timeout to ensure DOM is updated
+        setTimeout(() => {
+          const element = document.getElementById(`env-var-key-${lastVar.id}`);
+          element?.focus();
+        }, 0);
+      }
+    }
+    prevEnvVarsLength.current = envVars.length;
+  }, [envVars]);
 
   return (
     <div className="space-y-4">
@@ -131,6 +148,7 @@ export function EnvVarsForm({
               <div key={item.id} className="flex gap-2 items-start">
                 <div className="flex-1">
                   <Input
+                    id={`env-var-key-${item.id}`}
                     placeholder={t(
                       'mcpServer.dialog.envVarKeyPlaceholder',
                       'Key (e.g. API_KEY)',

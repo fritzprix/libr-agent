@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import React, { useId, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
@@ -51,6 +51,23 @@ export function HttpForm({
 }: HttpFormProps) {
   const { t } = useTranslation('common');
   const advancedPanelId = useId();
+  const prevCustomHeadersLength = useRef(customHeaders.length);
+
+  // Auto-focus new header input when added
+  useEffect(() => {
+    if (customHeaders.length > prevCustomHeadersLength.current) {
+      const lastHeader = customHeaders[customHeaders.length - 1];
+      if (lastHeader) {
+        setTimeout(() => {
+          const element = document.getElementById(
+            `header-key-${lastHeader.id}`,
+          );
+          element?.focus();
+        }, 0);
+      }
+    }
+    prevCustomHeadersLength.current = customHeaders.length;
+  }, [customHeaders]);
 
   return (
     <div className="space-y-4">
@@ -246,6 +263,7 @@ export function HttpForm({
                     <div key={header.id} className="flex gap-2 items-start">
                       <div className="flex-1">
                         <Input
+                          id={`header-key-${header.id}`}
                           placeholder={t(
                             'mcpServer.dialog.headerKeyPlaceholder',
                             'Key (e.g. User-Agent)',
