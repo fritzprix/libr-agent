@@ -151,7 +151,7 @@ pub fn extract_zip_secure<R: std::io::Read + std::io::Seek>(
         #[cfg(unix)]
         if file
             .unix_mode()
-            .map_or(false, |mode| (mode & 0o170000) == 0o120000)
+            .is_some_and(|mode| (mode & 0o170000) == 0o120000)
         {
             continue;
         }
