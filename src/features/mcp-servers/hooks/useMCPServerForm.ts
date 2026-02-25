@@ -1,0 +1,360 @@
+import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { createId } from '@paralleldrive/cuid2';
+import type { MCPServerEntity } from '@/models/chat';
+import type { TransportConfig } from '@/lib/mcp/config/transport';
+
+export interface KeyValuePair {
+  id: string;
+  key: string;
+  value: string;
+}
+
+export interface MCPServerMetadata {
+  description?: string;
+  logo?: string;
+  variableDefinitions?: Record<
+    string,
+    {
+      label?: string;
+      description?: string;
+      required?: boolean;
+      type?: string;
+      target?: 'env' | 'header' | 'bearer-token' | 'url-param';
+    }
+  >;
+  [key: string]: unknown;
+}
+
+export function useMCPServerForm(
+  server: MCPServerEntity,
+  onSave: (server: MCPServerEntity) => Promise<void>,
+) {
+  const { t } = useTranslation('common');
+  const [draft, setDraft] = useState(server);
+  const [isSaving, setIsSaving] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Stdio specific state
+  const [argsText, setArgsText] = useState(() => {
+    if (server.transport.type === 'stdio' && server.transport.args) {
+      return server.transport.args.join(' ');
+    }
+    return '';
+  });
+
+  // Environment Variables state (Key-Value List)
+  const [envVars, setEnvVars] = useState<KeyValuePair[]>(() => {
+    if (server.transport.type === 'stdio' && server.transport.env) {
+      return Object.entries(server.transport.env).map(([key, value]) => ({
+        id: createId(),
+        key,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+      }));
+    }
+    return [];
+  });
+
+  // HTTP specific state
+  const [apiKey, setApiKey] = useState(() => {
+    // Type guard/check for HTTP transport which supports headers
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'headers' in server.transport &&
+      server.transport.headers
+    ) {
+      // Try to extract existing Bearer token
+      const auth = server.transport.headers['Authorization'];
+      if (auth && auth.startsWith('Bearer ')) {
+        return auth.slice(7);
+      }
+    }
+    return '';
+  });
+
+  const [customHeaders, setCustomHeaders] = useState<KeyValuePair[]>(() => {
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'headers' in server.transport &&
+      server.transport.headers
+    ) {
+      // Keys managed by variableDefinitions (bearer-token uses Authorization, header uses its key)
+      const managedKeys = new Set<string>(['Authorization']);
+      const varDefs = (server.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (varDefs) {
+        Object.entries(varDefs).forEach(([key, def]) => {
+          const target = def.target ?? 'env';
+          if (target === 'header') managedKeys.add(key);
+        });
+      }
+      return Object.entries(server.transport.headers)
+        .filter(([key]) => !managedKeys.has(key))
+        .map(([key, value]) => ({
+          id: createId(),
+          key,
+          value,
+        }));
+    }
+    return [];
+  });
+
+  const [enableSSE, setEnableSSE] = useState(() => {
+    if (
+      ((server.transport.type as string) === 'http' ||
+        server.transport.type === 'http-sse') &&
+      'enableSSE' in server.transport &&
+      server.transport.enableSSE !== undefined
+    ) {
+      return server.transport.enableSSE;
+    }
+    return true; // Default to true
+  });
+
+  // URL query params state (for url-param variableDefinitions)
+  const [urlParams, setUrlParams] = useState<Record<string, string>>(() => {
+    try {
+      if (
+        ((server.transport.type as string) === 'http' ||
+          server.transport.type === 'http-sse') &&
+        'url' in server.transport &&
+        server.transport.url
+      ) {
+        const urlObj = new URL(server.transport.url);
+        const params: Record<string, string> = {};
+        urlObj.searchParams.forEach((value, key) => {
+          params[key] = value;
+        });
+        return params;
+      }
+    } catch {
+      // invalid URL, ignore
+    }
+    return {};
+  });
+
+  const isValid = useCallback(() => {
+    if (!draft.name.trim()) return false;
+
+    if (draft.transport.type === 'stdio') {
+      const hasCommand = !!draft.transport.command.trim();
+
+      // Check required defined variables
+      const definitions = (draft.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (definitions) {
+        const missingRequired = Object.entries(definitions).some(
+          ([key, def]) => {
+            if (def.required) {
+              // Check if it exists in envVars AND has a value
+              const v = envVars.find((item) => item.key === key);
+              return !v || !v.value.trim();
+            }
+            return false;
+          },
+        );
+        if (missingRequired) return false;
+      }
+
+      return hasCommand;
+    } else if (
+      (draft.transport.type as string) === 'http' ||
+      draft.transport.type === 'http-sse'
+    ) {
+      if (!draft.transport.url.trim()) return false;
+      const httpDefs = (server.metadata as MCPServerMetadata | undefined)
+        ?.variableDefinitions;
+      if (httpDefs) {
+        const missingRequired = Object.entries(httpDefs).some(([key, def]) => {
+          if (!def.required) return false;
+          const target = def.target ?? 'env';
+          if (target === 'bearer-token') return !apiKey.trim();
+          if (target === 'header') {
+            const h = customHeaders.find((c) => c.key === key);
+            return !h || !h.value.trim();
+          }
+          if (target === 'url-param') return !urlParams[key]?.trim();
+          return false;
+        });
+        if (missingRequired) return false;
+      }
+      return true;
+    }
+
+    return false;
+  }, [draft, envVars, server.metadata, apiKey, customHeaders, urlParams]);
+
+  const handleAddEnvVar = useCallback(() => {
+    setEnvVars((prev) => [...prev, { id: createId(), key: '', value: '' }]);
+  }, []);
+
+  const handleRemoveEnvVar = useCallback((id: string) => {
+    setEnvVars((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleUpdateEnvVar = useCallback(
+    (id: string, field: 'key' | 'value', value: string) => {
+      setEnvVars((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, [field]: value } : item,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleAddHeader = useCallback(() => {
+    setCustomHeaders((prev) => [
+      ...prev,
+      { id: createId(), key: '', value: '' },
+    ]);
+  }, []);
+
+  const handleRemoveHeader = useCallback((id: string) => {
+    setCustomHeaders((prev) => prev.filter((h) => h.id !== id));
+  }, []);
+
+  const handleUpdateHeader = useCallback(
+    (id: string, field: 'key' | 'value', value: string) => {
+      setCustomHeaders((prev) =>
+        prev.map((h) => (h.id === id ? { ...h, [field]: value } : h)),
+      );
+    },
+    [],
+  );
+
+  const handleSave = async () => {
+    if (!isValid()) {
+      setValidationError(
+        t(
+          'mcpServer.dialog.validationError',
+          'Please fill in all required fields',
+        ),
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    setValidationError(null);
+
+    try {
+      if (draft.transport.type === 'stdio') {
+        // Construct env object from key-value pairs
+        const env: Record<string, string> = {};
+        envVars.forEach((item) => {
+          if (item.key.trim()) {
+            env[item.key.trim()] = item.value;
+          }
+        });
+
+        // Parse arguments from text input
+        const args = argsText.trim()
+          ? argsText.trim().split(/\s+/).filter(Boolean)
+          : [];
+
+        // Update draft with validated env and parsed args before saving
+        const updatedDraft: MCPServerEntity = {
+          ...draft,
+          transport: {
+            ...draft.transport,
+            args,
+            env,
+          },
+        };
+        await onSave(updatedDraft);
+      } else {
+        // HTTP Transport Logic
+        const headers: Record<string, string> = {};
+
+        // Add API Key as Authorization header
+        if (apiKey.trim()) {
+          headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+        }
+
+        // Add Custom Headers
+        customHeaders.forEach((h) => {
+          if (h.key.trim()) {
+            headers[h.key.trim()] = h.value;
+          }
+        });
+
+        // Inject url-param values into the URL
+        let finalUrl = (draft.transport as { url: string }).url;
+        try {
+          const urlObj = new URL(finalUrl);
+          Object.entries(urlParams).forEach(([key, val]) => {
+            if (val.trim()) urlObj.searchParams.set(key, val.trim());
+          });
+          finalUrl = urlObj.toString();
+        } catch {
+          // keep original URL if invalid
+        }
+
+        const updatedDraft: MCPServerEntity = {
+          ...draft,
+          transport: {
+            ...draft.transport,
+            type: 'http-sse',
+            url: finalUrl,
+            headers,
+            enableSSE: enableSSE,
+          } as TransportConfig,
+        };
+
+        await onSave(updatedDraft);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const resetStdio = useCallback(() => {
+    setDraft((prev) => ({
+      ...prev,
+      transport: { type: 'stdio', command: '', args: [] },
+    }));
+    setArgsText('');
+    setEnvVars([]);
+  }, []);
+
+  const resetHttp = useCallback(() => {
+    setDraft((prev) => ({
+      ...prev,
+      transport: { type: 'http-sse', url: '' } as TransportConfig,
+    }));
+  }, []);
+
+  return {
+    draft,
+    setDraft,
+    isSaving,
+    validationError,
+    setValidationError,
+    isValid,
+    handleSave,
+    // Stdio
+    argsText,
+    setArgsText,
+    envVars,
+    setEnvVars, // Exposed for adding items manually if needed (e.g. required config)
+    handleAddEnvVar,
+    handleRemoveEnvVar,
+    handleUpdateEnvVar,
+    resetStdio,
+    // HTTP
+    apiKey,
+    setApiKey,
+    customHeaders,
+    setCustomHeaders, // Exposed for similar reasons
+    handleAddHeader,
+    handleRemoveHeader,
+    handleUpdateHeader,
+    enableSSE,
+    setEnableSSE,
+    urlParams,
+    setUrlParams,
+    resetHttp,
+  };
+}
