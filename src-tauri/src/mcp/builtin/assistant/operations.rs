@@ -4,7 +4,8 @@ use crate::mcp::builtin::error_guidance::{
     SuccessHint, ToolGroup,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::{AssistantRepository, MCPServerRepository, SessionRepository};
+use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::{AssistantRepository, MCPServerRepository};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
