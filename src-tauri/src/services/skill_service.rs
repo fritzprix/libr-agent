@@ -300,7 +300,8 @@ fn import_assistant_skills_blocking(
             if ext == "zip" {
                 let file = fs::File::open(&src_path).map_err(|e| e.to_string())?;
                 let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-                archive.extract(&temp_dir).map_err(|e| e.to_string())?;
+                // Use secure extraction to prevent Zip Slip vulnerability
+                crate::utils::fs::extract_zip_secure(&mut archive, &temp_dir)?;
             } else {
                 return Err("Only .zip files or directories are supported".to_string());
             }

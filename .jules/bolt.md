@@ -62,3 +62,8 @@
 
 **Learning:** Queries filtering by `session_id` in `messages`, `contents`, and `stores` tables were performing full table scans because SQLite (and many other DBs) does not automatically index foreign keys. This caused performance degradation in chat history loading and content management as the dataset grew.
 **Action:** Always verify database indexes for columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses, especially foreign keys. Add specific migrations to create these indexes if the ORM or database doesn't do it automatically.
+
+## 2026-02-13 - Frequent Message Cloning in Hot Path
+
+**Learning:** `handle_llm_response` clones the entire `Message` struct 3 times (cache, event, DB) before processing. This causes performance overhead when the message contains large payloads like tool arguments (file content).
+**Action:** Use `Option::take()` to extract heavy fields (like `tool_calls`) from the struct instance after the required clones are made for cache/event/DB, but before spawning async work, to avoid one additional deep clone in the hot path. Note that this pattern does not prevent the earlier clones from carrying the heavy data; truly minimizing cloning would require extracting the heavy field before cloning and explicitly reconstructing lighter variants for the clones that do not need it. Move ownership into async blocks instead of cloning whenever possible.

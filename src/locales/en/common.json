@@ -79,6 +79,9 @@
   "settings": {
     "title": "Settings",
     "unsaved": "Unsaved",
+    "saved": "Settings saved successfully",
+    "saving": "Saving...",
+    "saveFailed": "Failed to save settings",
     "applyChanges": "Apply Changes",
     "language": {
       "label": "Language",
@@ -102,6 +105,7 @@
       "browseAriaLabel": "Browse skills directory",
       "openInExplorer": "Open in Explorer",
       "verifying": "Verifying...",
+      "error": "Error: {{message}}",
       "skillsFound_one": "Found {{count}} skill",
       "skillsFound_other": "Found {{count}} skills",
       "invalidDirectory": "Invalid directory",
@@ -110,7 +114,13 @@
     "aiModels": {
       "apiKeys": "Provider API Keys",
       "preferences": "Model Preferences",
-      "agentHub": "Agent Hub"
+      "agentHub": "Agent Hub",
+      "agentHubUrlLabel": "Agent Hub URL",
+      "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server."
+    },
+    "chatInterface": {
+      "diffContextLines": "Diff Context Lines",
+      "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10)."
     },
     "display": {
       "metricsTitle": "Performance Metrics",
@@ -126,18 +136,41 @@
       "maxRetries": "Max Retry Attempts",
       "retryDelay": "Retry Delay (ms)",
       "circuitBreaker": "Tool Loop Threshold",
-      "shellIsolation": "Shell Isolation Level"
+      "shellIsolation": "Shell Isolation Level",
+      "shellIsolationModes": {
+        "basic": "Basic - Full PATH access (less secure)",
+        "medium": "Medium - Restricted PATH (balanced)",
+        "high": "High - Sandboxed (most secure)"
+      },
+      "shellIsolationDescription": "Controls environment isolation for shell commands. Basic allows user-installed tools, High provides maximum security."
     },
     "system": {
       "title": "System & Performance",
       "network": "Network",
       "httpServerPort": "HTTP Server Port",
       "httpServerExpose": "Expose HTTP Server",
+      "httpServerExposeMode": {
+        "local": "Local only (127.0.0.1)",
+        "public": "Expose to network (0.0.0.0)"
+      },
+      "httpServerExposeDescription": "Use local-only by default. Exposing allows access from other devices on your network.",
+      "httpServerExposeWarning": "Warning: HTTP API is exposed to your network (0.0.0.0). Use only in trusted networks and protect access appropriately.",
       "fileWorkspace": "File & Workspace",
       "backgroundTasks": "Background Tasks",
       "mcpToolTimeoutDisabled": "Disabled",
       "networkRestartFailed": "Failed to restart the app. Please restart manually.",
       "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
+    },
+    "about": {
+      "title": "About",
+      "version": "Version",
+      "updateAvailable": "v{{version}} available",
+      "upToDate": "Up to date",
+      "checkFailed": "Check failed",
+      "installing": "Installing…",
+      "downloading": "Downloading {{pct}}%",
+      "installUpdate": "Install Update",
+      "checkForUpdates": "Check for Updates"
     },
     "factoryReset": {
       "title": "Factory Reset",

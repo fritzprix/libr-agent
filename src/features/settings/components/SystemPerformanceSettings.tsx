@@ -293,8 +293,18 @@ export function SystemPerformanceSettings({
             }
             className="bg-background border text-foreground w-full max-w-xs p-2 rounded"
           >
-            <option value="local">Local only (127.0.0.1)</option>
-            <option value="public">Expose to network (0.0.0.0)</option>
+            <option value="local">
+              {t(
+                'settings.system.httpServerExposeMode.local',
+                'Local only (127.0.0.1)',
+              )}
+            </option>
+            <option value="public">
+              {t(
+                'settings.system.httpServerExposeMode.public',
+                'Expose to network (0.0.0.0)',
+              )}
+            </option>
           </select>
           <p className="text-xs text-muted-foreground mt-1">
             {t(

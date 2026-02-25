@@ -63,7 +63,9 @@ use commands::playbook_commands::{
     update_playbook,
 };
 use commands::session_commands::{remove_session, switch_session};
-use commands::settings_commands::{delete_setting, get_setting, list_settings, set_setting};
+use commands::settings_commands::{
+    delete_setting, get_setting, list_settings, set_setting, update_settings,
+};
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, open_skills_directory_in_explorer,
     scan_skills_directory,
@@ -236,6 +238,7 @@ pub fn run() {
                 list_playbooks,
                 toggle_playbook_bookmark,
                 set_setting,
+                update_settings,
                 get_setting,
                 delete_setting,
                 list_settings,

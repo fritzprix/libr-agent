@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.18] - 2026-02-25
+
+### 🚀 Features
+
+- **Settings page overhaul**: `SettingsPage` refactored with a dedicated `useSettingsForm` hook — eliminates cascading `useEffect` state duplication, adds proper dirty-state detection, and batches saves into a single optimized IPC command.
+- **Settings i18n**: All Settings components (General, API Keys, etc.) are now fully localized with Korean and fallback English strings; save action labels and error messages no longer appear as raw i18n keys.
+- **Workspace panel click-to-upload**: AgentWorkspacePanel now supports clicking anywhere on the drop zone to open a file dialog, improving accessibility and discoverability.
+- **Assistant management service**: New `AssistantService` with local/remote source toggling backed by Rust commands, enabling agent-level assistant CRUD from the backend.
+- **Linux file manager integration**: Cross-platform path handling and Linux file manager launch fully fixed, including correct `local_bin` resolution on non-standard `PATH` setups.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Zip Slip vulnerability patched**: Skill import now uses `extract_zip_secure()` which validates paths via `enclosed_name()`, canonicalizes the target directory, and rejects symlink entries — preventing arbitrary file writes from malicious ZIP archives.
+- **Settings retrieval uses `safeInvoke`**: Replaced bare `invoke` calls in settings fetch/update with `safeInvoke` for consistent error logging and handling.
+- **GeneralTab error message formatting**: Improved error display formatting in the General settings tab for clearer user feedback.
+- **Skills verification error handling**: Improved robustness of the skill verification flow to surface errors correctly.
+- **Gemini provider mapping corrected**: `LLMConfigManager` now correctly maps the Gemini provider configuration, fixing model selection for Google AI users.
+
+### ⚡ Performance
+
+- **`handle_llm_response` deep-clone eliminated**: LLM response processing avoids unnecessary deep clones, reducing allocations on every turn of the agent loop.
+
+### 🔧 Internal
+
+- **MCP session isolation tests consolidated**: Session isolation integration tests merged into `stdio_manager` test suite for better co-location.
+- **Integration test hardening**: Python3 availability checked before execution in integration tests; error message formatting standardized across test assertions.
+
 ## [0.5.17] - 2026-02-24
 
 ### 🚀 Features
