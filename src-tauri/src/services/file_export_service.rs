@@ -90,14 +90,18 @@ impl FileExportService {
         let mut added_archive_paths = HashSet::<String>::new();
         for file_path in &files {
             // Resolve path securely
-            let source_path =
-                match crate::utils::security::resolve_secure_path(&workspace_dir, file_path).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        log::warn!("Skipping invalid path {}: {}", file_path, e);
-                        continue;
-                    }
-                };
+            let source_path = match crate::utils::security::resolve_secure_path(
+                &workspace_dir,
+                file_path,
+            )
+            .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("Skipping invalid path {}: {}", file_path, e);
+                    continue;
+                }
+            };
 
             let roots: Vec<PathBuf> = if source_path.is_file() {
                 vec![source_path]

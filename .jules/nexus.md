@@ -18,7 +18,7 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 
 - **Context:** `download_commands.rs` contained mixed business logic (file reading, zip creation) and UI interaction. `MCPServerDialog.tsx` was a "God Component" managing complex form state, validation, and rendering for multiple transport types.
 - **Action:**
-    - Extracted `FileExportService` (`src-tauri/src/services/file_export_service.rs`) to encapsulate file reading and ZIP creation logic.
-    - Extracted `useMCPServerForm` hook to manage form state and validation logic.
-    - Decomposed `MCPServerDialog` into `StdioForm`, `HttpForm`, and `EnvVarsForm` components.
+  - Extracted `FileExportService` (`src-tauri/src/services/file_export_service.rs`) to encapsulate file reading and ZIP creation logic.
+  - Extracted `useMCPServerForm` hook to manage form state and validation logic.
+  - Decomposed `MCPServerDialog` into `StdioForm`, `HttpForm`, and `EnvVarsForm` components.
 - **Result:** Command handlers now delegate business logic to the service. The dialog component is now a pure presentational component that delegates logic to the hook and rendering to sub-components, improving maintainability and testability.

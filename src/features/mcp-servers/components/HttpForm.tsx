@@ -130,7 +130,11 @@ export function HttpForm({
                     } else if (target === 'header') {
                       const existing = customHeaders.find((h) => h.key === key);
                       if (existing) {
-                        handleUpdateHeader(existing.id, 'value', e.target.value);
+                        handleUpdateHeader(
+                          existing.id,
+                          'value',
+                          e.target.value,
+                        );
                       } else {
                         setCustomHeaders((prev) => [
                           ...prev,
