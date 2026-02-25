@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use sea_orm::DatabaseConnection;
-use tauri::AppHandle;
-use crate::session::SessionManager;
 use crate::mcp::builtin::BuiltinMCPServer;
+use crate::session::SessionManager;
+use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tauri::AppHandle;
 
 /// Factory function to create session-bound builtin server instances
 ///

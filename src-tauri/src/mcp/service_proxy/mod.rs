@@ -13,15 +13,15 @@ use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 
-pub mod routing;
-pub mod types;
 pub mod builder;
 pub mod factory;
+pub mod routing;
+pub mod types;
 
-use routing::{route_tool, ToolRouting};
-pub use types::{ProxyConfig, SessionManagers, SharedManagers};
 pub use builder::MCPServiceProxyBuilder;
 use factory::create_builtin_server;
+use routing::{route_tool, ToolRouting};
+pub use types::{ProxyConfig, SessionManagers, SharedManagers};
 
 /// Session-specific MCP service proxy
 ///
@@ -53,7 +53,6 @@ pub struct MCPServiceProxy {
     /// Tool execution timeout in seconds
     tool_timeout_seconds: u64,
 }
-
 
 impl MCPServiceProxy {
     /// Create a new session-bound proxy using builder

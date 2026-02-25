@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use sea_orm::DatabaseConnection;
-use tauri::AppHandle;
-use crate::session::SessionManager;
-use crate::mcp::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::MCPServiceProxy;
+use crate::mcp::session_isolation::{HttpSessionManager, SessionMCPManager};
+use crate::session::SessionManager;
+use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tauri::AppHandle;
 
 /// Builder for MCPServiceProxy
 pub struct MCPServiceProxyBuilder {

@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use sea_orm::DatabaseConnection;
-use tauri::AppHandle;
-use crate::session::SessionManager;
 use crate::mcp::server::MCPServerManager;
 use crate::mcp::session_isolation::{HttpSessionManager, SessionMCPManager};
+use crate::session::SessionManager;
+use sea_orm::DatabaseConnection;
+use std::sync::Arc;
+use tauri::AppHandle;
 
 /// Configuration for creating an MCPServiceProxy
 #[derive(Debug)]
