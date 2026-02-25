@@ -24,11 +24,30 @@ pub fn route_tool(tool_name: &str) -> Result<ToolRouting, String> {
             return Err(format!("Invalid builtin tool ID (empty): {}", tool_name));
         }
 
+        if real_tool_name.is_empty() {
+            return Err(format!(
+                "Invalid builtin tool name (empty after '__'): {}",
+                tool_name
+            ));
+        }
+
         Ok(ToolRouting::Builtin {
             server_id: tool_id.to_string(),
             tool_name: real_tool_name.to_string(),
         })
     } else if let Some((server_name, real_tool_name)) = tool_name.split_once("__") {
+        if server_name.is_empty() {
+            return Err(format!(
+                "Invalid external tool name (empty server name): {}",
+                tool_name
+            ));
+        }
+        if real_tool_name.is_empty() {
+            return Err(format!(
+                "Invalid external tool name (empty tool name): {}",
+                tool_name
+            ));
+        }
         Ok(ToolRouting::External {
             server_name: server_name.to_string(),
             tool_name: real_tool_name.to_string(),
@@ -78,5 +97,23 @@ mod tests {
         assert!(route_tool("builtin_").is_err());
         assert!(route_tool("builtin_no_separator").is_err());
         assert!(route_tool("no_separator").is_err());
+    }
+
+    #[test]
+    fn test_builtin_empty_tool_name() {
+        // builtin_planning__ has an empty real_tool_name after '__'
+        assert!(route_tool("builtin_planning__").is_err());
+    }
+
+    #[test]
+    fn test_external_empty_server_name() {
+        // __get_forecast has an empty server name
+        assert!(route_tool("__get_forecast").is_err());
+    }
+
+    #[test]
+    fn test_external_empty_tool_name() {
+        // weather_server__ has an empty tool name
+        assert!(route_tool("weather_server__").is_err());
     }
 }
