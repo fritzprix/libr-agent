@@ -1,5 +1,5 @@
 use crate::agent::state::AgentSession;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use std::collections::{HashMap, HashSet};

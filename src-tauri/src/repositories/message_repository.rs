@@ -1,5 +1,5 @@
 use super::error::DbError;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{

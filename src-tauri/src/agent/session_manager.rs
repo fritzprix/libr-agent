@@ -2,7 +2,7 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::context::skills::SkillsContextProvider;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionMetadata, SessionRepository};

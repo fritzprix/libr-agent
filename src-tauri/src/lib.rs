@@ -7,6 +7,7 @@ mod db_schema_validator; // Schema validation for database integrity
 pub mod entity; // SeaORM entity definitions
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
+pub mod models;
 pub mod mcp; // Make public for integration tests
 pub mod repositories; // Make public for integration tests
 mod search;
