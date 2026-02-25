@@ -57,3 +57,8 @@
 
 **Split:** `src-tauri/src/mcp/service_proxy/` (`routing.rs`, `types.rs`, `builder.rs`, `factory.rs`, `mod.rs`)
 **Improvement:** Decoupled routing logic, configuration types, builder pattern, and factory creation from the main proxy logic. Reduced the main file size significantly and improved modularity and testability.
+
+## 2026-03-03 - src-tauri/src/agent/lifecycle.rs
+
+**Split:** `src-tauri/src/agent/lifecycle/` (`creation.rs`, `management.rs`, `recovery.rs`, `queries.rs`, `cache.rs`, `mod.rs`)
+**Improvement:** Decoupled session lifecycle management (creation, resumption, status updates, recovery) and query/cache logic into focused modules. Reduced the monolithic file size of ~500 lines into multiple smaller files, improving maintainability and readability.
