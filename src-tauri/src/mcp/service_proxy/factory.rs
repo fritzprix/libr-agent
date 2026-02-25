@@ -1,4 +1,5 @@
 use crate::mcp::builtin::BuiltinMCPServer;
+use crate::repositories::session_repository::SessionRepository;
 use crate::session::SessionManager;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;

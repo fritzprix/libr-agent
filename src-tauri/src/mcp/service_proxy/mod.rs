@@ -1,4 +1,3 @@
-use crate::repositories::SessionRepository;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -8,7 +7,6 @@ use tokio::sync::RwLock;
 
 use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
-use super::server::MCPServerManager;
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
