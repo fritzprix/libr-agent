@@ -145,6 +145,50 @@ impl SessionMCPManager {
         for arg in &final_args {
             cmd.arg(arg);
         }
+
+        // Apply environment isolation
+        // 1. Clear all inherited environment variables
+        cmd.env_clear();
+
+        // 2. Re-apply whitelisted system variables
+        let preserved_vars = [
+            "PATH",
+            "SystemRoot",              // Windows
+            "COMSPEC",                 // Windows
+            "PATHEXT",                 // Windows
+            "WINDIR",                  // Windows
+            "APPDATA",                 // Windows
+            "LOCALAPPDATA",            // Windows
+            "ProgramData",             // Windows
+            "ProgramFiles",            // Windows
+            "ProgramFiles(x86)",       // Windows
+            "CommonProgramFiles",      // Windows
+            "CommonProgramFiles(x86)", // Windows
+            "HOME",
+            "USERPROFILE", // Windows
+            "HOMEDRIVE",   // Windows
+            "HOMEPATH",    // Windows
+            "TEMP",
+            "TMP",
+            "TMPDIR",
+            "TERM",
+            "LANG",
+        ];
+
+        for (key, value) in std::env::vars() {
+            // Check exact matches
+            if preserved_vars.contains(&key.as_str()) {
+                cmd.env(&key, &value);
+                continue;
+            }
+
+            // Check prefixes (Locale and XDG)
+            if key.starts_with("LC_") || key.starts_with("XDG_") {
+                cmd.env(&key, &value);
+            }
+        }
+
+        // 3. Apply user-defined variables from config (can override system vars)
         for (key, value) in env {
             cmd.env(key, value);
         }
@@ -722,26 +766,26 @@ mod tests {
         }
     }
 
-    /// Test that system PATH inheritance is not blocked
-    /// Note: This is a design verification test - we verify that env_clear is NOT called
+    /// Test that environment isolation is enforced
+    /// Note: This is a design verification test - we verify that env_clear IS called
     #[test]
-    fn test_no_env_clear_in_spawn_logic() {
+    fn test_env_clear_in_spawn_logic() {
         // This test documents the expected behavior:
-        // tokio::process::Command inherits parent environment by default
-        // cmd.env(key, value) adds/overrides without clearing
+        // We MUST call env_clear() to prevent secret leakage from the host process
+        // Then we selectively whitelist essential variables like PATH
 
         let source = include_str!("./stdio_manager.rs");
 
-        // Verify that env_clear() is NOT present in the spawn logic
+        // Verify that env_clear() IS present in the spawn logic
         assert!(
-            !source.contains("env_clear()"),
-            "stdio_manager should NOT call env_clear() - system PATH must be inherited"
+            source.contains("cmd.env_clear()"),
+            "stdio_manager MUST call env_clear() to isolate process environment"
         );
 
-        // Verify that cmd.env() is used (which preserves inheritance)
+        // Verify that we are whitelisting PATH
         assert!(
-            source.contains("cmd.env(key, value)"),
-            "stdio_manager should use cmd.env() to add custom env vars"
+            source.contains("\"PATH\""),
+            "stdio_manager must whitelist PATH"
         );
     }
 
