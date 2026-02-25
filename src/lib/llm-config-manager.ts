@@ -192,6 +192,9 @@ export class LLMConfigManager {
       groq: 'groq',
       google: 'google-genai',
       gemini: 'google-genai',
+      ollama: 'ollama',
+      cerebras: 'cerebras',
+      fireworks: 'fireworks',
     };
 
     const langchainProvider = providerMap[providerId];

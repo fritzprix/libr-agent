@@ -150,7 +150,7 @@ pub fn run() {
                 download_workspace_file,
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
-                switch_session,
+                switch_session, // (Legacy/Deprecated)
                 remove_session,
                 delete_content_store,
                 get_app_data_dir,

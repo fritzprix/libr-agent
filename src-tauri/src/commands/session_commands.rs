@@ -29,6 +29,7 @@ pub struct SessionResponse {
 /// In Agent V2, sessions are isolated by ID and do not rely on global context switching.
 /// This command is preserved as a no-op to prevent frontend errors during transition.
 #[command]
+#[deprecated(note = "Global session switching is disabled in Agent V2.")]
 pub async fn switch_session(request: SessionSwitchRequest) -> Result<SessionResponse, String> {
     log::warn!("Call to deprecated switch_session for '{}'. Global session switching is disabled in Agent V2.", request.session_id);
 
