@@ -37,15 +37,15 @@ export default function AssistantEditor() {
         <TabsList className="w-full grid grid-cols-3 mb-4">
           <TabsTrigger value="general" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
-            <span>{t('assistant.tabs.general', 'General')}</span>
+            <span>{t('assistant.tabs.general')}</span>
           </TabsTrigger>
           <TabsTrigger value="tools" className="flex items-center gap-2">
             <Wrench className="h-4 w-4" />
-            <span>{t('assistant.tabs.tools', 'Tools')}</span>
+            <span>{t('assistant.tabs.tools')}</span>
           </TabsTrigger>
           <TabsTrigger value="skills" className="flex items-center gap-2">
             <Server className="h-4 w-4" />
-            <span>{t('assistant.tabs.skills', 'Skills')}</span>
+            <span>{t('assistant.tabs.skills')}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -62,17 +62,14 @@ export default function AssistantEditor() {
           />
 
           <TextareaWithLabel
-            label={t('assistant.descriptionLabel', 'Description')}
+            label={t('assistant.descriptionLabel')}
             value={draft?.description || ''}
             onChange={(e) =>
               update((draft) => {
                 draft.description = e.target.value || undefined;
               })
             }
-            placeholder={t(
-              'assistant.descriptionPlaceholder',
-              'Brief description of what this assistant does...',
-            )}
+            placeholder={t('assistant.descriptionPlaceholder')}
             className="min-h-16"
           />
 
@@ -135,13 +132,10 @@ function MCPServersTab() {
     <div className="space-y-4">
       <div>
         <Label className="text-base font-semibold">
-          {t('assistant.mcp.label', 'MCP Servers')}
+          {t('assistant.mcp.label')}
         </Label>
         <p className="text-sm text-muted-foreground mt-1">
-          {t(
-            'assistant.mcp.description',
-            'Select which MCP servers this assistant can access',
-          )}
+          {t('assistant.mcp.description')}
         </p>
       </div>
 
@@ -149,22 +143,19 @@ function MCPServersTab() {
         <div className="text-center py-8 border rounded-lg bg-muted/20">
           <Server className="h-12 w-12 mx-auto mb-3 text-muted-foreground" />
           <p className="text-sm text-muted-foreground mb-2">
-            {t('assistant.mcp.noActive', 'No active MCP servers found')}
+            {t('assistant.mcp.noActive')}
           </p>
           <Link
             to="/settings"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
           >
-            {t('assistant.mcp.addServersLink', 'Add servers in settings')} →
+            {t('assistant.mcp.addServersLink')} →
           </Link>
         </div>
       ) : (
         <>
           <Input
-            placeholder={t(
-              'assistant.mcp.searchPlaceholder',
-              'Search servers...',
-            )}
+            placeholder={t('assistant.mcp.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -172,7 +163,7 @@ function MCPServersTab() {
           <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
             {filteredServers.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">
-                {t('assistant.mcp.noMatch', 'No servers match your search')}
+                {t('assistant.mcp.noMatch')}
               </p>
             ) : (
               filteredServers.map((server) => (
@@ -200,10 +191,10 @@ function MCPServersTab() {
                     )}
                     <div className="text-xs text-muted-foreground mt-1 font-mono">
                       {server.transport.type === 'stdio' &&
-                        `${t('assistant.mcp.transport.stdio', 'stdio')}: ${server.transport.command}`}
+                        `${t('assistant.mcp.transport.stdio')}: ${server.transport.command}`}
                       {((server.transport.type as string) === 'http' ||
                         server.transport.type === 'http-sse') &&
-                        `${t('assistant.mcp.transport.http', 'http')}: ${(server.transport as { url: string }).url}`}
+                        `${t('assistant.mcp.transport.http')}: ${(server.transport as { url: string }).url}`}
                     </div>
                   </label>
                 </div>

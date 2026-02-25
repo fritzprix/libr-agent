@@ -51,7 +51,7 @@ export default function SkillsEditor() {
       setSkills(result);
     } catch (error) {
       console.error('Failed to fetch skills:', error);
-      toast.error(t('skills.fetchFailed', 'Failed to fetch skills'));
+      toast.error(t('skills.fetchFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -79,23 +79,17 @@ export default function SkillsEditor() {
         ) {
           setIsDragging(false);
           const filePath = payload.paths[0];
-          const toastId = toast.loading(
-            t('skills.importing', 'Importing skills...'),
-          );
+          const toastId = toast.loading(t('skills.importing'));
 
           try {
             await importAssistantSkills(draft.id, filePath);
-            toast.success(
-              t('skills.importSuccess', 'Skills imported successfully'),
-              { id: toastId },
-            );
+            toast.success(t('skills.importSuccess'), { id: toastId });
             fetchSkills();
           } catch (error) {
             console.error('Failed to import skills:', error);
-            toast.error(
-              `${t('skills.importFailed', 'Failed to import skills')}: ${error}`,
-              { id: toastId },
-            );
+            toast.error(`${t('skills.importFailed')}: ${error}`, {
+              id: toastId,
+            });
           }
         }
       },
@@ -111,13 +105,11 @@ export default function SkillsEditor() {
     if (!draft?.id) return;
     try {
       await copyGlobalToAssistant(draft.id, skillName);
-      toast.success(
-        t('skills.overrideSuccess', 'Skill overridden successfully'),
-      );
+      toast.success(t('skills.overrideSuccess'));
       fetchSkills();
     } catch (error) {
       console.error('Failed to override skill:', error);
-      toast.error(t('skills.overrideFailed', 'Failed to override skill'));
+      toast.error(t('skills.overrideFailed'));
     }
   };
 
@@ -125,13 +117,11 @@ export default function SkillsEditor() {
     if (!draft?.id) return;
     try {
       await deleteAssistantSkill(draft.id, skillName);
-      toast.success(
-        t('skills.revertSuccess', 'Skill reverted to global version'),
-      );
+      toast.success(t('skills.revertSuccess'));
       fetchSkills();
     } catch (error) {
       console.error('Failed to revert skill:', error);
-      toast.error(t('skills.revertFailed', 'Failed to revert skill'));
+      toast.error(t('skills.revertFailed'));
     }
   };
 
@@ -162,14 +152,12 @@ export default function SkillsEditor() {
 
     try {
       await resetAssistantSkills(draft.id);
-      toast.success(
-        t('skills.resetSuccess', 'Assistant skills reset successfully'),
-      );
+      toast.success(t('skills.resetSuccess'));
       fetchSkills();
       setShowResetDialog(false);
     } catch (error) {
       console.error('Failed to reset skills:', error);
-      toast.error(t('skills.resetFailed', 'Failed to reset skills'));
+      toast.error(t('skills.resetFailed'));
     }
   };
 
@@ -179,14 +167,11 @@ export default function SkillsEditor() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t('skills.title', 'Skills Management')}</CardTitle>
+          <CardTitle>{t('skills.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {t(
-              'skills.saveFirst',
-              'Please save the assistant to manage skills.',
-            )}
+            {t('skills.saveFirst')}
           </p>
         </CardContent>
       </Card>
@@ -201,13 +186,10 @@ export default function SkillsEditor() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="flex flex-col space-y-1">
             <CardTitle className="text-sm font-medium">
-              {t('skills.title', 'Skills Management')}
+              {t('skills.title')}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              {t(
-                'skills.dragDropDesc',
-                'Drag and drop a zip file or folder to override skills.',
-              )}
+              {t('skills.dragDropDesc')}
             </p>
           </div>
 
@@ -217,14 +199,11 @@ export default function SkillsEditor() {
                 variant="outline"
                 size="sm"
                 onClick={handleReset}
-                title={t(
-                  'skills.resetTooltip',
-                  'Remove all assistant-specific skills',
-                )}
+                title={t('skills.resetTooltip')}
                 className="text-destructive border-destructive/50 hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                {t('skills.reset', 'Reset Override')}
+                {t('skills.reset')}
               </Button>
             )}
             <Button
@@ -245,7 +224,7 @@ export default function SkillsEditor() {
               <div className="flex flex-col items-center">
                 <Upload className="h-10 w-10 text-primary mb-2" />
                 <p className="text-lg font-medium">
-                  {t('skills.dropHere', 'Drop to import skills')}
+                  {t('skills.dropHere')}
                 </p>
               </div>
             </div>
@@ -254,7 +233,7 @@ export default function SkillsEditor() {
           <div className="space-y-2">
             {skills.length === 0 ? (
               <div className="text-sm text-muted-foreground text-center py-4">
-                {t('skills.noSkills', 'No skills found.')}
+                {t('skills.noSkills')}
               </div>
             ) : (
               skills.map((skill) => {
@@ -281,11 +260,11 @@ export default function SkillsEditor() {
                           </span>
                           {skill.source === 'assistant' ? (
                             <Badge variant="secondary" className="text-xs">
-                              {t('skills.sourceAssistant', 'Assistant')}
+                              {t('skills.sourceAssistant')}
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="text-xs">
-                              {t('skills.sourceGlobal', 'Global')}
+                              {t('skills.sourceGlobal')}
                             </Badge>
                           )}
                         </div>
@@ -300,10 +279,7 @@ export default function SkillsEditor() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleOverride(skill.name)}
-                          title={t(
-                            'skills.override',
-                            'Override for this assistant',
-                          )}
+                          title={t('skills.override')}
                           disabled={isDisabled}
                         >
                           <Copy className="h-4 w-4" />
@@ -314,7 +290,7 @@ export default function SkillsEditor() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleRevert(skill.name)}
-                          title={t('skills.revert', 'Revert to global')}
+                          title={t('skills.revert')}
                           disabled={isDisabled}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -333,24 +309,21 @@ export default function SkillsEditor() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('skills.resetTitle', 'Reset Skills Override?')}
+              {t('skills.resetTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t(
-                'skills.resetConfirm',
-                'This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone.',
-              )}
+              {t('skills.resetConfirm')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>
-              {t('common.cancel', 'Cancel')}
+              {t('common.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmReset}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {t('skills.reset', 'Reset Override')}
+              {t('skills.reset')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
