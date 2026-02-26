@@ -8,6 +8,15 @@ pub async fn create_basic_isolated_command(
 ) -> Result<AsyncCommand, String> {
     // Unix-like logic from original create_basic_isolated_command
     let shell_type = config.shell_type.unwrap_or(ShellType::Bash);
+
+    // Windows-specific shells are not supported on Unix platforms.
+    if shell_type.is_windows() {
+        return Err(
+            "Windows shells (PowerShell/Cmd) are not supported on Unix systems. Use Bash."
+                .to_string(),
+        );
+    }
+
     let mut cmd = AsyncCommand::new(shell_type.command());
 
     // Set working directory
@@ -56,7 +65,10 @@ pub async fn create_basic_isolated_command(
 
     info!(
         "Unix shell execution: {} {:?} (original: '{}' args: {:?})",
-        shell_cmd, shell_args, config.command, config.args
+        shell_type.command(),
+        shell_args,
+        config.command,
+        config.args
     );
     cmd.args(shell_args);
 

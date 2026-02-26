@@ -14,7 +14,11 @@ pub async fn create_basic_isolated_command(
     let shell_type = config.shell_type.unwrap_or(ShellType::PowerShell);
 
     if shell_type == ShellType::Cmd {
-        return Err("Isolated execution for Cmd shell is not yet implemented on Windows. Use PowerShell or Persistent Shell.".to_string());
+        return Err("Isolated execution for Cmd shell is not yet implemented on Windows. Use PowerShell instead.".to_string());
+    }
+
+    if shell_type == ShellType::Bash {
+        return Err("Bash shell is not supported on Windows for isolated execution. Use PowerShell instead.".to_string());
     }
 
     // All commands are written to a temp .ps1 file and executed with `powershell -File`.
