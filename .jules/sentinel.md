@@ -9,3 +9,9 @@
 **Vulnerability:** Logic flaw in `SecurityValidator::validate_path` where `!canonical.starts_with(base) && !absolute.starts_with(base)` allowed symlinks pointing outside the workspace to bypass validation because `absolute` (constructed from base) always started with base.
 **Learning:** Redundant "double checks" can inadvertently create bypasses if the logic is `AND` instead of `OR`, or if one condition is trivially true. Always verify the canonical path for existing files.
 **Prevention:** Fixed the condition to strictly check `canonical_path.starts_with(base)`. Added a regression test case for symlink traversal.
+
+## 2025-05-24 - Environment Variable Leakage in MCP Processes
+
+**Vulnerability:** MCP server processes spawned via `stdio_manager.rs` inherited all environment variables from the host process by default. This could leak sensitive secrets (e.g. `OPENAI_API_KEY`, `AWS_SECRET_KEY`) to untrusted or compromised MCP tools.
+**Learning:** `tokio::process::Command` inherits the parent environment by default. Explicitly calling `.env_clear()` is required for isolation. A test explicitly asserting _against_ `env_clear()` existed, showing a misunderstanding of security requirements.
+**Prevention:** Always use `cmd.env_clear()` when spawning subprocesses intended to be isolated. Use an explicit whitelist for essential system variables (`PATH`, `HOME`, etc.).

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,6 +42,7 @@ type PlaybookWithMeta = Playbook & {
 };
 
 export default function PlaybookList() {
+  const { t } = useTranslation();
   const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
   const [assistants, setAssistants] = useState<
     Record<string, { name: string }>
@@ -80,11 +82,11 @@ export default function PlaybookList() {
       setAssistants(assistantMap);
     } catch (error) {
       logger.error('Failed to load playbooks', error);
-      toast.error('Failed to load playbooks');
+      toast.error(t('playbook.toasts.loadFailed'));
     } finally {
       setLoading(false);
     }
-  }, [sortMode, sortOrder, bookmarkFirst]);
+  }, [sortMode, sortOrder, bookmarkFirst, t]);
 
   useEffect(() => {
     fetchData();
@@ -104,7 +106,7 @@ export default function PlaybookList() {
       await togglePlaybookBookmark(id, isBookmarked, agentId);
     } catch (error) {
       logger.error('Failed to toggle bookmark', error);
-      toast.error('Failed to update bookmark');
+      toast.error(t('playbook.toasts.bookmarkFailed'));
       fetchData(); // Revert on failure
     }
   };
@@ -122,10 +124,10 @@ export default function PlaybookList() {
     try {
       await deletePlaybook(playbookToDelete.id, playbookToDelete.agentId);
       setPlaybooks((prev) => prev.filter((p) => p.id !== playbookToDelete.id));
-      toast.success('Playbook deleted');
+      toast.success(t('playbook.toasts.deleted'));
     } catch (error) {
       logger.error('Failed to delete playbook', error);
-      toast.error('Failed to delete playbook');
+      toast.error(t('playbook.toasts.deleteFailed'));
     } finally {
       setPlaybookToDelete(null);
     }
@@ -175,10 +177,10 @@ export default function PlaybookList() {
             </div>
             <div>
               <h1 className="text-2xl text-foreground font-semibold tracking-tight">
-                Playbooks
+                {t('playbook.title')}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Browse and execute automated workflows
+                {t('playbook.description')}
               </p>
             </div>
           </div>
@@ -199,7 +201,7 @@ export default function PlaybookList() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search playbooks..."
+                placeholder={t('playbook.searchPlaceholder')}
                 className="pl-8 h-9"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -223,7 +225,7 @@ export default function PlaybookList() {
           {loading && playbooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
               <Loader2 className="h-10 w-10 animate-spin mb-4" />
-              <p>Loading playbooks...</p>
+              <p>{t('playbook.loading')}</p>
             </div>
           ) : processedPlaybooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto">
@@ -233,25 +235,18 @@ export default function PlaybookList() {
                     <PlaybookIcon className="w-8 h-8 text-primary" />
                   </div>
                   <CardTitle className="text-2xl font-bold">
-                    플레이북(Playbook) 시작하기
+                    {t('playbook.emptyState.title')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6 text-muted-foreground">
-                  <p>
-                    플레이북은 Agent가 성공적으로 실행한 복잡한 요청을 다시할 수
-                    있도록 기록한 것입니다.
-                  </p>
+                  <p>{t('playbook.emptyState.description')}</p>
                   <div className="grid gap-4 text-left p-4 bg-muted/50 rounded-lg">
                     <div className="flex gap-3">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                         1
                       </span>
                       <p className="text-sm">
-                        Agent에게{' '}
-                        <span className="font-semibold text-foreground">
-                          &quot;플레이북을 만들어줘&quot;
-                        </span>
-                        라고 이야기하여 생성할 수 있습니다.
+                        {t('playbook.emptyState.step1')}
                       </p>
                     </div>
                     <div className="flex gap-3">
@@ -259,9 +254,7 @@ export default function PlaybookList() {
                         2
                       </span>
                       <p className="text-sm">
-                        생성된 Playbook을 활용하면 복잡한 프롬프트를 다시
-                        입력하지 않아도, 복잡한 작업을 반복적으로 실행할 수
-                        있습니다.
+                        {t('playbook.emptyState.step2')}
                       </p>
                     </div>
                   </div>
@@ -277,7 +270,8 @@ export default function PlaybookList() {
                       key={playbook.id}
                       playbook={playbook}
                       assistantName={
-                        assistants[playbook.agentId]?.name || 'Unknown'
+                        assistants[playbook.agentId]?.name ||
+                        t('playbook.card.unknownAssistant')
                       }
                       onBookmarkToggle={(id, val) =>
                         handleBookmarkToggle(id, val, playbook.agentId)
@@ -293,7 +287,11 @@ export default function PlaybookList() {
                     groups[key] && (
                       <PlaybookGroup
                         key={key}
-                        title={key}
+                        title={
+                          groupMode === 'time' || key.startsWith('playbook.')
+                            ? t(key)
+                            : key
+                        }
                         playbooks={groups[key]}
                         assistantMap={assistants}
                         onBookmarkToggle={(id, val) =>
@@ -318,16 +316,21 @@ export default function PlaybookList() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Playbook</AlertDialogTitle>
+              <AlertDialogTitle>
+                {t('playbook.deleteDialog.title')}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete &quot;{playbookToDelete?.goal}
-                &quot;? This action cannot be undone.
+                {t('playbook.deleteDialog.description', {
+                  goal: playbookToDelete?.goal,
+                })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>
+                {t('playbook.deleteDialog.cancel')}
+              </AlertDialogCancel>
               <AlertDialogAction onClick={confirmDelete}>
-                Delete
+                {t('playbook.deleteDialog.confirm')}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

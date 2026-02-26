@@ -98,14 +98,25 @@ export function SessionHistoryPanel({
   // SP7: Precompute descendant counts for all sessions so SessionCard can warn
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list
   //      so the count stays accurate even when a lineage filter is active.
+  //      Optimized to O(N) using an adjacency map.
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
+    const childrenMap = new Map<string, AgentSession[]>();
+
+    // Build adjacency list - O(N)
+    for (const session of sessions) {
+      if (session.parentSessionId) {
+        const children = childrenMap.get(session.parentSessionId) || [];
+        children.push(session);
+        childrenMap.set(session.parentSessionId, children);
+      }
+    }
 
     const count = (sessionId: string): number => {
       if (counts.has(sessionId)) {
         return counts.get(sessionId)!;
       }
-      const children = sessions.filter((s) => s.parentSessionId === sessionId);
+      const children = childrenMap.get(sessionId) || [];
       const total =
         children.length +
         children.reduce((sum, child) => sum + count(child.id), 0);

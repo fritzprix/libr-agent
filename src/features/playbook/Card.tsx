@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Bookmark, Play, Trash2 } from 'lucide-react';
 import type { Playbook } from '@/types/playbook';
@@ -34,6 +35,7 @@ export function PlaybookCard({
   onDelete,
   className,
 }: PlaybookCardProps) {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
 
   const handleStart = () => {
@@ -76,7 +78,7 @@ export function PlaybookCard({
                   playbook.isBookmarked && 'fill-current',
                 )}
               />
-              <span className="sr-only">Bookmark</span>
+              <span className="sr-only">{t('playbook.card.bookmark')}</span>
             </Button>
           </div>
         </div>
@@ -87,7 +89,9 @@ export function PlaybookCard({
           {playbook.goal}
         </CardTitle>
         <CardDescription className="line-clamp-1 text-xs">
-          Created {playbook.createdAt.toLocaleDateString()}
+          {t('playbook.card.created', {
+            date: playbook.createdAt.toLocaleDateString(i18n.language),
+          })}
         </CardDescription>
       </CardHeader>
 
@@ -96,7 +100,7 @@ export function PlaybookCard({
           {/* Display steps summary or description if available */}
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="secondary" className="text-xs font-mono">
-              {playbook.workflow.length} Steps
+              {t('playbook.card.steps', { count: playbook.workflow.length })}
             </Badge>
           </div>
           {playbook.initialCommand && (
@@ -120,7 +124,7 @@ export function PlaybookCard({
                 <Trash2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Delete Playbook</TooltipContent>
+            <TooltipContent>{t('playbook.card.deleteTooltip')}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
 
@@ -130,7 +134,7 @@ export function PlaybookCard({
           onClick={handleStart}
         >
           <Play className="h-3.5 w-3.5" />
-          Start
+          {t('playbook.card.start')}
         </Button>
       </CardFooter>
     </Card>

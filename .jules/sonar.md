@@ -16,4 +16,6 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 
 ## 2026-02-24 - src/lib/llm-config-manager.ts **Coverage Expanded:** LLMConfigManager (all methods) **Assertions:** Verified provider/model retrieval, getLangchainModelId mapping, filtering (tools, reasoning, cost), and recommendModel logic. **Bug Fixed:** Added missing `gemini` -> `google-genai` mapping in `getLangchainModelId` to prevent runtime errors.
 
+## 2026-02-25 - src/features/agent/hooks/useAgentFileAttachment.ts **Coverage Expanded:** useAgentFileAttachment **Assertions:** Verified MIME type detection, dropped file registration/reading, file size validation, and file input handling.
+
 ## 2026-02-25 - src/lib/message-preprocessor.ts **Coverage Expanded:** prepareMessageForLLM, prepareMessagesForLLM **Assertions:** Verified attachment handling (Content Store, Workspace, Metadata only), error resilience (returns original message), and logging statistics.

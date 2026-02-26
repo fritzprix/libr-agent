@@ -1,5 +1,5 @@
 use crate::agent::types::ToolCall;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use std::collections::HashMap;
 
 pub(crate) fn is_builtin_alias_enabled(agent_config: Option<&str>, alias: &str) -> bool {
