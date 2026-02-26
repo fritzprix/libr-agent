@@ -1,6 +1,6 @@
 use crate::agent::state::AgentSession;
-use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;

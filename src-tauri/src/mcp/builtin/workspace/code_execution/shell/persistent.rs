@@ -81,8 +81,7 @@ impl WorkspaceServer {
                     } else {
                         // Ensure it starts with ./ or .\ for clarity if it's relative
                         if relative_cwd.starts_with(".")
-                            || relative_cwd.starts_with("/")
-                            || relative_cwd.starts_with("\\")
+                            || relative_cwd.starts_with(std::path::MAIN_SEPARATOR)
                             || relative_cwd.contains(":")
                         {
                             relative_cwd.to_string()

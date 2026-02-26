@@ -27,3 +27,8 @@
 
 **Learning:** Nesting interactive elements (like a `button` inside a `div role="button"`) creates accessibility barriers. Screen readers may ignore the inner control.
 **Action:** When a card acts as a single button but contains a visual "action button", make the container the interactive element (`role="button"`) and replace the inner button with a visual-only element (`div` with button styles + `aria-hidden="true"`).
+
+## 2026-02-25 - [Dynamic List Focus Management]
+
+**Learning:** When adding items to a dynamic list (like environment variables), default focus behavior leaves the user stranded on the "Add" button, requiring multiple tab presses to reach the new input.
+**Action:** Implement `useEffect` to track list length changes and automatically focus the first input of the newly added item using stable IDs or refs.

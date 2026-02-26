@@ -24,4 +24,6 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 
 ## 2026-02-26 - [src-tauri/src/mcp/builtin/workspace/file_operations/search_query.rs] **Platform Bug:** Glob matching failed on Windows because path strings contained backslashes. **Resolved:** Implemented `matches_glob` helper to normalize paths before matching against glob patterns.
 
-## 2026-02-26 - [src-tauri/src/mcp/builtin/workspace/code_execution/shell/persistent.rs] **Platform Bug:** Hardcoded `./` prefix for relative working directory display. **Resolved:** Used `std::path::MAIN_SEPARATOR` to support `.\` on Windows.
+## 2026-03-01 - [src-tauri/src/mcp/builtin/workspace/code_execution/shell/persistent.rs] **Platform Bug:** Hardcoded `./` relative path prefix on Windows. **Resolved:** Replaced with logic using `std::path::MAIN_SEPARATOR` to ensure correct path formatting (e.g. `.\` on Windows).
+
+## 2026-03-01 - [src-tauri/src/session/manager.rs] **Platform Bug:** Hardcoded path separators in macOS log directory path. **Resolved:** Replaced `Library/Logs/...` string with chained `.join()` calls for robust path construction.
