@@ -293,7 +293,7 @@ pub async fn read_content(
     };
 
     let mut hints = vec![
-        "Use keywordSimilaritySearch to find specific content".to_string(),
+        "Use searchContent to find specific content".to_string(),
         format!(
             "Use deleteContent with contentId='{}' to remove this content",
             args.content_id
@@ -336,7 +336,7 @@ pub async fn keyword_similarity_search(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Invalid keywordSimilaritySearch parameters: {e}"),
+                format!("Invalid searchContent parameters: {e}"),
                 ToolGroup::ContentStore,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
