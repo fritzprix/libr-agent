@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search, History } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { filterSessions } from '@/lib/session-utils';
+import { filterSessions, computeDescendantCounts } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
 import { SessionCard } from './SessionCard';
 
@@ -99,22 +99,7 @@ export function SessionHistoryPanel({
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list
   //      so the count stays accurate even when a lineage filter is active.
   const descendantCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    const count = (sessionId: string): number => {
-      if (counts.has(sessionId)) {
-        return counts.get(sessionId)!;
-      }
-      const children = sessions.filter((s) => s.parentSessionId === sessionId);
-      const total =
-        children.length +
-        children.reduce((sum, child) => sum + count(child.id), 0);
-      counts.set(sessionId, total);
-      return total;
-    };
-
-    sessions.forEach((s) => count(s.id));
-    return counts;
+    return computeDescendantCounts(sessions);
   }, [sessions]);
 
   const displayRows = useMemo(() => {

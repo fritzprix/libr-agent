@@ -1,6 +1,130 @@
 import { describe, it, expect } from 'vitest';
-import { filterSessions } from '../session-utils';
+import { filterSessions, computeDescendantCounts } from '../session-utils';
 import { AgentSession } from '@/models/agent';
+
+describe('computeDescendantCounts', () => {
+  it('returns empty map for empty sessions list', () => {
+    const counts = computeDescendantCounts([]);
+    expect(counts.size).toBe(0);
+  });
+
+  it('returns 0 for single session with no children', () => {
+    const session: AgentSession = {
+      id: '1',
+      status: 'idle',
+      model: 'gpt-4',
+      provider: 'openai',
+      createdAt: new Date(),
+    };
+    const counts = computeDescendantCounts([session]);
+    expect(counts.get('1')).toBe(0);
+  });
+
+  it('computes counts for a simple chain: 1 -> 2 -> 3', () => {
+    const sessions: AgentSession[] = [
+      {
+        id: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+      {
+        id: '2',
+        parentSessionId: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+      {
+        id: '3',
+        parentSessionId: '2',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+    ];
+    // shuffle sessions to ensure order doesn't matter
+    const counts = computeDescendantCounts(sessions.reverse());
+    expect(counts.get('1')).toBe(2);
+    expect(counts.get('2')).toBe(1);
+    expect(counts.get('3')).toBe(0);
+  });
+
+  it('computes counts for a tree structure: 1->2, 1->3, 2->4', () => {
+    const sessions: AgentSession[] = [
+      {
+        id: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+      {
+        id: '2',
+        parentSessionId: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+      {
+        id: '3',
+        parentSessionId: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+      {
+        id: '4',
+        parentSessionId: '2',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      },
+    ];
+    const counts = computeDescendantCounts(sessions);
+    expect(counts.get('1')).toBe(3); // 2, 3, 4
+    expect(counts.get('2')).toBe(1); // 4
+    expect(counts.get('3')).toBe(0);
+    expect(counts.get('4')).toBe(0);
+  });
+
+  it('handles disconnected graphs', () => {
+    const sessions: AgentSession[] = [
+      {
+        id: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      }, // Root 1
+      {
+        id: '2',
+        parentSessionId: '1',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      }, // Child of 1
+      {
+        id: '3',
+        status: 'idle',
+        model: 'gpt-4',
+        provider: 'openai',
+        createdAt: new Date(),
+      }, // Root 2
+    ];
+    const counts = computeDescendantCounts(sessions);
+    expect(counts.get('1')).toBe(1);
+    expect(counts.get('2')).toBe(0);
+    expect(counts.get('3')).toBe(0);
+  });
+});
 
 describe('filterSessions', () => {
   const mockSessions: AgentSession[] = [
