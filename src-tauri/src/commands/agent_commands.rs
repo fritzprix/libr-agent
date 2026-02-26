@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
 
-use crate::agent::types::AgentMessageDto;
 use crate::commands::workspace_commands::get_app_logs_dir;
+use crate::models::chat::Message;
 use std::fs;
 
 /// Request to create a new agent session
@@ -32,7 +32,7 @@ pub struct CreateAgentSessionWithMessageRequest {
     pub model: Option<String>,
     pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
-    pub message: AgentMessageDto,
+    pub message: Message,
 }
 
 /// Request to send a user message to trigger workflow
@@ -40,7 +40,7 @@ pub struct CreateAgentSessionWithMessageRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SendUserMessageRequest {
     pub session_id: String,
-    pub message: AgentMessageDto,
+    pub message: Message,
 }
 
 /// Request to inject messages silently or with workflow trigger
@@ -48,7 +48,7 @@ pub struct SendUserMessageRequest {
 #[serde(rename_all = "camelCase")]
 pub struct InjectMessagesRequest {
     pub session_id: String,
-    pub messages: Vec<AgentMessageDto>,
+    pub messages: Vec<Message>,
     pub trigger_workflow: bool,
 }
 
@@ -252,9 +252,10 @@ pub async fn agent_inject_messages(
 pub async fn agent_handle_llm_response(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
-    assistant_message: AgentMessageDto,
+    assistant_message: Message,
 ) -> Result<AgentResponse, String> {
-    // AgentMessageDto is now a type alias for Message, no conversion needed
+    // AgentMessageDto was a type alias for Message, no conversion needed
+    // Message is the direct type (AgentMessageDto was a deprecated alias for Message)
     let message = assistant_message;
 
     log::info!(
@@ -262,7 +263,7 @@ pub async fn agent_handle_llm_response(
         session_id,
         message.id,
         message.tool_calls.is_some(),
-        message.tool_calls.as_ref().map(|tc| tc.len()).unwrap_or(0),
+        message.tool_calls.as_ref().map(|tc: &Vec<crate::agent::types::ToolCall>| tc.len()).unwrap_or(0),
         message.content.len()
     );
 

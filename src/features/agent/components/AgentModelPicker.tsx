@@ -1,15 +1,17 @@
-import { FC, useCallback, useMemo, useState, useEffect } from 'react';
+import { FC, useCallback, useMemo } from 'react';
 import React from 'react';
-import { Dropdown } from '@/components/ui';
-import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
-import { getLogger } from '@/lib/logger';
 import { RefreshCw } from 'lucide-react';
-import { useSettings } from '@/hooks/use-settings';
-import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
-import useSWR from 'swr';
-import { toast } from 'sonner';
 
-const logger = getLogger('AgentModelPicker');
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { AIServiceProvider } from '@/lib/ai-service';
+import { llmConfigManager } from '@/lib/llm-config-manager';
+import { useAgentModels } from '../hooks/useAgentModels';
 
 interface AgentModelPickerProps {
   currentModel?: string;
@@ -19,134 +21,13 @@ interface AgentModelPickerProps {
 }
 
 const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
-  currentModel,
-  currentProvider,
+  currentModel = '',
+  currentProvider = '',
   className,
   onConfigUpdate,
 }) => {
-  const {
-    value: { serviceConfigs },
-  } = useSettings();
-
-  // Local state for the picker selections (initialized from props)
-  const [localProvider, setLocalProvider] = useState<string>(
-    currentProvider || '',
-  );
-  const [localModel, setLocalModel] = useState<string>(currentModel || '');
-
-  // Sync state when props change (e.g. initial load or external update)
-  useEffect(() => {
-    if (currentProvider) setLocalProvider(currentProvider);
-    if (currentModel) setLocalModel(currentModel);
-  }, [currentProvider, currentModel]);
-
-  // --- Model Fetching Logic (Mirrors ModelProvider but scoped to localProvider) ---
-
-  // Get API key for the selected local provider
-  const apiKey = useMemo(() => {
-    return serviceConfigs[localProvider as AIServiceProvider]?.apiKey || '';
-  }, [serviceConfigs, localProvider]);
-
-  // Fetcher for dynamic models
-  const fetchDynamicModels = useCallback(
-    async ([, provider, key]: [string, string, string]) => {
-      const supportsDynamic =
-        provider === AIServiceProvider.Ollama ||
-        provider === AIServiceProvider.OpenAI ||
-        provider === AIServiceProvider.Anthropic ||
-        provider === AIServiceProvider.Gemini;
-
-      if (!supportsDynamic) return {};
-
-      let effectiveApiKey = key;
-      if (!effectiveApiKey) {
-        if (provider === AIServiceProvider.Ollama) {
-          effectiveApiKey = 'ollama-dummy';
-        } else {
-          return {};
-        }
-      }
-
-      try {
-        const providerConfig =
-          serviceConfigs[provider as AIServiceProvider] || {};
-        const service = AIServiceFactory.getService(
-          provider as AIServiceProvider,
-          effectiveApiKey,
-          providerConfig,
-        );
-        const modelList = await service.listModels();
-
-        return modelList.reduce(
-          (acc, modelInfo) => {
-            const k = modelInfo.id || modelInfo.name;
-            acc[k] = modelInfo;
-            return acc;
-          },
-          {} as Record<string, ModelInfo>,
-        );
-      } catch (error) {
-        logger.error('Failed to fetch models locally:', error);
-        toast.error(`Failed to fetch models for ${provider}`);
-        return {};
-      }
-    },
-    [serviceConfigs],
-  );
-
-  const {
-    data: dynamicModels = {},
-    mutate: refreshModels,
-    isValidating: isRefreshing,
-  } = useSWR(
-    localProvider ? ['local-models', localProvider, apiKey] : null,
-    fetchDynamicModels,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 60000,
-    },
-  );
-
-  // Combine static and dynamic models
-  const availableModels = useMemo(() => {
-    if (!localProvider) return {};
-
-    const providerConfig =
-      serviceConfigs[localProvider as AIServiceProvider] || {};
-
-    // If 3rd party is enabled for OpenAI, show only custom model ID
-    if (
-      localProvider === AIServiceProvider.OpenAI &&
-      providerConfig.use3rdParty &&
-      providerConfig.customModelId
-    ) {
-      const customModel: ModelInfo = {
-        id: providerConfig.customModelId,
-        name: providerConfig.customModelId,
-        contextWindow: 128000,
-        supportReasoning: false,
-        supportTools: true,
-        supportStreaming: true,
-        cost: {
-          input: 0,
-          output: 0,
-        },
-        description: 'Custom 3rd party OpenAI-compatible model',
-      };
-
-      return {
-        [providerConfig.customModelId]: customModel,
-      };
-    }
-
-    // Otherwise, show static or dynamic models
-    const staticModels =
-      llmConfigManager.getModelsForProvider(
-        localProvider as AIServiceProvider,
-      ) || {};
-
-    return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
-  }, [localProvider, dynamicModels, serviceConfigs]);
+  const { availableModels, isRefreshing, refreshModels } =
+    useAgentModels(currentProvider);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
@@ -163,40 +44,30 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
     }));
   }, []);
 
-  // --- Update Logic ---
-
-  // Handle Provider Change
   const handleProviderChange = useCallback(
     (newProvider: string) => {
-      setLocalProvider(newProvider);
-      onConfigUpdate?.(localModel, newProvider);
-
-      // Default model selection logic (optional, can be moved to parent or kept here as UI helper)
+      // Default model selection logic
       const staticModels = llmConfigManager.getModelsForProvider(
         newProvider as AIServiceProvider,
       );
+      let defaultModel = '';
       if (staticModels && Object.keys(staticModels).length > 0) {
-        const defaultModel = Object.keys(staticModels)[0];
-        setLocalModel(defaultModel);
-        onConfigUpdate?.(defaultModel, newProvider);
-      } else {
-        setLocalModel('');
-        onConfigUpdate?.('', newProvider);
+        defaultModel = Object.keys(staticModels)[0];
       }
+
+      onConfigUpdate?.(defaultModel, newProvider);
     },
-    [localModel, onConfigUpdate],
+    [onConfigUpdate],
   );
 
-  // Handle Model Change
   const handleModelChange = useCallback(
     (newModel: string) => {
-      setLocalModel(newModel);
-      onConfigUpdate?.(newModel, localProvider);
+      onConfigUpdate?.(newModel, currentProvider);
     },
-    [localProvider, onConfigUpdate],
+    [currentProvider, onConfigUpdate],
   );
 
-  if (!localProvider && !localModel) return null;
+  if (!currentProvider && !currentModel) return null;
 
   return (
     <div
@@ -205,28 +76,41 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       <div className="w-2 h-2 rounded-full bg-primary/40" />
 
       {/* Provider Selector */}
-      <Dropdown
-        options={providerOptions}
-        value={localProvider}
-        onChange={handleProviderChange}
-        className="w-24 h-6 text-xs bg-transparent border-none focus:ring-0"
-        placeholder="Provider"
-      />
+      <Select value={currentProvider} onValueChange={handleProviderChange}>
+        <SelectTrigger className="w-24 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
+          <SelectValue placeholder="Provider" />
+        </SelectTrigger>
+        <SelectContent>
+          {providerOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       <span className="text-muted-foreground/50">/</span>
 
       {/* Model Selector */}
-      <Dropdown
-        options={modelOptions}
-        value={localModel}
-        onChange={handleModelChange}
-        className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0"
-        placeholder={isRefreshing ? 'Loading...' : 'Model'}
-        disabled={isRefreshing || !localProvider}
-      />
+      <Select
+        value={currentModel}
+        onValueChange={handleModelChange}
+        disabled={isRefreshing || !currentProvider}
+      >
+        <SelectTrigger className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
+          <SelectValue placeholder={isRefreshing ? 'Loading...' : 'Model'} />
+        </SelectTrigger>
+        <SelectContent>
+          {modelOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {/* Refresh Button for Ollama */}
-      {localProvider === AIServiceProvider.Ollama && (
+      {currentProvider === AIServiceProvider.Ollama && (
         <button
           onClick={() => refreshModels()}
           disabled={isRefreshing}

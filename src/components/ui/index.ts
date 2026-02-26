@@ -52,7 +52,6 @@ export { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 export { ScrollArea, ScrollBar } from './scroll-area';
 
 // Custom components that don't have Shadcn equivalents
-export { Dropdown } from './Dropdown';
 
 export { default as FileAttachment } from './FileAttachment';
 export { default as InputWithLabel } from './InputWithLabel';
@@ -62,5 +61,3 @@ export { default as StatusIndicator } from './StatusIndicator';
 export { default as TextareaWithLabel } from './TextareaWithLabel';
 
 // NOTE: Do not re-export ModelPicker here to avoid cycles.
-// ModelPicker imports from this UI index (Dropdown), and re-exporting ModelPicker
-// would create a circular dependency between chunks in Rollup/Vite.
