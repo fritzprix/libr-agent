@@ -259,7 +259,11 @@ export function HttpForm({
                     <div key={header.id} className="flex gap-2 items-start">
                       <div className="flex-1">
                         <Input
-                          ref={index === arr.length - 1 ? lastNewInputRef : undefined}
+                          ref={
+                            index === arr.length - 1
+                              ? lastNewInputRef
+                              : undefined
+                          }
                           id={`header-key-${header.id}`}
                           placeholder={t(
                             'mcpServer.dialog.headerKeyPlaceholder',
