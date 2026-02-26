@@ -2,10 +2,28 @@
   "assistant": {
     "nameLabel": "어시스턴트 이름 *",
     "namePlaceholder": "어시스턴트 이름을 입력하세요...",
+    "descriptionLabel": "설명",
+    "descriptionPlaceholder": "이 어시스턴트가 하는 일에 대한 간단한 설명...",
     "systemPromptLabel": "시스템 프롬프트 *",
     "systemPromptPlaceholder": "AI의 역할과 행동을 설명하세요...",
+    "tabs": {
+      "general": "일반",
+      "tools": "도구",
+      "skills": "스킬"
+    },
+    "builtin": {
+      "title": "내장 도구",
+      "loading": "도구 로딩 중...",
+      "noTools": "사용 가능한 내장 도구가 없습니다.",
+      "toolAccess": "도구 접근",
+      "noOptional": "핵심 내장 도구는 자동으로 관리됩니다. 이 환경에서는 선택적 내장 도구를 사용할 수 없습니다.",
+      "description": "핵심 내장 도구는 항상 자동으로 활성화됩니다. 선택적 도구만 아래에 표시됩니다.",
+      "toolCount_one": "{{count}}개 도구 사용 가능",
+      "toolCount_other": "{{count}}개 도구 사용 가능"
+    },
     "mcp": {
       "label": "MCP 서버",
+      "description": "이 어시스턴트가 액세스할 수 있는 MCP 서버를 선택하세요",
       "noActive": "활성화된 MCP 서버가 없습니다.",
       "addServersLink": "설정에서 서버 추가",
       "searchPlaceholder": "서버 검색...",
@@ -22,7 +40,22 @@
       "save": "저장"
     },
     "list": {
-      "create": "새 어시스턴트 만들기"
+      "title": "어시스턴트",
+      "subtitle": "나만의 AI 에이전트 관리",
+      "create": "새 어시스턴트 만들기",
+      "searchPlaceholder": "어시스턴트 검색...",
+      "searchAriaLabel": "어시스턴트 검색",
+      "clearSearchAriaLabel": "검색어 지우기",
+      "searching": "검색 중...",
+      "searchResults": "\"{{query}}\"에 대한 {{count}}개의 결과 발견",
+      "noResults": "검색과 일치하는 어시스턴트가 없습니다",
+      "empty": "사용 가능한 어시스턴트가 없습니다",
+      "pagination": {
+        "previous": "이전",
+        "next": "다음",
+        "pageInfo": "{{total}}페이지 중 {{current}}페이지",
+        "totalInfo": "(총 {{total}}개 어시스턴트 중 {{count}}개)"
+      }
     },
     "card": {
       "protected": "보호됨",
@@ -186,7 +219,29 @@
     },
     "skills": {
       "modalTitle": "사용 가능한 스킬 ({{count}})",
-      "noSkills": "스킬을 찾을 수 없습니다."
+      "noSkills": "스킬을 찾을 수 없습니다.",
+      "title": "스킬 관리",
+      "saveFirst": "스킬을 관리하려면 먼저 어시스턴트를 저장하세요.",
+      "fetchFailed": "스킬을 불러오는데 실패했습니다",
+      "importing": "스킬 가져오는 중...",
+      "importSuccess": "스킬 가져오기 성공",
+      "importFailed": "스킬 가져오기 실패",
+      "overrideSuccess": "스킬 재정의 성공",
+      "overrideFailed": "스킬 재정의 실패",
+      "revertSuccess": "스킬을 전역 버전으로 되돌렸습니다",
+      "revertFailed": "스킬 되돌리기 실패",
+      "resetSuccess": "어시스턴트 스킬 초기화 성공",
+      "resetFailed": "스킬 초기화 실패",
+      "dragDropDesc": "스킬을 재정의하려면 zip 파일이나 폴더를 드래그 앤 드롭하세요.",
+      "resetTooltip": "모든 어시스턴트 전용 스킬 제거",
+      "reset": "재정의 초기화",
+      "dropHere": "스킬을 가져오려면 여기에 놓으세요",
+      "sourceAssistant": "어시스턴트",
+      "sourceGlobal": "전역",
+      "override": "이 어시스턴트에 대해 재정의",
+      "revert": "전역으로 되돌리기",
+      "resetTitle": "스킬 재정의를 초기화하시겠습니까?",
+      "resetConfirm": "이 작업은 모든 어시스턴트 전용 스킬을 제거하고 전역 기본값으로 되돌립니다. 이 작업은 되돌릴 수 없습니다."
     }
   },
   "mcpServer": {
