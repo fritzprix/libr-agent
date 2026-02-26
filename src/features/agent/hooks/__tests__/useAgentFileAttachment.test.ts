@@ -1,6 +1,6 @@
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useAgentFileAttachment } from '../useAgentFileAttachment';
-import { vi, describe, it, expect, beforeEach, Mock } from 'vitest';
 
 // Mocks
 const mockUseSettings = {
@@ -52,8 +52,8 @@ vi.mock('@/hooks/use-rust-backend', () => ({
 }));
 
 vi.mock('@/lib/workspace-sync-service', () => ({
-  validateFileSize: (...args: any[]) => mockValidateFileSize(...args),
-  createFileSizeErrorMessage: (...args: any[]) => mockCreateFileSizeErrorMessage(...args),
+  validateFileSize: (...args: unknown[]) => mockValidateFileSize(...args),
+  createFileSizeErrorMessage: (...args: unknown[]) => mockCreateFileSizeErrorMessage(...args),
 }));
 
 describe('useAgentFileAttachment', () => {
@@ -156,6 +156,36 @@ describe('useAgentFileAttachment', () => {
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Error processing file'));
       expect(mockUseAgentResourceAttachment.addPendingFiles).not.toHaveBeenCalled();
     });
+
+    it('should alert and stop early when registerDroppedFiles throws', async () => {
+      mockUseRustBackend.registerDroppedFiles.mockRejectedValue(new Error('Register failed'));
+      const filePaths = ['/path/to/file.txt'];
+      const { result } = renderHook(() => useAgentFileAttachment());
+
+      await act(async () => {
+        await result.current.processFileDrop(filePaths);
+      });
+
+      expect(window.alert).toHaveBeenCalledWith('Failed to validate dropped files. Please try again.');
+      expect(mockUseRustBackend.readDroppedFile).not.toHaveBeenCalled();
+      expect(mockUseAgentResourceAttachment.addPendingFiles).not.toHaveBeenCalled();
+    });
+
+    it('should alert when batch addPendingFiles throws after files are prepared', async () => {
+      (mockUseAgentResourceAttachment.addPendingFiles as Mock).mockImplementation(() => {
+        throw new Error('Batch upload failed');
+      });
+      const filePaths = ['/path/to/file.txt'];
+      const { result } = renderHook(() => useAgentFileAttachment());
+
+      await act(async () => {
+        await result.current.processFileDrop(filePaths);
+      });
+
+      expect(window.alert).toHaveBeenCalledWith(
+        expect.stringContaining('Batch upload failed'),
+      );
+    });
   });
 
   describe('handleFileAttachment', () => {
@@ -222,6 +252,30 @@ describe('useAgentFileAttachment', () => {
 
       expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('File large.txt is too big'));
       expect(mockUseAgentResourceAttachment.addPendingFiles).not.toHaveBeenCalled();
+    });
+
+    it('should alert and clear input when addPendingFiles throws', async () => {
+      (mockUseAgentResourceAttachment.addPendingFiles as Mock).mockImplementation(() => {
+        throw new Error('Test addPendingFiles error');
+      });
+      const { result } = renderHook(() => useAgentFileAttachment());
+
+      const file = new File(['content'], 'error.txt', { type: 'text/plain' });
+      const event = {
+        target: {
+          files: [file],
+          value: 'C:\\fakepath\\error.txt',
+        },
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
+
+      await act(async () => {
+        await result.current.handleFileAttachment(event);
+      });
+
+      expect(window.alert).toHaveBeenCalledWith(
+        expect.stringContaining('Test addPendingFiles error'),
+      );
+      expect(event.target.value).toBe('');
     });
   });
 
