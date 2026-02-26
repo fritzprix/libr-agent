@@ -68,7 +68,7 @@ describe('useAgentFileAttachment', () => {
     mockUseRustBackend.readDroppedFile.mockResolvedValue([1, 2, 3]); // Mock file content
     mockUseRustBackend.registerDroppedFiles.mockResolvedValue(undefined);
     mockValidateFileSize.mockReturnValue(true);
-    mockCreateFileSizeErrorMessage.mockImplementation((name, size, max) => `File ${name} is too big`);
+    mockCreateFileSizeErrorMessage.mockImplementation((name: string) => `File ${name} is too big`);
   });
 
   afterEach(() => {
@@ -96,7 +96,7 @@ describe('useAgentFileAttachment', () => {
 
   describe('processFileDrop', () => {
     it('should alert if no session available', async () => {
-      mockUseAgentSessionState.session = null as any;
+      mockUseAgentSessionState.session = null as unknown as { id: string };
       const { result } = renderHook(() => useAgentFileAttachment());
 
       await act(async () => {
@@ -216,7 +216,7 @@ describe('useAgentFileAttachment', () => {
     });
 
     it('should alert if no session available', async () => {
-      mockUseAgentSessionState.session = null as any;
+      mockUseAgentSessionState.session = null as unknown as { id: string };
       const { result } = renderHook(() => useAgentFileAttachment());
 
       const file = new File(['content'], 'test.txt', { type: 'text/plain' });
