@@ -75,6 +75,10 @@ export function useMCPServerManagement(service?: McpServerService) {
   const [serverToDelete, setServerToDelete] = useState<MCPServerEntity | null>(
     null,
   );
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [togglingStatus, setTogglingStatus] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const handleCreateNew = useCallback(() => {
     const newServer: MCPServerEntity = {
@@ -175,14 +179,16 @@ export function useMCPServerManagement(service?: McpServerService) {
   }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (!serverToDelete) return;
+    if (!serverToDelete || isDeleting) return;
 
+    setIsDeleting(true);
     try {
       await deleteServer(serverToDelete.id);
       await mutateServers();
       toast.success(
         t('mcpServer.toasts.deleted', 'Extension deleted successfully'),
       );
+      setServerToDelete(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       toast.error(
@@ -193,12 +199,13 @@ export function useMCPServerManagement(service?: McpServerService) {
       );
       logger.error('Failed to delete MCP server', error);
     } finally {
-      setServerToDelete(null);
+      setIsDeleting(false);
     }
   }, [serverToDelete, deleteServer, mutateServers, t]);
 
   const handleToggleActive = useCallback(
     async (server: MCPServerEntity, checked: boolean) => {
+      setTogglingStatus((prev) => ({ ...prev, [server.id]: true }));
       try {
         await toggleActive(server.id, checked);
         await mutateServers();
@@ -220,6 +227,12 @@ export function useMCPServerManagement(service?: McpServerService) {
           }),
         );
         logger.error('Failed to toggle MCP server active status', error);
+      } finally {
+        setTogglingStatus((prev) => {
+          const next = { ...prev };
+          delete next[server.id];
+          return next;
+        });
       }
     },
     [toggleActive, mutateServers, t],
@@ -236,6 +249,8 @@ export function useMCPServerManagement(service?: McpServerService) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
+    togglingStatus,
     verificationStatus,
     handleCreateNew,
     handleSetupPreset,
