@@ -346,7 +346,8 @@
     },
     "card": {
       "unknownAssistant": "Unknown",
-      "steps": "{{count}} Steps",
+      "steps_one": "{{count}} Step",
+      "steps_other": "{{count}} Steps",
       "start": "Start",
       "deleteTooltip": "Delete Playbook",
       "created": "Created {{date}}",

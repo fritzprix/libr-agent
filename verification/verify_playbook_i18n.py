@@ -1,5 +1,4 @@
 from playwright.sync_api import Page, expect, sync_playwright
-import time
 
 def verify_playbook_i18n(page: Page):
     print("Navigating to Playbooks page...")
