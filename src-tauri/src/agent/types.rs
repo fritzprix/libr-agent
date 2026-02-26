@@ -1,4 +1,3 @@
-use crate::models::chat::Message;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -13,4 +12,3 @@ pub struct ToolCallFunction {
     pub name: String,
     pub arguments: String, // JSON string
 }
-
