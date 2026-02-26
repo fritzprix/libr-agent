@@ -223,9 +223,7 @@ export default function SkillsEditor() {
             <div className="absolute inset-0 z-50 bg-background/80 flex items-center justify-center rounded-lg border-2 border-dashed border-primary">
               <div className="flex flex-col items-center">
                 <Upload className="h-10 w-10 text-primary mb-2" />
-                <p className="text-lg font-medium">
-                  {t('skills.dropHere')}
-                </p>
+                <p className="text-lg font-medium">{t('skills.dropHere')}</p>
               </div>
             </div>
           )}
@@ -308,17 +306,13 @@ export default function SkillsEditor() {
       <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('skills.resetTitle')}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t('skills.resetTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
               {t('skills.resetConfirm')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
-              {t('common.cancel')}
-            </AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmReset}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
