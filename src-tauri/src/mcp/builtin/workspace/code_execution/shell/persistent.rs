@@ -79,14 +79,15 @@ impl WorkspaceServer {
                     let display_cwd = if relative_cwd.is_empty() {
                         ".".to_string()
                     } else {
-                        // Ensure it starts with ./ for clarity if it's relative
+                        // Ensure it starts with ./ or .\ for clarity if it's relative
                         if relative_cwd.starts_with(".")
                             || relative_cwd.starts_with("/")
+                            || relative_cwd.starts_with("\\")
                             || relative_cwd.contains(":")
                         {
                             relative_cwd.to_string()
                         } else {
-                            format!("./{}", relative_cwd)
+                            format!(".{}{}", std::path::MAIN_SEPARATOR, relative_cwd)
                         }
                     };
 
