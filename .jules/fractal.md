@@ -61,4 +61,4 @@
 ## 2026-03-03 - src-tauri/src/agent/lifecycle.rs
 
 **Split:** `src-tauri/src/agent/lifecycle/` (`creation.rs`, `management.rs`, `recovery.rs`, `queries.rs`, `cache.rs`, `mod.rs`)
-**Improvement:** Decoupled session lifecycle management (creation, resumption, status updates, recovery) and query/cache logic into focused modules. Reduced the monolithic file size of ~500 lines into multiple smaller files, improving maintainability and readability.
+**Improvement:** Decoupled session lifecycle management (creation, resumption, status updates, recovery) and query/cache logic into focused modules. Reduced the monolithic file size of ~600 lines into multiple smaller files, improving maintainability and readability.
