@@ -116,12 +116,12 @@ describe('Message conversions', () => {
   });
 
   it('handles number timestamps in Message (runtime robustness)', () => {
-      // simulate runtime object with number timestamps
-      const msg: any = {
+      // simulate runtime object with number timestamps while keeping type safety
+      const msg = {
           ...fullMessage,
-          createdAt: nowTs,
-          updatedAt: undefined // should fall back to createdAt (nowTs)
-      };
+          createdAt: nowTs as unknown,
+          updatedAt: undefined, // should fall back to createdAt (nowTs)
+      } as Message;
 
       const rustMsg = messageToRustMessage(msg);
       expect(rustMsg.createdAt).toBe(nowTs);
