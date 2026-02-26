@@ -254,6 +254,7 @@ pub async fn agent_handle_llm_response(
     session_id: String,
     assistant_message: Message,
 ) -> Result<AgentResponse, String> {
+    // AgentMessageDto was a type alias for Message, no conversion needed
     // Message is the direct type (AgentMessageDto was a deprecated alias for Message)
     let message = assistant_message;
 

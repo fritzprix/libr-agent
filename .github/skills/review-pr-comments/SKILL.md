@@ -60,6 +60,7 @@ When the user confirms, apply all approved changes using targeted edits (not who
 After all approved fixes have been applied, produce a **ready-to-paste agent prompt** that verifies the PR's actual runtime behavior inside LibrAgent.
 
 **When to generate:**
+
 - After Step 5 completes, OR
 - When the user asks "테스트 프롬프트 만들어줘" / "give me a test prompt"
 
@@ -83,6 +84,7 @@ After all approved fixes have been applied, produce a **ready-to-paste agent pro
 ```
 
 **Rules:**
+
 - Each test must be fully self-contained (set up its own fixtures if needed).
 - Expected output must be **concrete and observable** — not "should work correctly" but "output contains `./subdir`".
 - Cover the main success path AND at least one error/edge case per change.
