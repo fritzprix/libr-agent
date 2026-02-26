@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
+import { withTimeout } from '@/lib/retry-utils';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useAgentModels');
@@ -14,11 +15,13 @@ export const useAgentModels = (provider?: string) => {
     value: { serviceConfigs },
   } = useSettings();
 
-  // Get API key for the selected provider
+  // Get API key and baseUrl for the selected provider
   const apiKey = useMemo(() => {
-    return (
-      serviceConfigs[provider as AIServiceProvider]?.apiKey || ''
-    );
+    return serviceConfigs[provider as AIServiceProvider]?.apiKey || '';
+  }, [serviceConfigs, provider]);
+
+  const baseUrl = useMemo(() => {
+    return serviceConfigs[provider as AIServiceProvider]?.baseUrl || '';
   }, [serviceConfigs, provider]);
 
   // Fetcher for dynamic models
@@ -42,14 +45,13 @@ export const useAgentModels = (provider?: string) => {
       }
 
       try {
-        const providerConfig =
-          serviceConfigs[p as AIServiceProvider] || {};
+        const providerConfig = serviceConfigs[p as AIServiceProvider] || {};
         const service = AIServiceFactory.getService(
           p as AIServiceProvider,
           effectiveApiKey,
           providerConfig,
         );
-        const modelList = await service.listModels();
+        const modelList = await withTimeout(service.listModels(), 20000);
 
         return modelList.reduce(
           (acc, modelInfo) => {
@@ -73,11 +75,11 @@ export const useAgentModels = (provider?: string) => {
     mutate: refreshModels,
     isValidating: isRefreshing,
   } = useSWR(
-    provider ? ['local-models', provider, apiKey] : null,
+    provider ? ['local-models', provider, apiKey, baseUrl] : null,
     fetchDynamicModels,
     {
       revalidateOnFocus: false,
-      dedupingInterval: 60000,
+      dedupingInterval: 30000,
     },
   );
 
@@ -85,8 +87,7 @@ export const useAgentModels = (provider?: string) => {
   const availableModels = useMemo(() => {
     if (!provider) return {};
 
-    const providerConfig =
-      serviceConfigs[provider as AIServiceProvider] || {};
+    const providerConfig = serviceConfigs[provider as AIServiceProvider] || {};
 
     // If 3rd party is enabled for OpenAI, show only custom model ID
     if (
@@ -115,9 +116,8 @@ export const useAgentModels = (provider?: string) => {
 
     // Otherwise, show static or dynamic models
     const staticModels =
-      llmConfigManager.getModelsForProvider(
-        provider as AIServiceProvider,
-      ) || {};
+      llmConfigManager.getModelsForProvider(provider as AIServiceProvider) ||
+      {};
 
     return Object.keys(dynamicModels).length > 0 ? dynamicModels : staticModels;
   }, [provider, dynamicModels, serviceConfigs]);

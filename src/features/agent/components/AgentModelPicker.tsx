@@ -26,9 +26,8 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   className,
   onConfigUpdate,
 }) => {
-  const { availableModels, isRefreshing, refreshModels } = useAgentModels(
-    currentProvider,
-  );
+  const { availableModels, isRefreshing, refreshModels } =
+    useAgentModels(currentProvider);
 
   const modelOptions = useMemo(() => {
     return Object.entries(availableModels).map(([key, value]) => ({
