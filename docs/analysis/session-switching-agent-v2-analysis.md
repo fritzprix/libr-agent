@@ -1,3 +1,13 @@
+# ⚠️ OBSOLETE DOCUMENTATION ⚠️
+
+> **NOTE:** This document describes a legacy architecture or a previous understanding of the Agent V2 session management.
+>
+> **Current Reality (as of March 2026):**
+> - The `switch_session` command is **deprecated** and functions as a **no-op** in the backend.
+> - Agent V2 sessions are fully isolated by ID and do not rely on global session switching in the `SessionManager`.
+> - The frontend no longer calls `switchSession`.
+> - Please refer to `agents.md` or `docs/architecture/agent-workflow-architecture.md` for current architecture details.
+
 # Analysis: Session Switching Requirements for Agent V2
 
 ## Executive Summary
