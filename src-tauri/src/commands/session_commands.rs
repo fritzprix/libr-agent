@@ -10,38 +10,11 @@ use tauri::command;
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SessionSwitchRequest {
-    pub session_id: String,
-    pub use_async: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SessionResponse {
     pub success: bool,
     pub message: String,
     pub session_id: Option<String>,
     pub data: Option<serde_json::Value>,
-}
-
-/// Switch to a specific session for workspace isolation
-/// Used by BuiltInToolProvider to switch backend workspace when changing Agent V2 sessions
-/// Switch to a specific session (Legacy/Deprecated)
-/// In Agent V2, sessions are isolated by ID and do not rely on global context switching.
-/// This command is preserved as a no-op to prevent frontend errors during transition.
-#[command]
-#[deprecated(note = "Global session switching is disabled in Agent V2.")]
-pub async fn switch_session(request: SessionSwitchRequest) -> Result<SessionResponse, String> {
-    log::warn!("Call to deprecated switch_session for '{}'. Global session switching is disabled in Agent V2.", request.session_id);
-
-    Ok(SessionResponse {
-        success: true,
-        message: format!(
-            "Session switch ignored (Agent V2 isolation enabled): {}",
-            request.session_id
-        ),
-        session_id: Some(request.session_id),
-        data: None,
-    })
 }
 
 /// Remove a specific session

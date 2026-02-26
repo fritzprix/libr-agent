@@ -62,7 +62,7 @@ use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
     update_playbook,
 };
-use commands::session_commands::{remove_session, switch_session};
+use commands::session_commands::remove_session;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
@@ -150,7 +150,6 @@ pub fn run() {
                 download_workspace_file,
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
-                switch_session, // (Legacy/Deprecated)
                 remove_session,
                 delete_content_store,
                 get_app_data_dir,
