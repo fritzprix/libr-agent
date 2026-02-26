@@ -22,3 +22,11 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
   - Extracted `useMCPServerForm` hook to manage form state and validation logic.
   - Decomposed `MCPServerDialog` into `StdioForm`, `HttpForm`, and `EnvVarsForm` components.
 - **Result:** Command handlers now delegate business logic to the service. The dialog component is now a pure presentational component that delegates logic to the hook and rendering to sub-components, improving maintainability and testability.
+
+## 2026-03-03 - [Architecture] **Anti-Pattern:** Fat Handler & Infrastructure Leakage **Resolution:** Service Extraction & Model Segregation
+
+- **Context:** `messages_commands.rs` contained `Message` struct definition (DTO), search index caching logic (`INDEX_CACHE`), and business logic for message deletion and search, mixing concerns.
+- **Action:**
+  - Extracted `Message` struct to `src-tauri/src/models/chat.rs` to decouple data shape from command handler.
+  - Extracted `MessageService` (`src-tauri/src/services/message_service.rs`) to encapsulate business logic for message deletion (DB + cache) and search (index management).
+- **Result:** `messages_commands.rs` is now a thin wrapper. The `Message` model is reusable across the application. Search logic is centralized and testable.

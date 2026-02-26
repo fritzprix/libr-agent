@@ -10,6 +10,7 @@ import {
   CardContent,
 } from '@/components/ui';
 import { Switch } from '@/components/ui/switch';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import type { VerificationStatus } from '../hooks/useMCPServerManagement';
 
 interface ServerCardProps {
@@ -18,6 +19,7 @@ interface ServerCardProps {
   onDelete: (server: MCPServerEntity) => void;
   onToggleActive: (server: MCPServerEntity, checked: boolean) => void;
   verificationStatus?: VerificationStatus;
+  isToggling?: boolean;
 }
 
 export const ServerCard = React.memo(
@@ -27,6 +29,7 @@ export const ServerCard = React.memo(
     onDelete,
     onToggleActive,
     verificationStatus,
+    isToggling,
   }: ServerCardProps) => {
     const { t } = useTranslation('common');
     const serverName = server.name || t('mcpServer.unnamed', 'Unnamed Server');
@@ -134,12 +137,16 @@ export const ServerCard = React.memo(
           </div>
           <div className="flex items-center gap-2">
             <div className="flex flex-col items-end gap-1">
-              <span className="text-xs text-muted-foreground">
-                {t('mcpServer.active', 'Active')}
-              </span>
+              <div className="flex items-center gap-1">
+                {isToggling && <LoadingSpinner size="sm" />}
+                <span className="text-xs text-muted-foreground">
+                  {t('mcpServer.active', 'Active')}
+                </span>
+              </div>
               <Switch
                 checked={server.isActive}
                 onCheckedChange={(checked) => onToggleActive(server, checked)}
+                disabled={isToggling}
                 aria-label={t('mcpServer.toggleActive', {
                   name: serverName,
                   defaultValue: 'Toggle active state for {{name}}',
@@ -185,6 +192,7 @@ export const ServerCard = React.memo(
       prev.server.toolCount === next.server.toolCount &&
       prev.server.updatedAt?.getTime() === next.server.updatedAt?.getTime() &&
       prev.verificationStatus === next.verificationStatus &&
+      prev.isToggling === next.isToggling &&
       prev.onEdit === next.onEdit &&
       prev.onDelete === next.onDelete &&
       prev.onToggleActive === next.onToggleActive

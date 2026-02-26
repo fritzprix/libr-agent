@@ -31,3 +31,7 @@
 ## 2025-05-23 - [Input Type Toggling]
 **Learning:** For password-like fields (like API keys), users frequently need to verify the pasted content. Providing a show/hide toggle significantly improves usability and reduces errors.
 **Action:** When implementing password inputs for non-auth credentials (e.g., tokens, keys), always include a visibility toggle using state management for the input `type` attribute.
+## 2026-02-25 - [Dynamic List Focus Management]
+
+**Learning:** When adding items to a dynamic list (like environment variables), default focus behavior leaves the user stranded on the "Add" button, requiring multiple tab presses to reach the new input.
+**Action:** Implement `useEffect` to track list length changes and automatically focus the first input of the newly added item using stable IDs or refs.
