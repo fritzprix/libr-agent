@@ -16,6 +16,8 @@ export interface RetryOptions {
   timeout?: number;
   /** If true, uses exponential backoff for delays. Defaults to true. */
   exponentialBackoff?: boolean;
+  /** If true, applies ±50% random jitter to delay to avoid thundering herd. Defaults to false. */
+  jitter?: boolean;
 }
 
 /**
@@ -82,6 +84,7 @@ export const withRetry = async <T>(
     maxDelay = 30000,
     timeout,
     exponentialBackoff = true,
+    jitter = false,
   } = options;
 
   let lastError: Error;
@@ -103,10 +106,12 @@ export const withRetry = async <T>(
         );
       }
 
-      // Calculate delay
-      const delay = exponentialBackoff
+      // Calculate delay with optional exponential backoff and jitter
+      const rawDelay = exponentialBackoff
         ? Math.min(baseDelay * Math.pow(2, attempt), maxDelay)
         : baseDelay;
+      // Apply ±50% jitter: multiply by 0.5–1.5 to spread retries and avoid thundering herd
+      const delay = jitter ? rawDelay * (0.5 + Math.random()) : rawDelay;
 
       await sleep(delay);
     }
@@ -136,6 +141,7 @@ export const withRetryResult = async <T>(
     maxDelay = 30000,
     timeout,
     exponentialBackoff = true,
+    jitter = false,
   } = options;
 
   let lastError: Error;
@@ -163,10 +169,12 @@ export const withRetryResult = async <T>(
         };
       }
 
-      // Calculate delay
-      const delay = exponentialBackoff
+      // Calculate delay with optional exponential backoff and jitter
+      const rawDelay = exponentialBackoff
         ? Math.min(baseDelay * Math.pow(2, attempt), maxDelay)
         : baseDelay;
+      // Apply ±50% jitter: multiply by 0.5–1.5
+      const delay = jitter ? rawDelay * (0.5 + Math.random()) : rawDelay;
 
       await sleep(delay);
     }
