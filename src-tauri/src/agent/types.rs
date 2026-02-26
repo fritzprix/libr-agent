@@ -18,4 +18,5 @@ pub struct ToolCallFunction {
 /// Message now has structured types matching TypeScript,
 /// with JSON conversion handled only in Repository layer.
 /// This type alias maintains compatibility during migration.
+#[deprecated(note = "Use Message directly.")]
 pub type AgentMessageDto = Message;

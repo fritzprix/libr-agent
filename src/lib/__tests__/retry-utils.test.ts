@@ -136,4 +136,80 @@ describe('retry-utils', () => {
        expect(result.error?.message).toBe('fail');
     });
   });
+
+  // SP4 regression tests
+  describe('jitter option', () => {
+    it('withRetry: jitter=true scales delay by Math.random factor (min half)', async () => {
+      // Math.random() = 0 → multiplier = 0.5 → delay = baseDelay * 0.5 = 50ms
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('ok');
+
+      const promise = withRetry(operation, { baseDelay: 100, maxRetries: 2, jitter: true });
+
+      // Before jittered delay (50ms) elapses, operation has only been called once
+      await vi.advanceTimersByTimeAsync(30);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      // After 50ms jittered delay, retry fires
+      await vi.advanceTimersByTimeAsync(30); // total 60ms > 50ms jitter
+      await expect(promise).resolves.toBe('ok');
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it('withRetry: jitter=true scales delay by Math.random factor (max 1.5x)', async () => {
+      // Math.random() = 1 → multiplier = 1.5 → delay = baseDelay * 1.5 = 150ms
+      vi.spyOn(Math, 'random').mockReturnValue(1);
+
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('ok');
+
+      const promise = withRetry(operation, { baseDelay: 100, maxRetries: 2, jitter: true });
+
+      // Below exact (non-jittered) delay of 100ms — operation should NOT yet have retried
+      await vi.advanceTimersByTimeAsync(110);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      // After full jittered delay of 150ms, retry fires
+      await vi.advanceTimersByTimeAsync(50); // total 160ms > 150ms
+      await expect(promise).resolves.toBe('ok');
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it('withRetry: jitter=false uses exact exponential delay unchanged', async () => {
+      // Without jitter, delay at attempt 0 = baseDelay = 100ms exactly
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('ok');
+
+      const promise = withRetry(operation, { baseDelay: 100, maxRetries: 2, jitter: false });
+
+      await vi.advanceTimersByTimeAsync(90);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(20); // total 110ms > 100ms
+      await expect(promise).resolves.toBe('ok');
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it('withRetryResult: jitter=true returns success with correct attemptCount', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0); // min delay (0.5x)
+
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValue('recovered');
+
+      const promise = withRetryResult(operation, { baseDelay: 100, maxRetries: 2, jitter: true });
+
+      await vi.advanceTimersByTimeAsync(60); // past 50ms jitter delay
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe('recovered');
+      expect(result.attemptCount).toBe(2);
+    });
+  });
 });
