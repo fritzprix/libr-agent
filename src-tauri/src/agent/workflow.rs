@@ -1,6 +1,6 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
-use crate::models::chat::Message;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{MessageRepository, SessionStatus};
 use std::collections::HashMap;

@@ -24,13 +24,19 @@ impl MessageService {
 
         // Find the message's session_id before deleting
         // We need to load it to identify which session cache to update
-        let page = repo
-            .get_page("", 1, 10000) // This is inefficient but messages_delete doesn't have session context
+        let message = repo
+            .get_by_id(&message_id)
             .await
-            .map_err(|e| format!("Failed to query messages: {}", e))?;
+            .map_err(|e| format!("Failed to query message by id {}: {}", message_id, e))?;
 
-        let target_message = page.items.iter().find(|m| m.id == message_id);
-        let session_id = target_message.map(|m| m.session_id.clone());
+        if message.is_none() {
+            log::warn!(
+                "delete_message: message {} not found in database, nothing to delete",
+                message_id
+            );
+        }
+
+        let session_id = message.map(|m| m.session_id);
 
         // Delete from database
         repo.delete_by_id(&message_id)

@@ -28,6 +28,9 @@ pub trait MessageRepository: Send + Sync {
     /// Insert or update multiple messages in a transaction
     async fn insert_many(&self, messages: Vec<Message>) -> Result<(), DbError>;
 
+    /// Retrieve a single message by its ID
+    async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError>;
+
     /// Delete a single message by its ID
     async fn delete_by_id(&self, message_id: &str) -> Result<(), DbError>;
 
@@ -253,6 +256,11 @@ impl MessageRepository for SqliteMessageRepository {
             .await
             .map_err(|e| DbError::TransactionFailed(e.to_string()))?;
         Ok(())
+    }
+
+    async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError> {
+        let model = MessageEntity::find_by_id(message_id).one(&self.db).await?;
+        Ok(model.map(Self::model_to_message))
     }
 
     async fn delete_by_id(&self, message_id: &str) -> Result<(), DbError> {

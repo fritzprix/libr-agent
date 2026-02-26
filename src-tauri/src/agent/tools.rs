@@ -1,7 +1,7 @@
 use crate::agent::state::AgentSession;
-use crate::models::chat::Message;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::AppHandle;
