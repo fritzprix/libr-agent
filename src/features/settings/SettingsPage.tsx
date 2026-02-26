@@ -194,6 +194,17 @@ export default function SettingsPage() {
     [update],
   );
 
+  const handleFallbackModelChange = useCallback(
+    (model: string, provider: string) => {
+      // Clear fallback if no model selected
+      update(
+        'fallbackModel',
+        model ? { provider: provider as AIServiceProvider, model } : undefined,
+      );
+    },
+    [update],
+  );
+
   const handleWindowSizeChange = useCallback(
     (value: number) => update('windowSize', value),
     [update],
@@ -315,9 +326,11 @@ export default function SettingsPage() {
                 serviceConfigs={formState.serviceConfigs}
                 providerEntries={providerEntries}
                 localPreferredModel={formState.preferredModel}
+                localFallbackModel={formState.fallbackModel}
                 localAgentHubUrl={formState.agentHubUrl || ''}
                 onPendingChange={handlePendingChange}
                 onPreferredModelChange={handlePreferredModelChange}
+                onFallbackModelChange={handleFallbackModelChange}
                 onAgentHubUrlChange={handleAgentHubUrlChange}
               />
             </TabsContent>

@@ -3,8 +3,8 @@
     "mcp-hn": {
       "description": "Read top stories from Hacker News.",
       "logo": "https://news.ycombinator.com/favicon.ico",
-      "command": "uvx",
-      "args": ["mcp-hn"]
+      "command": "npx",
+      "args": ["-y", "@fritzprix/hn-mcp"]
     },
     "yfinance": {
       "description": "Get real-time stock market data and financial news.",

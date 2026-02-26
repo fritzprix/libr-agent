@@ -17,7 +17,8 @@ const logger = getLogger('RustSettingsService');
 // Define specific types for each setting value
 type SettingValue =
   | Record<AIServiceProvider, ServiceConfig> // serviceConfigs
-  | ModelChoice // preferredModel
+  | ModelChoice // preferredModel / fallbackModel
+  | null // fallbackModel can be null (cleared)
   | number // windowSize, toolCallGroupVisibleCount
   | string // uiLanguage, agentHubUrl
   | AdvancedSettings // advancedSettings
@@ -79,6 +80,11 @@ export class RustSettingsService implements ISettingsService {
           'preferredModel',
           DEFAULT_SETTING.preferredModel,
         ),
+        fallbackModel:
+          (settingsMap.get('fallbackModel') as
+            | ModelChoice
+            | null
+            | undefined) ?? DEFAULT_SETTING.fallbackModel,
         windowSize: getTypedValue('windowSize', DEFAULT_SETTING.windowSize),
         uiLanguage: getTypedValue('uiLanguage', DEFAULT_SETTING.uiLanguage),
         toolCallGroupVisibleCount: getTypedValue(
@@ -122,6 +128,11 @@ export class RustSettingsService implements ISettingsService {
 
       if (settings.preferredModel) {
         changes['preferredModel'] = settings.preferredModel;
+      }
+
+      // fallbackModel: allow null to explicitly clear it
+      if (settings.fallbackModel !== undefined) {
+        changes['fallbackModel'] = settings.fallbackModel ?? null;
       }
 
       if (settings.windowSize != null) {
