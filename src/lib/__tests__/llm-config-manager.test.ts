@@ -163,6 +163,9 @@ describe('LLMConfigManager', () => {
       expect(manager.getLangchainModelId('groq', 'llama3-8b-8192')).toBe('groq:llama3-8b-8192');
       // Should work after fix
       expect(manager.getLangchainModelId('gemini', 'gemini-1.5-pro')).toBe('google-genai:gemini-1.5-pro');
+      expect(manager.getLangchainModelId('ollama', 'llama2')).toBe('ollama:llama2');
+      expect(manager.getLangchainModelId('cerebras', 'llama3.1-8b')).toBe('cerebras:llama3.1-8b');
+      expect(manager.getLangchainModelId('fireworks', 'mixtral-8x7b')).toBe('fireworks:mixtral-8x7b');
     });
 
     it('should throw for unknown provider in getLangchainModelId', () => {

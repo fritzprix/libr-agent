@@ -7,6 +7,7 @@ import type { Settings } from '@/context/SettingsContext';
 import { AIServiceProvider } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
+import { sleep } from '@/lib/retry-utils';
 import type { CompletionRequest } from './types';
 import { isAbortError } from './types';
 
@@ -119,18 +120,130 @@ export function useLLMListener({
           });
 
           try {
-            // Execute the completion with API key from Settings
-            const result = await executeCompletionRequest(
-              sessionId,
-              messages,
-              model,
-              provider,
-              finalApiKey,
-              systemPrompt,
-              temperature,
-              maxTokens,
-              availableTools,
-            );
+            // SP4: Execute with retry (exponential backoff + jitter) and optional fallback model.
+            // Malformed/empty responses come as errors from executeCompletionRequest,
+            // despite the LLM API returning HTTP 200 — this recovers from those silently.
+            const SP4_MAX_RETRIES = 3;
+            const SP4_BASE_DELAY_MS = 500;
+
+            const attemptCompletion = async (
+              targetModel: string,
+              targetProvider: string,
+              targetApiKey: string,
+            ): Promise<Message> => {
+              for (let attempt = 0; attempt <= SP4_MAX_RETRIES; attempt++) {
+                if (attempt > 0) {
+                  // Exponential backoff with ±50% jitter to spread retries
+                  const rawDelay = Math.min(
+                    SP4_BASE_DELAY_MS * Math.pow(2, attempt - 1),
+                    30000,
+                  );
+                  const jitteredDelay = rawDelay * (0.5 + Math.random());
+                  logger.warn(
+                    `SP4: Retry ${attempt}/${SP4_MAX_RETRIES} after ${Math.round(jitteredDelay)}ms`,
+                    { sessionId, model: targetModel, provider: targetProvider },
+                  );
+                  await sleep(jitteredDelay);
+
+                  // Reset streaming indicator so UI shows a fresh spinner on retry
+                  setStreamingMessages((prev) => {
+                    const next = new Map(prev);
+                    next.set(sessionId, {
+                      id: `msg_${Date.now()}`,
+                      sessionId,
+                      threadId: sessionId,
+                      role: 'assistant',
+                      content: [],
+                      isStreaming: true,
+                      createdAt: new Date(),
+                    });
+                    return next;
+                  });
+                }
+
+                try {
+                  return await executeCompletionRequest(
+                    sessionId,
+                    messages,
+                    targetModel,
+                    targetProvider,
+                    targetApiKey,
+                    systemPrompt,
+                    temperature,
+                    maxTokens,
+                    availableTools,
+                  );
+                } catch (attemptError) {
+                  // Abort errors must never be retried — propagate immediately
+                  if (isAbortError(attemptError)) {
+                    throw attemptError;
+                  }
+                  if (attempt === SP4_MAX_RETRIES) {
+                    throw attemptError;
+                  }
+                  logger.warn(
+                    `SP4: Attempt ${attempt + 1} failed, will retry`,
+                    { sessionId, error: attemptError },
+                  );
+                }
+              }
+              // Unreachable, but satisfies TS
+              throw new Error('SP4: retry loop exhausted');
+            };
+
+            // First try primary model with retries
+            let result: Message;
+            try {
+              result = await attemptCompletion(model, provider, finalApiKey);
+            } catch (primaryError) {
+              if (isAbortError(primaryError)) {
+                throw primaryError; // Let the outer catch handle abort
+              }
+
+              // Primary model exhausted — try configured fallback model
+              const fallbackModel = settingsRef.current.fallbackModel;
+              if (fallbackModel) {
+                const fallbackApiKey =
+                  settingsRef.current.serviceConfigs?.[
+                    fallbackModel.provider as AIServiceProvider
+                  ]?.apiKey ?? '';
+
+                logger.warn(
+                  `SP4: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,
+                  { sessionId },
+                );
+
+                // Reset streaming indicator for fallback attempt
+                setStreamingMessages((prev) => {
+                  const next = new Map(prev);
+                  next.set(sessionId, {
+                    id: `msg_${Date.now()}`,
+                    sessionId,
+                    threadId: sessionId,
+                    role: 'assistant',
+                    content: [],
+                    isStreaming: true,
+                    createdAt: new Date(),
+                  });
+                  return next;
+                });
+
+                // One shot with fallback — no further retries
+                result = await executeCompletionRequest(
+                  sessionId,
+                  messages,
+                  fallbackModel.model,
+                  fallbackModel.provider,
+                  fallbackApiKey,
+                  systemPrompt,
+                  temperature,
+                  maxTokens,
+                  availableTools,
+                );
+              } else {
+                throw primaryError; // No fallback, propagate to outer catch
+              }
+            }
 
             // Send result back to Rust
             logger.info('Sending LLM response to Rust', {
