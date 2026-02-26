@@ -277,5 +277,59 @@
       "activated": "activated",
       "deactivated": "deactivated"
     }
+  },
+  "playbook": {
+    "title": "Playbooks",
+    "description": "Browse and execute automated workflows",
+    "searchPlaceholder": "Search playbooks...",
+    "loading": "Loading playbooks...",
+    "emptyState": {
+      "title": "Start Playbook",
+      "description": "A playbook is a record of complex requests that the Agent has successfully executed.",
+      "step1": "You can create one by telling the Agent \"Create a playbook\".",
+      "step2": "Using the created Playbook allows you to repeat complex tasks without re-entering complex prompts."
+    },
+    "card": {
+      "unknownAssistant": "Unknown",
+      "steps": "{{count}} Steps",
+      "start": "Start",
+      "deleteTooltip": "Delete Playbook",
+      "created": "Created {{date}}",
+      "bookmark": "Bookmark"
+    },
+    "deleteDialog": {
+      "title": "Delete Playbook",
+      "description": "Are you sure you want to delete \"{{goal}}\"? This action cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "sort": {
+      "display": "Display",
+      "sortBy": "Sort By",
+      "dateCreated": "Date Created",
+      "assistant": "Assistant",
+      "order": "Order",
+      "newestFirst": "Newest First (Desc)",
+      "oldestFirst": "Oldest First (Asc)",
+      "grouping": "Grouping",
+      "none": "None",
+      "byTime": "By Time",
+      "byAssistant": "By Assistant",
+      "bookmarksFirst": "Bookmarks First"
+    },
+    "group": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "thisWeek": "This Week",
+      "lastMonth": "Last Month",
+      "older": "Older",
+      "unknownAssistant": "Unknown Assistant"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load playbooks",
+      "bookmarkFailed": "Failed to update bookmark",
+      "deleted": "Playbook deleted",
+      "deleteFailed": "Failed to delete playbook"
+    }
   }
 }
