@@ -33,7 +33,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:
 - readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
-- For keyword-based similarity search: keywordSimilaritySearch(sessionId: "${attachment.sessionId}", query: "your search query")
+- For keyword search: searchContent(sessionId: "${attachment.sessionId}", query: "your search query")
 - For file list: listContent(sessionId: "${attachment.sessionId}")`
         : attachment.workspacePath
           ? `This file is in your workspace (may not be indexed in content store yet):
