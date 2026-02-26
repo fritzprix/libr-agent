@@ -1,6 +1,6 @@
 use crate::agent::AgentSessionManager;
-use crate::commands::messages_commands::Message;
 use crate::mcp::types::MCPContent;
+use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::session_repository::SessionRepository;
 use serde::{Deserialize, Serialize};

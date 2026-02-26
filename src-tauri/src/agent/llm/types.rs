@@ -1,4 +1,4 @@
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
