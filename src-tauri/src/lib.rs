@@ -8,6 +8,7 @@ pub mod entity; // SeaORM entity definitions
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
+pub mod models;
 pub mod repositories; // Make public for integration tests
 mod search;
 pub mod server;

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
 
-use crate::commands::messages_commands::Message;
 use crate::commands::workspace_commands::get_app_logs_dir;
+use crate::models::chat::Message;
 use std::fs;
 
 /// Request to create a new agent session
@@ -262,7 +262,7 @@ pub async fn agent_handle_llm_response(
         session_id,
         message.id,
         message.tool_calls.is_some(),
-        message.tool_calls.as_ref().map(|tc| tc.len()).unwrap_or(0),
+        message.tool_calls.as_ref().map(|tc: &Vec<crate::agent::types::ToolCall>| tc.len()).unwrap_or(0),
         message.content.len()
     );
 

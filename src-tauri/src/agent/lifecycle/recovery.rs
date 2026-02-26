@@ -38,7 +38,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
         .unwrap_or_default()
         .as_millis() as i64;
 
-    let mut tombstones: Vec<crate::commands::messages_commands::Message> = Vec::new();
+    let mut tombstones: Vec<crate::models::chat::Message> = Vec::new();
 
     // Find assistant messages with unresolved tool calls
     for msg in &messages {
@@ -53,7 +53,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 continue;
             }
             // Inject a synthetic error result tombstone so the UI can unblock
-            tombstones.push(crate::commands::messages_commands::Message {
+            tombstones.push(crate::models::chat::Message {
                 id: uuid::Uuid::new_v4().to_string(),
                 session_id: session_id.to_string(),
                 role: "tool".to_string(),
