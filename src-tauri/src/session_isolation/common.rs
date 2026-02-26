@@ -1,5 +1,3 @@
-#[cfg(unix)]
-use crate::session_isolation::types::ShellType;
 use std::path::PathBuf;
 use tokio::process::Command as AsyncCommand;
 use tracing::warn;
@@ -22,19 +20,6 @@ pub async fn is_command_available(command: &str) -> bool {
             warn!("Failed to check command availability: {err}");
             false
         }
-    }
-}
-
-/// Get the appropriate shell command for the platform and shell type
-#[cfg(unix)]
-pub fn get_shell_command(shell_type: Option<ShellType>) -> &'static str {
-    if cfg!(target_os = "windows") {
-        match shell_type {
-            Some(ShellType::Cmd) => "cmd",
-            Some(ShellType::PowerShell) | Some(ShellType::Bash) | None => "powershell",
-        }
-    } else {
-        "bash"
     }
 }
 

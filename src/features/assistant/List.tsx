@@ -178,10 +178,10 @@ export default function AssistantList() {
             </div>
             <div>
               <h1 className="text-2xl text-foreground font-semibold tracking-tight">
-                {t('assistant.list.title', 'Assistants')}
+                {t('assistant.list.title')}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Manage your customized AI agents
+                {t('assistant.list.subtitle')}
               </p>
             </div>
           </div>
@@ -191,14 +191,11 @@ export default function AssistantList() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder={t(
-                  'assistant.list.searchPlaceholder',
-                  'Search assistants...',
-                )}
+                placeholder={t('assistant.list.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => handleSearch(e.target.value)}
                 className="pl-9 pr-9 h-9"
-                aria-label="Search assistants"
+                aria-label={t('assistant.list.searchAriaLabel')}
               />
               {searchQuery && (
                 <Button
@@ -206,7 +203,7 @@ export default function AssistantList() {
                   size="icon"
                   className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
                   onClick={handleClearSearch}
-                  aria-label="Clear search"
+                  aria-label={t('assistant.list.clearSearchAriaLabel')}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -218,17 +215,22 @@ export default function AssistantList() {
               className="h-9 whitespace-nowrap"
             >
               <Plus size={16} className="mr-2" />
-              {t('assistant.list.create', 'Create New')}
+              {t('assistant.list.create')}
             </Button>
           </div>
         </div>
 
         {isSearching && (
-          <div className="text-sm text-muted-foreground mb-4">Searching...</div>
+          <div className="text-sm text-muted-foreground mb-4">
+            {t('assistant.list.searching')}
+          </div>
         )}
         {searchResults !== null && !isSearching && (
           <div className="text-sm text-muted-foreground mb-4">
-            Found {searchResults.length} results for &quot;{searchQuery}&quot;
+            {t('assistant.list.searchResults', {
+              count: searchResults.length,
+              query: searchQuery,
+            })}
           </div>
         )}
 
@@ -237,8 +239,8 @@ export default function AssistantList() {
           {displayedAssistants.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
               {searchResults !== null
-                ? 'No assistants found matching your search'
-                : 'No assistants available'}
+                ? t('assistant.list.noResults')
+                : t('assistant.list.empty')}
             </div>
           ) : (
             <div className="space-y-2">
@@ -266,12 +268,18 @@ export default function AssistantList() {
                 onClick={() => setPage(currentPage - 1)}
                 disabled={currentPage === 1}
               >
-                Previous
+                {t('assistant.list.pagination.previous')}
               </Button>
               <div className="text-sm text-muted-foreground">
-                Page {currentPage} of {totalPages}
+                {t('assistant.list.pagination.pageInfo', {
+                  current: currentPage,
+                  total: totalPages,
+                })}
                 <span className="ml-2">
-                  ({assistants.length} of {totalAssistants} assistants)
+                  {t('assistant.list.pagination.totalInfo', {
+                    count: assistants.length,
+                    total: totalAssistants,
+                  })}
                 </span>
               </div>
               <Button
@@ -280,7 +288,7 @@ export default function AssistantList() {
                 onClick={() => setPage(currentPage + 1)}
                 disabled={currentPage >= totalPages}
               >
-                Next
+                {t('assistant.list.pagination.next')}
               </Button>
             </div>
           </div>

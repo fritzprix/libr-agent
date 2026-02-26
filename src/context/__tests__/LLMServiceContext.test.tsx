@@ -5,8 +5,9 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import type { Message } from '@/models/chat';
-import { SettingsProvider } from '../SettingsContext';
+import { SettingsProvider, SettingsContext, DEFAULT_SETTING } from '../SettingsContext';
 import type { ReactNode } from 'react';
+import type { AIServiceProvider } from '@/lib/ai-service';
 
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
@@ -33,6 +34,12 @@ vi.mock('@/lib/logger', () => ({
     error: vi.fn(),
   }),
 }));
+
+// SP4: make sleep a no-op so retry tests don't take real time
+vi.mock('@/lib/retry-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/retry-utils')>();
+  return { ...actual, sleep: vi.fn().mockResolvedValue(undefined) };
+});
 
 // Test wrapper with required providers
 function TestWrapper({ children }: { children: ReactNode }) {
@@ -505,6 +512,187 @@ describe('LLMServiceContext', () => {
           }),
         );
       });
+    });
+  });
+
+  // ─── SP4 regression: Retry & Fallback Recovery ───────────────────────────
+  describe('SP4 – Retry & Fallback Recovery', () => {
+    // Capture event handler registered via listen()
+    let eventHandler: ((event: unknown) => Promise<void>) | undefined;
+
+    beforeEach(() => {
+      eventHandler = undefined;
+
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-request') {
+            eventHandler = handler as (event: unknown) => Promise<void>;
+          }
+          return mockUnlisten;
+        },
+      );
+    });
+
+    /** Trigger llm:completion-request and wait for it to settle */
+    const triggerEvent = async (model = 'gpt-4', provider = 'openai') => {
+      await eventHandler?.({
+        payload: {
+          sessionId: 'sp4-session',
+          messages: [
+            {
+              id: 'u1',
+              sessionId: 'sp4-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model,
+          provider,
+          apiKey: 'test-key',
+        },
+      });
+    };
+
+    it('SP4: succeeds on retry after transient API failure', async () => {
+      // First attempt throws; second succeeds
+      mockStreamChat
+        .mockImplementationOnce(async function* () {
+          yield; // satisfy require-yield
+          throw new Error('transient');
+        })
+        .mockImplementationOnce(async function* () {
+          yield JSON.stringify({ content: 'recovered' });
+        });
+
+      renderHook(() => useLLMService(), { wrapper: TestWrapper });
+      await waitFor(() => expect(eventHandler).toBeDefined());
+
+      await act(async () => {
+        await triggerEvent();
+      });
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith(
+          'agent_handle_llm_response',
+          expect.objectContaining({ sessionId: 'sp4-session' }),
+        );
+      });
+
+      // Primary was called twice (1 initial + 1 retry), no error reported
+      expect(mockStreamChat).toHaveBeenCalledTimes(2);
+      expect(invoke).not.toHaveBeenCalledWith(
+        'agent_handle_llm_error',
+        expect.anything(),
+      );
+    });
+
+    it('SP4: exhausts all retries and reports error when no fallback configured', async () => {
+      // All 4 attempts fail (attempt 0 + retries 1-3)
+      mockStreamChat.mockImplementation(async function* () {
+        yield;
+        throw new Error('persistent failure');
+      });
+
+      renderHook(() => useLLMService(), { wrapper: TestWrapper });
+      await waitFor(() => expect(eventHandler).toBeDefined());
+
+      await act(async () => {
+        await triggerEvent();
+      });
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith(
+          'agent_handle_llm_error',
+          expect.objectContaining({ sessionId: 'sp4-session' }),
+        );
+      });
+
+      // 4 attempts total (1 initial + 3 retries), no fallback
+      expect(mockStreamChat).toHaveBeenCalledTimes(4);
+    });
+
+    it('SP4: switches to fallback model after primary exhausts all retries', async () => {
+      // Primary fails 4 times; fallback succeeds on 5th call
+      mockStreamChat
+        .mockImplementationOnce(async function* () { yield; throw new Error('api err'); })
+        .mockImplementationOnce(async function* () { yield; throw new Error('api err'); })
+        .mockImplementationOnce(async function* () { yield; throw new Error('api err'); })
+        .mockImplementationOnce(async function* () { yield; throw new Error('api err'); })
+        .mockImplementationOnce(async function* () {
+          yield JSON.stringify({ content: 'fallback ok' });
+        });
+
+      // Custom wrapper that provides settings with a fallback model configured
+      const fallbackSettings = {
+        ...DEFAULT_SETTING,
+        fallbackModel: {
+          provider: 'anthropic' as AIServiceProvider,
+          model: 'claude-3-5-sonnet-20241022',
+        },
+      };
+
+      function WrapperWithFallback({ children }: { children: ReactNode }) {
+        return (
+          <SettingsContext.Provider
+            value={{ value: fallbackSettings, update: vi.fn(), isLoading: false, error: null }}
+          >
+            <LLMServiceProvider>{children}</LLMServiceProvider>
+          </SettingsContext.Provider>
+        );
+      }
+
+      renderHook(() => useLLMService(), { wrapper: WrapperWithFallback });
+      await waitFor(() => expect(eventHandler).toBeDefined());
+
+      await act(async () => {
+        await triggerEvent();
+      });
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith(
+          'agent_handle_llm_response',
+          expect.objectContaining({ sessionId: 'sp4-session' }),
+        );
+      });
+
+      // 5 total calls: 4 primary + 1 fallback
+      expect(mockStreamChat).toHaveBeenCalledTimes(5);
+      // Last call to getService used the fallback provider
+      const getServiceCalls = (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mock.calls;
+      expect(getServiceCalls[getServiceCalls.length - 1][0]).toBe('anthropic');
+      expect(invoke).not.toHaveBeenCalledWith(
+        'agent_handle_llm_error',
+        expect.anything(),
+      );
+    });
+
+    it('SP4: abort error is not retried and is silently swallowed', async () => {
+      // Throw an AbortError on the first (and only) attempt
+      mockStreamChat.mockImplementation(async function* () {
+        yield;
+        const err = new DOMException('User aborted', 'AbortError');
+        throw err;
+      });
+
+      renderHook(() => useLLMService(), { wrapper: TestWrapper });
+      await waitFor(() => expect(eventHandler).toBeDefined());
+
+      await act(async () => {
+        await triggerEvent();
+      });
+
+      // Neither error nor success should have been reported to Rust
+      expect(invoke).not.toHaveBeenCalledWith(
+        'agent_handle_llm_error',
+        expect.anything(),
+      );
+      expect(invoke).not.toHaveBeenCalledWith(
+        'agent_handle_llm_response',
+        expect.anything(),
+      );
+      // Only 1 attempt — no retries on abort
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
     });
   });
 });
