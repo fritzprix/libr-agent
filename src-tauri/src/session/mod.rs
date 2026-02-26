@@ -16,15 +16,17 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
             error!("Failed to initialize SessionManager: {e}");
             // Create fallback session manager with temp directory
             let temp_base = std::env::temp_dir().join("com.fritzprix.libragent");
-            let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("default"));
-            let _ = std::fs::create_dir_all(temp_base.join("workspaces").join("templates"));
-            let _ = std::fs::create_dir_all(temp_base.join("logs"));
-            let _ = std::fs::create_dir_all(temp_base.join("config"));
 
-            SessionManager {
-                base_data_dir: temp_base,
-                workspace_pool: Arc::new(RwLock::new(HashMap::new())),
-                template_workspace: Arc::new(RwLock::new(None)),
+            // We need to use the constructor that initializes directory service
+            match SessionManager::new_with_base_dir(temp_base) {
+                Ok(manager) => manager,
+                Err(err) => {
+                    // Critical failure fallback - should technically panic or handle gracefully
+                    // But to satisfy the type signature, we will construct a dummy manager manually
+                    // However, we can't easily construct DirectoryService without valid paths.
+                    // Let's panic because if we can't even create temp dirs, the app is doomed.
+                    panic!("Critical error initializing SessionManager fallback: {err}");
+                }
             }
         })
     });
@@ -62,6 +64,11 @@ mod tests {
 
         // Create a file in Session A
         let file_a = path_a.join("test.txt");
+        // Ensure directory exists (SessionManager lazy creation might need explicit trigger in test environment if async creation wasn't awaited)
+        // However, get_session_workspace_dir_by_id calls get_workspace_dir which we modified to create if missing.
+        // Let's verify dir existence first
+        assert!(path_a.exists(), "Session A path should exist");
+
         fs::write(&file_a, "Hello A").expect("Failed to write file A");
 
         // Verify it exists in A but NOT in B path
@@ -71,6 +78,7 @@ mod tests {
 
         // Create file in Session B
         let file_b = path_b.join("other.txt");
+        assert!(path_b.exists(), "Session B path should exist");
         fs::write(&file_b, "Hello B").expect("Failed to write file B");
 
         assert!(file_b.exists());
