@@ -55,6 +55,39 @@ Include a short rationale for each verdict. Call out inaccuracies in the comment
 
 When the user confirms, apply all approved changes using targeted edits (not wholesale file replacement). Re-read the current file state before editing — it may have changed since the PR was opened.
 
+### 6. Generate Live Test Prompt (after fixes applied)
+
+After all approved fixes have been applied, produce a **ready-to-paste agent prompt** that verifies the PR's actual runtime behavior inside LibrAgent.
+
+**When to generate:**
+- After Step 5 completes, OR
+- When the user asks "테스트 프롬프트 만들어줘" / "give me a test prompt"
+
+**How to construct the prompt:**
+
+1. Read the PR `changes[]` diff to identify what runtime behavior changed (not just what code changed).
+2. For each changed behavior, design a concrete, observable test step the agent can execute with its tools (shell commands, file search, browser, etc.).
+3. Instruct the agent to report actual output for each step, not just "success/fail."
+
+**Template:**
+
+```
+다음 변경 사항의 실동작을 순서대로 검증해줘.
+
+## 테스트 N: [변경 이름]
+1. [도구 호출 또는 명령]
+2. [예상 출력 또는 확인 기준]
+3. [엣지 케이스가 있다면 추가 단계]
+
+각 단계의 실제 출력을 그대로 보고해줘.
+```
+
+**Rules:**
+- Each test must be fully self-contained (set up its own fixtures if needed).
+- Expected output must be **concrete and observable** — not "should work correctly" but "output contains `./subdir`".
+- Cover the main success path AND at least one error/edge case per change.
+- Clean up any temp files/directories created during tests at the end.
+
 ## Evaluation Heuristics
 
 **Mark as High priority if:**
