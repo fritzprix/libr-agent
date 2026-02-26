@@ -34,14 +34,14 @@ impl SecurityValidator {
 
         // Canonicalize base_dir so that starts_with comparisons in validate_path work
         // correctly even when base_dir itself is a symlink.
-        let canonical_base = base_dir
-            .canonicalize()
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to canonicalize base_dir {:?}: {}", base_dir, e);
-                base_dir
-            });
+        let canonical_base = base_dir.canonicalize().unwrap_or_else(|e| {
+            tracing::warn!("Failed to canonicalize base_dir {:?}: {}", base_dir, e);
+            base_dir
+        });
 
-        Self { base_dir: canonical_base }
+        Self {
+            base_dir: canonical_base,
+        }
     }
 
     /// Validate and clean a file path to prevent directory traversal
@@ -422,7 +422,10 @@ mod tests {
             eprintln!("Failed to remove test directory {:?}: {}", temp_root, err);
         }
         if let Err(err) = std::fs::remove_file(&secret_file) {
-            eprintln!("Failed to remove secret test file {:?}: {}", secret_file, err);
+            eprintln!(
+                "Failed to remove secret test file {:?}: {}",
+                secret_file, err
+            );
         }
     }
 }

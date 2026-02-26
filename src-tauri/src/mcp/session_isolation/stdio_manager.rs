@@ -176,8 +176,15 @@ impl SessionMCPManager {
         ];
 
         for (key, value) in std::env::vars() {
+            // On Windows, env var names are case-insensitive (e.g., PATH is stored as "Path").
+            // Use case-insensitive comparison so whitelisted names like "PATH" match "Path".
+            #[cfg(windows)]
+            let is_preserved = preserved_vars.iter().any(|&p| p.eq_ignore_ascii_case(&key));
+            #[cfg(not(windows))]
+            let is_preserved = preserved_vars.contains(&key.as_str());
+
             // Check exact matches
-            if preserved_vars.contains(&key.as_str()) {
+            if is_preserved {
                 cmd.env(&key, &value);
                 continue;
             }
