@@ -1,5 +1,5 @@
 use super::error::DbError;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
@@ -28,7 +28,7 @@ pub trait MessageRepository: Send + Sync {
     /// Insert or update multiple messages in a transaction
     async fn insert_many(&self, messages: Vec<Message>) -> Result<(), DbError>;
 
-    /// Get a single message by ID
+    /// Retrieve a single message by its ID
     async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError>;
 
     /// Delete a single message by its ID
@@ -259,10 +259,7 @@ impl MessageRepository for SqliteMessageRepository {
     }
 
     async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError> {
-        let model = MessageEntity::find_by_id(message_id)
-            .one(&self.db)
-            .await?;
-
+        let model = MessageEntity::find_by_id(message_id).one(&self.db).await?;
         Ok(model.map(Self::model_to_message))
     }
 

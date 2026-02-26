@@ -1,4 +1,4 @@
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use log::info;
 use serde::{Deserialize, Serialize};

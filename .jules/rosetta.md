@@ -17,3 +17,15 @@
 **Extracted:** 10
 **Languages updated:** [EN, KO]
 **Notes:** Localized `GeneralTab` and `SkillsListModal`. Added `settings.general` keys and updated `settings.skills.modalTitle` with pluralization support.
+
+## 2026-02-26 - [Playbook]
+
+**Extracted:** ~35
+**Languages updated:** [EN, KO]
+**Notes:** Fully localized the Playbook feature (List, Card, Grouping, SortControls). Refactored `grouping-utils.ts` to return translation keys instead of hardcoded strings. Preserved existing Korean translations found in `List.tsx`.
+
+## 2026-02-25 - [Assistant Feature]
+
+**Extracted:** ~35
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AssistantEditor`, `AssistantList`, `BuiltInToolsEditor`, and `SkillsEditor`. Added `assistant.tabs`, `assistant.list`, `assistant.builtin`, and expanded `skills` namespaces in `common.json`.

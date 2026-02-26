@@ -2,10 +2,28 @@
   "assistant": {
     "nameLabel": "Assistant Name *",
     "namePlaceholder": "Enter assistant name...",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Brief description of what this assistant does...",
     "systemPromptLabel": "System Prompt *",
     "systemPromptPlaceholder": "Describe the AI's role and behavior...",
+    "tabs": {
+      "general": "General",
+      "tools": "Tools",
+      "skills": "Skills"
+    },
+    "builtin": {
+      "title": "Built-in Tools",
+      "loading": "Loading tools...",
+      "noTools": "No built-in tools available.",
+      "toolAccess": "Tool Access",
+      "noOptional": "Core built-in tools are managed automatically. There are no optional built-in tools available in this environment.",
+      "description": "Core built-in tools are always enabled automatically. Only optional tools are shown below.",
+      "toolCount_one": "{{count}} tool available",
+      "toolCount_other": "{{count}} tools available"
+    },
     "mcp": {
       "label": "MCP Servers",
+      "description": "Select which MCP servers this assistant can access",
       "noActive": "No active MCP servers.",
       "addServersLink": "Add servers in Settings",
       "searchPlaceholder": "Search servers...",
@@ -22,7 +40,22 @@
       "save": "Save"
     },
     "list": {
-      "create": "Create New Assistant"
+      "title": "Assistants",
+      "subtitle": "Manage your customized AI agents",
+      "create": "Create New Assistant",
+      "searchPlaceholder": "Search assistants...",
+      "searchAriaLabel": "Search assistants",
+      "clearSearchAriaLabel": "Clear search",
+      "searching": "Searching...",
+      "searchResults": "Found {{count}} results for \"{{query}}\"",
+      "noResults": "No assistants found matching your search",
+      "empty": "No assistants available",
+      "pagination": {
+        "previous": "Previous",
+        "next": "Next",
+        "pageInfo": "Page {{current}} of {{total}}",
+        "totalInfo": "({{count}} of {{total}} assistants)"
+      }
     },
     "card": {
       "protected": "PROTECTED",
@@ -186,7 +219,29 @@
     },
     "skills": {
       "modalTitle": "Available Skills ({{count}})",
-      "noSkills": "No skills found."
+      "noSkills": "No skills found.",
+      "title": "Skills Management",
+      "saveFirst": "Please save the assistant to manage skills.",
+      "fetchFailed": "Failed to fetch skills",
+      "importing": "Importing skills...",
+      "importSuccess": "Skills imported successfully",
+      "importFailed": "Failed to import skills",
+      "overrideSuccess": "Skill overridden successfully",
+      "overrideFailed": "Failed to override skill",
+      "revertSuccess": "Skill reverted to global version",
+      "revertFailed": "Failed to revert skill",
+      "resetSuccess": "Assistant skills reset successfully",
+      "resetFailed": "Failed to reset skills",
+      "dragDropDesc": "Drag and drop a zip file or folder to override skills.",
+      "resetTooltip": "Remove all assistant-specific skills",
+      "reset": "Reset Override",
+      "dropHere": "Drop to import skills",
+      "sourceAssistant": "Assistant",
+      "sourceGlobal": "Global",
+      "override": "Override for this assistant",
+      "revert": "Revert to global",
+      "resetTitle": "Reset Skills Override?",
+      "resetConfirm": "This will remove all assistant-specific skills and revert to global defaults. This action cannot be undone."
     }
   },
   "mcpServer": {
@@ -276,6 +331,61 @@
       "toggleFailed": "Failed to toggle extension: {{error}}",
       "activated": "activated",
       "deactivated": "deactivated"
+    }
+  },
+  "playbook": {
+    "title": "Playbooks",
+    "description": "Browse and execute automated workflows",
+    "searchPlaceholder": "Search playbooks...",
+    "loading": "Loading playbooks...",
+    "emptyState": {
+      "title": "Start Playbook",
+      "description": "A playbook is a record of complex requests that the Agent has successfully executed.",
+      "step1": "You can create one by telling the Agent \"Create a playbook\".",
+      "step2": "Using the created Playbook allows you to repeat complex tasks without re-entering complex prompts."
+    },
+    "card": {
+      "unknownAssistant": "Unknown",
+      "steps_one": "{{count}} Step",
+      "steps_other": "{{count}} Steps",
+      "start": "Start",
+      "deleteTooltip": "Delete Playbook",
+      "created": "Created {{date}}",
+      "bookmark": "Bookmark"
+    },
+    "deleteDialog": {
+      "title": "Delete Playbook",
+      "description": "Are you sure you want to delete \"{{goal}}\"? This action cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "sort": {
+      "display": "Display",
+      "sortBy": "Sort By",
+      "dateCreated": "Date Created",
+      "assistant": "Assistant",
+      "order": "Order",
+      "newestFirst": "Newest First (Desc)",
+      "oldestFirst": "Oldest First (Asc)",
+      "grouping": "Grouping",
+      "none": "None",
+      "byTime": "By Time",
+      "byAssistant": "By Assistant",
+      "bookmarksFirst": "Bookmarks First"
+    },
+    "group": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "thisWeek": "This Week",
+      "lastMonth": "Last Month",
+      "older": "Older",
+      "unknownAssistant": "Unknown Assistant"
+    },
+    "toasts": {
+      "loadFailed": "Failed to load playbooks",
+      "bookmarkFailed": "Failed to update bookmark",
+      "deleted": "Playbook deleted",
+      "deleteFailed": "Failed to delete playbook"
     }
   }
 }
