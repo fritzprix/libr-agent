@@ -98,11 +98,16 @@ export function DangerZoneSettings({
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={async () => {
-                        setConfirmOpen(false);
+                      onClick={async (e) => {
+                        e.preventDefault();
                         await onDelete();
+                        setConfirmOpen(false);
                       }}
+                      disabled={isDeleting}
                     >
+                      {isDeleting && (
+                        <LoadingSpinner size="sm" className="mr-2" />
+                      )}
                       {t('common.delete', 'Delete')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -170,7 +175,17 @@ export function DangerZoneSettings({
                     <AlertDialogCancel>
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
-                    <AlertDialogAction onClick={onReset}>
+                    <AlertDialogAction
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        await onReset();
+                        setResetConfirmOpen(false);
+                      }}
+                      disabled={isResetting}
+                    >
+                      {isResetting && (
+                        <LoadingSpinner size="sm" className="mr-2" />
+                      )}
                       {t(
                         'settings.factoryReset.confirmButton',
                         'Reset Everything',

@@ -13,6 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { MCPServerDialog } from './MCPServerDialog';
 import { useMCPServerManagement } from './hooks/useMCPServerManagement';
 import { ServerCard } from './components/ServerCard';
@@ -36,6 +37,8 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     setEditingServer,
     serverToDelete,
     setServerToDelete,
+    isDeleting,
+    togglingStatus,
     verificationStatus,
     handleCreateNew,
     handleSetupPreset,
@@ -88,6 +91,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                   onDelete={handleDelete}
                   onToggleActive={handleToggleActive}
                   verificationStatus={verificationStatus[server.id]}
+                  isToggling={!!togglingStatus[server.id]}
                 />
               ))}
             </div>
@@ -127,7 +131,7 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
       <AlertDialog
         open={!!serverToDelete}
-        onOpenChange={(open) => !open && setServerToDelete(null)}
+        onOpenChange={(open) => !open && !isDeleting && setServerToDelete(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -143,10 +147,17 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>
               {t('mcpServer.deleteDialog.cancel', 'Cancel')}
             </AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
+            <AlertDialogAction
+              onClick={async (e) => {
+                e.preventDefault();
+                await confirmDelete();
+              }}
+              disabled={isDeleting}
+            >
+              {isDeleting && <LoadingSpinner size="sm" className="mr-2" />}
               {t('mcpServer.deleteDialog.confirm', 'Delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
