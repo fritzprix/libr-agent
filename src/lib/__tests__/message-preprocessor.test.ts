@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { prepareMessageForLLM, prepareMessagesForLLM } from '../message-preprocessor';
-import { Message } from '@/models/chat';
+import type { Message, AttachmentReference } from '@/models/chat';
+import type { MCPTextContent } from '@/lib/mcp/protocol/content';
 import * as loggerModule from '../logger';
 
 // Mock the logger
@@ -25,12 +26,12 @@ vi.mock('../logger', () => {
 });
 
 describe('message-preprocessor', () => {
-  let mockLogger: { debug: any; info: any; error: any; warn: any };
+  let mockLogger: { debug: Mock; info: Mock; error: Mock; warn: Mock };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Re-acquire the mock logger
-    mockLogger = (loggerModule as any).getLogger();
+    // Re-acquire the mock logger - cast through unknown for test mock module access
+    mockLogger = (loggerModule as unknown as { getLogger: () => typeof mockLogger }).getLogger();
   });
 
   const createMessage = (overrides: Partial<Message> = {}): Message => ({
@@ -74,7 +75,7 @@ describe('message-preprocessor', () => {
 
       expect(processed.content).toHaveLength(2);
       expect(processed.content[1].type).toBe('text');
-      const text = (processed.content[1] as any).text;
+      const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('<attachment_0>');
       expect(text).toContain('"filename": "test.txt"');
@@ -102,7 +103,7 @@ describe('message-preprocessor', () => {
       const processed = await prepareMessageForLLM(message);
 
       expect(processed.content).toHaveLength(2);
-      const text = (processed.content[1] as any).text;
+      const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('builtin_workspace__readFile(path: "/path/to/file.txt")');
       expect(text).toContain('listContent(sessionId: "session-1")');
@@ -127,7 +128,7 @@ describe('message-preprocessor', () => {
       const processed = await prepareMessageForLLM(message);
 
       expect(processed.content).toHaveLength(2);
-      const text = (processed.content[1] as any).text;
+      const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('File metadata only');
       expect(text).toContain('listContent(sessionId: "session-1")');
@@ -164,7 +165,7 @@ describe('message-preprocessor', () => {
       const processed = await prepareMessageForLLM(message);
 
       expect(processed.content).toHaveLength(2);
-      const text = (processed.content[1] as any).text;
+      const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('<attachment_0>');
       expect(text).toContain('<attachment_1>');
@@ -181,15 +182,15 @@ describe('message-preprocessor', () => {
         ]
       });
 
-      // Create a circular structure
-      const attachment: any = {
+      // Create a circular structure to force JSON.stringify to throw
+      const attachment: Record<string, unknown> = {
         sessionId: 's1',
         filename: 'f1',
         status: 'committed',
       };
       attachment.self = attachment;
 
-      message.attachments = [attachment];
+      message.attachments = [attachment as unknown as AttachmentReference];
 
       const processed = await prepareMessageForLLM(message);
 
