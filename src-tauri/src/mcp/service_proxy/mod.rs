@@ -484,6 +484,93 @@ impl MCPServiceProxy {
             .unwrap_or_default()
     }
 
+    /// Attempts to dispatch a tool call to an external MCP server (HTTP or Stdio).
+    ///
+    /// This is used both for normal external routing and as a fallback when an LLM
+    /// mistakenly calls an external server tool with the `builtin_` prefix.
+    ///
+    /// # Returns
+    /// * `Some(result)` if the server was found and the call was dispatched
+    /// * `None` if no external server with that name is registered in this session
+    async fn try_dispatch_external(
+        &self,
+        server_name: &str,
+        real_tool_name: &str,
+        args: Value,
+    ) -> Option<Result<MCPResponse, String>> {
+        if self.session_managers.http.has_server(server_name).await {
+            log::debug!("Routing to session-isolated HTTP server: {}", server_name);
+            let response = match self
+                .session_managers
+                .http
+                .call_tool(server_name, real_tool_name, args)
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let result = external_tool_error_result(
+                        "Call External Tool",
+                        server_name,
+                        real_tool_name,
+                        ExternalMcpErrorCategory::Transport,
+                        &e.to_string(),
+                        vec![
+                            "Verify the HTTP MCP server URL and headers are valid".to_string(),
+                            "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
+                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                        ],
+                    );
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    }
+                }
+            };
+            return Some(Ok(response));
+        }
+
+        if self.session_managers.stdio.has_server(server_name) {
+            log::debug!("Routing to session-isolated Stdio server: {}", server_name);
+            let response = match self
+                .session_managers
+                .stdio
+                .call_tool(server_name, real_tool_name, args)
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let result = external_tool_error_result(
+                        "Call External Tool",
+                        server_name,
+                        real_tool_name,
+                        ExternalMcpErrorCategory::Transport,
+                        &e.to_string(),
+                        vec![
+                            "Verify the MCP server command can be spawned".to_string(),
+                            "Check server stderr logs for startup errors".to_string(),
+                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                        ],
+                    );
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    }
+                }
+            };
+            return Some(Ok(response));
+        }
+
+        None
+    }
+
     /// Get cached tools from session-isolated stdio servers
     ///
     /// Returns tools that were fetched during session creation (eager tool discovery).
