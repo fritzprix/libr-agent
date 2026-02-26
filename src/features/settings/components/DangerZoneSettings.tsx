@@ -23,7 +23,7 @@ interface DangerZoneSettingsProps {
   isDeleting: boolean;
   isResetting: boolean;
   onDelete: () => Promise<void>;
-  onReset: () => void;
+  onReset: () => Promise<void>;
 }
 
 export function DangerZoneSettings({
@@ -77,7 +77,12 @@ export function DangerZoneSettings({
                       )}
                 </span>
               </Button>
-              <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialog
+                open={confirmOpen}
+                onOpenChange={(open) =>
+                  !open && !isDeleting && setConfirmOpen(false)
+                }
+              >
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>
@@ -94,7 +99,7 @@ export function DangerZoneSettings({
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>
+                    <AlertDialogCancel disabled={isDeleting}>
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
                     <AlertDialogAction
@@ -154,7 +159,9 @@ export function DangerZoneSettings({
               </Button>
               <AlertDialog
                 open={resetConfirmOpen}
-                onOpenChange={setResetConfirmOpen}
+                onOpenChange={(open) =>
+                  !open && !isResetting && setResetConfirmOpen(false)
+                }
               >
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -172,7 +179,7 @@ export function DangerZoneSettings({
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>
+                    <AlertDialogCancel disabled={isResetting}>
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
                     <AlertDialogAction

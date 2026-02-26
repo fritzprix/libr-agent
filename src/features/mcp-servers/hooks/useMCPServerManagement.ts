@@ -179,7 +179,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   }, []);
 
   const confirmDelete = useCallback(async () => {
-    if (!serverToDelete) return;
+    if (!serverToDelete || isDeleting) return;
 
     setIsDeleting(true);
     try {
