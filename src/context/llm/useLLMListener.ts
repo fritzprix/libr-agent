@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import type { Message } from '@/models/chat';
+import { messageToRustMessage, type Message } from '@/models/chat';
+import type { AgentResponse } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceProvider } from '@/lib/ai-service/types';
@@ -254,45 +255,7 @@ export function useLLMListener({
             });
 
             // Convert to Rust Message format with explicit field mapping
-            // Fixes deserialization issue: threadId doesn't exist in Rust schema
-            // Convert timestamps and map camelCase to snake_case
-            const now = Date.now();
-            const messageForRust = {
-              id: result.id,
-              sessionId: result.sessionId,
-              // threadId removed - not in Rust Message schema
-              role: result.role,
-              content: result.content || [],
-              // Ensure all tool calls have the required 'type' field
-              toolCalls: result.tool_calls
-                ? result.tool_calls.map((tc) => ({
-                    id: tc.id,
-                    type: tc.type || 'function',
-                    function: tc.function,
-                  }))
-                : undefined,
-              toolCallId: result.tool_call_id || undefined,
-              isStreaming: result.isStreaming || undefined,
-              thinking: result.thinking || undefined,
-              thinkingSignature: result.thinkingSignature || undefined,
-              assistantId: result.assistantId || undefined,
-              attachments: result.attachments || undefined,
-              toolUse: result.tool_use || undefined,
-              createdAt:
-                result.createdAt instanceof Date
-                  ? result.createdAt.getTime()
-                  : result.createdAt || now,
-              updatedAt:
-                result.updatedAt instanceof Date
-                  ? result.updatedAt.getTime()
-                  : result.updatedAt ||
-                    (result.createdAt instanceof Date
-                      ? result.createdAt.getTime()
-                      : result.createdAt) ||
-                    now,
-              source: result.source || undefined,
-              error: result.error || undefined,
-            };
+            const messageForRust = messageToRustMessage(result);
 
             logger.info('Message prepared for Rust', {
               sessionId,
@@ -302,7 +265,7 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await invoke('agent_handle_llm_response', {
+            await invoke<AgentResponse>('agent_handle_llm_response', {
               sessionId,
               assistantMessage: messageForRust,
             });
@@ -326,7 +289,7 @@ export function useLLMListener({
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust
-            await invoke('agent_handle_llm_error', {
+            await invoke<AgentResponse>('agent_handle_llm_error', {
               sessionId,
               error: error instanceof Error ? error.message : String(error),
             });
