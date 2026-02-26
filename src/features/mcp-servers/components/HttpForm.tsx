@@ -51,23 +51,19 @@ export function HttpForm({
 }: HttpFormProps) {
   const { t } = useTranslation('common');
   const advancedPanelId = useId();
-  const prevCustomHeadersLength = useRef(customHeaders.length);
+  const prevLengthRef = useRef(customHeaders.length);
+  const customHeadersRef = useRef(customHeaders);
+  customHeadersRef.current = customHeaders;
+  const lastNewInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Auto-focus new header input when added
+  // Auto-focus the key input of a newly added custom header.
+  // Depends only on length so edits to existing items don't trigger this.
   useEffect(() => {
-    if (customHeaders.length > prevCustomHeadersLength.current) {
-      const lastHeader = customHeaders[customHeaders.length - 1];
-      if (lastHeader) {
-        setTimeout(() => {
-          const element = document.getElementById(
-            `header-key-${lastHeader.id}`,
-          );
-          element?.focus();
-        }, 0);
-      }
+    if (customHeadersRef.current.length > prevLengthRef.current) {
+      lastNewInputRef.current?.focus();
     }
-    prevCustomHeadersLength.current = customHeaders.length;
-  }, [customHeaders]);
+    prevLengthRef.current = customHeadersRef.current.length;
+  }, [customHeaders.length]);
 
   return (
     <div className="space-y-4">
@@ -259,10 +255,11 @@ export function HttpForm({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {customHeaders.map((header) => (
+                  {customHeaders.map((header, index, arr) => (
                     <div key={header.id} className="flex gap-2 items-start">
                       <div className="flex-1">
                         <Input
+                          ref={index === arr.length - 1 ? lastNewInputRef : undefined}
                           id={`header-key-${header.id}`}
                           placeholder={t(
                             'mcpServer.dialog.headerKeyPlaceholder',

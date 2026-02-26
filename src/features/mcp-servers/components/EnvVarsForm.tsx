@@ -28,23 +28,19 @@ export function EnvVarsForm({
   handleUpdateEnvVar,
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
-  const prevEnvVarsLength = useRef(envVars.length);
+  const prevLengthRef = useRef(envVars.length);
+  const envVarsRef = useRef(envVars);
+  envVarsRef.current = envVars;
+  const lastNewInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Auto-focus new environment variable input when added
+  // Auto-focus the key input of a newly added environment variable.
+  // Depends only on length so edits to existing items don't trigger this.
   useEffect(() => {
-    if (envVars.length > prevEnvVarsLength.current) {
-      // Find the last added variable (assuming append behavior)
-      const lastVar = envVars[envVars.length - 1];
-      if (lastVar) {
-        // Use a small timeout to ensure DOM is updated
-        setTimeout(() => {
-          const element = document.getElementById(`env-var-key-${lastVar.id}`);
-          element?.focus();
-        }, 0);
-      }
+    if (envVarsRef.current.length > prevLengthRef.current) {
+      lastNewInputRef.current?.focus();
     }
-    prevEnvVarsLength.current = envVars.length;
-  }, [envVars]);
+    prevLengthRef.current = envVarsRef.current.length;
+  }, [envVars.length]);
 
   return (
     <div className="space-y-4">
@@ -144,10 +140,11 @@ export function EnvVarsForm({
                 !(server.metadata as MCPServerMetadata | undefined)
                   ?.variableDefinitions?.[item.key],
             )
-            .map((item) => (
+            .map((item, index, arr) => (
               <div key={item.id} className="flex gap-2 items-start">
                 <div className="flex-1">
                   <Input
+                    ref={index === arr.length - 1 ? lastNewInputRef : undefined}
                     id={`env-var-key-${item.id}`}
                     placeholder={t(
                       'mcpServer.dialog.envVarKeyPlaceholder',

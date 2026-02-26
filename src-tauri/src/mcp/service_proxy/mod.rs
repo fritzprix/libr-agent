@@ -177,12 +177,13 @@ impl MCPServiceProxy {
                                 .try_dispatch_external(&server_id, &real_tool_name, args)
                                 .await
                             {
-                                let correct_name =
-                                    format!("{}__{}", server_id, real_tool_name);
+                                let correct_name = format!("{}__{}", server_id, real_tool_name);
                                 log::warn!(
                                     "Tool '{}' called with 'builtin_' prefix but '{}' is an \
                                      external server. Rerouted to '{}'. Correction hint injected.",
-                                    tool_name, server_id, correct_name
+                                    tool_name,
+                                    server_id,
+                                    correct_name
                                 );
                                 return response.map(|resp| {
                                     Self::inject_routing_correction(resp, tool_name, &correct_name)
@@ -287,12 +288,13 @@ impl MCPServiceProxy {
                                 .try_dispatch_external(&server_id, &real_tool_name, args)
                                 .await
                             {
-                                let correct_name =
-                                    format!("{}__{}", server_id, real_tool_name);
+                                let correct_name = format!("{}__{}", server_id, real_tool_name);
                                 log::warn!(
                                     "Tool '{}' called with 'builtin_' prefix but '{}' is an \
                                      external server. Rerouted to '{}'. Correction hint injected.",
-                                    tool_name, server_id, correct_name
+                                    tool_name,
+                                    server_id,
+                                    correct_name
                                 );
                                 return response.map(|resp| {
                                     Self::inject_routing_correction(resp, tool_name, &correct_name)
@@ -361,7 +363,12 @@ impl MCPServiceProxy {
             }
         })
         .await
-        .map_err(|_| format!("Tool execution timed out after {} seconds", self.tool_timeout_seconds))?
+        .map_err(|_| {
+            format!(
+                "Tool execution timed out after {} seconds",
+                self.tool_timeout_seconds
+            )
+        })?
     }
 
     /// Get the session ID this proxy is bound to
@@ -495,7 +502,8 @@ impl MCPServiceProxy {
                         vec![
                             "Verify the MCP server command can be spawned".to_string(),
                             "Check server stderr logs for startup errors".to_string(),
-                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                            "Re-run session tool discovery to confirm tool availability"
+                                .to_string(),
                         ],
                     );
                     MCPResponse {
