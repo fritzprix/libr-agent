@@ -27,3 +27,7 @@
 
 **Learning:** Nesting interactive elements (like a `button` inside a `div role="button"`) creates accessibility barriers. Screen readers may ignore the inner control.
 **Action:** When a card acts as a single button but contains a visual "action button", make the container the interactive element (`role="button"`) and replace the inner button with a visual-only element (`div` with button styles + `aria-hidden="true"`).
+
+## 2025-05-23 - [Input Type Toggling]
+**Learning:** For password-like fields (like API keys), users frequently need to verify the pasted content. Providing a show/hide toggle significantly improves usability and reduces errors.
+**Action:** When implementing password inputs for non-auth credentials (e.g., tokens, keys), always include a visibility toggle using state management for the input `type` attribute.
