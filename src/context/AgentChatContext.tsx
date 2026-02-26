@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useDebounce } from 'react-use';
 import {
   useAgentSessionState,
   useAgentSessionActions,
@@ -236,19 +237,23 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Reactive Service Context Update:
   // When messages change, if the last message is from assistant, update service contexts.
-  useEffect(() => {
-    if (sessionMessages.length > 0) {
-      const lastMsg = sessionMessages[sessionMessages.length - 1];
-      if (lastMsg.role === 'assistant') {
-        updateServiceContexts().catch((err) =>
-          logger.error(
-            'Failed to update service contexts on message change',
-            err,
-          ),
-        );
+  useDebounce(
+    () => {
+      if (sessionMessages.length > 0) {
+        const lastMsg = sessionMessages[sessionMessages.length - 1];
+        if (lastMsg.role === 'assistant') {
+          updateServiceContexts().catch((err) =>
+            logger.error(
+              'Failed to update service contexts on message change',
+              err,
+            ),
+          );
+        }
       }
-    }
-  }, [sessionMessages, updateServiceContexts]);
+    },
+    500,
+    [sessionMessages, updateServiceContexts],
+  );
 
   /**
    * Clean up pending messages when they appear in sessionMessages

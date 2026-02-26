@@ -563,23 +563,111 @@ impl WorkspaceServer {
                 continue;
             }
 
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if glob_pattern.matches(file_name) || glob_pattern.matches(&path.to_string_lossy())
-                {
-                    let metadata = entry
-                        .metadata()
-                        .map_err(|e| format!("Metadata error: {e}"))?;
+            let file_name = path.file_name().and_then(|n| n.to_str());
+            if matches_glob(&glob_pattern, path, file_name) {
+                let metadata = entry
+                    .metadata()
+                    .map_err(|e| format!("Metadata error: {e}"))?;
 
-                    results.push(json!({
-                        "path": path.to_string_lossy(),
-                        "name": file_name,
-                        "type": if is_dir { "directory" } else { "file" },
-                        "size": if is_file { Some(metadata.len()) } else { None }
-                    }));
-                }
+                results.push(json!({
+                    "path": path.to_string_lossy(),
+                    "name": file_name.unwrap_or(""),
+                    "type": if is_dir { "directory" } else { "file" },
+                    "size": if is_file { Some(metadata.len()) } else { None }
+                }));
             }
         }
 
         Ok(results)
+    }
+}
+
+/// Helper function to match paths against glob patterns in a cross-platform way.
+/// Normalizes Windows backslashes to forward slashes before matching.
+fn matches_glob(pattern: &glob::Pattern, path: &std::path::Path, file_name: Option<&str>) -> bool {
+    // 1. Try matching the file name directly (common case)
+    if let Some(name) = file_name {
+        if pattern.matches(name) {
+            return true;
+        }
+    }
+
+    let path_str = path.to_string_lossy();
+
+    // 2. Try matching the path as-is (Unix default)
+    if pattern.matches(&path_str) {
+        return true;
+    }
+
+    // 3. Try matching normalized path (Windows compatibility)
+    // If the path contains backslashes, normalize to forward slashes because
+    // glob patterns standardly use forward slashes.
+    if path_str.contains('\\') {
+        let normalized = path_str.replace('\\', "/");
+        if pattern.matches(&normalized) {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glob::Pattern;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_matches_glob_unix() {
+        let pattern = Pattern::new("src/**/*.rs").unwrap();
+
+        let path = PathBuf::from("src/main.rs");
+        assert!(matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
+
+        let path = PathBuf::from("src/subdir/test.rs");
+        assert!(matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
+
+        let path = PathBuf::from("other/file.rs");
+        assert!(!matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
+    }
+
+    #[test]
+    fn test_matches_glob_windows() {
+        let pattern = Pattern::new("src/**/*.rs").unwrap();
+
+        // Construct Windows-style path manually
+        let path_str = "src\\main.rs";
+        let path = PathBuf::from(path_str);
+
+        // Note: On Unix, PathBuf::from("src\\main.rs") treats it as a single filename "src\main.rs"
+        // so to test this properly on Unix runner, we need to ensure the path string has backslashes
+        // and matches_glob handles it.
+        // matches_glob uses to_string_lossy(), which preserves the backslashes if constructed from string.
+
+        assert!(matches_glob(&pattern, &path, None));
+
+        let path_str = "src\\subdir\\test.rs";
+        let path = PathBuf::from(path_str);
+        assert!(matches_glob(&pattern, &path, None));
+    }
+
+    #[test]
+    fn test_matches_glob_filename() {
+        let pattern = Pattern::new("*.txt").unwrap();
+        let path = PathBuf::from("path/to/file.txt");
+        assert!(matches_glob(&pattern, &path, Some("file.txt")));
     }
 }
