@@ -4,11 +4,26 @@ use std::path::PathBuf;
 
 /// Shell type enumeration for cross-platform shell support
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Used by tool handlers and future shell selection logic
 pub enum ShellType {
     Bash,
     PowerShell,
     Cmd,
+}
+
+impl ShellType {
+    /// Get shell command for spawning
+    pub fn command(&self) -> &str {
+        match self {
+            ShellType::Bash => "bash",
+            ShellType::PowerShell => "powershell.exe",
+            ShellType::Cmd => "cmd.exe",
+        }
+    }
+
+    /// Check if this is a Windows shell
+    pub fn is_windows(&self) -> bool {
+        matches!(self, ShellType::PowerShell | ShellType::Cmd)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +50,6 @@ pub struct IsolatedProcessConfig {
     pub args: Vec<String>,
     pub env_vars: HashMap<String, String>,
     pub isolation_level: IsolationLevel,
-    #[allow(dead_code)] // Unused on Linux/Unix
     pub shell_type: Option<ShellType>,
 }
 

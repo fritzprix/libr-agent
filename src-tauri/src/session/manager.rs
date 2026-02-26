@@ -247,7 +247,10 @@ echo "Available tools: python3, typescript/deno, shell commands"
         #[cfg(target_os = "macos")]
         {
             if let Some(home) = dirs::home_dir() {
-                return home.join("Library/Logs/com.fritzprix.libragent");
+                return home
+                    .join("Library")
+                    .join("Logs")
+                    .join("com.fritzprix.libragent");
             }
         }
 

@@ -1,7 +1,7 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::agent::types::{ToolCall, ToolCallFunction};
-use crate::commands::messages_commands::Message;
 use crate::mcp::MCPServiceProxyManager;
+use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
