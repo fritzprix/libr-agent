@@ -26,7 +26,7 @@ async fn test_env_isolation_prevents_leakage() {
     let output_path_str = output_file.to_string_lossy().replace("\\", "/");
 
     let python_script = format!(
-        "import os; f = open('{}', 'w'); f.write(f\"SECRET:{{os.environ.get('{}', 'SAFE')}}|ALLOWED:{{os.environ.get('ALLOWED_VAR', 'MISSING')}}\"); f.close()",
+        "import os; path_val = 'PRESENT' if os.environ.get('PATH') else 'MISSING'; f = open('{}', 'w'); f.write(f\"SECRET:{{os.environ.get('{}', 'SAFE')}}|ALLOWED:{{os.environ.get('ALLOWED_VAR', 'MISSING')}}|PATH:{{path_val}}\"); f.close()",
         output_path_str,
         secret_var
     );
@@ -76,8 +76,7 @@ async fn test_env_isolation_prevents_leakage() {
             .output()
             .is_err()
         {
-            println!("Skipping test: python3 not found");
-            return;
+            panic!("python3 not found: this security env isolation test requires python3 to run");
         }
         panic!("Output file not created. Python script likely failed to run or crashed.");
     }
@@ -96,6 +95,10 @@ async fn test_env_isolation_prevents_leakage() {
     assert!(
         content.contains("ALLOWED:explicit_value"),
         "Explicitly passed var SHOULD be present"
+    );
+    assert!(
+        content.contains("PATH:PRESENT"),
+        "Whitelisted PATH variable MUST be preserved after env_clear"
     );
 
     // Clean up
