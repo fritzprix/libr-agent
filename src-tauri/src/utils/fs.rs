@@ -5,9 +5,9 @@ use tokio::io::AsyncReadExt;
 
 /// Reads a file into a byte vector, ensuring it does not exceed the specified maximum size.
 ///
-/// This function opens the file and reads up to `max_size` bytes. If the file is larger,
-/// it returns an error. This prevents large memory allocations and handles potential
-/// race conditions (TOCTOU) where the file size changes between check and read.
+/// This function attempts to read up to `max_size + 1` bytes to detect if the file exceeds
+/// the limit. If the file is larger, it returns an error. This prevents large memory allocations
+/// and handles potential race conditions (TOCTOU) where the file size changes between check and read.
 ///
 /// # Arguments
 /// * `path` - The path to the file to read.
