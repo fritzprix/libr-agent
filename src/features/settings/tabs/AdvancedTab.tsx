@@ -21,7 +21,7 @@ interface AdvancedTabProps {
     isDeleting: boolean;
     isResetting: boolean;
     onDelete: () => Promise<void>;
-    onReset: () => void;
+    onReset: () => Promise<void>;
   };
 }
 
