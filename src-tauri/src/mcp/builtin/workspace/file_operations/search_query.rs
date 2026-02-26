@@ -623,13 +623,25 @@ mod tests {
         let pattern = Pattern::new("src/**/*.rs").unwrap();
 
         let path = PathBuf::from("src/main.rs");
-        assert!(matches_glob(&pattern, &path, path.file_name().and_then(|n| n.to_str())));
+        assert!(matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
 
         let path = PathBuf::from("src/subdir/test.rs");
-        assert!(matches_glob(&pattern, &path, path.file_name().and_then(|n| n.to_str())));
+        assert!(matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
 
         let path = PathBuf::from("other/file.rs");
-        assert!(!matches_glob(&pattern, &path, path.file_name().and_then(|n| n.to_str())));
+        assert!(!matches_glob(
+            &pattern,
+            &path,
+            path.file_name().and_then(|n| n.to_str())
+        ));
     }
 
     #[test]
