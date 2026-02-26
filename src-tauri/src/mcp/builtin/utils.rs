@@ -32,7 +32,16 @@ impl SecurityValidator {
             tracing::error!("Failed to create base directory {:?}: {}", base_dir, e);
         }
 
-        Self { base_dir }
+        // Canonicalize base_dir so that starts_with comparisons in validate_path work
+        // correctly even when base_dir itself is a symlink.
+        let canonical_base = base_dir
+            .canonicalize()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to canonicalize base_dir {:?}: {}", base_dir, e);
+                base_dir
+            });
+
+        Self { base_dir: canonical_base }
     }
 
     /// Validate and clean a file path to prevent directory traversal
@@ -357,7 +366,63 @@ mod tests {
         }
 
         // Cleanup
-        let _ = std::fs::remove_dir_all(temp_dir);
-        let _ = std::fs::remove_file(secret_file);
+        if let Err(err) = std::fs::remove_dir_all(&temp_dir) {
+            eprintln!("Failed to remove test directory {:?}: {}", temp_dir, err);
+        }
+        if let Err(err) = std::fs::remove_file(&secret_file) {
+            eprintln!("Failed to remove test file {:?}: {}", secret_file, err);
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_base_dir_traversal() {
+        use std::os::unix::fs::symlink;
+
+        // temp root for this test
+        let temp_root = std::env::temp_dir().join("mcp_symlink_base_dir_test");
+        if temp_root.exists() {
+            std::fs::remove_dir_all(&temp_root).unwrap();
+        }
+        std::fs::create_dir_all(&temp_root).unwrap();
+
+        // real base directory and a symlink used as the validator's base_dir
+        let real_base = temp_root.join("real_base");
+        std::fs::create_dir_all(&real_base).unwrap();
+        let base_dir_link = temp_root.join("base_link");
+        symlink(&real_base, &base_dir_link).unwrap();
+
+        // Use the symlinked path as base_dir; new_with_base_dir should canonicalize it
+        let validator = SecurityValidator::new_with_base_dir(base_dir_link.clone());
+
+        // secret file outside the real base
+        let secret_file = std::env::temp_dir().join("mcp_secret_base_dir.txt");
+        std::fs::write(&secret_file, "secret").unwrap();
+
+        // symlink inside the real base that points to the secret file outside
+        let escaping_link = real_base.join("escaping_link");
+        symlink(&secret_file, &escaping_link).unwrap();
+
+        // From the validator's perspective this looks like a valid relative path,
+        // but its canonical resolution escapes the real base directory.
+        let result = validator.validate_path("escaping_link");
+
+        assert!(
+            result.is_err(),
+            "Symlink traversal via symlinked base_dir should be blocked"
+        );
+        if let Err(SecurityError::PathTraversal(msg)) = result {
+            assert!(msg.contains("resolves outside allowed directory"));
+        } else {
+            panic!("Expected PathTraversal error");
+        }
+
+        // Cleanup
+        if let Err(err) = std::fs::remove_dir_all(&temp_root) {
+            eprintln!("Failed to remove test directory {:?}: {}", temp_root, err);
+        }
+        if let Err(err) = std::fs::remove_file(&secret_file) {
+            eprintln!("Failed to remove secret test file {:?}: {}", secret_file, err);
+        }
     }
 }
