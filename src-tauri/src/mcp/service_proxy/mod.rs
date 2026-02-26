@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
-use super::types::{MCPResponse, MCPTool, ServiceContext};
+use super::types::{MCPContent, MCPResponse, MCPResponseResult, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 
 pub mod builder;
@@ -150,40 +150,60 @@ impl MCPServiceProxy {
                     server_id,
                     tool_name: real_tool_name,
                 } => {
-                    let server = self.builtin_servers.get(&server_id).ok_or_else(|| {
-                        let available = self
-                            .builtin_servers
-                            .keys()
-                            .map(|k| format!("'{}'", k))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!(
-                            "Built-in server '{}' not enabled in this session.\n\n\
-                                Available servers: [{}]\n\n\
-                                💡 To fix: Update the assistant's 'allowedBuiltInServiceAliases' \
-                                configuration to include \"{}\"",
-                            server_id, available, server_id
-                        )
-                    })?;
-
-                    log::debug!(
-                        "Calling builtin tool '{}' for session '{}'",
-                        tool_name,
-                        self.session_id
-                    );
-
-                    let result = server
-                        .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
-                        .await?;
-
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                    match self.builtin_servers.get(&server_id) {
+                        Some(server) => {
+                            log::debug!(
+                                "Calling builtin tool '{}' for session '{}'",
+                                tool_name,
+                                self.session_id
+                            );
+                            let result = server
+                                .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
+                                .await?;
+                            Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: Some(super::types::JsonRpcId::String(
+                                    uuid::Uuid::new_v4().to_string(),
+                                )),
+                                result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                                error: None,
+                            })
+                        }
+                        None => {
+                            // The LLM may have hallucinated the 'builtin_' prefix for an external
+                            // server. Fall back to external routing before giving up, and inject a
+                            // correction hint so the AI uses the right name on the next call.
+                            if let Some(response) = self
+                                .try_dispatch_external(&server_id, &real_tool_name, args)
+                                .await
+                            {
+                                let correct_name =
+                                    format!("{}__{}", server_id, real_tool_name);
+                                log::warn!(
+                                    "Tool '{}' called with 'builtin_' prefix but '{}' is an \
+                                     external server. Rerouted to '{}'. Correction hint injected.",
+                                    tool_name, server_id, correct_name
+                                );
+                                return response.map(|resp| {
+                                    Self::inject_routing_correction(resp, tool_name, &correct_name)
+                                });
+                            }
+                            let available = self
+                                .builtin_servers
+                                .keys()
+                                .map(|k| format!("'{}'", k))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            Err(format!(
+                                "Built-in server '{}' not enabled in this session.\n\n\
+                                    Available servers: [{}]\n\n\
+                                    💡 To fix: Update the assistant's \
+                                    'allowedBuiltInServiceAliases' configuration to include \
+                                    \"{}\"",
+                                server_id, available, server_id
+                            ))
+                        }
+                    }
                 }
                 ToolRouting::External {
                     server_name,
@@ -195,72 +215,11 @@ impl MCPServiceProxy {
                         self.session_id
                     );
 
-                    if self.session_managers.http.has_server(&server_name).await {
-                        log::debug!("Routing to session-isolated HTTP server: {}", server_name);
-                        return match self
-                            .session_managers
-                            .http
-                            .call_tool(&server_name, &real_tool_name, args)
-                            .await
-                        {
-                            Ok(resp) => Ok(resp),
-                            Err(e) => {
-                                let result = external_tool_error_result(
-                                    "Call External Tool",
-                                    &server_name,
-                                    &real_tool_name,
-                                    ExternalMcpErrorCategory::Transport,
-                                    &e.to_string(),
-                                    vec![
-                                        "Verify the HTTP MCP server URL and headers are valid".to_string(),
-                                        "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
-                                        "Re-run session tool discovery to confirm tool availability".to_string(),
-                                    ],
-                                );
-                                Ok(MCPResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id: Some(super::types::JsonRpcId::String(
-                                        uuid::Uuid::new_v4().to_string(),
-                                    )),
-                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                    error: None,
-                                })
-                            }
-                        };
-                    }
-
-                    if self.session_managers.stdio.has_server(&server_name) {
-                        log::debug!("Routing to session-isolated Stdio server: {}", server_name);
-                        return match self
-                            .session_managers
-                            .stdio
-                            .call_tool(&server_name, &real_tool_name, args)
-                            .await
-                        {
-                            Ok(resp) => Ok(resp),
-                            Err(e) => {
-                                let result = external_tool_error_result(
-                                    "Call External Tool",
-                                    &server_name,
-                                    &real_tool_name,
-                                    ExternalMcpErrorCategory::Transport,
-                                    &e.to_string(),
-                                    vec![
-                                        "Verify the MCP server command can be spawned".to_string(),
-                                        "Check server stderr logs for startup errors".to_string(),
-                                        "Re-run session tool discovery to confirm tool availability".to_string(),
-                                    ],
-                                );
-                                Ok(MCPResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id: Some(super::types::JsonRpcId::String(
-                                        uuid::Uuid::new_v4().to_string(),
-                                    )),
-                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                    error: None,
-                                })
-                            }
-                        };
+                    if let Some(response) = self
+                        .try_dispatch_external(&server_name, &real_tool_name, args)
+                        .await
+                    {
+                        return response;
                     }
 
                     let result = external_tool_error_result(
@@ -300,42 +259,61 @@ impl MCPServiceProxy {
                     server_id,
                     tool_name: real_tool_name,
                 } => {
-                    let server = self
-                        .builtin_servers
-                        .get(&server_id)
-                        .ok_or_else(|| {
-                            let available = self.builtin_servers.keys()
+                    match self.builtin_servers.get(&server_id) {
+                        Some(server) => {
+                            log::debug!(
+                                "Calling builtin tool '{}' for session '{}'",
+                                tool_name,
+                                self.session_id
+                            );
+                            let result = server
+                                .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
+                                .await?;
+                            // Convert MCPResult to MCPResponse with proper type
+                            Ok(MCPResponse {
+                                jsonrpc: "2.0".to_string(),
+                                id: Some(super::types::JsonRpcId::String(
+                                    uuid::Uuid::new_v4().to_string(),
+                                )),
+                                result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                                error: None,
+                            })
+                        }
+                        None => {
+                            // The LLM may have hallucinated the 'builtin_' prefix for an external
+                            // server. Fall back to external routing before giving up, and inject a
+                            // correction hint so the AI uses the right name on the next call.
+                            if let Some(response) = self
+                                .try_dispatch_external(&server_id, &real_tool_name, args)
+                                .await
+                            {
+                                let correct_name =
+                                    format!("{}__{}", server_id, real_tool_name);
+                                log::warn!(
+                                    "Tool '{}' called with 'builtin_' prefix but '{}' is an \
+                                     external server. Rerouted to '{}'. Correction hint injected.",
+                                    tool_name, server_id, correct_name
+                                );
+                                return response.map(|resp| {
+                                    Self::inject_routing_correction(resp, tool_name, &correct_name)
+                                });
+                            }
+                            let available = self
+                                .builtin_servers
+                                .keys()
                                 .map(|k| format!("'{}'", k))
                                 .collect::<Vec<_>>()
                                 .join(", ");
-                            format!(
+                            Err(format!(
                                 "Built-in server '{}' not enabled in this session.\n\n\
-                                Available servers: [{}]\n\n\
-                                💡 To fix: Update the assistant's 'allowedBuiltInServiceAliases' \
-                                configuration to include \"{}\"",
+                                    Available servers: [{}]\n\n\
+                                    💡 To fix: Update the assistant's \
+                                    'allowedBuiltInServiceAliases' configuration to include \
+                                    \"{}\"",
                                 server_id, available, server_id
-                            )
-                        })?;
-
-                    log::debug!(
-                        "Calling builtin tool '{}' for session '{}'",
-                        tool_name,
-                        self.session_id
-                    );
-
-                    let result = server
-                        .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
-                        .await?;
-
-                    // Convert MCPResult to MCPResponse with proper type
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                            ))
+                        }
+                    }
                 }
                 ToolRouting::External {
                     server_name,
@@ -348,76 +326,11 @@ impl MCPServiceProxy {
                         self.session_id
                     );
 
-                    // 1. Check if it's a session-isolated HTTP server
-                    if self.session_managers.http.has_server(&server_name).await {
-                        log::debug!("Routing to session-isolated HTTP server: {}", server_name);
-                        return match self
-                            .session_managers
-                            .http
-                            .call_tool(&server_name, &real_tool_name, args)
-                            .await
-                        {
-                            Ok(resp) => Ok(resp),
-                            Err(e) => {
-                                let result = external_tool_error_result(
-                                    "Call External Tool",
-                                    &server_name,
-                                    &real_tool_name,
-                                    ExternalMcpErrorCategory::Transport,
-                                    &e.to_string(),
-                                    vec![
-                                        "Verify the HTTP MCP server URL and headers are valid".to_string(),
-                                        "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
-                                        "Re-run session tool discovery to confirm tool availability".to_string(),
-                                    ],
-                                );
-
-                                Ok(MCPResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id: Some(super::types::JsonRpcId::String(
-                                        uuid::Uuid::new_v4().to_string(),
-                                    )),
-                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                    error: None,
-                                })
-                            }
-                        };
-                    }
-
-                    // 2. Check if it's a session-isolated Stdio server
-                    if self.session_managers.stdio.has_server(&server_name) {
-                        log::debug!("Routing to session-isolated Stdio server: {}", server_name);
-                        return match self
-                            .session_managers
-                            .stdio
-                            .call_tool(&server_name, &real_tool_name, args)
-                            .await
-                        {
-                            Ok(resp) => Ok(resp),
-                            Err(e) => {
-                                let result = external_tool_error_result(
-                                    "Call External Tool",
-                                    &server_name,
-                                    &real_tool_name,
-                                    ExternalMcpErrorCategory::Transport,
-                                    &e.to_string(),
-                                    vec![
-                                        "Verify the MCP server command can be spawned".to_string(),
-                                        "Check server stderr logs for startup errors".to_string(),
-                                        "Re-run session tool discovery to confirm tool availability".to_string(),
-                                    ],
-                                );
-
-                                Ok(MCPResponse {
-                                    jsonrpc: "2.0".to_string(),
-                                    id: Some(super::types::JsonRpcId::String(
-                                        uuid::Uuid::new_v4().to_string(),
-                                    )),
-                                    result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                    error: None,
-                                })
-                            }
-                        };
+                    if let Some(response) = self
+                        .try_dispatch_external(&server_name, &real_tool_name, args)
+                        .await
+                    {
+                        return response;
                     }
 
                     let result = external_tool_error_result(
@@ -438,7 +351,9 @@ impl MCPServiceProxy {
 
                     Ok(MCPResponse {
                         jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(uuid::Uuid::new_v4().to_string())),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
                         result: Some(super::types::MCPResponseResult::ToolCall(result)),
                         error: None,
                     })
@@ -482,6 +397,121 @@ impl MCPServiceProxy {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Injects a routing-correction hint at the top of a tool response's text content.
+    ///
+    /// This is used when the LLM called an external server tool with the `builtin_` prefix.
+    /// The hint is visible to the AI on its next token budget so it self-corrects the
+    /// tool name in subsequent calls.
+    fn inject_routing_correction(
+        mut response: MCPResponse,
+        wrong_name: &str,
+        correct_name: &str,
+    ) -> MCPResponse {
+        let hint = format!(
+            "⚠️ Routing correction: '{}' is an external MCP server, not a built-in. \
+             Use '{}' for future calls to this tool.\n\n",
+            wrong_name, correct_name
+        );
+        if let Some(MCPResponseResult::ToolCall(ref mut result)) = response.result {
+            let correction = MCPContent::Text {
+                text: hint,
+                is_error: None,
+            };
+            match result.content {
+                Some(ref mut v) => v.insert(0, correction),
+                None => result.content = Some(vec![correction]),
+            }
+        }
+        response
+    }
+
+    /// Attempts to dispatch a tool call to an external MCP server (HTTP or Stdio).
+    ///
+    /// This is used both for normal external routing and as a fallback when an LLM
+    /// mistakenly calls an external server tool with the `builtin_` prefix.
+    ///
+    /// # Returns
+    /// * `Some(result)` if the server was found and the call was dispatched
+    /// * `None` if no external server with that name is registered in this session
+    async fn try_dispatch_external(
+        &self,
+        server_name: &str,
+        real_tool_name: &str,
+        args: Value,
+    ) -> Option<Result<MCPResponse, String>> {
+        if self.session_managers.http.has_server(server_name).await {
+            log::debug!("Routing to session-isolated HTTP server: {}", server_name);
+            let response = match self
+                .session_managers
+                .http
+                .call_tool(server_name, real_tool_name, args)
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let result = external_tool_error_result(
+                        "Call External Tool",
+                        server_name,
+                        real_tool_name,
+                        ExternalMcpErrorCategory::Transport,
+                        &e.to_string(),
+                        vec![
+                            "Verify the HTTP MCP server URL and headers are valid".to_string(),
+                            "If this server is session-scoped, ensure it is enabled for this agent/session".to_string(),
+                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                        ],
+                    );
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    }
+                }
+            };
+            return Some(Ok(response));
+        }
+
+        if self.session_managers.stdio.has_server(server_name) {
+            log::debug!("Routing to session-isolated Stdio server: {}", server_name);
+            let response = match self
+                .session_managers
+                .stdio
+                .call_tool(server_name, real_tool_name, args)
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    let result = external_tool_error_result(
+                        "Call External Tool",
+                        server_name,
+                        real_tool_name,
+                        ExternalMcpErrorCategory::Transport,
+                        &e.to_string(),
+                        vec![
+                            "Verify the MCP server command can be spawned".to_string(),
+                            "Check server stderr logs for startup errors".to_string(),
+                            "Re-run session tool discovery to confirm tool availability".to_string(),
+                        ],
+                    );
+                    MCPResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: Some(super::types::JsonRpcId::String(
+                            uuid::Uuid::new_v4().to_string(),
+                        )),
+                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                        error: None,
+                    }
+                }
+            };
+            return Some(Ok(response));
+        }
+
+        None
     }
 
     /// Get cached tools from session-isolated stdio servers

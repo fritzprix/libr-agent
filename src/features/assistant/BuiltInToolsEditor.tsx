@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { getLogger } from '@/lib/logger';
+import { useTranslation } from 'react-i18next';
 import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
 import type { BuiltinServerInfo } from '@/lib/backend/types';
 import {
@@ -17,6 +18,7 @@ export default function BuiltInToolsEditor() {
   const { draft, update } = useEditor<Assistant>();
   const [services, setServices] = useState<BuiltinServerInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const { t } = useTranslation('common');
 
   useEffect(() => {
     let isMounted = true;
@@ -121,8 +123,12 @@ export default function BuiltInToolsEditor() {
   if (isLoading) {
     return (
       <div className="space-y-4">
-        <Label className="text-base font-semibold">Built-in Tools</Label>
-        <div className="text-sm text-muted-foreground">Loading tools...</div>
+        <Label className="text-base font-semibold">
+          {t('assistant.builtin.title')}
+        </Label>
+        <div className="text-sm text-muted-foreground">
+          {t('assistant.builtin.loading')}
+        </div>
       </div>
     );
   }
@@ -130,9 +136,11 @@ export default function BuiltInToolsEditor() {
   if (services.length === 0) {
     return (
       <div className="space-y-4">
-        <Label className="text-base font-semibold">Built-in Tools</Label>
+        <Label className="text-base font-semibold">
+          {t('assistant.builtin.title')}
+        </Label>
         <div className="text-sm text-muted-foreground">
-          No built-in tools available.
+          {t('assistant.builtin.noTools')}
         </div>
       </div>
     );
@@ -141,10 +149,11 @@ export default function BuiltInToolsEditor() {
   if (optionalServices.length === 0) {
     return (
       <div className="space-y-4">
-        <Label className="text-base font-semibold">Tool Access</Label>
+        <Label className="text-base font-semibold">
+          {t('assistant.builtin.toolAccess')}
+        </Label>
         <div className="text-sm text-muted-foreground">
-          Core built-in tools are managed automatically. There are no optional
-          built-in tools available in this environment.
+          {t('assistant.builtin.noOptional')}
         </div>
       </div>
     );
@@ -152,11 +161,12 @@ export default function BuiltInToolsEditor() {
 
   return (
     <div className="space-y-4">
-      <Label className="text-base font-semibold">Tool Access</Label>
+      <Label className="text-base font-semibold">
+        {t('assistant.builtin.toolAccess')}
+      </Label>
 
       <div className="text-sm text-muted-foreground">
-        Core built-in tools are always enabled automatically. Only optional
-        tools are shown below.
+        {t('assistant.builtin.description')}
       </div>
 
       <div className="space-y-3 border rounded-lg p-4">
@@ -178,8 +188,9 @@ export default function BuiltInToolsEditor() {
                   {service.metadata.description}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  {service.toolCount} tool{service.toolCount !== 1 ? 's' : ''}{' '}
-                  available
+                  {t('assistant.builtin.toolCount', {
+                    count: service.toolCount,
+                  })}
                 </div>
               </div>
               <Switch
