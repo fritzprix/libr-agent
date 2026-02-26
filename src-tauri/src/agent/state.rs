@@ -1,5 +1,5 @@
 use crate::agent::context::registry::ContextRegistry;
-use crate::commands::messages_commands::Message;
+use crate::models::chat::Message;
 use crate::repositories::SessionMetadata;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
