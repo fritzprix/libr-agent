@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input, Label } from '@/components/ui';
 import { Plus, Trash2 } from 'lucide-react';
@@ -28,6 +28,19 @@ export function EnvVarsForm({
   handleUpdateEnvVar,
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
+  const prevLengthRef = useRef(envVars.length);
+  const envVarsRef = useRef(envVars);
+  envVarsRef.current = envVars;
+  const lastNewInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-focus the key input of a newly added environment variable.
+  // Depends only on length so edits to existing items don't trigger this.
+  useEffect(() => {
+    if (envVarsRef.current.length > prevLengthRef.current) {
+      lastNewInputRef.current?.focus();
+    }
+    prevLengthRef.current = envVarsRef.current.length;
+  }, [envVars.length]);
 
   return (
     <div className="space-y-4">
@@ -127,10 +140,12 @@ export function EnvVarsForm({
                 !(server.metadata as MCPServerMetadata | undefined)
                   ?.variableDefinitions?.[item.key],
             )
-            .map((item) => (
+            .map((item, index, arr) => (
               <div key={item.id} className="flex gap-2 items-start">
                 <div className="flex-1">
                   <Input
+                    ref={index === arr.length - 1 ? lastNewInputRef : undefined}
+                    id={`env-var-key-${item.id}`}
                     placeholder={t(
                       'mcpServer.dialog.envVarKeyPlaceholder',
                       'Key (e.g. API_KEY)',

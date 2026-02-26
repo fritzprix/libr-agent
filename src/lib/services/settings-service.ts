@@ -62,6 +62,7 @@ export interface SystemSettings {
 export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
+  fallbackModel?: ModelChoice;
   windowSize: number;
   uiLanguage: string;
   toolCallGroupVisibleCount: number;
@@ -85,6 +86,7 @@ export const DEFAULT_SETTING: Settings = {
     provider: (DEFAULT_MODEL?.providerId || 'openai') as AIServiceProvider,
     model: DEFAULT_MODEL?.modelId || '',
   },
+  fallbackModel: undefined,
   windowSize: 20,
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,

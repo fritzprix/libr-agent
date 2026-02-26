@@ -12,30 +12,7 @@ use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
-
-/// Shell type enumeration for cross-platform shell support
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellType {
-    Bash,
-    PowerShell,
-    Cmd,
-}
-
-impl ShellType {
-    /// Get shell command for spawning
-    pub fn command(&self) -> &str {
-        match self {
-            ShellType::Bash => "bash",
-            ShellType::PowerShell => "powershell.exe",
-            ShellType::Cmd => "cmd.exe",
-        }
-    }
-
-    /// Check if this is a Windows shell
-    pub fn is_windows(&self) -> bool {
-        matches!(self, ShellType::PowerShell | ShellType::Cmd)
-    }
-}
+use crate::session_isolation::types::ShellType;
 
 // Platform-specific persistent shell tool name
 #[cfg(unix)]

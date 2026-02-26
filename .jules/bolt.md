@@ -13,11 +13,6 @@
 **Learning:** `AgentChatMessages` was performing a redundant O(N) iteration to build `toolResultsMap` on every render (token update), even though `useMessageGrouping` was already iterating the same list (O(N)).
 **Action:** List-processing hooks should return derived lookups (like maps) alongside the main result when consumers need them. This avoids redundant passes over the data and simplifies the consumer code.
 
-## 2024-05-25 - Expensive Prop Recreation in Render Loop
-
-**Learning:** `AgentMessageRenderer` was creating new object references for `htmlProps` and spreading `supportedContentTypes` (creating a new array) on every render. This caused `UIResourceRenderer` (which likely contains iframes) to re-render unnecessarily, potentially causing flicker or performance degradation during streaming.
-**Action:** Always memoize complex objects or arrays passed as props to expensive child components (like those rendering iframes or heavy UI), especially within a component that renders frequently (like a chat message renderer).
-
 ## 2025-02-19 - Redundant Map Creation in Render Loop
 
 **Learning:** `AgentChatMessages` was creating a new `Map` for `toolResults` inside the render loop for every tool group message, even though `useMessageGrouping` already provided a global map. This caused unnecessary object allocations and potentially triggered re-renders in children if they relied on prop identity.
@@ -67,3 +62,8 @@
 
 **Learning:** `handle_llm_response` clones the entire `Message` struct 3 times (cache, event, DB) before processing. This causes performance overhead when the message contains large payloads like tool arguments (file content).
 **Action:** Use `Option::take()` to extract heavy fields (like `tool_calls`) from the struct instance after the required clones are made for cache/event/DB, but before spawning async work, to avoid one additional deep clone in the hot path. Note that this pattern does not prevent the earlier clones from carrying the heavy data; truly minimizing cloning would require extracting the heavy field before cloning and explicitly reconstructing lighter variants for the clones that do not need it. Move ownership into async blocks instead of cloning whenever possible.
+
+## 2026-10-24 - O(N^2) Tree Traversal in Render Loop
+
+**Learning:** `SessionHistoryPanel` was calculating descendant counts using a recursive function that filtered the entire `sessions` array at each step, resulting in O(N^2) complexity. This caused potential lag as the session history grew.
+**Action:** When processing tree structures from flat lists, always build an O(N) adjacency map (parent -> children) first, then use that map for O(1) lookups during traversal, reducing overall complexity to O(N).
