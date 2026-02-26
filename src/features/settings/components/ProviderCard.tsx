@@ -83,8 +83,9 @@ function ProviderCardBase({
               variant="ghost"
               size="icon"
               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-              onClick={() => setShowApiKey(!showApiKey)}
+              onClick={() => setShowApiKey((v) => !v)}
               aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+              aria-pressed={showApiKey}
             >
               {showApiKey ? (
                 <EyeOff className="h-4 w-4 text-muted-foreground" />
