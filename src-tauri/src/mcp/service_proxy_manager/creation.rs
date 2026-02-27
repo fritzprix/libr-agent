@@ -18,7 +18,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `session_manager` - Shared SessionManager for workspace/attachments
     pub fn new(db: Arc<DatabaseConnection>, session_manager: Arc<SessionManager>) -> Self {
         Self::new_with_config(db, session_manager, SessionIsolationConfig::default())
     }
@@ -27,7 +27,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `session_manager` - Shared SessionManager for workspace/attachments
     /// * `config` - Session isolation configuration
     pub fn new_with_config(
         db: Arc<DatabaseConnection>,

@@ -59,7 +59,7 @@ impl MCPServiceProxy {
     /// * `session_id` - Unique identifier for the agent session
     /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `session_manager` - Shared SessionManager for workspace/attachments
     /// * `http_manager` - Session-specific HTTP manager
     /// * `stdio_manager` - Session-specific Stdio manager
     ///
@@ -134,7 +134,7 @@ impl MCPServiceProxy {
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "builtin_content_store__addContent")
+    /// * `tool_name` - Full tool name (e.g., "builtin_attachments__addContent")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns

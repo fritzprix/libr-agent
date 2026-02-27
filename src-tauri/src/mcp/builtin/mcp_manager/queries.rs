@@ -358,7 +358,7 @@ pub async fn list_builtin_tools(args: Value) -> Result<MCPResult, String> {
         "knowledge",
         "browser",
         "workspace",
-        "content_store",
+        "attachments",
         "assistant",
         "playbook",
         "bootstrap",

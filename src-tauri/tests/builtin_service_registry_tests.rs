@@ -171,7 +171,7 @@ fn test_multiple_content_items() {
 /// Verify that core aliases are always present regardless of what the agent config says.
 /// NOTE: "session_api" and "contentstore" are NOT recognised canonical names —
 /// canonicalize_builtin_service_alias() returns None for them and logs a warning.
-/// "swarm" and "content_store" appear in the result because they are CORE aliases
+/// "swarm" and "attachments" appear in the result because they are CORE aliases
 /// (always enabled), NOT because legacy name normalization occurred.
 /// If legacy alias mapping is needed, add explicit entries to
 /// canonicalize_builtin_service_alias() and update this test.
@@ -186,8 +186,8 @@ fn extract_builtin_tool_ids_core_aliases_always_present_despite_unknown_inputs()
         "swarm is a core alias and must always be present"
     );
     assert!(
-        tool_ids.contains(&"content_store".to_string()),
-        "content_store is a core alias and must always be present"
+        tool_ids.contains(&"attachments".to_string()),
+        "attachments is a core alias and must always be present"
     );
     // browser IS a recognised canonical and is optional — it's in the alias list, so it should be included.
     assert!(
@@ -244,7 +244,7 @@ fn mcp_manager_is_enabled_even_with_empty_alias_list() {
 
 // ─── Server name / registry regression tests ─────────────────────────────────
 // Original bug: ContentStoreServer::name() returned "contentstore" while the
-// registry had "content_store". All four tests below would have caught it.
+// registry had "attachments". All four tests below would have caught it.
 
 /// Every concrete server NAME must be a recognised canonical in the registry.
 #[test]

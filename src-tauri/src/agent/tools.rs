@@ -43,7 +43,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
-        canonical: "content_store",
+        canonical: "attachments",
         optional: false,
     },
     BuiltinServiceEntry {
@@ -77,14 +77,20 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
     "assistant",
     "skills",
     "playbook",
-    "content_store",
+    "attachments",
     "swarm",
     "ui",
     "mcp_manager",
 ];
 
 pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
-    let normalized = alias.trim().to_lowercase();
+    let mut normalized = alias.trim().to_lowercase();
+
+    // Phase 1 Migration: Map legacy 'content_store' to 'attachments'
+    if normalized == "content_store" {
+        normalized = "attachments".to_string();
+    }
+
     BUILTIN_SERVICE_REGISTRY
         .iter()
         .find(|entry| entry.canonical == normalized.as_str())

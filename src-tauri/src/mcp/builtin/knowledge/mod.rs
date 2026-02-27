@@ -43,7 +43,7 @@ impl KnowledgeServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "Knowledge Server".to_string(),
-            description: "Persistent knowledge base scoped to this assistant (survives across sessions). Use for information that should be remembered long-term. For session-only files, use the content_store server.".to_string(),
+            description: "Persistent knowledge base scoped to this assistant (survives across sessions). Use for information that should be remembered long-term. For session-only files, use the attachments server.".to_string(),
             icon: Some("📚".to_string()),
         }
     }
@@ -58,7 +58,7 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     fn description(&self) -> &str {
-        "Persistent knowledge base scoped to this assistant (survives across sessions). Use for information that should be remembered long-term. For session-only files, use the content_store server."
+        "Persistent knowledge base scoped to this assistant (survives across sessions). Use for information that should be remembered long-term. For session-only files, use the attachments server."
     }
 
     fn version(&self) -> &str {

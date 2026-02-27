@@ -452,7 +452,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             tool_count: workspace::WorkspaceServer::tools_static().len(),
         },
         BuiltinServerInfo {
-            name: "contentstore".to_string(),
+            name: "attachments".to_string(),
             metadata: content_store::ContentStoreServer::metadata_static(),
             tool_count: content_store::ContentStoreServer::tools_static().len(),
         },
@@ -614,7 +614,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
         "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
         "workspace" => crate::mcp::builtin::workspace::WorkspaceServer::tools_static(),
-        "content_store" | "contentstore" => {
+        "attachments" | "content_store" | "contentstore" => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
         "assistant" | "assistant_manager" => {

@@ -17,7 +17,7 @@ const BUILTIN_SERVICE_REGISTRY: readonly BuiltinServiceEntry[] = [
   { canonical: 'assistant', category: 'core' },
   { canonical: 'skills', category: 'core' },
   { canonical: 'playbook', category: 'core' },
-  { canonical: 'content_store', category: 'core' },
+  { canonical: 'attachments', category: 'core' },
   { canonical: 'swarm', category: 'core' },
   { canonical: 'ui', category: 'core' },
   { canonical: 'browser', category: 'optional' },
@@ -41,7 +41,13 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES: readonly string[] =
 const _canonicals = new Set(BUILTIN_SERVICE_REGISTRY.map((e) => e.canonical));
 
 function canonicalizeAlias(alias: string): string | null {
-  const normalized = alias.trim().toLowerCase();
+  let normalized = alias.trim().toLowerCase();
+
+  // Phase 1 Migration: Map legacy 'content_store' to 'attachments'
+  if (normalized === 'content_store') {
+    normalized = 'attachments';
+  }
+
   return _canonicals.has(normalized) ? normalized : null;
 }
 

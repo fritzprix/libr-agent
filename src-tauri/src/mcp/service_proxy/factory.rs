@@ -48,7 +48,7 @@ pub(crate) async fn create_builtin_server(
         "workspace" => Ok(Some(Box::new(
             crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
         ))),
-        "content_store" | "contentstore" => Ok(Some(Box::new(
+        "attachments" | "content_store" | "contentstore" => Ok(Some(Box::new(
             crate::mcp::builtin::content_store::ContentStoreServer::new(
                 _session_id,
                 _session_manager,

@@ -66,13 +66,13 @@ mod tests {
 
     #[test]
     fn test_builtin_tool_routing() {
-        let tool_name = "builtin_content_store__addContent";
+        let tool_name = "builtin_attachments__addContent";
         let routing = route_tool(tool_name).expect("Parsing failed");
 
         assert_eq!(
             routing,
             ToolRouting::Builtin {
-                server_id: "content_store".to_string(),
+                server_id: "attachments".to_string(),
                 tool_name: "addContent".to_string(),
             }
         );

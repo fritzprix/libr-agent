@@ -295,7 +295,7 @@ pub fn list_internal_tools_tool() -> MCPTool {
 
 🏠 INTERNAL SERVICES (this tool):
 • planning, knowledge, browser, workspace
-• content_store, assistant, playbook
+• attachments, assistant, playbook
 • bootstrap, ui, mcp_manager
 
 🌐 EXTERNAL SERVERS (not supported):
@@ -313,7 +313,7 @@ Results are paginated (20 tools per page) for large result sets.
                 string_prop(
                     None,
                     None,
-                    Some("Optional: Internal service name to filter by. Valid: planning, knowledge, browser, workspace, content_store, assistant, playbook, bootstrap, ui, mcp_manager"),
+                    Some("Optional: Internal service name to filter by. Valid: planning, knowledge, browser, workspace, attachments, assistant, playbook, bootstrap, ui, mcp_manager"),
                 ),
             )],
             vec![],

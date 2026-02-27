@@ -494,7 +494,7 @@ pub struct BuiltinServerMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuiltinServerInfo {
-    /// Server identifier (e.g., "workspace", "content_store")
+    /// Server identifier (e.g., "workspace", "attachments")
     pub name: String,
     /// UI metadata
     pub metadata: BuiltinServerMetadata,

@@ -68,7 +68,7 @@ export interface MessageSearchResult {
  * Complete information about a builtin server including metadata.
  */
 export interface BuiltinServerInfo {
-  /** Server identifier (e.g., "workspace", "content_store") */
+  /** Server identifier (e.g., "workspace", "attachments") */
   name: string;
   /** UI metadata (displayName, description, category, icon) */
   metadata: ServiceMetadata;

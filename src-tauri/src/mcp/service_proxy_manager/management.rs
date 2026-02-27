@@ -110,7 +110,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call
-    /// * `tool_name` - Name of the tool to invoke (e.g., "builtin_content_store__addContent" or "filesystem__read_file")
+    /// * `tool_name` - Name of the tool to invoke (e.g., "builtin_attachments__addContent" or "filesystem__read_file")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -121,7 +121,7 @@ impl MCPServiceProxyManager {
     /// ```rust,ignore
     /// let result = manager.call_tool(
     ///     "session-123",
-    ///     "builtin_content_store__addContent",
+    ///     "builtin_attachments__addContent",
     ///     json!({"title": "My Note", "content": "Content"})
     /// ).await?;
     /// ```
