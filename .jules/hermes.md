@@ -34,3 +34,13 @@
 
 - **Batching:** Implemented `update_settings` Tauri command accepting `HashMap<String, Value>` to process multiple setting updates in a single transaction.
 - **Refactor:** Updated `src/lib/services/rust-settings-service.ts` to accumulate changes and send a single `invoke("update_settings")` payload.
+
+## 2026-03-04 - Logger IPC Batching
+
+**Problem:** Chatty logging system triggering individual `invoke` calls for every log message, flooding the IPC bridge during high-frequency events.
+
+**Action:**
+
+- **Batching:** Implemented `LogQueue` in `src/lib/logger.ts` to buffer log entries (limit 50 or 500ms timeout) and send them in a single `invoke("log_batch")` call.
+- **Type Sync:** Defined `LogEntry` interface in TS and corresponding struct in Rust to ensure type safety.
+- **Rust Command:** Added `log_batch` to `src-tauri/src/commands/log_commands.rs` to process batched log entries efficiently.

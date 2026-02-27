@@ -276,14 +276,14 @@ fn agent_config_with_legacy_content_store_gets_attachments_enabled() {
     );
 }
 
-/// "contentstore" (no underscore) is NOT a recognised alias — not a canonical,
-/// not a legacy mapping. Must return None and not silently enable anything.
+/// "contentstore" (no underscore) is a legacy alias written by early versions of
+/// `assistant_init.rs`. Must resolve to "attachments" for backward compatibility.
 #[test]
-fn contentstore_without_underscore_is_unknown() {
+fn contentstore_without_underscore_resolves_to_attachments() {
     assert_eq!(
         canonicalize_builtin_service_alias("contentstore"),
-        None,
-        "'contentstore' (no underscore) is not a valid alias and must not resolve"
+        Some("attachments"),
+        "'contentstore' (no underscore) must resolve to 'attachments'"
     );
 }
 
