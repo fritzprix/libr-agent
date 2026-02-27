@@ -63,12 +63,8 @@ class LogQueue {
   private timer: NodeJS.Timeout | null = null;
 
   constructor() {
-    // Attempt to flush on page unload
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
-        this.flush();
-      });
-    }
+    // Intentionally empty: rely on timer-based flushing instead of unreliable
+    // async work in beforeunload/window-close hooks (not reliably awaited in Tauri).
   }
 
   /**
@@ -110,21 +106,18 @@ class LogQueue {
       await invoke('log_batch', { entries });
     } catch (e) {
       console.error('[Logger] Failed to flush log batch:', e);
-      // If flush fails, we could retry or just dump to console.
-      // For now, dump to console to ensure visibility during debugging.
-      entries.forEach((entry) => {
-        console.log(
-          `[webview:${entry.level.toUpperCase()}] (FAILED FLUSH) ${entry.message}`,
-        );
-      });
+      // Re-queue failed entries so they can be retried on the next flush.
+      // Cap at batchSize to prevent unbounded growth when the backend is down.
+      const requeued = [...entries, ...this.queue].slice(-this.batchSize);
+      this.queue = requeued;
     }
   }
 }
 
 const globalLogQueue = new LogQueue();
 
-// Helper function to send logs to Rust backend via LogQueue
-async function logToBackend(level: LogLevel, message: string): Promise<void> {
+// Helper function to send logs to Rust backend via LogQueue (fire-and-forget)
+function logToBackend(level: LogLevel, message: string): void {
   globalLogQueue.enqueue(level, message);
 }
 
