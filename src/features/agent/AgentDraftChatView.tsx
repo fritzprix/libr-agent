@@ -37,7 +37,7 @@ import {
   enforceRuntimeBuiltinAliases,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
-import { workspaceWriteFile } from '@/lib/backend/workspace';
+import { workspaceWriteFile, getWorkspaceDir } from '@/lib/backend/workspace';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
 import type { AttachmentReference } from '@/models/chat';
 import {
@@ -54,6 +54,9 @@ const logger = getLogger('AgentDraftChatView');
 // File extensions treated as plain text for Content Store indexing
 const TEXT_EXTENSIONS_DRAFT =
   /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto)$/i;
+
+// Binary file extensions that the backend document parser can handle via file:// URL
+const BINARY_INDEXABLE_EXTENSIONS_DRAFT = /\.(pdf|docx|xlsx)$/i;
 
 interface BuiltinServerInfo {
   name: string; // This is the ID
@@ -410,11 +413,23 @@ function DraftChatInner() {
           },
         });
 
-        // Step 2: Commit text files to Content Store now that session is initialized
+        // Step 2: Commit indexable files to Content Store now that session is initialized
+        let workspaceDirCache: string | null = null;
+        const getWorkspaceDirCached = async (): Promise<string> => {
+          if (workspaceDirCache === null) {
+            workspaceDirCache = await getWorkspaceDir(newSessionId);
+          }
+          return workspaceDirCache;
+        };
+
         for (let i = 0; i < pendingFiles.length; i++) {
           const file = pendingFiles[i];
           const isTextFile =
             TEXT_EXTENSIONS_DRAFT.test(file.name) || /^text\//.test(file.type);
+          const isBinaryIndexable = BINARY_INDEXABLE_EXTENSIONS_DRAFT.test(
+            file.name,
+          );
+
           if (isTextFile) {
             try {
               const content = await file.text();
@@ -438,6 +453,47 @@ function DraftChatInner() {
             } catch (commitErr) {
               logger.warn(
                 'Failed to commit file to Content Store, keeping workspace-only',
+                { filename: file.name, error: commitErr },
+              );
+            }
+          } else if (isBinaryIndexable) {
+            // Binary files (PDF, DOCX, XLSX) are parsed on the backend via file:// URL
+            try {
+              const workspaceDir = await getWorkspaceDirCached();
+              const workspacePath = attachments[i].workspacePath;
+              if (!workspacePath) {
+                logger.warn(
+                  'Binary file missing workspacePath, skipping index',
+                  {
+                    filename: file.name,
+                  },
+                );
+                continue;
+              }
+              // Normalize path separators to forward slashes for file:// URL construction
+              const normalizedDir = workspaceDir.replace(/\\/g, '/');
+              const normalizedRelative = workspacePath.replace(/\\/g, '/');
+              const fileUrl = `file:///${normalizedDir.replace(/^\//, '')}/${normalizedRelative}`;
+              const result = (await saveAgentFile(newSessionId, file.name, {
+                fileUrl,
+                metadata: {
+                  mimeType: file.type || 'application/octet-stream',
+                  size: file.size,
+                  uploadedAt: now.toISOString(),
+                  filename: file.name,
+                },
+              })) as ContentStoreItem;
+              if (result?.contentId) {
+                attachments[i] = {
+                  ...attachments[i],
+                  status: 'committed',
+                  contentId: result.contentId,
+                  lineCount: result.lineCount ?? attachments[i].lineCount,
+                };
+              }
+            } catch (commitErr) {
+              logger.warn(
+                'Failed to commit binary file to Content Store, keeping workspace-only',
                 { filename: file.name, error: commitErr },
               );
             }

@@ -8,6 +8,7 @@ pub mod entity; // SeaORM entity definitions
 pub mod lifecycle; // New lifecycle module
 mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
+pub mod models;
 pub mod repositories; // Make public for integration tests
 mod search;
 pub mod server;
@@ -62,7 +63,7 @@ use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
     update_playbook,
 };
-use commands::session_commands::{remove_session, switch_session};
+use commands::session_commands::remove_session;
 use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
@@ -76,9 +77,9 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_override, greet,
-    list_workspace_files, open_workspace_file_with_default_app, open_workspace_in_explorer,
-    open_workspace_in_terminal, restart_app, set_workspace_override,
+    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_dir,
+    get_workspace_override, greet, list_workspace_files, open_workspace_file_with_default_app,
+    open_workspace_in_explorer, open_workspace_in_terminal, restart_app, set_workspace_override,
 };
 
 // Re-export state management functions
@@ -150,7 +151,6 @@ pub fn run() {
                 download_workspace_file,
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
-                switch_session,
                 remove_session,
                 delete_content_store,
                 get_app_data_dir,
@@ -174,6 +174,7 @@ pub fn run() {
                 get_workspace_override,
                 set_workspace_override,
                 cancel_workspace_override,
+                get_workspace_dir,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,

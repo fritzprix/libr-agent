@@ -274,7 +274,7 @@ export interface Assistant {
    * - Only tools with aliases in this array will be available to the assistant
    * - `undefined` = all built-in services allowed (default behaviour)
    * - `[]` = no built-in services enabled
-   * - Example: ['browser', 'content_store', 'workspace', 'planning', 'playbook']
+   * - Example: ['browser', 'attachments', 'workspace', 'planning', 'playbook']
    */
   allowedBuiltInServiceAliases?: string[];
   deletionProtected: boolean;
@@ -304,4 +304,52 @@ export interface Session {
    * Other threads exist only in backend state.
    */
   sessionThread: Thread;
+}
+
+/**
+ * Convert Message (frontend format) to RustMessage (backend format)
+ */
+export function messageToRustMessage(msg: Message): RustMessage {
+  const now = Date.now();
+
+  const createdAt =
+    msg.createdAt instanceof Date
+      ? msg.createdAt.getTime()
+      : typeof msg.createdAt === 'number'
+        ? msg.createdAt
+        : now;
+
+  const updatedAt =
+    msg.updatedAt instanceof Date
+      ? msg.updatedAt.getTime()
+      : typeof msg.updatedAt === 'number'
+        ? msg.updatedAt
+        : createdAt;
+
+  return {
+    id: msg.id,
+    sessionId: msg.sessionId,
+    role: msg.role,
+    content: msg.content,
+    toolCalls: msg.tool_calls
+      ? msg.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: tc.function,
+        }))
+      : undefined,
+    toolCallId: msg.tool_call_id,
+    isStreaming: msg.isStreaming,
+    thinking: msg.thinking,
+    thinkingSignature: msg.thinkingSignature,
+    thinkingTime: msg.thinkingTime,
+    assistantId: msg.assistantId,
+    attachments: msg.attachments,
+    toolUse: msg.tool_use,
+    createdAt,
+    updatedAt,
+    source: msg.source,
+    error: msg.error,
+    metadata: msg.metadata,
+  };
 }

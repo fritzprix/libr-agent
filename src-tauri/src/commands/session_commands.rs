@@ -1,5 +1,6 @@
+use crate::services::SessionCleanupService;
 use crate::session::get_session_manager;
-use log::{error, info};
+use log::info;
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
@@ -10,12 +11,6 @@ use tauri::command;
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SessionSwitchRequest {
-    pub session_id: String,
-    pub use_async: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct SessionResponse {
     pub success: bool,
     pub message: String,
@@ -23,60 +18,31 @@ pub struct SessionResponse {
     pub data: Option<serde_json::Value>,
 }
 
-/// Switch to a specific session for workspace isolation
-/// Used by BuiltInToolProvider to switch backend workspace when changing Agent V2 sessions
-/// Switch to a specific session (Legacy/Deprecated)
-/// In Agent V2, sessions are isolated by ID and do not rely on global context switching.
-/// This command is preserved as a no-op to prevent frontend errors during transition.
-#[command]
-pub async fn switch_session(request: SessionSwitchRequest) -> Result<SessionResponse, String> {
-    log::warn!("Call to deprecated switch_session for '{}'. Global session switching is disabled in Agent V2.", request.session_id);
-
-    Ok(SessionResponse {
-        success: true,
-        message: format!(
-            "Session switch ignored (Agent V2 isolation enabled): {}",
-            request.session_id
-        ),
-        session_id: Some(request.session_id),
-        data: None,
-    })
-}
-
 /// Remove a specific session
 /// Deletes search index, metadata, workspace directory, and all associated resources
 #[command]
 pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
-    use crate::repositories::MessageRepository;
-    use crate::search::index_storage::delete_index;
+    info!("🗑️  Removing session via services: {session_id}");
 
-    info!("🗑️  Removing session: {session_id}");
+    // 1. Clean up auxiliary resources (Index, DB) via SessionCleanupService
+    // This handles the "side effects" and external data.
+    let message_repo = crate::state::get_message_repository();
 
-    // Step 1: Delete BM25 search index file and metadata
-    if let Err(e) = delete_index(&session_id) {
-        error!("Failed to delete search index for session {session_id}: {e}");
-        // Continue with removal even if index deletion fails (best-effort)
-    }
+    // Pass the message repository reference directly, trusting it implements MessageRepository trait
+    SessionCleanupService::cleanup_auxiliary_resources(&session_id, message_repo)
+        .await
+        .map_err(|e| format!("Failed to cleanup auxiliary resources: {e}"))?;
 
-    // Step 2: Delete index metadata from database
-    let repo = crate::state::get_message_repository();
-    if let Err(e) = repo.delete_index_metadata(&session_id).await {
-        error!("Failed to delete index metadata for session {session_id}: {e}");
-        // Continue with removal even if metadata deletion fails (best-effort)
-    } else {
-        info!("✅ Deleted index metadata for session: {session_id}");
-    }
-
-    // Step 3: Remove session workspace directory and other resources
+    // 2. Remove workspace directory and update internal session pool via SessionManager
+    // This handles the core "session existence" and filesystem.
     let session_manager =
         get_session_manager().map_err(|e| format!("Failed to get session manager: {e}"))?;
-
     session_manager
         .remove_session(&session_id)
         .await
-        .map_err(|e| format!("Failed to remove session: {e}"))?;
+        .map_err(|e| format!("Failed to remove session workspace: {e}"))?;
 
-    info!("✅ Removed session: {session_id}");
+    info!("✅ Fully removed session: {session_id}");
 
     Ok(SessionResponse {
         success: true,

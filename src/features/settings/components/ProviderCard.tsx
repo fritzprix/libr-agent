@@ -8,8 +8,10 @@ import {
   CardTitle,
   Input,
   Checkbox,
+  Button,
 } from '@/components/ui';
 import { useDebounce } from '@/hooks/useDebounce';
+import { Eye, EyeOff } from 'lucide-react';
 
 export interface ProviderCardProps {
   provider: AIServiceProvider;
@@ -41,6 +43,7 @@ function ProviderCardBase({
   const [localCustomModelId, setLocalCustomModelId] = useState(
     customModelId || '',
   );
+  const [showApiKey, setShowApiKey] = useState(false);
 
   // Use debounce hook for pending changes
   const { debounced: schedulePending } = useDebounce(
@@ -62,18 +65,35 @@ function ProviderCardBase({
           <label className="block text-muted-foreground mb-2 text-sm font-medium">
             API Key
           </label>
-          <Input
-            type="password"
-            placeholder={`Enter your ${providerName} API key`}
-            value={localApiKey}
-            onChange={(e) => {
-              const v = e.target.value;
-              setLocalApiKey(v);
-              schedulePending({ apiKey: v });
-            }}
-            onBlur={() => onPendingChange(provider, { apiKey: localApiKey })}
-            className="bg-background border text-foreground w-full"
-          />
+          <div className="relative">
+            <Input
+              type={showApiKey ? 'text' : 'password'}
+              placeholder={`Enter your ${providerName} API key`}
+              value={localApiKey}
+              onChange={(e) => {
+                const v = e.target.value;
+                setLocalApiKey(v);
+                schedulePending({ apiKey: v });
+              }}
+              onBlur={() => onPendingChange(provider, { apiKey: localApiKey })}
+              className="bg-background border text-foreground w-full pr-10"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+              onClick={() => setShowApiKey((v) => !v)}
+              aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+              aria-pressed={showApiKey}
+            >
+              {showApiKey ? (
+                <EyeOff className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Eye className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+          </div>
         </div>
 
         {(provider === AIServiceProvider.Ollama ||

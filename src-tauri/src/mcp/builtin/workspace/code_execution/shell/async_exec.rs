@@ -293,7 +293,7 @@ impl WorkspaceServer {
 
 • Process ID: {}
 • Command: {}
-• Mode: Asynchronous (long-running)
+• Mode: Asynchronous (non-blocking)
 
 💡 Next Steps:",
                 process_id, command
@@ -315,7 +315,7 @@ impl WorkspaceServer {
             "process_id": process_id,
             "command": command,
             "mode": "async",
-            "note": "async mode is intended for long-running commands (over 30s)"
+            "note": "use waitForProcess or readProcessOutput to retrieve output"
         });
 
         Ok(hint.to_mcp_result_with_data(Some(response_data)))

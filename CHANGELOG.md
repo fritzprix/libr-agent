@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.19] - 2026-02-25
+
+### 🚀 Features
+
+- **LLM retry with fallback model**: Agent LLM calls now automatically retry with exponential backoff and jitter on transient failures. A configurable fallback model can be specified so the agent degrades gracefully instead of hard-failing when the primary model is unavailable (SP4 implementation).
+
+### 🐛 Fixes
+
+- **mcp-hn server command corrected**: The `mcp-hn` preset now launches via `npx` with the correct package name, fixing MCP server startup failures for the Hacker News integration.
+- **Service proxy routing error handling**: Improved error propagation in the MCP service proxy routing layer so failures surface with actionable messages rather than being silently swallowed.
+
+### 🔧 Internal
+
+- **`service_proxy.rs` modularized**: The monolithic `service_proxy.rs` split into focused submodules for improved maintainability and testability.
+- **`MCPServerDialog` services extracted**: Service logic and UI components extracted from `MCPServerDialog` into dedicated modules, improving separation of concerns.
+- **Download commands architecture**: Download-related Tauri commands refactored for better separation from UI concerns.
+- **Outdated setup scripts removed**: Legacy Python/Node.js/uv installation and verification scripts pruned from the repository.
+
 ## [0.5.18] - 2026-02-25
 
 ### 🚀 Features

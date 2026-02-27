@@ -1,7 +1,7 @@
 {
   "name": "libragent",
   "private": true,
-  "version": "0.5.18",
+  "version": "0.5.19",
   "description": "A desktop app for AI agents with built-in tools",
   "author": "fritzprix",
   "license": "MIT",
@@ -32,6 +32,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,scss,md}\" --ignore-path .prettierignore",
     "tauri": "tauri",
+    "tauri:mcp": "LIBRAGENT_MCP_ENABLE=1 tauri dev",
     "diagnose": "echo 'System diagnostic...' && ldd --version && echo 'WebKit packages:' && dpkg -l | grep webkit",
     "dead-code": "unimported",
     "dead-code:init": "unimported --init",

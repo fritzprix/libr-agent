@@ -33,10 +33,10 @@ export async function saveAgentFile(
   },
 ): Promise<unknown> {
   // Note: The tool name must be namespaced for the proxy: builtin_{server_name}__{tool_name}
-  // Server ID is 'content_store' (with underscore) in extract_builtin_tool_ids (tools.rs)
+  // Server ID is 'attachments' in extract_builtin_tool_ids (tools.rs)
   const response = await agentCallBuiltinTool(
     sessionId,
-    'builtin_content_store__addContent',
+    'builtin_attachments__addContent',
     {
       ...args,
       metadata: {

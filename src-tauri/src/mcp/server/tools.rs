@@ -452,7 +452,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             tool_count: workspace::WorkspaceServer::tools_static().len(),
         },
         BuiltinServerInfo {
-            name: "contentstore".to_string(),
+            name: "attachments".to_string(),
             metadata: content_store::ContentStoreServer::metadata_static(),
             tool_count: content_store::ContentStoreServer::tools_static().len(),
         },
@@ -609,22 +609,33 @@ pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
 /// # Returns
 /// A vector of tool schemas for the specified server, or empty vector if server not found
 pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
-    match server_name {
-        "planning" => crate::mcp::builtin::planning::PlanningServer::tools_static(),
-        "knowledge" => crate::mcp::builtin::knowledge::KnowledgeServer::tools_static(),
-        "browser" => crate::mcp::builtin::browser::BrowserServer::tools_static(),
-        "workspace" => crate::mcp::builtin::workspace::WorkspaceServer::tools_static(),
-        "content_store" | "contentstore" => {
+    use crate::mcp::builtin::service_id::BuiltinServiceId;
+
+    let Some(service_id) = BuiltinServiceId::from_alias(server_name) else {
+        return Vec::new();
+    };
+
+    match service_id {
+        BuiltinServiceId::Planning => crate::mcp::builtin::planning::PlanningServer::tools_static(),
+        BuiltinServiceId::Knowledge => {
+            crate::mcp::builtin::knowledge::KnowledgeServer::tools_static()
+        }
+        BuiltinServiceId::Browser => crate::mcp::builtin::browser::BrowserServer::tools_static(),
+        BuiltinServiceId::Workspace => {
+            crate::mcp::builtin::workspace::WorkspaceServer::tools_static()
+        }
+        BuiltinServiceId::Attachments => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
-        "assistant" | "assistant_manager" => {
+        BuiltinServiceId::Assistant => {
             crate::mcp::builtin::assistant::AssistantServer::tools_static()
         }
-        "playbook" => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
-        "bootstrap" => crate::mcp::builtin::bootstrap::tools::all_tools(),
-        "ui" => crate::mcp::builtin::ui::tools::all_tools(),
-        "mcp_manager" => crate::mcp::builtin::mcp_manager::tools::all_tools(),
-        "swarm" => crate::mcp::builtin::session_api::tools::all_tools(),
-        _ => Vec::new(),
+        BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
+        BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
+        BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),
+        BuiltinServiceId::McpManager => crate::mcp::builtin::mcp_manager::tools::all_tools(),
+        BuiltinServiceId::Swarm => crate::mcp::builtin::session_api::tools::all_tools(),
+        // Skills tools are session-bound; no static definition available.
+        BuiltinServiceId::Skills => Vec::new(),
     }
 }

@@ -25,7 +25,7 @@ use super::BuiltinMCPServer;
 use crate::mcp::types::ServiceContext;
 use serde_json::Value;
 
-pub const NAME: &str = "content_store";
+pub const NAME: &str = "attachments";
 
 // BuiltinMCPServer trait implementation
 #[async_trait]
@@ -35,7 +35,7 @@ impl BuiltinMCPServer for ContentStoreServer {
     }
 
     fn description(&self) -> &str {
-        "File attachment and semantic search system with native performance and BM25 indexing"
+        "Session-scoped file attachment store (ephemeral: cleared when session ends). Use for files uploaded in the current task. For persistent knowledge across sessions, use the knowledge server."
     }
 
     fn display_name(&self) -> String {
@@ -62,7 +62,7 @@ impl BuiltinMCPServer for ContentStoreServer {
             "addContent" => operations::add_content(self, args, &target_session_id).await,
             "listContent" => queries::list_content(self, args, &target_session_id).await,
             "readContent" => queries::read_content(self, args, &target_session_id).await,
-            "keywordSimilaritySearch" => {
+            "searchContent" => {
                 queries::keyword_similarity_search(self, args, &target_session_id).await
             }
             "deleteContent" => operations::delete_content(self, args, &target_session_id).await,

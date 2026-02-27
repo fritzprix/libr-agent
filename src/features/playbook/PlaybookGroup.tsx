@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { PlaybookCard } from './Card';
@@ -23,6 +24,7 @@ export function PlaybookGroup({
   onDelete,
   defaultCollapsed = false,
 }: PlaybookGroupProps) {
+  const { t } = useTranslation();
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   return (
@@ -61,7 +63,10 @@ export function PlaybookGroup({
           <PlaybookCard
             key={playbook.id}
             playbook={playbook}
-            assistantName={assistantMap[playbook.agentId]?.name || 'Unknown'}
+            assistantName={
+              assistantMap[playbook.agentId]?.name ||
+              t('playbook.card.unknownAssistant')
+            }
             onBookmarkToggle={onBookmarkToggle}
             onDelete={onDelete}
           />

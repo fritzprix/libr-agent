@@ -43,7 +43,7 @@ pub struct MCPServiceProxyManager {
     /// Shared SeaORM database connection for all sessions
     db: Arc<DatabaseConnection>,
 
-    /// Shared SessionManager for workspace/content_store servers
+    /// Shared SessionManager for workspace/attachments servers
     session_manager: Arc<SessionManager>,
 
     /// Background cleanup task handle

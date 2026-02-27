@@ -16,6 +16,7 @@ pub mod knowledge;
 pub mod mcp_manager;
 pub mod planning;
 pub mod playbook;
+pub mod service_id;
 pub mod session_api;
 pub mod skills;
 pub mod ui;

@@ -3,6 +3,7 @@ import { getAgentAvailableTools } from '@/lib/backend/agent-commands';
 import type { MCPTool } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
 import { validateMCPTools } from '@/lib/schemas/mcp-tool';
+import { isBuiltinTool } from '@/lib/tool-call-utils';
 
 const logger = getLogger('useAgentTools');
 
@@ -59,10 +60,8 @@ export function useAgentTools(sessionId: string | undefined) {
           logger.info('Loaded agent tools', {
             sessionId,
             toolCount: tools.length,
-            builtinCount: tools.filter((t) => t.name.startsWith('builtin_'))
-              .length,
-            externalCount: tools.filter((t) => !t.name.startsWith('builtin_'))
-              .length,
+            builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
+            externalCount: tools.filter((t) => !isBuiltinTool(t.name)).length,
           });
         }
       } catch (err) {

@@ -3,12 +3,18 @@ pub mod browser_error;
 pub mod dropped_file_service;
 pub mod file_export_service;
 pub mod interactive_browser_server;
+pub mod message_service;
 pub mod secure_file_manager;
+pub mod session_cleanup_service;
+pub mod session_directory_service;
 pub mod skill_service;
 pub mod workspace_service;
 
 pub use dropped_file_service::DroppedFileService;
 pub use file_export_service::FileExportService;
 pub use interactive_browser_server::{BrowserSession, InteractiveBrowserServer};
+pub use message_service::MessageService;
 pub use secure_file_manager::SecureFileManager;
+pub use session_cleanup_service::SessionCleanupService;
+pub use session_directory_service::SessionDirectoryService;
 pub use workspace_service::{WorkspaceFileItem, WorkspaceService};

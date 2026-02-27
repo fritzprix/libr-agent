@@ -10,12 +10,14 @@ interface AIModelsTabProps {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   providerEntries: AIServiceProvider[];
   localPreferredModel: { provider: AIServiceProvider; model: string };
+  localFallbackModel?: { provider: AIServiceProvider; model: string } | null;
   localAgentHubUrl: string;
   onPendingChange: (
     provider: AIServiceProvider,
     patch: Partial<ServiceConfig>,
   ) => void;
   onPreferredModelChange: (model: string, provider: string) => void;
+  onFallbackModelChange: (model: string, provider: string) => void;
   onAgentHubUrlChange: (url: string) => void;
 }
 
@@ -23,9 +25,11 @@ function AIModelsTabComponent({
   serviceConfigs,
   providerEntries,
   localPreferredModel,
+  localFallbackModel,
   localAgentHubUrl,
   onPendingChange,
   onPreferredModelChange,
+  onFallbackModelChange,
   onAgentHubUrlChange,
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
@@ -83,6 +87,30 @@ function AIModelsTabComponent({
             className="w-full max-w-sm"
           />
         </div>
+
+        {/* Fallback Model — SP4: used when primary model fails all retries */}
+        <div className="min-w-0">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t(
+              'settings.aiModels.fallbackModel',
+              'Fallback LLM (SP4 Recovery)',
+            )}
+          </label>
+          <AgentModelPicker
+            currentModel={localFallbackModel?.model ?? ''}
+            currentProvider={
+              localFallbackModel?.provider ?? localPreferredModel.provider
+            }
+            onConfigUpdate={onFallbackModelChange}
+            className="w-full max-w-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.aiModels.fallbackModelDescription',
+              'Used as a last resort when the primary model returns malformed or empty responses after all retries.',
+            )}
+          </p>
+        </div>
       </div>
 
       {/* Agent Hub Section */}
@@ -117,9 +145,12 @@ export default React.memo(AIModelsTabComponent, (prev, next) => {
   return (
     prev.localPreferredModel.provider === next.localPreferredModel.provider &&
     prev.localPreferredModel.model === next.localPreferredModel.model &&
+    prev.localFallbackModel?.provider === next.localFallbackModel?.provider &&
+    prev.localFallbackModel?.model === next.localFallbackModel?.model &&
     prev.localAgentHubUrl === next.localAgentHubUrl &&
     prev.onPendingChange === next.onPendingChange &&
     prev.onPreferredModelChange === next.onPreferredModelChange &&
+    prev.onFallbackModelChange === next.onFallbackModelChange &&
     prev.onAgentHubUrlChange === next.onAgentHubUrlChange
   );
 });

@@ -248,7 +248,7 @@ pub async fn add_content(
         ),
         vec![
             format!("Use readContent with contentId='{}' to view the full content", content_item.id),
-            "Use keywordSimilaritySearch to find content by keywords".to_string(),
+            "Use searchContent to find content by keywords".to_string(),
         ],
     );
 

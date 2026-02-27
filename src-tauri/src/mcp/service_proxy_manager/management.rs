@@ -1,6 +1,7 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
 use super::MCPServiceProxyManager;
+use crate::mcp::builtin::service_id::is_builtin_tool_name;
 use std::sync::Arc;
 
 impl MCPServiceProxyManager {
@@ -110,7 +111,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call
-    /// * `tool_name` - Name of the tool to invoke (e.g., "builtin_content_store__addContent" or "filesystem__read_file")
+    /// * `tool_name` - Name of the tool to invoke (e.g., "builtin_attachments__addContent" or "filesystem__read_file")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -121,7 +122,7 @@ impl MCPServiceProxyManager {
     /// ```rust,ignore
     /// let result = manager.call_tool(
     ///     "session-123",
-    ///     "builtin_content_store__addContent",
+    ///     "builtin_attachments__addContent",
     ///     json!({"title": "My Note", "content": "Content"})
     /// ).await?;
     /// ```
@@ -132,7 +133,7 @@ impl MCPServiceProxyManager {
         args: serde_json::Value,
     ) -> Result<MCPResponse, String> {
         // Builtin tools route through proxy
-        if tool_name.starts_with("builtin_") {
+        if is_builtin_tool_name(tool_name) {
             let proxy = match self.get_proxy(session_id).await {
                 Some(proxy) => proxy,
                 None => {
