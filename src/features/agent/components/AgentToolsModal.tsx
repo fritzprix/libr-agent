@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Wrench } from 'lucide-react';
 import {
   Dialog,
@@ -35,6 +35,19 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
     const mcp = availableTools.filter((t) => !t.name.startsWith('builtin_'));
     return { builtinTools: builtin, mcpTools: mcp };
   }, [availableTools]);
+
+  /**
+   * Strip the internal `builtin_<group>__` prefix for display.
+   * e.g. "builtin_planning__addScratchpad" → "planning / addScratchpad"
+   * External MCP tool names are returned as-is.
+   */
+  const displayName = useCallback((name: string): string => {
+    const match = name.match(/^builtin_([^_]+(?:_[^_]+)*)__(.+)$/);
+    if (match) {
+      return `${match[1]} / ${match[2]}`;
+    }
+    return name;
+  }, []);
 
   const totalCount = availableTools.length;
   const mcpCount = mcpTools.length;
@@ -99,7 +112,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                           className="font-mono text-sm text-foreground break-words font-medium"
                           title={tool.name}
                         >
-                          {tool.name}
+                          {displayName(tool.name)}
                         </span>
                         <span
                           className={
