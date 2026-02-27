@@ -176,7 +176,6 @@ export class Logger {
    */
   static updateConfig(config: Partial<LoggerConfig>): void {
     globalLoggerConfig = { ...globalLoggerConfig, ...config };
-    console.log('Logger config updated:', globalLoggerConfig);
   }
 
   /**
@@ -207,10 +206,7 @@ export class Logger {
 
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
-      console.log('📁 File logging enabled');
     }
-
-    console.log('🚀 Logger initialized with config:', globalLoggerConfig);
   }
 
   /**
@@ -226,8 +222,7 @@ export class Logger {
     }
 
     try {
-      const backupPath = await logFileManager.backupCurrentLog();
-      console.log(`📄 Log backup created at startup: ${backupPath}`);
+      await logFileManager.backupCurrentLog();
       Logger.hasBackedUpOnStartup = true;
     } catch (error) {
       // A failure to backup should not prevent the logger from initializing.
