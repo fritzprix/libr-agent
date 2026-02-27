@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
+use super::builtin::service_id::builtin_tool_name;
 use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
@@ -59,7 +60,7 @@ impl MCPServiceProxy {
     /// * `session_id` - Unique identifier for the agent session
     /// * `external_mcp_manager` - Shared manager for external MCP servers
     /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/content_store
+    /// * `session_manager` - Shared SessionManager for workspace/attachments
     /// * `http_manager` - Session-specific HTTP manager
     /// * `stdio_manager` - Session-specific Stdio manager
     ///
@@ -134,7 +135,7 @@ impl MCPServiceProxy {
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "builtin_content_store__addContent")
+    /// * `tool_name` - Full tool name (e.g., "builtin_attachments__addContent")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -398,7 +399,7 @@ impl MCPServiceProxy {
                         // Normalize tool name to include builtin prefix and server ID
                         // This ensures the orchestrator can correctly route the tool call back to this proxy
                         // format: builtin_{server_id}__{tool_name}
-                        tool.name = format!("builtin_{}__{}", server_id, tool.name);
+                        tool.name = builtin_tool_name(server_id, &tool.name);
                         tool
                     })
                     .collect()

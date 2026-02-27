@@ -89,3 +89,12 @@ pub async fn set_workspace_override(
 pub async fn cancel_workspace_override(session_id: String) -> Result<(), String> {
     WorkspaceService::cancel_override(&session_id).await
 }
+
+/// Returns the absolute workspace directory path for the given session.
+/// Used by the frontend to construct file:// URLs for binary file indexing.
+#[tauri::command]
+pub async fn get_workspace_dir(session_id: String) -> Result<String, String> {
+    let session_manager = get_session_manager().map_err(|e| e.to_string())?;
+    let workspace_path = session_manager.get_session_workspace_dir_by_id(&session_id);
+    Ok(workspace_path.to_string_lossy().to_string())
+}

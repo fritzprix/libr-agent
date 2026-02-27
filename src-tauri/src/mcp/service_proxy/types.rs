@@ -23,7 +23,7 @@ pub struct SharedManagers {
     pub external_mcp: Arc<MCPServerManager>,
     /// Shared SeaORM database connection
     pub db: Arc<DatabaseConnection>,
-    /// Shared SessionManager for workspace/content_store
+    /// Shared SessionManager for workspace/attachments
     pub session_manager: Arc<SessionManager>,
 }
 

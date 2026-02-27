@@ -1,3 +1,4 @@
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use serde::{Deserialize, Serialize};
 
 /// Agent configuration defining the AI agent's behavior and capabilities
@@ -31,7 +32,7 @@ pub struct AgentConfig {
     /// - None = all built-in services allowed (default)
     /// - Some([]) = no built-in services enabled
     /// - Some([...]) = specific services allowed
-    pub allowed_built_in_service_aliases: Option<Vec<String>>,
+    pub allowed_built_in_service_aliases: Option<Vec<BuiltinServiceId>>,
 
     // NOTE: Model and Provider have been moved to the session level or global settings.
     // Assistants focus on identity (system prompt) and capabilities (MCP servers).
@@ -138,7 +139,7 @@ mod tests {
             system_prompt: "You are a helpful assistant".to_string(),
             mcp_server_ids: vec!["server1".to_string()],
             local_services: vec![],
-            allowed_built_in_service_aliases: Some(vec!["browser".to_string()]),
+            allowed_built_in_service_aliases: Some(vec![BuiltinServiceId::Browser]),
             temperature: 0.7,
             max_tokens: Some(4096),
             max_depth: Some(8),
@@ -195,5 +196,64 @@ mod tests {
 
         assert_eq!(parsed_camel.id.as_deref(), Some("assistant-camel"));
         assert_eq!(parsed_snake.id.as_deref(), Some("assistant-snake"));
+    }
+
+    /// Regression: legacy "content_store" in DB JSON must deserialise to Attachments.
+    #[test]
+    fn test_allowed_aliases_legacy_content_store_deserializes() {
+        let json = r#"{
+            "name": "Legacy Assistant",
+            "systemPrompt": "You are helpful",
+            "allowedBuiltInServiceAliases": ["content_store", "browser"]
+        }"#;
+        let config = AgentConfig::from_json(json).unwrap();
+        let aliases = config.allowed_built_in_service_aliases.unwrap();
+        assert_eq!(aliases.len(), 2);
+        assert_eq!(aliases[0], BuiltinServiceId::Attachments);
+        assert_eq!(aliases[1], BuiltinServiceId::Browser);
+    }
+
+    /// Canonical "attachments" name must also deserialise correctly.
+    #[test]
+    fn test_allowed_aliases_canonical_names_deserialize() {
+        let json = r#"{
+            "name": "Test",
+            "systemPrompt": "You are helpful",
+            "allowedBuiltInServiceAliases": ["attachments", "planning", "browser"]
+        }"#;
+        let config = AgentConfig::from_json(json).unwrap();
+        let aliases = config.allowed_built_in_service_aliases.unwrap();
+        assert_eq!(aliases[0], BuiltinServiceId::Attachments);
+        assert_eq!(aliases[1], BuiltinServiceId::Planning);
+        assert_eq!(aliases[2], BuiltinServiceId::Browser);
+    }
+
+    /// Unknown alias string must cause a parse error (compile-time safety).
+    #[test]
+    fn test_allowed_aliases_unknown_string_errors() {
+        let json = r#"{
+            "name": "Test",
+            "systemPrompt": "You are helpful",
+            "allowedBuiltInServiceAliases": ["not_a_real_service"]
+        }"#;
+        assert!(AgentConfig::from_json(json).is_err());
+    }
+
+    /// Serialise then deserialise must be identity.
+    #[test]
+    fn test_allowed_aliases_roundtrip() {
+        let config = AgentConfig {
+            allowed_built_in_service_aliases: Some(vec![
+                BuiltinServiceId::Attachments,
+                BuiltinServiceId::Browser,
+            ]),
+            ..AgentConfig::default()
+        };
+        let json = config.to_json().unwrap();
+        let parsed = AgentConfig::from_json(&json).unwrap();
+        assert_eq!(
+            parsed.allowed_built_in_service_aliases,
+            config.allowed_built_in_service_aliases
+        );
     }
 }

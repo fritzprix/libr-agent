@@ -77,9 +77,9 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_override, greet,
-    list_workspace_files, open_workspace_file_with_default_app, open_workspace_in_explorer,
-    open_workspace_in_terminal, restart_app, set_workspace_override,
+    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_dir,
+    get_workspace_override, greet, list_workspace_files, open_workspace_file_with_default_app,
+    open_workspace_in_explorer, open_workspace_in_terminal, restart_app, set_workspace_override,
 };
 
 // Re-export state management functions
@@ -174,6 +174,7 @@ pub fn run() {
                 get_workspace_override,
                 set_workspace_override,
                 cancel_workspace_override,
+                get_workspace_dir,
                 // Interactive Browser commands
                 create_browser_session,
                 close_browser_session,

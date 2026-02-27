@@ -277,6 +277,7 @@
       "titleNew": "Add Extension",
       "titleEdit": "Edit Extension: {{name}}",
       "validationError": "Please fill in all required fields",
+      "reservedNameError": "\"{{name}}\" is a reserved builtin service name. Choose a different name.",
       "nameLabel": "Name",
       "namePlaceholder": "e.g., filesystem, github, sequential-thinking",
       "nameDesc": "Unique identifier for this extension",

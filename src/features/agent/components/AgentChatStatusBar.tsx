@@ -22,6 +22,7 @@ import { useTokenMetrics } from '@/hooks/use-token-metrics';
 import { TokenMetricsBadge } from './TokenMetricsBadge';
 import { TokenUsage } from '@/lib/ai-service/types';
 import { toast } from 'sonner';
+import { isBuiltinTool } from '@/lib/tool-call-utils';
 
 const logger = getLogger('AgentChatStatusBar');
 
@@ -67,10 +68,8 @@ export function AgentChatStatusBar() {
 
   // Categorize tools by type
   const { builtinTools, externalTools } = useMemo(() => {
-    const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
-    const external = availableTools.filter(
-      (t) => !t.name.startsWith('builtin_'),
-    );
+    const builtin = availableTools.filter((t) => isBuiltinTool(t.name));
+    const external = availableTools.filter((t) => !isBuiltinTool(t.name));
     return { builtinTools: builtin, externalTools: external };
   }, [availableTools]);
 

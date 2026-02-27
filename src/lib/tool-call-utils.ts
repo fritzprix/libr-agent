@@ -41,10 +41,56 @@ export function hasUIResource(toolResult?: Message): boolean {
 }
 
 /**
- * Parses a tool name by removing the server prefix.
- * Example: "server__toolName" -> "toolName"
+ * ─── Tool Name Utilities ─────────────────────────────────────────────────────
+ *
+ * All tool-name formatting/parsing lives here.
+ * When the builtin naming convention changes, update ONLY this section.
+ *
+ * Current convention:  builtin_<group>__<tool>
+ *   e.g.  builtin_planning__addScratchpad
+ *         builtin_mcp_manager__listServers
+ *
+ * External MCP tools:  <server>__<tool>
+ *   e.g.  github__search_code
+ */
+
+/** The prefix shared by all builtin service tool names. */
+export const BUILTIN_PREFIX = 'builtin_';
+
+/** Regex for the internal builtin tool name format. */
+const BUILTIN_TOOL_RE = /^builtin_([^_]+(?:_[^_]+)*)__(.+)$/;
+
+/** Returns true if the raw tool name belongs to a builtin service. */
+export function isBuiltinTool(rawName: string): boolean {
+  return BUILTIN_TOOL_RE.test(rawName);
+}
+
+/**
+ * Parses a builtin tool name into its structural parts.
+ * Returns null for external MCP tools.
+ *
+ * @example
+ * parseBuiltinToolName("builtin_planning__addScratchpad")
+ * // → { group: "planning", tool: "addScratchpad" }
+ */
+export function parseBuiltinToolName(
+  rawName: string,
+): { group: string; tool: string } | null {
+  const m = rawName.match(BUILTIN_TOOL_RE);
+  return m ? { group: m[1], tool: m[2] } : null;
+}
+
+/**
+ * Returns a human-friendly display name for any tool.
+ *
+ * Builtin:  "builtin_planning__addScratchpad"  → "planning / addScratchpad"
+ * External: "github__search_code"              → "search_code"
  */
 export function parseToolName(fullToolName: string): string {
+  const parsed = parseBuiltinToolName(fullToolName);
+  if (parsed) {
+    return `${parsed.group} / ${parsed.tool}`;
+  }
   return fullToolName.split('__').pop() || fullToolName;
 }
 

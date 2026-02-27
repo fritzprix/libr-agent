@@ -163,6 +163,10 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // MCP HTTP endpoint is enabled via env var or --mcp CLI flag
+    let mcp_enabled =
+        std::env::var("LIBRAGENT_MCP_ENABLE").is_ok() || std::env::args().any(|a| a == "--mcp");
+
     let browser_server = InteractiveBrowserServer::new(app.handle().clone(), web_action_timeout);
     app.manage(browser_server);
     info!(
@@ -249,8 +253,13 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .inner()
         .clone_for_task();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) =
-            crate::server::init(std::sync::Arc::new(server_manager), http_port, http_expose).await
+        if let Err(e) = crate::server::init(
+            std::sync::Arc::new(server_manager),
+            http_port,
+            http_expose,
+            mcp_enabled,
+        )
+        .await
         {
             log::error!("Failed to start HTTP server on port {}: {}", http_port, e);
         }

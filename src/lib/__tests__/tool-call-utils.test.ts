@@ -95,8 +95,16 @@ describe('tool-call-utils', () => {
   });
 
   describe('parseToolName', () => {
-    it('should extract tool name from builtin_server__toolName', () => {
-      expect(parseToolName('builtin_server__toolName')).toBe('toolName');
+    it('should return group/tool display for builtin tool names', () => {
+      expect(parseToolName('builtin_server__toolName')).toBe(
+        'server / toolName',
+      );
+    });
+
+    it('should return group/tool display for builtin tool with underscore group', () => {
+      expect(parseToolName('builtin_mcp_manager__listServers')).toBe(
+        'mcp_manager / listServers',
+      );
     });
 
     it('should return full name if no prefix/delimiter', () => {
@@ -107,7 +115,7 @@ describe('tool-call-utils', () => {
       expect(parseToolName('')).toBe('');
     });
 
-    it('should handle multiple underscores correctly (take last part)', () => {
+    it('should handle external server tool (take last part after __)', () => {
       expect(parseToolName('a__b__c')).toBe('c');
     });
   });
