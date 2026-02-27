@@ -173,27 +173,10 @@ export function AgentResourceAttachmentProvider({
   // NOTE: Content stores are auto-created on first use (addContent/listContent)
   // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
-  // Reset files when session changes
-  const prevSessionIdRef = useRef<string | undefined>();
-  const uploadedFilenamesRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (currentSession?.id !== prevSessionIdRef.current) {
-      logger.debug('Session changed, clearing cached data', {
-        previousSessionId: prevSessionIdRef.current,
-        currentSessionId: currentSession?.id,
-      });
-      // Clear uploaded filenames when session changes
-      uploadedFilenamesRef.current.clear();
-      // Clear pending files on session change
-      setPendingFiles([]);
-      // Update sessionId cache
-      sessionStoreIdRef.current = currentSession?.id;
-      prevSessionIdRef.current = currentSession?.id;
-    }
-  }, [currentSession?.id]);
 
   // Update sessionId cache when currentSession id changes
+  // Note: pendingFiles are local state and naturally reset on component remount
+  // (which happens via key={sessionId} in parent)
   useEffect(() => {
     sessionStoreIdRef.current = currentSession?.id;
   }, [currentSession?.id]);
