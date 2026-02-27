@@ -277,6 +277,7 @@
       "titleNew": "확장 기능 추가",
       "titleEdit": "확장 기능 편집: {{name}}",
       "validationError": "필수 항목을 모두 입력해 주세요",
+      "reservedNameError": "\"{{name}}\"은 내장 서비스 이름으로 예약되어 있습니다. 다른 이름을 사용해 주세요.",
       "nameLabel": "이름",
       "namePlaceholder": "예: filesystem, github, sequential-thinking",
       "nameDesc": "이 확장 기능의 고유 식별자",
