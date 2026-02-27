@@ -91,11 +91,7 @@ async fn handle_tools_list(session_id: &str, id: Option<serde_json::Value>) -> M
     let proxy = match proxy_manager.get_proxy(session_id).await {
         Some(p) => p,
         None => {
-            return error_response(
-                id,
-                -32602,
-                format!("Session not found: {}", session_id),
-            );
+            return error_response(id, -32602, format!("Session not found: {}", session_id));
         }
     };
 
@@ -140,7 +136,10 @@ async fn handle_tools_call(
     let proxy_manager = get_mcp_service_proxy_manager();
     // External clients use the public name (without `builtin_`); restore it for internal routing.
     let routing_name = resolve_tool_name(&call.name);
-    match proxy_manager.call_tool(session_id, &routing_name, args).await {
+    match proxy_manager
+        .call_tool(session_id, &routing_name, args)
+        .await
+    {
         Ok(mcp_response) => {
             if let Some(MCPResponseResult::ToolCall(result)) = mcp_response.result {
                 // Strip structured_content before sending to external MCP clients.

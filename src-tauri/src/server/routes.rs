@@ -112,7 +112,7 @@ pub fn get_routes(
         .and(warp::path("mcp"))
         .and(warp::path::param::<String>())
         .and(warp::path::end())
-        .and(mcp_enabled_filter.clone())
+        .and(mcp_enabled_filter)
         .and(warp::body::json())
         .and_then(mcp_handler::mcp_rpc_gated);
 

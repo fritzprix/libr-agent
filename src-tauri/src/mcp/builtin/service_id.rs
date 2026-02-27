@@ -131,7 +131,7 @@ pub const BUILTIN_PREFIX: &str = "builtin_";
 /// builtin_tool_name("planning", "addScratchpad") → "builtin_planning__addScratchpad"
 /// ```
 pub fn builtin_tool_name(group: &str, tool: &str) -> String {
-    format!("{}{}__{}",  BUILTIN_PREFIX, group, tool)
+    format!("{}{}__{}", BUILTIN_PREFIX, group, tool)
 }
 
 /// Return `true` if `tool_name` is an internal builtin tool name.
