@@ -15,8 +15,8 @@ describe('extractBuiltInServiceAlias', () => {
     expect(extractBuiltInServiceAlias('builtin_mcp_manager__list_servers')).toBe(
       'mcp_manager',
     );
-    expect(extractBuiltInServiceAlias('builtin_content_store__search')).toBe(
-      'content_store',
+    expect(extractBuiltInServiceAlias('builtin_attachments__search')).toBe(
+      'attachments',
     );
   });
 
@@ -86,7 +86,7 @@ describe('isValidServiceAlias', () => {
   it('should accept valid service names', () => {
     expect(isValidServiceAlias('browser')).toBe(true);
     expect(isValidServiceAlias('mcp_manager')).toBe(true);
-    expect(isValidServiceAlias('content_store')).toBe(true);
+    expect(isValidServiceAlias('attachments')).toBe(true);
     expect(isValidServiceAlias('a_b_c_d_e_f')).toBe(true);
     expect(isValidServiceAlias('my_service_123')).toBe(true);
   });

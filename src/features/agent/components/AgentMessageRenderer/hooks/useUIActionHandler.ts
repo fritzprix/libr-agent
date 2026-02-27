@@ -13,6 +13,7 @@ import {
 } from '@/lib/chat-utils';
 import { handleUserToolCall } from '@/lib/backend';
 import { createId } from '@paralleldrive/cuid2';
+import { isBuiltinTool, BUILTIN_PREFIX } from '@/lib/tool-call-utils';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -161,7 +162,7 @@ export function useUIActionHandler(
               let finalToolName = toolName;
               if (serviceInfo) {
                 const isBaseName =
-                  !toolName.includes('__') && !toolName.startsWith('builtin_');
+                  !toolName.includes('__') && !isBuiltinTool(toolName);
 
                 logger.debug('UI Action Tool Call - Name Resolution', {
                   originalToolName: toolName,
@@ -176,7 +177,7 @@ export function useUIActionHandler(
                     serviceInfo.backendType === 'BuiltInWeb' ||
                     serviceInfo.backendType === 'BuiltInRust'
                   ) {
-                    finalToolName = `builtin_${serviceInfo.serverName}__${toolName}`;
+                    finalToolName = `${BUILTIN_PREFIX}${serviceInfo.serverName}__${toolName}`;
                   } else {
                     finalToolName = `${serviceInfo.serverName}__${toolName}`;
                   }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
@@ -40,15 +40,7 @@ export function AgentChatMessages() {
   const lastMessageWho = messages[messages.length - 1]?.role;
 
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
-  const getAssistantNameForMessage = useCallback(
-    (msg: Message) => {
-      if (msg?.role === 'assistant') {
-        return session?.assistant?.name || 'Agent';
-      }
-      return '';
-    },
-    [session?.assistant?.name],
-  );
+  const assistantName = session?.assistant?.name || 'Agent';
 
   // Memoize error objects so ErrorBubble memo stays effective during streaming re-renders
   const agentError = useMemo(
@@ -87,7 +79,7 @@ export function AgentChatMessages() {
               <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
-                getAssistantName={getAssistantNameForMessage}
+                assistantName={assistantName}
                 toolResultsMap={toolResultsMap}
                 groupedToolCalls={groupedMessage.toolGroup.calls}
                 groupedMessages={groupedMessage.messages}
@@ -101,7 +93,7 @@ export function AgentChatMessages() {
               <AgentMessageBubble
                 key={groupedMessage.message.id}
                 message={groupedMessage.message}
-                getAssistantName={getAssistantNameForMessage}
+                assistantName={assistantName}
                 groupedMessages={groupedMessage.messages}
                 isPending={pendingMessageIds.has(groupedMessage.message.id)}
                 toolErrorGroup={true}
@@ -143,7 +135,7 @@ export function AgentChatMessages() {
             <AgentMessageBubble
               key={msg.id}
               message={msg}
-              getAssistantName={getAssistantNameForMessage}
+              assistantName={assistantName}
               isPending={pendingMessageIds.has(msg.id)}
             />
           );

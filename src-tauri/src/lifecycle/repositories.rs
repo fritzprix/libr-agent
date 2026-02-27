@@ -69,6 +69,10 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
         info!("✅ Default assistants verified");
     }
 
+    // One-time idempotent migration: normalise legacy builtin alias names in DB.
+    crate::lifecycle::alias_migration::run_alias_migrations(db).await;
+    info!("✅ Builtin alias migrations applied");
+
     // Initialize the MCP Service Proxy Manager for session-aware builtin tools
     // For shared ownership, MCPServiceProxyManager needs Arc-wrapped dependencies
     // We'll modify the state management to use Arc storage pattern

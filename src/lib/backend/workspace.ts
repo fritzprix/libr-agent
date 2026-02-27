@@ -111,3 +111,13 @@ export async function cancelWorkspaceOverride(
 ): Promise<void> {
   return safeInvoke<void>('cancel_workspace_override', { sessionId });
 }
+
+/**
+ * Returns the absolute filesystem path of the session's workspace directory.
+ * Used to construct file:// URLs for binary file indexing in the Content Store.
+ * @param sessionId The session ID to query.
+ * @returns A promise that resolves to the absolute workspace directory path string.
+ */
+export async function getWorkspaceDir(sessionId: string): Promise<string> {
+  return safeInvoke<string>('get_workspace_dir', { sessionId });
+}

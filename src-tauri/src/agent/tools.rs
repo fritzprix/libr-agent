@@ -43,7 +43,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
-        canonical: "content_store",
+        canonical: "attachments",
         optional: false,
     },
     BuiltinServiceEntry {
@@ -77,18 +77,19 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
     "assistant",
     "skills",
     "playbook",
-    "content_store",
+    "attachments",
     "swarm",
     "ui",
     "mcp_manager",
 ];
 
+/// Resolve any alias string (including legacy pre-0.6.0 names) to the current
+/// canonical service name.
+///
+/// Delegates to [`crate::mcp::builtin::service_id::BuiltinServiceId::from_alias`]
+/// which is the single source of truth for all alias mappings.
 pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
-    let normalized = alias.trim().to_lowercase();
-    BUILTIN_SERVICE_REGISTRY
-        .iter()
-        .find(|entry| entry.canonical == normalized.as_str())
-        .map(|entry| entry.canonical)
+    crate::mcp::builtin::service_id::BuiltinServiceId::from_alias(alias).map(|id| id.name())
 }
 
 pub fn runtime_allowed_builtin_service_aliases(
@@ -99,16 +100,9 @@ pub fn runtime_allowed_builtin_service_aliases(
         .map(|alias| alias.to_string())
         .collect();
 
-    if let Some(configured_aliases) = &agent_config.allowed_built_in_service_aliases {
-        for alias in configured_aliases {
-            match canonicalize_builtin_service_alias(alias) {
-                Some(canonical) => {
-                    allowed.insert(canonical.to_string());
-                }
-                None => {
-                    log::warn!("Unknown builtin service alias: {}", alias);
-                }
-            }
+    if let Some(configured_ids) = &agent_config.allowed_built_in_service_aliases {
+        for id in configured_ids {
+            allowed.insert(id.name().to_string());
         }
     } else {
         // No explicit list → all optional services are implicitly enabled

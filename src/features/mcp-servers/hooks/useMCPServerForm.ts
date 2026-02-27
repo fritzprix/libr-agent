@@ -4,6 +4,28 @@ import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
 import { createId } from '@paralleldrive/cuid2';
 
+/**
+ * Builtin service group names reserved for internal tools.
+ * External MCP servers must not use these names to avoid tool name collisions.
+ * Keep in sync with BuiltinServiceId::from_alias() in src-tauri/src/mcp/builtin/service_id.rs
+ */
+const RESERVED_BUILTIN_NAMES = new Set([
+  'planning',
+  'workspace',
+  'knowledge',
+  'assistant',
+  'assistant_manager',
+  'skills',
+  'playbook',
+  'attachments',
+  'content_store',
+  'swarm',
+  'ui',
+  'browser',
+  'bootstrap',
+  'mcp_manager',
+]);
+
 export interface KeyValuePair {
   id: string;
   key: string;
@@ -136,8 +158,12 @@ export function useMCPServerForm(server: MCPServerEntity) {
 
   const isNewServer = !server.createdAt || draft.name === '';
 
+  const isReservedName = () =>
+    RESERVED_BUILTIN_NAMES.has(draft.name.trim().toLowerCase());
+
   const isValid = () => {
     if (!draft.name.trim()) return false;
+    if (isReservedName()) return false;
 
     if (draft.transport.type === 'stdio') {
       const hasCommand = !!draft.transport.command.trim();
@@ -230,12 +256,22 @@ export function useMCPServerForm(server: MCPServerEntity) {
 
   const submit = async (onSave: (server: MCPServerEntity) => Promise<void>) => {
     if (!isValid()) {
-      setValidationError(
-        t(
-          'mcpServer.dialog.validationError',
-          'Please fill in all required fields',
-        ),
-      );
+      if (isReservedName()) {
+        setValidationError(
+          t(
+            'mcpServer.dialog.reservedNameError',
+            '"{{name}}" is a reserved builtin service name. Choose a different name.',
+            { name: draft.name.trim() },
+          ),
+        );
+      } else {
+        setValidationError(
+          t(
+            'mcpServer.dialog.validationError',
+            'Please fill in all required fields',
+          ),
+        );
+      }
       return;
     }
 

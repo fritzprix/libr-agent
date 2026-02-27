@@ -1,4 +1,5 @@
 pub mod handlers;
+pub mod mcp_handler;
 pub mod routes;
 
 use log::info;
@@ -11,6 +12,7 @@ pub async fn init(
     agent_manager: Arc<AgentSessionManager>,
     port: u16,
     expose: bool,
+    mcp_enabled: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bind_addr = if expose {
         std::net::Ipv4Addr::UNSPECIFIED
@@ -23,7 +25,7 @@ pub async fn init(
     let listener = std::net::TcpListener::bind((bind_addr, port))?;
     drop(listener);
 
-    let routes = routes::get_routes(agent_manager);
+    let routes = routes::get_routes(agent_manager, mcp_enabled);
 
     let server_future = warp::serve(routes).run((bind_addr.octets(), port));
 

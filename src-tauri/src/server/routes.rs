@@ -1,10 +1,12 @@
 use crate::agent::AgentSessionManager;
 use crate::server::handlers;
+use crate::server::mcp_handler;
 use std::sync::Arc;
 use warp::Filter;
 
 pub fn get_routes(
     agent_manager: Arc<AgentSessionManager>,
+    mcp_enabled: bool,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let agent_manager = warp::any().map(move || agent_manager.clone());
 
@@ -104,6 +106,24 @@ pub fn get_routes(
         .allow_headers(vec!["content-type"])
         .allow_methods(vec!["GET", "POST", "DELETE"]);
 
+    // POST /mcp/:session_id — MCP JSON-RPC endpoint (gated by mcp_enabled flag)
+    let mcp_enabled_filter = warp::any().map(move || mcp_enabled);
+    let mcp_route = warp::post()
+        .and(warp::path("mcp"))
+        .and(warp::path::param::<String>())
+        .and(warp::path::end())
+        .and(mcp_enabled_filter)
+        .and(warp::body::json())
+        .and_then(mcp_handler::mcp_rpc_gated);
+
+    // POST /mcp — sessionless endpoint: auto-selects the first active session
+    let mcp_auto_route = warp::post()
+        .and(warp::path("mcp"))
+        .and(warp::path::end())
+        .and(mcp_enabled_filter)
+        .and(warp::body::json())
+        .and_then(mcp_handler::mcp_rpc_auto);
+
     create_session
         .or(get_session)
         .or(get_messages)
@@ -114,5 +134,7 @@ pub fn get_routes(
         .or(list_assistants)
         .or(get_assistant)
         .or(health)
+        .or(mcp_auto_route)
+        .or(mcp_route)
         .with(cors)
 }
