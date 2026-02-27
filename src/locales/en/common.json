@@ -126,10 +126,16 @@
       "aiModels": "AI & Models",
       "chatInterface": "Chat Interface",
       "mcpServers": "MCP Servers",
-      "advanced": "Advanced"
+      "advanced": "Advanced",
+      "extensions": "Extensions"
     },
     "llmPreference": "Default LLM",
     "messageWindowSize": "Message Window Size",
+    "messageWindowSizeDescription": "Number of messages to keep in conversation history",
+    "messageWindowSizePlaceholder": "e.g., 50",
+    "toolCallGroupVisibleCount": "Tool Calls Visible Count",
+    "toolCallGroupVisibleCountDescription": "Number of tool calls to show in collapsed group view",
+    "toolCallGroupVisibleCountPlaceholder": "e.g., 4",
     "general": {
       "skillsDirectory": "Skills Directory",
       "skillsDirectorySelectTitle": "Select Skills Directory",
@@ -147,12 +153,26 @@
     "aiModels": {
       "apiKeys": "Provider API Keys",
       "preferences": "Model Preferences",
+      "fallbackModel": "Fallback LLM (SP4 Recovery)",
+      "fallbackModelDescription": "Used as a last resort when the primary model returns malformed or empty responses after all retries.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",
       "agentHubUrlDescription": "URL of the remote Agent Hub server. If set, assistants will be synced with this server."
     },
+    "provider": {
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your {{name}} API key",
+      "showApiKey": "Show API key",
+      "hideApiKey": "Hide API key",
+      "baseUrl": "Base URL",
+      "use3rdParty": "Use 3rd party OpenAI-compatible API",
+      "customModelId": "Custom Model ID",
+      "customModelIdPlaceholder": "e.g., llama-3.1-70b, mistral-large",
+      "customModelIdDescription": "Enter the model ID supported by your 3rd party API (e.g., LM Studio, LocalAI)"
+    },
     "chatInterface": {
       "diffContextLines": "Diff Context Lines",
+      "diffContextLinesPlaceholder": "e.g., 3",
       "diffContextLinesDescription": "Number of context lines to show in file edit diffs (1-10)."
     },
     "display": {
@@ -160,15 +180,42 @@
       "metricDisplayMode": "Metric Display Mode",
       "inline": "Inline (show in message)",
       "tooltip": "Tooltip (hover to see)",
+      "metricDisplayModeDescription": "Choose how token metrics are displayed in chat messages",
+      "prefillDisplayFormat": "Prefill Performance Format",
+      "time": "Time to First Token (e.g., 245ms)",
+      "tokensPerSecond": "Tokens Per Second (e.g., 520 tok/s)",
+      "prefillDisplayFormatDescription": "Choose how prefill performance is displayed",
       "showTokenSpeed": "Show Token Speed",
+      "showTokenSpeedDescription": "Display generation speed (tokens per second) in metrics",
       "compactMetrics": "Compact Metrics",
+      "compactMetricsDescription": "Use compact display format for token metrics",
       "toolCallsTitle": "Tool Calls",
-      "toolDetailLevel": "Tool Detail Level"
+      "toolDetailLevel": "Tool Detail Level",
+      "toolDetailSimple": "Simple (tool name only)",
+      "toolDetailDeveloper": "Developer (params, errors, timing)",
+      "toolDetailLevelDescription": "Simple mode shows only tool names and status icons. Developer mode shows full parameters, error details, and execution time."
     },
     "advanced": {
       "maxRetries": "Max Retry Attempts",
+      "maxRetriesDescription": "Maximum number of retries for failed AI requests.",
       "retryDelay": "Retry Delay (ms)",
+      "retryDelayDescription": "Delay in milliseconds between retry attempts.",
       "circuitBreaker": "Tool Loop Threshold",
+      "circuitBreakerDescription": "Number of repeated errors or tool calls before triggering the circuit breaker.",
+      "maxOutputTokens": "Max Output Tokens (Default)",
+      "maxOutputTokensDescription": "Default maximum output tokens for new sessions if not specified by assistant.",
+      "defaultSessionMaxDepth": "Session Branching Limit (Advanced)",
+      "defaultSessionMaxDepthDescription": "Controls how many child-session levels are allowed by default. Set 0 for unlimited. Most users can leave this as-is.",
+      "defaultSessionMaxFanout": "Session Child Limit (Advanced)",
+      "defaultSessionMaxFanoutDescription": "Controls how many direct child sessions each parent can create by default. Set 0 for unlimited. Most users can leave this as-is.",
+      "maxConcurrentActiveSessions": "Max Concurrent Agent Sessions",
+      "maxConcurrentActiveSessionsDescription": "Maximum number of agent sessions running their LLM loop simultaneously. Higher values use more API quota and memory.",
+      "maxSuspendedSessions": "Max Suspended Agent Sessions",
+      "maxSuspendedSessionsDescription": "Maximum number of agent sessions that can be paused waiting for a child agent to complete. Should be ≥ active sessions.",
+      "maxConcurrentActiveProcesses": "Max Concurrent Shell Processes",
+      "maxConcurrentActiveProcessesDescription": "Maximum number of shell/code processes running simultaneously across all agent sessions.",
+      "maxSuspendedProcesses": "Max Suspended Shell Processes",
+      "maxSuspendedProcessesDescription": "Maximum number of processes that can be paused waiting on pollProcess. Should be ≥ active processes.",
       "shellIsolation": "Shell Isolation Level",
       "shellIsolationModes": {
         "basic": "Basic - Full PATH access (less secure)",
@@ -181,6 +228,7 @@
       "title": "System & Performance",
       "network": "Network",
       "httpServerPort": "HTTP Server Port",
+      "httpServerPortDescription": "Port used by the internal HTTP API server.",
       "httpServerExpose": "Expose HTTP Server",
       "httpServerExposeMode": {
         "local": "Local only (127.0.0.1)",
@@ -189,8 +237,22 @@
       "httpServerExposeDescription": "Use local-only by default. Exposing allows access from other devices on your network.",
       "httpServerExposeWarning": "Warning: HTTP API is exposed to your network (0.0.0.0). Use only in trusted networks and protect access appropriately.",
       "fileWorkspace": "File & Workspace",
+      "maxFileUploadSize": "Max File Upload Size (MB)",
+      "maxFileUploadSizeDescription": "Maximum size for a single file upload. Increase if you often work with large documents.",
+      "workspaceCapacity": "Workspace Capacity (MB)",
+      "workspaceCapacityDescription": "Total limit for your current workspace's text content.",
       "backgroundTasks": "Background Tasks",
+      "searchIndexFrequency": "Search Index Frequency (Min)",
+      "searchIndexFrequencyDescription": "How often the AI updates its memory search. Faster updates keep search fresh but use more battery/CPU.",
+      "webActionTimeout": "Web Action Timeout (Sec)",
+      "webActionTimeoutDescription": "How long the AI waits for a webpage to load or a click to finish.",
+      "mcpServerStartupTimeout": "MCP Server Startup Timeout (Sec)",
+      "mcpServerStartupTimeoutDescription": "How long to wait for MCP tool servers to initialize. Increase if servers fail to start.",
+      "mcpToolTimeout": "MCP Tool Execution Timeout (Sec)",
       "mcpToolTimeoutDisabled": "Disabled",
+      "mcpToolTimeoutDescription": "How long to wait for a single tool call before cancelling it. Set to 0 to disable (recommended for long-running agent tools like awaitAgent).",
+      "activeSessionRetention": "Keep Active Sessions For (Hours)",
+      "activeSessionRetentionDescription": "How long to keep session data in fast memory.",
       "networkRestartFailed": "Failed to restart the app. Please restart manually.",
       "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
     },
@@ -205,14 +267,26 @@
       "installUpdate": "Install Update",
       "checkForUpdates": "Check for Updates"
     },
+    "dangerZone": {
+      "title": "Danger Zone"
+    },
     "factoryReset": {
       "title": "Factory Reset",
+      "description": "This will perform a complete factory reset. It deletes ALL data.",
+      "button": "Reset All Data & Settings",
+      "confirmTitle": "Factory Reset Confirmation",
+      "confirmDescription": "This will permanently delete ALL data including sessions, assistants, MCP servers, and playbooks. Are you sure?",
+      "confirmButton": "Reset Everything",
       "resetting": "Resetting...",
       "success": "Factory reset complete. Restart required to fully apply changes.",
       "error": "Failed to perform factory reset. See logs for details."
     },
     "dataReset": {
       "title": "Data & Reset",
+      "description": "This will permanently delete all local sessions, their messages, and workspace file stores.",
+      "clearAll": "Clear All Sessions & Workspace",
+      "confirmTitle": "Delete All Sessions, Messages & Workspace",
+      "confirmDescription": "This will permanently delete all local sessions, their messages, and workspace file stores. This action cannot be undone. Are you sure you want to continue?",
       "deleting": "Deleting...",
       "success": "All sessions have been deleted. Restart recommended.",
       "error": "Failed to clear sessions."
@@ -246,6 +320,7 @@
   },
   "mcpServer": {
     "title": "Extensions",
+    "pageSubtitle": "Manage your AI extensions and tools",
     "addServer": "Add Extension",
     "recommended": "Recommended Extensions",
     "installed": "Installed",
@@ -267,6 +342,10 @@
     "deleteServer": "Delete {{name}}",
     "loadMore": "Load more",
     "loadingMore": "Loading...",
+    "verifying": "Verifying...",
+    "verified": "Verified",
+    "verifiedWithCount": "{{count}} tools verified",
+    "verificationFailed": "Connection failed",
     "deleteDialog": {
       "title": "Delete Extension",
       "description": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
@@ -387,6 +466,23 @@
       "bookmarkFailed": "Failed to update bookmark",
       "deleted": "Playbook deleted",
       "deleteFailed": "Failed to delete playbook"
+    }
+  },
+  "agent": {
+    "toolGroup": {
+      "executions": "Tool Executions",
+      "callCount_one": "({{count}} call)",
+      "callCount_other": "({{count}} calls)",
+      "hiddenCalls_one": "{{count}} older call hidden",
+      "hiddenCalls_other": "{{count}} older calls hidden",
+      "showLess": "Show Less",
+      "showAll": "Show All"
+    },
+    "toolDetails": {
+      "parameters": "Parameters",
+      "errorDetails": "Error Details",
+      "result": "Result",
+      "executing": "Executing tool..."
     }
   }
 }

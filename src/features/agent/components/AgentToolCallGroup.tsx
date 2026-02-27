@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { hasToolCallError } from '@/lib/tool-call-utils';
 import { ToolCallCompactItem } from './ToolCallCompactItem';
 import { useSettings } from '@/hooks/use-settings';
+import { useTranslation } from 'react-i18next';
 
 interface AgentToolCallGroupProps {
   message: Message;
@@ -60,12 +61,17 @@ const GroupHeader: React.FC<GroupHeaderProps & { isSimpleMode: boolean }> = ({
   statusSummary,
   isSimpleMode,
 }) => {
+  const { t } = useTranslation('common');
   return (
     <div className="flex items-center justify-between p-3 border-b border-muted/20">
       <div className="flex items-center gap-2">
         <Wrench className="w-4 h-4 text-muted-foreground" />
         <span className="font-medium text-sm">
-          Tool Executions ({totalCalls} {totalCalls === 1 ? 'call' : 'calls'})
+          {t('agent.toolGroup.executions', 'Tool Executions')}{' '}
+          {t('agent.toolGroup.callCount', {
+            count: totalCalls,
+            defaultValue: `(${totalCalls} calls)`,
+          })}
         </span>
       </div>
       <StatusBadges {...statusSummary} isSimpleMode={isSimpleMode} />
@@ -121,6 +127,7 @@ const GradientOverlay: React.FC<GradientOverlayProps> = ({
   hasError,
   isRunning,
 }) => {
+  const { t } = useTranslation('common');
   if (hiddenCount === 0) return null;
 
   return (
@@ -139,7 +146,10 @@ const GradientOverlay: React.FC<GradientOverlayProps> = ({
       />
       <div className="absolute inset-0 flex items-center justify-center">
         <span className="text-xs text-muted-foreground font-medium">
-          {hiddenCount} older {hiddenCount === 1 ? 'call' : 'calls'} hidden
+          {t('agent.toolGroup.hiddenCalls', {
+            count: hiddenCount,
+            defaultValue: `${hiddenCount} older calls hidden`,
+          })}
         </span>
       </div>
     </div>
@@ -154,13 +164,22 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
   totalCalls,
   onToggle,
 }) => {
+  const { t } = useTranslation('common');
   return (
     <div
       className="flex items-center justify-center p-2 border-t border-muted cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={onToggle}
     >
       <span className="text-xs text-muted-foreground font-medium">
-        {isExpanded ? 'Show Less' : `Show All (${totalCalls} calls)`}
+        {isExpanded
+          ? t('agent.toolGroup.showLess', 'Show Less')
+          : `${t('agent.toolGroup.showAll', 'Show All')} ${t(
+              'agent.toolGroup.callCount',
+              {
+                count: totalCalls,
+                defaultValue: `(${totalCalls} calls)`,
+              },
+            )}`}
       </span>
       <ChevronDown
         className={cn(
