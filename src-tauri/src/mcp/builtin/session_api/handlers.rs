@@ -155,7 +155,7 @@ pub async fn handle_tool_call(
             let await_completion = args
                 .get("awaitCompletion")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(false);
+                .unwrap_or(true);
             let timeout_seconds = args
                 .get("timeoutSeconds")
                 .and_then(|v| v.as_u64())
