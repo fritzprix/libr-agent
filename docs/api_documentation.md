@@ -108,6 +108,49 @@ Immediately stops any running workflows and cleans up session resources.
 
 ---
 
+### Get Child Sessions
+
+Retrieves a list of child sessions spawned by a parent session.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions/:id/children`
+
+#### Response Body
+
+```json
+{
+  "childSessions": [
+    {
+      "id": "string",
+      "name": "string",
+      "status": "Idle | Busy | Paused | Error",
+      "model": "string",
+      "provider": "string",
+      "createdAt": 1739000000000
+    }
+  ]
+}
+```
+
+---
+
+### Resume Session
+
+Resumes a paused session.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/resume`
+
+#### Response Body
+
+```json
+{
+  "status": "resumed"
+}
+```
+
+---
+
 ## 💬 Messaging
 
 ### Send Message
@@ -191,6 +234,46 @@ Lists all configured assistant roles available on the platform.
       "config": "JSON String"
     }
   ]
+}
+```
+
+---
+
+### Get Assistant
+
+Retrieves details for a specific assistant.
+
+- **Method**: `GET`
+- **Path**: `/api/assistants/:id`
+
+#### Response Body
+
+```json
+{
+  "id": "string",
+  "name": "Coder",
+  "description": "Software development specialist",
+  "config": "JSON String"
+}
+```
+
+---
+
+## 🏥 System
+
+### Health Check
+
+Checks if the server is running and reachable.
+
+- **Method**: `GET`
+- **Path**: `/api/health`
+
+#### Response Body
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0"
 }
 ```
 
