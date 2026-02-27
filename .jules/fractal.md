@@ -62,3 +62,8 @@
 
 **Split:** `src-tauri/src/agent/lifecycle/` (`creation.rs`, `management.rs`, `recovery.rs`, `queries.rs`, `cache.rs`, `mod.rs`)
 **Improvement:** Decoupled session lifecycle management (creation, resumption, status updates, recovery) and query/cache logic into focused modules. Reduced the monolithic file size of ~600 lines into multiple smaller files, improving maintainability and readability.
+
+## 2026-03-05 - src-tauri/src/mcp/session_isolation/stdio_manager.rs
+
+**Split:** `src-tauri/src/mcp/session_isolation/stdio_manager/` (`lifecycle.rs`, `execution.rs`, `cleanup.rs`, `tests.rs`, `mod.rs`)
+**Improvement:** Decoupled `SessionMCPManager` struct implementation into distinct submodules based on functionality (lifecycle, execution, cleanup). Moved tests to a dedicated file. Reduced the monolithic file size of ~900 lines into manageable components, improving readability and maintainability.
