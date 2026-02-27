@@ -102,7 +102,15 @@ async fn handle_tools_call(
     match proxy_manager.call_tool(session_id, &call.name, args).await {
         Ok(mcp_response) => {
             if let Some(MCPResponseResult::ToolCall(result)) = mcp_response.result {
-                ok_response(id, MCPResponseResult::ToolCall(result))
+                // Strip structured_content before sending to external MCP clients.
+                // structured_content is a LibrAgent-internal UI extension — it must not
+                // be exposed to external AI agents (only the text content array is canonical).
+                use crate::mcp::types::MCPResult;
+                let sanitized = MCPResult {
+                    structured_content: None,
+                    ..result
+                };
+                ok_response(id, MCPResponseResult::ToolCall(sanitized))
             } else {
                 error_response(id, -32603, "Unexpected tool response format".to_string())
             }
