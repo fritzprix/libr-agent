@@ -11,7 +11,7 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
-import { parseToolName } from '@/lib/tool-call-utils';
+import { parseToolName, isBuiltinTool } from '@/lib/tool-call-utils';
 
 interface AgentToolsModalProps {
   isOpen: boolean;
@@ -32,8 +32,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   const { availableTools, isLoading, error } = useAgentTools(session?.id);
 
   const { builtinTools, mcpTools } = useMemo(() => {
-    const builtin = availableTools.filter((t) => t.name.startsWith('builtin_'));
-    const mcp = availableTools.filter((t) => !t.name.startsWith('builtin_'));
+    const builtin = availableTools.filter((t) => isBuiltinTool(t.name));
+    const mcp = availableTools.filter((t) => !isBuiltinTool(t.name));
     return { builtinTools: builtin, mcpTools: mcp };
   }, [availableTools]);
 
@@ -104,13 +104,13 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                         </span>
                         <span
                           className={
-                            tool.name.startsWith('builtin_')
+                            isBuiltinTool(tool.name)
                               ? 'text-xs uppercase font-bold bg-success/20 text-success px-1.5 py-0.5 rounded-full'
                               : 'text-xs uppercase font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full'
                           }
                           aria-hidden
                         >
-                          {tool.name.startsWith('builtin_') ? 'builtin' : 'mcp'}
+                          {isBuiltinTool(tool.name) ? 'builtin' : 'mcp'}
                         </span>
                       </div>
                     </div>
