@@ -17,8 +17,12 @@
 //! - The migration is idempotent: running it twice has no effect (no rows match
 //!   after the first run).
 //! - Only rows whose `config` actually contains `"content_store"` are touched.
-//! - The SQL `REPLACE()` operates on the literal substring `"content_store"``
-//!   (with JSON quotes), preventing accidental partial matches.
+//! - The SQL `REPLACE()` matches the literal substring `'"content_store"'`
+//!   (with surrounding JSON quotes), which limits false positives to the case
+//!   where a system-prompt or description field contains exactly that JSON-quoted
+//!   string.  This scenario is extremely unlikely in practice, and since runtime
+//!   deserialization via `BuiltinServiceId::from_alias` already handles the old
+//!   value, the migration is a best-effort cleanup rather than a correctness gate.
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use tracing::{info, warn};

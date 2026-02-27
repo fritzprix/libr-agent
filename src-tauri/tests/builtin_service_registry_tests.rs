@@ -337,7 +337,7 @@ fn builtin_service_id_serializes_to_canonical_name() {
 /// the 0.6.0 rename: existing DB records written before the rename must still
 /// deserialize without a migration.
 #[test]
-fn legacy_content_store_does_not_deserialize_as_builtin_service_id() {
+fn legacy_content_store_deserializes_to_attachments_via_serde_alias() {
     let id: BuiltinServiceId = serde_json::from_str(r#""content_store""#).expect(
         "\"content_store\" must deserialize as BuiltinServiceId::Attachments via serde alias",
     );

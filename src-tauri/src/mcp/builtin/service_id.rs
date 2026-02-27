@@ -16,8 +16,10 @@
 //! - `from_alias()` centralises all string → ID resolution (including legacy names).
 //! - Exhaustive `match` in `factory.rs` / `server/tools.rs` means the compiler
 //!   catches every missing arm if a new variant is added.
-//! - `name()` returns the *current* public name; changing it in the future requires
-//!   only updating this one function — no DB change.
+//! - `name()` returns the *current* public name.  **Important**: `name()` currently
+//!   returns the same values as the serde representation, so both must stay in sync.
+//!   To decouple them in the future, add explicit `#[serde(rename = "...")]`
+//!   attributes to each variant.
 //!
 //! ## Serde
 //!
@@ -31,8 +33,10 @@ use std::fmt;
 /// Type-safe, stable identifier for a builtin MCP service.
 ///
 /// The serde representation (snake_case of the variant name) is the **stable DB key**
-/// — it must never change.  The public-facing name returned by [`BuiltinServiceId::name`]
-/// may be updated freely.
+/// — it must never change.  The `name()` method currently returns the same values,
+/// so **both must be kept in sync**.  To truly decouple them, add explicit
+/// `#[serde(rename = "...")]` attributes to each variant and then `name()` can
+/// diverge freely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinServiceId {
@@ -44,9 +48,11 @@ pub enum BuiltinServiceId {
     Playbook,
     /// Formerly known as `content_store`.  DB value: `"attachments"`.
     ///
-    /// The serde aliases ensure that legacy DB records containing `"content_store"`
-    /// or `"contentstore"` deserialise correctly without requiring a DB migration.
-    #[serde(alias = "content_store", alias = "contentstore")]
+    /// The serde alias ensures that legacy DB records containing `"content_store"`
+    /// deserialise correctly without requiring a DB migration.
+    /// Note: `"contentstore"` (no underscore) is intentionally NOT an alias —
+    /// it was never a valid stored value, so we do not accept it via serde.
+    #[serde(alias = "content_store")]
     Attachments,
     Swarm,
     Ui,
@@ -219,13 +225,16 @@ mod tests {
 
     /// Regression: `"content_store"` must deserialise via serde alias without error.
     /// This covers DB records written before the 0.6.0 rename.
+    /// Note: `"contentstore"` (no underscore) is NOT accepted — it was never a
+    /// valid stored value so we intentionally reject it.
     #[test]
     fn serde_deserialize_legacy_content_store_alias() {
         let id: BuiltinServiceId = serde_json::from_str("\"content_store\"").unwrap();
         assert_eq!(id, BuiltinServiceId::Attachments);
 
-        let id: BuiltinServiceId = serde_json::from_str("\"contentstore\"").unwrap();
-        assert_eq!(id, BuiltinServiceId::Attachments);
+        // "contentstore" is not a serde alias — must be rejected
+        let result: Result<BuiltinServiceId, _> = serde_json::from_str("\"contentstore\"");
+        assert!(result.is_err(), "\"contentstore\" must not be accepted");
     }
 
     #[test]
