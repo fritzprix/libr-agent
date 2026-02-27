@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -68,11 +68,21 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const previousHasResource = useRef(false);
 
   // Parse tool name (remove server prefix)
-  const toolName = parseToolName(toolCall.function.name);
+  const toolName = useMemo(
+    () => parseToolName(toolCall.function.name),
+    [toolCall.function.name],
+  );
 
   // Parse arguments for summary (developer mode only)
-  const params = parseToolArguments(toolCall.function.arguments);
-  const paramSummary = formatToolArgumentsSummary(params);
+  const params = useMemo(
+    () => parseToolArguments(toolCall.function.arguments),
+    [toolCall.function.arguments],
+  );
+
+  const paramSummary = useMemo(
+    () => formatToolArgumentsSummary(params),
+    [params],
+  );
 
   // Check for error using utility function
   const hasError = hasToolCallError(toolResult);

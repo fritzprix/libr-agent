@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { ToolCall, Message } from '@/models/chat';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { AlertCircle, Loader2 } from 'lucide-react';
@@ -27,9 +27,13 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   isLoading = false,
   showDetails = true,
 }) => {
+  const params = useMemo(
+    () => parseToolArguments(toolCall.function.arguments),
+    [toolCall.function.arguments],
+  );
+
   if (!showDetails) return null;
 
-  const params = parseToolArguments(toolCall.function.arguments);
   const hasParams = Object.keys(params).length > 0;
 
   return (
