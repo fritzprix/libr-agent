@@ -119,15 +119,11 @@ Retrieves a list of child sessions spawned by a parent session.
 
 ```json
 {
-  "childSessions": [
-    {
-      "id": "string",
-      "name": "string",
-      "status": "Idle | Busy | Paused | Error",
-      "model": "string",
-      "provider": "string",
-      "createdAt": 1739000000000
-    }
+  "parentSessionId": "string",
+  "count": 2,
+  "children": [
+    "session-id-1",
+    "session-id-2"
   ]
 }
 ```
@@ -252,8 +248,9 @@ Retrieves details for a specific assistant.
 {
   "id": "string",
   "name": "Coder",
-  "description": "Software development specialist",
-  "config": "JSON String"
+  "config": "{...}",
+  "created_at": 1739000000000,
+  "updated_at": 1739000000000
 }
 ```
 
@@ -273,7 +270,7 @@ Checks if the server is running and reachable.
 ```json
 {
   "status": "ok",
-  "version": "0.1.0"
+  "service": "libr-agent-session-api"
 }
 ```
 
