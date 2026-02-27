@@ -298,7 +298,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           onChange={handleAgentInputChange}
           onKeyDown={handleKeyDown}
           placeholder={inputPlaceholder}
-          disabled={isAttachmentLoading}
+          disabled={false} // Always enabled to allow typing while attachments upload
           className={inputClassName}
           style={textareaStyle}
           autoComplete="off"
