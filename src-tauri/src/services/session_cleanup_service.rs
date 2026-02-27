@@ -1,6 +1,6 @@
-use log::{error, info};
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::delete_index;
+use log::{error, info};
 
 pub struct SessionCleanupService;
 
@@ -13,7 +13,7 @@ impl SessionCleanupService {
     /// The caller must handle that via SessionManager or DirectoryService.
     pub async fn cleanup_auxiliary_resources(
         session_id: &str,
-        message_repo: &impl MessageRepository
+        message_repo: &impl MessageRepository,
     ) -> Result<(), String> {
         info!("🗑️  Cleaning up auxiliary resources for session: {session_id}");
 
@@ -22,7 +22,7 @@ impl SessionCleanupService {
             error!("Failed to delete search index for session {session_id}: {e}");
             // Continue with removal even if index deletion fails (best-effort)
         } else {
-             info!("✅ Deleted search index for session: {session_id}");
+            info!("✅ Deleted search index for session: {session_id}");
         }
 
         // Step 2: Delete index metadata from database

@@ -1,11 +1,11 @@
-use log::{error, info, warn};
+use log::info;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::time::{Duration, Instant};
 
-use crate::services::SessionDirectoryService;
 use super::types::{SessionStats, SessionWorkspaceInfo};
+use crate::services::SessionDirectoryService;
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {
@@ -35,7 +35,10 @@ impl SessionManager {
 
     /// Fast session creation using template workspace (delegated to Directory Service)
     async fn create_session_workspace_async(&self, session_id: &str) -> Result<PathBuf, String> {
-        let session_dir = self.directory_service.create_session_workspace(session_id).await?;
+        let session_dir = self
+            .directory_service
+            .create_session_workspace(session_id)
+            .await?;
 
         // Add to workspace pool
         let workspace_info = SessionWorkspaceInfo {
@@ -113,7 +116,10 @@ impl SessionManager {
 
     pub fn list_sessions(&self) -> Result<Vec<String>, String> {
         // We still need to read the directory to list sessions, but we use the base path from service
-        let workspaces_dir = self.directory_service.get_base_data_dir().join("workspaces");
+        let workspaces_dir = self
+            .directory_service
+            .get_base_data_dir()
+            .join("workspaces");
 
         let entries = std::fs::read_dir(&workspaces_dir)
             .map_err(|e| format!("Failed to read workspaces directory: {e}"))?;
@@ -374,18 +380,17 @@ impl SessionManager {
 
     /// Remove a specific session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
-        let _workspace_path = {
+        // Remove session from pool, returning error if not found
+        {
             let mut pool = self
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if let Some(session_info) = pool.remove(session_id) {
-                session_info.workspace_path
-            } else {
+            if pool.remove(session_id).is_none() {
                 return Err(format!("Session '{session_id}' not found in pool"));
             }
-        };
+        }
 
         // Remove the workspace directory via directory service
         self.directory_service.remove_workspace(session_id).await?;

@@ -5,8 +5,7 @@ pub use manager::*;
 pub use types::*;
 
 use log::error;
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::OnceLock;
 
 static SESSION_MANAGER: OnceLock<SessionManager> = OnceLock::new();
 
@@ -21,10 +20,8 @@ pub fn get_session_manager() -> Result<&'static SessionManager, String> {
             match SessionManager::new_with_base_dir(temp_base) {
                 Ok(manager) => manager,
                 Err(err) => {
-                    // Critical failure fallback - should technically panic or handle gracefully
-                    // But to satisfy the type signature, we will construct a dummy manager manually
-                    // However, we can't easily construct DirectoryService without valid paths.
-                    // Let's panic because if we can't even create temp dirs, the app is doomed.
+                    // Critical failure: if we can't create temp directories, the application
+                    // cannot function. Panicking is preferable to returning a broken instance.
                     panic!("Critical error initializing SessionManager fallback: {err}");
                 }
             }

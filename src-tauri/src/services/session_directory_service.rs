@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug)]
@@ -143,13 +143,17 @@ echo "Available tools: python3, typescript/deno, shell commands"
         Ok(())
     }
 
-    /// Get session workspace directory, ensuring it exists
+    /// Get session workspace directory, ensuring it exists.
+    ///
+    /// **Note:** This method performs synchronous blocking I/O (`fs::create_dir_all`).
+    /// It must only be called from synchronous contexts. If called from async code,
+    /// wrap the call in `tokio::task::spawn_blocking` to avoid blocking the executor.
     pub fn get_workspace_dir(&self, session_id: &str) -> PathBuf {
         let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
 
         // Ensure directory exists if we are calculating it
         if !workspace_dir.exists() {
-             let _ = fs::create_dir_all(&workspace_dir);
+            let _ = fs::create_dir_all(&workspace_dir);
         }
 
         workspace_dir
