@@ -35,6 +35,8 @@ pub fn create_html_export_ui(
         .collect::<Vec<_>>()
         .join("");
 
+    // Serialize path to a safe JSON string (handles backslashes on Windows properly)
+    // The result will be a quoted string like "C:\\path\\to\\file"
     let js_file_path = serde_json::to_string(download_path).unwrap_or_else(|_| "''".to_string());
 
     format!(
