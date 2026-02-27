@@ -9,10 +9,13 @@ import {
 } from '../type-guards';
 import { MCPResponse, MCPResult } from '../../protocol';
 
+const baseResponse = { jsonrpc: '2.0' as const, id: null };
+
 describe('MCP Type Guards', () => {
   describe('isMCPSuccess', () => {
     it('should return true for a success response', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         result: {
           content: [],
         },
@@ -22,6 +25,7 @@ describe('MCP Type Guards', () => {
 
     it('should return false if error is present', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         error: { code: 1, message: 'Error' },
       };
       expect(isMCPSuccess(response)).toBe(false);
@@ -37,6 +41,7 @@ describe('MCP Type Guards', () => {
   describe('isMCPError', () => {
     it('should return true for an error response', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         error: { code: 1, message: 'Error' },
       };
       expect(isMCPError(response)).toBe(true);
@@ -44,6 +49,7 @@ describe('MCP Type Guards', () => {
 
     it('should return false if error is missing', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         result: {},
       };
       expect(isMCPError(response)).toBe(false);
@@ -77,6 +83,7 @@ describe('MCP Type Guards', () => {
     it('should return structuredContent from valid success response', () => {
       const data = { key: 'value' };
       const response: MCPResponse<typeof data> = {
+        ...baseResponse,
         result: {
           structuredContent: data,
         },
@@ -86,6 +93,7 @@ describe('MCP Type Guards', () => {
 
     it('should return null for error response', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         error: { code: 1, message: 'Error' },
       };
       expect(extractStructuredContent(response)).toBeNull();
@@ -111,6 +119,7 @@ describe('MCP Type Guards', () => {
   describe('hasStructuredContent', () => {
     it('should return true if response has structuredContent', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         result: {
           structuredContent: {},
         },
@@ -120,6 +129,7 @@ describe('MCP Type Guards', () => {
 
     it('should return false if response does not have structuredContent', () => {
       const response: MCPResponse<unknown> = {
+        ...baseResponse,
         result: {
           content: [],
         },

@@ -183,7 +183,7 @@ ATTENTION ECONOMY:
             "localServices": [],
             "allowedBuiltInServiceAliases": [
                 "knowledge",
-                "contentstore",
+                "attachments",
                 "workspace",
                 "browser",
                 "planning",
@@ -250,7 +250,7 @@ ATTENTION ECONOMY:
                 "workspace",
                 "planning",
                 "knowledge",
-                "contentstore",
+                "attachments",
                 "playbook"
             ]
         });
@@ -315,7 +315,7 @@ ATTENTION ECONOMY:
                 "workspace",
                 "planning",
                 "knowledge",
-                "contentstore"
+                "attachments"
             ]
         });
 
@@ -349,7 +349,7 @@ ATTENTION ECONOMY:
             "allowedBuiltInServiceAliases": [
                 "planning",
                 "knowledge",
-                "contentstore",
+                "attachments",
                 "playbook",
                 "assistant",
                 "swarm"

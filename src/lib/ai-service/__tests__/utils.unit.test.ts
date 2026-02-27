@@ -118,9 +118,9 @@ describe('AI Service Utils', () => {
         totalTokens: 3000,
       };
       const result = formatUsageMetrics(usage);
-      expect(result.input).toBe('1,000');
-      expect(result.output).toBe('2,000');
-      expect(result.total).toBe('3,000');
+      expect(result.input).toBe(usage.promptTokens.toLocaleString());
+      expect(result.output).toBe(usage.completionTokens.toLocaleString());
+      expect(result.total).toBe(usage.totalTokens.toLocaleString());
       expect(result.speed).toBeUndefined();
     });
 

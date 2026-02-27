@@ -67,6 +67,7 @@ describe('AI Service Sanitizer', () => {
           },
         ],
         sessionId: 'session_1',
+        threadId: 'session_1',
         createdAt: new Date(),
       };
 
@@ -83,6 +84,7 @@ describe('AI Service Sanitizer', () => {
         content: [],
         thinking: '{invalid thinking}',
         sessionId: 'session_1',
+        threadId: 'session_1',
         createdAt: new Date(),
       };
 
@@ -96,6 +98,7 @@ describe('AI Service Sanitizer', () => {
         role: 'user',
         content: [],
         sessionId: 'session_1',
+        threadId: 'session_1',
         createdAt: new Date(),
       };
 
