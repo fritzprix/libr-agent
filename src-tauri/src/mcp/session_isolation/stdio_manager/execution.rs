@@ -8,6 +8,23 @@ use tokio_util::sync::CancellationToken;
 
 impl SessionMCPManager {
     /// Calls a tool on the specified MCP server.
+    ///
+    /// This will spawn the process if it's not running, execute the tool call,
+    /// and detect crashes.
+    ///
+    /// More specifically, this method:
+    /// - ensures the stdio MCP process for `server_name` is running (spawning it
+    ///   via `ensure_process_running` if needed),
+    /// - increments an active call counter used for lifecycle and crash tracking,
+    /// - registers a per-call [`CancellationToken`] so other APIs can cancel the
+    ///   in-flight tool invocation,
+    /// - forwards the request to the underlying `rmcp` client, and
+    /// - inspects the result to surface transport/protocol failures or server
+    ///   crashes as [`SessionMCPError`] variants.
+    ///
+    /// If the underlying MCP server crashes, hangs, or becomes unreachable while
+    /// handling the request, the error is converted into an appropriate
+    /// [`SessionMCPError`] so callers can react instead of silently succeeding.
     pub async fn call_tool(
         &self,
         server_name: &str,
@@ -65,7 +82,9 @@ impl SessionMCPManager {
                     .await
                     .insert(server_name.to_string(), std::time::Instant::now());
 
-                // Map rmcp Content to crate::mcp::types::MCPContent
+                // Map rmcp Content to crate::mcp::types::MCPContent.
+                // Since rmcp uses Annotated<RawContent>, we serialize through JSON and inspect
+                // the "type" discriminator to reconstruct the appropriate local MCPContent variant.
                 let local_content: Vec<crate::mcp::types::MCPContent> = call_result
                     .content
                     .into_iter()
@@ -87,6 +106,7 @@ impl SessionMCPManager {
                                     Some(crate::mcp::types::MCPContent::Image { data, mime_type })
                                 }
                                 "resource" => {
+                                    // Extract only the nested 'resource' field to avoid double-nesting
                                     let resource_data = json_val.get("resource")?.clone();
                                     Some(crate::mcp::types::MCPContent::Resource {
                                         resource: resource_data,
@@ -121,9 +141,12 @@ impl SessionMCPManager {
                 }
             }
             Err(e) => {
+                // Tool call failed - log error and return error response
                 error!("MCP server '{}' tool call failed: {}", server_name, e);
 
                 let error_msg = format!("{}", e);
+                // If the error indicates a connection/communication failure, remove the process
+                // from the map so it will be respawned on next call
                 if error_msg.contains("connection")
                     || error_msg.contains("closed")
                     || error_msg.contains("broken pipe")
@@ -159,6 +182,9 @@ impl SessionMCPManager {
     }
 
     /// List all available tools from a specific MCP server.
+    ///
+    /// This will spawn the process if it's not running, fetch the tools,
+    /// and keep the process alive for subsequent tool calls.
     pub async fn list_tools(
         &self,
         server_name: &str,

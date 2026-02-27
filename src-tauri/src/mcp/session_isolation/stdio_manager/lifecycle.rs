@@ -38,7 +38,16 @@ impl SessionMCPManager {
         }
     }
 
-    /// Ensures the specified MCP server process is running.
+    /// Ensures the specified MCP server process is running for this session.
+    ///
+    /// This is race-safe: if multiple tasks try to spawn the same server at the
+    /// same time, only one will actually start the process. The other tasks will
+    /// wait on the per-server spawn lock, re-check the process table after the
+    /// lock is released, and then reuse the already-running process.
+    ///
+    /// Call this before executing any MCP request that depends on the given
+    /// `server_name`; it is cheap when the server is already running due to the
+    /// fast-path check on `active_processes`.
     pub(crate) async fn ensure_process_running(
         &self,
         server_name: &str,
@@ -102,7 +111,8 @@ impl SessionMCPManager {
             cmd.arg(arg);
         }
 
-        // Apply environment isolation
+        // Apply environment isolation:
+        // 1. Clear all inherited environment variables to prevent secret leakage
         cmd.env_clear();
 
         let preserved_vars = [
@@ -129,22 +139,28 @@ impl SessionMCPManager {
             "LANG",
         ];
 
+        // 2. Re-apply whitelisted system variables
         for (key, value) in std::env::vars() {
+            // On Windows, env var names are case-insensitive (e.g., PATH is stored as 'Path').
+            // Use case-insensitive comparison so whitelisted names like 'PATH' match 'Path'.
             #[cfg(windows)]
             let is_preserved = preserved_vars.iter().any(|&p| p.eq_ignore_ascii_case(&key));
             #[cfg(not(windows))]
             let is_preserved = preserved_vars.contains(&key.as_str());
 
+            // Check exact matches
             if is_preserved {
                 cmd.env(&key, &value);
                 continue;
             }
 
+            // Check prefixes (Locale and XDG Base Directory variables)
             if key.starts_with("LC_") || key.starts_with("XDG_") {
                 cmd.env(&key, &value);
             }
         }
 
+        // 3. Apply user-defined variables from config (can override system vars)
         for (key, value) in env {
             cmd.env(key, value);
         }
@@ -159,6 +175,7 @@ impl SessionMCPManager {
 
         debug!("Created transport for command: {} {:?}", command, args);
 
+        // 7. Initialize rmcp client with timeout
         let timeout = Duration::from_secs(self.config.process_startup_timeout_seconds);
         let client = tokio::time::timeout(timeout, ().serve(transport))
             .await
@@ -167,6 +184,7 @@ impl SessionMCPManager {
 
         info!("Successfully connected to MCP server: {}", server_name);
 
+        // 8. Store process and update activity timestamp
         let process = MCPProcess::new(client);
 
         let mut processes = self.active_processes.write().await;
