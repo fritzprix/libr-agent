@@ -83,12 +83,22 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
     "mcp_manager",
 ];
 
+// 🚨 DO NOT DELETE: Backward compatibility for pre-0.6.0 sessions
+// Maps legacy service names stored in the database to their new canonical names.
+// This ensures old sessions don't break when loading tools.
+fn get_legacy_service_mapping(alias: &str) -> Option<&'static str> {
+    match alias {
+        "content_store" => Some("attachments"),
+        _ => None,
+    }
+}
+
 pub fn canonicalize_builtin_service_alias(alias: &str) -> Option<&'static str> {
     let mut normalized = alias.trim().to_lowercase();
 
-    // Phase 1 Migration: Map legacy 'content_store' to 'attachments'
-    if normalized == "content_store" {
-        normalized = "attachments".to_string();
+    // Apply legacy mappings if present
+    if let Some(new_name) = get_legacy_service_mapping(&normalized) {
+        normalized = new_name.to_string();
     }
 
     BUILTIN_SERVICE_REGISTRY

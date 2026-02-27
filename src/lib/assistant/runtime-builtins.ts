@@ -40,12 +40,19 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES: readonly string[] =
 /** Known canonical names. O(1) lookup. */
 const _canonicals = new Set(BUILTIN_SERVICE_REGISTRY.map((e) => e.canonical));
 
+// 🚨 DO NOT DELETE: Backward compatibility for pre-0.6.0 sessions
+// Maps legacy service names stored in the database to their new canonical names.
+// This ensures old sessions don't break when loading tools.
+const LEGACY_SERVICE_MAPPINGS: Record<string, string> = {
+  content_store: 'attachments',
+};
+
 function canonicalizeAlias(alias: string): string | null {
   let normalized = alias.trim().toLowerCase();
 
-  // Phase 1 Migration: Map legacy 'content_store' to 'attachments'
-  if (normalized === 'content_store') {
-    normalized = 'attachments';
+  // Apply legacy mappings if present
+  if (LEGACY_SERVICE_MAPPINGS[normalized]) {
+    normalized = LEGACY_SERVICE_MAPPINGS[normalized];
   }
 
   return _canonicals.has(normalized) ? normalized : null;
