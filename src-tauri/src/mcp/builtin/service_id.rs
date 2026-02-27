@@ -48,11 +48,10 @@ pub enum BuiltinServiceId {
     Playbook,
     /// Formerly known as `content_store`.  DB value: `"attachments"`.
     ///
-    /// The serde alias ensures that legacy DB records containing `"content_store"`
-    /// deserialise correctly without requiring a DB migration.
-    /// Note: `"contentstore"` (no underscore) is intentionally NOT an alias —
-    /// it was never a valid stored value, so we do not accept it via serde.
-    #[serde(alias = "content_store")]
+    /// The serde aliases ensure that legacy DB records containing `"content_store"`
+    /// or `"contentstore"` (no underscore, written by early versions of
+    /// `assistant_init.rs`) deserialise correctly without requiring a DB migration.
+    #[serde(alias = "content_store", alias = "contentstore")]
     Attachments,
     Swarm,
     Ui,
@@ -78,8 +77,9 @@ impl BuiltinServiceId {
             "assistant" | "assistant_manager" => Some(Self::Assistant),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
-            // "content_store" is the pre-0.6.0 legacy name; keep forever for DB compat.
-            "attachments" | "content_store" => Some(Self::Attachments),
+            // "content_store" is the pre-0.6.0 legacy name; "contentstore" (no
+            // underscore) was written by early assistant_init.rs; keep both forever.
+            "attachments" | "content_store" | "contentstore" => Some(Self::Attachments),
             "swarm" => Some(Self::Swarm),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
@@ -188,11 +188,16 @@ mod tests {
         }
     }
 
-    /// Regression: legacy alias written to DB before 0.6.0 must still resolve.
+    /// Regression: legacy aliases written to DB before 0.6.0 must still resolve.
     #[test]
     fn from_alias_legacy_content_store_resolves_to_attachments() {
         assert_eq!(
             BuiltinServiceId::from_alias("content_store"),
+            Some(BuiltinServiceId::Attachments)
+        );
+        // "contentstore" (no underscore) was written by early assistant_init.rs
+        assert_eq!(
+            BuiltinServiceId::from_alias("contentstore"),
             Some(BuiltinServiceId::Attachments)
         );
     }
@@ -223,18 +228,18 @@ mod tests {
         assert_eq!(id, BuiltinServiceId::Attachments);
     }
 
-    /// Regression: `"content_store"` must deserialise via serde alias without error.
-    /// This covers DB records written before the 0.6.0 rename.
-    /// Note: `"contentstore"` (no underscore) is NOT accepted — it was never a
-    /// valid stored value so we intentionally reject it.
+    /// Regression: `"content_store"` and `"contentstore"` must deserialise via serde
+    /// alias without error.  Both were written to the DB by earlier versions.
+    /// `"content_store"` was the pre-0.6.0 canonical name; `"contentstore"` (no
+    /// underscore) was written by early `assistant_init.rs`.
     #[test]
     fn serde_deserialize_legacy_content_store_alias() {
         let id: BuiltinServiceId = serde_json::from_str("\"content_store\"").unwrap();
         assert_eq!(id, BuiltinServiceId::Attachments);
 
-        // "contentstore" is not a serde alias — must be rejected
-        let result: Result<BuiltinServiceId, _> = serde_json::from_str("\"contentstore\"");
-        assert!(result.is_err(), "\"contentstore\" must not be accepted");
+        // "contentstore" (no underscore) must also be accepted
+        let id: BuiltinServiceId = serde_json::from_str("\"contentstore\"").unwrap();
+        assert_eq!(id, BuiltinServiceId::Attachments);
     }
 
     #[test]
