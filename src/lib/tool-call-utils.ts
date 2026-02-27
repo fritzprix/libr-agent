@@ -54,6 +54,9 @@ export function hasUIResource(toolResult?: Message): boolean {
  *   e.g.  github__search_code
  */
 
+/** The prefix shared by all builtin service tool names. */
+export const BUILTIN_PREFIX = 'builtin_';
+
 /** Regex for the internal builtin tool name format. */
 const BUILTIN_TOOL_RE = /^builtin_([^_]+(?:_[^_]+)*)__(.+)$/;
 

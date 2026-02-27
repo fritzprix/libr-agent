@@ -1,3 +1,5 @@
+use crate::mcp::builtin::service_id::{is_builtin_tool_name, parse_builtin_tool_name};
+
 #[derive(Debug, PartialEq)]
 pub enum ToolRouting {
     Builtin {
@@ -11,9 +13,8 @@ pub enum ToolRouting {
 }
 
 pub fn route_tool(tool_name: &str) -> Result<ToolRouting, String> {
-    if tool_name.starts_with("builtin_") {
-        let suffix = tool_name.strip_prefix("builtin_").unwrap();
-        let (tool_id, real_tool_name) = suffix.split_once("__").ok_or_else(|| {
+    if is_builtin_tool_name(tool_name) {
+        let (tool_id, real_tool_name) = parse_builtin_tool_name(tool_name).ok_or_else(|| {
             format!(
                 "Invalid builtin tool name format (missing '__'): {}",
                 tool_name

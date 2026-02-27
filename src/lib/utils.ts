@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { BUILTIN_PREFIX } from './tool-call-utils';
 
 /**
  * Converts a string to an array of MCPContent objects with type 'text'.
@@ -180,9 +181,9 @@ export function toValidJsName(name: string): string {
  * @returns The service alias or null if the tool name doesn't match the pattern
  */
 export function extractBuiltInServiceAlias(toolName: string): string | null {
-  // Match everything between 'builtin_' and '__' (non-greedy, including underscores)
-  // Uses .+? (non-greedy) to stop at the first occurrence of '__'
-  const match = toolName.match(/^builtin_(.+?)__/);
+  // Delegates to the shared prefix constant so naming is centralized in tool-call-utils.ts
+  const re = new RegExp(`^${BUILTIN_PREFIX}(.+?)__`);
+  const match = toolName.match(re);
   return match ? match[1] : null;
 }
 

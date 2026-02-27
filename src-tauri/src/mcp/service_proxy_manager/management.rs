@@ -1,6 +1,7 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
 use super::MCPServiceProxyManager;
+use crate::mcp::builtin::service_id::is_builtin_tool_name;
 use std::sync::Arc;
 
 impl MCPServiceProxyManager {
@@ -132,7 +133,7 @@ impl MCPServiceProxyManager {
         args: serde_json::Value,
     ) -> Result<MCPResponse, String> {
         // Builtin tools route through proxy
-        if tool_name.starts_with("builtin_") {
+        if is_builtin_tool_name(tool_name) {
             let proxy = match self.get_proxy(session_id).await {
                 Some(proxy) => proxy,
                 None => {
