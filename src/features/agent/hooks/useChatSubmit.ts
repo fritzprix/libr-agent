@@ -12,9 +12,15 @@ interface UseChatSubmitProps {
   session: { id: string; threadId?: string } | null;
   submit: ReturnType<typeof useAgentChat>['submit'];
   pendingFiles: ReturnType<typeof useAgentResourceAttachment>['pendingFiles'];
-  commitPendingFiles: ReturnType<typeof useAgentResourceAttachment>['commitPendingFiles'];
-  clearPendingFiles: ReturnType<typeof useAgentResourceAttachment>['clearPendingFiles'];
-  refetchSessionFiles: ReturnType<typeof useAgentResourceAttachment>['refetchSessionFiles'];
+  commitPendingFiles: ReturnType<
+    typeof useAgentResourceAttachment
+  >['commitPendingFiles'];
+  clearPendingFiles: ReturnType<
+    typeof useAgentResourceAttachment
+  >['clearPendingFiles'];
+  refetchSessionFiles: ReturnType<
+    typeof useAgentResourceAttachment
+  >['refetchSessionFiles'];
 }
 
 export function useChatSubmit({
