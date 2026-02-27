@@ -325,7 +325,9 @@ export default function PlaybookList() {
 
         <AlertDialog
           open={!!playbookToDelete}
-          onOpenChange={(open) => !open && !isDeleting && setPlaybookToDelete(null)}
+          onOpenChange={(open) =>
+            !open && !isDeleting && setPlaybookToDelete(null)
+          }
         >
           <AlertDialogContent>
             <AlertDialogHeader>
