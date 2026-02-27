@@ -15,6 +15,7 @@ use tauri_mcp_agent_lib::agent::tools::{
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
+use tauri_mcp_agent_lib::mcp::builtin::service_id::BuiltinServiceId;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -27,8 +28,15 @@ fn mock_agent_config(aliases: Option<Vec<&str>>) -> AgentConfig {
         system_prompt: "You are helpful".to_string(),
         mcp_server_ids: Vec::new(),
         local_services: Vec::new(),
-        allowed_built_in_service_aliases: aliases
-            .map(|values| values.into_iter().map(|v| v.to_string()).collect()),
+        allowed_built_in_service_aliases: aliases.map(|values| {
+            values
+                .into_iter()
+                .map(|v| {
+                    BuiltinServiceId::from_alias(v)
+                        .unwrap_or_else(|| panic!("unknown alias in test: {v}"))
+                })
+                .collect()
+        }),
         temperature: 1.0,
         max_tokens: None,
         max_depth: None,
@@ -169,15 +177,14 @@ fn test_multiple_content_items() {
 // ─── extract_builtin_tool_ids tests ──────────────────────────────────────────
 
 /// Verify that core aliases are always present regardless of what the agent config says.
-/// NOTE: "session_api" and "contentstore" are NOT recognised canonical names —
-/// canonicalize_builtin_service_alias() returns None for them and logs a warning.
-/// "swarm" and "attachments" appear in the result because they are CORE aliases
-/// (always enabled), NOT because legacy name normalization occurred.
-/// If legacy alias mapping is needed, add explicit entries to
-/// canonicalize_builtin_service_alias() and update this test.
+/// With the typed `Vec<BuiltinServiceId>` field, only valid aliases can appear in the
+/// config — unknown strings are rejected at deserialisation time.
+/// This test verifies that even when only optional aliases are explicitly requested,
+/// all CORE aliases are still included in the result.
 #[test]
 fn extract_builtin_tool_ids_core_aliases_always_present_despite_unknown_inputs() {
-    let config = mock_agent_config(Some(vec!["session_api", "contentstore", "browser"]));
+    // Only "browser" (optional) is explicitly requested; core aliases must still appear.
+    let config = mock_agent_config(Some(vec!["browser"]));
     let tool_ids = extract_builtin_tool_ids(&config);
 
     // These are present because they are CORE aliases, not because of alias normalization.
@@ -239,6 +246,105 @@ fn mcp_manager_is_enabled_even_with_empty_alias_list() {
     assert!(
         tool_ids.contains(&"mcp_manager".to_string()),
         "mcp_manager must be present even when allowedBuiltInServiceAliases is empty"
+    );
+}
+
+// ─── Legacy alias migration regression tests ─────────────────────────────────
+
+/// Regression: DB rows created before 0.6.0 store "content_store" in
+/// `allowedBuiltInServiceAliases`. canonicalize_builtin_service_alias() must
+/// map it to "attachments" so those agents don't silently lose the tool.
+#[test]
+fn legacy_content_store_alias_maps_to_attachments() {
+    assert_eq!(
+        canonicalize_builtin_service_alias("content_store"),
+        Some("attachments"),
+        "legacy 'content_store' must map to 'attachments' for DB backward compat"
+    );
+}
+
+/// End-to-end: an AgentConfig loaded from a pre-0.6.0 DB row (which has
+/// "content_store" in its alias list) must still get "attachments" enabled.
+#[test]
+fn agent_config_with_legacy_content_store_gets_attachments_enabled() {
+    let config = mock_agent_config(Some(vec!["content_store"]));
+    let tool_ids = extract_builtin_tool_ids(&config);
+    assert!(
+        tool_ids.contains(&"attachments".to_string()),
+        "legacy 'content_store' in allowedBuiltInServiceAliases must enable 'attachments'; \
+         got: {tool_ids:?}"
+    );
+}
+
+/// "contentstore" (no underscore) is NOT a recognised alias — not a canonical,
+/// not a legacy mapping. Must return None and not silently enable anything.
+#[test]
+fn contentstore_without_underscore_is_unknown() {
+    assert_eq!(
+        canonicalize_builtin_service_alias("contentstore"),
+        None,
+        "'contentstore' (no underscore) is not a valid alias and must not resolve"
+    );
+}
+
+/// "assistant_manager" is a historical variant of "assistant" used in some
+/// UI definitions. Must resolve to the canonical "assistant".
+#[test]
+fn assistant_manager_alias_maps_to_assistant() {
+    assert_eq!(
+        canonicalize_builtin_service_alias("assistant_manager"),
+        Some("assistant"),
+        "'assistant_manager' must resolve to 'assistant' canonical"
+    );
+}
+
+// ─── BuiltinServiceId serde stability tests ───────────────────────────────────
+// Stable DB key requirement: serde value must never drift from the canonical name.
+// If these fail, old DB records become unreadable.
+
+/// Every BuiltinServiceId must serialize to its canonical name string.
+/// The serialized form is the stable DB key — it must match `name()`.
+#[test]
+fn builtin_service_id_serializes_to_canonical_name() {
+    let cases = [
+        (BuiltinServiceId::Planning, "planning"),
+        (BuiltinServiceId::Workspace, "workspace"),
+        (BuiltinServiceId::Knowledge, "knowledge"),
+        (BuiltinServiceId::Assistant, "assistant"),
+        (BuiltinServiceId::Skills, "skills"),
+        (BuiltinServiceId::Playbook, "playbook"),
+        (BuiltinServiceId::Attachments, "attachments"),
+        (BuiltinServiceId::Swarm, "swarm"),
+        (BuiltinServiceId::Ui, "ui"),
+        (BuiltinServiceId::Browser, "browser"),
+        (BuiltinServiceId::Bootstrap, "bootstrap"),
+        (BuiltinServiceId::McpManager, "mcp_manager"),
+    ];
+    for (id, expected) in cases {
+        let json = serde_json::to_string(&id).unwrap();
+        assert_eq!(
+            json,
+            format!("\"{expected}\""),
+            "{id:?} must serialize to {expected:?} (stable DB key)"
+        );
+        // name() must agree with the serde form
+        assert_eq!(id.name(), expected, "{id:?}.name() must match canonical");
+    }
+}
+
+/// The legacy DB value "content_store" MUST deserialize as `BuiltinServiceId::Attachments`
+/// via the serde alias added in Phase 2.  This is the regression guard for
+/// the 0.6.0 rename: existing DB records written before the rename must still
+/// deserialize without a migration.
+#[test]
+fn legacy_content_store_does_not_deserialize_as_builtin_service_id() {
+    let id: BuiltinServiceId = serde_json::from_str(r#""content_store""#).expect(
+        "\"content_store\" must deserialize as BuiltinServiceId::Attachments via serde alias",
+    );
+    assert_eq!(
+        id,
+        BuiltinServiceId::Attachments,
+        "\"content_store\" must map to Attachments"
     );
 }
 

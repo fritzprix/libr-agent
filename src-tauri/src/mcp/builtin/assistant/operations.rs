@@ -3,6 +3,7 @@ use crate::mcp::builtin::error_guidance::{
     duplicate_error, guided_error, invalid_input_error, not_found_error, ErrorCategory,
     SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::types::MCPResult;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{AssistantRepository, MCPServerRepository};
@@ -20,7 +21,7 @@ pub struct CreateAssistantRequest {
     pub system_prompt: Option<String>,
     pub description: Option<String>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
-    pub allowed_builtin_service_aliases: Option<Vec<String>>,
+    pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
     pub mcp_server_ids: Option<Vec<String>>,
     // Legacy v2 fields
@@ -41,7 +42,7 @@ pub struct UpdateAssistantRequest {
     pub system_prompt: Option<String>,
     pub description: Option<String>,
     #[serde(rename = "allowedBuiltInServiceAliases")]
-    pub allowed_builtin_service_aliases: Option<Vec<String>>,
+    pub allowed_builtin_service_aliases: Option<Vec<BuiltinServiceId>>,
     #[serde(rename = "mcpServerIds")]
     pub mcp_server_ids: Option<Vec<String>>,
     // Legacy v2 fields
@@ -64,7 +65,7 @@ struct ConfigMergeParams<'a> {
     base_config: Option<Value>,
     system_prompt: Option<&'a str>,
     description: Option<&'a str>,
-    allowed_builtin_service_aliases: Option<&'a Vec<String>>,
+    allowed_builtin_service_aliases: Option<&'a Vec<BuiltinServiceId>>,
     mcp_server_ids: Option<&'a Vec<String>>,
     tools: Option<&'a Vec<String>>,
     mcp_servers: Option<&'a Vec<String>>,

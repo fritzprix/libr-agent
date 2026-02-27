@@ -5,8 +5,32 @@
 
 type ServiceCategory = 'core' | 'optional';
 
+/**
+ * Stable identifier for a builtin service.
+ *
+ * These are the canonical strings stored in `allowedBuiltInServiceAliases` for
+ * new records.  The Rust side serialises `BuiltinServiceId` enum to these same
+ * `snake_case` strings, so the set must stay in sync with
+ * `src-tauri/src/mcp/builtin/service_id.rs`.
+ *
+ * Adding a new service: update this type AND add a row to `BUILTIN_SERVICE_REGISTRY`.
+ */
+export type BuiltinServiceId =
+  | 'planning'
+  | 'workspace'
+  | 'knowledge'
+  | 'assistant'
+  | 'skills'
+  | 'playbook'
+  | 'attachments'
+  | 'swarm'
+  | 'ui'
+  | 'browser'
+  | 'bootstrap'
+  | 'mcp_manager';
+
 interface BuiltinServiceEntry {
-  readonly canonical: string;
+  readonly canonical: BuiltinServiceId;
   readonly category: ServiceCategory;
 }
 
@@ -40,6 +64,13 @@ export const OPTIONAL_BUILTIN_SERVICE_ALIASES: readonly string[] =
 /** Known canonical names. O(1) lookup. */
 const _canonicals = new Set(BUILTIN_SERVICE_REGISTRY.map((e) => e.canonical));
 
+/** Runtime type guard: checks if a string is a known BuiltinServiceId. */
+function isBuiltinServiceId(s: string): s is BuiltinServiceId {
+  // The Set<BuiltinServiceId> .has() requires T; cast is safe because
+  // we're INSIDE the type predicate — this IS the runtime validation.
+  return (_canonicals as Set<string>).has(s);
+}
+
 // 🚨 DO NOT DELETE: Backward compatibility for pre-0.6.0 sessions
 // Maps legacy service names stored in the database to their new canonical names.
 // This ensures old sessions don't break when loading tools.
@@ -47,7 +78,7 @@ const LEGACY_SERVICE_MAPPINGS: Record<string, string> = {
   content_store: 'attachments',
 };
 
-function canonicalizeAlias(alias: string): string | null {
+function canonicalizeAlias(alias: string): BuiltinServiceId | null {
   let normalized = alias.trim().toLowerCase();
 
   // Apply legacy mappings if present
@@ -55,7 +86,7 @@ function canonicalizeAlias(alias: string): string | null {
     normalized = LEGACY_SERVICE_MAPPINGS[normalized];
   }
 
-  return _canonicals.has(normalized) ? normalized : null;
+  return isBuiltinServiceId(normalized) ? normalized : null;
 }
 
 // ─── Runtime enforcement ───────────────────────────────────────────────────────

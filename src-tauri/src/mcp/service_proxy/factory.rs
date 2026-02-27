@@ -1,3 +1,4 @@
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::repositories::session_repository::SessionRepository;
 use crate::session::SessionManager;
@@ -26,36 +27,42 @@ pub(crate) async fn create_builtin_server(
     _session_manager: Arc<SessionManager>,
     app_handle: Option<AppHandle>,
 ) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
-    match tool_id {
-        "bootstrap" => Ok(Some(Box::new(
+    // Resolve string → stable enum (handles legacy aliases like "content_store").
+    // Unknown strings return Ok(None) — not an error, just not a builtin service.
+    let Some(service_id) = BuiltinServiceId::from_alias(tool_id) else {
+        return Ok(None);
+    };
+
+    match service_id {
+        BuiltinServiceId::Bootstrap => Ok(Some(Box::new(
             crate::mcp::builtin::bootstrap::BootstrapServer::new(),
         ))),
-        "knowledge" => {
+        BuiltinServiceId::Knowledge => {
             let assistant_id = get_assistant_id_from_session(&_session_id).await?;
             Ok(Some(Box::new(
                 crate::mcp::builtin::knowledge::KnowledgeServer::new(assistant_id, _db).await?,
             )))
         }
-        "planning" => Ok(Some(Box::new(
+        BuiltinServiceId::Planning => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
-        "playbook" => Ok(Some(Box::new(
+        BuiltinServiceId::Playbook => Ok(Some(Box::new(
             crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db).await?,
         ))),
-        "assistant" => Ok(Some(Box::new(
+        BuiltinServiceId::Assistant => Ok(Some(Box::new(
             crate::mcp::builtin::assistant::AssistantServer::new(_db).await?,
         ))),
-        "workspace" => Ok(Some(Box::new(
+        BuiltinServiceId::Workspace => Ok(Some(Box::new(
             crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
         ))),
-        "attachments" | "content_store" | "contentstore" => Ok(Some(Box::new(
+        BuiltinServiceId::Attachments => Ok(Some(Box::new(
             crate::mcp::builtin::content_store::ContentStoreServer::new(
                 _session_id,
                 _session_manager,
             ),
         ))),
-        "ui" => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
-        "browser" => {
+        BuiltinServiceId::Ui => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
+        BuiltinServiceId::Browser => {
             if let Some(handle) = app_handle {
                 Ok(Some(Box::new(
                     crate::mcp::builtin::browser::BrowserServer::new(handle, _session_id),
@@ -65,16 +72,15 @@ pub(crate) async fn create_builtin_server(
                 Ok(None)
             }
         }
-        "mcp_manager" => Ok(Some(Box::new(
+        BuiltinServiceId::McpManager => Ok(Some(Box::new(
             crate::mcp::builtin::mcp_manager::MCPManagerServer::new(),
         ))),
-        "swarm" => Ok(Some(Box::new(
+        BuiltinServiceId::Swarm => Ok(Some(Box::new(
             crate::mcp::builtin::session_api::SessionApiServer::new(),
         ))),
-        "skills" => Ok(Some(Box::new(
+        BuiltinServiceId::Skills => Ok(Some(Box::new(
             crate::mcp::builtin::skills::SkillsServer::new(_session_id),
         ))),
-        _ => Ok(None), // Unknown tool, skip
     }
 }
 
