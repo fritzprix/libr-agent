@@ -1,0 +1,124 @@
+import { useState, useCallback } from 'react';
+import { createId } from '@paralleldrive/cuid2';
+import { toast } from 'sonner';
+import { getLogger } from '@/lib/logger';
+import type { Message, AttachmentReference } from '@/models/chat';
+import type { useAgentChat } from '@/context/AgentChatContext';
+import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
+
+const logger = getLogger('useChatSubmit');
+
+interface UseChatSubmitProps {
+  session: { id: string; threadId?: string } | null;
+  submit: ReturnType<typeof useAgentChat>['submit'];
+  pendingFiles: ReturnType<typeof useAgentResourceAttachment>['pendingFiles'];
+  commitPendingFiles: ReturnType<typeof useAgentResourceAttachment>['commitPendingFiles'];
+  clearPendingFiles: ReturnType<typeof useAgentResourceAttachment>['clearPendingFiles'];
+  refetchSessionFiles: ReturnType<typeof useAgentResourceAttachment>['refetchSessionFiles'];
+}
+
+export function useChatSubmit({
+  session,
+  submit,
+  pendingFiles,
+  commitPendingFiles,
+  clearPendingFiles,
+  refetchSessionFiles,
+}: UseChatSubmitProps) {
+  const [input, setInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = useCallback(
+    async (e?: React.FormEvent<HTMLFormElement>) => {
+      e?.preventDefault();
+
+      const hasInput = input.trim().length > 0 || pendingFiles.length > 0;
+
+      if (!hasInput) {
+        logger.info('Submit ignored: no input and no pending files');
+        return;
+      }
+      if (!session?.id) {
+        logger.info('Submit ignored: no session');
+        return;
+      }
+
+      let attachedFileRefs: AttachmentReference[] = [];
+
+      if (pendingFiles.length > 0) {
+        try {
+          logger.info('About to commit pending files', {
+            pendingCount: pendingFiles.length,
+            filenames: pendingFiles.map((f) => f.filename),
+          });
+          attachedFileRefs = await commitPendingFiles();
+          logger.info('Pending files committed', {
+            attachedCount: attachedFileRefs.length,
+          });
+        } catch (err) {
+          logger.error('Error uploading pending files:', err);
+          toast.error('Failed to upload files. Please try again.');
+          return;
+        }
+      }
+
+      const userMessage: Message = {
+        id: createId(),
+        sessionId: session.id,
+        threadId: session.id,
+        role: 'user',
+        content: [{ type: 'text', text: input.trim() }],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      // Include ALL attachments (committed + workspace-only) so message-preprocessor
+      // can generate correct tool-call hints for each status.
+      // workspace-only binary files stay as-is; the preprocessor emits readFile hints.
+      if (attachedFileRefs.length > 0) {
+        userMessage.attachments = attachedFileRefs;
+      }
+
+      setIsSubmitting(true);
+      const currentInput = input;
+      setInput(''); // Clear input immediately for better UX
+      clearPendingFiles();
+
+      try {
+        await submit(userMessage);
+        logger.info('Message submitted successfully');
+
+        // Refetch session files after successful message submission
+        // This ensures SessionFilesPopover shows updated file count
+        if (attachedFileRefs.length > 0) {
+          logger.info(
+            'Refetching session files after message with attachments',
+          );
+          await refetchSessionFiles();
+        }
+      } catch (err) {
+        // Restore input on error
+        setInput(currentInput);
+        logger.error('Failed to submit message:', err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [
+      input,
+      pendingFiles,
+      session,
+      commitPendingFiles,
+      clearPendingFiles,
+      submit,
+      refetchSessionFiles,
+    ],
+  );
+
+  return {
+    input,
+    setInput,
+    isSubmitting,
+    handleSubmit,
+  };
+}
