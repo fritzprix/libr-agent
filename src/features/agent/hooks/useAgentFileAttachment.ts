@@ -8,6 +8,7 @@ import {
   validateFileSize,
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
+import { toast } from 'sonner';
 import type React from 'react';
 
 const logger = getLogger('AgentFileAttachment');
@@ -74,7 +75,7 @@ export function useAgentFileAttachment() {
 
       if (!session) {
         logger.error('Cannot attach file: session not available.');
-        alert('Cannot attach file: session not available.');
+        toast.error('Cannot attach file: session not available.');
         return;
       }
 
@@ -89,7 +90,7 @@ export function useAgentFileAttachment() {
         logger.error('Failed to register dropped file paths in backend', {
           error,
         });
-        alert('Failed to validate dropped files. Please try again.');
+        toast.error('Failed to validate dropped files. Please try again.');
         return;
       }
 
@@ -146,7 +147,9 @@ export function useAgentFileAttachment() {
               fileSize: fileObj.size,
               maxBytes,
             });
-            alert(createFileSizeErrorMessage(filename, fileObj.size, maxBytes));
+            toast.error(
+              createFileSizeErrorMessage(filename, fileObj.size, maxBytes),
+            );
             continue;
           }
 
@@ -178,7 +181,7 @@ export function useAgentFileAttachment() {
                 : error,
             errorString: String(error),
           });
-          alert(
+          toast.error(
             `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
           );
         }
@@ -213,7 +216,7 @@ export function useAgentFileAttachment() {
           });
         } catch (error) {
           logger.error('Failed to add files to pending state:', error);
-          alert(
+          toast.error(
             `Error processing files: ${error instanceof Error ? error.message : String(error)}`,
           );
           filesToUpload.forEach((file) => file.cleanup());
@@ -227,7 +230,7 @@ export function useAgentFileAttachment() {
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files || !session) {
-        alert('Cannot attach file: session not available.');
+        toast.error('Cannot attach file: session not available.');
         return;
       }
 
@@ -240,7 +243,9 @@ export function useAgentFileAttachment() {
         // }
 
         if (!validateFileSize(file, maxBytes)) {
-          alert(createFileSizeErrorMessage(file.name, file.size, maxBytes));
+          toast.error(
+            createFileSizeErrorMessage(file.name, file.size, maxBytes),
+          );
           continue;
         }
 
@@ -282,7 +287,7 @@ export function useAgentFileAttachment() {
                 : error,
             errorString: String(error),
           });
-          alert(
+          toast.error(
             `Error processing file "${file.name}": ${error instanceof Error ? error.message : String(error)}`,
           );
         }

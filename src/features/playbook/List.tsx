@@ -1,7 +1,15 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useDeferredValue,
+  type MouseEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   AlertDialog,
@@ -49,6 +57,7 @@ export default function PlaybookList() {
   >({});
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const [sortMode, setSortMode] = useState<SortMode>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -56,6 +65,7 @@ export default function PlaybookList() {
   const [bookmarkFirst, setBookmarkFirst] = useState(false);
   const [playbookToDelete, setPlaybookToDelete] =
     useState<PlaybookWithMeta | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -118,32 +128,35 @@ export default function PlaybookList() {
     }
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = async (e: MouseEvent) => {
     if (!playbookToDelete) return;
+    e.preventDefault();
+    setIsDeleting(true);
 
     try {
       await deletePlaybook(playbookToDelete.id, playbookToDelete.agentId);
       setPlaybooks((prev) => prev.filter((p) => p.id !== playbookToDelete.id));
       toast.success(t('playbook.toasts.deleted'));
+      setPlaybookToDelete(null);
     } catch (error) {
       logger.error('Failed to delete playbook', error);
       toast.error(t('playbook.toasts.deleteFailed'));
     } finally {
-      setPlaybookToDelete(null);
+      setIsDeleting(false);
     }
   };
 
   // Filter and Process Playbooks
   const processedPlaybooks = useMemo(() => {
     let filtered = playbooks.filter((p) => {
-      const query = searchQuery.toLowerCase();
+      const query = deferredSearchQuery.toLowerCase();
       return (
         p.goal.toLowerCase().includes(query) ||
         (assistants[p.agentId]?.name || '').toLowerCase().includes(query)
       );
     });
     return filtered;
-  }, [playbooks, searchQuery, assistants]);
+  }, [playbooks, deferredSearchQuery, assistants]);
 
   const groups = useMemo(() => {
     if (groupMode === 'time') {
@@ -312,7 +325,9 @@ export default function PlaybookList() {
 
         <AlertDialog
           open={!!playbookToDelete}
-          onOpenChange={(open) => !open && setPlaybookToDelete(null)}
+          onOpenChange={(open) =>
+            !open && !isDeleting && setPlaybookToDelete(null)
+          }
         >
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -326,10 +341,11 @@ export default function PlaybookList() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>
+              <AlertDialogCancel disabled={isDeleting}>
                 {t('playbook.deleteDialog.cancel')}
               </AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDelete}>
+              <AlertDialogAction onClick={confirmDelete} disabled={isDeleting}>
+                {isDeleting && <LoadingSpinner className="mr-2 h-4 w-4" />}
                 {t('playbook.deleteDialog.confirm')}
               </AlertDialogAction>
             </AlertDialogFooter>
