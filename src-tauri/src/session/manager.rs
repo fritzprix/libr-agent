@@ -1,18 +1,16 @@
-use log::{error, info, warn};
+use log::info;
 use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use tokio::fs as async_fs;
 use tokio::time::{Duration, Instant};
 
 use super::types::{SessionStats, SessionWorkspaceInfo};
+use crate::services::SessionDirectoryService;
 
 #[derive(Clone, Debug)]
 pub struct SessionManager {
-    pub(crate) base_data_dir: PathBuf,
+    pub(crate) directory_service: SessionDirectoryService,
     pub(crate) workspace_pool: Arc<RwLock<HashMap<String, SessionWorkspaceInfo>>>,
-    pub(crate) template_workspace: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl SessionManager {
@@ -25,108 +23,22 @@ impl SessionManager {
     }
 
     pub fn new_with_base_dir(base_data_dir: PathBuf) -> Result<Self, String> {
-        // Create base directory structure
-        fs::create_dir_all(base_data_dir.join("workspaces"))
-            .map_err(|e| format!("Failed to create workspaces directory: {e}"))?;
-
-        fs::create_dir_all(base_data_dir.join("workspaces").join("templates"))
-            .map_err(|e| format!("Failed to create templates directory: {e}"))?;
-
-        fs::create_dir_all(base_data_dir.join("logs"))
-            .map_err(|e| format!("Failed to create logs directory: {e}"))?;
-
-        fs::create_dir_all(base_data_dir.join("config"))
-            .map_err(|e| format!("Failed to create config directory: {e}"))?;
-
-        fs::create_dir_all(base_data_dir.join("skills"))
-            .map_err(|e| format!("Failed to create skills directory: {e}"))?;
-
-        // Create default workspace
-        let default_workspace = base_data_dir.join("workspaces").join("default");
-        fs::create_dir_all(&default_workspace)
-            .map_err(|e| format!("Failed to create default workspace: {e}"))?;
-
-        // Initialize template workspace
-        let template_workspace = base_data_dir
-            .join("workspaces")
-            .join("templates")
-            .join("base");
-        fs::create_dir_all(&template_workspace)
-            .map_err(|e| format!("Failed to create template workspace: {e}"))?;
-
-        // Create basic template structure
-        Self::setup_template_workspace(&template_workspace)?;
+        let directory_service = SessionDirectoryService::new(base_data_dir.clone())?;
 
         info!("SessionManager initialized with base directory: {base_data_dir:?}");
 
         Ok(Self {
-            base_data_dir,
+            directory_service,
             workspace_pool: Arc::new(RwLock::new(HashMap::new())),
-            template_workspace: Arc::new(RwLock::new(Some(template_workspace))),
         })
     }
 
-    /// Setup basic template workspace structure
-    fn setup_template_workspace(template_path: &Path) -> Result<(), String> {
-        // Create common directories that sessions might need
-        let dirs_to_create = vec!["tmp", "projects", "downloads", "scripts"];
-
-        for dir in dirs_to_create {
-            fs::create_dir_all(template_path.join(dir))
-                .map_err(|e| format!("Failed to create template directory {dir}: {e}"))?;
-        }
-
-        // Create a basic welcome script
-        let welcome_script = r#"#!/bin/bash
-echo "Welcome to your isolated workspace!"
-echo "Session ID: $(basename "$PWD")"
-echo "Workspace: $PWD"
-echo "Available tools: python3, typescript/deno, shell commands"
-"#;
-
-        fs::write(template_path.join("welcome.sh"), welcome_script)
-            .map_err(|e| format!("Failed to create welcome script: {e}"))?;
-
-        // Make script executable on Unix systems
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(template_path.join("welcome.sh"))
-                .map_err(|e| format!("Failed to get script metadata: {e}"))?
-                .permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(template_path.join("welcome.sh"), perms)
-                .map_err(|e| format!("Failed to set script permissions: {e}"))?;
-        }
-
-        Ok(())
-    }
-
-    /// Fast session creation using template workspace
-    /// Async session workspace creation
+    /// Fast session creation using template workspace (delegated to Directory Service)
     async fn create_session_workspace_async(&self, session_id: &str) -> Result<PathBuf, String> {
-        let session_dir = self.base_data_dir.join("workspaces").join(session_id);
-
-        // Create directory structure asynchronously
-        async_fs::create_dir_all(&session_dir)
-            .await
-            .map_err(|e| format!("Failed to create session directory '{session_id}': {e}"))?;
-
-        // Copy from template if available (async)
-        let template_path_option = {
-            if let Ok(template_lock) = self.template_workspace.read() {
-                template_lock.as_ref().cloned()
-            } else {
-                None
-            }
-        };
-
-        if let Some(template_path) = template_path_option {
-            if template_path.exists() {
-                self.copy_template_to_session_async(&template_path, &session_dir)
-                    .await?;
-            }
-        }
+        let session_dir = self
+            .directory_service
+            .create_session_workspace(session_id)
+            .await?;
 
         // Add to workspace pool
         let workspace_info = SessionWorkspaceInfo {
@@ -149,37 +61,6 @@ echo "Available tools: python3, typescript/deno, shell commands"
         Ok(session_dir)
     }
 
-    /// Async template copying
-    async fn copy_template_to_session_async(
-        &self,
-        template_path: &Path,
-        session_dir: &Path,
-    ) -> Result<(), String> {
-        // Copy essential files asynchronously
-        let items_to_copy = vec!["welcome.sh"];
-
-        for item in items_to_copy {
-            let src = template_path.join(item);
-            let dst = session_dir.join(item);
-
-            if src.exists() && src.is_file() {
-                async_fs::copy(&src, &dst)
-                    .await
-                    .map_err(|e| format!("Failed to copy file {item}: {e}"))?;
-            }
-        }
-
-        // Create directories asynchronously
-        let dirs_to_create = vec!["tmp", "projects", "downloads", "scripts"];
-        for dir in dirs_to_create {
-            async_fs::create_dir_all(session_dir.join(dir))
-                .await
-                .map_err(|e| format!("Failed to create directory {dir}: {e}"))?;
-        }
-
-        Ok(())
-    }
-
     pub fn get_session_workspace_dir_by_id(&self, session_id: &str) -> PathBuf {
         // Try to find in pool first to see if there is an override
         if let Ok(pool) = self.workspace_pool.read() {
@@ -187,25 +68,13 @@ echo "Available tools: python3, typescript/deno, shell commands"
                 if let Some(override_path) = &info.workspace_override {
                     return override_path.clone();
                 }
-                // Also return the standard path if found in pool (avoids re-creation checks)
+                // Also return the standard path if found in pool
                 return info.workspace_path.clone();
             }
         }
 
-        let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
-
-        // Ensure directory exists
-        let final_dir = if let Err(e) = fs::create_dir_all(&workspace_dir) {
-            warn!("Failed to create workspace directory {workspace_dir:?}: {e}");
-            // Fallback to default workspace
-            let default_dir = self.base_data_dir.join("workspaces").join("default");
-            if let Err(e) = fs::create_dir_all(&default_dir) {
-                error!("Failed to create default workspace: {e}");
-            }
-            default_dir
-        } else {
-            workspace_dir
-        };
+        // Delegate directory creation/retrieval to service
+        let final_dir = self.directory_service.get_workspace_dir(session_id);
 
         // Lazy load: Add to pool if missing
         if let Ok(mut pool) = self.workspace_pool.write() {
@@ -233,35 +102,26 @@ echo "Available tools: python3, typescript/deno, shell commands"
     }
 
     pub fn get_base_data_dir(&self) -> &PathBuf {
-        &self.base_data_dir
+        self.directory_service.get_base_data_dir()
     }
 
     pub fn get_logs_dir(&self) -> PathBuf {
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(local_data) = dirs::data_local_dir() {
-                return local_data.join("com.fritzprix.libragent").join("logs");
-            }
-        }
+        self.directory_service.get_logs_dir()
+    }
 
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(home) = dirs::home_dir() {
-                return home
-                    .join("Library")
-                    .join("Logs")
-                    .join("com.fritzprix.libragent");
-            }
-        }
-
-        // Fallback for Linux or if platform specific dirs fail
-        self.base_data_dir.join("logs")
+    // Expose directory service for other services (like cleanup)
+    pub fn get_directory_service(&self) -> &SessionDirectoryService {
+        &self.directory_service
     }
 
     pub fn list_sessions(&self) -> Result<Vec<String>, String> {
-        let workspaces_dir = self.base_data_dir.join("workspaces");
+        // We still need to read the directory to list sessions, but we use the base path from service
+        let workspaces_dir = self
+            .directory_service
+            .get_base_data_dir()
+            .join("workspaces");
 
-        let entries = fs::read_dir(&workspaces_dir)
+        let entries = std::fs::read_dir(&workspaces_dir)
             .map_err(|e| format!("Failed to read workspaces directory: {e}"))?;
 
         let mut sessions = Vec::new();
@@ -389,7 +249,7 @@ echo "Available tools: python3, typescript/deno, shell commands"
             .ok_or("Invalid workspace path")?
             .join(new_session_id);
 
-        async_fs::rename(&old_path, &new_path)
+        tokio::fs::rename(&old_path, &new_path)
             .await
             .map_err(|e| format!("Failed to rename workspace directory: {e}"))?;
 
@@ -520,25 +380,20 @@ echo "Available tools: python3, typescript/deno, shell commands"
 
     /// Remove a specific session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
-        let workspace_path = {
+        // Remove session from pool, returning error if not found
+        {
             let mut pool = self
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if let Some(session_info) = pool.remove(session_id) {
-                session_info.workspace_path
-            } else {
+            if pool.remove(session_id).is_none() {
                 return Err(format!("Session '{session_id}' not found in pool"));
             }
-        };
-
-        // Remove the workspace directory
-        if workspace_path.exists() {
-            async_fs::remove_dir_all(&workspace_path)
-                .await
-                .map_err(|e| format!("Failed to remove workspace directory: {e}"))?;
         }
+
+        // Remove the workspace directory via directory service
+        self.directory_service.remove_workspace(session_id).await?;
 
         info!("Removed session '{session_id}' and its workspace");
         Ok(())
