@@ -41,10 +41,22 @@ export function hasUIResource(toolResult?: Message): boolean {
 }
 
 /**
- * Parses a tool name by removing the server prefix.
- * Example: "server__toolName" -> "toolName"
+ * Parses a tool name for display by removing server prefix noise.
+ *
+ * Builtin tools use the pattern `builtin_<group>__<tool>`.
+ * These are shown as `<group> / <tool>` for clarity.
+ * External MCP tools use `<server>__<tool>` and are shown as-is (last segment only).
+ *
+ * Examples:
+ *   "builtin_planning__addScratchpad"  → "planning / addScratchpad"
+ *   "builtin_mcp_manager__listServers" → "mcp_manager / listServers"
+ *   "github__search_code"              → "search_code"
  */
 export function parseToolName(fullToolName: string): string {
+  const builtinMatch = fullToolName.match(/^builtin_([^_]+(?:_[^_]+)*)__(.+)$/);
+  if (builtinMatch) {
+    return `${builtinMatch[1]} / ${builtinMatch[2]}`;
+  }
   return fullToolName.split('__').pop() || fullToolName;
 }
 
