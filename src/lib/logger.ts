@@ -11,6 +11,7 @@
  * - **Log Level Filtering**: Supports 'trace', 'debug', 'info', 'warn', and 'error' levels.
  * - **Persistent Configuration**: Saves logger settings (e.g., log level) to local storage.
  * - **Contextual Logging**: Allows creating logger instances with specific contexts (e.g., component names).
+ * - **Batched IPC**: Queues log messages and sends them to the backend in batches to reduce IPC overhead.
  *
  * @example
  * ```typescript
@@ -45,31 +46,79 @@ enum LogLevel {
   Error = 'error',
 }
 
-// Helper function to send logs to Rust backend via Tauri commands
-async function logToBackend(level: LogLevel, message: string): Promise<void> {
-  try {
-    switch (level) {
-      case LogLevel.Trace:
-        await invoke('log_trace', { message });
-        break;
-      case LogLevel.Debug:
-        await invoke('log_debug', { message });
-        break;
-      case LogLevel.Info:
-        await invoke('log_info', { message });
-        break;
-      case LogLevel.Warn:
-        await invoke('log_warn', { message });
-        break;
-      case LogLevel.Error:
-        await invoke('log_error_from_frontend', { message });
-        break;
-    }
-  } catch (e) {
-    // Fallback to console if invoke fails
-    console.error('[Logger] Failed to invoke backend log command:', e);
-    console.log(`[webview:${level.toUpperCase()}] ${message}`);
+interface LogEntry {
+  level: LogLevel;
+  message: string;
+  timestamp: number;
+}
+
+/**
+ * Manages a queue of log messages to be sent to the backend in batches.
+ * This prevents flooding the IPC bridge with individual log calls.
+ */
+class LogQueue {
+  private queue: LogEntry[] = [];
+  private readonly batchSize = 50;
+  private readonly flushInterval = 500; // ms
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Intentionally empty: rely on timer-based flushing instead of unreliable
+    // async work in beforeunload/window-close hooks (not reliably awaited in Tauri).
   }
+
+  /**
+   * Adds a log entry to the queue.
+   * If the queue size exceeds the batch size, it is flushed immediately.
+   * Otherwise, a timer is set to flush the queue after a delay.
+   */
+  enqueue(level: LogLevel, message: string): void {
+    this.queue.push({
+      level,
+      message,
+      timestamp: Date.now(),
+    });
+
+    if (this.queue.length >= this.batchSize) {
+      this.flush();
+    } else if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.flush();
+      }, this.flushInterval);
+    }
+  }
+
+  /**
+   * Flushes the current queue to the backend.
+   */
+  async flush(): Promise<void> {
+    if (this.queue.length === 0) return;
+
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+
+    const entries = [...this.queue];
+    this.queue = [];
+
+    try {
+      await invoke('log_batch', { entries });
+    } catch (e) {
+      console.error('[Logger] Failed to flush log batch:', e);
+      // Re-queue failed entries so they can be retried on the next flush.
+      // Cap at batchSize to prevent unbounded growth when the backend is down.
+      const requeued = [...entries, ...this.queue].slice(-this.batchSize);
+      this.queue = requeued;
+    }
+  }
+}
+
+const globalLogQueue = new LogQueue();
+
+// Helper function to send logs to Rust backend via LogQueue (fire-and-forget)
+function logToBackend(level: LogLevel, message: string): void {
+  globalLogQueue.enqueue(level, message);
 }
 
 // Export logging functions
@@ -176,7 +225,6 @@ export class Logger {
    */
   static updateConfig(config: Partial<LoggerConfig>): void {
     globalLoggerConfig = { ...globalLoggerConfig, ...config };
-    console.log('Logger config updated:', globalLoggerConfig);
   }
 
   /**
@@ -207,10 +255,7 @@ export class Logger {
 
     if (globalLoggerConfig.enableFileLogging) {
       await Logger.performStartupBackup();
-      console.log('📁 File logging enabled');
     }
-
-    console.log('🚀 Logger initialized with config:', globalLoggerConfig);
   }
 
   /**
@@ -226,8 +271,7 @@ export class Logger {
     }
 
     try {
-      const backupPath = await logFileManager.backupCurrentLog();
-      console.log(`📄 Log backup created at startup: ${backupPath}`);
+      await logFileManager.backupCurrentLog();
       Logger.hasBackedUpOnStartup = true;
     } catch (error) {
       // A failure to backup should not prevent the logger from initializing.
