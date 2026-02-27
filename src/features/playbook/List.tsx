@@ -4,6 +4,7 @@ import {
   useMemo,
   useCallback,
   useDeferredValue,
+  type MouseEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -127,7 +128,7 @@ export default function PlaybookList() {
     }
   };
 
-  const confirmDelete = async (e: React.MouseEvent) => {
+  const confirmDelete = async (e: MouseEvent) => {
     if (!playbookToDelete) return;
     e.preventDefault();
     setIsDeleting(true);
@@ -324,7 +325,7 @@ export default function PlaybookList() {
 
         <AlertDialog
           open={!!playbookToDelete}
-          onOpenChange={(open) => !open && setPlaybookToDelete(null)}
+          onOpenChange={(open) => !open && !isDeleting && setPlaybookToDelete(null)}
         >
           <AlertDialogContent>
             <AlertDialogHeader>
