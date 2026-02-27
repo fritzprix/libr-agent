@@ -80,7 +80,7 @@ describe('message-preprocessor', () => {
       expect(text).toContain('<attachment_0>');
       expect(text).toContain('"filename": "test.txt"');
       expect(text).toContain('readContent(sessionId: "session-1", contentId: "content-1"');
-      expect(text).toContain('keywordSimilaritySearch');
+      expect(text).toContain('searchContent');
     });
 
     it('should append attachment hints for Workspace files', async () => {

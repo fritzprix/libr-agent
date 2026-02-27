@@ -136,9 +136,9 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "keywordSimilaritySearch".to_string(),
-                title: Some("Keyword Similarity Search".to_string()),
-                description: "Search for content entries using keyword similarity (BM25 algorithm)".to_string(),
+                name: "searchContent".to_string(),
+                title: Some("Search Content".to_string()),
+                description: "Search session-scoped content using BM25 keyword ranking. Only finds content uploaded in the current session.".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -156,14 +156,6 @@ impl ContentStoreServer {
                 })).unwrap(),
                 output_schema: None,
                 annotations: None,
-            },
-            MCPTool {
-                name: "deleteContent".to_string(),
-                title: Option::None,
-                description: "Remove content from a store".to_string(),
-                input_schema: schemas::tool_delete_content_schema(),
-                output_schema: Option::None,
-                annotations: Option::None,
             },
         ]
     }

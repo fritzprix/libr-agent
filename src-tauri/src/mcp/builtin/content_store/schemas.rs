@@ -45,15 +45,6 @@ pub(crate) fn tool_read_content_schema() -> JSONSchema {
     object_schema(props, vec!["contentId".to_string()])
 }
 
-pub(crate) fn tool_delete_content_schema() -> JSONSchema {
-    let mut props: HashMap<String, JSONSchema> = HashMap::new();
-    props.insert(
-        "contentId".to_string(),
-        string_prop(None, None, Some("ID of the content to delete")),
-    );
-    object_schema(props, vec!["contentId".to_string()])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
