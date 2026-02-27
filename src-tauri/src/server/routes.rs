@@ -112,9 +112,17 @@ pub fn get_routes(
         .and(warp::path("mcp"))
         .and(warp::path::param::<String>())
         .and(warp::path::end())
-        .and(mcp_enabled_filter)
+        .and(mcp_enabled_filter.clone())
         .and(warp::body::json())
         .and_then(mcp_handler::mcp_rpc_gated);
+
+    // POST /mcp — sessionless endpoint: auto-selects the first active session
+    let mcp_auto_route = warp::post()
+        .and(warp::path("mcp"))
+        .and(warp::path::end())
+        .and(mcp_enabled_filter)
+        .and(warp::body::json())
+        .and_then(mcp_handler::mcp_rpc_auto);
 
     create_session
         .or(get_session)
@@ -126,6 +134,7 @@ pub fn get_routes(
         .or(list_assistants)
         .or(get_assistant)
         .or(health)
+        .or(mcp_auto_route)
         .or(mcp_route)
         .with(cors)
 }

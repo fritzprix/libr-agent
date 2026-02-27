@@ -1,7 +1,7 @@
 use crate::mcp::types::{MCPError, MCPResponse, MCPResponseResult, ServerCapabilities, ServerInfo};
 use crate::state::get_mcp_service_proxy_manager;
 use serde::Deserialize;
-use warp::{http::StatusCode, Rejection, Reply};
+use warp::{http::StatusCode, Rejection};
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
@@ -115,7 +115,7 @@ async fn handle_tools_call(
 pub async fn mcp_rpc(
     session_id: String,
     body: serde_json::Value,
-) -> Result<impl Reply, Rejection> {
+) -> Result<warp::reply::WithStatus<warp::reply::Json>, Rejection> {
     let req: JsonRpcRequest = match serde_json::from_value(body) {
         Ok(r) => r,
         Err(e) => {
@@ -146,9 +146,43 @@ pub async fn mcp_rpc_gated(
     session_id: String,
     enabled: bool,
     body: serde_json::Value,
-) -> Result<impl Reply, Rejection> {
+) -> Result<warp::reply::WithStatus<warp::reply::Json>, Rejection> {
     if !enabled {
         return Err(warp::reject::not_found());
     }
+    mcp_rpc(session_id, body).await
+}
+
+/// Sessionless handler for `POST /mcp` — auto-selects the first active session.
+///
+/// Useful for MCP clients (e.g. Copilot CLI) that register a static endpoint URL
+/// without knowing the session ID upfront.
+pub async fn mcp_rpc_auto(
+    enabled: bool,
+    body: serde_json::Value,
+) -> Result<warp::reply::WithStatus<warp::reply::Json>, Rejection> {
+    if !enabled {
+        return Err(warp::reject::not_found());
+    }
+
+    let proxy_manager = get_mcp_service_proxy_manager();
+    let sessions = proxy_manager.list_sessions().await;
+
+    let session_id = match sessions.into_iter().next() {
+        Some(id) => id,
+        None => {
+            let req_id = body.get("id").cloned();
+            let response = error_response(
+                req_id,
+                -32603,
+                "No active agent session found. Create a session first via POST /api/sessions or open an agent in the UI.".to_string(),
+            );
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&response),
+                StatusCode::OK,
+            ));
+        }
+    };
+
     mcp_rpc(session_id, body).await
 }
