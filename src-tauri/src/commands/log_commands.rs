@@ -5,7 +5,15 @@
 use crate::commands::workspace_commands::get_app_logs_dir;
 use chrono::Utc;
 use log::{debug, error as log_error, info, trace, warn};
+use serde::{Deserialize, Serialize};
 use std::fs;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub level: String,
+    pub message: String,
+    pub timestamp: i64,
+}
 
 /// Creates a timestamped backup of the current main log file.
 ///
@@ -106,4 +114,19 @@ pub fn log_warn(message: String) {
 #[tauri::command]
 pub fn log_error_from_frontend(message: String) {
     log_error!("[webview] {}", message);
+}
+
+/// Process a batch of log entries from the frontend
+#[tauri::command]
+pub fn log_batch(entries: Vec<LogEntry>) {
+    for entry in entries {
+        match entry.level.as_str() {
+            "trace" => trace!("[webview] {}", entry.message),
+            "debug" => debug!("[webview] {}", entry.message),
+            "info" => info!("[webview] {}", entry.message),
+            "warn" => warn!("[webview] {}", entry.message),
+            "error" => log_error!("[webview] {}", entry.message),
+            _ => info!("[webview] [UNKNOWN:{}] {}", entry.level, entry.message),
+        }
+    }
 }
