@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.20] - 2026-02-27
+
+### 🚀 Features
+
+- **Fluid UX improvements**: File attachment errors now use non-blocking sonner toasts instead of browser `alert()`. The Playbook search input is debounced with `useDeferredValue` for buttery-smooth filtering. The delete confirmation dialog shows a loading spinner and stays open until the async deletion completes. Chat input stays enabled while files upload so users can type and attach simultaneously.
+- **Builtin tools over HTTP**: The agent's built-in tool set (planning, workspace, knowledge, browser, etc.) is now accessible via the MCP HTTP endpoint. A new sessionless `POST /mcp` endpoint auto-selects an available session, making it easy to call builtin tools without managing session IDs.
+- **Block reserved builtin names in MCP UI**: The MCP server registration form now prevents naming an external server with a reserved `builtin_` prefix, avoiding silent routing conflicts.
+- **API key show/hide toggle**: API keys in the settings panel can now be revealed with a single click, with full ARIA support (`aria-pressed`) for accessibility.
+- **Playbook i18n**: All user-facing strings in the Playbook feature are now fully localized with English and Korean translations.
+- **Windows path handling**: Glob search and persistent shell execution on Windows now correctly normalize backslash paths, fixing broken file operations in Windows environments.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Symlink traversal in SecurityValidator patched**: The base directory is now canonicalized in the `SecurityValidator` constructor, preventing symlink-based path traversal attacks that could escape the workspace sandbox.
+- **Tool names display correctly**: Built-in tool names are now shown as `group / tool` throughout the UI (AgentToolsModal, tool call displays, etc.) instead of the internal `builtin_group__tool` format.
+- **`structured_content` stripped from external MCP responses**: Non-standard LibrAgent internal fields are no longer forwarded to external MCP clients, preventing unexpected data exposure.
+- **`spawnProcess` / `spawnAgent` tool responses improved**: Response text now includes process IDs, status, and follow-up hints in the text content so agents can reliably extract IDs for follow-up tool calls.
+- **External tool routing fallback**: Tool calls with a `builtin_` prefix that target external servers are now correctly routed with a clarifying error hint instead of silently failing.
+
+### 🔧 Internal
+
+- **MCP process environment isolation**: External MCP server subprocesses now start with a clean environment (only an explicit allowlist of variables is inherited), preventing accidental leakage of host secrets to third-party MCP servers.
+- **`content_store` renamed to `attachments`**: The builtin content store service and its database entities have been renamed to `attachments` across both Rust backend and frontend, with PDF attachment indexing added.
+- **Builtin naming convention centralized**: The `builtin_` prefix handling and tool name parsing are consolidated into a single utility, eliminating scattered string manipulation across the codebase.
+- **Deprecated `switch_session` and `AgentMessageDto` removed**: Cleaned up long-standing deprecated backend command and DTO.
+- **Agent features modernized**: `AgentModelPicker` and related components refactored to use hooks and modern React patterns; legacy dropdown anti-pattern removed.
+
 ## [0.5.19] - 2026-02-25
 
 ### 🚀 Features
