@@ -22,14 +22,29 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
-    // Unix: Inherit environment variables (do not clear)
+    // Apply environment isolation: prevent leaking host secrets
+    cmd.env_clear();
+
+    // Whitelist essential variables from parent environment
+    // Note: HOME is deliberately excluded here as it's overridden below for isolation
+    let preserved_vars = [
+        "PATH", "TERM", "USER", "LOGNAME", "SHELL", "DISPLAY", "XAUTHORITY",
+    ];
+
+    for key in &preserved_vars {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+
+    // Set isolated environment variables
+    // Override HOME to workspace path for isolation
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
     // Force English output for consistent AI reasoning
     cmd.env("LC_ALL", "en_US.UTF-8");
     cmd.env("LANG", "en_US.UTF-8");
-    // PATH is inherited from parent process (agent)
 
     // Add user-specified environment variables (applies to all platforms)
     for (key, value) in &config.env_vars {
