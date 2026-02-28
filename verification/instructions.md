@@ -5,21 +5,23 @@ This script verifies the new "Clear Search" button functionality in the Session 
 ## Steps to Verify
 
 1.  **Start the Dev Server**: Ensure the application is running locally.
+
     ```bash
     pnpm dev &
     ```
+
     Wait for the server to start (usually on http://localhost:1420).
 
 2.  **Run the Playwright Script**:
     The script will:
-    -   Navigate to the main page.
-    -   Locate the Session History search input.
-    -   Type a search query (e.g., "test").
-    -   Verify the "Clear search" button (X icon) appears.
-    -   Take a screenshot of the search input with the clear button.
-    -   Click the "Clear search" button.
-    -   Verify the input is cleared and the button disappears.
-    -   Take a screenshot of the cleared state.
+    - Navigate to the main page.
+    - Locate the Session History search input.
+    - Type a search query (e.g., "test").
+    - Verify the "Clear search" button (X icon) appears.
+    - Take a screenshot of the search input with the clear button.
+    - Click the "Clear search" button.
+    - Verify the input is cleared and the button disappears.
+    - Take a screenshot of the cleared state.
 
 ## Playwright Script (`verification/verify_search_clear.py`)
 
