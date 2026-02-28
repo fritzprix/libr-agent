@@ -36,4 +36,4 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `agent_commands.rs` contained significant business logic for deleting all sessions and performing a factory reset, violating the Separation of Concerns principle.
 - **Action:**
   - Extracted `AgentService` (`src-tauri/src/services/agent_service.rs`) to encapsulate the domain logic for `clear_all_sessions` and `factory_reset`.
-- **Result:** Command handlers in `agent_commands.rs` are now thin wrappers delegating to `AgentService`. The core logic is decoupled from Tauri `State` and is easier to test.
+- **Result:** Command handlers in `agent_commands.rs` are now thin wrappers delegating to `AgentService`. The handlers are decoupled from Tauri `State`; the service still relies on global repository singletons, so full unit-test isolation requires a future dependency-injection refactor.

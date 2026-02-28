@@ -1,5 +1,5 @@
 use crate::agent::AgentSessionManager;
-use crate::commands::workspace_commands::get_app_logs_dir;
+use crate::session::get_session_manager;
 use std::fs;
 
 pub struct AgentService;
@@ -59,8 +59,8 @@ impl AgentService {
     /// Deletes all sessions, assistants, playbooks, mcp servers, and logs.
     pub async fn factory_reset(manager: &AgentSessionManager) -> Result<(), String> {
         use crate::repositories::mcp_server_repository::MCPServerRepository;
-        use crate::repositories::PlaybookRepository;
         use crate::repositories::AssistantRepository;
+        use crate::repositories::PlaybookRepository;
         use crate::state::get_mcp_server_repository;
 
         // 1. Clear all sessions first
@@ -123,8 +123,8 @@ impl AgentService {
 
         // 6. Clear application logs
         // We do this last to preserve logging of the reset process as much as possible
-        if let Ok(log_dir_str) = get_app_logs_dir().await {
-            let log_dir = std::path::PathBuf::from(log_dir_str);
+        if let Ok(session_mgr) = get_session_manager() {
+            let log_dir = session_mgr.get_logs_dir();
             if log_dir.exists() {
                 if let Ok(entries) = fs::read_dir(&log_dir) {
                     for entry in entries.flatten() {

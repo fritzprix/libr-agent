@@ -1,3 +1,4 @@
+pub mod agent_service;
 pub mod assistant_init;
 pub mod browser_error;
 pub mod dropped_file_service;
@@ -8,7 +9,6 @@ pub mod secure_file_manager;
 pub mod session_cleanup_service;
 pub mod session_directory_service;
 pub mod skill_service;
-pub mod agent_service;
 pub mod workspace_service;
 
 pub use agent_service::AgentService;
