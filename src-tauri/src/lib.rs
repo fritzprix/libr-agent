@@ -14,7 +14,7 @@ mod search;
 pub mod server;
 pub mod services;
 pub mod session;
-mod session_isolation;
+pub mod session_isolation;
 mod state;
 pub mod utils;
 
