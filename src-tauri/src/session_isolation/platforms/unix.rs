@@ -22,18 +22,36 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
-    // Apply environment isolation: prevent leaking host secrets
+    // Apply environment isolation: clear all inherited environment variables so that
+    // host-level secrets (e.g., API keys, tokens, credentials) are not exposed inside
+    // the isolated shell process. We then explicitly re-add only a small, trusted
+    // whitelist of system variables required for basic shell and terminal behavior.
     cmd.env_clear();
 
     // Whitelist essential variables from parent environment
     // Note: HOME is deliberately excluded here as it's overridden below for isolation
     let preserved_vars = [
-        "PATH", "TERM", "USER", "LOGNAME", "SHELL", "DISPLAY", "XAUTHORITY",
+        "PATH",
+        "TERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "DISPLAY",
+        "XAUTHORITY",
     ];
 
     for key in &preserved_vars {
         if let Ok(val) = std::env::var(key) {
             cmd.env(key, val);
+        }
+    }
+
+    // Preserve locale and XDG base directory variables for consistency with MCP stdio isolation.
+    // This includes all LC_* variables (beyond LC_ALL/LANG) and XDG_* variables.
+    // LC_ALL and LANG are still explicitly overridden below to enforce consistent English output.
+    for (key, value) in std::env::vars() {
+        if key.starts_with("LC_") || key.starts_with("XDG_") {
+            cmd.env(&key, value);
         }
     }
 
