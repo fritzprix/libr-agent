@@ -4,6 +4,20 @@ import type { AgentSession } from '@/models/agent';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, defaultString: string, options?: Record<string, unknown>) => {
+      if (key === 'sessionHistory.actions.deleteAria') {
+        return `Delete session ${options?.name || ''}`;
+      }
+      if (key === 'sessionHistory.actions.deleteTooltip') {
+        return 'Delete session';
+      }
+      return defaultString || key;
+    },
+  }),
+}));
+
 // Mock ResizeObserver for Radix UI
 global.ResizeObserver = class ResizeObserver {
   observe() {}
