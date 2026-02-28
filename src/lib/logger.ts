@@ -103,7 +103,7 @@ class LogQueue {
     this.queue = [];
 
     try {
-      await invoke('log_batch', { entries });
+      await invoke<void>('log_batch', { entries });
     } catch (e) {
       console.error('[Logger] Failed to flush log batch:', e);
       // Re-queue failed entries so they can be retried on the next flush.
@@ -197,7 +197,7 @@ class TauriLogFileManager implements LogFileManager {
   }
 
   async clearCurrentLog(): Promise<void> {
-    await invoke('clear_current_log');
+    await invoke<void>('clear_current_log');
   }
 
   async listLogFiles(): Promise<string[]> {

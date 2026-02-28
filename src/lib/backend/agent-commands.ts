@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { AgentResponse } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
@@ -12,7 +13,7 @@ export async function handleLLMResponse(
   sessionId: string,
   assistantMessage: RustMessage,
 ): Promise<void> {
-  await invoke('agent_handle_llm_response', {
+  await invoke<AgentResponse>('agent_handle_llm_response', {
     sessionId,
     assistantMessage,
   });
@@ -70,7 +71,7 @@ export async function handleUserToolCall(
 export async function getAgentAvailableTools(
   sessionId: string,
 ): Promise<MCPTool[]> {
-  return invoke('agent_get_available_tools', { sessionId });
+  return invoke<MCPTool[]>('agent_get_available_tools', { sessionId });
 }
 
 /**
@@ -87,7 +88,7 @@ export async function agentCallBuiltinTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<MCPResult<T>> {
-  return invoke('agent_call_builtin_tool', {
+  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
     sessionId,
     toolName,
     args,
