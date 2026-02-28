@@ -23,3 +23,5 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-02-25 - src/lib/mcp/utils/type-guards.ts, src/lib/mcp/utils/service-info.ts, src/lib/mcp/protocol/content.ts **Coverage Expanded:** MCP Type Guards & Utilities **Assertions:** Verified isMCPSuccess, isMCPError, isValidMCPResult, extractStructuredContent, hasServiceInfo, and isMCPErrorContent. **Bug Fixed:** `hasServiceInfo` now correctly returns boolean false instead of null for null inputs.
 
 ## 2026-02-25 - src/lib/ai-service/sanitizer.ts, src/lib/ai-service/utils.ts **Coverage Expanded:** AI Service Utilities & Sanitizer **Assertions:** Verified message sanitization (tool_calls, thinking), token calculation, usage formatting, and multimodal content processing.
+
+## 2026-02-28 - src/features/agent/lib/chat-utils.ts **Coverage Expanded:** computeDisplayContent **Assertions:** Verified content array parsing, grouped tools restructuring, and original fallback filtering.
