@@ -1,165 +1,92 @@
-------
-
-name: extract-log-debugname: extract-log-debug
-
-description: Extract and analyze LibrAgent debug logs with pattern matching and context. Use when debugging LibrAgent issues, analyzing agent workflows, investigating tool execution problems, or extracting specific log patterns like errors, warnings, planning operations, MCP tool calls, or browser automation traces. Supports extracting last N lines or searching for patterns with surrounding context.description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
-
+---
+name: extract-log-debug
+description: Extract and analyze LibrAgent debug logs with pattern matching and context. Use when debugging LibrAgent issues, analyzing agent workflows, investigating tool execution problems, or extracting specific log patterns like errors, warnings, planning operations, MCP tool calls, or browser automation traces. Supports extracting last N lines or searching for patterns with surrounding context.
 ---
 
----
+# Extract Log Debug
 
-# Extract Log Debug# Extract Log Debug
+Extract and analyze LibrAgent debug logs for troubleshooting and analysis.
 
-Extract and analyze LibrAgent debug logs for troubleshooting and analysis.## Overview
+## Quick Start
 
-## Quick Start[TODO: 1-2 sentences explaining what this skill enables]
+Extract logs using the Python script:
 
-Extract logs using the Python script:## Structuring This Skill
-
-````bash[TODO: Choose the structure that best fits this skill's purpose. Common patterns:
-
+```bash
 # Extract last 100 lines
+python scripts/extract_logs.py -n 100
 
-python scripts/extract_logs.py -n 100**1. Workflow-Based** (best for sequential processes)
+# Extract all errors with 5 lines of context
+python scripts/extract_logs.py --pattern "[ERROR]" --context 5
 
-- Works well when there are clear step-by-step procedures
+# Extract planning logs
+python scripts/extract_logs.py --pattern "PLANNING" -n 5000
 
-# Extract all errors with 5 lines of context- Example: DOCX skill with "Workflow Decision Tree" �� "Reading" �� "Creating" �� "Editing"
-
-python scripts/extract_logs.py --pattern "[ERROR]" --context 5- Structure: ## Overview �� ## Workflow Decision Tree �� ## Step 1 �� ## Step 2...
-
-
-
-# Extract planning logs**2. Task-Based** (best for tool collections)
-
-python scripts/extract_logs.py --pattern "PLANNING" -n 5000- Works well when the skill offers different operations/capabilities
-
-- Example: PDF skill with "Quick Start" �� "Merge PDFs" �� "Split PDFs" �� "Extract Text"
-
-# Save to custom file- Structure: ## Overview �� ## Quick Start �� ## Task Category 1 �� ## Task Category 2...
-
+# Save to custom file
 python scripts/extract_logs.py --pattern "[WARN]" -o warnings.txt
+```
 
-```**3. Reference/Guidelines** (best for standards or specifications)
-
-- Works well for brand guidelines, coding standards, or requirements
-
-## Log File Location- Example: Brand styling with "Brand Guidelines" �� "Colors" �� "Typography" �� "Features"
-
-- Structure: ## Overview �� ## Guidelines �� ## Specifications �� ## Usage...
+## Log File Location
 
 LibrAgent stores logs in platform-specific directories:
 
-**4. Capabilities-Based** (best for integrated systems)
+- **Windows**: `%LOCALAPPDATA%\com.fritzprix.libragent\logs\libragent.log`
+- **macOS**: `~/Library/Logs/com.fritzprix.libragent/libragent.log`
+- **Linux**: `~/.local/share/com.fritzprix.libragent/logs/libragent.log`
 
-- **Windows**: `%LOCALAPPDATA%\com.fritzprix.libragent\logs\libragent.log`- Works well when the skill provides multiple interrelated features
+The script automatically detects and uses the correct path.
 
-- **macOS**: `~/Library/Logs/com.fritzprix.libragent/libragent.log`- Example: Product Management with "Core Capabilities" �� numbered capability list
+## Common Patterns
 
-- **Linux**: `~/.local/share/com.fritzprix.libragent/logs/libragent.log`- Structure: ## Overview �� ## Core Capabilities �� ### 1. Feature �� ### 2. Feature...
-
-
-
-The script automatically detects and uses the correct path.Patterns can be mixed and matched as needed. Most skills combine patterns (e.g., start with task-based, add workflow for complex operations).
-
-
-
-## Common PatternsDelete this entire "Structuring This Skill" section when done - it's just guidance.]
-
-
-
-### Error Extraction## [TODO: Replace with the first main section based on chosen structure]
+### Error Extraction
 
 ```bash
+python scripts/extract_logs.py --pattern "[ERROR]" --context 10
+```
 
-python scripts/extract_logs.py --pattern "[ERROR]" --context 10[TODO: Add content here. See examples in existing skills:
+### Component-Specific Logs
 
-```- Code samples for technical skills
-
-- Decision trees for complex workflows
-
-### Component-Specific Logs- Concrete examples with realistic user requests
-
-```bash- References to scripts/templates/references as needed]
-
+```bash
 # Agent workflow logs
+python scripts/extract_logs.py --pattern "agent_" -n 5000
 
-python scripts/extract_logs.py --pattern "agent_" -n 5000## Resources
-
-
-
-# MCP tool executionThis skill includes example resource directories that demonstrate how to organize different types of bundled resources:
-
+# MCP tool execution
 python scripts/extract_logs.py --pattern "MCPServiceProxy" --context 10
 
-### scripts/
-
-# Planning operationsExecutable code (Python/Bash/etc.) that can be run directly to perform specific operations.
-
+# Planning operations
 python scripts/extract_logs.py --pattern "PLANNING" --context 5
 
-**Examples from other skills:**
-
-# Browser automation- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-
-python scripts/extract_logs.py --pattern "BrowserServer" --context 10- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
-
-````
-
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
+# Browser automation
+python scripts/extract_logs.py --pattern "BrowserServer" --context 10
+```
 
 ### Recent Activity
 
-````bash**Note:** Scripts may be executed without loading into context, but can still be read by Claude for patching or environment adjustments.
-
+```bash
 # Last 500 lines for quick check
-
-python scripts/extract_logs.py -n 500### references/
-
-Documentation and reference material intended to be loaded into context to inform Claude's process and thinking.
+python scripts/extract_logs.py -n 500
 
 # Last 5000 lines for detailed analysis
+python scripts/extract_logs.py -n 5000
+```
 
-python scripts/extract_logs.py -n 5000**Examples from other skills:**
+## Pattern Reference
 
-```- Product management: `communication.md`, `context_building.md` - detailed workflow guides
+For comprehensive list of log patterns and search strategies, see [log_patterns.md](references/log_patterns.md).
 
-- BigQuery: API reference documentation and query examples
+Key pattern categories:
 
-## Pattern Reference- Finance: Schema documentation, company policies
-
-
-
-For comprehensive list of log patterns and search strategies, see [log_patterns.md](references/log_patterns.md).**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information that Claude should reference while working.
-
-
-
-Key pattern categories:### assets/
-
-- Error patterns (`[ERROR]`, `Failed to`, `panic`)Files not intended to be loaded into context, but rather used within the output Claude produces.
-
+- Error patterns (`[ERROR]`, `Failed to`, `panic`)
 - Component logs (`agent_`, `MCPServiceProxy`, `BrowserServer`)
-
-- Workflow phases (`Think phase`, `Act phase`, `Observe phase`)**Examples from other skills:**
-
-- Tool operations (`call_tool`, `list_tools`)- Brand styling: PowerPoint template files (.pptx), logo files
-
-- Performance indicators (`Duration:`, `elapsed`)- Frontend builder: HTML/React boilerplate project directories
-
-- Typography: Font files (.ttf, .woff2)
+- Workflow phases (`Think phase`, `Act phase`, `Observe phase`)
+- Tool operations (`call_tool`, `list_tools`)
+- Performance indicators (`Duration:`, `elapsed`)
 
 ## Debugging Workflows
 
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
-
 ### 1. Investigate Error
 
----
-
 ```bash
-
-# Extract errors**Any unneeded directories can be deleted.** Not every skill requires all three types of resources.
-
+# Extract errors
 python scripts/extract_logs.py --pattern "[ERROR]" --context 10 -o errors.txt
 
 # Review errors.txt for:
@@ -167,7 +94,7 @@ python scripts/extract_logs.py --pattern "[ERROR]" --context 10 -o errors.txt
 # - Preceding operations (context lines above)
 # - Affected component (agent, MCP, builtin server)
 # - Session ID for tracking
-````
+```
 
 ### 2. Analyze Agent Workflow
 

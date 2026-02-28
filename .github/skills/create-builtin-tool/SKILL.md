@@ -1,3 +1,8 @@
+---
+name: create-builtin-tool
+description: Guide for creating builtin MCP tools in LibrAgent. Use when creating a new builtin MCP server, adding tools to existing builtin servers, refactoring tool implementations to follow best practices, or auditing tool compliance with the Tool Design Manifesto v2.1.
+---
+
 # Create Builtin MCP Tool Skill
 
 ## When to Use This Skill

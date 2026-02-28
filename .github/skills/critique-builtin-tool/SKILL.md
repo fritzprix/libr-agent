@@ -1,3 +1,8 @@
+---
+name: critique-builtin-tool
+description: Audit and critique builtin MCP tool implementations in LibrAgent. Use when auditing existing builtin MCP server implementations for compliance, reviewing pull requests that add or modify builtin tools, validating tool implementations against the Tool Design Manifesto v2.1, or identifying potential issues before they reach production.
+---
+
 # Critique Builtin MCP Tool Skill
 
 ## When to Use This Skill
