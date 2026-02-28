@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 mod cleanup;
 mod execution;
 mod lifecycle;
+#[cfg(test)]
 mod tests;
 
 /// Manages session-specific MCP server processes with lazy spawning and idle cleanup.

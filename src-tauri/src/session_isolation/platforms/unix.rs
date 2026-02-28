@@ -22,14 +22,47 @@ pub async fn create_basic_isolated_command(
     // Set working directory
     cmd.current_dir(&config.workspace_path);
 
-    // Unix: Inherit environment variables (do not clear)
+    // Apply environment isolation: clear all inherited environment variables so that
+    // host-level secrets (e.g., API keys, tokens, credentials) are not exposed inside
+    // the isolated shell process. We then explicitly re-add only a small, trusted
+    // whitelist of system variables required for basic shell and terminal behavior.
+    cmd.env_clear();
+
+    // Whitelist essential variables from parent environment
+    // Note: HOME is deliberately excluded here as it's overridden below for isolation
+    let preserved_vars = [
+        "PATH",
+        "TERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "DISPLAY",
+        "XAUTHORITY",
+    ];
+
+    for key in &preserved_vars {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+
+    // Preserve locale and XDG base directory variables for consistency with MCP stdio isolation.
+    // This includes all LC_* variables (beyond LC_ALL/LANG) and XDG_* variables.
+    // LC_ALL and LANG are still explicitly overridden below to enforce consistent English output.
+    for (key, value) in std::env::vars() {
+        if key.starts_with("LC_") || key.starts_with("XDG_") {
+            cmd.env(&key, value);
+        }
+    }
+
+    // Set isolated environment variables
+    // Override HOME to workspace path for isolation
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
     // Force English output for consistent AI reasoning
     cmd.env("LC_ALL", "en_US.UTF-8");
     cmd.env("LANG", "en_US.UTF-8");
-    // PATH is inherited from parent process (agent)
 
     // Add user-specified environment variables (applies to all platforms)
     for (key, value) in &config.env_vars {

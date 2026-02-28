@@ -13,6 +13,12 @@ pub struct SessionIsolationManager {
     isolation_config: IsolationConfig,
 }
 
+impl Default for SessionIsolationManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionIsolationManager {
     pub fn new() -> Self {
         Self {
