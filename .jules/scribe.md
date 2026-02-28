@@ -104,3 +104,13 @@
 
 **Drift:** `getLangchainModelId` missing mappings for Ollama, Cerebras, Fireworks. Rust types `AgentMessageDto` and command `switch_session` were deprecated but not marked as such in code.
 **Reality:** Added missing provider mappings. Added `#[deprecated]` attributes to Rust code and updated comments.
+
+## 2026-02-28 - src-tauri/src/mcp/builtin/error_guidance.rs
+
+**Drift:** Referenced `docs/guides/builtin-tool-best-practices.md` which does not exist.
+**Reality:** The file is named `docs/guides/builtin_tool_bp.md`.
+
+## 2026-02-28 - src-tauri/src/mcp/builtin/planning/tools.rs
+
+**Drift:** Referenced `file://workspace/docs/readme.md` in a tool description example which is not a standard file path.
+**Reality:** Updated the example to use `file://workspace/README.md`.
