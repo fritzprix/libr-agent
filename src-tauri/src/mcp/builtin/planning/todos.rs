@@ -35,6 +35,19 @@ pub async fn add_todo(
         ));
     }
 
+    // 2b. Enforce description length limit to prevent context pollution
+    const MAX_DESCRIPTION_CHARS: usize = 500;
+    if description.chars().count() > MAX_DESCRIPTION_CHARS {
+        return Ok(invalid_input_error(
+            &format!(
+                "Todo description too long ({} chars). Maximum is {} characters.",
+                description.chars().count(),
+                MAX_DESCRIPTION_CHARS
+            ),
+            ToolGroup::Planning,
+        ));
+    }
+
     // 3. Generate title from description (truncate to 50 chars)
     let title = if description.chars().count() > 50 {
         let truncated: String = description.chars().take(50).collect();

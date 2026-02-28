@@ -50,6 +50,14 @@ impl SqliteMCPServerRepository {
 #[async_trait]
 impl MCPServerRepository for SqliteMCPServerRepository {
     async fn create(&self, name: &str, config: Value) -> Result<mcp_server::Model, DbError> {
+        // Reject empty or whitespace-only server names
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(DbError::InvalidInput(
+                "MCP server name cannot be empty or whitespace-only".to_string(),
+            ));
+        }
+
         let now = chrono::Utc::now().timestamp_millis();
         let id = cuid2::create_id(); // Auto-generate immutable ID
 

@@ -100,6 +100,23 @@ impl SecurityValidator {
             )));
         }
 
+        // Individual path component length limit.
+        // Windows MAX_PATH is 260 chars for the full path; even with long-path
+        // extensions enabled, single components > 255 chars are always invalid.
+        // Reject them early to avoid triggering OS error 123 deep in the stack.
+        const MAX_COMPONENT_LEN: usize = 255;
+        for component in Path::new(&traversal_check_path).components() {
+            if let Component::Normal(name) = component {
+                if name.len() > MAX_COMPONENT_LEN {
+                    return Err(SecurityError::InvalidPath(format!(
+                        "Path component '{}...' exceeds maximum length of {} characters",
+                        &name.to_string_lossy()[..50],
+                        MAX_COMPONENT_LEN
+                    )));
+                }
+            }
+        }
+
         // base_dir 기준 상대경로로만 처리
         let absolute_path = self.base_dir.join(clean_path);
 
