@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -81,19 +81,22 @@ export function SessionHistoryPanel({
     });
   }, [baseSessions, searchQuery, activeTab]);
 
-  useEffect(() => {
-    if (!selectedLineageId) {
-      return;
-    }
+  // Eradicating Action-Effect Chain / Derived State
+  // Checking existence of selected lineage directly during render.
+  // Only update prevSessions (and check lineage) when a selection is active — avoids
+  // an extra re-render on every sessions identity change when nothing is selected.
+  const [prevSessions, setPrevSessions] = useState(sessions);
 
+  if (sessions !== prevSessions && selectedLineageId) {
+    setPrevSessions(sessions);
     const stillExists = sessions.some(
       (session) => session.lineageId === selectedLineageId,
     );
-
     if (!stillExists) {
+      // Schedule a re-render with the cleared lineage ID
       setSelectedLineageId(null);
     }
-  }, [sessions, selectedLineageId]);
+  }
 
   // SP7: Precompute descendant counts for all sessions so SessionCard can warn
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list

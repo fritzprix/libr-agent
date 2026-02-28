@@ -64,6 +64,9 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Use refs for transition-sentinel values — they don't affect rendered output,
+  // so refs avoid the extra re-render that useState would cause.
   const previousHasError = useRef(false);
   const previousHasResource = useRef(false);
 
@@ -90,22 +93,22 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand only in developer mode when transitioning to error/resource state.
-  useEffect(() => {
-    if (isSimpleMode) return;
-
+  // Adjusting State During Render: auto-expand in developer mode on error/resource transition.
+  // Refs are read here (not written) to detect transitions; they are updated after render via useEffect.
+  if (!isSimpleMode) {
     const errorBecameVisible = !previousHasError.current && hasError;
     const resourceBecameVisible = !previousHasResource.current && hasResource;
 
-    if (errorBecameVisible) {
-      setIsExpanded(true);
-    } else if (resourceBecameVisible && isLast) {
+    if ((errorBecameVisible || (resourceBecameVisible && isLast)) && !isExpanded) {
       setIsExpanded(true);
     }
+  }
 
+  // Update sentinel refs after each render so the next render can detect transitions.
+  useEffect(() => {
     previousHasError.current = hasError;
     previousHasResource.current = hasResource;
-  }, [hasError, hasResource, isLast, isSimpleMode]);
+  }, [hasError, hasResource]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -44,18 +44,19 @@ export function AgentChatStatusBar() {
 
   // Persist last metrics to show after streaming ends
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
+  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(session?.id);
 
-  // Reset last metrics when session changes
-  useEffect(() => {
+  // Eradicated Syncing State: Adjusting State During Render Pattern
+  // Reset last metrics when session changes without using useEffect
+  if (session?.id !== prevSessionId) {
+    setPrevSessionId(session?.id);
     setLastMetrics(null);
-  }, [session?.id]);
+  }
 
   // Update last metrics when active metrics are available
-  useEffect(() => {
-    if (metrics) {
-      setLastMetrics(metrics);
-    }
-  }, [metrics]);
+  if (metrics && metrics !== lastMetrics) {
+    setLastMetrics(metrics);
+  }
 
   const displayMetrics = metrics || lastMetrics;
 
