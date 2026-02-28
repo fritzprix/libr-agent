@@ -14,7 +14,7 @@ export function hasServiceInfo(
   content: MCPContent,
 ): content is MCPContent & { serviceInfo: ServiceInfo } {
   return (
-    content &&
+    !!content &&
     typeof content === 'object' &&
     'serviceInfo' in content &&
     content.serviceInfo !== undefined

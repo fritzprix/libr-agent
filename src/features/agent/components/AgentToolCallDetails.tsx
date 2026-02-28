@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { ToolCall, Message } from '@/models/chat';
 import { AgentMessageRenderer } from './AgentMessageRenderer';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { parseToolArguments } from '@/lib/tool-call-utils';
+import { useTranslation } from 'react-i18next';
 
 interface AgentToolCallDetailsProps {
   toolCall: ToolCall;
@@ -27,9 +28,14 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   isLoading = false,
   showDetails = true,
 }) => {
+  const { t } = useTranslation('common');
+  const params = useMemo(
+    () => parseToolArguments(toolCall.function.arguments),
+    [toolCall.function.arguments],
+  );
+
   if (!showDetails) return null;
 
-  const params = parseToolArguments(toolCall.function.arguments);
   const hasParams = Object.keys(params).length > 0;
 
   return (
@@ -38,7 +44,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
       {hasParams && (
         <div>
           <div className="text-xs font-medium text-muted-foreground mb-2">
-            Parameters
+            {t('agent.toolDetails.parameters', 'Parameters')}
           </div>
           <div className="bg-muted/50 rounded p-2 w-full max-w-full min-w-0 max-h-96 overflow-y-auto">
             <pre className="text-xs font-mono w-full whitespace-pre-wrap break-all">
@@ -52,7 +58,9 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
       {toolResult && (
         <div>
           <div className="text-xs font-medium text-muted-foreground mb-2">
-            {hasError ? 'Error Details' : 'Result'}
+            {hasError
+              ? t('agent.toolDetails.errorDetails', 'Error Details')
+              : t('agent.toolDetails.result', 'Result')}
           </div>
           {hasError ? (
             <div className="bg-destructive/10 border border-destructive/20 rounded p-3">
@@ -82,7 +90,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
       {isLoading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Executing tool...</span>
+          <span>{t('agent.toolDetails.executing', 'Executing tool...')}</span>
         </div>
       )}
     </div>

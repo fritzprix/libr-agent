@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { RefreshCw, Search, History } from 'lucide-react';
+import { RefreshCw, Search, History, X } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { filterSessions } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
@@ -81,19 +81,22 @@ export function SessionHistoryPanel({
     });
   }, [baseSessions, searchQuery, activeTab]);
 
-  useEffect(() => {
-    if (!selectedLineageId) {
-      return;
-    }
+  // Eradicating Action-Effect Chain / Derived State
+  // Checking existence of selected lineage directly during render.
+  // Only update prevSessions (and check lineage) when a selection is active — avoids
+  // an extra re-render on every sessions identity change when nothing is selected.
+  const [prevSessions, setPrevSessions] = useState(sessions);
 
+  if (sessions !== prevSessions && selectedLineageId) {
+    setPrevSessions(sessions);
     const stillExists = sessions.some(
       (session) => session.lineageId === selectedLineageId,
     );
-
     if (!stillExists) {
+      // Schedule a re-render with the cleared lineage ID
       setSelectedLineageId(null);
     }
-  }, [sessions, selectedLineageId]);
+  }
 
   // SP7: Precompute descendant counts for all sessions so SessionCard can warn
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list
@@ -282,15 +285,25 @@ export function SessionHistoryPanel({
         </Tabs>
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="text"
             placeholder={searchPlaceholder}
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
-            className="pl-10"
+            className="pl-10 pr-10"
             aria-label="Search sessions"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchQueryChange('')}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
