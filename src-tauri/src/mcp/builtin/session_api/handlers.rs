@@ -626,6 +626,17 @@ pub async fn handle_tool_call(
         }
         "terminateAgent" => {
             let session_id = read_required_string(&args, "sessionId")?;
+
+            // Prevent an agent from terminating itself — self-termination mid-execution
+            // leaves the session in a torn state (tool call never returns, loop hangs).
+            if caller_session_id.as_deref() == Some(session_id.as_str()) {
+                return Err(
+                    "Self-termination is not allowed. An agent cannot terminate its own session. \
+                     Use the planning tool to mark the task complete instead."
+                        .to_string(),
+                );
+            }
+
             let data = call_json(
                 Method::POST,
                 &format!("/api/sessions/{}/terminate", session_id),
