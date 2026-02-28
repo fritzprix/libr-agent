@@ -203,7 +203,7 @@ NOTE: The scratchpad has a strict limit of 10 items. If you reach this limit, yo
                     string_prop(
                         None,
                         None,
-                        Some(r#"Optional source of the information for citation tracking. Examples: "https://example.com/article", "file://workspace/docs/readme.md", "tool_result_id:abc123""#),
+                        Some(r#"Optional source of the information for citation tracking. Examples: "https://example.com/article", "file://workspace/README.md", "tool_result_id:abc123""#),
                     ),
                 ),
                 (

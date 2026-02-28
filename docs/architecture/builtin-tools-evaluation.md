@@ -1,7 +1,7 @@
 # Built-in Tools Implementation Evaluation
 
 **Evaluation Date:** December 31, 2025 (Re-evaluation)
-**Evaluated Against:** [Built-in Tool Best Practices](../guides/builtin-tool-best-practices.md)
+**Evaluated Against:** [Built-in Tool Best Practices](../guides/builtin_tool_bp.md)
 **Scope:** All Rust built-in MCP servers in `src-tauri/src/mcp/builtin/`
 
 ---

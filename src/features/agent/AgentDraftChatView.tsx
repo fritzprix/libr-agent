@@ -30,6 +30,8 @@ import {
   X,
 } from 'lucide-react';
 import type { Assistant, Message } from '@/models/chat';
+import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
+import type { AssistantDto } from '@/lib/backend/assistants';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
@@ -125,6 +127,7 @@ function DraftChatInner() {
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
+  const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const rustBackend = useRustBackend();
@@ -172,34 +175,39 @@ function DraftChatInner() {
     const processDroppedPaths = (paths: string[]) => {
       // Fire-and-forget: errors handled internally
       const run = async () => {
-        // Must register paths with Tauri security layer before reading
+        setIsAttachmentLoading(true);
         try {
-          await rustBackend.registerDroppedFiles(paths);
-        } catch (err) {
-          logger.error('Failed to register dropped files', err);
-          toast.error('Failed to register dropped files');
-          return;
-        }
-        const files: File[] = [];
-        for (const filePath of paths) {
+          // Must register paths with Tauri security layer before reading
           try {
-            const fileData = await rustBackend.readDroppedFile(filePath);
-            const filename =
-              filePath.split('/').pop() ??
-              filePath.split('\\').pop() ??
-              'unknown';
-            const mimeType = getMimeType(filename);
-            files.push(
-              new File([new Uint8Array(fileData)], filename, {
-                type: mimeType,
-              }),
-            );
+            await rustBackend.registerDroppedFiles(paths);
           } catch (err) {
-            logger.error('Failed to read dropped file', { filePath, err });
-            toast.error(`Failed to read: ${filePath.split(/[\\/]/).pop()}`);
+            logger.error('Failed to register dropped files', err);
+            toast.error('Failed to register dropped files');
+            return;
           }
+          const files: File[] = [];
+          for (const filePath of paths) {
+            try {
+              const fileData = await rustBackend.readDroppedFile(filePath);
+              const filename =
+                filePath.split('/').pop() ??
+                filePath.split('\\').pop() ??
+                'unknown';
+              const mimeType = getMimeType(filename);
+              files.push(
+                new File([new Uint8Array(fileData)], filename, {
+                  type: mimeType,
+                }),
+              );
+            } catch (err) {
+              logger.error('Failed to read dropped file', { filePath, err });
+              toast.error(`Failed to read: ${filePath.split(/[\\/]/).pop()}`);
+            }
+          }
+          addFiles(files);
+        } finally {
+          setIsAttachmentLoading(false);
         }
-        addFiles(files);
       };
       void run();
     };
@@ -253,7 +261,7 @@ function DraftChatInner() {
       }
 
       try {
-        const rawData = await invoke('get_assistant', {
+        const rawData = await invoke<AssistantDto | null>('get_assistant', {
           id: assistantId,
         });
 
@@ -399,7 +407,7 @@ function DraftChatInner() {
         if (!toastId) toastId = toast.loading('Creating session...');
 
         // Step 1: Create session — this initializes MCPServiceProxy + Content Store
-        await invoke('agent_create_session', {
+        await invoke<AgentSessionMetadata>('agent_create_session', {
           request: {
             sessionId: newSessionId,
             name: shortName,
@@ -505,7 +513,7 @@ function DraftChatInner() {
           ...rustMessage,
           ...(attachments.length > 0 ? { attachments } : {}),
         };
-        await invoke('agent_send_message', {
+        await invoke<AgentResponse>('agent_send_message', {
           request: {
             sessionId: newSessionId,
             message: finalRustMessage,
@@ -756,7 +764,7 @@ function DraftChatInner() {
             variant="ghost"
             size="icon"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isAttachmentLoading}
             className="mb-1 h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
             title="Attach files"
             aria-label="Attach files"
@@ -771,7 +779,9 @@ function DraftChatInner() {
                 ? 'Drop files here...'
                 : dragState === 'invalid'
                   ? 'Unsupported file!'
-                  : `Message ${assistant.name}...`
+                  : isAttachmentLoading
+                    ? 'Uploading...'
+                    : `Message ${assistant.name}...`
             }
             className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
             onKeyDown={(e) => {
@@ -780,17 +790,19 @@ function DraftChatInner() {
                 handleSubmit(e);
               }
             }}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isAttachmentLoading}
           />
           <Button
             type="submit"
             size="icon"
             disabled={
-              (!input.trim() && pendingFiles.length === 0) || isSubmitting
+              (!input.trim() && pendingFiles.length === 0) ||
+              isSubmitting ||
+              isAttachmentLoading
             }
             className="mb-1"
           >
-            {isSubmitting ? (
+            {isSubmitting || isAttachmentLoading ? (
               <Loader2 className="animate-spin" />
             ) : (
               <Send className="w-4 h-4" />

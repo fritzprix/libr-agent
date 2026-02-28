@@ -2,7 +2,7 @@
 ///
 /// This module provides a centralized error guidance system that ensures consistent,
 /// actionable error messages across all built-in tools. It follows the best practices
-/// documented in docs/guides/builtin-tool-best-practices.md.
+/// documented in docs/guides/builtin_tool_bp.md.
 ///
 /// Key principles:
 /// - Every error includes visual markers (✗)

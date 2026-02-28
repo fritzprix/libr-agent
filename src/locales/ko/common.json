@@ -109,6 +109,90 @@
     "settings": "설정",
     "history": "기록"
   },
+  "sessionHistory": {
+    "heading": "세션 기록",
+    "description": "이전 대화 세션을 찾아보고 관리하세요",
+    "defaultHeading": "최근 세션",
+    "defaultDescription": "이전 에이전트 세션 다시 시작",
+    "searchPlaceholder": "이름이나 ID로 세션 검색...",
+    "defaultEmptyTitle": "이전 세션 없음",
+    "defaultEmptySubtitle": "대화를 시작하여 첫 번째 세션을 만드세요",
+    "refreshAria": "세션 새로고침",
+    "searchAria": "세션 검색",
+    "clearSearchAria": "검색 지우기",
+    "focusedLineage": "집중된 리니지: {{id}}",
+    "showAllLineages": "모든 리니지 표시",
+    "loading": "세션 로드 중...",
+    "noSessionsInLineage": "리니지 {{id}}에 표시할 세션이 없습니다",
+    "clearLineageFocus": "리니지 집중 해제",
+    "noSessionsMatching": "\"{{query}}\"와 일치하는 세션이 없습니다",
+    "clearSearch": "검색 지우기",
+    "toasts": {
+      "deleted": "세션이 삭제되었습니다",
+      "deleteFailed": "세션 삭제에 실패했습니다"
+    },
+    "tabs": {
+      "all": "전체",
+      "busy": "진행 중",
+      "idle": "대기 중",
+      "paused": "일시 중지",
+      "error": "오류"
+    },
+    "lineageHint": {
+      "child": "↳ {{parentName}}의 하위 세션",
+      "topLevel": "최상위 세션"
+    },
+    "status": {
+      "busy": "활성",
+      "idle": "대기",
+      "paused": "일시 중지됨",
+      "error": "오류",
+      "unknown": "알 수 없음"
+    },
+    "card": {
+      "fallbackName": "세션 {{id}}",
+      "ariaLabel": "세션: {{name}}",
+      "level": "레벨 {{level}}",
+      "child": "하위",
+      "parent": "상위",
+      "root": "루트",
+      "parentBadge": "상위: {{id}}",
+      "lineageBadge": "리니지: {{id}}",
+      "lineageFilterAria": "리니지 {{id}}(으)로 필터링",
+      "statusAriaLabel": "세션 상태: {{status}}",
+      "model": "모델:",
+      "createdAt": "생성됨 {{time}}",
+      "updatedAt": "업데이트됨 {{time}}",
+      "justNow": "방금 전",
+      "subagentsCount_one": "+{{count}}개의 하위 에이전트",
+      "subagentsCount_other": "+{{count}}개의 하위 에이전트",
+      "subagentsKept": "하위 에이전트 유지됨"
+    },
+    "actions": {
+      "view": "보기",
+      "continue": "계속",
+      "resume": "재개",
+      "viewAria": "세션 {{name}} 보기",
+      "continueAria": "세션 {{name}} 계속",
+      "resumeAria": "세션 {{name}} 재개",
+      "groupAria": "세션 작업",
+      "deleteTooltip": "세션 삭제",
+      "deleteAria": "세션 {{name}} 삭제",
+      "deleting": "삭제 중...",
+      "deleteAll": "모두 삭제",
+      "deleteAllAria": "이 세션 및 모든 하위 에이전트 세션 삭제",
+      "deleteOnlyThis": "이것만 삭제",
+      "deleteOnlyThisAria": "이 세션만 삭제",
+      "confirmDelete": "삭제 확인",
+      "confirmDeleteAria": "삭제 확인",
+      "cancel": "취소",
+      "cancelDeletionAria": "삭제 취소"
+    },
+    "emptyState": {
+      "title": "아직 세션이 없습니다",
+      "subtitle": "대화를 시작하여 첫 번째 세션을 만드세요"
+    }
+  },
   "settings": {
     "title": "설정",
     "unsaved": "미저장",

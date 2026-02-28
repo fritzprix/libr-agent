@@ -29,3 +29,9 @@
 **Extracted:** ~35
 **Languages updated:** [EN, KO]
 **Notes:** Localized `AssistantEditor`, `AssistantList`, `BuiltInToolsEditor`, and `SkillsEditor`. Added `assistant.tabs`, `assistant.list`, `assistant.builtin`, and expanded `skills` namespaces in `common.json`.
+
+## 2026-02-28 - [Session History & Management]
+
+**Extracted:** ~40
+**Languages updated:** [EN, KO]
+**Notes:** Localized `History` view, `SessionHistoryPanel`, and `SessionCard`. Added `sessionHistory` namespace in `common.json` with keys for panel UI, tab labels, toast messages, and session card actions. Used standard i18n pluralization rules for `subagentsCount`.

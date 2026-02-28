@@ -11,7 +11,7 @@ export async function agentCallBuiltinTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<MCPResult<T>> {
-  return invoke('agent_call_builtin_tool', {
+  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
     sessionId,
     toolName,
     args,
