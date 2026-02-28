@@ -69,12 +69,13 @@ pub async fn call_json(
         .map_err(|e| format!("Failed to read response body: {e}"))?;
 
     if !status.is_success() {
-        return Err(format!(
-            "Session API {} {} failed ({status}): {}",
-            path,
-            status.as_u16(),
-            text
-        ));
+        // Extract the error message from the response body without exposing
+        // internal API paths or implementation details.
+        let msg = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v["error"].as_str().map(String::from))
+            .unwrap_or_else(|| format!("Request failed with status {status}"));
+        return Err(msg);
     }
 
     serde_json::from_str(&text).map_err(|e| format!("Invalid JSON response: {e}. body={text}"))
