@@ -75,7 +75,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   // Parse arguments for summary (developer mode only)
   const paramSummary = useMemo(
-    () => formatToolArgumentsSummary(parseToolArguments(toolCall.function.arguments)),
+    () =>
+      formatToolArgumentsSummary(
+        parseToolArguments(toolCall.function.arguments),
+      ),
     [toolCall.function.arguments],
   );
 

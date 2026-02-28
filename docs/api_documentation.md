@@ -121,10 +121,7 @@ Retrieves a list of child sessions spawned by a parent session.
 {
   "parentSessionId": "string",
   "count": 2,
-  "children": [
-    "session-id-1",
-    "session-id-2"
-  ]
+  "children": ["session-id-1", "session-id-2"]
 }
 ```
 
