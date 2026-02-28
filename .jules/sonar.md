@@ -19,3 +19,7 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-02-25 - src/features/agent/hooks/useAgentFileAttachment.ts **Coverage Expanded:** useAgentFileAttachment **Assertions:** Verified MIME type detection, dropped file registration/reading, file size validation, and file input handling.
 
 ## 2026-02-25 - src/lib/message-preprocessor.ts **Coverage Expanded:** prepareMessageForLLM, prepareMessagesForLLM **Assertions:** Verified attachment handling (Content Store, Workspace, Metadata only), error resilience (returns original message), and logging statistics.
+
+## 2026-02-25 - src/lib/mcp/utils/type-guards.ts, src/lib/mcp/utils/service-info.ts, src/lib/mcp/protocol/content.ts **Coverage Expanded:** MCP Type Guards & Utilities **Assertions:** Verified isMCPSuccess, isMCPError, isValidMCPResult, extractStructuredContent, hasServiceInfo, and isMCPErrorContent. **Bug Fixed:** `hasServiceInfo` now correctly returns boolean false instead of null for null inputs.
+
+## 2026-02-25 - src/lib/ai-service/sanitizer.ts, src/lib/ai-service/utils.ts **Coverage Expanded:** AI Service Utilities & Sanitizer **Assertions:** Verified message sanitization (tool_calls, thinking), token calculation, usage formatting, and multimodal content processing.
