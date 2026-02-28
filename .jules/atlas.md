@@ -27,3 +27,5 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 ## 2026-03-01 - [src-tauri/src/mcp/builtin/workspace/code_execution/shell/persistent.rs] **Platform Bug:** Hardcoded `./` relative path prefix on Windows. **Resolved:** Replaced with logic using `std::path::MAIN_SEPARATOR` to ensure correct path formatting (e.g. `.\` on Windows).
 
 ## 2026-03-01 - [src-tauri/src/session/manager.rs] **Platform Bug:** Hardcoded path separators in macOS log directory path. **Resolved:** Replaced `Library/Logs/...` string with chained `.join()` calls for robust path construction.
+
+## 2025-05-24 - [src-tauri/src/mcp/builtin/browser/content.rs] **Platform Bug:** Hardcoded forward slashes in path construction (`extracted-content/`). **Resolved:** Replaced string formatting with `PathBuf::join` to respect OS-specific path separators.

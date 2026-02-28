@@ -459,7 +459,10 @@ async fn save_raw_html_to_file(
 
     let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%S").to_string();
     let file_name = format!("extracted-{}-{}.html", session_id, timestamp);
-    let relative_path = format!("extracted-content/{}", file_name);
+    let relative_path = std::path::PathBuf::from("extracted-content")
+        .join(&file_name)
+        .to_string_lossy()
+        .to_string();
 
     file_manager
         .write_file_string(&relative_path, raw_html)
