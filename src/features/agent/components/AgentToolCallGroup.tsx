@@ -67,10 +67,9 @@ const GroupHeader: React.FC<GroupHeaderProps & { isSimpleMode: boolean }> = ({
       <div className="flex items-center gap-2">
         <Wrench className="w-4 h-4 text-muted-foreground" />
         <span className="font-medium text-sm">
-          {t('agent.toolGroup.executions', 'Tool Executions')}{' '}
-          {t('agent.toolGroup.callCount', {
+          {t('agent.toolGroup.header', {
             count: totalCalls,
-            defaultValue: `(${totalCalls} calls)`,
+            defaultValue: `Tool Executions (${totalCalls} call${totalCalls === 1 ? '' : 's'})`,
           })}
         </span>
       </div>
@@ -166,20 +165,18 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
 }) => {
   const { t } = useTranslation('common');
   return (
-    <div
-      className="flex items-center justify-center p-2 border-t border-muted cursor-pointer hover:bg-muted/50 transition-colors"
+    <button
+      type="button"
+      className="flex items-center justify-center p-2 border-t border-muted w-full cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={onToggle}
     >
       <span className="text-xs text-muted-foreground font-medium">
         {isExpanded
           ? t('agent.toolGroup.showLess', 'Show Less')
-          : `${t('agent.toolGroup.showAll', 'Show All')} ${t(
-              'agent.toolGroup.callCount',
-              {
-                count: totalCalls,
-                defaultValue: `(${totalCalls} calls)`,
-              },
-            )}`}
+          : t('agent.toolGroup.showAllWithCount', {
+              count: totalCalls,
+              defaultValue: `Show All (${totalCalls} calls)`,
+            })}
       </span>
       <ChevronDown
         className={cn(
@@ -187,7 +184,7 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
           isExpanded && 'rotate-180',
         )}
       />
-    </div>
+    </button>
   );
 };
 

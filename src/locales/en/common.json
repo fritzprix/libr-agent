@@ -470,13 +470,13 @@
   },
   "agent": {
     "toolGroup": {
-      "executions": "Tool Executions",
-      "callCount_one": "({{count}} call)",
-      "callCount_other": "({{count}} calls)",
+      "header_one": "Tool Executions ({{count}} call)",
+      "header_other": "Tool Executions ({{count}} calls)",
       "hiddenCalls_one": "{{count}} older call hidden",
       "hiddenCalls_other": "{{count}} older calls hidden",
       "showLess": "Show Less",
-      "showAll": "Show All"
+      "showAllWithCount_one": "Show All ({{count}} call)",
+      "showAllWithCount_other": "Show All ({{count}} calls)"
     },
     "toolDetails": {
       "parameters": "Parameters",
