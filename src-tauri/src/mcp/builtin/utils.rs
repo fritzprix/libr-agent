@@ -100,6 +100,33 @@ impl SecurityValidator {
             )));
         }
 
+        // Windows 예약 파일명 금지 (모든 플랫폼에서 차단 — Windows에서는 생성 불가
+        // 또는 삭제 불능 파일이 됨; 크로스 플랫폼 프로젝트에서도 일관성을 위해 차단)
+        {
+            static RESERVED: &[&str] = &[
+                "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+                "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+                "LPT9",
+            ];
+            let path_for_check = PathBuf::from(user_path.replace('\\', "/"));
+            for component in path_for_check.components() {
+                if let Component::Normal(name) = component {
+                    // Strip any extension (CON.txt → CON) before checking
+                    let stem = Path::new(name)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    let upper = stem.to_uppercase();
+                    if RESERVED.contains(&upper.as_str()) {
+                        return Err(SecurityError::InvalidPath(format!(
+                            "Windows reserved filename '{}' is not allowed in path: '{user_path}'",
+                            stem
+                        )));
+                    }
+                }
+            }
+        }
+
         // base_dir 기준 상대경로로만 처리
         let absolute_path = self.base_dir.join(clean_path);
 
