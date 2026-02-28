@@ -7,6 +7,8 @@ describe('chat-utils', () => {
   describe('computeDisplayContent', () => {
     const baseMessage: Message = {
       id: 'msg-1',
+      sessionId: 'test-session',
+      threadId: 'test-session',
       role: 'assistant',
       content: [{ type: 'text', text: 'Base message text' }],
       createdAt: new Date(),
@@ -24,12 +26,16 @@ describe('chat-utils', () => {
       const groupedMessages: Message[] = [
         {
           id: 'grp-1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
           role: 'assistant',
           content: [{ type: 'text', text: 'Grouped message 1' }],
           createdAt: new Date(),
         },
         {
           id: 'grp-2',
+          sessionId: 'test-session',
+          threadId: 'test-session',
           role: 'assistant',
           content: [{ type: 'text', text: 'Grouped message 2' }],
           createdAt: new Date(),
@@ -49,12 +55,14 @@ describe('chat-utils', () => {
         type: 'tool_call',
         id: 'tc-old',
         name: 'old_tool',
-        arguments: { arg: 'old' },
+        arguments: JSON.stringify({ arg: 'old' }),
       };
 
       const groupedMessages: Message[] = [
         {
           id: 'grp-1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
           role: 'assistant',
           content: [
             { type: 'text', text: 'Some text' },
@@ -88,14 +96,16 @@ describe('chat-utils', () => {
     });
 
     it('handles groupedMessages when content is a string', () => {
-      const groupedMessages: Message[] = [
-        {
-          id: 'grp-1',
-          role: 'assistant',
-          content: 'This is a string content',
-          createdAt: new Date(),
-        },
-      ];
+      const invalidGroupedMessage: Message = {
+        ...baseMessage,
+        id: 'grp-1',
+      };
+
+      // Deliberately assign invalid content type to cover runtime branch where content is not an array.
+      (invalidGroupedMessage as { content: unknown }).content =
+        'This is a string content';
+
+      const groupedMessages: Message[] = [invalidGroupedMessage];
 
       const result = computeDisplayContent(baseMessage, groupedMessages);
 
@@ -110,7 +120,7 @@ describe('chat-utils', () => {
         ...baseMessage,
         content: [
           { type: 'text', text: 'Primary text' },
-          { type: 'tool_call', id: 'tc-old', name: 'old', arguments: {} } as MCPToolCallContent,
+          { type: 'tool_call', id: 'tc-old', name: 'old', arguments: '{}' },
         ],
       };
 
@@ -140,11 +150,12 @@ describe('chat-utils', () => {
 
     it('handles msg.content as a string when processing groupedToolCalls', () => {
       const stringMessage: Message = {
+        ...baseMessage,
         id: 'msg-str',
-        role: 'assistant',
-        content: 'String content',
-        createdAt: new Date(),
       };
+
+      // Deliberately assign invalid content type to cover runtime branch where content is a string.
+      (stringMessage as { content: unknown }).content = 'String content';
 
       const groupedToolCalls: ToolCall[] = [
         {
