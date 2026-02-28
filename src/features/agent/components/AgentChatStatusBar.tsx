@@ -44,7 +44,9 @@ export function AgentChatStatusBar() {
 
   // Persist last metrics to show after streaming ends
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(session?.id);
+  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
+    session?.id,
+  );
 
   // Eradicated Syncing State: Adjusting State During Render Pattern
   // Reset last metrics when session changes without using useEffect

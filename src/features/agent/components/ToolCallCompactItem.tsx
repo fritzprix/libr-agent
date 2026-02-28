@@ -99,7 +99,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
     const errorBecameVisible = !previousHasError.current && hasError;
     const resourceBecameVisible = !previousHasResource.current && hasResource;
 
-    if ((errorBecameVisible || (resourceBecameVisible && isLast)) && !isExpanded) {
+    if (
+      (errorBecameVisible || (resourceBecameVisible && isLast)) &&
+      !isExpanded
+    ) {
       setIsExpanded(true);
     }
   }
