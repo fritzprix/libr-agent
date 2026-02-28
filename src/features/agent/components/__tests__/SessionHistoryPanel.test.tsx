@@ -4,6 +4,13 @@ import type { AgentSession } from '@/models/agent';
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 
+// Mock react-i18next to avoid missing i18n initialization in test setup
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, defaultString: string) => defaultString || key,
+  }),
+}));
+
 // Mock SessionCard to expose descendantCount
 vi.mock('../SessionCard', () => ({
   SessionCard: ({ session, descendantCount }: { session: AgentSession; descendantCount: number }) => (

@@ -54,7 +54,7 @@ export function SessionCard({
       case 'busy':
         return {
           icon: 'active',
-          badge: t('sessionHistory.status.active', 'Active'),
+          badge: t('sessionHistory.status.busy', 'Active'),
           variant: 'outline' as const,
           className: 'bg-warning/10 text-warning-foreground border-warning/20',
         };
@@ -130,6 +130,7 @@ export function SessionCard({
   const statusConfig = getStatusConfig(session.status);
   const isActive = session.status === 'busy' || session.status === 'idle';
   const isViewOnly = session.status === 'error';
+  const isPaused = session.status === 'paused';
   const shortLineageId = session.lineageId?.slice(0, 8);
   const shortParentId = session.parentSessionId?.slice(0, 8);
   const depthLabel =
@@ -236,13 +237,20 @@ export function SessionCard({
               aria-label={
                 isViewOnly
                   ? t('sessionHistory.actions.viewAria', 'View session {{name}}', { name: sessionNameFallback })
-                  : t('sessionHistory.actions.continueAria', 'Continue session {{name}}', { name: sessionNameFallback })
+                  : isPaused
+                    ? t('sessionHistory.actions.resumeAria', 'Resume session {{name}}', { name: sessionNameFallback })
+                    : t('sessionHistory.actions.continueAria', 'Continue session {{name}}', { name: sessionNameFallback })
               }
             >
               {isViewOnly ? (
                 <>
                   <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
                   {t('sessionHistory.actions.view', 'View')}
+                </>
+              ) : isPaused ? (
+                <>
+                  <Play className="w-3 h-3 mr-1" aria-hidden="true" />
+                  {t('sessionHistory.actions.resume', 'Resume')}
                 </>
               ) : (
                 <>
