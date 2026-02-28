@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::mcp::builtin::error_guidance::{ErrorCategory, ToolGroup, guided_error};
 use crate::mcp::builtin::BuiltinMCPServer;
+use crate::mcp::error_normalization::{ExternalMcpErrorCategory, categorize_session_api_error};
 use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
 
 mod cache;
@@ -58,7 +60,6 @@ impl BuiltinMCPServer for SessionApiServer {
         args: Value,
         caller_session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        let tool_name_owned = tool_name.to_string();
         handlers::handle_tool_call(tool_name, args, caller_session_id)
             .await
             .or_else(|e| {
@@ -68,17 +69,22 @@ impl BuiltinMCPServer for SessionApiServer {
                     return Err(e);
                 }
 
-                let (category, recovery) =
-                    crate::mcp::error_normalization::categorize_session_api_error(&e);
+                // Map the raw error to an error_guidance ErrorCategory so the
+                // format matches planning/knowledge/browser builtins.
+                let (norm_category, _) = categorize_session_api_error(&e);
+                let category = match norm_category {
+                    ExternalMcpErrorCategory::NotFound
+                    | ExternalMcpErrorCategory::SessionExpired => ErrorCategory::ResourceNotFound,
+                    ExternalMcpErrorCategory::InvalidInput => ErrorCategory::InvalidInput,
+                    ExternalMcpErrorCategory::PermissionDenied => ErrorCategory::PermissionDenied,
+                    ExternalMcpErrorCategory::Timeout => ErrorCategory::Timeout,
+                    ExternalMcpErrorCategory::Transport => ErrorCategory::NetworkError,
+                    ExternalMcpErrorCategory::Protocol
+                    | ExternalMcpErrorCategory::RemoteToolError
+                    | ExternalMcpErrorCategory::Internal => ErrorCategory::InternalError,
+                };
 
-                Ok(crate::mcp::error_normalization::builtin_tool_error_result(
-                    &format!("Execute {}", tool_name_owned),
-                    NAME,
-                    &tool_name_owned,
-                    category,
-                    &e,
-                    recovery,
-                ))
+                Ok(guided_error(category, e, ToolGroup::Swarm).to_mcp_result())
             })
     }
 

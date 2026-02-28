@@ -50,6 +50,7 @@ pub enum ToolGroup {
     UI,
     McpManager,
     Bootstrap,
+    Swarm,
 }
 
 /// Structured error with guidance
@@ -310,6 +311,43 @@ impl ErrorGuidance {
                 "Verify tool parameter is provided".to_string(),
                 "Tool must be one of: node, python, uv, docker, git".to_string(),
                 "Platform must be: windows, linux, darwin, or auto".to_string(),
+            ],
+
+            // Swarm tool errors
+            (ErrorCategory::ResourceNotFound, ToolGroup::Swarm) => vec![
+                "Verify the agent ID is correct using getChildAgents".to_string(),
+                "The session may have been terminated — use getChildAgents to list active sessions"
+                    .to_string(),
+                "Use spawnAgent to create a new agent if needed".to_string(),
+            ],
+            (ErrorCategory::InvalidInput, ToolGroup::Swarm) => vec![
+                "Check all required parameters are provided and correctly typed".to_string(),
+                "Review the tool schema for required fields and formats".to_string(),
+                "Use healthCheck to verify the swarm system is available".to_string(),
+            ],
+            (ErrorCategory::NetworkError, ToolGroup::Swarm) => vec![
+                "The internal swarm service may not be running — check the application state"
+                    .to_string(),
+                "Restart the application if this error persists".to_string(),
+                "Use healthCheck to verify the swarm system is available".to_string(),
+            ],
+            (ErrorCategory::Timeout, ToolGroup::Swarm) => vec![
+                "Increase the timeoutSeconds parameter for slow tasks".to_string(),
+                "Use awaitAgent with a longer timeout".to_string(),
+                "Check agent status with getAgentStatus".to_string(),
+            ],
+            (ErrorCategory::PermissionDenied, ToolGroup::Swarm) => vec![
+                "Check agent nesting depth constraints (maxDepth)".to_string(),
+                "Verify you have permission to spawn agents in this context".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::Swarm) => vec![
+                "Retry the operation".to_string(),
+                "Use getChildAgents to see current agent state".to_string(),
+                "Use healthCheck to verify the swarm system is available".to_string(),
+            ],
+            (ErrorCategory::InternalError, ToolGroup::Swarm) => vec![
+                "Retry the operation — this is likely a transient error".to_string(),
+                "Check application logs for details".to_string(),
             ],
 
             // Generic fallbacks
