@@ -432,6 +432,45 @@ async fn test_server_connection(
                 for arg in &final_args {
                     cmd.arg(arg);
                 }
+
+                // Apply environment isolation to prevent leaking host secrets (e.g. API keys)
+                // during server connection testing
+                cmd.env_clear();
+
+                // Forward essential variables (matching lifecycle.rs)
+                for (key, value) in std::env::vars() {
+                    let key_upper = key.to_uppercase();
+                    let essential_vars = [
+                        "PATH",
+                        "TERM",
+                        "USER",
+                        "LOGNAME",
+                        "SHELL",
+                        "LANG",
+                        "LC_ALL",
+                        "HOME",
+                        "TMPDIR",
+                        "TEMP",
+                        "TMP",
+                        "USERPROFILE",
+                        "HOMEDRIVE",
+                        "HOMEPATH",
+                        "APPDATA",
+                        "LOCALAPPDATA",
+                        "PROGRAMDATA",
+                        "PROGRAMFILES",
+                        "PROGRAMFILES(X86)",
+                        "COMMONPROGRAMFILES",
+                        "COMMONPROGRAMFILES(X86)",
+                        "SYSTEMROOT",
+                        "WINDIR",
+                    ];
+
+                    if essential_vars.contains(&key_upper.as_str()) {
+                        cmd.env(&key, &value);
+                    }
+                }
+
                 for (key, value) in env {
                     cmd.env(key, value);
                 }
