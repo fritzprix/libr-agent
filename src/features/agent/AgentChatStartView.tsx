@@ -41,6 +41,7 @@ export default function AgentChatStartView() {
       const initPlaybookSession = async () => {
         try {
           processingPlaybookRef.current = true;
+          setIsCreating(true);
           logger.info('Auto-starting playbook session', { playbookId });
 
           if (!toastId) toastId = toast.loading('Starting playbook...');
@@ -85,6 +86,7 @@ export default function AgentChatStartView() {
           toast.error('Failed to start playbook session');
         } finally {
           processingPlaybookRef.current = false;
+          setIsCreating(false);
         }
       };
 
