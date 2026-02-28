@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.21] - 2026-02-28
+
+### 🚀 Features
+
+- **MCP HTTP endpoint**: Builtin MCP tools are now exposed via an HTTP endpoint, enabling external integrations to call agent tools directly. A sessionless `POST /mcp` endpoint with auto session selection is also available for stateless callers.
+- **Clear button in session history search**: Added a one-click clear button to the session history search input for faster navigation.
+- **Reserved builtin name blocking**: The MCP server registration UI now blocks users from registering external servers with names that conflict with reserved builtin prefixes, preventing tool routing confusion.
+- **Playbook & chat input UX improvements**: Fluid UX enhancements applied to `PlaybookList` and `AgentChatInput` for a smoother interaction flow.
+- **i18n expansion**: Strings across the MCP, assistant, playbook, and settings pages extracted and localized with Korean and English support.
+
+### 🐛 Fixes
+
+- **Builtin tool names cleaned up**: Tool calls throughout the UI (AgentToolsModal, tool call groups, MCP HTTP exposure) now display `group / tool` format instead of the raw internal `builtin_group__tool` prefix, making logs and history readable.
+- **Security: Unix shell env isolation**: Environment variable isolation implemented for Unix shell execution in MCP server processes — prevents host environment leakage into spawned tool processes.
+- **Security: symlink traversal in SecurityValidator**: `SecurityValidator` now canonicalizes the base directory to prevent symlink-based path traversal attacks.
+- **Windows path injection fixed**: Path handling in the UI corrected for Windows, and Linux file manager integration improved.
+- **Legacy `content_store` alias handling**: Legacy `contentstore` aliases now correctly resolved, fixing compatibility with older sessions.
+- **MCP HTTP structured_content stripped**: `structured_content` (a LibrAgent-internal field) is correctly stripped from responses exposed via the external MCP HTTP endpoint.
+- **`spawnProcess` / `spawnAgent` response quality**: Tool text responses for process spawning now include actionable IDs and follow-up instructions so agents can act on results without ambiguity.
+- **External server routing fallback**: `MCPServiceProxy` now falls back gracefully when `builtin_`-prefixed tool calls are routed to external servers, providing a correction hint rather than a hard failure.
+
+### ⚡ Performance
+
+- **Logger IPC batching**: Logger now batches IPC calls to reduce round-trips, significantly cutting log-related overhead in high-volume agent sessions.
+- **Tool call argument parsing memoized**: Argument parsing in tool call components is now memoized to avoid redundant work on re-renders.
+
+### 🔧 Internal
+
+- **`AgentService` extracted from commands layer**: Agent orchestration logic moved out of Tauri command handlers into a dedicated `AgentService`, improving testability and separation of concerns.
+- **`SessionMCPManager` modularized**: Refactored into focused lifecycle/execution/cleanup submodules.
+- **Session services reorganized**: `SessionManager` split into `DirectoryService` and `CleanupService` for clearer responsibilities.
+- **Attachments renamed from `content_store`**: Internal rename of `content_store` to `attachments` across Rust backend for clarity (Phase 1 & 2).
+- **React agent components modernized**: Agent feature components updated to modern React patterns (adjust-during-render instead of sync `useEffect`).
+- **Rust clippy warnings resolved**: `needless_borrow`, `clone_on_copy`, and related warnings cleaned up across the backend.
+
 ## [0.5.19] - 2026-02-25
 
 ### 🚀 Features
