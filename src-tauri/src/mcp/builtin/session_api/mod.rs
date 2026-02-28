@@ -58,7 +58,28 @@ impl BuiltinMCPServer for SessionApiServer {
         args: Value,
         caller_session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        handlers::handle_tool_call(tool_name, args, caller_session_id).await
+        let tool_name_owned = tool_name.to_string();
+        handlers::handle_tool_call(tool_name, args, caller_session_id)
+            .await
+            .or_else(|e| {
+                // Cancellation errors must propagate as Err so the workflow loop
+                // can handle them correctly (abort, surface to user, etc.).
+                if e.contains("cancelled") || e.contains("interrupted") {
+                    return Err(e);
+                }
+
+                let (category, recovery) =
+                    crate::mcp::error_normalization::categorize_session_api_error(&e);
+
+                Ok(crate::mcp::error_normalization::builtin_tool_error_result(
+                    &format!("Execute {}", tool_name_owned),
+                    NAME,
+                    &tool_name_owned,
+                    category,
+                    &e,
+                    recovery,
+                ))
+            })
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {

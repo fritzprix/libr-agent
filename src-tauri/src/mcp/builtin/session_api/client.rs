@@ -69,13 +69,13 @@ pub async fn call_json(
         .map_err(|e| format!("Failed to read response body: {e}"))?;
 
     if !status.is_success() {
-        // Extract the error message from the response body without exposing
-        // internal API paths or implementation details.
-        let msg = serde_json::from_str::<serde_json::Value>(&text)
+        // Include status code (needed by error_normalization::extract_http_status for
+        // correct error categorization) but omit the internal API path.
+        let cause = serde_json::from_str::<serde_json::Value>(&text)
             .ok()
             .and_then(|v| v["error"].as_str().map(String::from))
-            .unwrap_or_else(|| format!("Request failed with status {status}"));
-        return Err(msg);
+            .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error").to_string());
+        return Err(format!("Request failed ({}): {}", status.as_u16(), cause));
     }
 
     serde_json::from_str(&text).map_err(|e| format!("Invalid JSON response: {e}. body={text}"))

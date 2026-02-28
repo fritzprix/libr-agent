@@ -56,11 +56,23 @@ export function SessionHistoryPanel({
     null,
   );
 
-  const defaultHeading = heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
-  const defaultDescription = description ?? t('sessionHistory.defaultDescription', 'Resume previous agent sessions');
-  const defaultSearchPlaceholder = searchPlaceholder ?? t('sessionHistory.searchPlaceholder', 'Search sessions by name or ID...');
-  const defaultEmptyTitle = emptyStateTitle ?? t('sessionHistory.defaultEmptyTitle', 'No previous sessions');
-  const defaultEmptySubtitle = emptyStateSubtitle ?? t('sessionHistory.defaultEmptySubtitle', 'Start a conversation to create your first session');
+  const defaultHeading =
+    heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
+  const defaultDescription =
+    description ??
+    t('sessionHistory.defaultDescription', 'Resume previous agent sessions');
+  const defaultSearchPlaceholder =
+    searchPlaceholder ??
+    t('sessionHistory.searchPlaceholder', 'Search sessions by name or ID...');
+  const defaultEmptyTitle =
+    emptyStateTitle ??
+    t('sessionHistory.defaultEmptyTitle', 'No previous sessions');
+  const defaultEmptySubtitle =
+    emptyStateSubtitle ??
+    t(
+      'sessionHistory.defaultEmptySubtitle',
+      'Start a conversation to create your first session',
+    );
 
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
@@ -186,14 +198,18 @@ export function SessionHistoryPanel({
 
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
-          t('sessionHistory.card.fallbackName', 'Session {{id}}', { id: session.parentSessionId.slice(0, 8) })
+          t('sessionHistory.card.fallbackName', 'Session {{id}}', {
+            id: session.parentSessionId.slice(0, 8),
+          })
         : undefined;
 
       rows.push({
         session,
         nestingLevel,
         lineageHint: parentName
-          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', { parentName })
+          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', {
+              parentName,
+            })
           : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
       });
 
@@ -251,7 +267,8 @@ export function SessionHistoryPanel({
                 {defaultHeading}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {defaultDescription} ({displayRows.length}/{baseSessions.length})
+                {defaultDescription} ({displayRows.length}/{baseSessions.length}
+                )
               </p>
             </div>
           </div>
@@ -284,7 +301,8 @@ export function SessionHistoryPanel({
               {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
             </TabsTrigger>
             <TabsTrigger value="paused" className="flex-1">
-              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused})
+              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused}
+              )
             </TabsTrigger>
             <TabsTrigger value="error" className="flex-1">
               {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
@@ -315,7 +333,11 @@ export function SessionHistoryPanel({
         </div>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', { id: selectedLineageId.slice(0, 8) })}</span>
+            <span>
+              {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
+                id: selectedLineageId.slice(0, 8),
+              })}
+            </span>
             <Button
               variant="link"
               size="sm"
@@ -333,7 +355,9 @@ export function SessionHistoryPanel({
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                <p className="text-sm">{t('sessionHistory.loading', 'Loading sessions...')}</p>
+                <p className="text-sm">
+                  {t('sessionHistory.loading', 'Loading sessions...')}
+                </p>
               </div>
             </div>
           ) : displayRows.length === 0 ? (
@@ -342,7 +366,11 @@ export function SessionHistoryPanel({
                 {selectedLineageId ? (
                   <>
                     <p className="text-sm">
-                      {t('sessionHistory.noSessionsInLineage', 'No sessions visible in lineage {{id}}', { id: selectedLineageId.slice(0, 8) })}
+                      {t(
+                        'sessionHistory.noSessionsInLineage',
+                        'No sessions visible in lineage {{id}}',
+                        { id: selectedLineageId.slice(0, 8) },
+                      )}
                     </p>
                     <Button
                       variant="link"
@@ -350,13 +378,20 @@ export function SessionHistoryPanel({
                       onClick={() => setSelectedLineageId(null)}
                       className="mt-2"
                     >
-                      {t('sessionHistory.clearLineageFocus', 'Clear lineage focus')}
+                      {t(
+                        'sessionHistory.clearLineageFocus',
+                        'Clear lineage focus',
+                      )}
                     </Button>
                   </>
                 ) : searchQuery.trim() ? (
                   <>
                     <p className="text-sm">
-                      {t('sessionHistory.noSessionsMatching', 'No sessions found matching "{{query}}"', { query: searchQuery })}
+                      {t(
+                        'sessionHistory.noSessionsMatching',
+                        'No sessions found matching "{{query}}"',
+                        { query: searchQuery },
+                      )}
                     </p>
                     <Button
                       variant="link"
