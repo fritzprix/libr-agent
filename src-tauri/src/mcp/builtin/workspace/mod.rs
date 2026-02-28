@@ -331,6 +331,19 @@ impl WorkspaceServer {
         file_operations::utils::validate_path_with_error(&file_manager, path_str)
     }
 
+    /// Validate path for write/create operations.
+    /// Blocks Windows reserved filenames in addition to standard security checks.
+    /// Delete operations should use `validate_path_with_error` instead so that
+    /// pre-existing reserved-name files can still be cleaned up.
+    pub fn validate_path_with_error_for_write(
+        &self,
+        path_str: &str,
+        session_id: Option<String>,
+    ) -> Result<std::path::PathBuf, String> {
+        let file_manager = self.get_file_manager(session_id);
+        file_operations::utils::validate_path_with_error_for_write(&file_manager, path_str)
+    }
+
     #[allow(dead_code)]
     fn get_workspace_tree(&self, path: &str, max_depth: usize) -> String {
         use std::fs;

@@ -265,8 +265,8 @@ impl WorkspaceServer {
             }
         }
 
-        // --- Read file ---
-        let safe_path = self.validate_path_with_error(path_str, session_id.clone())?;
+        // Validate path — use write validator to block reserved filenames on edits
+        let safe_path = self.validate_path_with_error_for_write(path_str, session_id.clone())?;
 
         let original_content = match read_file_as_string(&safe_path).await {
             Ok(content) => content,

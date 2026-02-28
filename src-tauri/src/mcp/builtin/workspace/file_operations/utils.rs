@@ -106,6 +106,24 @@ pub fn validate_path_with_error(
     }
 }
 
+/// Validate path for write/create operations — same as [`validate_path_with_error`]
+/// but additionally blocks Windows reserved filenames (CON, NUL, COM1, …).
+pub fn validate_path_with_error_for_write(
+    file_manager: &crate::services::SecureFileManager,
+    path_str: &str,
+) -> Result<std::path::PathBuf, String> {
+    match file_manager
+        .get_security_validator()
+        .validate_path_for_write(path_str)
+    {
+        Ok(path) => Ok(path),
+        Err(e) => {
+            error!("Path validation failed: {}", e);
+            Err(format!("Security error: {e}"))
+        }
+    }
+}
+
 /// Read file as string (helper for edit operations)
 pub async fn read_file_as_string(path: &std::path::Path) -> Result<String, String> {
     tokio::fs::read_to_string(path)
