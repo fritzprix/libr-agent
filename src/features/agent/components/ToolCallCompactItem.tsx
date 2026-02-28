@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -64,8 +64,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const isSimpleMode = (display?.toolDetailLevel ?? 'simple') === 'simple';
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const previousHasError = useRef(false);
-  const previousHasResource = useRef(false);
+
+  // We track previous errors/resources in state to safely compare during the pure render phase
+  const [previousHasError, setPreviousHasError] = useState(false);
+  const [previousHasResource, setPreviousHasResource] = useState(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -87,22 +89,30 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Auto-expand only in developer mode when transitioning to error/resource state.
-  useEffect(() => {
-    if (isSimpleMode) return;
+  // Eradicated Action-Effect Chain
+  // Auto-expand only in developer mode when transitioning to error/resource state directly during render
+  if (!isSimpleMode) {
+    let newIsExpanded = isExpanded;
 
-    const errorBecameVisible = !previousHasError.current && hasError;
-    const resourceBecameVisible = !previousHasResource.current && hasResource;
+    const errorBecameVisible = !previousHasError && hasError;
+    const resourceBecameVisible = !previousHasResource && hasResource;
 
-    if (errorBecameVisible) {
-      setIsExpanded(true);
-    } else if (resourceBecameVisible && isLast) {
-      setIsExpanded(true);
+    if (errorBecameVisible || (resourceBecameVisible && isLast)) {
+      newIsExpanded = true;
     }
 
-    previousHasError.current = hasError;
-    previousHasResource.current = hasResource;
-  }, [hasError, hasResource, isLast, isSimpleMode]);
+    if (previousHasError !== hasError) {
+      setPreviousHasError(hasError);
+    }
+
+    if (previousHasResource !== hasResource) {
+      setPreviousHasResource(hasResource);
+    }
+
+    if (newIsExpanded !== isExpanded) {
+      setIsExpanded(newIsExpanded);
+    }
+  }
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

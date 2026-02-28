@@ -1,5 +1,12 @@
 # Weaver's Journal - The Pattern Log
 
+## 2026-02-27 - [AgentChatStatusBar / SessionHistoryPanel / ToolCallCompactItem] **Eradicated:** [Action-Effect Chains & Syncing State] **Woven:** [Adjusting State During Render Pattern]
+
+- **AgentChatStatusBar:** Removed two `useEffect` hooks used to synchronize `lastMetrics` when the session changed or new metrics arrived. Added a `prevSessionId` state and updated variables directly during render.
+- **SessionHistoryPanel:** Eliminated the `useEffect` used to check if `selectedLineageId` still existed when `sessions` changed. Stored the previous `sessions` using a `useRef` and computed the reset logic directly during the render phase.
+- **ToolCallCompactItem:** Removed `useEffect` for auto-expanding tools on error/resource load. Checked visibility changes during the render phase against previous refs and updated state naturally without relying on the effect lifecycle.
+- **Renders Saved:** Eliminated cascading double-renders and action-effect cycles across multiple key components.
+
 ## 2026-02-27 - [AgentResourceAttachmentContext] **Eradicated:** [Defensive Coding/Redundant State Reset] **Woven:** [React Lifecycle Integrity]
 
 - Removed `prevSessionIdRef`, `uploadedFilenamesRef`, and the associated `useEffect` that manually reset state on session ID change.
