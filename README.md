@@ -146,6 +146,7 @@ Primary user-facing tools:
 - **Skills**: Reusable capabilities and tool definitions
 - **Playbook**: Workflow automation and process templates
 - **Assistant**: Role management and system prompt configuration
+- **Swarm**: Spawn and orchestrate child agents to delegate tasks in parallel
 
 > Note: Additional internal modules (Bootstrap, Content Store, UI, MCP Manager) handle infrastructure and state.
 

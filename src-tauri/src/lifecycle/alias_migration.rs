@@ -33,6 +33,7 @@ use tracing::{info, warn};
 /// are initialised.  All steps are idempotent.
 pub async fn run_alias_migrations(db: &DatabaseConnection) {
     migrate_content_store_to_attachments(db).await;
+    migrate_contentstore_to_attachments(db).await;
 }
 
 /// Replace the legacy `"content_store"` alias with `"attachments"` in every
@@ -63,6 +64,39 @@ async fn migrate_content_store_to_attachments(db: &DatabaseConnection) {
             // Non-fatal: runtime mapping still works via BuiltinServiceId::from_alias().
             warn!(
                 "alias_migration: failed to migrate content_store aliases (non-fatal): {}",
+                e
+            );
+        }
+    }
+}
+
+/// Replace the legacy `"contentstore"` alias (no underscore, written by early
+/// versions of `assistant_init.rs`) with `"attachments"` in every assistant
+/// `config` JSON blob that still contains the old value.
+async fn migrate_contentstore_to_attachments(db: &DatabaseConnection) {
+    let sql = r#"
+        UPDATE assistants
+        SET config = REPLACE(config, '"contentstore"', '"attachments"')
+        WHERE config LIKE '%"contentstore"%'
+    "#;
+
+    match db
+        .execute(Statement::from_string(DbBackend::Sqlite, sql.to_string()))
+        .await
+    {
+        Ok(result) => {
+            let rows = result.rows_affected();
+            if rows > 0 {
+                info!(
+                    "alias_migration: updated {} assistant row(s): \
+                     \"contentstore\" → \"attachments\"",
+                    rows
+                );
+            }
+        }
+        Err(e) => {
+            warn!(
+                "alias_migration: failed to migrate contentstore aliases (non-fatal): {}",
                 e
             );
         }
