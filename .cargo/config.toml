@@ -1,4 +1,7 @@
-# Use LLVM's lld linker on Windows to avoid MSVC link.exe LNK1102
-# (out-of-memory) errors when linking large debug/test binaries.
-[target.x86_64-pc-windows-msvc]
-linker = "rust-lld"
+# Reduce debug info in dev/test profiles to avoid MSVC link.exe LNK1102
+# (out-of-memory) errors when linking large Rust binaries on Windows.
+[profile.dev]
+debug = 1
+
+[profile.test]
+debug = 1
