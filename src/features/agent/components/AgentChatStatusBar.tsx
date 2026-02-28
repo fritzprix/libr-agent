@@ -1,4 +1,4 @@
-import type { AgentResponse } from "@/models/agent-ipc";
+import type { AgentResponse } from '@/models/agent-ipc';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
