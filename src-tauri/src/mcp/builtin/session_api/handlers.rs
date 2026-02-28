@@ -397,6 +397,25 @@ pub async fn handle_tool_call(
                 )
                 .await;
                 gate.resume_agent().await?; // suspended → active (always)
+
+                // On timeout the child is still running — terminate it so it
+                // doesn't linger as a zombie consuming resources.
+                if let Err(ref e) = wait_result {
+                    if e.contains("timed out") {
+                        log::warn!(
+                            "awaitAgent: timeout for session '{}', terminating child",
+                            session_id
+                        );
+                        let _ = call_json(
+                            Method::POST,
+                            &format!("/api/sessions/{}/terminate", session_id),
+                            None,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+
                 wait_result?
             };
 

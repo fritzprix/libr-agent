@@ -53,6 +53,9 @@ pub enum BuiltinServiceId {
     /// `assistant_init.rs`) deserialise correctly without requiring a DB migration.
     #[serde(alias = "content_store", alias = "contentstore")]
     Attachments,
+    /// `"session_api"` was the pre-0.5 name for this service; keep as serde alias
+    /// so that DB records written by older binaries still deserialise correctly.
+    #[serde(alias = "session_api")]
     Swarm,
     Ui,
     Browser,
@@ -80,7 +83,8 @@ impl BuiltinServiceId {
             // "content_store" is the pre-0.6.0 legacy name; "contentstore" (no
             // underscore) was written by early assistant_init.rs; keep both forever.
             "attachments" | "content_store" | "contentstore" => Some(Self::Attachments),
-            "swarm" => Some(Self::Swarm),
+            // "session_api" was the pre-0.5 internal name; keep forever for DB compat.
+            "swarm" | "session_api" => Some(Self::Swarm),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
