@@ -44,3 +44,8 @@
 - **Batching:** Implemented `LogQueue` in `src/lib/logger.ts` to buffer log entries (limit 50 or 500ms timeout) and send them in a single `invoke("log_batch")` call.
 - **Type Sync:** Defined `LogEntry` interface in TS and corresponding struct in Rust to ensure type safety.
 - **Rust Command:** Added `log_batch` to `src-tauri/src/commands/log_commands.rs` to process batched log entries efficiently.
+
+## 2026-02-28 - Generic Type Boundaries for Tauri commands
+**Problem:** Several `invoke` calls for various Tauri backend commands (`agent_handle_llm_response`, `agent_get_available_tools`, `agent_call_builtin_tool`, `agent_create_session`, `agent_send_message`, `agent_update_session_config`, `get_assistant`, `log_batch`, `clear_current_log`, `delete_assistant`, `open_skills_directory_in_explorer`) were missing explicit TypeScript generic types, bypassing `invoke`'s type safety.
+**Action:**
+- **Type Sync:** Applied strict generic return types (`invoke<Type>`) across the codebase. Reused existing strong interfaces (`AgentResponse`, `MCPTool[]`, `MCPResult<T>`, `AgentSessionMetadata`, `AssistantDto`, and `<void>`).

@@ -1,3 +1,4 @@
+import type { AgentResponse } from "@/models/agent-ipc";
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
@@ -234,7 +235,7 @@ export function AgentChatStatusBar() {
                   // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
                   const { invoke } = await import('@tauri-apps/api/core');
 
-                  await invoke('agent_update_session_config', {
+                  await invoke<AgentResponse>('agent_update_session_config', {
                     request: {
                       sessionId: session.id,
                       model,

@@ -30,6 +30,8 @@ import {
   X,
 } from 'lucide-react';
 import type { Assistant, Message } from '@/models/chat';
+import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
+import type { AssistantDto } from '@/lib/backend/assistants';
 import { parseAssistant } from '@/models/validation';
 import { useSettings } from '@/context/SettingsContext';
 import { cn } from '@/lib/utils';
@@ -253,7 +255,7 @@ function DraftChatInner() {
       }
 
       try {
-        const rawData = await invoke('get_assistant', {
+        const rawData = await invoke<AssistantDto | null>('get_assistant', {
           id: assistantId,
         });
 
@@ -399,7 +401,7 @@ function DraftChatInner() {
         if (!toastId) toastId = toast.loading('Creating session...');
 
         // Step 1: Create session — this initializes MCPServiceProxy + Content Store
-        await invoke('agent_create_session', {
+        await invoke<AgentSessionMetadata>('agent_create_session', {
           request: {
             sessionId: newSessionId,
             name: shortName,
@@ -505,7 +507,7 @@ function DraftChatInner() {
           ...rustMessage,
           ...(attachments.length > 0 ? { attachments } : {}),
         };
-        await invoke('agent_send_message', {
+        await invoke<AgentResponse>('agent_send_message', {
           request: {
             sessionId: newSessionId,
             message: finalRustMessage,
