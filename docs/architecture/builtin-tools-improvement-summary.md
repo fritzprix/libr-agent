@@ -4,7 +4,7 @@
 **Status:** Phase 1 Foundation Complete ✅
 **Related Documents:**
 
-- [Built-in Tool Best Practices](../guides/builtin-tool-best-practices.md)
+- [Built-in Tool Best Practices](../guides/builtin_tool_bp.md)
 - [Built-in Tools Evaluation](./builtin-tools-evaluation.md)
 
 ---
@@ -809,7 +809,7 @@ The foundation for comprehensive error guidance is now in place. The `error_guid
 
 ## References
 
-1. [Built-in Tool Best Practices Guide](../guides/builtin-tool-best-practices.md) - Implementation patterns
+1. [Built-in Tool Best Practices Guide](../guides/builtin_tool_bp.md) - Implementation patterns
 2. [Built-in Tools Evaluation Document](./builtin-tools-evaluation.md) - Baseline assessment
 3. [Error Guidance Module Source](/src-tauri/src/mcp/builtin/error_guidance.rs) - Implementation
 4. [Planning Module Source](/src-tauri/src/mcp/builtin/planning/mod.rs) - Example usage
