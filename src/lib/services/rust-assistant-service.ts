@@ -162,7 +162,7 @@ export class RustAssistantService implements IAssistantService {
 
   async delete(id: string): Promise<void> {
     try {
-      await invoke('delete_assistant', { id });
+      await invoke<void>('delete_assistant', { id });
       this.emitRevalidate({
         entity: 'assistants',
         action: 'delete',

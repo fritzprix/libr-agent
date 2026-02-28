@@ -6,7 +6,7 @@ import { parseAssistant } from '@/models/validation';
 /**
  * Backend DTO for Assistant
  */
-interface AssistantDto {
+export interface AssistantDto {
   id: string;
   name: string;
   config: unknown; // JSON

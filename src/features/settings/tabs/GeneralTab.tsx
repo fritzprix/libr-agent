@@ -106,7 +106,7 @@ function GeneralTabComponent({
     }
     logger.info(`Attempting to open directory: ${skillsDirectory}`);
     try {
-      await invoke('open_skills_directory_in_explorer', {
+      await invoke<void>('open_skills_directory_in_explorer', {
         directory: skillsDirectory,
       });
       logger.info(`Successfully requested open_skills_directory_in_explorer`);
