@@ -3,9 +3,9 @@
 ## 2026-02-27 - [AgentChatStatusBar / SessionHistoryPanel / ToolCallCompactItem] **Eradicated:** [Action-Effect Chains & Syncing State] **Woven:** [Adjusting State During Render Pattern]
 
 - **AgentChatStatusBar:** Removed two `useEffect` hooks used to synchronize `lastMetrics` when the session changed or new metrics arrived. Added a `prevSessionId` state and updated variables directly during render.
-- **SessionHistoryPanel:** Eliminated the `useEffect` used to check if `selectedLineageId` still existed when `sessions` changed. Stored the previous `sessions` using a `useRef` and computed the reset logic directly during the render phase.
-- **ToolCallCompactItem:** Removed `useEffect` for auto-expanding tools on error/resource load. Checked visibility changes during the render phase against previous refs and updated state naturally without relying on the effect lifecycle.
-- **Renders Saved:** Eliminated cascading double-renders and action-effect cycles across multiple key components.
+- **SessionHistoryPanel:** Eliminated the `useEffect` used to check if `selectedLineageId` still existed when `sessions` changed. Stored the previous `sessions` in a `useState` tracker and computed the reset logic directly during the render phase, gated on `selectedLineageId` being set to avoid unnecessary re-renders.
+- **ToolCallCompactItem:** Removed the `useEffect` that triggered auto-expand on error/resource load. Moved the `setIsExpanded` call to the render phase (Adjusting State During Render) while retaining `useRef` for the transition-sentinel values `previousHasError`/`previousHasResource`, which are updated via a lean `useEffect` to avoid extra re-renders from state changes that don't affect output.
+- **Renders Saved:** Removed cascading action-effect loops across key components; while the new `useState` trackers introduce an extra, intentional render when values change, they avoid the previous double-render cascades and keep updates local.
 
 ## 2026-02-27 - [AgentResourceAttachmentContext] **Eradicated:** [Defensive Coding/Redundant State Reset] **Woven:** [React Lifecycle Integrity]
 

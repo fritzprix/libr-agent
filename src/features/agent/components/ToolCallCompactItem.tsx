@@ -1,4 +1,4 @@
-import React, { useState, memo, useMemo } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -65,9 +65,10 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
 
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // We track previous errors/resources in state to safely compare during the pure render phase
-  const [previousHasError, setPreviousHasError] = useState(false);
-  const [previousHasResource, setPreviousHasResource] = useState(false);
+  // Use refs for transition-sentinel values — they don't affect rendered output,
+  // so refs avoid the extra re-render that useState would cause.
+  const previousHasError = useRef(false);
+  const previousHasResource = useRef(false);
 
   // Parse tool name (remove server prefix)
   const toolName = useMemo(
@@ -89,30 +90,22 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   const executionTime = toolResult?.metadata?.executionTime;
   const detailsId = `tool-call-details-${toolCall.id}`;
 
-  // Eradicated Action-Effect Chain
-  // Auto-expand only in developer mode when transitioning to error/resource state directly during render
+  // Adjusting State During Render: auto-expand in developer mode on error/resource transition.
+  // Refs are read here (not written) to detect transitions; they are updated after render via useEffect.
   if (!isSimpleMode) {
-    let newIsExpanded = isExpanded;
+    const errorBecameVisible = !previousHasError.current && hasError;
+    const resourceBecameVisible = !previousHasResource.current && hasResource;
 
-    const errorBecameVisible = !previousHasError && hasError;
-    const resourceBecameVisible = !previousHasResource && hasResource;
-
-    if (errorBecameVisible || (resourceBecameVisible && isLast)) {
-      newIsExpanded = true;
-    }
-
-    if (previousHasError !== hasError) {
-      setPreviousHasError(hasError);
-    }
-
-    if (previousHasResource !== hasResource) {
-      setPreviousHasResource(hasResource);
-    }
-
-    if (newIsExpanded !== isExpanded) {
-      setIsExpanded(newIsExpanded);
+    if ((errorBecameVisible || (resourceBecameVisible && isLast)) && !isExpanded) {
+      setIsExpanded(true);
     }
   }
+
+  // Update sentinel refs after each render so the next render can detect transitions.
+  useEffect(() => {
+    previousHasError.current = hasError;
+    previousHasResource.current = hasResource;
+  }, [hasError, hasResource]);
 
   // ── Simple Mode ─────────────────────────────────────────────────────────
   // Shows tool name + status + brief param summary. No expand, no execution

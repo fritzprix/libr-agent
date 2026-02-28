@@ -82,21 +82,19 @@ export function SessionHistoryPanel({
   }, [baseSessions, searchQuery, activeTab]);
 
   // Eradicating Action-Effect Chain / Derived State
-  // Checking existence of selected lineage directly during render
-  // Use state to store the previous items to compare during the pure render phase
+  // Checking existence of selected lineage directly during render.
+  // Only update prevSessions (and check lineage) when a selection is active — avoids
+  // an extra re-render on every sessions identity change when nothing is selected.
   const [prevSessions, setPrevSessions] = useState(sessions);
 
-  // Only trigger a state update if the sessions array identity has changed
-  if (sessions !== prevSessions) {
+  if (sessions !== prevSessions && selectedLineageId) {
     setPrevSessions(sessions);
-    if (selectedLineageId) {
-      const stillExists = sessions.some(
-        (session) => session.lineageId === selectedLineageId,
-      );
-      if (!stillExists) {
-        // Schedule a re-render with the cleared lineage ID
-        setSelectedLineageId(null);
-      }
+    const stillExists = sessions.some(
+      (session) => session.lineageId === selectedLineageId,
+    );
+    if (!stillExists) {
+      // Schedule a re-render with the cleared lineage ID
+      setSelectedLineageId(null);
     }
   }
 
