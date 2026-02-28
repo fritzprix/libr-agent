@@ -794,7 +794,9 @@ function DraftChatInner() {
             type="submit"
             size="icon"
             disabled={
-              (!input.trim() && pendingFiles.length === 0) || isSubmitting || isAttachmentLoading
+              (!input.trim() && pendingFiles.length === 0) ||
+              isSubmitting ||
+              isAttachmentLoading
             }
             className="mb-1"
           >
