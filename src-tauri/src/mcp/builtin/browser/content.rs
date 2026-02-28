@@ -462,7 +462,7 @@ async fn save_raw_html_to_file(
     let relative_path = std::path::PathBuf::from("extracted-content")
         .join(&file_name)
         .to_string_lossy()
-        .to_string();
+        .replace('\\', "/");
 
     file_manager
         .write_file_string(&relative_path, raw_html)
