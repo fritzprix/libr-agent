@@ -12,6 +12,8 @@ interface AgentToolCallDetailsProps {
   isLoading?: boolean;
   /** When false, renders nothing. Used by Simple display mode to hide all detail. */
   showDetails?: boolean;
+  /** Pre-parsed arguments to avoid redundant JSON.parse calls */
+  parsedArgs?: Record<string, unknown>;
 }
 
 /**
@@ -27,11 +29,12 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   hasError = false,
   isLoading = false,
   showDetails = true,
+  parsedArgs,
 }) => {
   const { t } = useTranslation('common');
   const params = useMemo(
-    () => parseToolArguments(toolCall.function.arguments),
-    [toolCall.function.arguments],
+    () => parsedArgs || parseToolArguments(toolCall.function.arguments),
+    [parsedArgs, toolCall.function.arguments],
   );
 
   if (!showDetails) return null;

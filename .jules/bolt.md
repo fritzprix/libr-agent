@@ -67,3 +67,8 @@
 
 **Learning:** `SessionHistoryPanel` was calculating descendant counts using a recursive function that filtered the entire `sessions` array at each step, resulting in O(N^2) complexity. This caused potential lag as the session history grew.
 **Action:** When processing tree structures from flat lists, always build an O(N) adjacency map (parent -> children) first, then use that map for O(1) lookups during traversal, reducing overall complexity to O(N).
+
+## 2026-10-25 - Redundant O(N) Object Parsing in Render Loop
+
+**Learning:** `ToolCallCompactItem` and its child `AgentToolCallDetails` were both calling `parseToolArguments(toolCall.function.arguments)` independently. Because tool call arguments are JSON strings, parsing them involves an O(N) allocation and instantiation that was being performed twice per tool call.
+**Action:** Extract expensive string parsing or object instantiation operations to a shared `useMemo` at the highest necessary parent component, and pass the parsed result down to children as a prop to avoid redundant computation.
