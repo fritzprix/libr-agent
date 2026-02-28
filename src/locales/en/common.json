@@ -109,6 +109,90 @@
     "settings": "Settings",
     "history": "History"
   },
+  "sessionHistory": {
+    "heading": "Session History",
+    "description": "Browse and manage your conversation sessions",
+    "defaultHeading": "Recent Sessions",
+    "defaultDescription": "Resume previous agent sessions",
+    "searchPlaceholder": "Search sessions by name or ID...",
+    "defaultEmptyTitle": "No previous sessions",
+    "defaultEmptySubtitle": "Start a conversation to create your first session",
+    "refreshAria": "Refresh sessions",
+    "searchAria": "Search sessions",
+    "clearSearchAria": "Clear search",
+    "focusedLineage": "Focused lineage: {{id}}",
+    "showAllLineages": "Show all lineages",
+    "loading": "Loading sessions...",
+    "noSessionsInLineage": "No sessions visible in lineage {{id}}",
+    "clearLineageFocus": "Clear lineage focus",
+    "noSessionsMatching": "No sessions found matching \"{{query}}\"",
+    "clearSearch": "Clear search",
+    "toasts": {
+      "deleted": "Session deleted",
+      "deleteFailed": "Failed to delete session"
+    },
+    "tabs": {
+      "all": "All",
+      "busy": "Busy",
+      "idle": "Idle",
+      "paused": "Paused",
+      "error": "Error"
+    },
+    "lineageHint": {
+      "child": "↳ Child of {{parentName}}",
+      "topLevel": "Top-level session"
+    },
+    "status": {
+      "active": "Active",
+      "idle": "Idle",
+      "paused": "Paused",
+      "error": "Error",
+      "unknown": "Unknown"
+    },
+    "card": {
+      "fallbackName": "Session {{id}}",
+      "ariaLabel": "Session: {{name}}",
+      "level": "Level {{level}}",
+      "child": "Child",
+      "parent": "Parent",
+      "root": "Root",
+      "parentBadge": "Parent: {{id}}",
+      "lineageBadge": "Lineage: {{id}}",
+      "lineageFilterAria": "Filter by lineage {{id}}",
+      "statusAriaLabel": "Session status: {{status}}",
+      "model": "Model:",
+      "createdAt": "Created {{time}}",
+      "updatedAt": "Updated {{time}}",
+      "justNow": "just now",
+      "subagentsCount_one": "+{{count}} subagent",
+      "subagentsCount_other": "+{{count}} subagents",
+      "subagentsKept": "Subagents kept"
+    },
+    "actions": {
+      "view": "View",
+      "continue": "Continue",
+      "resume": "Resume",
+      "viewAria": "View session {{name}}",
+      "continueAria": "Continue session {{name}}",
+      "resumeAria": "Resume session {{name}}",
+      "groupAria": "Session actions",
+      "deleteTooltip": "Delete session",
+      "deleteAria": "Delete session {{name}}",
+      "deleting": "Deleting...",
+      "deleteAll": "Delete all",
+      "deleteAllAria": "Delete this session and all subagent sessions",
+      "deleteOnlyThis": "Delete only this",
+      "deleteOnlyThisAria": "Delete only this session",
+      "confirmDelete": "Confirm Delete",
+      "confirmDeleteAria": "Confirm deletion",
+      "cancel": "Cancel",
+      "cancelDeletionAria": "Cancel deletion"
+    },
+    "emptyState": {
+      "title": "No sessions yet",
+      "subtitle": "Start a conversation to create your first session"
+    }
+  },
   "settings": {
     "title": "Settings",
     "unsaved": "Unsaved",

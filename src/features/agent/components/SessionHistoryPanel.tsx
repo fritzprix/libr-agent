@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -44,15 +45,22 @@ export function SessionHistoryPanel({
   onResume,
   onDelete,
   onDeleteOnly,
-  heading = 'Recent Sessions',
-  description = 'Resume previous agent sessions',
-  searchPlaceholder = 'Search sessions by name or ID...',
-  emptyStateTitle = 'No previous sessions',
-  emptyStateSubtitle = 'Select an assistant to start your first session',
+  heading,
+  description,
+  searchPlaceholder,
+  emptyStateTitle,
+  emptyStateSubtitle,
 }: SessionHistoryPanelProps) {
+  const { t } = useTranslation('common');
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
+
+  const defaultHeading = heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
+  const defaultDescription = description ?? t('sessionHistory.defaultDescription', 'Resume previous agent sessions');
+  const defaultSearchPlaceholder = searchPlaceholder ?? t('sessionHistory.searchPlaceholder', 'Search sessions by name or ID...');
+  const defaultEmptyTitle = emptyStateTitle ?? t('sessionHistory.defaultEmptyTitle', 'No previous sessions');
+  const defaultEmptySubtitle = emptyStateSubtitle ?? t('sessionHistory.defaultEmptySubtitle', 'Start a conversation to create your first session');
 
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
@@ -178,15 +186,15 @@ export function SessionHistoryPanel({
 
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
-          `Session ${session.parentSessionId.slice(0, 8)}`
+          t('sessionHistory.card.fallbackName', 'Session {{id}}', { id: session.parentSessionId.slice(0, 8) })
         : undefined;
 
       rows.push({
         session,
         nestingLevel,
         lineageHint: parentName
-          ? `↳ Child of ${parentName}`
-          : 'Top-level session',
+          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', { parentName })
+          : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
       });
 
       const children = childrenByParent.get(session.id) || [];
@@ -240,10 +248,10 @@ export function SessionHistoryPanel({
                 className="text-2xl text-foreground font-semibold tracking-tight"
                 id="session-heading"
               >
-                {heading}
+                {defaultHeading}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {description} ({displayRows.length}/{baseSessions.length})
+                {defaultDescription} ({displayRows.length}/{baseSessions.length})
               </p>
             </div>
           </div>
@@ -252,7 +260,7 @@ export function SessionHistoryPanel({
             size="icon"
             onClick={onRefresh}
             disabled={isLoading}
-            aria-label="Refresh sessions"
+            aria-label={t('sessionHistory.refreshAria', 'Refresh sessions')}
             className="h-9 w-9"
           >
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
@@ -267,19 +275,19 @@ export function SessionHistoryPanel({
         >
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="all" className="flex-1">
-              All ({statusCounts.all})
+              {t('sessionHistory.tabs.all', 'All')} ({statusCounts.all})
             </TabsTrigger>
             <TabsTrigger value="busy" className="flex-1">
-              Busy ({statusCounts.busy})
+              {t('sessionHistory.tabs.busy', 'Busy')} ({statusCounts.busy})
             </TabsTrigger>
             <TabsTrigger value="idle" className="flex-1">
-              Idle ({statusCounts.idle})
+              {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
             </TabsTrigger>
             <TabsTrigger value="paused" className="flex-1">
-              Paused ({statusCounts.paused})
+              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused})
             </TabsTrigger>
             <TabsTrigger value="error" className="flex-1">
-              Error ({statusCounts.error})
+              {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -288,18 +296,18 @@ export function SessionHistoryPanel({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="text"
-            placeholder={searchPlaceholder}
+            placeholder={defaultSearchPlaceholder}
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             className="pl-10 pr-10"
-            aria-label="Search sessions"
+            aria-label={t('sessionHistory.searchAria', 'Search sessions')}
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchQueryChange('')}
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
-              aria-label="Clear search"
+              aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -307,14 +315,14 @@ export function SessionHistoryPanel({
         </div>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Focused lineage: {selectedLineageId.slice(0, 8)}</span>
+            <span>{t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', { id: selectedLineageId.slice(0, 8) })}</span>
             <Button
               variant="link"
               size="sm"
               className="h-auto p-0"
               onClick={() => setSelectedLineageId(null)}
             >
-              Show all lineages
+              {t('sessionHistory.showAllLineages', 'Show all lineages')}
             </Button>
           </div>
         )}
@@ -325,7 +333,7 @@ export function SessionHistoryPanel({
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                <p className="text-sm">Loading sessions...</p>
+                <p className="text-sm">{t('sessionHistory.loading', 'Loading sessions...')}</p>
               </div>
             </div>
           ) : displayRows.length === 0 ? (
@@ -334,8 +342,7 @@ export function SessionHistoryPanel({
                 {selectedLineageId ? (
                   <>
                     <p className="text-sm">
-                      No sessions visible in lineage{' '}
-                      {selectedLineageId.slice(0, 8)}
+                      {t('sessionHistory.noSessionsInLineage', 'No sessions visible in lineage {{id}}', { id: selectedLineageId.slice(0, 8) })}
                     </p>
                     <Button
                       variant="link"
@@ -343,13 +350,13 @@ export function SessionHistoryPanel({
                       onClick={() => setSelectedLineageId(null)}
                       className="mt-2"
                     >
-                      Clear lineage focus
+                      {t('sessionHistory.clearLineageFocus', 'Clear lineage focus')}
                     </Button>
                   </>
                 ) : searchQuery.trim() ? (
                   <>
                     <p className="text-sm">
-                      No sessions found matching &quot;{searchQuery}&quot;
+                      {t('sessionHistory.noSessionsMatching', 'No sessions found matching "{{query}}"', { query: searchQuery })}
                     </p>
                     <Button
                       variant="link"
@@ -357,13 +364,13 @@ export function SessionHistoryPanel({
                       onClick={() => onSearchQueryChange('')}
                       className="mt-2"
                     >
-                      Clear search
+                      {t('sessionHistory.clearSearch', 'Clear search')}
                     </Button>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm">{emptyStateTitle}</p>
-                    <p className="text-xs mt-2">{emptyStateSubtitle}</p>
+                    <p className="text-sm">{defaultEmptyTitle}</p>
+                    <p className="text-xs mt-2">{defaultEmptySubtitle}</p>
                   </>
                 )}
               </div>

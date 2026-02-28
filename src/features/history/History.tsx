@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   useAgentSessionListActions,
   useAgentSessionListState,
@@ -12,6 +13,7 @@ const logger = getLogger('History');
 
 export default function History() {
   const navigate = useNavigate();
+  const { t } = useTranslation('common');
   const { sessions, isSessionsListLoading } = useAgentSessionListState();
   const { loadSessions, deleteSession, deleteSessionOnly } =
     useAgentSessionListActions();
@@ -33,26 +35,26 @@ export default function History() {
     async (sessionId: string) => {
       try {
         await deleteSession(sessionId);
-        toast.success('Session deleted');
+        toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session', error);
-        toast.error('Failed to delete session');
+        toast.error(t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'));
       }
     },
-    [deleteSession],
+    [deleteSession, t],
   );
 
   const handleDeleteSessionOnly = useCallback(
     async (sessionId: string) => {
       try {
         await deleteSessionOnly(sessionId);
-        toast.success('Session deleted');
+        toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session only', error);
-        toast.error('Failed to delete session');
+        toast.error(t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'));
       }
     },
-    [deleteSessionOnly],
+    [deleteSessionOnly, t],
   );
 
   const handleRefreshSessions = useCallback(() => {
@@ -72,10 +74,10 @@ export default function History() {
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}
-        heading="Session History"
-        description="Browse and manage your conversation sessions"
-        emptyStateTitle="No sessions yet"
-        emptyStateSubtitle="Start a conversation to create your first session"
+        heading={t('sessionHistory.heading', 'Session History')}
+        description={t('sessionHistory.description', 'Browse and manage your conversation sessions')}
+        emptyStateTitle={t('sessionHistory.emptyState.title', 'No sessions yet')}
+        emptyStateSubtitle={t('sessionHistory.emptyState.subtitle', 'Start a conversation to create your first session')}
       />
     </div>
   );
