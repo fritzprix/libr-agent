@@ -14,7 +14,7 @@ mod search;
 pub mod server;
 pub mod services;
 pub mod session;
-mod session_isolation;
+pub mod session_isolation;
 mod state;
 pub mod utils;
 
@@ -43,8 +43,8 @@ use commands::file_commands::{
     read_dropped_file, register_dropped_files, workspace_write_file, write_file,
 };
 use commands::log_commands::{
-    backup_current_log, clear_current_log, list_log_files, log_debug, log_error_from_frontend,
-    log_info, log_trace, log_warn,
+    backup_current_log, clear_current_log, list_log_files, log_batch, log_debug,
+    log_error_from_frontend, log_info, log_trace, log_warn,
 };
 use commands::mcp_commands::{
     get_oauth_token, has_oauth_token, list_available_builtin_server_definitions,
@@ -163,6 +163,7 @@ pub fn run() {
                 log_info,
                 log_warn,
                 log_error_from_frontend,
+                log_batch,
                 register_dropped_files,
                 read_dropped_file,
                 write_file,

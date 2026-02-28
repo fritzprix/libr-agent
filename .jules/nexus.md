@@ -30,3 +30,10 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
   - Extracted `Message` struct to `src-tauri/src/models/chat.rs` to decouple data shape from command handler.
   - Extracted `MessageService` (`src-tauri/src/services/message_service.rs`) to encapsulate business logic for message deletion (DB + cache) and search (index management).
 - **Result:** `messages_commands.rs` is now a thin wrapper. The `Message` model is reusable across the application. Search logic is centralized and testable.
+
+## 2026-02-27 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** `agent_commands.rs` contained significant business logic for deleting all sessions and performing a factory reset, violating the Separation of Concerns principle.
+- **Action:**
+  - Extracted `AgentService` (`src-tauri/src/services/agent_service.rs`) to encapsulate the domain logic for `clear_all_sessions` and `factory_reset`.
+- **Result:** Command handlers in `agent_commands.rs` are now thin wrappers delegating to `AgentService`. The handlers are decoupled from Tauri `State`; the service still relies on global repository singletons, so full unit-test isolation requires a future dependency-injection refactor.

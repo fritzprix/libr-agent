@@ -108,6 +108,42 @@ Immediately stops any running workflows and cleans up session resources.
 
 ---
 
+### Get Child Sessions
+
+Retrieves a list of child sessions spawned by a parent session.
+
+- **Method**: `GET`
+- **Path**: `/api/sessions/:id/children`
+
+#### Response Body
+
+```json
+{
+  "parentSessionId": "string",
+  "count": 2,
+  "children": ["session-id-1", "session-id-2"]
+}
+```
+
+---
+
+### Resume Session
+
+Resumes a paused session.
+
+- **Method**: `POST`
+- **Path**: `/api/sessions/:id/resume`
+
+#### Response Body
+
+```json
+{
+  "status": "resumed"
+}
+```
+
+---
+
 ## 💬 Messaging
 
 ### Send Message
@@ -191,6 +227,47 @@ Lists all configured assistant roles available on the platform.
       "config": "JSON String"
     }
   ]
+}
+```
+
+---
+
+### Get Assistant
+
+Retrieves details for a specific assistant.
+
+- **Method**: `GET`
+- **Path**: `/api/assistants/:id`
+
+#### Response Body
+
+```json
+{
+  "id": "string",
+  "name": "Coder",
+  "config": "{...}",
+  "created_at": 1739000000000,
+  "updated_at": 1739000000000
+}
+```
+
+---
+
+## 🏥 System
+
+### Health Check
+
+Checks if the server is running and reachable.
+
+- **Method**: `GET`
+- **Path**: `/api/health`
+
+#### Response Body
+
+```json
+{
+  "status": "ok",
+  "service": "libr-agent-session-api"
 }
 ```
 
