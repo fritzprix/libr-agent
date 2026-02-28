@@ -5,6 +5,148 @@ use std::fs;
 pub struct AgentService;
 
 impl AgentService {
+    /// Create a new agent session
+    pub async fn create_session(
+        manager: &AgentSessionManager,
+        request: crate::commands::agent_commands::CreateAgentSessionRequest,
+    ) -> Result<crate::repositories::SessionMetadata, String> {
+        use crate::repositories::in_memory_session_repository::InMemorySessionRepository;
+        use crate::repositories::SessionRepository;
+        use std::sync::Arc;
+
+        // Handle workspace override if path is provided
+        if let Some(path_str) = &request.workspace_path {
+            if let Ok(session_manager) = crate::session::get_session_manager() {
+                let path = std::path::PathBuf::from(path_str);
+                // Ensure path is absolute and valid
+                if path.is_absolute() {
+                    session_manager
+                        .register_session_override(&request.session_id, path)
+                        .await?;
+                } else {
+                    return Err("Workspace path must be absolute".to_string());
+                }
+            } else {
+                log::warn!("Failed to get session manager for workspace override");
+            }
+        }
+
+        // Select repository based on is_ephemeral flag
+        let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
+            log::info!(
+                "Creating ephemeral session (in-memory only): {}",
+                request.session_id
+            );
+            Arc::new(InMemorySessionRepository::new()) as Arc<dyn SessionRepository>
+        } else {
+            log::info!(
+                "Creating persistent session (DB-backed): {}",
+                request.session_id
+            );
+            Arc::new(crate::state::get_session_repository().clone())
+        };
+
+        manager
+            .create_session_with_repo(
+                session_repo,
+                request.session_id,
+                request.name,
+                request.model,
+                request.provider,
+                request.agent_config,
+            )
+            .await
+    }
+
+    /// Create a new session and IMMEDIATELY start the workflow with an initial message
+    /// This is used for "Draft Mode" where the session is created only when the first message is sent.
+    pub async fn create_session_with_initial_message(
+        manager: &AgentSessionManager,
+        request: crate::commands::agent_commands::CreateAgentSessionWithMessageRequest,
+    ) -> Result<crate::commands::agent_commands::AgentResponse, String> {
+        // 1. Create the session first (persistent by default)
+        // We use the default persistent repository here
+        let session_repo = std::sync::Arc::new(crate::state::get_session_repository().clone());
+
+        manager
+            .create_session_with_repo(
+                session_repo,
+                request.session_id.clone(),
+                request.name,
+                request.model,
+                request.provider,
+                request.agent_config,
+            )
+            .await?;
+
+        // 2. Start the workflow with the initial message
+        manager
+            .start_workflow(request.session_id.clone(), request.message)
+            .await
+            .map(|_| crate::commands::agent_commands::AgentResponse {
+                success: true,
+                message: "Session created and workflow started".to_string(),
+                data: None,
+            })
+    }
+
+    /// Call a builtin tool directly via proxy_manager (for testing and direct execution)
+    /// Returns the unwrapped MCPResult (not the full MCPResponse wrapper)
+    pub async fn call_builtin_tool(
+        session_id: String,
+        tool_name: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        use crate::mcp::types::MCPResponseResult;
+        use crate::state::get_mcp_service_proxy_manager;
+
+        let proxy_manager = get_mcp_service_proxy_manager();
+
+        let response = proxy_manager
+            .call_tool(&session_id, &tool_name, args)
+            .await?;
+
+        // Handle errors from tool execution
+        if let Some(error) = response.error {
+            return Err(format!("Tool execution error: {}", error.message));
+        }
+
+        // Extract result from MCPResponse
+        let result = response
+            .result
+            .ok_or_else(|| "Tool execution returned no result or error".to_string())?;
+
+        // Unwrap MCPResult from MCPResponseResult::ToolCall variant
+        // This matches the TypeScript expectation of receiving MCPResult directly
+        match result {
+            MCPResponseResult::ToolCall(mcp_result) => {
+                // Serialize MCPResult (with camelCase field names matching TypeScript interface)
+                serde_json::to_value(mcp_result)
+                    .map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+            }
+            _ => Err(format!(
+                "Unexpected response type for builtin tool '{}': expected ToolCall variant",
+                tool_name
+            )),
+        }
+    }
+
+    /// Get service contexts for a session
+    pub async fn get_service_contexts(
+        session_id: String,
+    ) -> Result<std::collections::HashMap<String, crate::mcp::types::ServiceContext>, String> {
+        use crate::state::get_mcp_service_proxy_manager;
+
+        let proxy_manager = get_mcp_service_proxy_manager();
+
+        let proxy = proxy_manager
+            .get_proxy(&session_id)
+            .await
+            .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
+
+        Ok(proxy.get_service_contexts().await)
+    }
+
     /// Clear all agent sessions (used for "Clear All Sessions" feature)
     pub async fn clear_all_sessions(manager: &AgentSessionManager) -> Result<usize, String> {
         // 1. Get all sessions
