@@ -89,6 +89,48 @@ fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> 
     SESSION_LINEAGE.get_or_init(|| TokioRwLock::new(HashMap::new()))
 }
 
+/// Returns true if the path points to a restricted system directory that agents
+/// should not be allowed to use as a workspace.
+fn is_restricted_system_path(path: &std::path::Path) -> bool {
+    let normalized = path.to_string_lossy().to_lowercase().replace('\\', "/");
+
+    // Windows system directories
+    let windows_prefixes = [
+        "c:/windows",
+        "c:/program files",
+        "c:/program files (x86)",
+        "c:/programdata",
+        "c:/system volume information",
+    ];
+
+    // Unix/macOS system directories
+    let unix_prefixes = [
+        "/etc",
+        "/sys",
+        "/proc",
+        "/dev",
+        "/run",
+        "/boot",
+        "/bin",
+        "/sbin",
+        "/lib",
+        "/lib64",
+        "/usr/bin",
+        "/usr/sbin",
+        "/usr/lib",
+        "/system",  // macOS
+        "/library", // macOS
+    ];
+
+    for prefix in windows_prefixes.iter().chain(unix_prefixes.iter()) {
+        if normalized == *prefix || normalized.starts_with(&format!("{}/", prefix)) {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub async fn create_session(
     manager: Arc<AgentSessionManager>,
     body: CreateSessionRequest,
@@ -313,22 +355,32 @@ pub async fn create_session(
 
     // Register override if path provided
     if let Some(path_str) = body.workspace_path {
+        let path = std::path::PathBuf::from(&path_str);
+        if !path.is_absolute() {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: "Workspace path must be absolute".to_string(),
+                }),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        if is_restricted_system_path(&path) {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: format!(
+                        "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
+                        path_str
+                    ),
+                }),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
         if let Ok(session_manager) = crate::session::get_session_manager() {
-            let path = std::path::PathBuf::from(path_str);
-            if path.is_absolute() {
-                if let Err(e) = session_manager
-                    .register_session_override(&session_id, path)
-                    .await
-                {
-                    log::warn!("Failed to register workspace override: {}", e);
-                }
-            } else {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&ErrorResponse {
-                        error: "Workspace path must be absolute".to_string(),
-                    }),
-                    StatusCode::BAD_REQUEST,
-                ));
+            if let Err(e) = session_manager
+                .register_session_override(&session_id, path)
+                .await
+            {
+                log::warn!("Failed to register workspace override: {}", e);
             }
         }
     }
@@ -435,9 +487,31 @@ pub async fn get_session(
 pub async fn get_messages(
     id: String,
     query: GetMessagesQuery,
-    _manager: Arc<AgentSessionManager>, // Not used directly, but kept for consistency if needed later
+    manager: Arc<AgentSessionManager>,
 ) -> Result<impl Reply, Rejection> {
-    // We access the repo directly here as per the plan
+    // Validate session existence before fetching messages.
+    // Without this check the message repo silently returns an empty list
+    // for any unknown session ID, masking bugs.
+    match manager.get_session(&id).await {
+        Ok(None) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: format!("Session not found: {}", id),
+                }),
+                StatusCode::NOT_FOUND,
+            ))
+        }
+        Err(e) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: format!("Failed to validate session: {}", e),
+                }),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+        Ok(Some(_)) => {} // Session exists, proceed
+    }
+
     let repo = crate::state::get_message_repository();
     let limit = query.limit.unwrap_or(50);
 
