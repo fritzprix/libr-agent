@@ -1,16 +1,16 @@
 {
   "mcpServers": {
-    "mcp-hn": {
-      "description": "Read top stories from Hacker News.",
+    "hn": {
+      "description": "Read Hacker News — top, new, best, Ask HN, Show HN, and job stories.",
       "logo": "https://news.ycombinator.com/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fritzprix/hn-mcp"]
+      "args": ["-y", "@fre4x/hn"]
     },
-    "yfinance": {
-      "description": "Get real-time stock market data and financial news.",
+    "yahoo-finance": {
+      "description": "Get real-time stock prices, financials, options chains, and insider data. No API key required.",
       "logo": "https://s.yimg.com/rz/p/yahoo_finance_en-US_h_p_finance_2.png",
-      "command": "uvx",
-      "args": ["yfin-mcp"]
+      "command": "npx",
+      "args": ["-y", "@fre4x/yahoo-finance"]
     },
     "ddg-search": {
       "description": "Search the web privately using DuckDuckGo.",
@@ -67,7 +67,7 @@
       "description": "Google Jules — autonomous coding agent for GitHub tasks.",
       "logo": "https://jules.google.com/favicon.ico",
       "command": "npx",
-      "args": ["-y", "jules-mcp"],
+      "args": ["-y", "@fre4x/jules"],
       "env": {
         "JULES_API_KEY": ""
       },
@@ -75,7 +75,7 @@
         "JULES_API_KEY": {
           "required": true,
           "label": "Jules API Key",
-          "description": "Get your API key from https://jules.google.com",
+          "description": "Get your API key from https://jules.google.com/settings#api",
           "type": "password"
         }
       }
@@ -119,10 +119,10 @@
       }
     },
     "fred": {
-      "description": "Access economic data from the Federal Reserve (FRED).",
+      "description": "Access Federal Reserve economic data — GDP, inflation, unemployment, interest rates, and 800K+ series.",
       "logo": "https://fred.stlouisfed.org/favicon.ico",
-      "command": "uvx",
-      "args": ["fred-data-mcp"],
+      "command": "npx",
+      "args": ["-y", "@fre4x/fred"],
       "env": {
         "FRED_API_KEY": ""
       },
@@ -130,7 +130,30 @@
         "FRED_API_KEY": {
           "required": true,
           "label": "FRED API Key",
-          "description": "Get your API key from https://fred.stlouisfed.org/docs/api/api_key.html",
+          "description": "Get your free API key from https://fred.stlouisfed.org/docs/api/api_key.html",
+          "type": "password"
+        }
+      }
+    },
+    "arxiv": {
+      "description": "Search and retrieve academic papers from arXiv — millions of papers across all categories.",
+      "logo": "https://arxiv.org/favicon.ico",
+      "command": "npx",
+      "args": ["-y", "@fre4x/arxiv"]
+    },
+    "gemini": {
+      "description": "Google Gemini — multimodal text generation, image/video analysis, and image synthesis via Imagen.",
+      "logo": "https://www.gstatic.com/lamda/images/gemini_favicon_f069958c85030456e93de685481c559f160ea06.svg",
+      "command": "npx",
+      "args": ["-y", "@fre4x/gemini"],
+      "env": {
+        "GEMINI_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "GEMINI_API_KEY": {
+          "required": true,
+          "label": "Google AI Studio API Key",
+          "description": "Get your free API key from https://aistudio.google.com",
           "type": "password"
         }
       }

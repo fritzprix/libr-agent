@@ -831,68 +831,71 @@ function DraftChatInner() {
               dragState === 'invalid' && 'bg-destructive/10 border-destructive',
             )}
           >
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handleFileAdd}
-            className="hidden"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isSubmitting || isAttachmentLoading}
-            className="mb-1 h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
-            title="Attach files"
-            aria-label="Attach files"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              onInputChange(e.target.value, e.target.selectionStart ?? e.target.value.length);
-            }}
-            placeholder={
-              dragState === 'valid'
-                ? 'Drop files here...'
-                : dragState === 'invalid'
-                  ? 'Unsupported file!'
-                  : isAttachmentLoading
-                    ? 'Uploading...'
-                    : `Message ${assistant.name}...`
-            }
-            className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit(e);
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileAdd}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSubmitting || isAttachmentLoading}
+              className="mb-1 h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+              title="Attach files"
+              aria-label="Attach files"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                onInputChange(
+                  e.target.value,
+                  e.target.selectionStart ?? e.target.value.length,
+                );
+              }}
+              placeholder={
+                dragState === 'valid'
+                  ? 'Drop files here...'
+                  : dragState === 'invalid'
+                    ? 'Unsupported file!'
+                    : isAttachmentLoading
+                      ? 'Uploading...'
+                      : `Message ${assistant.name}...`
               }
-            }}
-            disabled={isSubmitting || isAttachmentLoading}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={
-              (!input.trim() && pendingFiles.length === 0) ||
-              isSubmitting ||
-              isAttachmentLoading
-            }
-            className="mb-1"
-          >
-            {isSubmitting || isAttachmentLoading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </Button>
-        </form>
+              className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
+              disabled={isSubmitting || isAttachmentLoading}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={
+                (!input.trim() && pendingFiles.length === 0) ||
+                isSubmitting ||
+                isAttachmentLoading
+              }
+              className="mb-1"
+            >
+              {isSubmitting || isAttachmentLoading ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+            </Button>
+          </form>
         </div>
       </div>
     </div>

@@ -303,7 +303,11 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
               onDismiss={onDismiss}
             />
           )}
-        <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
+        <form
+          ref={chatInputRef}
+          onSubmit={handleSubmit}
+          className={formClassName}
+        >
           <FileAttachment
             files={fileAttachmentFiles}
             onRemove={handleRemoveFile}
