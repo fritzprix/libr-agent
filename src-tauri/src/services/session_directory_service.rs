@@ -59,19 +59,19 @@ impl SessionDirectoryService {
         }
 
         // Create a basic welcome script
-        let welcome_script = r#"#!/bin/bash
+        #[cfg(not(target_os = "windows"))]
+        {
+            let welcome_script = r#"#!/bin/bash
 echo "Welcome to your isolated workspace!"
 echo "Session ID: $(basename "$PWD")"
 echo "Workspace: $PWD"
 echo "Available tools: python3, typescript/deno, shell commands"
 "#;
 
-        fs::write(template_path.join("welcome.sh"), welcome_script)
-            .map_err(|e| format!("Failed to create welcome script: {e}"))?;
+            fs::write(template_path.join("welcome.sh"), welcome_script)
+                .map_err(|e| format!("Failed to create welcome script: {e}"))?;
 
-        // Make script executable on Unix systems
-        #[cfg(unix)]
-        {
+            // Make script executable on Unix systems
             use std::os::unix::fs::PermissionsExt;
             let mut perms = fs::metadata(template_path.join("welcome.sh"))
                 .map_err(|e| format!("Failed to get script metadata: {e}"))?
@@ -79,6 +79,18 @@ echo "Available tools: python3, typescript/deno, shell commands"
             perms.set_mode(0o755);
             fs::set_permissions(template_path.join("welcome.sh"), perms)
                 .map_err(|e| format!("Failed to set script permissions: {e}"))?;
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let welcome_script = r#"Write-Host "Welcome to your isolated workspace!"
+Write-Host "Session ID: $((Get-Item $PWD).Name)"
+Write-Host "Workspace: $PWD"
+Write-Host "Available tools: python3, typescript/deno, shell commands"
+"#;
+
+            fs::write(template_path.join("welcome.ps1"), welcome_script)
+                .map_err(|e| format!("Failed to create welcome script: {e}"))?;
         }
 
         Ok(())
@@ -119,6 +131,9 @@ echo "Available tools: python3, typescript/deno, shell commands"
         session_dir: &Path,
     ) -> Result<(), String> {
         // Copy essential files asynchronously
+        #[cfg(target_os = "windows")]
+        let items_to_copy = vec!["welcome.ps1"];
+        #[cfg(not(target_os = "windows"))]
         let items_to_copy = vec!["welcome.sh"];
 
         for item in items_to_copy {
