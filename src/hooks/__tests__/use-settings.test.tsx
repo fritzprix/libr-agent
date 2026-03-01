@@ -1,8 +1,9 @@
 import { renderHook } from '@testing-library/react';
 import { useSettings } from '../use-settings';
-import { SettingsContext, SettingsContextType } from '@/context/SettingsContext';
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { SettingsContext } from '@/context/SettingsContext';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import React from 'react';
+import { DEFAULT_SETTING } from '@/lib/services/settings-service';
 
 // Mock console.error to prevent act warnings from cluttering output during the expected error test
 const originalError = console.error;
@@ -20,35 +21,23 @@ afterAll(() => {
 
 describe('useSettings', () => {
   it('throws an error if used outside of SettingsProvider', () => {
-    // Suppress console.error for expected thrown error
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-
     expect(() => renderHook(() => useSettings())).toThrowError(
       'useSettings must be used within a SettingsProvider',
     );
-
-    consoleSpy.mockRestore();
   });
 
   it('returns context value when used within SettingsProvider', () => {
-    const mockContextValue: SettingsContextType = {
-      settings: {
-        apiKeys: {},
-        llmProvider: 'openai',
-        defaultModel: 'gpt-4o',
-        theme: 'system',
-        developerMode: false,
-        mcp: {
-          servers: {}
-        }
-      },
-      updateSettings: vi.fn(),
-      isLoaded: true,
+    // We cannot use SettingsContextType as an import because it is not exported,
+    // so we just define a valid object literal matching its expected shape:
+    const mockContextValue = {
+      value: DEFAULT_SETTING,
+      update: async () => { },
+      isLoading: false,
       error: null,
     };
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <SettingsContext.Provider value={mockContextValue}>
+      <SettingsContext.Provider value={mockContextValue as any}>
         {children}
       </SettingsContext.Provider>
     );
@@ -56,6 +45,6 @@ describe('useSettings', () => {
     const { result } = renderHook(() => useSettings(), { wrapper });
 
     expect(result.current).toBe(mockContextValue);
-    expect(result.current.settings.llmProvider).toBe('openai');
+    expect(result.current.value.preferredModel.provider).toBe(DEFAULT_SETTING.preferredModel.provider);
   });
 });
