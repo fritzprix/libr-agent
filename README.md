@@ -150,6 +150,34 @@ Primary user-facing tools:
 
 > Note: Additional internal modules (Bootstrap, Content Store, UI, MCP Manager) handle infrastructure and state.
 
+## Agent Features
+
+### @mention Reference System
+
+Type `@` in the chat input to inject rich context directly into your message:
+
+| Syntax | What it injects |
+|---|---|
+| `@skill:name` | Full skill documentation (available in all chat views) |
+| `@tool:name` | Soft attention hint for a specific MCP/builtin tool |
+| `@file:path` | File content from the session workspace |
+
+Autocomplete suggests matching skills, tools, and files as you type. On submit, mentions are resolved and injected into the message before it reaches the LLM. Unresolved references are appended as a `⚠️` warning so the agent knows what was missing.
+
+### Workspace Agent Instructions
+
+Drop any of the following files into a session workspace and LibrAgent will automatically inject their contents into the system prompt before the session starts:
+
+```
+agents.md  AGENTS.md  soul.md  CLAUDE.md  GEMINI.md
+```
+
+This lets you define project-specific agent behavior, coding conventions, or constraints at the workspace level — no global settings change needed.
+
+### Session Bookmarks
+
+Mark important sessions as bookmarks to keep them pinned in the session list. Bookmarks persist across restarts.
+
 ## Architecture
 
 ### Tauri 2.x + Rust Backend
