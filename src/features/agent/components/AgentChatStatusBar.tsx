@@ -77,21 +77,32 @@ export function AgentChatStatusBar() {
     return { builtinTools: builtin, externalTools: external };
   }, [availableTools]);
 
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+
   const handleRetry = async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
     try {
       await retryMessage();
     } catch (err) {
       logger.error('Failed to retry message:', err);
       toast.error('Failed to retry message');
+    } finally {
+      setIsRetrying(false);
     }
   };
 
   const handleResume = async () => {
+    if (isResuming) return;
+    setIsResuming(true);
     try {
       await resume();
     } catch (err) {
       logger.error('Failed to resume session:', err);
       toast.error('Failed to resume session');
+    } finally {
+      setIsResuming(false);
     }
   };
 
@@ -191,9 +202,14 @@ export function AgentChatStatusBar() {
             variant="outline"
             onClick={handleRetry}
             className="h-7"
+            disabled={isRetrying}
           >
-            <RefreshCw className="w-3 h-3 mr-1" />
-            Retry
+            {isRetrying ? (
+              <LoadingSpinner size="sm" className="mr-1" />
+            ) : (
+              <RefreshCw className="w-3 h-3 mr-1" />
+            )}
+            {isRetrying ? 'Retrying...' : 'Retry'}
           </Button>
         )}
         {config.showResume && (
@@ -202,9 +218,14 @@ export function AgentChatStatusBar() {
             variant="outline"
             onClick={handleResume}
             className="h-7"
+            disabled={isResuming}
           >
-            <Play className="w-3 h-3 mr-1" />
-            Continue
+            {isResuming ? (
+              <LoadingSpinner size="sm" className="mr-1" />
+            ) : (
+              <Play className="w-3 h-3 mr-1" />
+            )}
+            {isResuming ? 'Resuming...' : 'Continue'}
           </Button>
         )}
       </div>
