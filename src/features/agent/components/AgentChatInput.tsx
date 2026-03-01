@@ -249,20 +249,19 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   );
 
   const inputClassName = cn(
-    'w-full resize-none transition-colors bg-transparent outline-none border-none py-3 px-4 text-sm leading-relaxed max-h-36 overflow-y-auto',
+    'flex-1 resize-none transition-colors bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto',
   );
 
   const formClassName = cn(
-    'mx-4 mb-4 rounded-2xl border bg-background shadow-sm transition-colors',
-    dragState === 'valid' && 'border-success bg-success/5',
-    dragState === 'invalid' && 'border-destructive bg-destructive/5',
-    dragState === 'none' && 'border-border',
+    'flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20 transition-colors',
+    dragState === 'valid' && 'bg-success/10 border-success',
+    dragState === 'invalid' && 'bg-destructive/10 border-destructive',
   );
 
   const hasContent = input.trim() || attachedFiles.length > 0;
 
   return (
-    <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
+    <div className="p-4 border-t">
       <div className="relative">
         {stage.kind !== 'idle' &&
           (typeResults.length > 0 ||
@@ -304,24 +303,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
               onDismiss={onDismiss}
             />
           )}
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={handleAgentInputChange}
-          onKeyDown={handleKeyDown}
-          placeholder={inputPlaceholder}
-          className={inputClassName}
-          style={textareaStyle}
-          autoComplete="off"
-          spellCheck="false"
-          rows={1}
-          aria-label="Chat input"
-        />
-      </div>
-
-      {/* Bottom toolbar */}
-      <div className="flex items-center justify-between px-3 pb-2 gap-2">
-        <div className="flex items-center gap-1">
+        <form ref={chatInputRef} onSubmit={handleSubmit} className={formClassName}>
           <FileAttachment
             files={fileAttachmentFiles}
             onRemove={handleRemoveFile}
@@ -329,9 +311,19 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             compact={true}
           />
           {children}
-        </div>
-
-        <div className="flex items-center gap-1">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={handleAgentInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={inputPlaceholder}
+            className={inputClassName}
+            style={textareaStyle}
+            autoComplete="off"
+            spellCheck="false"
+            rows={1}
+            aria-label="Chat input"
+          />
           {isBusy ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -340,7 +332,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   onClick={handleCancel}
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-xl text-destructive hover:bg-destructive/10"
+                  className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
                   disabled={pendingCancel}
                   aria-label="Cancel request"
                 >
@@ -362,7 +354,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   type="submit"
                   disabled={!hasContent || isAttachmentLoading}
                   size="icon"
-                  className="h-8 w-8 rounded-xl"
+                  className="mb-1 shrink-0"
                   aria-label="Send message"
                 >
                   <Send className="h-4 w-4" />
@@ -371,8 +363,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
               <TooltipContent>Send</TooltipContent>
             </Tooltip>
           )}
-        </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 }
