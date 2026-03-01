@@ -115,49 +115,9 @@ impl SessionMCPManager {
         // 1. Clear all inherited environment variables to prevent secret leakage
         cmd.env_clear();
 
-        let preserved_vars = [
-            "PATH",
-            "SystemRoot",              // Windows
-            "COMSPEC",                 // Windows
-            "PATHEXT",                 // Windows
-            "WINDIR",                  // Windows
-            "APPDATA",                 // Windows
-            "LOCALAPPDATA",            // Windows
-            "ProgramData",             // Windows
-            "ProgramFiles",            // Windows
-            "ProgramFiles(x86)",       // Windows
-            "CommonProgramFiles",      // Windows
-            "CommonProgramFiles(x86)", // Windows
-            "HOME",
-            "USERPROFILE", // Windows
-            "HOMEDRIVE",   // Windows
-            "HOMEPATH",    // Windows
-            "TEMP",
-            "TMP",
-            "TMPDIR",
-            "TERM",
-            "LANG",
-        ];
-
         // 2. Re-apply whitelisted system variables
-        for (key, value) in std::env::vars() {
-            // On Windows, env var names are case-insensitive (e.g., PATH is stored as 'Path').
-            // Use case-insensitive comparison so whitelisted names like 'PATH' match 'Path'.
-            #[cfg(windows)]
-            let is_preserved = preserved_vars.iter().any(|&p| p.eq_ignore_ascii_case(&key));
-            #[cfg(not(windows))]
-            let is_preserved = preserved_vars.contains(&key.as_str());
-
-            // Check exact matches
-            if is_preserved {
-                cmd.env(&key, &value);
-                continue;
-            }
-
-            // Check prefixes (Locale and XDG Base Directory variables)
-            if key.starts_with("LC_") || key.starts_with("XDG_") {
-                cmd.env(&key, &value);
-            }
+        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+            cmd.env(k, v);
         }
 
         // 3. Apply user-defined variables from config (can override system vars)
