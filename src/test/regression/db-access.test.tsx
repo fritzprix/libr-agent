@@ -9,7 +9,7 @@ const mockServerStore = new Map<string, { name: string; config: unknown; created
 const mockAssistantStore: unknown[] = [];
 
 // Mock Tauri API first (before any module imports)
-vi.mock('@tauri-apps/api/core', async () => {
+vi.mock('@/lib/backend/core', async () => {
     const mockInvoke = vi.fn().mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
         // Return proper DTOs for MCP server operations
         if (cmd === 'create_mcp_server_config' || cmd === 'update_mcp_server_config') {
@@ -41,6 +41,7 @@ vi.mock('@tauri-apps/api/core', async () => {
     });
 
     return {
+        safeInvoke: mockInvoke,
         invoke: mockInvoke,
     };
 });

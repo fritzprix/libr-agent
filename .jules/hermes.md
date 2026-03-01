@@ -51,3 +51,5 @@
 **Action:**
 
 - **Type Sync:** Applied strict generic return types (`invoke<Type>`) across the codebase. Reused existing strong interfaces (`AgentResponse`, `MCPTool[]`, `MCPResult<T>`, `AgentSessionMetadata`, `AssistantDto`, and `<void>`).
+
+## 2026-03-01 - [All Tauri Commands] **IPC Fix:** [Scattered Error Handling] **Optimized:** [Replaced explicit tauri invoke calls with safeInvoke from backend/core for centralized error handling and logging]

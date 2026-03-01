@@ -4,7 +4,7 @@ import useSWRImmutable from 'swr/immutable';
 import { useTranslation } from 'react-i18next';
 import { createId } from '@paralleldrive/cuid2';
 import { toast } from 'sonner';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { MCPServerEntity } from '@/models/chat';
 import { McpServerService } from '@/lib/services/mcp-server-service';
 import {

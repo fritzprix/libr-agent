@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { getLogger } from '@/lib/logger';
 import { useSettings } from '@/hooks/use-settings';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('SkillsContext');
