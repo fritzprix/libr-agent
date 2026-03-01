@@ -196,6 +196,14 @@ impl SessionRepository for InMemorySessionRepository {
         sessions.remove(session_id);
         Ok(())
     }
+
+    async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.is_bookmarked = bookmarked;
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {

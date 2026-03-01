@@ -68,12 +68,14 @@ export function useChatSubmit({
         }
       }
 
+      let messageText = input.trim();
+
       const userMessage: Message = {
         id: createId(),
         sessionId: session.id,
         threadId: session.id,
         role: 'user',
-        content: [{ type: 'text', text: input.trim() }],
+        content: [{ type: 'text', text: messageText }],
         createdAt: new Date(),
         updatedAt: new Date(),
       };

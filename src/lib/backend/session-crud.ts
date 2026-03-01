@@ -116,6 +116,16 @@ export async function deleteSessionOnly(id: string): Promise<void> {
   await safeInvoke('agent_delete_session_only', { sessionId: id });
 }
 
+export async function toggleSessionBookmark(
+  id: string,
+  bookmarked: boolean,
+): Promise<void> {
+  await safeInvoke('agent_toggle_session_bookmark', {
+    sessionId: id,
+    bookmarked,
+  });
+}
+
 export async function getSessionsPage(
   page: number,
   pageSize: number,

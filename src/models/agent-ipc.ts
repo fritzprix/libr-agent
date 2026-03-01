@@ -136,4 +136,5 @@ export interface AgentSessionMetadata {
   maxFanout?: number;
   createdAt: number;
   updatedAt?: number;
+  isBookmarked?: boolean;
 }

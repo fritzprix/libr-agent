@@ -5,7 +5,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Trash2, Play, Eye, Circle, Pause, XCircle } from 'lucide-react';
+import {
+  Trash2,
+  Play,
+  Eye,
+  Circle,
+  Pause,
+  XCircle,
+  Bookmark,
+  BookmarkCheck,
+} from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
@@ -26,6 +35,8 @@ interface SessionCardProps {
   descendantCount?: number;
   /** Delete only this session, promoting children to top-level (SP7). */
   onDeleteOnly?: (sessionId: string) => void;
+  /** Toggle bookmark on this session (SP12). */
+  onToggleBookmark?: (sessionId: string) => void;
 }
 
 /**
@@ -44,6 +55,7 @@ export function SessionCard({
   onLineageSelect,
   descendantCount = 0,
   onDeleteOnly,
+  onToggleBookmark,
 }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -306,6 +318,38 @@ export function SessionCard({
                 </>
               )}
             </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onToggleBookmark?.(session.id)}
+                  aria-label={
+                    session.isBookmarked
+                      ? t(
+                          'sessionHistory.actions.unbookmarkAria',
+                          'Remove bookmark',
+                        )
+                      : t(
+                          'sessionHistory.actions.bookmarkAria',
+                          'Bookmark session',
+                        )
+                  }
+                  className={session.isBookmarked ? 'text-yellow-500' : ''}
+                >
+                  {session.isBookmarked ? (
+                    <BookmarkCheck className="w-3 h-3" aria-hidden="true" />
+                  ) : (
+                    <Bookmark className="w-3 h-3" aria-hidden="true" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {session.isBookmarked
+                  ? t('sessionHistory.actions.unbookmark', 'Remove bookmark')
+                  : t('sessionHistory.actions.bookmark', 'Bookmark')}
+              </TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

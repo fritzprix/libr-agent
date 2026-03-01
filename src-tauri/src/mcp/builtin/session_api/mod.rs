@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::mcp::builtin::error_guidance::{ErrorCategory, ToolGroup, guided_error};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::error_normalization::{ExternalMcpErrorCategory, categorize_session_api_error};
+use crate::mcp::error_normalization::{categorize_session_api_error, ExternalMcpErrorCategory};
 use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
 
 mod cache;

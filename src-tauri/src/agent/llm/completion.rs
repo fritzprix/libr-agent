@@ -1,4 +1,6 @@
+use crate::agent::references::build_default_registry;
 use crate::agent::state::AgentSession;
+use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::{SessionRepository, SessionStatus};
@@ -140,6 +142,10 @@ pub async fn request_llm_completion(
             .await
             .ok();
 
+    // Resolve @type:arg references in user messages (Late Binding).
+    // The stored messages are NOT modified — only the CompletionRequest payload is enriched.
+    let messages = resolve_message_references(messages, &session_id).await;
+
     let request = CompletionRequest {
         session_id: session_id.clone(),
         messages,
@@ -158,4 +164,37 @@ pub async fn request_llm_completion(
     log::info!("Emitted LLM completion request for session: {}", session_id);
 
     Ok(())
+}
+
+/// Resolve `@type:arg` references in user messages.
+/// Each user message's text content is processed through the reference registry.
+/// Only the returned `Vec<Message>` is modified — the session store is untouched.
+async fn resolve_message_references(messages: Vec<Message>, session_id: &str) -> Vec<Message> {
+    let registry = build_default_registry(session_id).await;
+    let mut result = Vec::with_capacity(messages.len());
+
+    for mut msg in messages {
+        if msg.role == "user" {
+            let mut new_content: Vec<MCPContent> = Vec::with_capacity(msg.content.len());
+            for part in msg.content {
+                if let MCPContent::Text { text, .. } = &part {
+                    // Only process parts that contain @ references
+                    if text.contains('@') {
+                        let resolved = registry.preprocess_message_text(text).await;
+                        new_content.push(MCPContent::Text {
+                            text: resolved,
+                            is_error: None,
+                        });
+                    } else {
+                        new_content.push(part);
+                    }
+                } else {
+                    new_content.push(part);
+                }
+            }
+            msg.content = new_content;
+        }
+        result.push(msg);
+    }
+    result
 }

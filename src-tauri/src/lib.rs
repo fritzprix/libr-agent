@@ -31,7 +31,8 @@ use commands::agent_commands::{
     agent_get_service_contexts, agent_get_session, agent_get_tools, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
     agent_inject_messages, agent_pause_workflow, agent_resume_session, agent_resume_workflow,
-    agent_send_message, agent_terminate_workflow, agent_update_session_config,
+    agent_send_message, agent_terminate_workflow, agent_toggle_session_bookmark,
+    agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant,
@@ -68,8 +69,8 @@ use commands::settings_commands::{
     delete_setting, get_setting, list_settings, set_setting, update_settings,
 };
 use commands::skill_commands::{
-    get_aggregated_skills, get_default_skills_directory, open_skills_directory_in_explorer,
-    scan_skills_directory,
+    get_aggregated_skills, get_default_skills_directory, get_skill_content,
+    list_workspace_file_paths, open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
     copy_global_to_assistant, delete_assistant_skill, import_assistant_skills,
@@ -222,6 +223,7 @@ pub fn run() {
                 agent_factory_reset,
                 agent_update_session_config,
                 agent_create_session_with_initial_message,
+                agent_toggle_session_bookmark,
                 // CRUD Commands
                 create_assistant,
                 update_assistant,
@@ -248,6 +250,8 @@ pub fn run() {
                 get_default_skills_directory,
                 open_skills_directory_in_explorer,
                 get_aggregated_skills,
+                get_skill_content,
+                list_workspace_file_paths,
                 copy_global_to_assistant,
                 delete_assistant_skill,
                 import_assistant_skills,

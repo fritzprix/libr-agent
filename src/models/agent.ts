@@ -21,6 +21,7 @@ export interface AgentSession {
   parentSessionId?: string;
   lineageId?: string;
   depth?: number;
+  isBookmarked?: boolean;
 }
 
 /**

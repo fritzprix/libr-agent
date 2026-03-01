@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { RefreshCw, Search, History, X } from 'lucide-react';
+import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { filterSessions } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
@@ -20,6 +20,7 @@ interface SessionHistoryPanelProps {
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onDeleteOnly?: (sessionId: string) => void;
+  onToggleBookmark?: (sessionId: string) => void;
   heading?: string;
   description?: string;
   searchPlaceholder?: string;
@@ -45,6 +46,7 @@ export function SessionHistoryPanel({
   onResume,
   onDelete,
   onDeleteOnly,
+  onToggleBookmark,
   heading,
   description,
   searchPlaceholder,
@@ -55,6 +57,7 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
+  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -87,6 +90,10 @@ export function SessionHistoryPanel({
   const filteredAndSortedSessions = useMemo(() => {
     let filtered = baseSessions;
 
+    if (showBookmarkedOnly) {
+      filtered = filtered.filter((session) => session.isBookmarked === true);
+    }
+
     if (activeTab !== 'all') {
       filtered = filtered.filter((session) => session.status === activeTab);
     }
@@ -99,7 +106,7 @@ export function SessionHistoryPanel({
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [baseSessions, searchQuery, activeTab]);
+  }, [baseSessions, searchQuery, activeTab, showBookmarkedOnly]);
 
   // Eradicating Action-Effect Chain / Derived State
   // Checking existence of selected lineage directly during render.
@@ -331,6 +338,25 @@ export function SessionHistoryPanel({
             </button>
           )}
         </div>
+        <Button
+          variant={showBookmarkedOnly ? 'secondary' : 'ghost'}
+          size="sm"
+          className="self-start"
+          onClick={() => setShowBookmarkedOnly((prev) => !prev)}
+          aria-pressed={showBookmarkedOnly}
+          aria-label={t(
+            'sessionHistory.bookmarkFilterAria',
+            'Show bookmarked sessions only',
+          )}
+        >
+          <Bookmark
+            className={cn(
+              'h-3.5 w-3.5 mr-1.5',
+              showBookmarkedOnly && 'fill-current text-yellow-500',
+            )}
+          />
+          {t('sessionHistory.bookmarkFilter', 'Bookmarked')}
+        </Button>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
             <span>
@@ -422,6 +448,7 @@ export function SessionHistoryPanel({
                     onResume={onResume}
                     onDelete={onDelete}
                     onDeleteOnly={onDeleteOnly}
+                    onToggleBookmark={onToggleBookmark}
                     nestingLevel={nestingLevel}
                     lineageHint={lineageHint}
                     selectedLineageId={selectedLineageId}

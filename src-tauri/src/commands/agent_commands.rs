@@ -1,6 +1,8 @@
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::ServiceContext;
 use crate::repositories::SessionMetadata;
+use crate::repositories::SessionRepository;
+use crate::state::get_session_repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{command, State};
@@ -416,6 +418,18 @@ pub async fn agent_clear_all_sessions(
         message: format!("Cleared {} sessions", count),
         data: None,
     })
+}
+
+/// Toggle the bookmark flag on a session
+#[command]
+pub async fn agent_toggle_session_bookmark(
+    session_id: String,
+    bookmarked: bool,
+) -> Result<(), String> {
+    let repo = get_session_repository();
+    repo.toggle_bookmark(&session_id, bookmarked)
+        .await
+        .map_err(|e| format!("Failed to toggle bookmark: {}", e))
 }
 
 /// Factory reset the agent system (used for "Reset All Data & Settings" feature)

@@ -17,6 +17,7 @@ pub struct Model {
     pub max_fanout: Option<i32>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

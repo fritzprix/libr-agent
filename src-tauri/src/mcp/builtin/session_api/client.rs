@@ -74,7 +74,12 @@ pub async fn call_json(
         let cause = serde_json::from_str::<serde_json::Value>(&text)
             .ok()
             .and_then(|v| v["error"].as_str().map(String::from))
-            .unwrap_or_else(|| status.canonical_reason().unwrap_or("Unknown error").to_string());
+            .unwrap_or_else(|| {
+                status
+                    .canonical_reason()
+                    .unwrap_or("Unknown error")
+                    .to_string()
+            });
         return Err(format!("Request failed ({}): {}", status.as_u16(), cause));
     }
 
