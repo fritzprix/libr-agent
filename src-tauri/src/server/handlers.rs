@@ -151,7 +151,7 @@ fn is_restricted_system_path(path: &std::path::Path) -> bool {
             }
         }
 
-        return false;
+        false
     }
 
     #[cfg(not(target_os = "windows"))]

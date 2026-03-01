@@ -182,9 +182,7 @@ export abstract class BaseAIService implements IAIService {
    *          containing either text or image data.
    * @protected
    */
-  protected processMultiModalContent(
-    content: MCPContent[],
-  ): Array<{
+  protected processMultiModalContent(content: MCPContent[]): Array<{
     type: string;
     text?: string;
     image?: string;

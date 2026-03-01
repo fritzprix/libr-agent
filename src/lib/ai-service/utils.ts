@@ -139,9 +139,7 @@ type MediaItem = {
   source?: { data?: string; uri?: string; mimeType?: string };
 };
 
-export function processMultiModalContent(
-  content: MCPContent[],
-): Array<{
+export function processMultiModalContent(content: MCPContent[]): Array<{
   type: string;
   text?: string;
   image?: string;
