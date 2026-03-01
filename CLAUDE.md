@@ -333,11 +333,11 @@ The system uses an agentic architecture where the Rust backend drives all orches
     - **`AgentSessionManager`**: The central brain residing in Rust (`src-tauri/src/agent/`). It manages the "Think-Act-Observe" loop independently of the frontend.
     - **Event-Driven:** Uses an event bus (`agent:event`) to push status updates and messages to the UI. The frontend (`AgentChatContext`) is purely reactive.
 
-3.  **Session Isolation:**
+2.  **Session Isolation:**
     - **Session-Per-Proxy**: Each agent session gets its own isolated `MCPServiceProxy`.
     - **Stateful Tools**: Built-in tools (e.g., Planning, Knowledge) are instantiated per-session, ensuring data isolation (e.g., unique Todo lists per agent).
 
-4.  **Service Context Pattern:**
+3.  **Service Context Pattern:**
     - Tools can dynamically inject context (e.g., browser state, current time) into the system prompt via the `get_service_context` trait method.
 
 ### MCP Tool Response Design Principles
