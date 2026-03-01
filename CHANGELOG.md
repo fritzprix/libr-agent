@@ -2,9 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.22] - 2026-03-01
+## [0.5.23] - 2026-03-02
 
 ### 🚀 Features
+
+- **Multimodal LLM Support**: Added ability for agents to process and send images and audio directly through OpenAI, Anthropic, and Gemini models. Mapped files correctly to native schema inputs (e.g. `inlineData` for Gemini, `image_url` / `input_audio` for OpenAI).
+
+### 🐛 Fixes
+
+- **`useSettings` Context Fix**: Updated the test context mock to cleanly default to `DEFAULT_SETTING`, fixing downstream test failures and removing dead imports.
+- **Double Submit Guards**: Buttons with async handlers across the UI now block synchronous double-clicks correctly.
+- **Form UI Streamlining**: Cleaned up the interface types for `InputWithLabel`, `TextareaWithLabel`, and `Label` components.
+- **Tool Call Execution Context Formatting**: Fixed the way `tool_calls` are shaped when injecting them into `useLLMExecution`.
+- **UI Simple Mode Tool Call Display**: The raw `parsedArgs` for tool calls are now accurately passed in UI Simple Mode, supported by a newly added test coverage suite.
+
+### 🔧 Internal
+
+- **Expanded Test Coverage**: Strengthened test assertion coverage for MCP schema builder utilities and the `useSettings` hook.
+- **Documentation Overhaul**: Updated the internal architecture and migration documentation for Agent V2 to clarify component isolation and state contexts.
+
+## [0.5.22] - 2026-03-01
 
 - **`@skill:` mention autocomplete in chat**: Draft chat now supports `@skill:` mention syntax with autocomplete, letting agents reference skills directly from the input field for faster workflows.
 - **Session bookmarks (SP10)**: Sessions can now be bookmarked for quick access, with DB migration and full UI support added.
