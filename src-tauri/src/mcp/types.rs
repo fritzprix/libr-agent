@@ -210,6 +210,12 @@ pub enum MCPContent {
         #[serde(rename = "mimeType")]
         mime_type: String,
     },
+    #[serde(rename = "audio")]
+    Audio {
+        data: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+    },
     #[serde(rename = "resource")]
     Resource {
         resource: serde_json::Value,

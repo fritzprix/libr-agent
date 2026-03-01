@@ -37,7 +37,7 @@ describe('useSettings', () => {
     };
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <SettingsContext.Provider value={mockContextValue as any}>
+      <SettingsContext.Provider value={mockContextValue as unknown as React.ContextType<typeof SettingsContext>}>
         {children}
       </SettingsContext.Provider>
     );
