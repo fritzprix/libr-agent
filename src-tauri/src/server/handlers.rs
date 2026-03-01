@@ -92,19 +92,21 @@ fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> 
 /// Returns true if the path points to a restricted system directory that agents
 /// should not be allowed to use as a workspace.
 fn is_restricted_system_path(path: &std::path::Path) -> bool {
-    let normalized = path.to_string_lossy().to_lowercase().replace('\\', "/");
+    // macOS and Windows file systems are often case-insensitive by default.
+    // Lowercase the path to ensure safe, case-insensitive component matching across all OSes.
+    let path_lower = std::path::PathBuf::from(path.to_string_lossy().to_lowercase());
 
-    // Windows system directories
-    let windows_prefixes = [
-        "c:/windows",
-        "c:/program files",
-        "c:/program files (x86)",
-        "c:/programdata",
-        "c:/system volume information",
+    #[cfg(target_os = "windows")]
+    let restricted_prefixes = [
+        "c:\\windows",
+        "c:\\program files",
+        "c:\\program files (x86)",
+        "c:\\programdata",
+        "c:\\system volume information",
     ];
 
-    // Unix/macOS system directories
-    let unix_prefixes = [
+    #[cfg(not(target_os = "windows"))]
+    let restricted_prefixes = [
         "/etc",
         "/sys",
         "/proc",
@@ -122,8 +124,8 @@ fn is_restricted_system_path(path: &std::path::Path) -> bool {
         "/library", // macOS
     ];
 
-    for prefix in windows_prefixes.iter().chain(unix_prefixes.iter()) {
-        if normalized == *prefix || normalized.starts_with(&format!("{}/", prefix)) {
+    for prefix in restricted_prefixes.iter() {
+        if path_lower.starts_with(prefix) {
             return true;
         }
     }
