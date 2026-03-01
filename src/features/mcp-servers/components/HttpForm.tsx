@@ -7,6 +7,12 @@ import { Switch } from '@/components/ui/switch';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { createId } from '@paralleldrive/cuid2';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface HttpFormProps {
   draft: MCPServerEntity;
@@ -295,26 +301,43 @@ export function HttpForm({
                           aria-label="Custom header value"
                         />
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveHeader(header.id)}
-                        aria-label={
-                          header.key
-                            ? t('mcpServer.dialog.removeHeader', {
-                                key: header.key,
-                                defaultValue: 'Remove header {{key}}',
-                              })
-                            : t(
-                                'mcpServer.dialog.removeUnnamedHeader',
-                                'Remove unnamed header',
-                              )
-                        }
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveHeader(header.id)}
+                              aria-label={
+                                header.key
+                                  ? t('mcpServer.dialog.removeHeader', {
+                                      key: header.key,
+                                      defaultValue: 'Remove header {{key}}',
+                                    })
+                                  : t(
+                                      'mcpServer.dialog.removeUnnamedHeader',
+                                      'Remove unnamed header',
+                                    )
+                              }
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {header.key
+                              ? t('mcpServer.dialog.removeHeader', {
+                                  key: header.key,
+                                  defaultValue: 'Remove header {{key}}',
+                                })
+                              : t(
+                                  'mcpServer.dialog.removeUnnamedHeader',
+                                  'Remove unnamed header',
+                                )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                   ))}
                 </div>

@@ -5,6 +5,12 @@ import { Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { MCPServerEntity } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface EnvVarsFormProps {
   server: MCPServerEntity;
@@ -173,26 +179,44 @@ export function EnvVarsForm({
                     aria-label="Environment variable value"
                   />
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemoveEnvVar(item.id)}
-                  aria-label={
-                    item.key
-                      ? t('mcpServer.dialog.removeEnvVar', {
-                          key: item.key,
-                          defaultValue: 'Remove environment variable {{key}}',
-                        })
-                      : t(
-                          'mcpServer.dialog.removeUnnamedEnvVar',
-                          'Remove unnamed environment variable',
-                        )
-                  }
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveEnvVar(item.id)}
+                        aria-label={
+                          item.key
+                            ? t('mcpServer.dialog.removeEnvVar', {
+                                key: item.key,
+                                defaultValue:
+                                  'Remove environment variable {{key}}',
+                              })
+                            : t(
+                                'mcpServer.dialog.removeUnnamedEnvVar',
+                                'Remove unnamed environment variable',
+                              )
+                        }
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {item.key
+                        ? t('mcpServer.dialog.removeEnvVar', {
+                            key: item.key,
+                            defaultValue: 'Remove environment variable {{key}}',
+                          })
+                        : t(
+                            'mcpServer.dialog.removeUnnamedEnvVar',
+                            'Remove unnamed environment variable',
+                          )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             ))}
         </div>
