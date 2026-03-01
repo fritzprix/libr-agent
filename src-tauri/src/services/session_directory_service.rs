@@ -131,6 +131,9 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
         session_dir: &Path,
     ) -> Result<(), String> {
         // Copy essential files asynchronously
+        #[cfg(target_os = "windows")]
+        let items_to_copy = vec!["welcome.ps1"];
+        #[cfg(not(target_os = "windows"))]
         let items_to_copy = vec!["welcome.sh"];
 
         for item in items_to_copy {

@@ -99,7 +99,12 @@ export function useMCPServerManagement(service?: McpServerService) {
   const handleSetupPreset = useCallback((preset: MCPServerPreset) => {
     const transport: MCPServerEntity['transport'] =
       preset.transportType === 'sse' && preset.url
-        ? { type: 'http-sse', url: preset.url }
+        ? {
+            type: 'http-sse',
+            url: preset.url,
+            enableSSE: true,
+            headers: sanitizePresetEnv(preset.env),
+          }
         : {
             type: 'stdio',
             command: preset.command || 'uvx',

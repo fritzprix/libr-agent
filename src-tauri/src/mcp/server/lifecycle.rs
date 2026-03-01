@@ -172,14 +172,13 @@ async fn start_http_server(
     }
 
     // Add session ID if provided
-    if let Some(sid) = session_id {
-        if let Ok(v) = reqwest::header::HeaderValue::from_str(&sid) {
-            // Use string key to avoid dependency on internal constants if possible,
-            // but Mcp-Session-Id is standard.
-            if let Ok(k) = reqwest::header::HeaderName::from_bytes(b"Mcp-Session-Id") {
-                header_map.insert(k, v);
-            }
-        }
+    if let Some(_sid) = session_id {
+        // WARNING: We intentionally DO NOT inject the libr-agent `session_id` as the HTTP header `Mcp-Session-Id`.
+        // The RMCP transport specification requires the MCP server to dictate the session ID during
+        // the initial SSE phase, and the internal `StreamableHttpClientTransport` module manages this automatically.
+        // Injecting our internal app session ID (e.g. owsz7...) causes standard servers like GitHub Copilot
+        // to reject the HTTP request with a 400 Bad Request error.
+        debug!("Ignoring explicit session_id injection to prevent RMCP header collision.");
     }
 
     // Build reqwest client
