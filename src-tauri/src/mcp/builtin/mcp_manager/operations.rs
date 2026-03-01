@@ -432,6 +432,15 @@ async fn test_server_connection(
                 for arg in &final_args {
                     cmd.arg(arg);
                 }
+
+                // Apply environment isolation to prevent leaking host secrets (e.g. API keys)
+                // to untrusted MCP server processes.
+                cmd.env_clear();
+                for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+                    cmd.env(k, v);
+                }
+
+                // Apply user-defined variables from config (can override system vars)
                 for (key, value) in env {
                     cmd.env(key, value);
                 }
