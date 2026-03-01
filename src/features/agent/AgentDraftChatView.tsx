@@ -50,6 +50,10 @@ import {
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
 import type { ContentStoreItem } from '@/models/content-store';
+import { useSkills } from '@/context/SkillsContext';
+import { useInputToken } from './hooks/useInputToken';
+import { InputTokenDropdown } from './components/InputTokenDropdown';
+import { getSkillContent } from '@/lib/backend/skills';
 
 const logger = getLogger('AgentDraftChatView');
 
@@ -130,8 +134,21 @@ function DraftChatInner() {
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
+
+  // @skill: mention support
+  const { skills } = useSkills();
+  const {
+    stage,
+    typeResults,
+    skillResults,
+    onInputChange,
+    onTypeSelect,
+    onArgSelect,
+    onDismiss,
+  } = useInputToken(skills);
 
   const getMimeType = useCallback((filename: string): string => {
     const ext = filename.toLowerCase().split('.').pop();
@@ -296,6 +313,35 @@ function DraftChatInner() {
       let unlisten: (() => void) | undefined;
       let toastId: string | number | undefined;
 
+      // Resolve @skill: mentions in the input before submission
+      let resolvedInput = input.trim();
+      const skillMentions = [...resolvedInput.matchAll(/@skill:([\S]+)/g)];
+      if (skillMentions.length > 0) {
+        const unresolved: string[] = [];
+        for (const match of skillMentions) {
+          const skillName = match[1];
+          const skill = skills.find(
+            (s) => s.name.toLowerCase() === skillName.toLowerCase(),
+          );
+          if (skill) {
+            try {
+              const content = await getSkillContent(skill.path);
+              resolvedInput = resolvedInput.replace(
+                match[0],
+                `\n\n---\n**Skill: ${skill.name}**\n\n${content}\n\n---\n`,
+              );
+            } catch {
+              unresolved.push(skillName);
+            }
+          } else {
+            unresolved.push(skillName);
+          }
+        }
+        if (unresolved.length > 0) {
+          resolvedInput += `\n\n⚠️ The following references could not be resolved: ${unresolved.map((n) => `@skill:${n}`).join(', ')}`;
+        }
+      }
+
       const shortName =
         input.trim().length > 50
           ? input.trim().substring(0, 47) + '...'
@@ -364,7 +410,7 @@ function DraftChatInner() {
           sessionId: newSessionId,
           threadId: newSessionId,
           role: 'user',
-          content: [{ type: 'text', text: input.trim() }],
+          content: [{ type: 'text', text: resolvedInput }],
           createdAt: now,
           updatedAt: now,
           ...(attachments.length > 0 ? { attachments } : {}),
@@ -543,6 +589,7 @@ function DraftChatInner() {
       overrideModel,
       overrideProvider,
       pendingFiles,
+      skills,
     ],
   );
 
@@ -742,15 +789,48 @@ function DraftChatInner() {
             ))}
           </div>
         )}
-        <form
-          ref={formRef}
-          onSubmit={handleSubmit}
-          className={cn(
-            'flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20',
-            dragState === 'valid' && 'bg-success/10 border-success',
-            dragState === 'invalid' && 'bg-destructive/10 border-destructive',
-          )}
-        >
+        <div className="relative">
+          {/* @skill: mention dropdown */}
+          {stage.kind !== 'idle' &&
+            (typeResults.length > 0 || skillResults.length > 0) && (
+              <InputTokenDropdown
+                mode={
+                  stage.kind === 'typing-type'
+                    ? { kind: 'types', items: typeResults }
+                    : { kind: 'skills', items: skillResults }
+                }
+                onSelectType={(typeName) => {
+                  const cursorPos =
+                    textareaRef.current?.selectionStart ?? input.length;
+                  const newValue = onTypeSelect(typeName, input, cursorPos);
+                  setInput(newValue);
+                  requestAnimationFrame(() => {
+                    if (textareaRef.current) {
+                      const pos = newValue.length - (input.length - cursorPos);
+                      textareaRef.current.setSelectionRange(pos, pos);
+                      textareaRef.current.focus();
+                    }
+                  });
+                }}
+                onSelectArg={(arg) => {
+                  const cursorPos =
+                    textareaRef.current?.selectionStart ?? input.length;
+                  const newValue = onArgSelect(arg, input, cursorPos);
+                  setInput(newValue);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                onDismiss={onDismiss}
+              />
+            )}
+          <form
+            ref={formRef}
+            onSubmit={handleSubmit}
+            className={cn(
+              'flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20',
+              dragState === 'valid' && 'bg-success/10 border-success',
+              dragState === 'invalid' && 'bg-destructive/10 border-destructive',
+            )}
+          >
           {/* Hidden file input */}
           <input
             ref={fileInputRef}
@@ -772,8 +852,12 @@ function DraftChatInner() {
             <Paperclip className="h-4 w-4" />
           </Button>
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              onInputChange(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            }}
             placeholder={
               dragState === 'valid'
                 ? 'Drop files here...'
@@ -809,6 +893,7 @@ function DraftChatInner() {
             )}
           </Button>
         </form>
+        </div>
       </div>
     </div>
   );
