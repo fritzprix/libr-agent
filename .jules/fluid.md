@@ -7,3 +7,7 @@
 ## 2026-02-26 - Playbook Auto-Start **Bottleneck:** `AgentChatStartView` auto-started playbooks without disabling UI interactions, risking double submits. **Flow Restored:** Added `isCreating` true state during the async operation.
 
 ## 2026-02-26 - Drag and Drop File Attachments **Bottleneck:** Dropped files on `AgentDraftChatView` processed asynchronously without any loading indication. **Flow Restored:** Added `isAttachmentLoading` to UI to show "Uploading..." and disable input buttons.
+
+## 2026-02-26 - Agent Workspace Panel **Bottleneck:** Naked awaits during workspace override setup, override cancellation, and file uploads left buttons clickable and provided no feedback. **Flow Restored:** Implemented `isSettingOverride`, `isCancelingOverride`, and `isUploading` states, applying disable properties, updating text to "Setting...", "Canceling...", "Uploading...", and preventing double uploads.
+
+## 2026-02-26 - Assistant Skills Editor **Bottleneck:** No feedback when overriding, reverting, or resetting skills, risking overlapping async requests. **Flow Restored:** Added local `loadingSkills` dictionary and global `isResetting` state for immediate visual spinners and disabled buttons during operations.

@@ -42,6 +42,8 @@ export default function SkillsEditor() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [loadingSkills, setLoadingSkills] = useState<Record<string, boolean>>({});
 
   const fetchSkills = useCallback(async () => {
     if (!draft?.id) return;
@@ -103,6 +105,7 @@ export default function SkillsEditor() {
 
   const handleOverride = async (skillName: string) => {
     if (!draft?.id) return;
+    setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
       await copyGlobalToAssistant(draft.id, skillName);
       toast.success(t('skills.overrideSuccess'));
@@ -110,11 +113,14 @@ export default function SkillsEditor() {
     } catch (error) {
       console.error('Failed to override skill:', error);
       toast.error(t('skills.overrideFailed'));
+    } finally {
+      setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
     }
   };
 
   const handleRevert = async (skillName: string) => {
     if (!draft?.id) return;
+    setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
       await deleteAssistantSkill(draft.id, skillName);
       toast.success(t('skills.revertSuccess'));
@@ -122,6 +128,8 @@ export default function SkillsEditor() {
     } catch (error) {
       console.error('Failed to revert skill:', error);
       toast.error(t('skills.revertFailed'));
+    } finally {
+      setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
     }
   };
 
@@ -150,6 +158,7 @@ export default function SkillsEditor() {
   const confirmReset = async () => {
     if (!draft?.id) return;
 
+    setIsResetting(true);
     try {
       await resetAssistantSkills(draft.id);
       toast.success(t('skills.resetSuccess'));
@@ -158,6 +167,8 @@ export default function SkillsEditor() {
     } catch (error) {
       console.error('Failed to reset skills:', error);
       toast.error(t('skills.resetFailed'));
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -278,9 +289,13 @@ export default function SkillsEditor() {
                           variant="ghost"
                           onClick={() => handleOverride(skill.name)}
                           title={t('skills.override')}
-                          disabled={isDisabled}
+                          disabled={isDisabled || loadingSkills[skill.name]}
                         >
-                          <Copy className="h-4 w-4" />
+                          {loadingSkills[skill.name] ? (
+                            <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Copy className="h-4 w-4" />
+                          )}
                         </Button>
                       )}
                       {skill.source === 'assistant' && (
@@ -289,9 +304,13 @@ export default function SkillsEditor() {
                           variant="ghost"
                           onClick={() => handleRevert(skill.name)}
                           title={t('skills.revert')}
-                          disabled={isDisabled}
+                          disabled={isDisabled || loadingSkills[skill.name]}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          {loadingSkills[skill.name] ? (
+                            <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          )}
                         </Button>
                       )}
                     </div>
@@ -303,7 +322,10 @@ export default function SkillsEditor() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+      <AlertDialog
+        open={showResetDialog}
+        onOpenChange={(open) => !isResetting && setShowResetDialog(open)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('skills.resetTitle')}</AlertDialogTitle>
@@ -312,11 +334,16 @@ export default function SkillsEditor() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel disabled={isResetting}>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmReset}
+              onClick={async (e) => {
+                e.preventDefault();
+                await confirmReset();
+              }}
+              disabled={isResetting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
+              {isResetting && <RefreshCw className="w-3 h-3 mr-2 animate-spin" />}
               {t('skills.reset')}
             </AlertDialogAction>
           </AlertDialogFooter>
