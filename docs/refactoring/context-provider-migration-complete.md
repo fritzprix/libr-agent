@@ -124,11 +124,11 @@ Successfully migrated ALL dynamic system prompt generation from React to Rust us
 4. Complete prompt sent to LLM API
 ```
 
-### Legacy Chat V1 (React)
+### LLM Execution Bridge (Frontend → LLM API)
 
-- **Status:** Still uses React `LLMServiceContext`
-- **System Prompt:** Passed from UI, no dynamic extensions
-- **Future:** Will be migrated to Agent V2 architecture
+- The Rust backend emits `llm:completion-request` events; the frontend `LLMServiceContext` handles actual LLM API calls
+- **System Prompt:** Built by Rust backend with dynamic context providers
+- **Result:** Streamed back through `useLLMExecution` → `useLLMListener` → Rust backend
 
 ---
 
@@ -288,8 +288,4 @@ Finished `release` profile [optimized] target(s) in 44.59s
 
 **Next Steps:**
 
-1. Test Agent V2 session creation
-2. Verify skills appear in system prompt
-3. Confirm time/location formatting
-4. Consider adding UserPreferencesContextProvider
-5. Migrate Legacy Chat V1 to Agent V2 architecture (future)
+1. Consider adding UserPreferencesContextProvider

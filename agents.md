@@ -509,15 +509,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 
 ### Data Flow
 
-**Legacy Chat V1 (React-Orchestrated):**
-
-1. User sends message via `ChatInput` component
-2. `ChatProvider` context invokes LLM service
-3. LLM response triggers tool calls
-4. `BuiltInToolProvider` routes to appropriate backend
-5. Results returned to `MessageRenderer` for display
-
-**Agent V2 (Rust-Orchestrated):**
+**Agent Architecture (Rust-Orchestrated):**
 
 1. User sends task via `AgentChatProvider`
 2. Rust `AgentSessionManager` starts Think-Act-Observe loop
@@ -526,7 +518,7 @@ The project uses a centralized logging system located at `src/lib/logger.ts` tha
 5. Backend emits events (`agent:event`) to update UI reactively
 6. Frontend (`AgentSessionContext`) consumes events and updates message list
 
-**Key Difference:** In Agent V2, frontend is purely reactive. All orchestration logic (loop control, tool execution, state management) resides in Rust.
+The frontend is purely reactive — all orchestration logic (loop control, tool execution, state management) resides in Rust.
 
 ### Service Context System
 
@@ -626,10 +618,7 @@ ServiceContext {
 
 **Overview:**
 
-Agent V2 is a "Dual-Track" architecture supporting autonomous, multi-turn workflows while maintaining legacy chat compatibility:
-
-- **Track 1 (Legacy Chat V1)**: Standard request/response chat orchestrated by React (`ChatContext`)
-- **Track 2 (Agent V2)**: Autonomous workflows orchestrated entirely by Rust backend (`AgentSessionManager`)
+The agent architecture is fully Rust-orchestrated, supporting autonomous, multi-turn workflows:
 
 **Rust-Based Orchestration:**
 
@@ -692,12 +681,10 @@ useEffect(() => {
 5. Loop continues until completion or error
 ```
 
-**Migration Notes:**
+**Session Architecture:**
 
-- Legacy Chat V1 uses global MCP manager (deprecated)
-- New Agent V2 sessions automatically use session isolation
-- Builtin servers implement both APIs for backward compatibility
-- Frontend gradually transitioning from `ChatContext` to `AgentSessionContext`
+- All sessions use session-isolated `MCPServiceProxy` instances
+- Builtin servers use session-scoped state
 
 ### MCP Tool Response Design
 

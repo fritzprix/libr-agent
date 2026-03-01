@@ -43,7 +43,9 @@ export default function SkillsEditor() {
   const [isDragging, setIsDragging] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [loadingSkills, setLoadingSkills] = useState<Record<string, boolean>>({});
+  const [loadingSkills, setLoadingSkills] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const fetchSkills = useCallback(async () => {
     if (!draft?.id) return;
@@ -334,7 +336,9 @@ export default function SkillsEditor() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isResetting}>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogCancel disabled={isResetting}>
+              {t('common.cancel')}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={async (e) => {
                 e.preventDefault();
@@ -343,7 +347,9 @@ export default function SkillsEditor() {
               disabled={isResetting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {isResetting && <RefreshCw className="w-3 h-3 mr-2 animate-spin" />}
+              {isResetting && (
+                <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
+              )}
               {t('skills.reset')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -533,55 +533,23 @@ const newMessage: Message = {
 
 ---
 
-### 10.2 Component Isolation Rules
+### 10.2 Component Structure Rules
 
-**CRITICAL**: Agent V2 and Legacy V1 components must NOT share context providers.
+All components must use the agent context stack.
 
-#### Forbidden Cross-Dependencies
-
-❌ **WRONG**: Agent V2 component using Legacy V1 dependency
-
-```typescript
-// src/features/agent/components/AgentToolCallGroup.tsx
-import { ToolCallDetails } from '@/features/chat/ToolCallDetails'; // ❌ V1 component
-// This imports MessageRenderer → ChatContext → CRASH!
-```
-
-✅ **CORRECT**: Use V2-specific components
-
-```typescript
-// src/features/agent/components/AgentToolCallGroup.tsx
-import { AgentToolCallDetails } from './AgentToolCallDetails'; // ✅ V2 component
-// Uses AgentMessageRenderer → AgentChatContext → Works!
-```
-
-#### Component Dependency Tree
-
-**Legacy V1 Stack** (do NOT use in Agent V2):
+#### Correct Component Dependency Tree
 
 ```
-ChatContainer (V1)
-  └─ MessageRenderer
-      └─ useChatActions()
-          └─ ChatContext (V1)  ← ❌ Not available in Agent V2
-```
-
-**Agent V2 Stack** (use these):
-
-```
-AgentContainer (V2)
+AgentContainer
   └─ AgentMessageRenderer
       └─ useAgentChatActions()
-          └─ AgentChatContext (V2)  ← ✅ Correct context
+          └─ AgentChatContext  ← ✅ Correct context
 ```
 
 **Checklist for New Components**:
 
-1. Does it import from `@/features/chat/*`? → ❌ Legacy V1
-2. Does it import from `@/components/MessageRenderer`? → ❌ Legacy V1
-3. Does it use `useChatActions()` or `useChatState()`? → ❌ Legacy V1
-4. Does it use `useAgentChatActions()` or `useAgentChatState()`? → ✅ Agent V2
-5. Does it import from `@/features/agent/components/*`? → ✅ Agent V2
+1. Does it import from `@/features/agent/components/*`? → ✅ Correct
+2. Does it use `useAgentChat()` or `useAgentSessionState()`? → ✅ Correct
 
 ---
 
@@ -741,7 +709,6 @@ Before merging any Rust ↔ TypeScript integration changes:
 | --------------------------- | ---------------------- | ----------------------------------------- |
 | PascalCase event check      | Events never matched   | Use camelCase: `'messageAdded'`           |
 | Missing Emitter trait       | `emit_to` not found    | Add `use tauri::Emitter;`                 |
-| Legacy V1 import            | ChatProvider error     | Create V2-specific component              |
 | Session ID mismatch         | All events filtered    | Support both: `sessionId \|\| session_id` |
 | Field name typo             | Undefined field access | Use defensive: `field1 \|\| field2`       |
 | emit() instead of emit_to() | Single window only     | Use `emit_to(EventTarget::app(), ...)`    |

@@ -156,11 +156,11 @@ Primary user-facing tools:
 
 Type `@` in the chat input to inject rich context directly into your message:
 
-| Syntax | What it injects |
-|---|---|
+| Syntax        | What it injects                                        |
+| ------------- | ------------------------------------------------------ |
 | `@skill:name` | Full skill documentation (available in all chat views) |
-| `@tool:name` | Soft attention hint for a specific MCP/builtin tool |
-| `@file:path` | File content from the session workspace |
+| `@tool:name`  | Soft attention hint for a specific MCP/builtin tool    |
+| `@file:path`  | File content from the session workspace                |
 
 Autocomplete suggests matching skills, tools, and files as you type. On submit, mentions are resolved and injected into the message before it reaches the LLM. Unresolved references are appended as a `⚠️` warning so the agent knows what was missing.
 

@@ -479,7 +479,7 @@ export function useLLMExecution({
             lastStreamingUpdateRef.current.set(sessionId, nowMs);
             setStreamingMessages((prev) => {
               const next = new Map(prev);
-              const legacyToolCalls: ToolCall[] = content
+              const toolCalls: ToolCall[] = content
                 .filter((c) => c.type === 'tool_call')
                 .map((c) => {
                   const tc = c as MCPToolCallContent;
@@ -493,7 +493,7 @@ export function useLLMExecution({
                   };
                 });
 
-              const legacyThinking = content
+              const thinking = content
                 .filter((c) => c.type === 'thinking')
                 .map((c) => (c as MCPThinkingContent).thinking)
                 .join('\n');
@@ -502,8 +502,8 @@ export function useLLMExecution({
                 ...streamingMessage,
                 content,
                 tool_calls:
-                  legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
-                thinking: legacyThinking || undefined,
+                  toolCalls.length > 0 ? toolCalls : undefined,
+                thinking: thinking || undefined,
                 thinkingSignature,
                 thinkingTime: currentThinkingTime,
                 usage: finalUsage,
@@ -518,7 +518,7 @@ export function useLLMExecution({
         lastStreamingUpdateRef.current.delete(sessionId);
         setStreamingMessages((prev) => {
           const next = new Map(prev);
-          const legacyToolCalls: ToolCall[] = content
+          const toolCalls: ToolCall[] = content
             .filter((c) => c.type === 'tool_call')
             .map((c) => {
               const tc = c as MCPToolCallContent;
@@ -531,7 +531,7 @@ export function useLLMExecution({
                 },
               };
             });
-          const legacyThinking = content
+          const thinking = content
             .filter((c) => c.type === 'thinking')
             .map((c) => (c as MCPThinkingContent).thinking)
             .join('\n');
@@ -539,8 +539,8 @@ export function useLLMExecution({
             ...streamingMessage,
             content,
             tool_calls:
-              legacyToolCalls.length > 0 ? legacyToolCalls : undefined,
-            thinking: legacyThinking || undefined,
+              toolCalls.length > 0 ? toolCalls : undefined,
+            thinking: thinking || undefined,
             thinkingSignature,
             thinkingTime: currentThinkingTime,
             usage: finalUsage,
@@ -570,7 +570,7 @@ export function useLLMExecution({
           }
         }
 
-        const finalLegacyToolCalls: ToolCall[] = content
+        const finalToolCalls: ToolCall[] = content
           .filter((c) => c.type === 'tool_call')
           .map((c) => {
             const tc = c as MCPToolCallContent;
@@ -584,7 +584,7 @@ export function useLLMExecution({
             };
           });
 
-        const finalLegacyThinking = content
+        const finalThinking = content
           .filter((c) => c.type === 'thinking')
           .map((c) => (c as MCPThinkingContent).thinking)
           .join('\n');
@@ -597,8 +597,8 @@ export function useLLMExecution({
           content,
           createdAt: new Date(),
           tool_calls:
-            finalLegacyToolCalls.length > 0 ? finalLegacyToolCalls : undefined,
-          thinking: finalLegacyThinking || undefined,
+            finalToolCalls.length > 0 ? finalToolCalls : undefined,
+          thinking: finalThinking || undefined,
           thinkingSignature,
           thinkingTime: thinkingStartTime
             ? (performance.now() - thinkingStartTime) / 1000
@@ -610,7 +610,7 @@ export function useLLMExecution({
         logger.info('Completion request completed', {
           sessionId,
           contentLength: content.length,
-          toolCallCount: finalLegacyToolCalls.length,
+          toolCallCount: finalToolCalls.length,
         });
 
         const hasContent =
