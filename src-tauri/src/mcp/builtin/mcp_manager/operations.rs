@@ -432,6 +432,47 @@ async fn test_server_connection(
                 for arg in &final_args {
                     cmd.arg(arg);
                 }
+
+                // Apply environment isolation to prevent leaking host secrets (e.g. API keys)
+                // to untrusted MCP server processes.
+                cmd.env_clear();
+
+                // Re-apply whitelisted essential system variables
+                let preserved_vars = [
+                    "PATH",
+                    "SystemRoot",              // Windows
+                    "COMSPEC",                 // Windows
+                    "PATHEXT",                 // Windows
+                    "WINDIR",                  // Windows
+                    "APPDATA",                 // Windows
+                    "LOCALAPPDATA",            // Windows
+                    "ProgramData",             // Windows
+                    "ProgramFiles",            // Windows
+                    "ProgramFiles(x86)",       // Windows
+                    "CommonProgramFiles",      // Windows
+                    "CommonProgramFiles(x86)", // Windows
+                    "HOME",
+                    "USERPROFILE", // Windows
+                    "HOMEDRIVE",   // Windows
+                    "HOMEPATH",    // Windows
+                    "TEMP",
+                    "TMP",
+                    "TMPDIR",
+                    "TERM",
+                    "LANG",
+                ];
+
+                for (key, value) in std::env::vars() {
+                    if preserved_vars.contains(&key.as_str()) {
+                        cmd.env(&key, &value);
+                        continue;
+                    }
+                    if key.starts_with("LC_") || key.starts_with("XDG_") {
+                        cmd.env(&key, &value);
+                    }
+                }
+
+                // Apply user-defined variables from config (can override system vars)
                 for (key, value) in env {
                     cmd.env(key, value);
                 }

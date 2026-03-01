@@ -15,3 +15,9 @@
 **Vulnerability:** MCP server processes spawned via `stdio_manager.rs` inherited all environment variables from the host process by default. This could leak sensitive secrets (e.g. `OPENAI_API_KEY`, `AWS_SECRET_KEY`) to untrusted or compromised MCP tools.
 **Learning:** `tokio::process::Command` inherits the parent environment by default. Explicitly calling `.env_clear()` is required for isolation. A test explicitly asserting _against_ `env_clear()` existed, showing a misunderstanding of security requirements.
 **Prevention:** Always use `cmd.env_clear()` when spawning subprocesses intended to be isolated. Use an explicit whitelist for essential system variables (`PATH`, `HOME`, etc.).
+
+## 2026-03-01 - Environment Variable Leakage in MCP Server Verification
+
+**Vulnerability:** When verifying an MCP server connection in `mcp_manager/operations.rs`, `tokio::process::Command` inherited the parent environment by default, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted tools via the `test_server_connection` function.
+**Learning:** Even short-lived, verification or testing processes must follow the same isolation guarantees as the main process lifecycle. `Command` builder configuration requires explicit variable clearing in all places where a child process executes untrusted components.
+**Prevention:** Always use `cmd.env_clear()` before spawning any isolated process, followed by applying an explicit whitelist for required system variables (`PATH`, `HOME`, etc.).
