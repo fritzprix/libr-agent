@@ -65,7 +65,7 @@ export function generateWorkspacePath(filename: string): string {
  *
  * Note: Exported for unit testing. Marked as internal API.
  *
- * @param filename The original filename.
+ * @param name The original filename.
  * @returns The sanitized filename.
  * @internal
  */
