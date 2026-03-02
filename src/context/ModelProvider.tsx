@@ -90,7 +90,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
         provider === AIServiceProvider.Ollama ||
         provider === AIServiceProvider.OpenAI ||
         provider === AIServiceProvider.Anthropic ||
-        provider === AIServiceProvider.Gemini;
+        provider === AIServiceProvider.Gemini ||
+        provider === AIServiceProvider.OpenRouter;
 
       if (!supportsDynamic) return {};
 
@@ -101,6 +102,13 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
             'No API key configured for Ollama — using dummy key to instantiate service',
           );
           effectiveApiKey = 'ollama-dummy';
+        } else if (provider === AIServiceProvider.OpenRouter) {
+          // OpenRouter listModels() uses the public /api/v1/models endpoint —
+          // no API key is required for metadata fetching.
+          logger.info(
+            'No API key configured for OpenRouter — using dummy key; listModels uses public endpoint',
+          );
+          effectiveApiKey = 'openrouter-dummy';
         } else {
           logger.warn(
             `No API key available for ${provider}, skipping model fetch`,
@@ -179,7 +187,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     const supportsDynamic =
       provider === AIServiceProvider.Ollama ||
       provider === AIServiceProvider.OpenAI ||
-      provider === AIServiceProvider.Anthropic;
+      provider === AIServiceProvider.Anthropic ||
+      provider === AIServiceProvider.OpenRouter;
 
     if (!supportsDynamic) return;
 
