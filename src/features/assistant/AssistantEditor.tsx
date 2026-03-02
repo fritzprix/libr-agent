@@ -208,12 +208,16 @@ function MCPServersTab() {
 }
 
 function AssistantDialog(props: DialogProps) {
-  const { draft, commit } = useEditor<Assistant>();
+  const { draft, commit, isLoading } = useEditor<Assistant>();
   const { t } = useTranslation('common');
 
-  const handleSave = () => {
-    commit();
-    if (props.onOpenChange) props.onOpenChange(false);
+  const handleSave = async () => {
+    try {
+      await commit();
+      if (props.onOpenChange) props.onOpenChange(false);
+    } catch {
+      // commit handles error logging and state internally
+    }
   };
   const handleCancel = () => {
     if (props.onOpenChange) props.onOpenChange(false);
@@ -236,11 +240,11 @@ function AssistantDialog(props: DialogProps) {
           <AssistantEditor />
         </div>
         <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-4 border-t bg-muted/20">
-          <Button variant="outline" onClick={handleCancel}>
+          <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
             {t('assistant.edit.cancel')}
           </Button>
-          <Button variant="default" onClick={handleSave}>
-            {t('assistant.edit.save')}
+          <Button variant="default" onClick={handleSave} disabled={isLoading}>
+            {isLoading ? t('common.saving') || 'Saving...' : t('assistant.edit.save')}
           </Button>
         </div>
       </DialogContent>
