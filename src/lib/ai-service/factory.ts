@@ -7,6 +7,7 @@ import { GeminiService } from './gemini';
 import { FireworksService } from './fireworks';
 import { CerebrasService } from './cerebras';
 import { OllamaService } from './ollama';
+import { OpenRouterService } from './openrouter';
 import { EmptyAIService } from './empty';
 import { LLMConfigManager } from '../llm-config-manager';
 
@@ -98,6 +99,9 @@ export class AIServiceFactory {
           break;
         case AIServiceProvider.Ollama:
           service = new OllamaService(effectiveApiKey, config);
+          break;
+        case AIServiceProvider.OpenRouter:
+          service = new OpenRouterService(effectiveApiKey, config);
           break;
         default:
           logger.warn(

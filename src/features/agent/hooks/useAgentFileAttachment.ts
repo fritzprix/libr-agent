@@ -8,6 +8,7 @@ import {
   validateFileSize,
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
+import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import { toast } from 'sonner';
 import type React from 'react';
 
@@ -45,25 +46,7 @@ export function useAgentFileAttachment() {
 
   const rustBackend = useRustBackend();
 
-  const getMimeType = useCallback((filename: string): string => {
-    const ext = filename.toLowerCase().split('.').pop();
-    switch (ext) {
-      case 'txt':
-        return 'text/plain';
-      case 'md':
-        return 'text/markdown';
-      case 'json':
-        return 'application/json';
-      case 'pdf':
-        return 'application/pdf';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      default:
-        return 'application/octet-stream';
-    }
-  }, []);
+  const getMimeType = getMimeTypeFromFilename;
 
   const processFileDrop = useCallback(
     async (filePaths: string[]) => {

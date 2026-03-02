@@ -41,13 +41,22 @@ export interface AttachmentReference {
   lastAccessedAt?: string; // Last access time
   workspacePath?: string; // File path where it's saved in the workspace
   // Explicit state tracking (replaces brittle contentId prefix checking)
-  status: 'pending' | 'committed' | 'workspace-only'; // File upload/storage status
+  status: 'pending' | 'committed' | 'workspace-only' | 'inline'; // File upload/storage status
   pendingId?: string; // Temporary ID for pending files (before commit)
   // For pending files only - used during upload process
   originalUrl?: string; // Original URL or blob URL
   originalPath?: string; // File system path (Tauri environment)
   file?: File; // File object (browser environment)
   blobCleanup?: () => void; // Cleanup function for blob URLs
+  /**
+   * Populated for image/* and audio/* attachments instead of going through the
+   * content store. Holds the base64-encoded file data for direct LLM consumption.
+   */
+  inlineContent?: {
+    type: 'image' | 'audio';
+    data: string; // base64-encoded file bytes
+    mimeType: string;
+  };
 }
 
 /**
