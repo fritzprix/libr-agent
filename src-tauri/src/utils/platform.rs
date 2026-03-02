@@ -37,7 +37,9 @@ pub fn command_exists(cmd: &str) -> bool {
     {
         std::process::Command::new("sh")
             .arg("-c")
-            .arg(format!("command -v {}", cmd))
+            .arg("command -v \"$1\"")
+            .arg("--")
+            .arg(cmd)
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)

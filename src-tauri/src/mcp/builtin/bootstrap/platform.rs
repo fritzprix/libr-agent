@@ -279,7 +279,9 @@ fn get_command_path(cmd: &str) -> Option<String> {
         // Unix-like: Use 'command -v'
         let output = Command::new("sh")
             .arg("-c")
-            .arg(format!("command -v {}", cmd))
+            .arg("command -v \"$1\"")
+            .arg("--")
+            .arg(cmd)
             .output()
             .ok()?;
 
