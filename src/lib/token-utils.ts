@@ -333,11 +333,13 @@ export function selectMessagesWithinContext(
 
     // Check token limit
     if (totalTokens + tokens > tokenLimit) {
-      // Providers that require strict tool chain boundary checking (no orphaned calls/results)
+      // Providers requiring strict tool chain boundary checking (no orphaned calls/results).
+      // OpenRouter is included because it proxies these same strict providers.
       if (
         providerId === AIServiceProvider.Anthropic ||
         providerId === AIServiceProvider.Gemini ||
         providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.OpenRouter ||
         providerId === AIServiceProvider.Groq
       ) {
         // Check tool chain integrity before stopping
@@ -371,6 +373,7 @@ export function selectMessagesWithinContext(
         providerId === AIServiceProvider.Anthropic ||
         providerId === AIServiceProvider.Gemini ||
         providerId === AIServiceProvider.OpenAI ||
+        providerId === AIServiceProvider.OpenRouter ||
         providerId === AIServiceProvider.Groq
       ) {
         const adjustedSelected = removeIncompleteToolChains(selected);
