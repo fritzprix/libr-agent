@@ -156,7 +156,9 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
           <div className="border-b px-3 py-2">
-            <h4 className="text-sm font-medium">{t('sessionFiles.fileList', 'Session file list')}</h4>
+            <h4 className="text-sm font-medium">
+              {t('sessionFiles.fileList', 'Session file list')}
+            </h4>
             <p className="text-xs text-muted-foreground">
               {t('sessionFiles.sessionId', 'Session ID:')} {sessionId}
             </p>
@@ -228,21 +230,26 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             </DialogTitle>
             <div className="text-xs text-muted-foreground">
               {selectedFile?.mimeType && (
-                <span className="mr-4">{t('sessionFiles.type', 'Type:')} {selectedFile.mimeType}</span>
+                <span className="mr-4">
+                  {t('sessionFiles.type', 'Type:')} {selectedFile.mimeType}
+                </span>
               )}
               {selectedFile?.size && (
                 <span className="mr-4">
-                  {t('sessionFiles.size', 'Size:')} {formatFileSize(selectedFile.size)}
+                  {t('sessionFiles.size', 'Size:')}{' '}
+                  {formatFileSize(selectedFile.size)}
                 </span>
               )}
               {selectedFile?.uploadedAt && (
                 <span className="mr-4">
-                  {t('sessionFiles.created', 'Created:')} {formatDate(selectedFile.uploadedAt)}
+                  {t('sessionFiles.created', 'Created:')}{' '}
+                  {formatDate(selectedFile.uploadedAt)}
                 </span>
               )}
               {selectedFile?.workspacePath && (
                 <span className="text-success">
-                  {t('sessionFiles.workspace', 'Workspace:')} {selectedFile.workspacePath}
+                  {t('sessionFiles.workspace', 'Workspace:')}{' '}
+                  {selectedFile.workspacePath}
                 </span>
               )}
             </div>
@@ -251,7 +258,9 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
           <div className="flex-1 min-h-0 mt-4">
             {isLoadingContent ? (
               <div className="flex items-center justify-center h-32">
-                <div className="text-sm text-muted-foreground">{t('common.loading', 'Loading...')}</div>
+                <div className="text-sm text-muted-foreground">
+                  {t('common.loading', 'Loading...')}
+                </div>
               </div>
             ) : (
               <div className="h-full overflow-auto border rounded p-3 bg-muted">

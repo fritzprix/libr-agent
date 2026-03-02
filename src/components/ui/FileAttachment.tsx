@@ -109,9 +109,14 @@ export default function FileAttachment({
         <div className="mt-2">
           <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
             <Paperclip className="w-3 h-3" />
-            <span>{t('fileAttachment.attachedFilesLabel', 'Attached Files:')}</span>
+            <span>
+              {t('fileAttachment.attachedFilesLabel', 'Attached Files:')}
+            </span>
           </div>
-          <ul className="space-y-1" aria-label={t('fileAttachment.attachedFilesList', 'Attached files')}>
+          <ul
+            className="space-y-1"
+            aria-label={t('fileAttachment.attachedFilesList', 'Attached files')}
+          >
             {files.map((file, index) => (
               <li
                 key={index}
@@ -126,8 +131,14 @@ export default function FileAttachment({
                   size="icon"
                   onClick={() => onRemove(index)}
                   className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
-                  title={t('fileAttachment.removeFile', { name: file.name, defaultValue: 'Remove {{name}}' })}
-                  aria-label={t('fileAttachment.removeFile', { name: file.name, defaultValue: 'Remove {{name}}' })}
+                  title={t('fileAttachment.removeFile', {
+                    name: file.name,
+                    defaultValue: 'Remove {{name}}',
+                  })}
+                  aria-label={t('fileAttachment.removeFile', {
+                    name: file.name,
+                    defaultValue: 'Remove {{name}}',
+                  })}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
