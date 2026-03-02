@@ -81,7 +81,10 @@ export class OpenRouterService extends OpenAIService {
       logger.info(`OpenRouter: ${result.length} models available`);
       return result;
     } catch (error) {
-      logger.error('Failed to fetch OpenRouter model list, falling back to static config', error);
+      logger.error(
+        'Failed to fetch OpenRouter model list, falling back to static config',
+        error,
+      );
       return super.listModels();
     }
   }
