@@ -109,7 +109,7 @@ describe('AgentSessionListContext', () => {
             expect(result.current.sessions[0].id).toBe('session-1');
         });
 
-        expect(invoke).toHaveBeenCalledWith('agent_get_all_sessions');
+        expect(invoke).toHaveBeenCalledWith('agent_get_all_sessions', expect.anything());
     });
 
     it('should create a new session', async () => {

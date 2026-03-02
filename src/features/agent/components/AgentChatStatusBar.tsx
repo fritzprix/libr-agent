@@ -254,7 +254,9 @@ export function AgentChatStatusBar() {
                   };
 
                   // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
-                  const { invoke } = await import('@tauri-apps/api/core');
+                  const { safeInvoke: invoke } = await import(
+                    '@/lib/backend/core'
+                  );
 
                   await invoke<AgentResponse>('agent_update_session_config', {
                     request: {
