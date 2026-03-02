@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 interface StatusIndicatorProps {
   status: 'connected' | 'disconnected' | 'unknown' | 'connecting';
@@ -13,6 +14,8 @@ export default function StatusIndicator({
   showLabel = false,
   size = 'md',
 }: StatusIndicatorProps) {
+  const { t } = useTranslation('common');
+
   const statusColors = {
     connected: 'bg-success',
     disconnected: 'bg-destructive',
@@ -21,10 +24,10 @@ export default function StatusIndicator({
   };
 
   const statusTexts = {
-    connected: 'Connected',
-    disconnected: 'Disconnected',
-    unknown: 'Unknown',
-    connecting: 'Connecting...',
+    connected: t('status.connected', 'Connected'),
+    disconnected: t('status.disconnected', 'Disconnected'),
+    unknown: t('status.unknown', 'Unknown'),
+    connecting: t('status.connecting', 'Connecting...'),
   };
 
   const sizeClasses = {

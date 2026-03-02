@@ -99,7 +99,7 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
                     </span>
                   ) : (
                     <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground uppercase">
-                      stdio
+                      {t('mcpServer.transport.stdio', 'stdio')}
                     </span>
                   )}
                 </div>

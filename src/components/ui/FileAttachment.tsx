@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -37,6 +38,7 @@ export default function FileAttachment({
   ],
   compact = false,
 }: FileAttachmentProps) {
+  const { t } = useTranslation('common');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFileSelect = () => {
@@ -63,8 +65,8 @@ export default function FileAttachment({
           type="button"
           onClick={handleFileSelect}
           className="h-8 w-8 text-muted-foreground hover:text-success"
-          title="Attach files"
-          aria-label="Attach files"
+          title={t('fileAttachment.attachFiles', 'Attach files')}
+          aria-label={t('fileAttachment.attachFiles', 'Attach files')}
         >
           <Paperclip className="h-4 w-4" />
         </Button>
@@ -96,8 +98,8 @@ export default function FileAttachment({
         type="button"
         onClick={handleFileSelect}
         className="text-muted-foreground hover:text-success border border-muted"
-        title="Attach files"
-        aria-label="Attach files"
+        title={t('fileAttachment.attachFiles', 'Attach files')}
+        aria-label={t('fileAttachment.attachFiles', 'Attach files')}
       >
         <Paperclip className="h-4 w-4" />
       </Button>
@@ -107,9 +109,9 @@ export default function FileAttachment({
         <div className="mt-2">
           <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
             <Paperclip className="w-3 h-3" />
-            <span>Attached Files:</span>
+            <span>{t('fileAttachment.attachedFilesLabel', 'Attached Files:')}</span>
           </div>
-          <ul className="space-y-1" aria-label="Attached files">
+          <ul className="space-y-1" aria-label={t('fileAttachment.attachedFilesList', 'Attached files')}>
             {files.map((file, index) => (
               <li
                 key={index}
@@ -124,8 +126,8 @@ export default function FileAttachment({
                   size="icon"
                   onClick={() => onRemove(index)}
                   className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
-                  title={`Remove ${file.name}`}
-                  aria-label={`Remove ${file.name}`}
+                  title={t('fileAttachment.removeFile', { name: file.name, defaultValue: 'Remove {{name}}' })}
+                  aria-label={t('fileAttachment.removeFile', { name: file.name, defaultValue: 'Remove {{name}}' })}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>

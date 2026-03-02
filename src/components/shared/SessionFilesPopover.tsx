@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Folder, FolderOpen, FileText } from 'lucide-react';
 import {
   DropdownMenu,
@@ -22,6 +23,7 @@ interface SessionFilesPopoverProps {
 }
 
 export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
+  const { t } = useTranslation('common');
   const { sessionFiles } = useAgentResourceAttachment();
   const [isOpen, setIsOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<AttachmentReference | null>(
@@ -119,7 +121,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         filename: file.filename,
         error: error instanceof Error ? error.message : String(error),
       });
-      setFileContent('파일을 읽는 중 오류가 발생했습니다.');
+      setFileContent(t('sessionFiles.readError', 'Error reading file.'));
     } finally {
       setIsLoadingContent(false);
     }
@@ -146,7 +148,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         <DropdownMenuTrigger asChild>
           <button
             className="text-xs hover:text-primary transition-colors flex items-center gap-1"
-            title="세션 파일 보기"
+            title={t('sessionFiles.viewFiles', 'View session files')}
           >
             <Folder className="w-3 h-3" />
             <span>{currentSessionFiles.length}</span>
@@ -154,15 +156,15 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-80 p-0" side="bottom" align="end">
           <div className="border-b px-3 py-2">
-            <h4 className="text-sm font-medium">세션 파일 목록</h4>
+            <h4 className="text-sm font-medium">{t('sessionFiles.fileList', 'Session file list')}</h4>
             <p className="text-xs text-muted-foreground">
-              Session ID: {sessionId}
+              {t('sessionFiles.sessionId', 'Session ID:')} {sessionId}
             </p>
           </div>
 
           {currentSessionFiles.length === 0 ? (
             <div className="p-4 text-center text-xs text-muted-foreground">
-              저장된 파일이 없습니다.
+              {t('sessionFiles.noFiles', 'No saved files.')}
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
@@ -226,21 +228,21 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             </DialogTitle>
             <div className="text-xs text-muted-foreground">
               {selectedFile?.mimeType && (
-                <span className="mr-4">타입: {selectedFile.mimeType}</span>
+                <span className="mr-4">{t('sessionFiles.type', 'Type:')} {selectedFile.mimeType}</span>
               )}
               {selectedFile?.size && (
                 <span className="mr-4">
-                  크기: {formatFileSize(selectedFile.size)}
+                  {t('sessionFiles.size', 'Size:')} {formatFileSize(selectedFile.size)}
                 </span>
               )}
               {selectedFile?.uploadedAt && (
                 <span className="mr-4">
-                  생성: {formatDate(selectedFile.uploadedAt)}
+                  {t('sessionFiles.created', 'Created:')} {formatDate(selectedFile.uploadedAt)}
                 </span>
               )}
               {selectedFile?.workspacePath && (
                 <span className="text-success">
-                  워크스페이스: {selectedFile.workspacePath}
+                  {t('sessionFiles.workspace', 'Workspace:')} {selectedFile.workspacePath}
                 </span>
               )}
             </div>
@@ -249,7 +251,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
           <div className="flex-1 min-h-0 mt-4">
             {isLoadingContent ? (
               <div className="flex items-center justify-center h-32">
-                <div className="text-sm text-muted-foreground">로딩 중...</div>
+                <div className="text-sm text-muted-foreground">{t('common.loading', 'Loading...')}</div>
               </div>
             ) : (
               <div className="h-full overflow-auto border rounded p-3 bg-muted">
