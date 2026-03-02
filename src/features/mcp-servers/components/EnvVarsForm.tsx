@@ -68,56 +68,56 @@ export function EnvVarsForm({
       {/* Defined Variables (from Preset) */}
       {(server.metadata as MCPServerMetadata | undefined)
         ?.variableDefinitions && (
-          <div className="space-y-4 mb-4 p-4 border rounded-md bg-muted/10">
-            <h4 className="text-sm font-medium mb-2">
-              {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
-            </h4>
-            {Object.entries(
-              (server.metadata as MCPServerMetadata).variableDefinitions || {},
-            ).map(([key, def]) => {
-              const envVar = envVars.find((v) => v.key === key);
-              const val = envVar?.value || '';
+        <div className="space-y-4 mb-4 p-4 border rounded-md bg-muted/10">
+          <h4 className="text-sm font-medium mb-2">
+            {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
+          </h4>
+          {Object.entries(
+            (server.metadata as MCPServerMetadata).variableDefinitions || {},
+          ).map(([key, def]) => {
+            const envVar = envVars.find((v) => v.key === key);
+            const val = envVar?.value || '';
 
-              return (
-                <div key={key} className="space-y-2">
-                  <Label
-                    htmlFor={`env-${key}`}
-                    className="flex gap-1 items-center"
-                  >
-                    {def.label || key}
-                    {def.required && <span className="text-destructive">*</span>}
-                  </Label>
-                  <Input
-                    id={`env-${key}`}
-                    type={def.type === 'password' ? 'password' : 'text'}
-                    value={val}
-                    placeholder={def.label}
-                    onChange={(e) => {
-                      if (envVar) {
-                        handleUpdateEnvVar(envVar.id, 'value', e.target.value);
-                      } else {
-                        // If it doesn't exist, add it
-                        setEnvVars((prev) => [
-                          ...prev,
-                          {
-                            id: createId(),
-                            key,
-                            value: e.target.value,
-                          },
-                        ]);
-                      }
-                    }}
-                  />
-                  {def.description && (
-                    <p className="text-xs text-muted-foreground">
-                      {def.description}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+            return (
+              <div key={key} className="space-y-2">
+                <Label
+                  htmlFor={`env-${key}`}
+                  className="flex gap-1 items-center"
+                >
+                  {def.label || key}
+                  {def.required && <span className="text-destructive">*</span>}
+                </Label>
+                <Input
+                  id={`env-${key}`}
+                  type={def.type === 'password' ? 'password' : 'text'}
+                  value={val}
+                  placeholder={def.label}
+                  onChange={(e) => {
+                    if (envVar) {
+                      handleUpdateEnvVar(envVar.id, 'value', e.target.value);
+                    } else {
+                      // If it doesn't exist, add it
+                      setEnvVars((prev) => [
+                        ...prev,
+                        {
+                          id: createId(),
+                          key,
+                          value: e.target.value,
+                        },
+                      ]);
+                    }
+                  }}
+                />
+                {def.description && (
+                  <p className="text-xs text-muted-foreground">
+                    {def.description}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Custom/Other Variables */}
       {envVars.filter(
@@ -148,18 +148,20 @@ export function EnvVarsForm({
             .map((item, index, arr) => {
               const removeLabel = item.key
                 ? t('mcpServer.dialog.removeEnvVar', {
-                  key: item.key,
-                  defaultValue: 'Remove environment variable {{key}}',
-                })
+                    key: item.key,
+                    defaultValue: 'Remove environment variable {{key}}',
+                  })
                 : t(
-                  'mcpServer.dialog.removeUnnamedEnvVar',
-                  'Remove unnamed environment variable',
-                );
+                    'mcpServer.dialog.removeUnnamedEnvVar',
+                    'Remove unnamed environment variable',
+                  );
               return (
                 <div key={item.id} className="flex gap-2 items-start">
                   <div className="flex-1">
                     <Input
-                      ref={index === arr.length - 1 ? lastNewInputRef : undefined}
+                      ref={
+                        index === arr.length - 1 ? lastNewInputRef : undefined
+                      }
                       id={`env-var-key-${item.id}`}
                       placeholder={t(
                         'mcpServer.dialog.envVarKeyPlaceholder',

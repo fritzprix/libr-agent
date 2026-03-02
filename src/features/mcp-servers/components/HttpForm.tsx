@@ -81,7 +81,7 @@ export function HttpForm({
           id="http-url"
           value={
             (draft.transport.type as string) === 'http' ||
-              draft.transport.type === 'http-sse'
+            draft.transport.type === 'http-sse'
               ? (draft.transport as { url: string }).url
               : ''
           }
@@ -111,106 +111,106 @@ export function HttpForm({
       {/* Required Configuration for HTTP (from variableDefinitions) */}
       {(server.metadata as MCPServerMetadata | undefined)
         ?.variableDefinitions && (
-          <div className="space-y-4 p-4 border rounded-md bg-muted/10">
-            <h4 className="text-sm font-medium">
-              {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
-            </h4>
-            {Object.entries(
-              (server.metadata as MCPServerMetadata).variableDefinitions || {},
-            ).map(([key, def]) => {
-              const target = def.target ?? 'env';
-              let currentValue = '';
-              if (target === 'bearer-token') {
-                currentValue = apiKey;
-              } else if (target === 'header') {
-                currentValue =
-                  customHeaders.find((h) => h.key === key)?.value || '';
-              } else if (target === 'url-param') {
-                currentValue = urlParams[key] || '';
-              }
-              return (
-                <div key={key} className="space-y-2">
-                  <Label
-                    htmlFor={`http-var-${key}`}
-                    className="flex gap-1 items-center"
-                  >
-                    {def.label || key}
-                    {def.required && <span className="text-destructive">*</span>}
-                  </Label>
-                  <Input
-                    id={`http-var-${key}`}
-                    type={def.type === 'password' ? 'password' : 'text'}
-                    value={currentValue}
-                    placeholder={def.label}
-                    onChange={(e) => {
-                      if (target === 'bearer-token') {
-                        setApiKey(e.target.value);
-                      } else if (target === 'header') {
-                        const existing = customHeaders.find((h) => h.key === key);
-                        if (existing) {
-                          handleUpdateHeader(
-                            existing.id,
-                            'value',
-                            e.target.value,
-                          );
-                        } else {
-                          setCustomHeaders((prev) => [
-                            ...prev,
-                            {
-                              id: createId(),
-                              key,
-                              value: e.target.value,
-                            },
-                          ]);
-                        }
-                      } else if (target === 'url-param') {
-                        setUrlParams((prev) => ({
+        <div className="space-y-4 p-4 border rounded-md bg-muted/10">
+          <h4 className="text-sm font-medium">
+            {t('mcpServer.dialog.requiredConfig', 'Required Configuration')}
+          </h4>
+          {Object.entries(
+            (server.metadata as MCPServerMetadata).variableDefinitions || {},
+          ).map(([key, def]) => {
+            const target = def.target ?? 'env';
+            let currentValue = '';
+            if (target === 'bearer-token') {
+              currentValue = apiKey;
+            } else if (target === 'header') {
+              currentValue =
+                customHeaders.find((h) => h.key === key)?.value || '';
+            } else if (target === 'url-param') {
+              currentValue = urlParams[key] || '';
+            }
+            return (
+              <div key={key} className="space-y-2">
+                <Label
+                  htmlFor={`http-var-${key}`}
+                  className="flex gap-1 items-center"
+                >
+                  {def.label || key}
+                  {def.required && <span className="text-destructive">*</span>}
+                </Label>
+                <Input
+                  id={`http-var-${key}`}
+                  type={def.type === 'password' ? 'password' : 'text'}
+                  value={currentValue}
+                  placeholder={def.label}
+                  onChange={(e) => {
+                    if (target === 'bearer-token') {
+                      setApiKey(e.target.value);
+                    } else if (target === 'header') {
+                      const existing = customHeaders.find((h) => h.key === key);
+                      if (existing) {
+                        handleUpdateHeader(
+                          existing.id,
+                          'value',
+                          e.target.value,
+                        );
+                      } else {
+                        setCustomHeaders((prev) => [
                           ...prev,
-                          [key]: e.target.value,
-                        }));
+                          {
+                            id: createId(),
+                            key,
+                            value: e.target.value,
+                          },
+                        ]);
                       }
-                    }}
-                  />
-                  {def.description && (
-                    <p className="text-xs text-muted-foreground">
-                      {def.description}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    } else if (target === 'url-param') {
+                      setUrlParams((prev) => ({
+                        ...prev,
+                        [key]: e.target.value,
+                      }));
+                    }
+                  }}
+                />
+                {def.description && (
+                  <p className="text-xs text-muted-foreground">
+                    {def.description}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Only show the generic API Key field if no variableDefinitions are defined for this server.
                   When variableDefinitions exist, all credentials are handled through that section above. */}
       {!(server.metadata as MCPServerMetadata | undefined)
         ?.variableDefinitions && (
-          <div className="space-y-2">
-            <Label htmlFor="http-api-key">
-              {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
-              <span className="text-muted-foreground text-xs">
-                {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
-              </span>
-            </Label>
-            <Input
-              id="http-api-key"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={t(
-                'mcpServer.dialog.apiKeyPlaceholder',
-                'Secret Token',
-              )}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'mcpServer.dialog.apiKeyDesc',
-                "Automatically adds 'Authorization: Bearer <token>' header.",
-              )}
-            </p>
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor="http-api-key">
+            {t('mcpServer.dialog.apiKeyLabel', 'API Key / Token')}{' '}
+            <span className="text-muted-foreground text-xs">
+              {t('mcpServer.dialog.apiKeyOptional', '(Optional)')}
+            </span>
+          </Label>
+          <Input
+            id="http-api-key"
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={t(
+              'mcpServer.dialog.apiKeyPlaceholder',
+              'Secret Token',
+            )}
+          />
+          <p className="text-xs text-muted-foreground">
+            {t(
+              'mcpServer.dialog.apiKeyDesc',
+              "Automatically adds 'Authorization: Bearer <token>' header.",
+            )}
+          </p>
+        </div>
+      )}
 
       {/* Advanced Settings */}
       <div className="border rounded-md">
@@ -263,13 +263,13 @@ export function HttpForm({
                   {customHeaders.map((header, index, arr) => {
                     const removeLabel = header.key
                       ? t('mcpServer.dialog.removeHeader', {
-                        key: header.key,
-                        defaultValue: 'Remove header {{key}}',
-                      })
+                          key: header.key,
+                          defaultValue: 'Remove header {{key}}',
+                        })
                       : t(
-                        'mcpServer.dialog.removeUnnamedHeader',
-                        'Remove unnamed header',
-                      );
+                          'mcpServer.dialog.removeUnnamedHeader',
+                          'Remove unnamed header',
+                        );
                     return (
                       <div key={header.id} className="flex gap-2 items-start">
                         <div className="flex-1">
@@ -286,7 +286,11 @@ export function HttpForm({
                             )}
                             value={header.key}
                             onChange={(e) =>
-                              handleUpdateHeader(header.id, 'key', e.target.value)
+                              handleUpdateHeader(
+                                header.id,
+                                'key',
+                                e.target.value,
+                              )
                             }
                             className="h-8 text-sm"
                             aria-label="Custom header key"
