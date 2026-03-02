@@ -350,6 +350,7 @@
   },
   "mcpServer": {
     "title": "확장 기능",
+    "pageSubtitle": "AI 확장 기능 및 도구 관리",
     "addServer": "확장 기능 추가",
     "recommended": "추천 확장 기능",
     "installed": "설치됨",

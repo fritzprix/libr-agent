@@ -109,8 +109,8 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         </SelectContent>
       </Select>
 
-      {/* Refresh Button for Ollama */}
-      {currentProvider === AIServiceProvider.Ollama && (
+      {/* Refresh Button — available for all providers */}
+      {currentProvider && (
         <button
           onClick={() => refreshModels()}
           disabled={isRefreshing}

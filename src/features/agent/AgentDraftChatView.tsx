@@ -41,6 +41,7 @@ import {
 } from '@/lib/assistant/runtime-builtins';
 import { workspaceWriteFile, getWorkspaceDir } from '@/lib/backend/workspace';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
+import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import type { AttachmentReference } from '@/models/chat';
 import {
   useDnDContext,
@@ -150,25 +151,7 @@ function DraftChatInner() {
     onDismiss,
   } = useInputToken(skills);
 
-  const getMimeType = useCallback((filename: string): string => {
-    const ext = filename.toLowerCase().split('.').pop();
-    switch (ext) {
-      case 'txt':
-        return 'text/plain';
-      case 'md':
-        return 'text/markdown';
-      case 'json':
-        return 'application/json';
-      case 'pdf':
-        return 'application/pdf';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'xlsx':
-        return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      default:
-        return 'application/octet-stream';
-    }
-  }, []);
+  const getMimeType = getMimeTypeFromFilename;
 
   const addFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
@@ -387,17 +370,58 @@ function DraftChatInner() {
                 // non-critical, leave as 0
               }
             }
-            attachments.push({
-              sessionId: newSessionId,
-              filename: file.name,
-              mimeType: file.type || 'application/octet-stream',
-              size: file.size,
-              lineCount,
-              preview: file.name,
-              uploadedAt: now.toISOString(),
-              status: 'workspace-only',
-              workspacePath,
-            });
+            // Determine actual MIME: file.type is already set via getMimeType() for
+            // drag-drop paths, but may be empty for native file picker on some platforms.
+            const actualMimeType =
+              file.type && file.type !== 'application/octet-stream'
+                ? file.type
+                : getMimeType(file.name);
+
+            const isInlineType =
+              actualMimeType.startsWith('image/') ||
+              actualMimeType.startsWith('audio/');
+
+            if (isInlineType) {
+              // Base64-encode inline for direct LLM consumption.
+              // Use chunk-by-chunk conversion to avoid call-stack overflow.
+              const byteArray = new Uint8Array(arrayBuffer);
+              let binary = '';
+              for (let bi = 0; bi < byteArray.length; bi++) {
+                binary += String.fromCharCode(byteArray[bi]);
+              }
+              const base64Data = btoa(binary);
+              const inlineType = actualMimeType.startsWith('image/')
+                ? ('image' as const)
+                : ('audio' as const);
+              attachments.push({
+                sessionId: newSessionId,
+                filename: file.name,
+                mimeType: actualMimeType,
+                size: file.size,
+                lineCount: 0,
+                preview: file.name,
+                uploadedAt: now.toISOString(),
+                status: 'inline',
+                workspacePath,
+                inlineContent: {
+                  type: inlineType,
+                  data: base64Data,
+                  mimeType: actualMimeType,
+                },
+              });
+            } else {
+              attachments.push({
+                sessionId: newSessionId,
+                filename: file.name,
+                mimeType: actualMimeType,
+                size: file.size,
+                lineCount,
+                preview: file.name,
+                uploadedAt: now.toISOString(),
+                status: 'workspace-only',
+                workspacePath,
+              });
+            }
           } catch (err) {
             logger.error('Failed to write pre-session attachment', err);
             toast.error(`Failed to attach: ${file.name}`);
