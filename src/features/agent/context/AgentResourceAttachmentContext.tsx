@@ -20,61 +20,9 @@ import {
   saveAgentFile,
   agentCallBuiltinTool,
 } from '@/features/agent/api/agent-backend';
+import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 
 const logger = getLogger('AgentResourceAttachmentContext');
-
-/**
- * Derives a MIME type from a filename extension.
- * Used as a last-resort fallback when the browser (e.g. WebKitGTK on Linux)
- * returns an empty string for `File.type` or when the file object is missing.
- */
-function getMimeTypeFromFilename(filename: string): string {
-  const ext = filename.toLowerCase().split('.').pop();
-  switch (ext) {
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'png':
-      return 'image/png';
-    case 'gif':
-      return 'image/gif';
-    case 'webp':
-      return 'image/webp';
-    case 'svg':
-      return 'image/svg+xml';
-    case 'bmp':
-      return 'image/bmp';
-    case 'ico':
-      return 'image/x-icon';
-    case 'tiff':
-    case 'tif':
-      return 'image/tiff';
-    case 'mp3':
-      return 'audio/mpeg';
-    case 'wav':
-      return 'audio/wav';
-    case 'ogg':
-      return 'audio/ogg';
-    case 'flac':
-      return 'audio/flac';
-    case 'm4a':
-      return 'audio/mp4';
-    case 'aac':
-      return 'audio/aac';
-    case 'webm':
-      return 'audio/webm';
-    case 'txt':
-      return 'text/plain';
-    case 'md':
-      return 'text/markdown';
-    case 'json':
-      return 'application/json';
-    case 'pdf':
-      return 'application/pdf';
-    default:
-      return 'application/octet-stream';
-  }
-}
 
 export interface PendingFileInput {
   file?: File;
@@ -257,7 +205,7 @@ export function AgentResourceAttachmentProvider({
         if (url.startsWith('blob:')) {
           return {
             blobUrl: url,
-            cleanup: () => { },
+            cleanup: () => {},
             size: 0,
             type: '',
           };
@@ -342,9 +290,7 @@ export function AgentResourceAttachmentProvider({
           workspacePath = await syncFileToWorkspace(file, currentSession.id);
           fileUrl = url;
           actualMimeType =
-            file.type ||
-            mimeType ||
-            getMimeTypeFromFilename(actualFilename);
+            file.type || mimeType || getMimeTypeFromFilename(actualFilename);
           fileSize = file.size;
         } catch (syncError) {
           logger.warn('Workspace sync failed, falling back to blob URL', {
@@ -356,9 +302,7 @@ export function AgentResourceAttachmentProvider({
           });
           fileUrl = URL.createObjectURL(file);
           actualMimeType =
-            file.type ||
-            mimeType ||
-            getMimeTypeFromFilename(actualFilename);
+            file.type || mimeType || getMimeTypeFromFilename(actualFilename);
           fileSize = file.size;
         }
       } else {

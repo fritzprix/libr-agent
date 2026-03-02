@@ -1,4 +1,5 @@
 import { Message } from '@/models/chat';
+import type { MCPContent } from '@/lib/mcp/protocol/content';
 import { getLogger } from './logger';
 import { stringToMCPContentArray } from './utils';
 
@@ -10,6 +11,10 @@ const logger = getLogger('message-preprocessor');
  * about each attachment and provides a guide on how to use tools to access the
  * full content of the attachments. This helps the LLM understand what files are
  * available and how to interact with them.
+ *
+ * Inline attachments (image/audio with status='inline') are injected directly
+ * into message.content as MCPImageContent/MCPAudioContent blocks so the LLM
+ * receives them as multimodal input.
  *
  * @param message The message to preprocess.
  * @returns A promise that resolves to the processed message, ready for the LLM.
@@ -27,18 +32,35 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
   });
 
   try {
-    // Generate attachment content blocks
-    // Skip inline attachments (image/audio) — they're already in message.content as MCPImageContent/MCPAudioContent.
+    // Separate inline (image/audio) from text/workspace attachments.
+    // Inline attachments must be injected into message.content; they are NOT
+    // already there in the agent V2 path (Rust stores and returns them only in
+    // the attachments field).
+    const inlineAttachments = message.attachments.filter(
+      (a) => a.status === 'inline' && !!a.inlineContent,
+    );
     const textAttachments = message.attachments.filter(
       (a) => a.status !== 'inline',
     );
 
-    if (textAttachments.length === 0) {
-      return message;
-    }
+    // Build MCPContent blocks for inline image/audio attachments
+    const inlineContentBlocks: MCPContent[] = inlineAttachments.map((a) => {
+      if (a.inlineContent!.type === 'image') {
+        return {
+          type: 'image' as const,
+          data: a.inlineContent!.data,
+          mimeType: a.inlineContent!.mimeType,
+        };
+      }
+      return {
+        type: 'audio' as const,
+        data: a.inlineContent!.data,
+        mimeType: a.inlineContent!.mimeType,
+      };
+    });
 
-    const attachmentContents = textAttachments.map((attachment, i) => {
-      // Generate tool-call hints based on whether the file is in the Content Store or workspace-only
+    // Build text hint blocks for workspace/committed attachments
+    const attachmentHintBlocks = textAttachments.map((attachment, i) => {
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:
 - readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
@@ -59,12 +81,21 @@ ${accessHints}
 </attachment_${i}>`;
     });
 
-    // Normalize content for LLM and combine with attachment information
+    const hasInline = inlineContentBlocks.length > 0;
+    const hasText = attachmentHintBlocks.length > 0;
+
+    if (!hasInline && !hasText) {
+      return message;
+    }
+
     const processedMessage: Message = {
       ...message,
       content: [
         ...message.content,
-        ...stringToMCPContentArray(attachmentContents.join('\n\n')),
+        ...inlineContentBlocks,
+        ...(hasText
+          ? stringToMCPContentArray(attachmentHintBlocks.join('\n\n'))
+          : []),
       ],
     };
 
