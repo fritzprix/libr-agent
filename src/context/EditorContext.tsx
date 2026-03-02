@@ -155,8 +155,8 @@ export function useEditor<T>(): EditorContextValue<T> {
 }
 
 /**
- * 특정 필드의 값과 해당 값을 업데이트하는 함수를 반환하는 헬퍼 훅입니다.
- * @param fieldName - 업데이트할 필드의 키
+ * A helper hook that returns the value of a specific field and a function to update that value.
+ * @param fieldName - The key of the field to update
  */
 export function useEditorField<T extends object, K extends keyof T>(
   fieldName: K,
