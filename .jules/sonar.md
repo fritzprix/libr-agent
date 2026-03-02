@@ -27,3 +27,4 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-02-28 - src/features/agent/lib/chat-utils.ts **Coverage Expanded:** computeDisplayContent **Assertions:** Verified content array parsing, grouped tools restructuring, and original fallback filtering.
 
 ## 2026-03-01 - src/lib/mcp/schema/builders.ts, src/hooks/use-settings.ts **Coverage Expanded:** JSON Schema Builders, useSettings Hook **Assertions:** Verified robust typed schema object creation, expected error handling outside context providers, and data retrieval inside providers.
+## 2026-03-02 - src/lib/mcp/schema/builders.ts, src/lib/mcp/utils/type-guards.ts, src/lib/mcp/utils/service-info.ts, src/lib/mcp/protocol/content.ts **Coverage Expanded:** MCP Types & Utilities **Assertions:** Added missing tests for schema builders, extracted coverage metric fixes.

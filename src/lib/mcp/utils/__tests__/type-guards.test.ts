@@ -7,7 +7,7 @@ import {
   hasStructuredContent,
   isExtendedResponse,
 } from '../type-guards';
-import { MCPResponse, MCPResult } from '../../protocol';
+import { MCPResponse, MCPResult, ExtendedMCPResponse } from '../../protocol';
 
 const baseResponse = { jsonrpc: '2.0' as const, id: null };
 
@@ -32,8 +32,9 @@ describe('MCP Type Guards', () => {
     });
 
     it('should return false if result is missing', () => {
-      // @ts-expect-error - Testing invalid input
-      const response: MCPResponse<unknown> = {};
+      const response: MCPResponse<unknown> = {
+          ...baseResponse,
+      };
       expect(isMCPSuccess(response)).toBe(false);
     });
   });
@@ -77,6 +78,11 @@ describe('MCP Type Guards', () => {
       };
       expect(isValidMCPResult(result)).toBe(false);
     });
+
+    it('should return false if content is missing and structuredContent is missing', () => {
+        const result: MCPResult = {};
+        expect(isValidMCPResult(result)).toBe(false);
+    });
   });
 
   describe('extractStructuredContent', () => {
@@ -100,19 +106,29 @@ describe('MCP Type Guards', () => {
     });
 
     it('should return null if result is missing', () => {
-        // @ts-expect-error - Testing invalid input
-      const response: MCPResponse<unknown> = {};
+      const response: MCPResponse<unknown> = {
+          ...baseResponse,
+      };
       expect(extractStructuredContent(response)).toBeNull();
     });
 
     it('should return null if result contains sampling', () => {
       const response: MCPResponse<unknown> = {
+          ...baseResponse,
         result: {
           // @ts-expect-error - Manually constructing sampling result for test
           sampling: 'test',
         },
       };
       expect(extractStructuredContent(response)).toBeNull();
+    });
+
+    it('should return null if result is empty', () => {
+        const response: MCPResponse<unknown> = {
+            ...baseResponse,
+            result: {}
+        };
+        expect(extractStructuredContent(response)).toBeNull();
     });
   });
 
@@ -141,22 +157,26 @@ describe('MCP Type Guards', () => {
   describe('isExtendedResponse', () => {
     it('should return true if serviceInfo is present', () => {
       const response = {
+        ...baseResponse,
         serviceInfo: {
           serverName: 'test',
           toolName: 'test',
           backendType: 'ExternalMCP',
         },
       };
-      // @ts-expect-error - Partial mock
-      expect(isExtendedResponse(response)).toBe(true);
+      expect(isExtendedResponse(response as ExtendedMCPResponse)).toBe(true);
     });
 
     it('should return false if serviceInfo is missing', () => {
       const response = {
+        ...baseResponse,
         result: {},
       };
-      // @ts-expect-error - Partial mock
-      expect(isExtendedResponse(response)).toBe(false);
+      expect(isExtendedResponse(response as ExtendedMCPResponse)).toBe(false);
+    });
+
+    it('should return false if response is null', () => {
+        expect(isExtendedResponse(null as unknown as ExtendedMCPResponse)).toBe(false);
     });
   });
 });

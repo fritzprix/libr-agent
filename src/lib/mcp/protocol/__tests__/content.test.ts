@@ -21,6 +21,12 @@ describe('MCP Content Types', () => {
       mimeType: 'image/png',
     };
 
+    const textWithFalseErrorContent = {
+      type: 'text',
+      text: 'Not an error',
+      isError: false,
+    } as unknown as MCPContent;
+
     it('should return true for error content', () => {
       expect(isMCPErrorContent(errorContent)).toBe(true);
     });
@@ -31,6 +37,10 @@ describe('MCP Content Types', () => {
 
     it('should return false for other content types', () => {
       expect(isMCPErrorContent(imageContent)).toBe(false);
+    });
+
+    it('should return false when isError is false', () => {
+      expect(isMCPErrorContent(textWithFalseErrorContent)).toBe(false);
     });
   });
 });

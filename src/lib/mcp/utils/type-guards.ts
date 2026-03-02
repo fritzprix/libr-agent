@@ -82,5 +82,5 @@ export function hasStructuredContent<T>(
 export function isExtendedResponse(
   response: MCPResponse<unknown>,
 ): response is ExtendedMCPResponse {
-  return response && typeof response === 'object' && 'serviceInfo' in response;
+  return !!response && typeof response === 'object' && 'serviceInfo' in response;
 }
