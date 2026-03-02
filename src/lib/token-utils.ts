@@ -253,8 +253,11 @@ export function batchToolCallsInMessages(
  * @param providerId The ID of the LLM provider.
  * @param modelId The ID of the model.
  * @param maxTokens An optional maximum number of tokens to include.
+ * @param options Additional options for message selection.
  * @param options.systemPrompt Optional system prompt to account for in token budget.
  * @param options.toolsJson Optional tools JSON string to account for in token budget.
+ * @param options.maxMessages Optional maximum number of messages to include.
+ * @param options.maxToolCallsPerMessage Optional maximum number of tool calls per assistant message.
  * @returns A new array of messages that fits within the context window.
  */
 export function selectMessagesWithinContext(
