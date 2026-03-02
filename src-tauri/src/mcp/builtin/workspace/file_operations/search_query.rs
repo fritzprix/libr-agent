@@ -775,8 +775,253 @@ fn matches_glob(pattern: &glob::Pattern, path: &std::path::Path, file_name: Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::SessionManager;
     use glob::Pattern;
+    use serde_json::json;
     use std::path::PathBuf;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    async fn create_server() -> (WorkspaceServer, tempfile::TempDir) {
+        let tmp = tempdir().unwrap();
+        let session_manager =
+            Arc::new(SessionManager::new_with_base_dir(tmp.path().to_path_buf()).unwrap());
+        let server = WorkspaceServer::new("test-session".to_string(), session_manager);
+        (server, tmp)
+    }
+
+    // ── searchLines — directory path tests ───────────────────────────────────
+
+    /// Basic happy path: two text files in a directory, both with matches.
+    #[tokio::test]
+    async fn test_search_lines_dir_basic() {
+        let (server, tmp) = create_server().await;
+        let dir = tmp.path().join("src");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.ts"), "const foo = 1;\nconst bar = 2;\n").unwrap();
+        std::fs::write(dir.join("b.ts"), "let foo = true;\n").unwrap();
+
+        let result = server
+            .handle_search_lines(
+                json!({ "path": dir.to_string_lossy(), "pattern": "foo" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let text = result
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        assert!(text.contains("2 match"), "expected 2 matches, got: {text}");
+        assert!(text.contains("a.ts") || text.contains("b.ts"), "expected file names in output");
+        assert!(!result.is_error.unwrap_or(false));
+    }
+
+    /// No matches in directory returns a friendly no-match message, not an error.
+    #[tokio::test]
+    async fn test_search_lines_dir_no_match() {
+        let (server, tmp) = create_server().await;
+        let dir = tmp.path().join("empty_src");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("readme.txt"), "hello world\n").unwrap();
+
+        let result = server
+            .handle_search_lines(
+                json!({ "path": dir.to_string_lossy(), "pattern": "zzznomatch" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = result
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        assert!(text.contains("No matches") || text.contains("no match"), "got: {text}");
+    }
+
+    /// Binary files (e.g. .png) are silently skipped and do not cause errors.
+    #[tokio::test]
+    async fn test_search_lines_dir_skips_binary_extension() {
+        let (server, tmp) = create_server().await;
+        let dir = tmp.path().join("mixed");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("image.png"), b"\x89PNG\r\n\x1a\n fake binary").unwrap();
+        std::fs::write(dir.join("code.ts"), "const needle = 42;\n").unwrap();
+
+        let result = server
+            .handle_search_lines(
+                json!({ "path": dir.to_string_lossy(), "pattern": "needle" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = result
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        // Must find the match in the .ts file
+        assert!(text.contains("needle"), "got: {text}");
+    }
+
+    /// Recursive walk finds files in subdirectories.
+    #[tokio::test]
+    async fn test_search_lines_dir_recursive() {
+        let (server, tmp) = create_server().await;
+        let root = tmp.path().join("root");
+        std::fs::create_dir_all(root.join("deep/nested")).unwrap();
+        std::fs::write(root.join("top.rs"), "// top\n").unwrap();
+        std::fs::write(root.join("deep/nested/leaf.rs"), "fn target_fn() {}\n").unwrap();
+
+        let result = server
+            .handle_search_lines(
+                json!({ "path": root.to_string_lossy(), "pattern": "target_fn" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = result
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        assert!(text.contains("leaf.rs"), "expected leaf.rs in output, got: {text}");
+        assert!(text.contains("target_fn"));
+    }
+
+    /// Case-insensitive flag works when searching a directory.
+    #[tokio::test]
+    async fn test_search_lines_dir_case_insensitive() {
+        let (server, tmp) = create_server().await;
+        let dir = tmp.path().join("ci");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("f.txt"), "Hello World\n").unwrap();
+
+        // Case-sensitive: should not match lowercase
+        let result_sensitive = server
+            .handle_search_lines(
+                json!({ "path": dir.to_string_lossy(), "pattern": "hello world", "ignoreCase": false }),
+                None,
+            )
+            .await
+            .unwrap();
+        let text_s = result_sensitive
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        assert!(text_s.contains("No matches") || text_s.contains("no match"), "expected no match case-sensitive, got: {text_s}");
+
+        // Case-insensitive: must match
+        let result_insensitive = server
+            .handle_search_lines(
+                json!({ "path": dir.to_string_lossy(), "pattern": "hello world", "ignoreCase": true }),
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(!result_insensitive.is_error.unwrap_or(false));
+        let text_i = result_insensitive
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        assert!(text_i.contains("Hello World"), "expected match case-insensitive, got: {text_i}");
+    }
+
+    /// Passing a file path still works (regression: directory branch must not break file path).
+    #[tokio::test]
+    async fn test_search_lines_file_path_still_works() {
+        let (server, tmp) = create_server().await;
+        let file = tmp.path().join("single.txt");
+        std::fs::write(&file, "line one\nline two\nline three\n").unwrap();
+
+        let result = server
+            .handle_search_lines(
+                json!({ "path": file.to_string_lossy(), "pattern": "line two" }),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = result
+            .content
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|c| {
+                if let crate::mcp::types::MCPContent::Text { text, .. } = c {
+                    Some(text.clone())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        assert!(text.contains("line two"), "got: {text}");
+    }
+
+    // ── matches_glob unit tests (unchanged) ──────────────────────────────────
 
     #[test]
     fn test_matches_glob_unix() {
