@@ -35,3 +35,9 @@
 **Extracted:** ~40
 **Languages updated:** [EN, KO]
 **Notes:** Localized `History` view, `SessionHistoryPanel`, and `SessionCard`. Added `sessionHistory` namespace in `common.json` with keys for panel UI, tab labels, toast messages, and session card actions. Used standard i18n pluralization rules for `subagentsCount`.
+
+## 2026-03-01 - [MCP Server Page]
+
+**Extracted:** 1
+**Languages updated:** [EN, KO]
+**Notes:** Replaced hardcoded "Manage your AI extensions and tools" string with `mcpServer.pageSubtitle` in `MCPServerPage.tsx`. Updated corresponding translations in English and Korean common.json.
