@@ -1,5 +1,4 @@
 use crate::agent::context::registry::ContextRegistry;
-use crate::agent::context::skills::SkillsContextProvider;
 use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
@@ -52,9 +51,6 @@ impl AgentSessionManager {
 
         // Register time/location context provider (high priority)
         registry.register(Box::new(TimeLocationContextProvider::new()));
-
-        // Register skills context provider
-        registry.register(Box::new(SkillsContextProvider::new()));
 
         log::info!(
             "✅ Context registry initialized with {} providers",

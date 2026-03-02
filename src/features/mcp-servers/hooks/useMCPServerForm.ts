@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
@@ -143,9 +143,22 @@ export function useMCPServerForm(server: MCPServerEntity) {
       ) {
         const urlObj = new URL(server.transport.url);
         const params: Record<string, string> = {};
-        urlObj.searchParams.forEach((value, key) => {
-          params[key] = value;
-        });
+
+        // Extract managed url-params
+        const varDefs = (server.metadata as MCPServerMetadata | undefined)
+          ?.variableDefinitions;
+        if (varDefs) {
+          Object.entries(varDefs).forEach(([key, def]) => {
+            if (def.target === 'url-param') {
+              const value = urlObj.searchParams.get(key);
+              if (value) {
+                params[key] = value;
+                // We don't remove it from urlObj here because we just need to read it.
+                // We'll clean up the main draft.url initialization instead.
+              }
+            }
+          });
+        }
         return params;
       }
     } catch {
@@ -153,6 +166,44 @@ export function useMCPServerForm(server: MCPServerEntity) {
     }
     return {};
   });
+
+  // Clean the URL in the draft state to hide url-params
+  useEffect(() => {
+    if (
+      ((draft.transport.type as string) === 'http' ||
+        draft.transport.type === 'http-sse') &&
+      'url' in draft.transport &&
+      draft.transport.url
+    ) {
+      try {
+        const urlObj = new URL(draft.transport.url);
+        const varDefs = (draft.metadata as MCPServerMetadata | undefined)
+          ?.variableDefinitions;
+        let changed = false;
+
+        if (varDefs) {
+          Object.entries(varDefs).forEach(([key, def]) => {
+            if (def.target === 'url-param' && urlObj.searchParams.has(key)) {
+              urlObj.searchParams.delete(key);
+              changed = true;
+            }
+          });
+        }
+
+        if (changed) {
+          setDraft((prev) => ({
+            ...prev,
+            transport: {
+              ...prev.transport,
+              url: urlObj.toString(),
+            } as TransportConfig,
+          }));
+        }
+      } catch {
+        // invalid URL
+      }
+    }
+  }, []);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { AgentResponse } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';

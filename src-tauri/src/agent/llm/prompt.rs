@@ -151,3 +151,79 @@ pub async fn build_system_prompt(
 
     Ok(parts.join("\n"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::context::registry::ContextRegistry;
+    use crate::mcp::service_proxy::MCPServiceProxy;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_build_system_prompt_all_sections() {
+        // 1. Agent Identity
+        let agent_config = crate::agent::AgentConfig {
+            id: Some("test-assistant".to_string()),
+            name: "Test Assistant".to_string(),
+            system_prompt: "You are a test assistant.".to_string(),
+            ..Default::default()
+        };
+
+        // 2. Workspace Instructions
+        let workspace_instructions =
+            vec![("agents.md".to_string(), "Custom agents.md rule".to_string())];
+
+        // 3. Session Context
+        let session_name = Some("Test Session 123".to_string());
+
+        // 4. Read-only Context Providers (Simulate empty for unit test simplicty, or mock)
+        let context_registry = Some(Arc::new(ContextRegistry::new()));
+
+        // 5. Service Contexts (Simulate None representing no MCPs for now)
+        let proxy: Option<Arc<MCPServiceProxy>> = None;
+
+        let prompt = build_system_prompt(
+            &agent_config,
+            session_name,
+            proxy,
+            context_registry,
+            workspace_instructions,
+        )
+        .await
+        .unwrap();
+
+        // Assert 1: Agent Identity
+        assert!(prompt.contains("You are a test assistant."));
+
+        // Assert 2: Workspace Instructions
+        assert!(prompt.contains("## Workspace Instructions (agents.md)"));
+        assert!(prompt.contains("Custom agents.md rule"));
+
+        // Assert 3: Session Context
+        assert!(prompt.contains("## Session Context"));
+        assert!(prompt.contains("Test Session 123"));
+    }
+
+    #[tokio::test]
+    async fn test_build_system_prompt_missing_optional_sections() {
+        let agent_config = crate::agent::AgentConfig {
+            system_prompt: "Base prompt only.".to_string(),
+            ..Default::default()
+        };
+
+        let prompt = build_system_prompt(
+            &agent_config,
+            None,   // No session name
+            None,   // No proxy
+            None,   // No context registry
+            vec![], // No workspace instructions
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(prompt, "Base prompt only.");
+        assert!(!prompt.contains("## Session Context"));
+        assert!(!prompt.contains("## Workspace Instructions"));
+        assert!(!prompt.contains("## Available Tools & Current State"));
+    }
+}

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, MCPContent } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager } from '../llm-config-manager';
@@ -310,7 +310,7 @@ export class OpenAIService extends BaseAIService {
       if (effectiveRole === 'user') {
         openaiMessages.push({
           role: 'user',
-          content: this.processMessageContent(m.content),
+          content: this.formatOpenAIContent(m.content),
         });
       } else if (effectiveRole === 'assistant') {
         if (m.tool_calls && m.tool_calls.length > 0) {
@@ -343,6 +343,37 @@ export class OpenAIService extends BaseAIService {
   }
 
   /**
+   * Helper to format content for OpenAI API, supporting multimodal parts.
+   */
+  private formatOpenAIContent(
+    content: MCPContent[],
+  ): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
+    const multimodal = this.processMultiModalContent(content);
+    if (multimodal.every((p) => p.type === 'text')) {
+      return this.processMessageContent(content);
+    }
+    return multimodal.map((part) => {
+      if (part.type === 'text') {
+        return { type: 'text', text: part.text || '' };
+      } else if (part.type === 'image') {
+        const mimeType = part.mimeType || 'image/jpeg';
+        return {
+          type: 'image_url',
+          image_url: { url: `data:${mimeType};base64,${part.image}` },
+        };
+      } else if (part.type === 'audio') {
+        // OpenAI expects 'wav' or 'mp3' for audio format
+        const format = part.mimeType?.includes('wav') ? 'wav' : 'mp3';
+        return {
+          type: 'input_audio',
+          input_audio: { data: part.audio || '', format },
+        } as unknown as OpenAI.Chat.Completions.ChatCompletionContentPart; // Cast to bypass TS if missing in older types
+      }
+      return { type: 'text', text: `[Unsupported content: ${part.type}]` };
+    });
+  }
+
+  /**
    * @inheritdoc
    * @description Creates an OpenAI-compatible system message object.
    * @protected
@@ -367,7 +398,7 @@ export class OpenAIService extends BaseAIService {
     if (effectiveRole === 'user') {
       return {
         role: 'user',
-        content: this.processMessageContent(message.content),
+        content: this.formatOpenAIContent(message.content),
       };
     } else if (effectiveRole === 'assistant') {
       if (message.tool_calls && message.tool_calls.length > 0) {

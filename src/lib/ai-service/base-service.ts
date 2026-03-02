@@ -182,9 +182,18 @@ export abstract class BaseAIService implements IAIService {
    *          containing either text or image data.
    * @protected
    */
-  protected processMultiModalContent(
-    content: MCPContent[],
-  ): Array<{ type: string; text?: string; image?: string }> {
+  protected processMultiModalContent(content: MCPContent[]): Array<{
+    type: string;
+    text?: string;
+    image?: string;
+    audio?: string;
+    mimeType?: string;
+  }> {
+    type MediaItem = {
+      data?: string;
+      mimeType?: string;
+      source?: { data?: string; uri?: string; mimeType?: string };
+    };
     return content.map((item) => {
       switch (item.type) {
         case 'text':
@@ -193,16 +202,23 @@ export abstract class BaseAIService implements IAIService {
           return {
             type: 'image',
             image:
-              (
-                item as {
-                  data?: string;
-                  source?: { data?: string; uri?: string };
-                }
-              ).data ||
-              (item as { source?: { data?: string; uri?: string } }).source
-                ?.data ||
-              (item as { source?: { data?: string; uri?: string } }).source
-                ?.uri,
+              (item as MediaItem).data ||
+              (item as MediaItem).source?.data ||
+              (item as MediaItem).source?.uri,
+            mimeType:
+              (item as MediaItem).mimeType ||
+              (item as MediaItem).source?.mimeType,
+          };
+        case 'audio':
+          return {
+            type: 'audio',
+            audio:
+              (item as MediaItem).data ||
+              (item as MediaItem).source?.data ||
+              (item as MediaItem).source?.uri,
+            mimeType:
+              (item as MediaItem).mimeType ||
+              (item as MediaItem).source?.mimeType,
           };
         default:
           return { type: 'text', text: `[${item.type}]` };

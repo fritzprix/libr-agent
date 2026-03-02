@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';

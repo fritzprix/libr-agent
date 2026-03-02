@@ -114,3 +114,8 @@
 
 **Drift:** Referenced `file://workspace/docs/readme.md` in a tool description example which is not a standard file path.
 **Reality:** Updated the example to use `file://workspace/README.md`.
+
+## 2026-03-05 - src/lib/workspace-sync-service.ts
+
+**Drift:** JSDoc for `normalizeUnicode` claimed `@param filename` while the actual function argument was `name`.
+**Reality:** Updated `@param filename` to `@param name` to match the actual function signature.

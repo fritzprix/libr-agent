@@ -55,18 +55,7 @@ export function generateWorkspacePath(filename: string): string {
 }
 
 /**
- * Sanitizes a filename to make it safe for use in a filesystem path.
- * The implementation follows clear, named steps for maintainability:
- * 1) normalizeUnicode → 2) replaceUnsafeChars → 3) collapseWhitespace → 4) limitLength
- * 5) splitBaseAndExt → 6) sanitizeBase/Extension → 7) recombine → 8) finalCleanup
- *
- * Behavior preserved from previous implementation (200 char limit, lowercase ext,
- * collapse underscores, drop invalid extension chars, ensure non-empty base → "file").
- *
- * Note: Exported for unit testing. Marked as internal API.
- *
- * @param filename The original filename.
- * @returns The sanitized filename.
+ * Normalizes the text to Unicode NFC/NFKC format to handle composed/precomposed character differences.
  * @internal
  */
 // Sanitize helpers exported for readability and testing
@@ -124,6 +113,21 @@ export function finalCleanup(name: string): string {
   return limitLength(safe);
 }
 
+/**
+ * Sanitizes a filename to make it safe for use in a filesystem path.
+ * The implementation follows clear, named steps for maintainability:
+ * 1) normalizeUnicode → 2) replaceUnsafeChars → 3) collapseWhitespace → 4) limitLength
+ * 5) splitBaseAndExt → 6) sanitizeBase/Extension → 7) recombine → 8) finalCleanup
+ *
+ * Behavior preserved from previous implementation (200 char limit, lowercase ext,
+ * collapse underscores, drop invalid extension chars, ensure non-empty base → "file").
+ *
+ * Note: Exported for unit testing. Marked as internal API.
+ *
+ * @param filename The original filename.
+ * @returns The sanitized filename.
+ * @internal
+ */
 export function sanitizeFilename(filename: string): string {
   const step1 = normalizeUnicode(filename);
   const step2 = replaceUnsafeChars(step1);
