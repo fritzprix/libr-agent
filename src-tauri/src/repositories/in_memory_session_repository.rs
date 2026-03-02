@@ -234,7 +234,6 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
-            is_bookmarked: false,
             created_at: 1234567890,
             updated_at: 1234567890,
         };
@@ -265,7 +264,6 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
-            is_bookmarked: false,
             created_at: 100,
             updated_at: 100,
         };
@@ -308,7 +306,6 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
-            is_bookmarked: false,
             created_at: 100,
             updated_at: 100,
         };
@@ -344,7 +341,6 @@ mod tests {
                 depth: None,
                 max_depth: None,
                 max_fanout: None,
-                is_bookmarked: false,
                 created_at: 100,
                 updated_at: 100,
             };
@@ -375,7 +371,6 @@ mod tests {
                 depth: None,
                 max_depth: None,
                 max_fanout: None,
-                is_bookmarked: false,
                 created_at: 100,
                 updated_at: 100,
             };
@@ -416,7 +411,6 @@ mod tests {
                     depth: None,
                     max_depth: None,
                     max_fanout: None,
-                    is_bookmarked: false,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });
