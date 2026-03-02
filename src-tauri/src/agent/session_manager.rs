@@ -606,10 +606,13 @@ impl AgentSessionManager {
         drop(active); // Release the read lock before async call
 
         // Wait for background tool loading to finish (stdio/HTTP servers are spawned
-        // asynchronously during proxy creation). Up to 60 s to accommodate slow servers.
+        // asynchronously during proxy creation). Use a short timeout here (10 s) because
+        // this is a UI query path — a partial tool list is far better than blocking the
+        // status indicator for a full minute while slow/failing external servers are
+        // still initialising. The LLM execution path uses the full 60 s timeout.
         if let Err(e) = self
             .proxy_manager
-            .wait_until_proxy_ready(session_id, 60)
+            .wait_until_proxy_ready(session_id, 10)
             .await
         {
             log::warn!(

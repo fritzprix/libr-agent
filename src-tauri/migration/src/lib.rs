@@ -13,6 +13,7 @@ mod m20260215_000008_add_cascade_delete_to_sessions;
 mod m20260217_000009_ensure_data_integrity;
 mod m20260218_000010_add_migration_metadata;
 mod m20260301_000011_add_bookmark_to_sessions;
+mod m20260302_000012_create_scheduled_tasks;
 
 pub struct Migrator;
 
@@ -31,6 +32,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260217_000009_ensure_data_integrity::Migration),
             Box::new(m20260218_000010_add_migration_metadata::Migration),
             Box::new(m20260301_000011_add_bookmark_to_sessions::Migration),
+            Box::new(m20260302_000012_create_scheduled_tasks::Migration),
         ]
     }
 }

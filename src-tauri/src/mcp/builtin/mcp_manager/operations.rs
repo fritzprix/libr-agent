@@ -469,12 +469,7 @@ async fn test_server_connection(
 
             Ok(tools.len())
         }
-        TransportConfig::Http {
-            url,
-            headers,
-            enable_sse,
-            ..
-        } => {
+        TransportConfig::Http { url, headers, .. } => {
             use rmcp::transport::streamable_http_client::{
                 StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
             };
@@ -500,9 +495,12 @@ async fn test_server_connection(
                 .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
             let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.as_str());
-            if let Some(sse) = enable_sse {
-                transport_config.allow_stateless = !sse;
-            }
+            // Always allow stateless so servers that omit Mcp-Session-Id (e.g. exa) connect
+            // successfully regardless of the enable_sse config flag.  Stateful servers that do
+            // return a session ID still work correctly — allow_stateless only matters when the
+            // server omits the header.  This matches the MCPServerManager (probe) path which
+            // hardcodes allow_stateless = true.
+            transport_config.allow_stateless = true;
 
             let transport =
                 StreamableHttpClientTransport::with_client(http_client, transport_config);

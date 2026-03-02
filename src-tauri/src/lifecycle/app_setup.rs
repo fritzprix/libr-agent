@@ -284,6 +284,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     info!("🔄 Session recovery initiated in background");
     info!("✅ Builtin servers initialized with SessionManager support");
 
+    // Start scheduled task background worker (polls every 60s)
+    let scheduler_app_handle = app.handle().clone();
+    let _scheduler_worker = crate::scheduled::SchedulerWorker::new(
+        scheduler_app_handle,
+        std::time::Duration::from_secs(60),
+    );
+    info!("✅ Scheduled task worker started");
+
     // Setup OAuth deep link handler
     let app_handle = app.handle().clone();
     app.listen("deep-link://new-url", move |event| {

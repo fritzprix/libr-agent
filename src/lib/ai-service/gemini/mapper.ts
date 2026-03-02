@@ -307,6 +307,17 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
     }
   }
 
+  // Gemini constraint: first message MUST be 'user'.
+  // Injected playbook tool-call/result pairs (source='ui') can arrive before any user
+  // message when starting a fresh session. Guard against this to prevent API rejection.
+  if (geminiMessages.length > 0 && geminiMessages[0].role !== 'user') {
+    logger.warn(
+      '⚠️ First Gemini message is not user role; prepending synthetic user message to satisfy API constraint',
+      { firstRole: geminiMessages[0].role },
+    );
+    geminiMessages.unshift({ role: 'user', parts: [{ text: '.' }] });
+  }
+
   logger.info(
     `Gemini conversion: ${messages.length} -> ${geminiMessages.length} messages`,
     {

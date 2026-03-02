@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import { useChatSubmit } from '../hooks/useChatSubmit';
 import { useInputToken } from '../hooks/useInputToken';
+import { usePlaybookSearch } from '../hooks/usePlaybookSearch';
 import { InputTokenDropdown } from './InputTokenDropdown';
 import {
   useDnDContext,
@@ -73,6 +74,15 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       ? stage.query
       : null;
   const fileResults = useWorkspaceFiles(session?.id, fileQuery);
+
+  const playbookQuery =
+    stage.kind === 'typing-arg' && stage.typeName === 'playbook'
+      ? stage.query
+      : null;
+  const playbookResults = usePlaybookSearch(
+    session?.assistant?.id,
+    playbookQuery,
+  );
 
   const {
     pendingFiles,
@@ -153,7 +163,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
         (typeResults.length > 0 ||
           skillResults.length > 0 ||
           toolResults.length > 0 ||
-          fileResults.length > 0)
+          fileResults.length > 0 ||
+          playbookResults.length > 0)
       ) {
         if (
           ['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)
@@ -182,6 +193,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       skillResults.length,
       toolResults.length,
       fileResults.length,
+      playbookResults.length,
     ],
   );
 
@@ -201,7 +213,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   useEffect(() => {
     const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
       if (event === 'drag-over') {
-        logger.info('Drag Over', { event, payload });
         const isValid = payload.paths ? validateFiles(payload.paths) : false;
         setDragState(isValid ? 'valid' : 'invalid');
       } else if (event === 'drop') {
@@ -268,7 +279,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
           (typeResults.length > 0 ||
             skillResults.length > 0 ||
             toolResults.length > 0 ||
-            fileResults.length > 0) && (
+            fileResults.length > 0 ||
+            playbookResults.length > 0) && (
             <InputTokenDropdown
               mode={
                 stage.kind === 'typing-type'
@@ -277,7 +289,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                     ? { kind: 'tools', items: toolResults }
                     : stage.typeName === 'file'
                       ? { kind: 'files', items: fileResults }
-                      : { kind: 'skills', items: skillResults }
+                      : stage.typeName === 'playbook'
+                        ? { kind: 'playbooks', items: playbookResults }
+                        : { kind: 'skills', items: skillResults }
               }
               onSelectType={(typeName) => {
                 const cursorPos =

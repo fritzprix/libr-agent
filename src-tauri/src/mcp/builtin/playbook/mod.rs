@@ -11,8 +11,9 @@ mod templates;
 mod tools;
 mod types;
 
-// Re-export types if needed, or just use them internally
-// use self::types::Playbook;
+// Re-export for use in other modules (e.g., PlaybookReferenceResolver)
+pub use operations::format_playbook_detailed;
+pub use types::Playbook;
 
 /// Playbook MCP Server
 #[derive(Debug)]

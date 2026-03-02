@@ -144,7 +144,8 @@ pub async fn request_llm_completion(
 
     // Resolve @type:arg references in user messages (Late Binding).
     // The stored messages are NOT modified — only the CompletionRequest payload is enriched.
-    let messages = resolve_message_references(messages, &session_id).await;
+    let messages =
+        resolve_message_references(messages, &session_id, agent_config.id.as_deref()).await;
 
     let request = CompletionRequest {
         session_id: session_id.clone(),
@@ -169,8 +170,12 @@ pub async fn request_llm_completion(
 /// Resolve `@type:arg` references in user messages.
 /// Each user message's text content is processed through the reference registry.
 /// Only the returned `Vec<Message>` is modified — the session store is untouched.
-async fn resolve_message_references(messages: Vec<Message>, session_id: &str) -> Vec<Message> {
-    let registry = build_default_registry(session_id).await;
+async fn resolve_message_references(
+    messages: Vec<Message>,
+    session_id: &str,
+    assistant_id: Option<&str>,
+) -> Vec<Message> {
+    let registry = build_default_registry(session_id, assistant_id).await;
     let mut result = Vec::with_capacity(messages.len());
 
     for mut msg in messages {
