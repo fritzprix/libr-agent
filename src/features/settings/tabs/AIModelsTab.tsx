@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { AIServiceProvider } from '@/lib/ai-service';
 import { ServiceConfig } from '@/context/SettingsContext';
@@ -34,16 +34,45 @@ function AIModelsTabComponent({
 }: AIModelsTabProps) {
   const { t } = useTranslation('common');
 
-  // Memoize provider names to prevent recalculation on every render
-  const providerNames = useMemo(() => {
-    return providerEntries.reduce(
-      (acc, provider) => {
-        acc[provider] = provider.charAt(0).toUpperCase() + provider.slice(1);
-        return acc;
-      },
-      {} as Record<AIServiceProvider, string>,
-    );
-  }, [providerEntries]);
+  // Static metadata for each provider — user-friendly name + short description
+  const PROVIDER_META: Record<
+    AIServiceProvider,
+    { name: string; description: string }
+  > = {
+    [AIServiceProvider.OpenAI]: {
+      name: 'OpenAI',
+      description: 'GPT-4o, o3, o4-mini and more',
+    },
+    [AIServiceProvider.Anthropic]: {
+      name: 'Anthropic',
+      description: 'Claude 3.5 Sonnet, Haiku and more',
+    },
+    [AIServiceProvider.Gemini]: {
+      name: 'Google Gemini',
+      description: 'Gemini 2.5 Pro, Flash and more',
+    },
+    [AIServiceProvider.Ollama]: {
+      name: 'Ollama',
+      description: 'Run open models locally on your machine',
+    },
+    [AIServiceProvider.Groq]: {
+      name: 'Groq',
+      description: 'Ultra-fast inference via Groq LPU chips',
+    },
+    [AIServiceProvider.Fireworks]: {
+      name: 'Fireworks AI',
+      description: 'Fast hosting for open-source models',
+    },
+    [AIServiceProvider.Cerebras]: {
+      name: 'Cerebras',
+      description: "World's fastest AI inference chips",
+    },
+    [AIServiceProvider.OpenRouter]: {
+      name: 'OpenRouter',
+      description: 'Access 200+ models through one API key',
+    },
+    [AIServiceProvider.Empty]: { name: 'None', description: '' },
+  };
 
   return (
     <div className="space-y-8">
@@ -55,11 +84,13 @@ function AIModelsTabComponent({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {providerEntries.map((provider) => {
             const cfg = serviceConfigs[provider] || {};
+            const meta = PROVIDER_META[provider];
             return (
               <ProviderCard
                 key={provider}
                 provider={provider}
-                providerName={providerNames[provider]}
+                providerName={meta?.name ?? provider}
+                description={meta?.description}
                 apiKey={cfg.apiKey || ''}
                 baseUrl={cfg.baseUrl}
                 use3rdParty={cfg.use3rdParty}
