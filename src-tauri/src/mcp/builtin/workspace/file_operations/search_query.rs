@@ -356,31 +356,37 @@ impl WorkspaceServer {
                     // If the path is a directory, delegate to multi-file search
                     if safe_path.is_dir() {
                         return self
-                            .search_lines_in_dir(safe_path, path_str, pattern, ignore_case, line_numbers)
+                            .search_lines_in_dir(
+                                safe_path,
+                                path_str,
+                                pattern,
+                                ignore_case,
+                                line_numbers,
+                            )
                             .await;
                     }
                     match tokio::fs::read_to_string(&safe_path).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
-                            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
-                        } else {
-                            e.to_string()
-                        };
+                        Ok(s) => s,
+                        Err(e) => {
+                            let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
+                                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
+                            } else {
+                                e.to_string()
+                            };
 
-                        return Ok(guided_error(
-                            ErrorCategory::OperationFailed,
-                            &error_msg,
-                            ToolGroup::Workspace,
-                        )
-                        .guidance(vec![
-                            "Verify the file exists with listDirectory".to_string(),
-                            "Check file permissions".to_string(),
-                            "Ensure the path is correct".to_string(),
-                        ])
-                        .to_mcp_result());
+                            return Ok(guided_error(
+                                ErrorCategory::OperationFailed,
+                                &error_msg,
+                                ToolGroup::Workspace,
+                            )
+                            .guidance(vec![
+                                "Verify the file exists with listDirectory".to_string(),
+                                "Check file permissions".to_string(),
+                                "Ensure the path is correct".to_string(),
+                            ])
+                            .to_mcp_result());
+                        }
                     }
-                }
                 }
                 Err(e) => {
                     return Ok(guided_error(
@@ -642,11 +648,33 @@ impl WorkspaceServer {
                 .to_lowercase();
             if matches!(
                 ext.as_str(),
-                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico"
-                    | "pdf" | "zip" | "tar" | "gz" | "bz2" | "xz"
-                    | "exe" | "dll" | "so" | "dylib" | "bin" | "wasm"
-                    | "mp3" | "mp4" | "wav" | "ogg" | "flac"
-                    | "ttf" | "woff" | "woff2"
+                "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "gif"
+                    | "webp"
+                    | "svg"
+                    | "ico"
+                    | "pdf"
+                    | "zip"
+                    | "tar"
+                    | "gz"
+                    | "bz2"
+                    | "xz"
+                    | "exe"
+                    | "dll"
+                    | "so"
+                    | "dylib"
+                    | "bin"
+                    | "wasm"
+                    | "mp3"
+                    | "mp4"
+                    | "wav"
+                    | "ogg"
+                    | "flac"
+                    | "ttf"
+                    | "woff"
+                    | "woff2"
             ) {
                 continue;
             }
@@ -735,9 +763,10 @@ impl WorkspaceServer {
             })).collect::<Vec<_>>(),
         });
 
-        Ok(SuccessHint::new(text, vec![
-            "Use path: \"file\" to narrow search to a specific file".to_string(),
-        ])
+        Ok(SuccessHint::new(
+            text,
+            vec!["Use path: \"file\" to narrow search to a specific file".to_string()],
+        )
         .to_mcp_result_with_data(Some(structured)))
     }
 }
@@ -826,7 +855,10 @@ mod tests {
             .unwrap_or_default();
 
         assert!(text.contains("2 match"), "expected 2 matches, got: {text}");
-        assert!(text.contains("a.ts") || text.contains("b.ts"), "expected file names in output");
+        assert!(
+            text.contains("a.ts") || text.contains("b.ts"),
+            "expected file names in output"
+        );
         assert!(!result.is_error.unwrap_or(false));
     }
 
@@ -860,7 +892,10 @@ mod tests {
                 }
             })
             .unwrap_or_default();
-        assert!(text.contains("No matches") || text.contains("no match"), "got: {text}");
+        assert!(
+            text.contains("No matches") || text.contains("no match"),
+            "got: {text}"
+        );
     }
 
     /// Binary files (e.g. .png) are silently skipped and do not cause errors.
@@ -929,7 +964,10 @@ mod tests {
                 }
             })
             .unwrap_or_default();
-        assert!(text.contains("leaf.rs"), "expected leaf.rs in output, got: {text}");
+        assert!(
+            text.contains("leaf.rs"),
+            "expected leaf.rs in output, got: {text}"
+        );
         assert!(text.contains("target_fn"));
     }
 
@@ -962,7 +1000,10 @@ mod tests {
                 }
             })
             .unwrap_or_default();
-        assert!(text_s.contains("No matches") || text_s.contains("no match"), "expected no match case-sensitive, got: {text_s}");
+        assert!(
+            text_s.contains("No matches") || text_s.contains("no match"),
+            "expected no match case-sensitive, got: {text_s}"
+        );
 
         // Case-insensitive: must match
         let result_insensitive = server
@@ -986,7 +1027,10 @@ mod tests {
                 }
             })
             .unwrap_or_default();
-        assert!(text_i.contains("Hello World"), "expected match case-insensitive, got: {text_i}");
+        assert!(
+            text_i.contains("Hello World"),
+            "expected match case-insensitive, got: {text_i}"
+        );
     }
 
     /// Passing a file path still works (regression: directory branch must not break file path).
