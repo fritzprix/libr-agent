@@ -103,6 +103,7 @@
     "removeFile": "Remove {{name}}"
   },
   "common": {
+    "loading": "Loading...",
     "cancel": "Cancel",
     "close": "Close",
     "delete": "Delete",

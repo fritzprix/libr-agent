@@ -103,6 +103,7 @@
     "removeFile": "{{name}} 제거"
   },
   "common": {
+    "loading": "로딩 중...",
     "cancel": "취소",
     "close": "닫기",
     "delete": "삭제",

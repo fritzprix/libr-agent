@@ -7,6 +7,23 @@ import FileAttachment from '../FileAttachment';
 // However, Button uses Radix Slot, which might be complex.
 // For now, let's try rendering the real component.
 
+// Mock react-i18next to simulate interpolation
+// Mock react-i18next to simulate interpolation
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown> | string) => {
+      // Custom mock to simulate { name: 'filename.txt' } interpolation
+      if (typeof options === 'object' && options && 'name' in options && typeof options.defaultValue === 'string') {
+        return options.defaultValue.replace('{{name}}', options.name as string);
+      }
+      // If it's a simple string or single string arg fallback
+      if (typeof options === 'string') return options;
+      // Default return the key if nothing matches
+      return key;
+    },
+  }),
+}));
+
 describe('FileAttachment', () => {
   const mockFiles = [
     { name: 'test.txt', content: 'hello' },
@@ -38,18 +55,11 @@ describe('FileAttachment', () => {
     );
 
     // Remove buttons should have specific, file-related accessible names for screen readers.
-    // React-i18next mock returns the fallback or key, here our fallback is 'Remove {{name}}'.
-    // The actual interpolation isn't fully mocked if we just use the simple vi.mock,
-    // so it might return 'Remove {{name}}' for both if interpolation fails in the mock.
-    // However, if we improve the mock, we can check for 'Remove test.txt'. Let's check by querying all buttons
-    // inside list items and ensure there are exactly two remove buttons.
+    // We mocked react-i18next to correctly substitute the {{name}} parameter.
     const listItems = screen.getAllByRole('listitem');
     expect(listItems.length).toBe(2);
 
-    // We can query by title or just ensure there is a button per file.
-    // The fallback mock provided in memory is:
-    // t: (key, fallback) => fallback || key
-    // which does NOT interpolate { name: 'test.txt' }. It just returns 'Remove {{name}}'.
-    expect(screen.getAllByRole('button', { name: 'Remove {{name}}' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove image.png' })).toBeInTheDocument();
   });
 });
