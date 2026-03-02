@@ -82,9 +82,28 @@
   "status": {
     "connected": "연결됨",
     "disconnected": "연결해제",
-    "unknown": "알 수 없음"
+    "unknown": "알 수 없음",
+    "connecting": "연결 중..."
+  },
+  "sessionFiles": {
+    "readError": "파일을 읽는 중 오류가 발생했습니다.",
+    "viewFiles": "세션 파일 보기",
+    "fileList": "세션 파일 목록",
+    "noFiles": "저장된 파일이 없습니다.",
+    "type": "타입:",
+    "size": "크기:",
+    "created": "생성:",
+    "workspace": "워크스페이스:",
+    "sessionId": "Session ID:"
+  },
+  "fileAttachment": {
+    "attachFiles": "파일 첨부",
+    "attachedFilesLabel": "첨부된 파일:",
+    "attachedFilesList": "첨부된 파일 목록",
+    "removeFile": "{{name}} 제거"
   },
   "common": {
+    "loading": "로딩 중...",
     "cancel": "취소",
     "close": "닫기",
     "delete": "삭제",
@@ -99,6 +118,7 @@
     "toggle": "테마 전환"
   },
   "sidebar": {
+    "toggle": "사이드바 전환",
     "library": "라이브러리",
     "chat": "채팅",
     "assistants": "어시스턴트",
