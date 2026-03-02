@@ -373,28 +373,26 @@ export function AgentSessionListProvider({
    */
   const toggleBookmark = useCallback(
     async (sessionId: string) => {
-      // Compute new value from current (non-optimistic) state before the update
-      const session = sessions.find((s) => s.id === sessionId);
-      const newValue = !(session?.isBookmarked ?? false);
-
-      // Optimistic: set locally with the known new value
+      // Optimistic: flip locally first
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === sessionId ? { ...s, isBookmarked: newValue } : s,
+          s.id === sessionId ? { ...s, isBookmarked: !s.isBookmarked } : s,
         ),
       );
 
       try {
+        const session = sessions.find((s) => s.id === sessionId);
+        const newValue = !(session?.isBookmarked ?? false);
         await invoke<void>('agent_toggle_session_bookmark', {
           sessionId,
           bookmarked: newValue,
         });
       } catch (err) {
         logger.error('Failed to toggle bookmark', err);
-        // Revert optimistic update on failure using the inverse of what we set
+        // Revert optimistic update on failure
         setSessions((prev) =>
           prev.map((s) =>
-            s.id === sessionId ? { ...s, isBookmarked: !newValue } : s,
+            s.id === sessionId ? { ...s, isBookmarked: !s.isBookmarked } : s,
           ),
         );
         throw err;

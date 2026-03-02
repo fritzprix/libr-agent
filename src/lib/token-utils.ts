@@ -253,11 +253,8 @@ export function batchToolCallsInMessages(
  * @param providerId The ID of the LLM provider.
  * @param modelId The ID of the model.
  * @param maxTokens An optional maximum number of tokens to include.
- * @param options Additional options for message selection.
  * @param options.systemPrompt Optional system prompt to account for in token budget.
  * @param options.toolsJson Optional tools JSON string to account for in token budget.
- * @param options.maxMessages Optional maximum number of messages to include.
- * @param options.maxToolCallsPerMessage Optional maximum number of tool calls per assistant message.
  * @returns A new array of messages that fits within the context window.
  */
 export function selectMessagesWithinContext(
@@ -336,13 +333,11 @@ export function selectMessagesWithinContext(
 
     // Check token limit
     if (totalTokens + tokens > tokenLimit) {
-      // Providers requiring strict tool chain boundary checking (no orphaned calls/results).
-      // OpenRouter is included because it proxies these same strict providers.
+      // Providers that require strict tool chain boundary checking (no orphaned calls/results)
       if (
         providerId === AIServiceProvider.Anthropic ||
         providerId === AIServiceProvider.Gemini ||
         providerId === AIServiceProvider.OpenAI ||
-        providerId === AIServiceProvider.OpenRouter ||
         providerId === AIServiceProvider.Groq
       ) {
         // Check tool chain integrity before stopping
@@ -376,7 +371,6 @@ export function selectMessagesWithinContext(
         providerId === AIServiceProvider.Anthropic ||
         providerId === AIServiceProvider.Gemini ||
         providerId === AIServiceProvider.OpenAI ||
-        providerId === AIServiceProvider.OpenRouter ||
         providerId === AIServiceProvider.Groq
       ) {
         const adjustedSelected = removeIncompleteToolChains(selected);

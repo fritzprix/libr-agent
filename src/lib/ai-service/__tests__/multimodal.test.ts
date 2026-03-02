@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { convertToGeminiMessages, convertSingleMessage as convertSingleGeminiMessage } from '../gemini/mapper';
 import { OpenAIService } from '../openai';
 import { AnthropicService } from '../anthropic';
-import { convertUserMessage } from '../ollama-core';
 import { Message } from '@/models/chat';
 
 import { AIServiceConfig } from '../types';
@@ -90,52 +89,5 @@ describe('Multimodal Payload Construction', () => {
     
     expect(result.parts![1]).toEqual({ inlineData: { mimeType: 'image/png', data: 'imagedata' } });
     expect(result.parts![2]).toEqual({ inlineData: { mimeType: 'audio/mp3', data: 'audiodata' } });
-  });
-});
-
-describe('Ollama Multimodal Payload Construction', () => {
-  const baseMessage = (content: Message['content']): Message => ({
-    id: 'test-ollama',
-    sessionId: 'session-1',
-    threadId: 'session-1',
-    role: 'user',
-    content,
-  });
-
-  it('extracts image data into the images[] field and keeps text in content', () => {
-    const message = baseMessage([
-      { type: 'text', text: 'Look at this image' },
-      { type: 'image', data: 'abc123', mimeType: 'image/png' },
-    ]);
-
-    const result = convertUserMessage(message);
-
-    expect(result).not.toBeNull();
-    expect(result!.role).toBe('user');
-    expect(result!.content).toBe('Look at this image');
-    expect(result!.images).toEqual(['abc123']);
-  });
-
-  it('has no images field for text-only messages', () => {
-    const message = baseMessage([{ type: 'text', text: 'Hello world' }]);
-
-    const result = convertUserMessage(message);
-
-    expect(result).not.toBeNull();
-    expect(result!.content).toBe('Hello world');
-    expect(result!.images).toBeUndefined();
-  });
-
-  it('handles multiple images in a single message', () => {
-    const message = baseMessage([
-      { type: 'text', text: 'Compare these' },
-      { type: 'image', data: 'img1base64', mimeType: 'image/jpeg' },
-      { type: 'image', data: 'img2base64', mimeType: 'image/png' },
-    ]);
-
-    const result = convertUserMessage(message);
-
-    expect(result!.images).toEqual(['img1base64', 'img2base64']);
-    expect(result!.content).toBe('Compare these');
   });
 });

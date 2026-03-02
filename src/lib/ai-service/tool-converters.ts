@@ -475,7 +475,6 @@ function convertMCPToolToProviderFormat(
   switch (provider) {
     case AIServiceProvider.OpenAI:
     case AIServiceProvider.Fireworks:
-    case AIServiceProvider.OpenRouter:
       return convertMCPToolToOpenAI(mcpTool);
     case AIServiceProvider.Groq:
       return convertMCPToolToGroq(mcpTool);

@@ -18,7 +18,7 @@ export default function MCPServerPage() {
               {t('settings.tabs.extensions', 'Extensions')}
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              {t('mcpServer.pageSubtitle', 'Manage your AI extensions and tools')}
+              Manage your AI extensions and tools
             </p>
           </div>
         </div>

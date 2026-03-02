@@ -83,18 +83,39 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     ];
   }, [provider, serviceConfigs]);
 
-  // Fetcher for models — always delegates to service.listModels(), which each
-  // provider implements. Static-only providers return llmConfigManager data;
-  // dynamic providers (Ollama, OpenAI, OpenRouter, …) fetch from their APIs.
-  // The "supports dynamic" decision lives in the service, not here.
+  // Fetcher for dynamic models
   const fetchDynamicModels = useCallback(
     async ([, provider, apiKey]: [string, string, string]) => {
-      // Use a non-empty placeholder when no real key is configured so that
-      // validateApiKey() (which rejects only empty strings) doesn't throw.
-      // Services whose listModels() needs a real key will fail gracefully and
-      // return an empty array; the models useMemo below then falls back to
-      // the static config from llmConfigManager.
-      const effectiveApiKey = apiKey || 'no-api-key';
+      const supportsDynamic =
+        provider === AIServiceProvider.Ollama ||
+        provider === AIServiceProvider.OpenAI ||
+        provider === AIServiceProvider.Anthropic ||
+        provider === AIServiceProvider.Gemini;
+
+      if (!supportsDynamic) return {};
+
+      let effectiveApiKey = apiKey;
+      if (!effectiveApiKey) {
+        if (provider === AIServiceProvider.Ollama) {
+          logger.info(
+            'No API key configured for Ollama — using dummy key to instantiate service',
+          );
+          effectiveApiKey = 'ollama-dummy';
+        } else {
+          logger.warn(
+            `No API key available for ${provider}, skipping model fetch`,
+            {
+              provider,
+              apiKeyState: {
+                type: typeof apiKey,
+                value: apiKey,
+                length: apiKey?.length || 0,
+              },
+            },
+          );
+          return {};
+        }
+      }
 
       try {
         // Get provider config including baseUrl
@@ -154,8 +175,17 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   // 수동 모델 새로고침 함수 (새로고침 버튼용)
   const refreshModels = useCallback(async () => {
+    // Only attempt dynamic listing for providers that support it
+    const supportsDynamic =
+      provider === AIServiceProvider.Ollama ||
+      provider === AIServiceProvider.OpenAI ||
+      provider === AIServiceProvider.Anthropic;
+
+    if (!supportsDynamic) return;
+
+    // Trigger revalidation via SWR mutate
     await mutateModels();
-  }, [mutateModels]);
+  }, [provider, mutateModels]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();

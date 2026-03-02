@@ -260,8 +260,7 @@ Then handle it in `InputTokenDropdown` as a new `mode.kind`.
 
 ## Deferred
 
-- `@tool:name` resolver (tool hint injection — autocomplete UI exists but Rust-side resolver is a no-op)
+- `@file:path` resolver (workspace file injection with path security validation)
+- `@tool:name` resolver (tool hint injection)
 - `/command` system (`/clear`, `/compact`, `/model`)
 - Progressive search depth for `@file:` queries (VS Code Ctrl+P style)
-
-> **Implemented in this PR:** `@file:path` resolver (`FileReferenceResolver` in Rust + `useWorkspaceFiles` hook for frontend autocomplete). `@skill:name` resolver is also implemented end-to-end.

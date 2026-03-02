@@ -16,8 +16,6 @@ import { Eye, EyeOff } from 'lucide-react';
 export interface ProviderCardProps {
   provider: AIServiceProvider;
   providerName: string;
-  /** Optional one-liner shown below the card title */
-  description?: string;
   apiKey: string;
   baseUrl?: string;
   use3rdParty?: boolean;
@@ -31,7 +29,6 @@ export interface ProviderCardProps {
 function ProviderCardBase({
   provider,
   providerName,
-  description,
   apiKey,
   baseUrl,
   use3rdParty,
@@ -62,9 +59,6 @@ function ProviderCardBase({
         <CardTitle className="text-foreground text-base font-medium break-words">
           {providerName}
         </CardTitle>
-        {description && (
-          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-        )}
       </CardHeader>
       <CardContent className="space-y-3 min-w-0">
         <div className="min-w-0">
@@ -185,7 +179,6 @@ export const ProviderCard = React.memo(ProviderCardBase, (prev, next) => {
     (prev.baseUrl || '') === (next.baseUrl || '') &&
     prev.use3rdParty === next.use3rdParty &&
     (prev.customModelId || '') === (next.customModelId || '') &&
-    prev.description === next.description &&
     prev.onPendingChange === next.onPendingChange // Critical: check callback stability
   );
 });

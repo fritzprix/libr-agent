@@ -119,13 +119,3 @@
 
 **Drift:** JSDoc for `normalizeUnicode` claimed `@param filename` while the actual function argument was `name`.
 **Reality:** Updated `@param filename` to `@param name` to match the actual function signature.
-
-## 2024-05-22 - src/lib/token-utils.ts
-
-**Drift:** JSDoc for `selectMessagesWithinContext` claimed `@param options.systemPrompt` and `@param options.toolsJson` while it's actually `@param options` with those properties. Missing `@param modelId`.
-**Reality:** Update JSDoc to correctly document the parameters `providerId`, `modelId`, `maxTokens`, and `options` with properties.
-
-## 2024-05-22 - src/context/EditorContext.tsx
-
-**Drift:** JSDoc for `useEditorField` was written in Korean, violating the project's English language policy.
-**Reality:** Translated the description and `@param fieldName` documentation to English.

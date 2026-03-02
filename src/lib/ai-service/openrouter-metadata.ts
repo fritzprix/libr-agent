@@ -59,9 +59,7 @@ let metadataCache: ModelMetadataCache | null = null;
  *
  * @returns Map of model IDs to model metadata
  */
-export async function fetchOpenRouterModels(): Promise<
-  Map<string, OpenRouterModel>
-> {
+async function fetchOpenRouterModels(): Promise<Map<string, OpenRouterModel>> {
   // Check cache validity
   if (metadataCache && Date.now() - metadataCache.fetchedAt < CACHE_TTL_MS) {
     logger.debug('Using cached OpenRouter metadata', {

@@ -97,7 +97,6 @@ export enum AIServiceProvider {
   Fireworks = 'fireworks',
   Cerebras = 'cerebras',
   Ollama = 'ollama',
-  OpenRouter = 'openrouter',
   Empty = 'empty',
 }
 

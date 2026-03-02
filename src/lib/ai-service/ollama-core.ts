@@ -10,12 +10,7 @@ import type { Tool } from 'ollama';
 import type { Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { TokenUsage } from './types';
-import {
-  tryParse,
-  formatToolCall,
-  generateToolCallId,
-  processMultiModalContent,
-} from './utils';
+import { tryParse, formatToolCall, generateToolCallId } from './utils';
 
 /**
  * Logger interface for dependency injection
@@ -57,8 +52,6 @@ export const consoleLogger: Logger = {
 export interface SimpleOllamaMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
-  /** Base64-encoded images for vision-capable models (e.g. LLaVA, llama3.2-vision) */
-  images?: string[];
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -153,39 +146,22 @@ export function processMessageContent(content: Message['content']): string {
 }
 
 /**
- * Converts a user message to Ollama format.
- * For vision-capable models, image content is extracted from `message.content`
- * and placed in the `images` field as base64 strings (Ollama native API format).
+ * Converts a user message to Ollama format
  */
 export function convertUserMessage(
   message: Message,
   logger: Logger = noopLogger,
 ): SimpleOllamaMessage | null {
-  const multimodal = processMultiModalContent(message.content);
-
-  // Separate text and image parts
-  const textParts = multimodal.filter((p) => p.type === 'text');
-  const imageParts = multimodal.filter((p) => p.type === 'image');
-
-  // Build text content from text parts only
-  const content = textParts.map((p) => p.text ?? '').join('\n');
-
-  // Extract base64 image data strings
-  const images = imageParts
-    .map((p) => p.image)
-    .filter((img): img is string => typeof img === 'string' && img.length > 0);
-
+  const content = processMessageContent(message.content);
   logger.debug('Converting user message', {
     messageId: message.id,
     contentLength: content.length,
-    imageCount: images.length,
   });
 
-  const result: SimpleOllamaMessage = { role: 'user', content };
-  if (images.length > 0) {
-    result.images = images;
-  }
-  return result;
+  return {
+    role: 'user',
+    content,
+  };
 }
 
 /**

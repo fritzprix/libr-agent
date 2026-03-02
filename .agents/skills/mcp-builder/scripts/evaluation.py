@@ -165,10 +165,9 @@ async def evaluate_single_task(
     print(f"Task {task_index + 1}: Running task with question: {qa_pair['question']}")
     response, tool_metrics = await agent_loop(client, model, qa_pair["question"], tools, connection)
 
-    safe_response = response or ""
-    response_value = extract_xml_content(safe_response, "response")
-    summary = extract_xml_content(safe_response, "summary")
-    feedback = extract_xml_content(safe_response, "feedback")
+    response_value = extract_xml_content(response, "response")
+    summary = extract_xml_content(response, "summary")
+    feedback = extract_xml_content(response, "feedback")
 
     duration_seconds = time.time() - start_time
 
