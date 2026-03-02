@@ -83,47 +83,18 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
     ];
   }, [provider, serviceConfigs]);
 
-  // Fetcher for dynamic models
+  // Fetcher for models — always delegates to service.listModels(), which each
+  // provider implements. Static-only providers return llmConfigManager data;
+  // dynamic providers (Ollama, OpenAI, OpenRouter, …) fetch from their APIs.
+  // The "supports dynamic" decision lives in the service, not here.
   const fetchDynamicModels = useCallback(
     async ([, provider, apiKey]: [string, string, string]) => {
-      const supportsDynamic =
-        provider === AIServiceProvider.Ollama ||
-        provider === AIServiceProvider.OpenAI ||
-        provider === AIServiceProvider.Anthropic ||
-        provider === AIServiceProvider.Gemini ||
-        provider === AIServiceProvider.OpenRouter;
-
-      if (!supportsDynamic) return {};
-
-      let effectiveApiKey = apiKey;
-      if (!effectiveApiKey) {
-        if (provider === AIServiceProvider.Ollama) {
-          logger.info(
-            'No API key configured for Ollama — using dummy key to instantiate service',
-          );
-          effectiveApiKey = 'ollama-dummy';
-        } else if (provider === AIServiceProvider.OpenRouter) {
-          // OpenRouter listModels() uses the public /api/v1/models endpoint —
-          // no API key is required for metadata fetching.
-          logger.info(
-            'No API key configured for OpenRouter — using dummy key; listModels uses public endpoint',
-          );
-          effectiveApiKey = 'openrouter-dummy';
-        } else {
-          logger.warn(
-            `No API key available for ${provider}, skipping model fetch`,
-            {
-              provider,
-              apiKeyState: {
-                type: typeof apiKey,
-                value: apiKey,
-                length: apiKey?.length || 0,
-              },
-            },
-          );
-          return {};
-        }
-      }
+      // Use a non-empty placeholder when no real key is configured so that
+      // validateApiKey() (which rejects only empty strings) doesn't throw.
+      // Services whose listModels() needs a real key will fail gracefully and
+      // return an empty array; the models useMemo below then falls back to
+      // the static config from llmConfigManager.
+      const effectiveApiKey = apiKey || 'no-api-key';
 
       try {
         // Get provider config including baseUrl
@@ -183,18 +154,8 @@ export const ModelOptionsProvider: FC<PropsWithChildren> = ({ children }) => {
 
   // 수동 모델 새로고침 함수 (새로고침 버튼용)
   const refreshModels = useCallback(async () => {
-    // Only attempt dynamic listing for providers that support it
-    const supportsDynamic =
-      provider === AIServiceProvider.Ollama ||
-      provider === AIServiceProvider.OpenAI ||
-      provider === AIServiceProvider.Anthropic ||
-      provider === AIServiceProvider.OpenRouter;
-
-    if (!supportsDynamic) return;
-
-    // Trigger revalidation via SWR mutate
     await mutateModels();
-  }, [provider, mutateModels]);
+  }, [mutateModels]);
 
   const providerOptions = useMemo(() => {
     const providers = llmConfigManager.getProviders();
