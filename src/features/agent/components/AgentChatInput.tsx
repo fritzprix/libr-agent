@@ -29,7 +29,7 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useSkills } from '@/context/SkillsContext';
-import { useSessionTools } from '../hooks/useSessionTools';
+import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 
 const logger = getLogger('AgentChatInput');
@@ -54,7 +54,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { subscribe } = useDnDContext();
   const { skills } = useSkills();
-  const { tools } = useSessionTools(session?.id);
+  const { availableTools: tools } = useAgentTools(session?.id);
 
   const {
     stage,
