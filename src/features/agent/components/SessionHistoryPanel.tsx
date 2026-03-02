@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { RefreshCw, Search, History, X } from 'lucide-react';
+import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { filterSessions } from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
@@ -20,6 +20,7 @@ interface SessionHistoryPanelProps {
   onResume: (sessionId: string) => void;
   onDelete: (sessionId: string) => void;
   onDeleteOnly?: (sessionId: string) => void;
+  onToggleBookmark?: (sessionId: string) => void;
   heading?: string;
   description?: string;
   searchPlaceholder?: string;
@@ -45,6 +46,7 @@ export function SessionHistoryPanel({
   onResume,
   onDelete,
   onDeleteOnly,
+  onToggleBookmark,
   heading,
   description,
   searchPlaceholder,
@@ -55,12 +57,25 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
+  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
 
-  const defaultHeading = heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
-  const defaultDescription = description ?? t('sessionHistory.defaultDescription', 'Resume previous agent sessions');
-  const defaultSearchPlaceholder = searchPlaceholder ?? t('sessionHistory.searchPlaceholder', 'Search sessions by name or ID...');
-  const defaultEmptyTitle = emptyStateTitle ?? t('sessionHistory.defaultEmptyTitle', 'No previous sessions');
-  const defaultEmptySubtitle = emptyStateSubtitle ?? t('sessionHistory.defaultEmptySubtitle', 'Start a conversation to create your first session');
+  const defaultHeading =
+    heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
+  const defaultDescription =
+    description ??
+    t('sessionHistory.defaultDescription', 'Resume previous agent sessions');
+  const defaultSearchPlaceholder =
+    searchPlaceholder ??
+    t('sessionHistory.searchPlaceholder', 'Search sessions by name or ID...');
+  const defaultEmptyTitle =
+    emptyStateTitle ??
+    t('sessionHistory.defaultEmptyTitle', 'No previous sessions');
+  const defaultEmptySubtitle =
+    emptyStateSubtitle ??
+    t(
+      'sessionHistory.defaultEmptySubtitle',
+      'Start a conversation to create your first session',
+    );
 
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
@@ -75,6 +90,10 @@ export function SessionHistoryPanel({
   const filteredAndSortedSessions = useMemo(() => {
     let filtered = baseSessions;
 
+    if (showBookmarkedOnly) {
+      filtered = filtered.filter((session) => session.isBookmarked === true);
+    }
+
     if (activeTab !== 'all') {
       filtered = filtered.filter((session) => session.status === activeTab);
     }
@@ -87,7 +106,7 @@ export function SessionHistoryPanel({
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [baseSessions, searchQuery, activeTab]);
+  }, [baseSessions, searchQuery, activeTab, showBookmarkedOnly]);
 
   // Eradicating Action-Effect Chain / Derived State
   // Checking existence of selected lineage directly during render.
@@ -186,14 +205,18 @@ export function SessionHistoryPanel({
 
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
-          t('sessionHistory.card.fallbackName', 'Session {{id}}', { id: session.parentSessionId.slice(0, 8) })
+          t('sessionHistory.card.fallbackName', 'Session {{id}}', {
+            id: session.parentSessionId.slice(0, 8),
+          })
         : undefined;
 
       rows.push({
         session,
         nestingLevel,
         lineageHint: parentName
-          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', { parentName })
+          ? t('sessionHistory.lineageHint.child', '↳ Child of {{parentName}}', {
+              parentName,
+            })
           : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
       });
 
@@ -251,7 +274,8 @@ export function SessionHistoryPanel({
                 {defaultHeading}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {defaultDescription} ({displayRows.length}/{baseSessions.length})
+                {defaultDescription} ({displayRows.length}/{baseSessions.length}
+                )
               </p>
             </div>
           </div>
@@ -284,7 +308,8 @@ export function SessionHistoryPanel({
               {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
             </TabsTrigger>
             <TabsTrigger value="paused" className="flex-1">
-              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused})
+              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused}
+              )
             </TabsTrigger>
             <TabsTrigger value="error" className="flex-1">
               {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
@@ -313,9 +338,32 @@ export function SessionHistoryPanel({
             </button>
           )}
         </div>
+        <Button
+          variant={showBookmarkedOnly ? 'secondary' : 'ghost'}
+          size="sm"
+          className="self-start"
+          onClick={() => setShowBookmarkedOnly((prev) => !prev)}
+          aria-pressed={showBookmarkedOnly}
+          aria-label={t(
+            'sessionHistory.bookmarkFilterAria',
+            'Show bookmarked sessions only',
+          )}
+        >
+          <Bookmark
+            className={cn(
+              'h-3.5 w-3.5 mr-1.5',
+              showBookmarkedOnly && 'fill-current text-yellow-500',
+            )}
+          />
+          {t('sessionHistory.bookmarkFilter', 'Bookmarked')}
+        </Button>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', { id: selectedLineageId.slice(0, 8) })}</span>
+            <span>
+              {t('sessionHistory.focusedLineage', 'Focused lineage: {{id}}', {
+                id: selectedLineageId.slice(0, 8),
+              })}
+            </span>
             <Button
               variant="link"
               size="sm"
@@ -333,7 +381,9 @@ export function SessionHistoryPanel({
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
                 <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                <p className="text-sm">{t('sessionHistory.loading', 'Loading sessions...')}</p>
+                <p className="text-sm">
+                  {t('sessionHistory.loading', 'Loading sessions...')}
+                </p>
               </div>
             </div>
           ) : displayRows.length === 0 ? (
@@ -342,7 +392,11 @@ export function SessionHistoryPanel({
                 {selectedLineageId ? (
                   <>
                     <p className="text-sm">
-                      {t('sessionHistory.noSessionsInLineage', 'No sessions visible in lineage {{id}}', { id: selectedLineageId.slice(0, 8) })}
+                      {t(
+                        'sessionHistory.noSessionsInLineage',
+                        'No sessions visible in lineage {{id}}',
+                        { id: selectedLineageId.slice(0, 8) },
+                      )}
                     </p>
                     <Button
                       variant="link"
@@ -350,13 +404,20 @@ export function SessionHistoryPanel({
                       onClick={() => setSelectedLineageId(null)}
                       className="mt-2"
                     >
-                      {t('sessionHistory.clearLineageFocus', 'Clear lineage focus')}
+                      {t(
+                        'sessionHistory.clearLineageFocus',
+                        'Clear lineage focus',
+                      )}
                     </Button>
                   </>
                 ) : searchQuery.trim() ? (
                   <>
                     <p className="text-sm">
-                      {t('sessionHistory.noSessionsMatching', 'No sessions found matching "{{query}}"', { query: searchQuery })}
+                      {t(
+                        'sessionHistory.noSessionsMatching',
+                        'No sessions found matching "{{query}}"',
+                        { query: searchQuery },
+                      )}
                     </p>
                     <Button
                       variant="link"
@@ -387,6 +448,7 @@ export function SessionHistoryPanel({
                     onResume={onResume}
                     onDelete={onDelete}
                     onDeleteOnly={onDeleteOnly}
+                    onToggleBookmark={onToggleBookmark}
                     nestingLevel={nestingLevel}
                     lineageHint={lineageHint}
                     selectedLineageId={selectedLineageId}

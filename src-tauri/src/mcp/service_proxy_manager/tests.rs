@@ -314,6 +314,7 @@ async fn test_phase3_concurrent_operations() {
     for session_id in &sessions {
         let new_session = session::ActiveModel {
             id: Set(session_id.clone()),
+            model: Set("test_model".to_string()),
             created_at: Set(chrono::Utc::now().timestamp()),
             updated_at: Set(0),
             status: Set("idle".to_string()),

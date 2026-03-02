@@ -80,11 +80,30 @@
     }
   },
   "status": {
-    "connected": "connected",
-    "disconnected": "disconnected",
-    "unknown": "unknown"
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "unknown": "Unknown",
+    "connecting": "Connecting..."
+  },
+  "sessionFiles": {
+    "readError": "Error reading file.",
+    "viewFiles": "View session files",
+    "fileList": "Session file list",
+    "noFiles": "No saved files.",
+    "type": "Type:",
+    "size": "Size:",
+    "created": "Created:",
+    "workspace": "Workspace:",
+    "sessionId": "Session ID:"
+  },
+  "fileAttachment": {
+    "attachFiles": "Attach files",
+    "attachedFilesLabel": "Attached Files:",
+    "attachedFilesList": "Attached files",
+    "removeFile": "Remove {{name}}"
   },
   "common": {
+    "loading": "Loading...",
     "cancel": "Cancel",
     "close": "Close",
     "delete": "Delete",
@@ -99,6 +118,7 @@
     "toggle": "Toggle theme"
   },
   "sidebar": {
+    "toggle": "Toggle Sidebar",
     "library": "Library",
     "chat": "Chat",
     "assistants": "Assistants",

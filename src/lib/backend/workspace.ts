@@ -121,3 +121,20 @@ export async function cancelWorkspaceOverride(
 export async function getWorkspaceDir(sessionId: string): Promise<string> {
   return safeInvoke<string>('get_workspace_dir', { sessionId });
 }
+
+/**
+ * Lists all file paths within the session workspace up to `maxDepth` levels deep.
+ * Returns relative paths (forward-slash separated) sorted alphabetically.
+ * @param sessionId The session ID to query.
+ * @param maxDepth Maximum directory traversal depth.
+ * @returns A promise that resolves to an array of relative path strings.
+ */
+export async function listWorkspaceFilePaths(
+  sessionId: string,
+  maxDepth: number,
+): Promise<string[]> {
+  return safeInvoke<string[]>('list_workspace_file_paths', {
+    sessionId,
+    maxDepth,
+  });
+}

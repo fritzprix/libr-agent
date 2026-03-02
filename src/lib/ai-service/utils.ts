@@ -133,9 +133,19 @@ export function processMessageContent(content: string | MCPContent[]): string {
  * Processes an array of `MCPContent` parts for a multimodal LLM,
  * handling both text and image content.
  */
-export function processMultiModalContent(
-  content: MCPContent[],
-): Array<{ type: string; text?: string; image?: string }> {
+type MediaItem = {
+  data?: string;
+  mimeType?: string;
+  source?: { data?: string; uri?: string; mimeType?: string };
+};
+
+export function processMultiModalContent(content: MCPContent[]): Array<{
+  type: string;
+  text?: string;
+  image?: string;
+  audio?: string;
+  mimeType?: string;
+}> {
   return content.map((item) => {
     switch (item.type) {
       case 'text':
@@ -143,16 +153,18 @@ export function processMultiModalContent(
       case 'image':
         return {
           type: 'image',
-          image:
-            (
-              item as {
-                data?: string;
-                source?: { data?: string; uri?: string };
-              }
-            ).data ||
-            (item as { source?: { data?: string; uri?: string } }).source
-              ?.data ||
-            (item as { source?: { data?: string; uri?: string } }).source?.uri,
+          image: (item as MediaItem).data || (item as MediaItem).source?.data,
+          mimeType:
+            (item as MediaItem).mimeType ||
+            (item as MediaItem).source?.mimeType,
+        };
+      case 'audio':
+        return {
+          type: 'audio',
+          audio: (item as MediaItem).data || (item as MediaItem).source?.data,
+          mimeType:
+            (item as MediaItem).mimeType ||
+            (item as MediaItem).source?.mimeType,
         };
       default:
         return { type: 'text', text: `[${item.type}]` };

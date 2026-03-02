@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.23] - 2026-03-02
+
+### 🚀 Features
+
+- **Multimodal LLM Support**: Added ability for agents to process and send images and audio directly through OpenAI, Anthropic, and Gemini models. Mapped files correctly to native schema inputs (e.g. `inlineData` for Gemini, `image_url` / `input_audio` for OpenAI).
+
+### 🐛 Fixes
+
+- **`useSettings` Context Fix**: Updated the test context mock to cleanly default to `DEFAULT_SETTING`, fixing downstream test failures and removing dead imports.
+- **Double Submit Guards**: Buttons with async handlers across the UI now block synchronous double-clicks correctly.
+- **Form UI Streamlining**: Cleaned up the interface types for `InputWithLabel`, `TextareaWithLabel`, and `Label` components.
+- **Tool Call Execution Context Formatting**: Fixed the way `tool_calls` are shaped when injecting them into `useLLMExecution`.
+- **UI Simple Mode Tool Call Display**: The raw `parsedArgs` for tool calls are now accurately passed in UI Simple Mode, supported by a newly added test coverage suite.
+
+### 🔧 Internal
+
+- **Expanded Test Coverage**: Strengthened test assertion coverage for MCP schema builder utilities and the `useSettings` hook.
+- **Documentation Overhaul**: Updated the internal architecture and migration documentation for Agent V2 to clarify component isolation and state contexts.
+
+## [0.5.22] - 2026-03-01
+
+- **`@skill:` mention autocomplete in chat**: Draft chat now supports `@skill:` mention syntax with autocomplete, letting agents reference skills directly from the input field for faster workflows.
+- **Session bookmarks (SP10)**: Sessions can now be bookmarked for quick access, with DB migration and full UI support added.
+- **Skill mention reference system (SP11/SP12)**: Agents can now resolve and inject skill documentation via `@skill:` references directly into prompts, enabling richer context-aware interactions.
+- **i18n: Session History Panel & SessionCard**: Session history UI components fully localized with Korean and English support.
+- **Type-safe Tauri IPC generics**: Strict generic typing applied to all `invoke` calls, catching type mismatches at compile time and eliminating unsafe casts in the IPC layer.
+- **Chat input consistency**: `AgentChatInput` harmonized with `DraftChatView` styling for a unified look across chat entry points.
+- **Session creation UX**: Fluid enhancements applied to the session creation flow for improved responsiveness and polish.
+
+### 🐛 Fixes
+
+- **Security: workspace override path validation**: Agent service now validates that workspace override paths exist, are directories, and are accessible before accepting them — prevents invalid or malicious paths from being registered as session workspaces.
+- **Security: Windows reserved filename blocking**: `SecurityValidator` now blocks Windows reserved filenames (e.g. `CON`, `NUL`, `COM1`) on write operations while still allowing deletion of such files.
+- **Security: input validation hardened**: Whitespace-only MCP server names, excessively long paths, and oversized todo content are now rejected at the validation layer.
+- **Swarm: agent self-termination prevented**: Agents can no longer accidentally terminate their own session via the swarm API.
+- **Swarm: zombie child processes cleaned up**: `awaitAgent` now terminates stuck child sessions on timeout instead of leaving them as zombies.
+- **Swarm: agent spawn/session bugs fixed**: Three bugs in agent spawn and session registration resolved, improving reliability of multi-agent workflows.
+- **Swarm: error response quality**: HTTP status codes restored in error responses; internal API paths no longer leaked in error messages.
+
+### 🔧 Internal
+
+- **`AgentService` extracted**: Agent domain logic moved from Tauri command handlers into a dedicated `AgentService` for better separation of concerns and testability.
+- **Cross-platform path handling**: Replaced hardcoded forward-slash path construction with `PathBuf::join` in browser content module for proper cross-platform behavior.
+- **Windows linker fix (LNK1102)**: Switched to `debug=1` line table profiles (and `rust-lld` as intermediate step) to resolve OOM linker errors on Windows.
+- **Expanded test coverage**: Agent chat utility tests expanded with broader coverage of edge cases (Sonar initiative).
+
 ## [0.5.21] - 2026-02-28
 
 ### 🚀 Features

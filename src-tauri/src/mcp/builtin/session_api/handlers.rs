@@ -397,6 +397,25 @@ pub async fn handle_tool_call(
                 )
                 .await;
                 gate.resume_agent().await?; // suspended → active (always)
+
+                // On timeout the child is still running — terminate it so it
+                // doesn't linger as a zombie consuming resources.
+                if let Err(ref e) = wait_result {
+                    if e.contains("timed out") {
+                        log::warn!(
+                            "awaitAgent: timeout for session '{}', terminating child",
+                            session_id
+                        );
+                        let _ = call_json(
+                            Method::POST,
+                            &format!("/api/sessions/{}/terminate", session_id),
+                            None,
+                            None,
+                        )
+                        .await;
+                    }
+                }
+
                 wait_result?
             };
 
@@ -607,6 +626,17 @@ pub async fn handle_tool_call(
         }
         "terminateAgent" => {
             let session_id = read_required_string(&args, "sessionId")?;
+
+            // Prevent an agent from terminating itself — self-termination mid-execution
+            // leaves the session in a torn state (tool call never returns, loop hangs).
+            if caller_session_id.as_deref() == Some(session_id.as_str()) {
+                return Err(
+                    "Self-termination is not allowed. An agent cannot terminate its own session. \
+                     Use the planning tool to mark the task complete instead."
+                        .to_string(),
+                );
+            }
+
             let data = call_json(
                 Method::POST,
                 &format!("/api/sessions/{}/terminate", session_id),

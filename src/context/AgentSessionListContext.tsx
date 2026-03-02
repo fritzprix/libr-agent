@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
@@ -56,6 +56,11 @@ interface AgentSessionListActionsContextValue {
    * Delete only this session, orphaning its direct children as top-level sessions
    */
   deleteSessionOnly: (sessionId: string) => Promise<void>;
+
+  /**
+   * Toggle the bookmark flag on a session
+   */
+  toggleBookmark: (sessionId: string) => Promise<void>;
 }
 
 const AgentSessionListActionsContext = createContext<
@@ -164,6 +169,7 @@ export function AgentSessionListProvider({
           depth,
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
+          isBookmarked: s.isBookmarked ?? false,
         };
       });
 
@@ -362,6 +368,39 @@ export function AgentSessionListProvider({
     }
   }, []);
 
+  /**
+   * Toggle the bookmark flag on a session (optimistic update)
+   */
+  const toggleBookmark = useCallback(
+    async (sessionId: string) => {
+      // Optimistic: flip locally first
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === sessionId ? { ...s, isBookmarked: !s.isBookmarked } : s,
+        ),
+      );
+
+      try {
+        const session = sessions.find((s) => s.id === sessionId);
+        const newValue = !(session?.isBookmarked ?? false);
+        await invoke<void>('agent_toggle_session_bookmark', {
+          sessionId,
+          bookmarked: newValue,
+        });
+      } catch (err) {
+        logger.error('Failed to toggle bookmark', err);
+        // Revert optimistic update on failure
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sessionId ? { ...s, isBookmarked: !s.isBookmarked } : s,
+          ),
+        );
+        throw err;
+      }
+    },
+    [sessions],
+  );
+
   // Initial load
   useEffect(() => {
     loadSessions();
@@ -421,8 +460,15 @@ export function AgentSessionListProvider({
       loadSessions,
       deleteSession,
       deleteSessionOnly,
+      toggleBookmark,
     }),
-    [createSession, loadSessions, deleteSession, deleteSessionOnly],
+    [
+      createSession,
+      loadSessions,
+      deleteSession,
+      deleteSessionOnly,
+      toggleBookmark,
+    ],
   );
 
   return (

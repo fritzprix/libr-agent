@@ -5,7 +5,7 @@ import {
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, MCPContent } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
@@ -591,7 +591,7 @@ export class AnthropicService extends BaseAIService {
       if (effectiveRole === 'user') {
         anthropicMessages.push({
           role: 'user',
-          content: this.processMessageContent(m.content),
+          content: this.formatAnthropicContent(m.content),
         });
       } else if (effectiveRole === 'assistant') {
         // Filter out empty assistant messages that would cause API errors
@@ -683,6 +683,37 @@ export class AnthropicService extends BaseAIService {
   }
 
   /**
+   * Helper to format content for Anthropic API, supporting multimodal parts.
+   */
+  private formatAnthropicContent(
+    content: MCPContent[],
+  ): AnthropicMessageParam['content'] {
+    const multimodal = this.processMultiModalContent(content);
+    if (multimodal.every((p) => p.type === 'text')) {
+      return this.processMessageContent(content);
+    }
+    return multimodal.map((part) => {
+      if (part.type === 'text') {
+        return { type: 'text', text: part.text || '' };
+      } else if (part.type === 'image') {
+        const mimeType = part.mimeType || 'image/jpeg';
+        return {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mimeType,
+            data: part.image || '',
+          },
+        };
+      }
+      return {
+        type: 'text',
+        text: `[Unsupported content format for Anthropic: ${part.type}]`,
+      };
+    }) as unknown as AnthropicMessageParam['content'];
+  }
+
+  /**
    * @inheritdoc
    * @description For Anthropic, system messages are handled as a separate parameter
    * in the API call, so this method returns null.
@@ -708,7 +739,7 @@ export class AnthropicService extends BaseAIService {
     if (message.role === 'user') {
       return {
         role: 'user',
-        content: this.processMessageContent(message.content),
+        content: this.formatAnthropicContent(message.content),
       };
     } else if (message.role === 'assistant') {
       // Build content array with thinking block first if present

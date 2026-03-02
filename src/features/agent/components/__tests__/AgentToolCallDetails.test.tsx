@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { AgentToolCallDetails } from '../AgentToolCallDetails';
 import type { ToolCall, Message } from '@/models/chat';
+import * as toolCallUtils from '@/lib/tool-call-utils';
 
 // Mock dependencies that AgentToolCallDetails pulls in via AgentMessageRenderer
 vi.mock('@/hooks/use-rust-backend', () => ({
@@ -116,5 +117,25 @@ describe('AgentToolCallDetails', () => {
             />,
         );
         expect(getByText('Executing tool...')).toBeInTheDocument();
+    });
+
+    it('uses parsedArgs directly and skips parseToolArguments when parsedArgs is provided', () => {
+        const parseSpy = vi.spyOn(toolCallUtils, 'parseToolArguments');
+        const preParseResult = { file: 'src/main.ts', line: 42 };
+
+        const { getByText } = render(
+            <AgentToolCallDetails
+                toolCall={makeToolCall('{"should":"not-be-parsed"}')}
+                parsedArgs={preParseResult}
+                showDetails={true}
+            />,
+        );
+
+        // parsedArgs data must be displayed (pre-parsed object used, not the raw argument string)
+        expect(getByText(/src\/main\.ts/)).toBeInTheDocument();
+        // parseToolArguments must NOT have been called — no redundant JSON.parse
+        expect(parseSpy).not.toHaveBeenCalled();
+
+        parseSpy.mockRestore();
     });
 });

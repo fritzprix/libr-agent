@@ -66,8 +66,9 @@ impl WorkspaceServer {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        // Validate path security
-        let safe_path = match self.validate_path_with_error(path_str, session_id.clone()) {
+        // Validate path security — blocks Windows reserved filenames on creation
+        let safe_path = match self.validate_path_with_error_for_write(path_str, session_id.clone())
+        {
             Ok(path) => path,
             Err(e) => {
                 return Ok(guided_error(

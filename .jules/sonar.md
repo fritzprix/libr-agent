@@ -25,3 +25,5 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-02-25 - src/lib/ai-service/sanitizer.ts, src/lib/ai-service/utils.ts **Coverage Expanded:** AI Service Utilities & Sanitizer **Assertions:** Verified message sanitization (tool_calls, thinking), token calculation, usage formatting, and multimodal content processing.
 
 ## 2026-02-28 - src/features/agent/lib/chat-utils.ts **Coverage Expanded:** computeDisplayContent **Assertions:** Verified content array parsing, grouped tools restructuring, and original fallback filtering.
+
+## 2026-03-01 - src/lib/mcp/schema/builders.ts, src/hooks/use-settings.ts **Coverage Expanded:** JSON Schema Builders, useSettings Hook **Assertions:** Verified robust typed schema object creation, expected error handling outside context providers, and data retrieval inside providers.

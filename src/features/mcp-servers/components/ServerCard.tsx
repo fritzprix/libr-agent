@@ -84,7 +84,34 @@ export const ServerCard = React.memo(
                   ` • ${server.transport.command}`}
                 {((server.transport.type as string) === 'http' ||
                   server.transport.type === 'http-sse') &&
-                  ` • ${(server.transport as { url: string }).url}`}
+                  ` • ${(() => {
+                    const urlString = (server.transport as { url: string }).url;
+                    try {
+                      const urlObj = new URL(urlString);
+                      // server.metadata should be queried strictly when parsing structure
+                      const varDefs = (
+                        server.metadata as {
+                          variableDefinitions?: Record<
+                            string,
+                            { target?: string }
+                          >;
+                        }
+                      )?.variableDefinitions;
+                      if (varDefs) {
+                        Object.entries(varDefs).forEach(([key, def]) => {
+                          if (
+                            def.target === 'url-param' &&
+                            urlObj.searchParams.has(key)
+                          ) {
+                            urlObj.searchParams.delete(key);
+                          }
+                        });
+                      }
+                      return urlObj.toString();
+                    } catch {
+                      return urlString; // Fallback to raw string if invalid URL
+                    }
+                  })()}`}
               </p>
               {/* Tool count / verification status — mutually exclusive display */}
               <div className="mt-1">

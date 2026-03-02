@@ -62,6 +62,7 @@ pub struct SessionMetadata {
     pub max_fanout: Option<u32>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub is_bookmarked: bool,
 }
 
 impl TryFrom<session::Model> for SessionMetadata {
@@ -82,6 +83,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             max_fanout: model.max_fanout.and_then(|v| u32::try_from(v).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            is_bookmarked: model.is_bookmarked,
         })
     }
 }
@@ -118,6 +120,9 @@ pub trait SessionRepository: Send + Sync {
 
     /// Delete only this session, orphaning its direct children (set their parent_session_id to NULL)
     async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError>;
+
+    /// Toggle the bookmark flag for a session
+    async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -152,6 +157,7 @@ impl SessionRepository for SqliteSessionRepository {
             max_fanout: Set(session.max_fanout.and_then(|v| i32::try_from(v).ok())),
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
+            is_bookmarked: Set(session.is_bookmarked),
         };
 
         Session::insert(model)
@@ -278,6 +284,18 @@ impl SessionRepository for SqliteSessionRepository {
         Session::delete_by_id(session_id).exec(&self.db).await?;
         Ok(())
     }
+
+    async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError> {
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            is_bookmarked: Set(bookmarked),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -317,6 +335,7 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            is_bookmarked: false,
         };
 
         // Test upsert
@@ -355,6 +374,7 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            is_bookmarked: false,
         };
 
         repo.upsert_session(&session)
@@ -400,6 +420,7 @@ mod tests {
                 max_fanout: None,
                 created_at: now,
                 updated_at: now + i,
+                is_bookmarked: false,
             };
 
             repo.upsert_session(&session)
@@ -466,6 +487,7 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            is_bookmarked: false,
         };
 
         repo.upsert_session(&session)
@@ -482,6 +504,7 @@ mod tests {
             agent_config: Some(r#"{"updated": true}"#.to_string()),
             created_at: now,
             updated_at: now + 1000,
+            is_bookmarked: false,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -522,6 +545,7 @@ mod tests {
             agent_config: None,
             created_at: now,
             updated_at: now,
+            is_bookmarked: false,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -545,5 +569,48 @@ mod tests {
         // Verify it's gone
         let retrieved = repo.get_session("test-session-delete").await.unwrap();
         assert!(retrieved.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_toggle_bookmark() {
+        let repo = setup_test_db().await;
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let session = SessionMetadata {
+            id: "test-bookmark".to_string(),
+            name: Some("Bookmarked Session".to_string()),
+            status: SessionStatus::Idle,
+            model: "gpt-4".to_string(),
+            provider: "openai".to_string(),
+            agent_config: None,
+            parent_session_id: None,
+            lineage_id: None,
+            depth: None,
+            max_depth: None,
+            max_fanout: None,
+            created_at: now,
+            updated_at: now,
+            is_bookmarked: false,
+        };
+
+        repo.upsert_session(&session)
+            .await
+            .expect("Failed to upsert session");
+
+        // Bookmark it
+        repo.toggle_bookmark("test-bookmark", true)
+            .await
+            .expect("Failed to bookmark session");
+
+        let retrieved = repo.get_session("test-bookmark").await.unwrap().unwrap();
+        assert!(retrieved.is_bookmarked);
+
+        // Unbookmark it
+        repo.toggle_bookmark("test-bookmark", false)
+            .await
+            .expect("Failed to unbookmark session");
+
+        let retrieved = repo.get_session("test-bookmark").await.unwrap().unwrap();
+        assert!(!retrieved.is_bookmarked);
     }
 }

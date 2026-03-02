@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
 import {

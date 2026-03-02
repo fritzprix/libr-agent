@@ -100,6 +100,23 @@ impl SecurityValidator {
             )));
         }
 
+        // Individual path component length limit.
+        // Windows MAX_PATH is 260 chars for the full path; even with long-path
+        // extensions enabled, single components > 255 chars are always invalid.
+        // Reject them early to avoid triggering OS error 123 deep in the stack.
+        const MAX_COMPONENT_LEN: usize = 255;
+        for component in Path::new(&traversal_check_path).components() {
+            if let Component::Normal(name) = component {
+                if name.len() > MAX_COMPONENT_LEN {
+                    return Err(SecurityError::InvalidPath(format!(
+                        "Path component '{}...' exceeds maximum length of {} characters",
+                        &name.to_string_lossy()[..50],
+                        MAX_COMPONENT_LEN
+                    )));
+                }
+            }
+        }
+
         // base_dir 기준 상대경로로만 처리
         let absolute_path = self.base_dir.join(clean_path);
 
@@ -135,6 +152,38 @@ impl SecurityValidator {
 
         tracing::debug!("Path validation successful: '{:?}'", absolute_path);
         Ok(absolute_path)
+    }
+
+    /// Validate a path for write/create operations.
+    ///
+    /// Same as [`validate_path`] but additionally blocks Windows reserved filenames
+    /// (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`).  These names
+    /// must be forbidden on creation because once written they become undeletable on
+    /// Windows.  Deletion uses plain [`validate_path`] so that pre-existing
+    /// reserved-name files can still be cleaned up.
+    pub fn validate_path_for_write(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
+        static RESERVED: &[&str] = &[
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        ];
+        let path_for_check = PathBuf::from(user_path.replace('\\', "/"));
+        for component in path_for_check.components() {
+            if let Component::Normal(name) = component {
+                // Strip extension (CON.txt → CON) before checking.
+                let stem = Path::new(name)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                let upper = stem.to_uppercase();
+                if RESERVED.contains(&upper.as_str()) {
+                    return Err(SecurityError::InvalidPath(format!(
+                        "Windows reserved filename '{}' is not allowed in path: '{user_path}'",
+                        stem
+                    )));
+                }
+            }
+        }
+        self.validate_path(user_path)
     }
 
     /// Validate a path for read-only operations. Absolute paths outside the base directory are

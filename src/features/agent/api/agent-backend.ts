@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import type { AddContentMetadata } from '@/models/content-store';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 

@@ -186,6 +186,10 @@ export function AgentWorkspacePanel() {
     isOver: false,
   });
 
+  const [isSettingOverride, setIsSettingOverride] = useState(false);
+  const [isCancelingOverride, setIsCancelingOverride] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
   // Component lifecycle logging
   useEffect(() => {
     logger.info('AgentWorkspacePanel initialized', { rootPath });
@@ -516,8 +520,9 @@ export function AgentWorkspacePanel() {
   }, [subscribe, handleWorkspaceFileDrop]);
 
   const handleSetOverride = async () => {
-    if (!workspaceOverride.trim() || !session?.id) return;
+    if (!workspaceOverride.trim() || !session?.id || isSettingOverride) return;
 
+    setIsSettingOverride(true);
     try {
       await setWorkspaceOverride(session.id, workspaceOverride);
       setIsOverrideActive(true);
@@ -526,12 +531,15 @@ export function AgentWorkspacePanel() {
     } catch (error) {
       logger.error('Failed to set workspace override', error);
       toast.error(`Failed to set override: ${error}`);
+    } finally {
+      setIsSettingOverride(false);
     }
   };
 
   const handleCancelOverride = async () => {
-    if (!session?.id) return;
+    if (!session?.id || isCancelingOverride) return;
 
+    setIsCancelingOverride(true);
     try {
       await cancelWorkspaceOverride(session.id);
       setWorkspaceOverridePath('');
@@ -541,6 +549,8 @@ export function AgentWorkspacePanel() {
     } catch (error) {
       logger.error('Failed to cancel workspace override', error);
       toast.error(`Failed to cancel override: ${error}`);
+    } finally {
+      setIsCancelingOverride(false);
     }
   };
 
@@ -582,6 +592,8 @@ export function AgentWorkspacePanel() {
   };
 
   const handleUploadClick = async () => {
+    if (isUploading) return;
+    setIsUploading(true);
     try {
       const selected = await open({
         multiple: true,
@@ -596,6 +608,8 @@ export function AgentWorkspacePanel() {
     } catch (error) {
       logger.error('Failed to open file dialog', error);
       toast.error(`Failed to select files: ${error}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -710,9 +724,9 @@ export function AgentWorkspacePanel() {
                   onClick={handleSetOverride}
                   size="sm"
                   className="h-7 text-xs"
-                  disabled={!workspaceOverride.trim()}
+                  disabled={!workspaceOverride.trim() || isSettingOverride}
                 >
-                  Set
+                  {isSettingOverride ? 'Setting...' : 'Set'}
                 </Button>
               ) : (
                 <Button
@@ -720,8 +734,9 @@ export function AgentWorkspacePanel() {
                   size="sm"
                   variant="destructive"
                   className="h-7 text-xs"
+                  disabled={isCancelingOverride}
                 >
-                  Cancel
+                  {isCancelingOverride ? 'Canceling...' : 'Cancel'}
                 </Button>
               )}
             </div>
@@ -776,7 +791,9 @@ export function AgentWorkspacePanel() {
         <div
           role="button"
           tabIndex={0}
-          className="border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50"
+          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 ${
+            isUploading ? 'opacity-50 pointer-events-none' : ''
+          }`}
           onClick={handleUploadClick}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -785,9 +802,14 @@ export function AgentWorkspacePanel() {
             }
           }}
           aria-label="Upload files to workspace"
+          aria-disabled={isUploading}
         >
-          <Upload className="w-4 h-4 mx-auto mb-1" />
-          Drop files here or click to upload
+          {isUploading ? (
+            <RefreshCw className="w-4 h-4 mx-auto mb-1 animate-spin" />
+          ) : (
+            <Upload className="w-4 h-4 mx-auto mb-1" />
+          )}
+          {isUploading ? 'Uploading...' : 'Drop files here or click to upload'}
         </div>
       </Card>
     </div>

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke as invoke } from '@/lib/backend/core';
 import type { Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { createPage } from '@/lib/db/crud';

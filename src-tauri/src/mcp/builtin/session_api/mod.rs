@@ -1,7 +1,9 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
+use crate::mcp::error_normalization::{categorize_session_api_error, ExternalMcpErrorCategory};
 use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
 
 mod cache;
@@ -58,7 +60,32 @@ impl BuiltinMCPServer for SessionApiServer {
         args: Value,
         caller_session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        handlers::handle_tool_call(tool_name, args, caller_session_id).await
+        handlers::handle_tool_call(tool_name, args, caller_session_id)
+            .await
+            .or_else(|e| {
+                // Cancellation errors must propagate as Err so the workflow loop
+                // can handle them correctly (abort, surface to user, etc.).
+                if e.contains("cancelled") || e.contains("interrupted") {
+                    return Err(e);
+                }
+
+                // Map the raw error to an error_guidance ErrorCategory so the
+                // format matches planning/knowledge/browser builtins.
+                let (norm_category, _) = categorize_session_api_error(&e);
+                let category = match norm_category {
+                    ExternalMcpErrorCategory::NotFound
+                    | ExternalMcpErrorCategory::SessionExpired => ErrorCategory::ResourceNotFound,
+                    ExternalMcpErrorCategory::InvalidInput => ErrorCategory::InvalidInput,
+                    ExternalMcpErrorCategory::PermissionDenied => ErrorCategory::PermissionDenied,
+                    ExternalMcpErrorCategory::Timeout => ErrorCategory::Timeout,
+                    ExternalMcpErrorCategory::Transport => ErrorCategory::NetworkError,
+                    ExternalMcpErrorCategory::Protocol
+                    | ExternalMcpErrorCategory::RemoteToolError
+                    | ExternalMcpErrorCategory::Internal => ErrorCategory::InternalError,
+                };
+
+                Ok(guided_error(category, e, ToolGroup::Swarm).to_mcp_result())
+            })
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {

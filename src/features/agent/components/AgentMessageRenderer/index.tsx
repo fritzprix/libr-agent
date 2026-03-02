@@ -278,8 +278,18 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               source?: { data?: string; uri?: string };
               mimeType?: string;
             };
-            const imageSrc =
-              imageItem.data || imageItem.source?.data || imageItem.source?.uri;
+            const rawData = imageItem.data || imageItem.source?.data;
+            const uri = imageItem.source?.uri;
+            let imageSrc: string | undefined;
+            if (rawData) {
+              const mimeType = imageItem.mimeType || 'image/png';
+              // Build a proper data URL if the data doesn't already have one
+              imageSrc = rawData.startsWith('data:')
+                ? rawData
+                : `data:${mimeType};base64,${rawData}`;
+            } else if (uri) {
+              imageSrc = uri;
+            }
             return imageSrc ? (
               <img
                 key={itemKey}
@@ -294,12 +304,17 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
               data?: string;
               mimeType?: string;
             };
-            return audioItem.data ? (
+            if (!audioItem.data) return null;
+            const mimeType = audioItem.mimeType || 'audio/mpeg';
+            const audioSrc = audioItem.data.startsWith('data:')
+              ? audioItem.data
+              : `data:${mimeType};base64,${audioItem.data}`;
+            return (
               <audio key={itemKey} controls className="w-full">
-                <source src={audioItem.data} type={audioItem.mimeType} />
+                <source src={audioSrc} type={mimeType} />
                 Your browser does not support the audio element.
               </audio>
-            ) : null;
+            );
           }
           case 'resource_link': {
             const linkItem = contentItem as {

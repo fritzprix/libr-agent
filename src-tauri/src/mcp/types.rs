@@ -23,12 +23,15 @@ pub enum TransportConfig {
     Http {
         url: String,
         #[serde(default = "default_protocol_version")]
+        #[serde(rename = "protocolVersion", alias = "protocol_version")]
         protocol_version: String,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "sessionId", alias = "session_id")]
         session_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         headers: Option<HashMap<String, String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "enableSSE", alias = "enable_sse")]
         enable_sse: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         security: Option<SecurityConfig>,
@@ -206,6 +209,12 @@ pub enum MCPContent {
     },
     #[serde(rename = "image")]
     Image {
+        data: String,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+    },
+    #[serde(rename = "audio")]
+    Audio {
         data: String,
         #[serde(rename = "mimeType")]
         mime_type: String,

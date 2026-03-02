@@ -58,3 +58,11 @@ export async function resetAssistantSkills(
 ): Promise<string> {
   return safeInvoke<string>('reset_assistant_skills', { assistantId });
 }
+
+/**
+ * Reads the full content of a skill's SKILL.md file.
+ * `skillPath` is the absolute path as returned in `SkillMetadata.path`.
+ */
+export async function getSkillContent(skillPath: string): Promise<string> {
+  return safeInvoke<string>('get_skill_content', { skillPath });
+}

@@ -169,7 +169,16 @@ describe('AI Service Utils', () => {
         { type: 'image', data: 'base64', mimeType: 'image/png' },
       ];
       expect(processMultiModalContent(content)).toEqual([
-        { type: 'image', image: 'base64' },
+        { type: 'image', image: 'base64', mimeType: 'image/png' },
+      ]);
+    });
+
+    it('should process audio content', () => {
+      const content: MCPContent[] = [
+        { type: 'audio', data: 'base64', mimeType: 'audio/mp3' },
+      ];
+      expect(processMultiModalContent(content)).toEqual([
+        { type: 'audio', audio: 'base64', mimeType: 'audio/mp3' },
       ]);
     });
 

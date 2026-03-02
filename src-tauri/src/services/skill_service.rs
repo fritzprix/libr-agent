@@ -86,6 +86,17 @@ pub async fn scan_skills_directory(directory: &Path) -> Result<Vec<SkillMetadata
     scan_skills_internal(directory, None).await
 }
 
+/// Reads the full content of a skill's SKILL.md file by skill path.
+/// The `skill_path` is the absolute path to the SKILL.md file as returned in `SkillMetadata.path`.
+pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
+    let path = PathBuf::from(&skill_path);
+    tokio::task::spawn_blocking(move || {
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read skill content: {}", e))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
 pub(crate) async fn scan_skills_internal(
     root_path: &Path,
     source_tag: Option<String>,

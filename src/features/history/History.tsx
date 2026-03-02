@@ -15,7 +15,7 @@ export default function History() {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { loadSessions, deleteSession, deleteSessionOnly } =
+  const { loadSessions, deleteSession, deleteSessionOnly, toggleBookmark } =
     useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,7 +38,9 @@ export default function History() {
         toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session', error);
-        toast.error(t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'));
+        toast.error(
+          t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'),
+        );
       }
     },
     [deleteSession, t],
@@ -51,7 +53,9 @@ export default function History() {
         toast.success(t('sessionHistory.toasts.deleted', 'Session deleted'));
       } catch (error) {
         logger.error('Failed to delete session only', error);
-        toast.error(t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'));
+        toast.error(
+          t('sessionHistory.toasts.deleteFailed', 'Failed to delete session'),
+        );
       }
     },
     [deleteSessionOnly, t],
@@ -74,10 +78,20 @@ export default function History() {
         onResume={handleResumeSession}
         onDelete={handleDeleteSession}
         onDeleteOnly={handleDeleteSessionOnly}
+        onToggleBookmark={toggleBookmark}
         heading={t('sessionHistory.heading', 'Session History')}
-        description={t('sessionHistory.description', 'Browse and manage your conversation sessions')}
-        emptyStateTitle={t('sessionHistory.emptyState.title', 'No sessions yet')}
-        emptyStateSubtitle={t('sessionHistory.emptyState.subtitle', 'Start a conversation to create your first session')}
+        description={t(
+          'sessionHistory.description',
+          'Browse and manage your conversation sessions',
+        )}
+        emptyStateTitle={t(
+          'sessionHistory.emptyState.title',
+          'No sessions yet',
+        )}
+        emptyStateSubtitle={t(
+          'sessionHistory.emptyState.subtitle',
+          'Start a conversation to create your first session',
+        )}
       />
     </div>
   );

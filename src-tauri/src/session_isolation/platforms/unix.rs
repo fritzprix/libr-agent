@@ -30,15 +30,9 @@ pub async fn create_basic_isolated_command(
 
     // Whitelist essential variables from parent environment
     // Note: HOME is deliberately excluded here as it's overridden below for isolation
-    let preserved_vars = [
-        "PATH",
-        "TERM",
-        "USER",
-        "LOGNAME",
-        "SHELL",
-        "DISPLAY",
-        "XAUTHORITY",
-    ];
+    // DISPLAY and XAUTHORITY are intentionally excluded to prevent GUI/X11 access
+    // from within the isolated shell (screen capture, input injection, etc.)
+    let preserved_vars = ["PATH", "TERM", "USER", "LOGNAME", "SHELL"];
 
     for key in &preserved_vars {
         if let Ok(val) = std::env::var(key) {
@@ -49,7 +43,12 @@ pub async fn create_basic_isolated_command(
     // Preserve locale and XDG base directory variables for consistency with MCP stdio isolation.
     // This includes all LC_* variables (beyond LC_ALL/LANG) and XDG_* variables.
     // LC_ALL and LANG are still explicitly overridden below to enforce consistent English output.
+    // XDG_RUNTIME_DIR is explicitly blocked: it exposes live D-Bus / Wayland sockets
+    // under /run/user/<uid> which an isolated shell has no business accessing.
     for (key, value) in std::env::vars() {
+        if key == "XDG_RUNTIME_DIR" {
+            continue; // Block D-Bus / Wayland socket exposure
+        }
         if key.starts_with("LC_") || key.starts_with("XDG_") {
             cmd.env(&key, value);
         }

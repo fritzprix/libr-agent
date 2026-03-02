@@ -4,6 +4,7 @@ import { MCPContent } from '@/lib/mcp';
 import { getLogger } from '../../logger';
 import {
   processMessageContent,
+  processMultiModalContent,
   tryParse,
   generateToolCallId as generateId,
 } from '../utils';
@@ -17,6 +18,32 @@ const GEMINI_DUMMY_THOUGHT_SIGNATURE = 'skip_thought_signature_validator';
  */
 export function generateToolCallId(): string {
   return generateId();
+}
+
+/**
+ * Helper to format content for Gemini API, supporting multimodal parts.
+ */
+export function formatGeminiContent(content: MCPContent[]): Part[] {
+  const multimodal = processMultiModalContent(content);
+  if (multimodal.every((p) => p.type === 'text')) {
+    return [{ text: processMessageContent(content) }];
+  }
+  return multimodal.map((part) => {
+    if (part.type === 'text') {
+      return { text: part.text || '' };
+    } else if (part.type === 'image' || part.type === 'audio') {
+      const mimeType =
+        part.mimeType || (part.type === 'image' ? 'image/jpeg' : 'audio/mp3');
+      const data = part.type === 'image' ? part.image : part.audio;
+      return {
+        inlineData: {
+          mimeType,
+          data: data || '',
+        },
+      };
+    }
+    return { text: `[Unsupported content format for Gemini: ${part.type}]` };
+  });
 }
 
 /**
@@ -192,20 +219,18 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
     }
 
     if (m.role === 'user') {
-      // Standard user text message (already handled tool responses above)
+      // Standard user message (already handled tool responses above)
       // Merge with previous user message if possible to reduce turns
       const lastMsg = geminiMessages[geminiMessages.length - 1];
-      const textPart = {
-        text: processMessageContent(m.content as MCPContent[]),
-      };
+      const parts = formatGeminiContent(m.content as MCPContent[]);
 
       if (lastMsg && lastMsg.role === 'user') {
         if (!lastMsg.parts) lastMsg.parts = [];
-        lastMsg.parts.push(textPart);
+        lastMsg.parts.push(...parts);
       } else {
         geminiMessages.push({
           role: 'user',
-          parts: [textPart],
+          parts,
         });
       }
     }
@@ -310,7 +335,7 @@ export function convertSingleMessage(message: Message): unknown {
   if (message.role === 'user' && message.content) {
     return {
       role: 'user',
-      parts: [{ text: processMessageContent(message.content as MCPContent[]) }],
+      parts: formatGeminiContent(message.content as MCPContent[]),
     };
   } else if (message.role === 'assistant') {
     if (message.tool_calls && message.tool_calls.length > 0) {

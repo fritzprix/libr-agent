@@ -196,6 +196,14 @@ impl SessionRepository for InMemorySessionRepository {
         sessions.remove(session_id);
         Ok(())
     }
+
+    async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.is_bookmarked = bookmarked;
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -219,6 +227,7 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            is_bookmarked: false,
             agent_config: Some("{}".to_string()),
             parent_session_id: None,
             lineage_id: None,
@@ -248,6 +257,7 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            is_bookmarked: false,
             agent_config: None,
             parent_session_id: None,
             lineage_id: None,
@@ -289,6 +299,7 @@ mod tests {
             status: SessionStatus::Idle,
             model: "gpt-4".to_string(),
             provider: "openai".to_string(),
+            is_bookmarked: false,
             agent_config: None,
             parent_session_id: None,
             lineage_id: None,
@@ -323,6 +334,7 @@ mod tests {
                 status: SessionStatus::Idle,
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
+                is_bookmarked: false,
                 agent_config: None,
                 parent_session_id: None,
                 lineage_id: None,
@@ -352,6 +364,7 @@ mod tests {
                 status: SessionStatus::Idle,
                 model: "gpt-4".to_string(),
                 provider: "openai".to_string(),
+                is_bookmarked: false,
                 agent_config: None,
                 parent_session_id: None,
                 lineage_id: None,
@@ -389,6 +402,7 @@ mod tests {
                     status: SessionStatus::Idle,
                     model: "gpt-4".to_string(),
                     provider: "openai".to_string(),
+                    is_bookmarked: false,
                     agent_config: None,
                     created_at: 100,
                     updated_at: 100,

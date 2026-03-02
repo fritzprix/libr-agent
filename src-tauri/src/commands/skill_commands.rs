@@ -54,3 +54,18 @@ pub async fn get_aggregated_skills(
 pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadata>, String> {
     skill_service::scan_skills_directory(&PathBuf::from(directory)).await
 }
+
+/// Returns the full content of a skill's SKILL.md file.
+/// `skill_path` is the absolute path as returned in `SkillMetadata.path`.
+#[tauri::command]
+pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
+    skill_service::get_skill_content(skill_path).await
+}
+
+#[tauri::command]
+pub async fn list_workspace_file_paths(
+    session_id: String,
+    max_depth: usize,
+) -> Result<Vec<String>, String> {
+    crate::agent::references::list_workspace_relative_paths(&session_id, max_depth).await
+}

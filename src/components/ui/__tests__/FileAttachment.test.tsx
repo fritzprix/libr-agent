@@ -7,6 +7,23 @@ import FileAttachment from '../FileAttachment';
 // However, Button uses Radix Slot, which might be complex.
 // For now, let's try rendering the real component.
 
+// Mock react-i18next to simulate interpolation
+// Mock react-i18next to simulate interpolation
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown> | string) => {
+      // Custom mock to simulate { name: 'filename.txt' } interpolation
+      if (typeof options === 'object' && options && 'name' in options && typeof options.defaultValue === 'string') {
+        return options.defaultValue.replace('{{name}}', options.name as string);
+      }
+      // If it's a simple string or single string arg fallback
+      if (typeof options === 'string') return options;
+      // Default return the key if nothing matches
+      return key;
+    },
+  }),
+}));
+
 describe('FileAttachment', () => {
   const mockFiles = [
     { name: 'test.txt', content: 'hello' },
@@ -38,6 +55,10 @@ describe('FileAttachment', () => {
     );
 
     // Remove buttons should have specific, file-related accessible names for screen readers.
+    // We mocked react-i18next to correctly substitute the {{name}} parameter.
+    const listItems = screen.getAllByRole('listitem');
+    expect(listItems.length).toBe(2);
+
     expect(screen.getByRole('button', { name: 'Remove test.txt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove image.png' })).toBeInTheDocument();
   });
