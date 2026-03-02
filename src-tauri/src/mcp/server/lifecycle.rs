@@ -75,38 +75,8 @@ async fn start_stdio_server(
         cmd.env_clear();
 
         // Re-apply whitelisted essential system variables
-        let preserved_vars = [
-            "PATH",
-            "SystemRoot",              // Windows
-            "COMSPEC",                 // Windows
-            "PATHEXT",                 // Windows
-            "WINDIR",                  // Windows
-            "APPDATA",                 // Windows
-            "LOCALAPPDATA",            // Windows
-            "ProgramData",             // Windows
-            "ProgramFiles",            // Windows
-            "ProgramFiles(x86)",       // Windows
-            "CommonProgramFiles",      // Windows
-            "CommonProgramFiles(x86)", // Windows
-            "HOME",
-            "USERPROFILE", // Windows
-            "HOMEDRIVE",   // Windows
-            "HOMEPATH",    // Windows
-            "TEMP",
-            "TMP",
-            "TMPDIR",
-            "TERM",
-            "LANG",
-        ];
-
-        for (key, value) in std::env::vars() {
-            if preserved_vars.contains(&key.as_str()) {
-                cmd.env(&key, &value);
-                continue;
-            }
-            if key.starts_with("LC_") || key.starts_with("XDG_") {
-                cmd.env(&key, &value);
-            }
+        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+            cmd.env(k, v);
         }
 
         // Apply user-defined variables from config (can override system vars)
@@ -145,7 +115,7 @@ async fn start_http_server(
     protocol_version: String,
     session_id: Option<String>,
     headers: Option<HashMap<String, String>>,
-    enable_sse: Option<bool>,
+    _enable_sse: Option<bool>,
 ) -> Result<String> {
     let name = config
         .name
@@ -190,15 +160,10 @@ async fn start_http_server(
     // Create configuration
     let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.clone());
 
-    // Process enable_sse if applicable (mapping to allow_stateless if inverse)
-    // If enable_sse is explicitly false, we might want to enable stateless if likely?
-    // But for now, let's keep config default unless we know for sure.
-    // The previous error showed allow_stateless is available.
-    // If streaming (SSE) is disabled, it might mean "stateless request/response".
-    // Let's assume enable_sse=false -> allow_stateless=true.
-    if let Some(sse) = enable_sse {
-        transport_config.allow_stateless = !sse;
-    }
+    // Always allow stateless servers (those that omit Mcp-Session-Id in their connection response).
+    // The MCP protocol allows SSE streams to be entirely stateless.
+    // Setting this to true means both stateless and stateful servers will connect successfully.
+    transport_config.allow_stateless = true;
 
     // Create transport with custom client
     let transport = StreamableHttpClientTransport::with_client(client, transport_config);
