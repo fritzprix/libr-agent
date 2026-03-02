@@ -35,7 +35,7 @@
  * ```
  */
 
-import { safeInvoke as invoke } from '@/lib/backend/core';
+import { invoke } from '@tauri-apps/api/core';
 
 // Log level enum
 enum LogLevel {

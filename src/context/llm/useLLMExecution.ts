@@ -501,8 +501,7 @@ export function useLLMExecution({
               next.set(sessionId, {
                 ...streamingMessage,
                 content,
-                tool_calls:
-                  toolCalls.length > 0 ? toolCalls : undefined,
+                tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
                 thinking: thinking || undefined,
                 thinkingSignature,
                 thinkingTime: currentThinkingTime,
@@ -538,8 +537,7 @@ export function useLLMExecution({
           next.set(sessionId, {
             ...streamingMessage,
             content,
-            tool_calls:
-              toolCalls.length > 0 ? toolCalls : undefined,
+            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
             thinking: thinking || undefined,
             thinkingSignature,
             thinkingTime: currentThinkingTime,
@@ -596,8 +594,7 @@ export function useLLMExecution({
           role: 'assistant',
           content,
           createdAt: new Date(),
-          tool_calls:
-            finalToolCalls.length > 0 ? finalToolCalls : undefined,
+          tool_calls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
           thinking: finalThinking || undefined,
           thinkingSignature,
           thinkingTime: thinkingStartTime

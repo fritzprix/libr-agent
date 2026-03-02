@@ -52,4 +52,11 @@
 
 - **Type Sync:** Applied strict generic return types (`invoke<Type>`) across the codebase. Reused existing strong interfaces (`AgentResponse`, `MCPTool[]`, `MCPResult<T>`, `AgentSessionMetadata`, `AssistantDto`, and `<void>`).
 
-## 2026-03-01 - [All Tauri Commands] **IPC Fix:** [Scattered Error Handling] **Optimized:** [Replaced explicit tauri invoke calls with safeInvoke from backend/core for centralized error handling and logging]
+## 2026-03-01 - All Tauri Commands IPC Error Handling
+
+**Problem:** Direct `invoke` calls for Tauri commands had scattered error handling and inconsistent logging, making IPC failures hard to track and reason about across the frontend.
+
+**Action:**
+
+- **Centralized Wrapper:** Introduced `safeInvoke` in `src/lib/backend/core.ts` to wrap Tauri `invoke` with standardized error handling, logging, and typed responses.
+- **Refactor:** Replaced explicit `invoke` usages across all Tauri command call sites with `safeInvoke`, ensuring consistent IPC behavior and observability.
