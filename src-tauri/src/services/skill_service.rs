@@ -88,10 +88,33 @@ pub async fn scan_skills_directory(directory: &Path) -> Result<Vec<SkillMetadata
 
 /// Reads the full content of a skill's SKILL.md file by skill path.
 /// The `skill_path` is the absolute path to the SKILL.md file as returned in `SkillMetadata.path`.
+///
+/// Security: validates that the path is within the configured skills directory
+/// and points to a `SKILL.md` file before reading.
 pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
     let path = PathBuf::from(&skill_path);
+
+    // Require the file to be named SKILL.md
+    if path.file_name() != Some(std::ffi::OsStr::new("SKILL.md")) {
+        return Err("Skill path must point to a SKILL.md file".to_string());
+    }
+
+    // Validate that the path is within the configured skills directory
+    let skills_dir_str = get_configured_skills_directory().await?;
+    let skills_dir = PathBuf::from(skills_dir_str);
+    let canonical_dir = skills_dir
+        .canonicalize()
+        .map_err(|e| format!("Invalid skills directory: {}", e))?;
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| format!("Invalid skill path: {}", e))?;
+    if !canonical_path.starts_with(&canonical_dir) {
+        return Err("Skill path is outside the configured skills directory".to_string());
+    }
+
     tokio::task::spawn_blocking(move || {
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read skill content: {}", e))
+        fs::read_to_string(&canonical_path)
+            .map_err(|e| format!("Failed to read skill content: {}", e))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
