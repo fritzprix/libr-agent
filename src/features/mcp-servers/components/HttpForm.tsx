@@ -7,6 +7,11 @@ import { Switch } from '@/components/ui/switch';
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { createId } from '@paralleldrive/cuid2';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface HttpFormProps {
   draft: MCPServerEntity;
@@ -255,68 +260,78 @@ export function HttpForm({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {customHeaders.map((header, index, arr) => (
-                    <div key={header.id} className="flex gap-2 items-start">
-                      <div className="flex-1">
-                        <Input
-                          ref={
-                            index === arr.length - 1
-                              ? lastNewInputRef
-                              : undefined
-                          }
-                          id={`header-key-${header.id}`}
-                          placeholder={t(
-                            'mcpServer.dialog.headerKeyPlaceholder',
-                            'Key (e.g. User-Agent)',
-                          )}
-                          value={header.key}
-                          onChange={(e) =>
-                            handleUpdateHeader(header.id, 'key', e.target.value)
-                          }
-                          className="h-8 text-sm"
-                          aria-label="Custom header key"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <Input
-                          placeholder={t(
-                            'mcpServer.dialog.headerValuePlaceholder',
-                            'Value',
-                          )}
-                          value={header.value}
-                          onChange={(e) =>
-                            handleUpdateHeader(
-                              header.id,
-                              'value',
-                              e.target.value,
-                            )
-                          }
-                          className="h-8 text-sm"
-                          aria-label="Custom header value"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveHeader(header.id)}
-                        aria-label={
-                          header.key
-                            ? t('mcpServer.dialog.removeHeader', {
-                                key: header.key,
-                                defaultValue: 'Remove header {{key}}',
-                              })
-                            : t(
-                                'mcpServer.dialog.removeUnnamedHeader',
-                                'Remove unnamed header',
+                  {customHeaders.map((header, index, arr) => {
+                    const removeLabel = header.key
+                      ? t('mcpServer.dialog.removeHeader', {
+                          key: header.key,
+                          defaultValue: 'Remove header {{key}}',
+                        })
+                      : t(
+                          'mcpServer.dialog.removeUnnamedHeader',
+                          'Remove unnamed header',
+                        );
+                    return (
+                      <div key={header.id} className="flex gap-2 items-start">
+                        <div className="flex-1">
+                          <Input
+                            ref={
+                              index === arr.length - 1
+                                ? lastNewInputRef
+                                : undefined
+                            }
+                            id={`header-key-${header.id}`}
+                            placeholder={t(
+                              'mcpServer.dialog.headerKeyPlaceholder',
+                              'Key (e.g. User-Agent)',
+                            )}
+                            value={header.key}
+                            onChange={(e) =>
+                              handleUpdateHeader(
+                                header.id,
+                                'key',
+                                e.target.value,
                               )
-                        }
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
+                            }
+                            className="h-8 text-sm"
+                            aria-label="Custom header key"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            placeholder={t(
+                              'mcpServer.dialog.headerValuePlaceholder',
+                              'Value',
+                            )}
+                            value={header.value}
+                            onChange={(e) =>
+                              handleUpdateHeader(
+                                header.id,
+                                'value',
+                                e.target.value,
+                              )
+                            }
+                            className="h-8 text-sm"
+                            aria-label="Custom header value"
+                          />
+                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveHeader(header.id)}
+                              aria-label={removeLabel}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{removeLabel}</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -5,6 +5,11 @@ import { Plus, Trash2 } from 'lucide-react';
 import { KeyValuePair, MCPServerMetadata } from '../hooks/useMCPServerForm';
 import { MCPServerEntity } from '@/models/chat';
 import { createId } from '@paralleldrive/cuid2';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface EnvVarsFormProps {
   server: MCPServerEntity;
@@ -140,61 +145,69 @@ export function EnvVarsForm({
                 !(server.metadata as MCPServerMetadata | undefined)
                   ?.variableDefinitions?.[item.key],
             )
-            .map((item, index, arr) => (
-              <div key={item.id} className="flex gap-2 items-start">
-                <div className="flex-1">
-                  <Input
-                    ref={index === arr.length - 1 ? lastNewInputRef : undefined}
-                    id={`env-var-key-${item.id}`}
-                    placeholder={t(
-                      'mcpServer.dialog.envVarKeyPlaceholder',
-                      'Key (e.g. API_KEY)',
-                    )}
-                    value={item.key}
-                    onChange={(e) =>
-                      handleUpdateEnvVar(item.id, 'key', e.target.value)
-                    }
-                    className="h-8 text-sm font-mono"
-                    aria-label="Environment variable key"
-                  />
+            .map((item, index, arr) => {
+              const removeLabel = item.key
+                ? t('mcpServer.dialog.removeEnvVar', {
+                    key: item.key,
+                    defaultValue: 'Remove environment variable {{key}}',
+                  })
+                : t(
+                    'mcpServer.dialog.removeUnnamedEnvVar',
+                    'Remove unnamed environment variable',
+                  );
+              return (
+                <div key={item.id} className="flex gap-2 items-start">
+                  <div className="flex-1">
+                    <Input
+                      ref={
+                        index === arr.length - 1 ? lastNewInputRef : undefined
+                      }
+                      id={`env-var-key-${item.id}`}
+                      placeholder={t(
+                        'mcpServer.dialog.envVarKeyPlaceholder',
+                        'Key (e.g. API_KEY)',
+                      )}
+                      value={item.key}
+                      onChange={(e) =>
+                        handleUpdateEnvVar(item.id, 'key', e.target.value)
+                      }
+                      className="h-8 text-sm font-mono"
+                      aria-label="Environment variable key"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      placeholder={t(
+                        'mcpServer.dialog.envVarValuePlaceholder',
+                        'Value',
+                      )}
+                      value={item.value}
+                      onChange={(e) =>
+                        handleUpdateEnvVar(item.id, 'value', e.target.value)
+                      }
+                      type="password" // Mask values for security
+                      className="h-8 text-sm font-mono"
+                      aria-label="Environment variable value"
+                    />
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveEnvVar(item.id)}
+                        aria-label={removeLabel}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{removeLabel}</TooltipContent>
+                  </Tooltip>
                 </div>
-                <div className="flex-1">
-                  <Input
-                    placeholder={t(
-                      'mcpServer.dialog.envVarValuePlaceholder',
-                      'Value',
-                    )}
-                    value={item.value}
-                    onChange={(e) =>
-                      handleUpdateEnvVar(item.id, 'value', e.target.value)
-                    }
-                    type="password" // Mask values for security
-                    className="h-8 text-sm font-mono"
-                    aria-label="Environment variable value"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleRemoveEnvVar(item.id)}
-                  aria-label={
-                    item.key
-                      ? t('mcpServer.dialog.removeEnvVar', {
-                          key: item.key,
-                          defaultValue: 'Remove environment variable {{key}}',
-                        })
-                      : t(
-                          'mcpServer.dialog.removeUnnamedEnvVar',
-                          'Remove unnamed environment variable',
-                        )
-                  }
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
         </div>
       )}
       <p className="text-xs text-muted-foreground">

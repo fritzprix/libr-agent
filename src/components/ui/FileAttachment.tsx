@@ -2,6 +2,11 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Paperclip, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface FileAttachmentProps {
   files: { name: string; content: string }[];
@@ -59,17 +64,23 @@ export default function FileAttachment({
         />
 
         {/* Attach Files Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          type="button"
-          onClick={handleFileSelect}
-          className="h-8 w-8 text-muted-foreground hover:text-success"
-          title={t('fileAttachment.attachFiles', 'Attach files')}
-          aria-label={t('fileAttachment.attachFiles', 'Attach files')}
-        >
-          <Paperclip className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              onClick={handleFileSelect}
+              className="h-8 w-8 text-muted-foreground hover:text-success"
+              aria-label={t('fileAttachment.attachFiles', 'Attach files')}
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('fileAttachment.attachFiles', 'Attach files')}
+          </TooltipContent>
+        </Tooltip>
 
         {/* File Count Indicator */}
         {files.length > 0 && (
@@ -92,17 +103,23 @@ export default function FileAttachment({
       />
 
       {/* Attach Files Button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        type="button"
-        onClick={handleFileSelect}
-        className="text-muted-foreground hover:text-success border border-muted"
-        title={t('fileAttachment.attachFiles', 'Attach files')}
-        aria-label={t('fileAttachment.attachFiles', 'Attach files')}
-      >
-        <Paperclip className="h-4 w-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={handleFileSelect}
+            className="text-muted-foreground hover:text-success border border-muted"
+            aria-label={t('fileAttachment.attachFiles', 'Attach files')}
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('fileAttachment.attachFiles', 'Attach files')}
+        </TooltipContent>
+      </Tooltip>
 
       {/* Attached Files Display */}
       {files.length > 0 && (
@@ -117,33 +134,37 @@ export default function FileAttachment({
             className="space-y-1"
             aria-label={t('fileAttachment.attachedFilesList', 'Attached files')}
           >
-            {files.map((file, index) => (
-              <li
-                key={index}
-                className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
-              >
-                <span className="text-xs text-success truncate flex-1">
-                  {file.name}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onRemove(index)}
-                  className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
-                  title={t('fileAttachment.removeFile', {
-                    name: file.name,
-                    defaultValue: 'Remove {{name}}',
-                  })}
-                  aria-label={t('fileAttachment.removeFile', {
-                    name: file.name,
-                    defaultValue: 'Remove {{name}}',
-                  })}
+            {files.map((file, index) => {
+              const removeLabel = t('fileAttachment.removeFile', {
+                name: file.name,
+                defaultValue: 'Remove {{name}}',
+              });
+              return (
+                <li
+                  key={index}
+                  className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
                 >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </li>
-            ))}
+                  <span className="text-xs text-success truncate flex-1">
+                    {file.name}
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onRemove(index)}
+                        className="h-6 w-6 ml-2 text-destructive hover:text-destructive/80"
+                        aria-label={removeLabel}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{removeLabel}</TooltipContent>
+                  </Tooltip>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
