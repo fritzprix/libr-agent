@@ -62,12 +62,13 @@ async fn execute_task(
 
     let agent_config = AgentConfig::from_json(&assistant.config)?;
 
-    // Ensure the assistant ID is embedded in the config so that
-    // get_assistant_id_from_session() can resolve it from the session record.
-    // The assistant entity stores `id` and `config` as separate DB columns,
-    // so the config JSON may not contain `"id"` on its own.
+    // Ensure the assistant ID and name are embedded in the config.
+    // The assistant entity stores `id` and `name` as separate DB columns from `config`,
+    // so the config JSON may not contain the correct values on its own.
+    // In particular, `name` defaults to "Unknown Assistant" if not set in the config JSON.
     let agent_config = AgentConfig {
         id: Some(task.assistant_id.clone()),
+        name: assistant.name.clone(),
         ..agent_config
     };
 
