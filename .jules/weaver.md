@@ -23,3 +23,8 @@
 
 - Extracted `handleSubmit`, input state, and file submission logic into `useChatSubmit` hook.
 - **Benefits:** `AgentChatInput` now focuses solely on UI rendering; business logic is reusable and testable.
+
+## 2026-03-02 - [AgentChatInput / Hooks] **Eradicated:** [Redundant Logic / Duplication] **Woven:** [DRY Pattern / Centralized Data Fetching Hook]
+
+- Removed the redundant `useSessionTools` hook, which duplicated the functionality of `useAgentTools`.
+- Updated `AgentChatInput` to use the more robust, centralized `useAgentTools` hook, providing validation, loading state, and error handling out of the box.
