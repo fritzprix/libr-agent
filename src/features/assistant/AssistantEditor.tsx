@@ -223,8 +223,14 @@ function AssistantDialog(props: DialogProps) {
     if (props.onOpenChange) props.onOpenChange(false);
   };
 
+  const handleOpenChange = (open: boolean) => {
+    // Block close gestures (Esc, outside click) while a save is in progress
+    if (!open && isLoading) return;
+    if (props.onOpenChange) props.onOpenChange(open);
+  };
+
   return (
-    <Dialog {...props} open={props.open} onOpenChange={props.onOpenChange}>
+    <Dialog {...props} open={props.open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] p-0 flex flex-col overflow-hidden">
         <DialogHeader className="flex-shrink-0 px-6 py-4 border-b">
           <DialogTitle>
@@ -244,7 +250,7 @@ function AssistantDialog(props: DialogProps) {
             {t('assistant.edit.cancel')}
           </Button>
           <Button variant="default" onClick={handleSave} disabled={isLoading}>
-            {isLoading ? t('common.saving') || 'Saving...' : t('assistant.edit.save')}
+            {isLoading ? t('settings.saving') : t('assistant.edit.save')}
           </Button>
         </div>
       </DialogContent>
