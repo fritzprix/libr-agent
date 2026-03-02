@@ -350,9 +350,16 @@ impl WorkspaceServer {
             let file_manager = self.get_file_manager(session_id);
             match file_manager
                 .get_security_validator()
-                .validate_path_for_read(path_str)  // Use validate_path_for_read for read operations
+                .validate_path_for_read(path_str)
             {
-                Ok(safe_path) => match tokio::fs::read_to_string(safe_path).await {
+                Ok(safe_path) => {
+                    // If the path is a directory, delegate to multi-file search
+                    if safe_path.is_dir() {
+                        return self
+                            .search_lines_in_dir(safe_path, path_str, pattern, ignore_case, line_numbers)
+                            .await;
+                    }
+                    match tokio::fs::read_to_string(&safe_path).await {
                     Ok(s) => s,
                     Err(e) => {
                         let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
@@ -373,7 +380,8 @@ impl WorkspaceServer {
                         ])
                         .to_mcp_result());
                     }
-                },
+                }
+                }
                 Err(e) => {
                     return Ok(guided_error(
                         ErrorCategory::PermissionDenied,
@@ -579,6 +587,158 @@ impl WorkspaceServer {
         }
 
         Ok(results)
+    }
+
+    /// Search for pattern matches across all text files in a directory (recursive).
+    /// Called by `handle_search_lines` when the path resolves to a directory.
+    async fn search_lines_in_dir(
+        &self,
+        dir: std::path::PathBuf,
+        display_path: &str,
+        pattern: &str,
+        ignore_case: bool,
+        line_numbers: bool,
+    ) -> Result<MCPResult, String> {
+        use walkdir::WalkDir;
+
+        let regex = match regex::RegexBuilder::new(pattern)
+            .case_insensitive(ignore_case)
+            .build()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!("Invalid regex pattern: {}", e),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Check regex syntax — use basic patterns like 'error|warning'".to_string(),
+                    "Escape special characters with backslash: \\. \\* \\+ \\?".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
+
+        // Collect per-file matches; skip binary / unreadable files silently.
+        struct FileMatch {
+            rel_path: String,
+            hits: Vec<Value>,
+        }
+
+        let mut file_matches: Vec<FileMatch> = Vec::new();
+        let mut files_searched: usize = 0;
+
+        for entry in WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            // Skip obviously binary extensions
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if matches!(
+                ext.as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico"
+                    | "pdf" | "zip" | "tar" | "gz" | "bz2" | "xz"
+                    | "exe" | "dll" | "so" | "dylib" | "bin" | "wasm"
+                    | "mp3" | "mp4" | "wav" | "ogg" | "flac"
+                    | "ttf" | "woff" | "woff2"
+            ) {
+                continue;
+            }
+
+            let content = match tokio::fs::read_to_string(path).await {
+                Ok(s) => s,
+                Err(_) => continue, // binary or unreadable — skip silently
+            };
+            files_searched += 1;
+
+            let rel_path = path
+                .strip_prefix(&dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+
+            let mut hits: Vec<Value> = Vec::new();
+            for (idx, line) in content.lines().enumerate() {
+                if regex.is_match(line) {
+                    if line_numbers {
+                        hits.push(json!({ "line": idx + 1, "text": line }));
+                    } else {
+                        hits.push(json!(line));
+                    }
+                }
+            }
+
+            if !hits.is_empty() {
+                file_matches.push(FileMatch { rel_path, hits });
+            }
+        }
+
+        if file_matches.is_empty() {
+            return Ok(SuccessHint::new(
+                format!(
+                    "No matches for `{}` in {} file(s) under `{}`",
+                    pattern, files_searched, display_path
+                ),
+                vec![
+                    "Try a broader pattern or check the directory path".to_string(),
+                    "Use ignoreCase: true for case-insensitive search".to_string(),
+                ],
+            )
+            .to_mcp_result());
+        }
+
+        let total_hits: usize = file_matches.iter().map(|f| f.hits.len()).sum();
+
+        // Build human-readable text block
+        let mut text = format!(
+            "**🔍 Directory Search: {} match(es) in {} file(s)** (searched {} files)\n\
+             Pattern: `{}`  Path: `{}`\n\n",
+            total_hits,
+            file_matches.len(),
+            files_searched,
+            pattern,
+            display_path,
+        );
+
+        for fm in &file_matches {
+            text.push_str(&format!("### `{}`\n", fm.rel_path));
+            for hit in &fm.hits {
+                if line_numbers {
+                    let ln = hit.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let t = hit.get("text").and_then(|v| v.as_str()).unwrap_or("");
+                    let lang = detect_language(std::path::Path::new(&fm.rel_path));
+                    text.push_str(&format!("- L{}: `{}`\n", ln, t.trim()));
+                    let _ = lang; // used for future syntax hint
+                } else {
+                    let t = hit.as_str().unwrap_or("");
+                    text.push_str(&format!("- `{}`\n", t.trim()));
+                }
+            }
+            text.push('\n');
+        }
+
+        let structured = json!({
+            "pattern": pattern,
+            "directory": display_path,
+            "files_searched": files_searched,
+            "files_with_matches": file_matches.len(),
+            "total_matches": total_hits,
+            "results": file_matches.iter().map(|fm| json!({
+                "file": fm.rel_path,
+                "matches": fm.hits,
+            })).collect::<Vec<_>>(),
+        });
+
+        Ok(SuccessHint::new(text, vec![
+            "Use path: \"file\" to narrow search to a specific file".to_string(),
+        ])
+        .to_mcp_result_with_data(Some(structured)))
     }
 }
 
