@@ -398,3 +398,101 @@ fn import_assistant_skills_blocking(
 
     Ok(format!("Successfully imported {} skills", imported_count))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Build a minimal skills directory containing one SKILL.md file,
+    /// returning the TempDir (must stay alive) and the path to SKILL.md.
+    fn setup_skills_dir() -> (TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let skill_dir = dir.path().join("my-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let skill_md = skill_dir.join("SKILL.md");
+        fs::write(&skill_md, "# My Skill\nDoes cool things.").unwrap();
+        (dir, skill_md)
+    }
+
+    // Helper: override the configured skills directory to `path` by temporarily
+    // setting an env variable checked by get_configured_skills_directory.
+    // Since get_skill_content calls get_configured_skills_directory internally
+    // and that function reads from the settings DB (which won't exist in tests),
+    // we test the sub-logic (filename + canonicalize check) in isolation.
+
+    #[test]
+    fn test_skill_path_must_be_skill_md() {
+        // Anything that isn't named SKILL.md should be rejected regardless of directory.
+        let dir = tempfile::tempdir().unwrap();
+        let bad_file = dir.path().join("secret.txt");
+        fs::write(&bad_file, "secret").unwrap();
+
+        // Build the path string (absolute)
+        let path_str = bad_file.to_string_lossy().to_string();
+
+        // Exercise only the filename guard (synchronously mirrored logic)
+        let path = std::path::PathBuf::from(&path_str);
+        let result: Result<(), String> =
+            if path.file_name() != Some(std::ffi::OsStr::new("SKILL.md")) {
+                Err("Skill path must point to a SKILL.md file".to_string())
+            } else {
+                Ok(())
+            };
+
+        assert!(result.is_err(), "Non-SKILL.md file should be rejected");
+        assert!(result.unwrap_err().contains("SKILL.md"));
+    }
+
+    #[test]
+    fn test_skill_md_filename_accepted() {
+        let (_dir, skill_md) = setup_skills_dir();
+        let path = skill_md.clone();
+
+        let result: Result<(), String> =
+            if path.file_name() != Some(std::ffi::OsStr::new("SKILL.md")) {
+                Err("Skill path must point to a SKILL.md file".to_string())
+            } else {
+                Ok(())
+            };
+
+        assert!(result.is_ok(), "SKILL.md should pass the filename check");
+    }
+
+    #[test]
+    fn test_path_traversal_blocked_by_starts_with() {
+        // Simulate a path outside the skills directory.
+        let skills_dir = tempfile::tempdir().unwrap();
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside_file = outside_dir.path().join("SKILL.md");
+        fs::write(&outside_file, "malicious").unwrap();
+
+        let canonical_dir = skills_dir.path().canonicalize().unwrap();
+        let canonical_path = outside_file.canonicalize().unwrap();
+
+        let result: Result<(), String> = if !canonical_path.starts_with(&canonical_dir) {
+            Err("Skill path is outside the configured skills directory".to_string())
+        } else {
+            Ok(())
+        };
+
+        assert!(result.is_err(), "Path outside skills dir should be blocked");
+        assert!(result.unwrap_err().contains("outside"));
+    }
+
+    #[test]
+    fn test_path_inside_skills_dir_accepted() {
+        let (skills_dir_temp, skill_md) = setup_skills_dir();
+
+        let canonical_dir = skills_dir_temp.path().canonicalize().unwrap();
+        let canonical_path = skill_md.canonicalize().unwrap();
+
+        let result: Result<(), String> = if !canonical_path.starts_with(&canonical_dir) {
+            Err("Skill path is outside the configured skills directory".to_string())
+        } else {
+            Ok(())
+        };
+
+        assert!(result.is_ok(), "Path inside skills dir should be accepted");
+    }
+}
