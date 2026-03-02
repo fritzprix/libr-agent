@@ -28,7 +28,16 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
 
   try {
     // Generate attachment content blocks
-    const attachmentContents = message.attachments.map((attachment, i) => {
+    // Skip inline attachments (image/audio) — they're already in message.content as MCPImageContent/MCPAudioContent.
+    const textAttachments = message.attachments.filter(
+      (a) => a.status !== 'inline',
+    );
+
+    if (textAttachments.length === 0) {
+      return message;
+    }
+
+    const attachmentContents = textAttachments.map((attachment, i) => {
       // Generate tool-call hints based on whether the file is in the Content Store or workspace-only
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:

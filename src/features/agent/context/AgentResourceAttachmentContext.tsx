@@ -23,6 +23,59 @@ import {
 
 const logger = getLogger('AgentResourceAttachmentContext');
 
+/**
+ * Derives a MIME type from a filename extension.
+ * Used as a last-resort fallback when the browser (e.g. WebKitGTK on Linux)
+ * returns an empty string for `File.type` or when the file object is missing.
+ */
+function getMimeTypeFromFilename(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop();
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'bmp':
+      return 'image/bmp';
+    case 'ico':
+      return 'image/x-icon';
+    case 'tiff':
+    case 'tif':
+      return 'image/tiff';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'flac':
+      return 'audio/flac';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'aac':
+      return 'audio/aac';
+    case 'webm':
+      return 'audio/webm';
+    case 'txt':
+      return 'text/plain';
+    case 'md':
+      return 'text/markdown';
+    case 'json':
+      return 'application/json';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 export interface PendingFileInput {
   file?: File;
   url: string;
@@ -204,7 +257,7 @@ export function AgentResourceAttachmentProvider({
         if (url.startsWith('blob:')) {
           return {
             blobUrl: url,
-            cleanup: () => {},
+            cleanup: () => { },
             size: 0,
             type: '',
           };
@@ -282,12 +335,16 @@ export function AgentResourceAttachmentProvider({
       let actualMimeType: string;
       let fileSize: number;
       let workspacePath: string | undefined;
+      let fetchedBlob: Blob | undefined;
 
       if (file) {
         try {
           workspacePath = await syncFileToWorkspace(file, currentSession.id);
           fileUrl = url;
-          actualMimeType = file.type || mimeType || 'application/octet-stream';
+          actualMimeType =
+            file.type ||
+            mimeType ||
+            getMimeTypeFromFilename(actualFilename);
           fileSize = file.size;
         } catch (syncError) {
           logger.warn('Workspace sync failed, falling back to blob URL', {
@@ -298,24 +355,36 @@ export function AgentResourceAttachmentProvider({
                 : String(syncError),
           });
           fileUrl = URL.createObjectURL(file);
-          actualMimeType = file.type || mimeType || 'application/octet-stream';
+          actualMimeType =
+            file.type ||
+            mimeType ||
+            getMimeTypeFromFilename(actualFilename);
           fileSize = file.size;
         }
       } else {
         try {
           const response = await fetch(url);
           if (!response.ok) throw new Error(`Failed to fetch ${url}`);
-          const blob = await response.blob();
-          const downloadedFile = new File([blob], actualFilename, {
-            type: blob.type || mimeType || 'application/octet-stream',
+          fetchedBlob = await response.blob();
+          // Prefer the caller-supplied mimeType (already resolved from filename)
+          // over blob.type which is often 'application/octet-stream' for local files.
+          // Final fallback: derive from extension (handles Linux WebKitGTK empty type).
+          const resolvedMimeType =
+            mimeType && mimeType !== 'application/octet-stream'
+              ? mimeType
+              : fetchedBlob.type ||
+                mimeType ||
+                getMimeTypeFromFilename(actualFilename);
+          const downloadedFile = new File([fetchedBlob], actualFilename, {
+            type: resolvedMimeType,
           });
           workspacePath = await syncFileToWorkspace(
             downloadedFile,
             currentSession.id,
           );
           fileUrl = `file://${workspacePath}`;
-          actualMimeType = blob.type || mimeType || 'application/octet-stream';
-          fileSize = blob.size;
+          actualMimeType = resolvedMimeType;
+          fileSize = fetchedBlob.size;
         } catch (downloadError) {
           logger.warn('URL download failed, falling back to blob URL', {
             url,
@@ -328,9 +397,84 @@ export function AgentResourceAttachmentProvider({
           const blobResult = await convertToBlobUrl(url);
           fileUrl = blobResult.blobUrl;
           actualMimeType =
-            mimeType || blobResult.type || 'application/octet-stream';
+            mimeType ||
+            blobResult.type ||
+            getMimeTypeFromFilename(actualFilename);
           fileSize = blobResult.size || 0;
+          fetchedBlob = undefined;
         }
+      }
+
+      // --- Inline multimodal handling (image/audio) ---
+      // Image and audio files are passed directly to the LLM as base64 instead of
+      // being indexed in the content store. No workspace sync is needed.
+      if (
+        actualMimeType === 'application/octet-stream' ||
+        actualMimeType === ''
+      ) {
+        // Extension-based detection was exhausted — log for visibility.
+        logger.warn(
+          'Could not resolve MIME type from file.type, mimeType param, or extension',
+          { filename: actualFilename },
+        );
+      }
+      const isInlineType =
+        actualMimeType.startsWith('image/') ||
+        actualMimeType.startsWith('audio/');
+
+      if (isInlineType) {
+        logger.info('File is image/audio — reading as inline base64', {
+          filename: actualFilename,
+          mimeType: actualMimeType,
+        });
+
+        let base64Data = '';
+        try {
+          // Use the File object if available (drop path), otherwise fall back to
+          // the blob fetched from the URL (URL-only path)
+          const sourceBlob: Blob =
+            file ??
+            fetchedBlob ??
+            (() => {
+              throw new Error('No data source available for inline content');
+            })();
+          const buffer = await sourceBlob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          // Convert to base64 in chunks to avoid call-stack overflow for large files
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          base64Data = btoa(binary);
+        } catch (readError) {
+          logger.error('Failed to read file as base64', {
+            filename: actualFilename,
+            error: readError,
+          });
+          throw new Error(
+            `Failed to read file "${actualFilename}" for inline attachment.`,
+          );
+        }
+
+        const inlineType = actualMimeType.startsWith('image/')
+          ? ('image' as const)
+          : ('audio' as const);
+
+        return {
+          sessionId: currentSession.id,
+          status: 'inline',
+          filename: actualFilename,
+          mimeType: actualMimeType,
+          size: fileSize,
+          lineCount: 0,
+          preview: actualFilename,
+          uploadedAt: new Date().toISOString(),
+          inlineContent: {
+            type: inlineType,
+            data: base64Data,
+            mimeType: actualMimeType,
+          },
+        };
       }
 
       const SUPPORTED_EXTENSIONS = /\.(txt|md|json|pdf|docx|xlsx)$/i;
