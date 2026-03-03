@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **[HIGH] Security: Command injection in platform utilities**: Fixed a critical command injection vulnerability in cross-platform utility functions — shell metacharacters can no longer be injected through tool arguments on any platform.
 - **Scheduled task timing accuracy**: Added a 1-second buffer to scheduled task execution timing and now records skipped runs, preventing drift and improving reliability on restart recovery.
 - **Scratchpad guidance messages**: Improved user-facing guidance in the `listScratchpad` and `readScratchpad` tool responses for clearer agent feedback.
+- **@mention reference size guards**: `@file:` and `@skill:` references now reject files larger than 100 KB and binary files instead of silently injecting oversized or garbled content into context.
+- **Agent session proxy readiness**: Sessions started by the scheduler now wait for the MCP service proxy to be fully ready before invoking the LLM, preventing tool-not-found errors on fresh sessions.
 
 ### 🚀 Features
 
@@ -19,6 +21,7 @@ All notable changes to this project will be documented in this file.
 
 - **MCP & Playbook service decoupling**: Architectural separation of MCP server management from Playbook service logic, reducing cross-cutting concerns and improving testability.
 - **IPC boundary optimization**: File Manager commands and batched assistant upserts (`saveAll`) tightened for performance and type safety at the Tauri IPC boundary.
+- **`@mention` resolution moved to Rust backend**: `@skill:` reference resolution removed from the frontend and unified with `@file:` and `@playbook:` handling in the backend's `ReferenceRegistry`, ensuring consistent resolution across all mention types.
 - **Tool routing refactor**: Removed `builtin_` prefix from internal tool routing; tool names are now cleaner and consistent across the proxy layer.
 - **Test coverage**: Expanded hook tests covering `useDebounce` and `useAgentTools`.
 - **Dependency updates**: `chrono` → 0.4.44, `tempfile` → 3.26.0, `anyhow` → 1.0.102.
