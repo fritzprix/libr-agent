@@ -639,17 +639,13 @@ impl BuiltinMCPServer for UiServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "promptUser" | "builtin_ui__promptUser" => self.prompt_user(args),
-            "getUserAnswer" | "builtin_ui__getUserAnswer" => self.get_user_answer(args),
-            "visualizeData" | "builtin_ui__visualizeData" => self.visualize_data(args),
-            "waitForUserResume" | "builtin_ui__waitForUserResume" => {
-                self.wait_for_user_resume(args)
-            }
-            "resumeFromWait" | "builtin_ui__resumeFromWait" => self.resume_from_wait(args),
-            "circuitBreak" | "builtin_ui__circuitBreak" => self.circuit_break(args),
-            "resumeCircuitBreak" | "builtin_ui__resumeCircuitBreak" => {
-                self.resume_circuit_break(args)
-            }
+            "promptUser" => self.prompt_user(args),
+            "getUserAnswer" => self.get_user_answer(args),
+            "visualizeData" => self.visualize_data(args),
+            "waitForUserResume" => self.wait_for_user_resume(args),
+            "resumeFromWait" => self.resume_from_wait(args),
+            "circuitBreak" => self.circuit_break(args),
+            "resumeCircuitBreak" => self.resume_circuit_break(args),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

@@ -84,7 +84,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let playbook_result = manager
         .call_tool(
             &session1,
-            "builtin_playbook__createPlaybook",
+            "playbook__createPlaybook",
             json!({
                 "goal": "Test Workflow",
                 "initialCommand": "test",
@@ -112,7 +112,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let assistant_result = manager
         .call_tool(
             &session1,
-            "builtin_assistant__createAssistant",
+            "assistant__createAssistant",
             json!({
                 "id": "assistant1",
                 "name": "Test Assistant",
@@ -154,7 +154,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
 
     // Test 3: Verify playbook isolation (session 2 can't see session 1's playbook)
     let list_result = manager
-        .call_tool(&session2, "builtin_playbook__listPlaybooks", json!({}))
+        .call_tool(&session2, "playbook__listPlaybooks", json!({}))
         .await
         .unwrap();
 
@@ -186,7 +186,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let get_assistant_result = manager
         .call_tool(
             &session2,
-            "builtin_assistant__getAssistant",
+            "assistant__getAssistant",
             json!({
                 "id": "assistant1"
             }),
@@ -219,7 +219,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     let playbook2_result = manager
         .call_tool(
             &session2,
-            "builtin_playbook__createPlaybook",
+            "playbook__createPlaybook",
             json!({
                 "goal": "Session 2 Workflow",
                 "initialCommand": "test2",
@@ -245,7 +245,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
 
     // Test 6: Verify each session sees its own playbook
     let list_playbook1 = manager
-        .call_tool(&session1, "builtin_playbook__listPlaybooks", json!({}))
+        .call_tool(&session1, "playbook__listPlaybooks", json!({}))
         .await
         .unwrap();
 
@@ -270,7 +270,7 @@ async fn test_phase3_playbook_and_assistant_integration() {
     );
 
     let list_playbook2 = manager
-        .call_tool(&session2, "builtin_playbook__listPlaybooks", json!({}))
+        .call_tool(&session2, "playbook__listPlaybooks", json!({}))
         .await
         .unwrap();
 
@@ -341,7 +341,7 @@ async fn test_phase3_concurrent_operations() {
         let handle = tokio::spawn(async move {
             mgr.call_tool(
                 &sid,
-                "builtin_playbook__createPlaybook",
+                "playbook__createPlaybook",
                 json!({
                     "goal": format!("Playbook {}", idx),
                     "initialCommand": format!("test {}", idx),
@@ -375,7 +375,7 @@ async fn test_phase3_concurrent_operations() {
     // Verify each session has its own playbooks
     for (idx, session_id) in sessions.iter().enumerate() {
         let list_result = manager
-            .call_tool(session_id, "builtin_playbook__listPlaybooks", json!({}))
+            .call_tool(session_id, "playbook__listPlaybooks", json!({}))
             .await
             .unwrap();
 
@@ -448,7 +448,7 @@ async fn test_phase3_all_servers_integration() {
 
     // Test Bootstrap (stateless)
     let bootstrap_result = manager
-        .call_tool(&session_id, "builtin_bootstrap__detectPlatform", json!({}))
+        .call_tool(&session_id, "bootstrap__detectPlatform", json!({}))
         .await
         .unwrap();
     assert!(bootstrap_result.error.is_none(), "Bootstrap should work");
@@ -457,7 +457,7 @@ async fn test_phase3_all_servers_integration() {
     let knowledge_result = manager
         .call_tool(
             &session_id,
-            "builtin_attachments__addContent",
+            "attachments__addContent",
             json!({
                 "title": "Test Knowledge",
                 "content": "Integration test content",
@@ -475,7 +475,7 @@ async fn test_phase3_all_servers_integration() {
     let planning_result = manager
         .call_tool(
             &session_id,
-            "builtin_planning__createGoal",
+            "planning__createGoal",
             json!({
                 "goal": "Complete Phase 3 integration"
             }),
@@ -488,7 +488,7 @@ async fn test_phase3_all_servers_integration() {
     let playbook_result = manager
         .call_tool(
             &session_id,
-            "builtin_playbook__createPlaybook",
+            "playbook__createPlaybook",
             json!({
                 "goal": "Integration Playbook",
                 "initialCommand": "test",
@@ -512,7 +512,7 @@ async fn test_phase3_all_servers_integration() {
     let assistant_result = manager
         .call_tool(
             &session_id,
-            "builtin_assistant__createAssistant",
+            "assistant__createAssistant",
             json!({
                 "id": "integration-assistant",
                 "name": "Integration Test Assistant",

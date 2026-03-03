@@ -274,6 +274,7 @@ async fn test_mcp_server_crud_operations() {
         name: Set("test-server".to_string()),
         config: Set(r#"{"command":"node","args":"server.js"}"#.to_string()),
         tool_count: Set(None),
+        cached_tools: Set(None),
         created_at: Set(1000),
         updated_at: Set(1000),
     };
@@ -292,6 +293,7 @@ async fn test_mcp_server_crud_operations() {
         name: Set("test-server".to_string()),
         config: Set(r#"{"command":"python","args":"server.py"}"#.to_string()),
         tool_count: Set(None),
+        cached_tools: Set(None),
         created_at: Set(1000),
         updated_at: Set(2000),
     };
