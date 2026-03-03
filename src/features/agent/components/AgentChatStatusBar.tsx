@@ -215,7 +215,9 @@ export function AgentChatStatusBar() {
             ) : (
               <RefreshCw className="w-3 h-3 mr-1" />
             )}
-            {isRetrying ? t('agent.statusBar.retrying') : t('agent.statusBar.retry')}
+            {isRetrying
+              ? t('agent.statusBar.retrying')
+              : t('agent.statusBar.retry')}
           </Button>
         )}
         {config.showResume && (
@@ -231,7 +233,9 @@ export function AgentChatStatusBar() {
             ) : (
               <Play className="w-3 h-3 mr-1" />
             )}
-            {isResuming ? t('agent.statusBar.resuming') : t('agent.statusBar.continue')}
+            {isResuming
+              ? t('agent.statusBar.resuming')
+              : t('agent.statusBar.continue')}
           </Button>
         )}
       </div>
@@ -299,7 +303,9 @@ export function AgentChatStatusBar() {
               size={14}
               className={agentModeEnabled ? 'animate-pulse' : ''}
             />
-            {agentModeEnabled ? t('agent.statusBar.agentMode') : t('agent.statusBar.chatMode')}
+            {agentModeEnabled
+              ? t('agent.statusBar.agentMode')
+              : t('agent.statusBar.chatMode')}
           </Button>
 
           {/* Token Metrics Badge - Show if metrics exist */}
@@ -314,7 +320,9 @@ export function AgentChatStatusBar() {
             <button
               onClick={() => setShowToolsModal(true)}
               className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
-              title={toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')}
+              title={
+                toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')
+              }
               disabled={toolsLoading}
             >
               {getToolsIcon()} {getToolsDisplayText()}

@@ -99,7 +99,9 @@ export function AgentChatHeader({
                 />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('agent.header.toggleWorkspaceTooltip')}</TooltipContent>
+            <TooltipContent>
+              {t('agent.header.toggleWorkspaceTooltip')}
+            </TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -117,7 +119,9 @@ export function AgentChatHeader({
                 />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('agent.header.togglePlanningTooltip')}</TooltipContent>
+            <TooltipContent>
+              {t('agent.header.togglePlanningTooltip')}
+            </TooltipContent>
           </Tooltip>
 
           {session?.id && <SessionFilesPopover sessionId={session.id} />}

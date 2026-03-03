@@ -365,7 +365,9 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {pendingCancel ? t('agent.input.cancellingTooltip') : t('agent.input.cancelTooltip')}
+                {pendingCancel
+                  ? t('agent.input.cancellingTooltip')
+                  : t('agent.input.cancelTooltip')}
               </TooltipContent>
             </Tooltip>
           ) : (

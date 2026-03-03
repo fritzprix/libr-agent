@@ -169,8 +169,8 @@ export function useAgentFileAttachment() {
           toast.error(
             t('agent.attachment.processingFileError', {
               filePath,
-              error: error instanceof Error ? error.message : String(error)
-            })
+              error: error instanceof Error ? error.message : String(error),
+            }),
           );
         }
       }
@@ -206,8 +206,8 @@ export function useAgentFileAttachment() {
           logger.error('Failed to add files to pending state:', error);
           toast.error(
             t('agent.attachment.processingBatchError', {
-              error: error instanceof Error ? error.message : String(error)
-            })
+              error: error instanceof Error ? error.message : String(error),
+            }),
           );
           filesToUpload.forEach((file) => file.cleanup());
         }
@@ -280,8 +280,8 @@ export function useAgentFileAttachment() {
           toast.error(
             t('agent.attachment.processingFileError', {
               filePath: file.name,
-              error: error instanceof Error ? error.message : String(error)
-            })
+              error: error instanceof Error ? error.message : String(error),
+            }),
           );
         }
       }

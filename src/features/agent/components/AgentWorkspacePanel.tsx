@@ -433,7 +433,7 @@ export function AgentWorkspacePanel() {
                   if (
                     'text' in (item as Record<string, unknown>) &&
                     typeof (item as Record<string, unknown>)['text'] ===
-                    'string'
+                      'string'
                   ) {
                     texts.push(
                       (item as Record<string, unknown>)['text'] as string,
@@ -459,8 +459,9 @@ export function AgentWorkspacePanel() {
               resultText = 'No result returned from importFile';
             }
           } catch (e) {
-            resultText = `Failed to parse tool response: ${e instanceof Error ? e.message : String(e)
-              }`;
+            resultText = `Failed to parse tool response: ${
+              e instanceof Error ? e.message : String(e)
+            }`;
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
@@ -642,7 +643,9 @@ export function AgentWorkspacePanel() {
         await openWorkspaceFileWithDefaultApp(node.path, session?.id);
         logger.info('File opened successfully', { path: node.path });
         toast.success(t('agent.workspace.fileOpened'), {
-          description: t('agent.workspace.fileOpenedDescription', { name: node.name }),
+          description: t('agent.workspace.fileOpenedDescription', {
+            name: node.name,
+          }),
         });
       } catch (error) {
         logger.error('Failed to open file', { path: node.path, error });
@@ -664,8 +667,9 @@ export function AgentWorkspacePanel() {
       className={`w-80 h-full ${dragState.isOver ? 'ring-2 ring-success' : ''}`}
     >
       <Card
-        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${dragState.isOver ? 'border-success bg-success/10' : ''
-          }`}
+        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${
+          dragState.isOver ? 'border-success bg-success/10' : ''
+        }`}
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -740,7 +744,9 @@ export function AgentWorkspacePanel() {
                   className="h-7 text-xs"
                   disabled={!workspaceOverride.trim() || isSettingOverride}
                 >
-                  {isSettingOverride ? t('agent.workspace.setting') : t('agent.workspace.set')}
+                  {isSettingOverride
+                    ? t('agent.workspace.setting')
+                    : t('agent.workspace.set')}
                 </Button>
               ) : (
                 <Button
@@ -750,7 +756,9 @@ export function AgentWorkspacePanel() {
                   className="h-7 text-xs"
                   disabled={isCancelingOverride}
                 >
-                  {isCancelingOverride ? t('agent.workspace.canceling') : t('agent.workspace.cancel')}
+                  {isCancelingOverride
+                    ? t('agent.workspace.canceling')
+                    : t('agent.workspace.cancel')}
                 </Button>
               )}
             </div>
@@ -780,7 +788,9 @@ export function AgentWorkspacePanel() {
           {loading && fileTree.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-              <span className="text-xs text-muted-foreground">{t('agent.workspace.loading')}</span>
+              <span className="text-xs text-muted-foreground">
+                {t('agent.workspace.loading')}
+              </span>
             </div>
           ) : (
             <div className="space-y-0">
@@ -805,8 +815,9 @@ export function AgentWorkspacePanel() {
         <div
           role="button"
           tabIndex={0}
-          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 ${isUploading ? 'opacity-50 pointer-events-none' : ''
-            }`}
+          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 ${
+            isUploading ? 'opacity-50 pointer-events-none' : ''
+          }`}
           onClick={handleUploadClick}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -822,7 +833,9 @@ export function AgentWorkspacePanel() {
           ) : (
             <Upload className="w-4 h-4 mx-auto mb-1" />
           )}
-          {isUploading ? t('agent.workspace.uploading') : t('agent.workspace.dropFiles')}
+          {isUploading
+            ? t('agent.workspace.uploading')
+            : t('agent.workspace.dropFiles')}
         </div>
       </Card>
     </div>

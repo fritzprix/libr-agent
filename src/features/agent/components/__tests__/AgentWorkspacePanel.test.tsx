@@ -72,7 +72,7 @@ vi.mock('@/lib/logger', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, _fallback?: string, _options?: unknown) => key,
+    t: (key: string) => key,
   }),
 }));
 
@@ -86,7 +86,7 @@ describe('AgentWorkspacePanel', () => {
 
     // Wait for initial load
     await waitFor(() => {
-        expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
+      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
     });
 
     // Check buttons by aria-label
