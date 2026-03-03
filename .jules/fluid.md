@@ -9,3 +9,7 @@
 ## 2026-02-26 - Drag and Drop File Attachments **Bottleneck:** Dropped files on `AgentDraftChatView` processed asynchronously without any loading indication. **Flow Restored:** Added `isAttachmentLoading` to UI to show "Uploading..." and disable input buttons.
 
 ## 2026-02-26 - Assistant Editor Save **Bottleneck:** Assistant dialog closed immediately on click before `commit` finished, and Save button didn't disable during save. **Flow Restored:** Added `await commit()` to `handleSave` and utilized `isLoading` state to disable buttons and prevent premature closure.
+
+## 2026-03-03 - [DangerZoneSettings, SkillsEditor, MCPServerManagement] **Bottleneck:** [Naked async onClick handlers lacking proper void return or UI state isolation] **Flow Restored:** [Eradicated naked async handlers by refactoring to use proper void functions and chaining for promise resolution]
+
+## 2026-03-03 - [AgentWorkspacePanel, GeneralTab] **Bottleneck:** [Naked await causing potential duplicate native window invocations on double-click] **Flow Restored:** [Added loading UI state for Open in Explorer and Open in Terminal invocations]

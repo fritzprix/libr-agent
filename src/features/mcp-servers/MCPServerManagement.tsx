@@ -151,9 +151,9 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
               {t('mcpServer.deleteDialog.cancel', 'Cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={async (e) => {
+              onClick={(e) => {
                 e.preventDefault();
-                await confirmDelete();
+                void confirmDelete();
               }}
               disabled={isDeleting}
             >

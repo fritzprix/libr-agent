@@ -27,3 +27,5 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-02-28 - src/features/agent/lib/chat-utils.ts **Coverage Expanded:** computeDisplayContent **Assertions:** Verified content array parsing, grouped tools restructuring, and original fallback filtering.
 
 ## 2026-03-01 - src/lib/mcp/schema/builders.ts, src/hooks/use-settings.ts **Coverage Expanded:** JSON Schema Builders, useSettings Hook **Assertions:** Verified robust typed schema object creation, expected error handling outside context providers, and data retrieval inside providers.
+
+## 2026-03-03 - src/hooks/useDebounce.ts, src/hooks/use-agent-tools.ts **Coverage Expanded:** Debounce Timing, Agent Tool Loading Hook **Assertions:** Verified accurate timer delays/cancellations using fake timers and verified API fetching, validation, error handling, and component unmount safety.

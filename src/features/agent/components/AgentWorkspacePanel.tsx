@@ -191,6 +191,8 @@ export function AgentWorkspacePanel() {
   const [isSettingOverride, setIsSettingOverride] = useState(false);
   const [isCancelingOverride, setIsCancelingOverride] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isOpeningNative, setIsOpeningNative] = useState(false);
+  const openingNativeLock = useRef(false);
 
   // Component lifecycle logging
   useEffect(() => {
@@ -431,7 +433,7 @@ export function AgentWorkspacePanel() {
                   if (
                     'text' in (item as Record<string, unknown>) &&
                     typeof (item as Record<string, unknown>)['text'] ===
-                      'string'
+                    'string'
                   ) {
                     texts.push(
                       (item as Record<string, unknown>)['text'] as string,
@@ -457,9 +459,8 @@ export function AgentWorkspacePanel() {
               resultText = 'No result returned from importFile';
             }
           } catch (e) {
-            resultText = `Failed to parse tool response: ${
-              e instanceof Error ? e.message : String(e)
-            }`;
+            resultText = `Failed to parse tool response: ${e instanceof Error ? e.message : String(e)
+              }`;
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
@@ -557,22 +558,32 @@ export function AgentWorkspacePanel() {
   };
 
   const handleOpenInExplorer = async () => {
-    if (!session?.id) return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    openingNativeLock.current = true;
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInExplorer(session.id);
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(t('agent.workspace.openExplorerError', { error }));
+    } finally {
+      setIsOpeningNative(false);
+      openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (!session?.id) return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    openingNativeLock.current = true;
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInTerminal(session.id);
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(t('agent.workspace.openTerminalError', { error }));
+    } finally {
+      setIsOpeningNative(false);
+      openingNativeLock.current = false;
     }
   };
 
@@ -653,9 +664,8 @@ export function AgentWorkspacePanel() {
       className={`w-80 h-full ${dragState.isOver ? 'ring-2 ring-success' : ''}`}
     >
       <Card
-        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${
-          dragState.isOver ? 'border-success bg-success/10' : ''
-        }`}
+        className={`w-full h-full flex flex-col bg-background/95 backdrop-blur border-border/50 ${dragState.isOver ? 'border-success bg-success/10' : ''
+          }`}
       >
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -671,6 +681,7 @@ export function AgentWorkspacePanel() {
                 className="h-6 px-2 text-xs"
                 title={t('agent.workspace.openInExplorer')}
                 aria-label={t('agent.workspace.openInExplorerAria')}
+                disabled={isOpeningNative}
               >
                 <Folder className="w-3 h-3" />
               </Button>
@@ -681,6 +692,7 @@ export function AgentWorkspacePanel() {
                 className="h-6 px-2 text-xs"
                 title={t('agent.workspace.openInTerminal')}
                 aria-label={t('agent.workspace.openInTerminalAria')}
+                disabled={isOpeningNative}
               >
                 <Terminal className="w-3 h-3" />
               </Button>
@@ -793,9 +805,8 @@ export function AgentWorkspacePanel() {
         <div
           role="button"
           tabIndex={0}
-          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 ${
-            isUploading ? 'opacity-50 pointer-events-none' : ''
-          }`}
+          className={`border-2 border-dashed border-muted-foreground/25 rounded m-2 p-2 text-center text-xs text-muted-foreground hover:border-muted-foreground/50 transition-colors cursor-pointer hover:bg-muted/50 ${isUploading ? 'opacity-50 pointer-events-none' : ''
+            }`}
           onClick={handleUploadClick}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
