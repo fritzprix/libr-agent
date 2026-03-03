@@ -54,7 +54,6 @@ import type { ContentStoreItem } from '@/models/content-store';
 import { useSkills } from '@/context/SkillsContext';
 import { useInputToken } from './hooks/useInputToken';
 import { InputTokenDropdown } from './components/InputTokenDropdown';
-import { getSkillContent } from '@/lib/backend/skills';
 
 const logger = getLogger('AgentDraftChatView');
 
@@ -296,34 +295,9 @@ function DraftChatInner() {
       let unlisten: (() => void) | undefined;
       let toastId: string | number | undefined;
 
-      // Resolve @skill: mentions in the input before submission
-      let resolvedInput = input.trim();
-      const skillMentions = [...resolvedInput.matchAll(/@skill:([\S]+)/g)];
-      if (skillMentions.length > 0) {
-        const unresolved: string[] = [];
-        for (const match of skillMentions) {
-          const skillName = match[1];
-          const skill = skills.find(
-            (s) => s.name.toLowerCase() === skillName.toLowerCase(),
-          );
-          if (skill) {
-            try {
-              const content = await getSkillContent(skill.path);
-              resolvedInput = resolvedInput.replace(
-                match[0],
-                `\n\n---\n**Skill: ${skill.name}**\n\n${content}\n\n---\n`,
-              );
-            } catch {
-              unresolved.push(skillName);
-            }
-          } else {
-            unresolved.push(skillName);
-          }
-        }
-        if (unresolved.length > 0) {
-          resolvedInput += `\n\n⚠️ The following references could not be resolved: ${unresolved.map((n) => `@skill:${n}`).join(', ')}`;
-        }
-      }
+      // @mention references (@skill:, @file:, @playbook:) are resolved by the Rust backend
+      // just before LLM submission via ReferenceRegistry. Store the original input as-is.
+      const resolvedInput = input.trim();
 
       const shortName =
         input.trim().length > 50

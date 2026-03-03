@@ -377,6 +377,21 @@ impl AgentSessionManager {
                 );
             }
 
+            // Wait for proxy to be ready before invoking LLM (mirrors start_workflow behaviour).
+            // This is essential for freshly-created sessions (e.g. scheduled tasks) where the
+            // MCPServiceProxy is still spawning external MCP servers asynchronously.
+            if let Err(e) = self
+                .proxy_manager
+                .wait_until_proxy_ready(&session_id, 60)
+                .await
+            {
+                log::warn!(
+                    "Proxy readiness wait failed for session '{}': {}. Proceeding anyway.",
+                    session_id,
+                    e
+                );
+            }
+
             // We use request_llm_completion directly here as we don't need the full start_workflow logic
             // (which assumes a User message as input)
             crate::agent::llm::request_llm_completion(
