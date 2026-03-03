@@ -70,7 +70,8 @@ pub struct UpdateScheduledTaskRequest {
 pub async fn create_scheduled_task(
     request: CreateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
-    let next_run_at = compute_next_run(&request.cron_expression).ok_or_else(|| {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let next_run_at = compute_next_run(&request.cron_expression, now_ms).ok_or_else(|| {
         format!(
             "Invalid cron expression '{}': no future occurrences found",
             request.cron_expression
@@ -119,11 +120,12 @@ pub async fn update_scheduled_task(
     request: UpdateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
     // Recompute next_run_at if the cron expression changed; reject invalid cron
+    let now_ms = chrono::Utc::now().timestamp_millis();
     let next_run_at: Option<Option<i64>> = request
         .cron_expression
         .as_deref()
         .map(|expr| {
-            compute_next_run(expr).ok_or_else(|| {
+            compute_next_run(expr, now_ms).ok_or_else(|| {
                 format!("Invalid cron expression '{expr}': no future occurrences found")
             })
         })

@@ -181,7 +181,8 @@ export function toValidJsName(name: string): string {
  */
 export function extractBuiltInServiceAlias(toolName: string): string | null {
   const idx = toolName.indexOf('__');
-  if (idx === -1) return null;
+  // Require character before and after '__'
+  if (idx <= 0 || idx + 2 >= toolName.length) return null;
   const server = toolName.slice(0, idx);
   return BUILTIN_SERVICE_NAMES.has(server) ? server : null;
 }

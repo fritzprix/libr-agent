@@ -36,8 +36,8 @@ describe('extractBuiltInServiceAlias', () => {
   });
 
   describe('edge cases', () => {
-    it('should handle missing tool name after __', () => {
-      expect(extractBuiltInServiceAlias('browser__')).toBe('browser');
+    it('should return null for missing tool name after __', () => {
+      expect(extractBuiltInServiceAlias('browser__')).toBeNull();
     });
 
     it('should return null if server part is empty', () => {

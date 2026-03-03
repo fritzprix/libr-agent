@@ -112,6 +112,12 @@ async fn execute_task(
                     task.name,
                     session_id
                 );
+                // Record the skip so we don't hot-loop (reschedule for next occurrence)
+                let next_run_at = compute_next_run(&task.cron_expression, now_ms);
+                let repo = get_scheduled_task_repository();
+                repo.record_run(&task.id, None, now_ms, next_run_at)
+                    .await
+                    .map_err(|e| format!("Failed to record skipped run: {e}"))?;
                 return Ok(());
             }
         }
@@ -147,7 +153,7 @@ async fn execute_task(
         .await?;
 
     // ── 5. Record the run and schedule the next fire time ─────────────────────
-    let next_run_at = compute_next_run(&task.cron_expression);
+    let next_run_at = compute_next_run(&task.cron_expression, now_ms);
     let repo = get_scheduled_task_repository();
     let new_session_id = is_new_session.then_some(session_id);
     repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
@@ -160,17 +166,46 @@ async fn execute_task(
 
 /// Compute the next UTC epoch-ms fire time from a cron expression.
 /// Returns `None` if the expression is invalid or has no future occurrences.
-pub fn compute_next_run(cron_expression: &str) -> Option<i64> {
+pub fn compute_next_run(cron_expression: &str, reference_ms: i64) -> Option<i64> {
     let normalized = super::normalize_cron(cron_expression);
     let schedule = Schedule::from_str(&normalized).ok()?;
-    // Use now + 60 s (the worker's tick interval) as the reference so that
-    // the returned next_run_at is always at least one full tick in the future.
-    // This prevents double-fires when a task triggers close to a cron boundary
-    // (e.g. */10 fires at :59 → without the offset the next boundary :00 would
-    // be only ~44 s away and the worker would pick it up on the very next tick).
-    let after = chrono::Utc::now() + chrono::Duration::seconds(60);
+
+    // Use reference_ms + 1s as the baseline for the next occurrence.
+    // This provides a tiny epsilon to prevent double-firing on the same tick,
+    // while remaining much more accurate than the previous 60s hardcoded offset.
+    let after = chrono::DateTime::from_timestamp_millis(reference_ms + 1000)?;
+
     schedule
         .after(&after)
         .next()
         .map(|dt| dt.timestamp_millis())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_next_run_accuracy() {
+        // Cron: every minute at 0 seconds
+        let cron = "0 * * * * * *";
+        
+        // 1. Reference is exactly at boundary :00 (12:00:00)
+        let ref_ms = 1740988800000; // 2025-03-03 12:00:00 UTC
+        let next = compute_next_run(cron, ref_ms).unwrap();
+        // Should be 12:01:00 (ref + 1s buffer makes it look after 12:00:01)
+        assert_eq!(next, ref_ms + 60000);
+
+        // 2. Reference is just before boundary :59 (11:59:59)
+        let ref_ms = 1740988799000; 
+        let next = compute_next_run(cron, ref_ms).unwrap();
+        // Should be 12:01:00 (ref + 1s buffer makes it 12:00:00, .after() takes us to 12:01:00)
+        assert_eq!(next, 1740988860000);
+
+        // 3. Reference is well before boundary (11:59:30)
+        let ref_ms = 1740988770000;
+        let next = compute_next_run(cron, ref_ms).unwrap();
+        // Should be 12:00:00
+        assert_eq!(next, 1740988800000);
+    }
 }

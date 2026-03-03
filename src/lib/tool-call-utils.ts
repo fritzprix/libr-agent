@@ -82,7 +82,7 @@ export const BUILTIN_SERVICE_NAMES = new Set([
  */
 export function isBuiltinTool(name: string): boolean {
   const idx = name.indexOf('__');
-  if (idx === -1) return false;
+  if (idx <= 0 || idx + 2 >= name.length) return false;
   const server = name.slice(0, idx);
   return BUILTIN_SERVICE_NAMES.has(server);
 }
