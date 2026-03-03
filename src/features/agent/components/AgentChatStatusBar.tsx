@@ -24,10 +24,12 @@ import { TokenMetricsBadge } from './TokenMetricsBadge';
 import { TokenUsage } from '@/lib/ai-service/types';
 import { toast } from 'sonner';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
+import { useTranslation } from 'react-i18next';
 
 const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const {
     workflowStatus,
@@ -87,7 +89,7 @@ export function AgentChatStatusBar() {
       await retryMessage();
     } catch (err) {
       logger.error('Failed to retry message:', err);
-      toast.error('Failed to retry message');
+      toast.error(t('agent.statusBar.retryError'));
     } finally {
       setIsRetrying(false);
     }
@@ -100,21 +102,25 @@ export function AgentChatStatusBar() {
       await resume();
     } catch (err) {
       logger.error('Failed to resume session:', err);
-      toast.error('Failed to resume session');
+      toast.error(t('agent.statusBar.resumeError'));
     } finally {
       setIsResuming(false);
     }
   };
 
   const getToolsDisplayText = () => {
-    if (toolsLoading) return 'Loading tools...';
-    if (toolsError) return 'Tools error';
+    if (toolsLoading) return t('agent.statusBar.loadingTools');
+    if (toolsError) return t('agent.statusBar.toolsError');
 
     const totalCount = availableTools.length;
     const mcpCount = externalTools.length;
     const builtinCount = builtinTools.length;
 
-    return `${totalCount}(${mcpCount}) available • builtin ${builtinCount}`;
+    return t('agent.statusBar.toolsCount', {
+      totalCount,
+      mcpCount,
+      builtinCount,
+    });
   };
 
   const getToolsColor = () => {
@@ -133,7 +139,7 @@ export function AgentChatStatusBar() {
     if (error || llmError) {
       return {
         icon: <AlertCircle className="w-4 h-4" />,
-        text: `An error occurred: ${error || llmError}`,
+        text: t('agent.statusBar.statusError', { error: error || llmError }),
         className: 'bg-destructive/10 border-destructive/20 text-destructive',
         showRetry: true,
         showResume: false,
@@ -144,7 +150,7 @@ export function AgentChatStatusBar() {
       case 'idle':
         return {
           icon: <Info className="w-4 h-4" />,
-          text: 'Ready for input. Type a message to start.',
+          text: t('agent.statusBar.statusIdle'),
           className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: false,
@@ -152,7 +158,7 @@ export function AgentChatStatusBar() {
       case 'busy':
         return {
           icon: <Loader2 className="w-4 h-4 animate-spin" />,
-          text: 'Processing your request... Agent is thinking and using tools.',
+          text: t('agent.statusBar.statusBusy'),
           className: 'bg-warning/10 border-warning/20 text-warning-foreground',
           showRetry: false,
           showResume: false,
@@ -160,7 +166,7 @@ export function AgentChatStatusBar() {
       case 'paused':
         return {
           icon: <Pause className="w-4 h-4" />,
-          text: 'Workflow paused. Click Continue to resume processing.',
+          text: t('agent.statusBar.statusPaused'),
           className: 'bg-secondary/50 border-border text-foreground',
           showRetry: false,
           showResume: true,
@@ -168,7 +174,7 @@ export function AgentChatStatusBar() {
       case 'error':
         return {
           icon: <AlertCircle className="w-4 h-4" />,
-          text: 'Workflow encountered an error.',
+          text: t('agent.statusBar.statusWorkflowError'),
           className: 'bg-destructive/10 border-destructive/20 text-destructive',
           showRetry: true,
           showResume: false,
@@ -176,7 +182,7 @@ export function AgentChatStatusBar() {
       default:
         return {
           icon: <Info className="w-4 h-4" />,
-          text: `Status: ${workflowStatus}`,
+          text: t('agent.statusBar.statusUnknown', { status: workflowStatus }),
           className: 'bg-muted/50 border-border text-muted-foreground',
           showRetry: false,
           showResume: false,
@@ -209,7 +215,9 @@ export function AgentChatStatusBar() {
             ) : (
               <RefreshCw className="w-3 h-3 mr-1" />
             )}
-            {isRetrying ? 'Retrying...' : 'Retry'}
+            {isRetrying
+              ? t('agent.statusBar.retrying')
+              : t('agent.statusBar.retry')}
           </Button>
         )}
         {config.showResume && (
@@ -225,7 +233,9 @@ export function AgentChatStatusBar() {
             ) : (
               <Play className="w-3 h-3 mr-1" />
             )}
-            {isResuming ? 'Resuming...' : 'Continue'}
+            {isResuming
+              ? t('agent.statusBar.resuming')
+              : t('agent.statusBar.continue')}
           </Button>
         )}
       </div>
@@ -285,15 +295,17 @@ export function AgentChatStatusBar() {
             }`}
             title={
               agentModeEnabled
-                ? 'Agent Mode ON: Forces tool use for autonomous tasks'
-                : 'Agent Mode OFF: Standard interaction'
+                ? t('agent.statusBar.agentModeOnTitle')
+                : t('agent.statusBar.agentModeOffTitle')
             }
           >
             <Bot
               size={14}
               className={agentModeEnabled ? 'animate-pulse' : ''}
             />
-            {agentModeEnabled ? 'Agent Mode' : 'Chat Mode'}
+            {agentModeEnabled
+              ? t('agent.statusBar.agentMode')
+              : t('agent.statusBar.chatMode')}
           </Button>
 
           {/* Token Metrics Badge - Show if metrics exist */}
@@ -304,11 +316,13 @@ export function AgentChatStatusBar() {
           )}
 
           <div className="flex items-center gap-2">
-            <span className="text-xs">Tools:</span>
+            <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
             <button
               onClick={() => setShowToolsModal(true)}
               className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
-              title={toolsError ? toolsError : 'Click to view available tools'}
+              title={
+                toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')
+              }
               disabled={toolsLoading}
             >
               {getToolsIcon()} {getToolsDisplayText()}
