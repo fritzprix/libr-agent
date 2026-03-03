@@ -120,6 +120,7 @@ export function PlaybookCard({
                 size="icon"
                 className="text-muted-foreground hover:text-destructive h-8 w-8"
                 onClick={() => onDelete(playbook.id)}
+                aria-label={t('playbook.card.deleteTooltip')}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
