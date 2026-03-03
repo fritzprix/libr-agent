@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.24] - 2026-03-02
+
+### 🚀 Features
+
+- **MCP Server Configuration UI**: New `EnvVarsForm` and `HttpForm` components for configuring MCP server environment variables and HTTP transport settings directly from the UI.
+- **Session Files Viewer**: UI to browse and inspect files associated with an agent session, with full LLM execution context visibility.
+- **Agent Skills Expansion**: New bundled skills for system setup, document processing (DOCX/PPTX/XLSX), and additional agent utilities including OOXML schema support.
+- **AgentSessionManager**: Comprehensive Rust-side agent session manager handling lifecycle, workflow orchestration, and context management — completing the Rust-orchestrated agent V2 architecture.
+- **In-memory session repository**: Ephemeral session support for lightweight, non-persisted agent workflows.
+- **MCP Server Management**: Full MCP server lifecycle management with new UI components, form handling, and backend controls.
+- **i18n expansion**: Hardcoded UI strings extracted to semantic translation keys across agent and settings panels.
+- **Tooltips on icon buttons**: Icon-only buttons across the agent UI now show accessible tooltips for better discoverability.
+
+### 🐛 Fixes
+
+- **Image drag-and-drop to LLM (multimodal pipeline)**: Three layered bugs fixed that prevented dragged images from reaching the LLM:
+  1. `AgentDraftChatView`'s MIME detection was missing all image/audio types (returning `application/octet-stream` on Linux/WebKitGTK).
+  2. Draft attachment loop hardcoded `status:'workspace-only'` — no inline base64 encoding path existed at all.
+  3. `message-preprocessor` skipped inline attachments instead of injecting `MCPImageContent`/`MCPAudioContent` blocks into `message.content` for the LLM.
+- **`get_skill_content` arbitrary file read**: Skill content API now validates that the requested path is within the configured skills directory and points to a `SKILL.md` file before reading — prevents path traversal via Tauri IPC.
+- **`toggleBookmark` stale closure**: Bookmark toggle now derives `newValue` from the current session state before the optimistic update so rapid double-toggles send the correct boolean to the backend.
+- **Security: MCP environment variable leak**: Fixed environment variable leak in MCP server verification; isolated env is now correctly enforced.
+- **Cross-platform path bugs**: Resolved pathing issues in handlers and scripts on Windows.
+- **JSDoc parameter mismatch**: Corrected mismatched parameter documentation in workspace-sync-service.
+- **i18n missing keys**: Added missing i18n keys and react-i18next test mock to fix test failures.
+
+### 🔧 Internal
+
+- **Centralized MIME utility** (`src/lib/mime-utils.ts`): Single canonical `getMimeTypeFromFilename()` replaces three diverged local implementations across the codebase.
+- **Environment variable isolation refactor**: Centralized env-var isolation logic into a dedicated utility module shared across MCP server spawn paths.
+- **IPC boundary optimization**: Tauri command handlers tightened for performance and type safety across all IPC boundaries.
+- **`useAgentTools` replaces `useSessionTools`**: Removed the thin redundant `useSessionTools` hook; `AgentChatInput` now uses the more robust `useAgentTools` with Zod validation, cleanup guards, and error state.
+- **Redundant `TooltipProvider` removed**: Eliminated nested `TooltipProvider` wrapping from icon button components.
+- **Regression test suite expanded**: New tests for MIME utility (30 cases), inline image injection in message preprocessor (7 cases), `toggleBookmark` stale closure (4 cases), and Rust-side skill path validation (4 cases).
+
 ## [0.5.23] - 2026-03-02
 
 ### 🚀 Features

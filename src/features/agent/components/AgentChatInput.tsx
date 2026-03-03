@@ -181,6 +181,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       typeResults.length,
       skillResults.length,
       toolResults.length,
+      fileResults.length,
     ],
   );
 

@@ -24,25 +24,15 @@ export const useAgentModels = (provider?: string) => {
     return serviceConfigs[provider as AIServiceProvider]?.baseUrl || '';
   }, [serviceConfigs, provider]);
 
-  // Fetcher for dynamic models
+  // Fetcher for models — delegates entirely to service.listModels().
+  // Each provider's implementation decides static vs dynamic;
+  // no hardcoded allowlist needed here.
   const fetchDynamicModels = useCallback(
     async ([, p, key]: [string, string, string]) => {
-      const supportsDynamic =
-        p === AIServiceProvider.Ollama ||
-        p === AIServiceProvider.OpenAI ||
-        p === AIServiceProvider.Anthropic ||
-        p === AIServiceProvider.Gemini;
-
-      if (!supportsDynamic) return {};
-
-      let effectiveApiKey = key;
-      if (!effectiveApiKey) {
-        if (p === AIServiceProvider.Ollama) {
-          effectiveApiKey = 'ollama-dummy';
-        } else {
-          return {};
-        }
-      }
+      // Use a non-empty placeholder so validateApiKey() doesn't throw.
+      // Services that need a real key will fail gracefully in their API calls;
+      // services using public endpoints (OpenRouter) or no key (Ollama) work normally.
+      const effectiveApiKey = key || 'no-api-key';
 
       try {
         const providerConfig = serviceConfigs[p as AIServiceProvider] || {};

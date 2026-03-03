@@ -3,6 +3,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import type { Message, AttachmentReference } from '@/models/chat';
+import type { MCPContent } from '@/lib/mcp';
 import type { useAgentChat } from '@/context/AgentChatContext';
 import type { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 
@@ -70,21 +71,42 @@ export function useChatSubmit({
 
       let messageText = input.trim();
 
+      // Split attachments: inline (image/audio) go straight into message.content;
+      // all others stay as attachments for the text-hint preprocessor.
+      const inlineRefs = attachedFileRefs.filter((r) => r.status === 'inline');
+      const textRefs = attachedFileRefs.filter((r) => r.status !== 'inline');
+
+      // Build multimodal content for inline attachments
+      const inlineContent: MCPContent[] = inlineRefs
+        .filter((r) => !!r.inlineContent)
+        .map((r) => {
+          if (r.inlineContent!.type === 'image') {
+            return {
+              type: 'image' as const,
+              data: r.inlineContent!.data,
+              mimeType: r.inlineContent!.mimeType,
+            };
+          }
+          return {
+            type: 'audio' as const,
+            data: r.inlineContent!.data,
+            mimeType: r.inlineContent!.mimeType,
+          };
+        });
+
       const userMessage: Message = {
         id: createId(),
         sessionId: session.id,
         threadId: session.id,
         role: 'user',
-        content: [{ type: 'text', text: messageText }],
+        content: [{ type: 'text', text: messageText }, ...inlineContent],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
-      // Include ALL attachments (committed + workspace-only) so message-preprocessor
-      // can generate correct tool-call hints for each status.
-      // workspace-only binary files stay as-is; the preprocessor emits readFile hints.
-      if (attachedFileRefs.length > 0) {
-        userMessage.attachments = attachedFileRefs;
+      // Include non-inline attachments for text-hint preprocessor
+      if (textRefs.length > 0) {
+        userMessage.attachments = textRefs;
       }
 
       setIsSubmitting(true);
