@@ -10,6 +10,7 @@ import {
 } from '@/lib/workspace-sync-service';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 import type React from 'react';
 
 const logger = getLogger('AgentFileAttachment');
@@ -21,6 +22,7 @@ const logger = getLogger('AgentFileAttachment');
  * Provides the same interface as useFileAttachment from Chat V1.
  */
 export function useAgentFileAttachment() {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const {
     pendingFiles,
@@ -58,7 +60,7 @@ export function useAgentFileAttachment() {
 
       if (!session) {
         logger.error('Cannot attach file: session not available.');
-        toast.error('Cannot attach file: session not available.');
+        toast.error(t('agent.attachment.sessionError'));
         return;
       }
 
@@ -73,7 +75,7 @@ export function useAgentFileAttachment() {
         logger.error('Failed to register dropped file paths in backend', {
           error,
         });
-        toast.error('Failed to validate dropped files. Please try again.');
+        toast.error(t('agent.attachment.validationError'));
         return;
       }
 
@@ -165,7 +167,10 @@ export function useAgentFileAttachment() {
             errorString: String(error),
           });
           toast.error(
-            `Error processing file "${filePath}": ${error instanceof Error ? error.message : String(error)}`,
+            t('agent.attachment.processingFileError', {
+              filePath,
+              error: error instanceof Error ? error.message : String(error)
+            })
           );
         }
       }
@@ -200,7 +205,9 @@ export function useAgentFileAttachment() {
         } catch (error) {
           logger.error('Failed to add files to pending state:', error);
           toast.error(
-            `Error processing files: ${error instanceof Error ? error.message : String(error)}`,
+            t('agent.attachment.processingBatchError', {
+              error: error instanceof Error ? error.message : String(error)
+            })
           );
           filesToUpload.forEach((file) => file.cleanup());
         }
@@ -213,7 +220,7 @@ export function useAgentFileAttachment() {
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files || !session) {
-        toast.error('Cannot attach file: session not available.');
+        toast.error(t('agent.attachment.sessionError'));
         return;
       }
 
@@ -271,7 +278,10 @@ export function useAgentFileAttachment() {
             errorString: String(error),
           });
           toast.error(
-            `Error processing file "${file.name}": ${error instanceof Error ? error.message : String(error)}`,
+            t('agent.attachment.processingFileError', {
+              filePath: file.name,
+              error: error instanceof Error ? error.message : String(error)
+            })
           );
         }
       }

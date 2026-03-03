@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/tooltip';
 import { PanelRight, FolderOpen, Copy } from 'lucide-react';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -23,6 +24,7 @@ export function AgentChatHeader({
   children,
   assistantName,
 }: AgentChatHeaderProps) {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
@@ -49,9 +51,9 @@ export function AgentChatHeader({
     try {
       const json = JSON.stringify(messages, null, 2);
       await navigator.clipboard.writeText(json);
-      toast.success('대화 내용이 클립보드에 복사되었습니다');
+      toast.success(t('agent.header.copySuccess'));
     } catch {
-      toast.error('클립보드 복사에 실패했습니다');
+      toast.error(t('agent.header.copyError'));
     }
   };
 
@@ -73,13 +75,13 @@ export function AgentChatHeader({
                 variant="ghost"
                 size="sm"
                 onClick={handleCopyMessages}
-                aria-label="Copy conversation as JSON"
+                aria-label={t('agent.header.copyAria')}
                 className="h-6 px-2"
               >
                 <Copy className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Copy conversation as JSON</TooltipContent>
+            <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -89,7 +91,7 @@ export function AgentChatHeader({
                 variant="ghost"
                 size="sm"
                 onClick={handleToggleWorkspace}
-                aria-label="Toggle Workspace Files Panel"
+                aria-label={t('agent.header.toggleWorkspaceAria')}
                 className="h-6 px-2"
               >
                 <FolderOpen
@@ -97,7 +99,7 @@ export function AgentChatHeader({
                 />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Toggle Workspace Files Panel</TooltipContent>
+            <TooltipContent>{t('agent.header.toggleWorkspaceTooltip')}</TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -107,7 +109,7 @@ export function AgentChatHeader({
                 variant="ghost"
                 size="sm"
                 onClick={handleTogglePlanning}
-                aria-label="Toggle AI Planning Panel"
+                aria-label={t('agent.header.togglePlanningAria')}
                 className="h-6 px-2"
               >
                 <PanelRight
@@ -115,7 +117,7 @@ export function AgentChatHeader({
                 />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Toggle AI Planning Panel</TooltipContent>
+            <TooltipContent>{t('agent.header.togglePlanningTooltip')}</TooltipContent>
           </Tooltip>
 
           {session?.id && <SessionFilesPopover sessionId={session.id} />}

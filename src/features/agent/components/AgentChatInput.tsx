@@ -19,6 +19,7 @@ import { Send, Square, Loader2 } from 'lucide-react';
 import type { AttachmentReference } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 import { useAgentFileAttachment } from '../hooks/useAgentFileAttachment';
 import { useChatSubmit } from '../hooks/useChatSubmit';
 import { useInputToken } from '../hooks/useInputToken';
@@ -45,6 +46,7 @@ interface AgentChatInputProps {
 }
 
 export function AgentChatInput({ children }: AgentChatInputProps) {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { submit, isSessionLoading, workflowStatus, cancel } = useAgentChat();
   const [pendingCancel, setPendingCancel] = useState(false);
@@ -121,16 +123,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
       return dragState === 'valid'
-        ? 'Drop supported files here...'
-        : 'Unsupported file type!';
+        ? t('agent.input.placeholderDropValid')
+        : t('agent.input.placeholderDropInvalid');
     }
-    if (isAttachmentLoading) return 'Uploading...';
+    if (isAttachmentLoading) return t('agent.input.placeholderUploading');
 
     if (isBusy) {
-      return 'Agent busy. Message will be queued...';
+      return t('agent.input.placeholderBusy');
     }
-    return 'Query agent or drop files... (@ for references)';
-  }, [dragState, isBusy, isAttachmentLoading]);
+    return t('agent.input.placeholderDefault');
+  }, [dragState, isBusy, isAttachmentLoading, t]);
 
   // Auto-resize textarea
   useLayoutEffect(() => {
@@ -341,7 +343,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             autoComplete="off"
             spellCheck="false"
             rows={1}
-            aria-label="Chat input"
+            aria-label={t('agent.input.ariaLabel')}
           />
           {isBusy ? (
             <Tooltip>
@@ -353,7 +355,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   size="icon"
                   className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
                   disabled={pendingCancel}
-                  aria-label="Cancel request"
+                  aria-label={t('agent.input.cancelAriaLabel')}
                 >
                   {pendingCancel ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -363,7 +365,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {pendingCancel ? 'Cancelling...' : 'Cancel'}
+                {pendingCancel ? t('agent.input.cancellingTooltip') : t('agent.input.cancelTooltip')}
               </TooltipContent>
             </Tooltip>
           ) : (
@@ -374,12 +376,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   disabled={!hasContent || isAttachmentLoading}
                   size="icon"
                   className="mb-1 shrink-0"
-                  aria-label="Send message"
+                  aria-label={t('agent.input.sendAriaLabel')}
                 >
                   <Send className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Send</TooltipContent>
+              <TooltipContent>{t('agent.input.sendTooltip')}</TooltipContent>
             </Tooltip>
           )}
         </form>

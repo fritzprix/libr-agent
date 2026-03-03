@@ -17,6 +17,7 @@ import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
+import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -167,6 +168,7 @@ const FileTreeNode = ({
 };
 
 export function AgentWorkspacePanel() {
+  const { t } = useTranslation();
   const {
     listWorkspaceFiles,
     openWorkspaceFileWithDefaultApp,
@@ -286,7 +288,7 @@ export function AgentWorkspacePanel() {
           err instanceof Error ? err.message : 'Failed to load directory';
         logger.error('Failed to load directory', { path, error: errorMessage });
         setError(errorMessage);
-        toast.error('디렉토리 로드에 실패했습니다');
+        toast.error(t('agent.workspace.loadError'));
       } finally {
         setLoading(false);
       }
@@ -481,7 +483,7 @@ export function AgentWorkspacePanel() {
         logger.error('File import failed', error);
         const message =
           error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error('Failed to import file', {
+        toast.error(t('agent.workspace.importFileError'), {
           description: message,
         });
       }
@@ -526,11 +528,11 @@ export function AgentWorkspacePanel() {
     try {
       await setWorkspaceOverride(session.id, workspaceOverride);
       setIsOverrideActive(true);
-      toast.success('Workspace override set successfully');
+      toast.success(t('agent.workspace.setOverrideSuccess'));
       loadDirectory('./');
     } catch (error) {
       logger.error('Failed to set workspace override', error);
-      toast.error(`Failed to set override: ${error}`);
+      toast.error(t('agent.workspace.setOverrideError', { error }));
     } finally {
       setIsSettingOverride(false);
     }
@@ -544,11 +546,11 @@ export function AgentWorkspacePanel() {
       await cancelWorkspaceOverride(session.id);
       setWorkspaceOverridePath('');
       setIsOverrideActive(false);
-      toast.success('Workspace override cancelled');
+      toast.success(t('agent.workspace.cancelOverrideSuccess'));
       loadDirectory('./');
     } catch (error) {
       logger.error('Failed to cancel workspace override', error);
-      toast.error(`Failed to cancel override: ${error}`);
+      toast.error(t('agent.workspace.cancelOverrideError', { error }));
     } finally {
       setIsCancelingOverride(false);
     }
@@ -560,7 +562,7 @@ export function AgentWorkspacePanel() {
       await openWorkspaceInExplorer(session.id);
     } catch (error) {
       logger.error('Failed to open explorer', error);
-      toast.error(`Failed to open explorer: ${error}`);
+      toast.error(t('agent.workspace.openExplorerError', { error }));
     }
   };
 
@@ -570,7 +572,7 @@ export function AgentWorkspacePanel() {
       await openWorkspaceInTerminal(session.id);
     } catch (error) {
       logger.error('Failed to open terminal', error);
-      toast.error(`Failed to open terminal: ${error}`);
+      toast.error(t('agent.workspace.openTerminalError', { error }));
     }
   };
 
@@ -579,7 +581,7 @@ export function AgentWorkspacePanel() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: 'Select Workspace Directory',
+        title: t('agent.workspace.selectDirectoryTitle'),
       });
 
       if (selected && typeof selected === 'string') {
@@ -587,7 +589,7 @@ export function AgentWorkspacePanel() {
       }
     } catch (error) {
       logger.error('Failed to open folder dialog', error);
-      toast.error(`Failed to open folder dialog: ${error}`);
+      toast.error(t('agent.workspace.openFolderDialogError', { error }));
     }
   };
 
@@ -597,7 +599,7 @@ export function AgentWorkspacePanel() {
     try {
       const selected = await open({
         multiple: true,
-        title: 'Select files to upload',
+        title: t('agent.workspace.selectFilesTitle'),
       });
 
       if (selected) {
@@ -607,7 +609,7 @@ export function AgentWorkspacePanel() {
       }
     } catch (error) {
       logger.error('Failed to open file dialog', error);
-      toast.error(`Failed to select files: ${error}`);
+      toast.error(t('agent.workspace.selectFilesError', { error }));
     } finally {
       setIsUploading(false);
     }
@@ -628,14 +630,14 @@ export function AgentWorkspacePanel() {
         logger.debug('Opening file with default app', { path: node.path });
         await openWorkspaceFileWithDefaultApp(node.path, session?.id);
         logger.info('File opened successfully', { path: node.path });
-        toast.success('File opened', {
-          description: `Opened ${node.name} with system default app`,
+        toast.success(t('agent.workspace.fileOpened'), {
+          description: t('agent.workspace.fileOpenedDescription', { name: node.name }),
         });
       } catch (error) {
         logger.error('Failed to open file', { path: node.path, error });
         const message =
           error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error('Failed to open file', {
+        toast.error(t('agent.workspace.fileOpenError'), {
           description: message,
         });
       }
@@ -659,7 +661,7 @@ export function AgentWorkspacePanel() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Folder className="w-4 h-4" />
-              Workspace Files
+              {t('agent.workspace.title')}
             </CardTitle>
             <div className="flex items-center gap-1">
               <Button
@@ -667,8 +669,8 @@ export function AgentWorkspacePanel() {
                 size="sm"
                 onClick={handleOpenInExplorer}
                 className="h-6 px-2 text-xs"
-                title="Open in Explorer"
-                aria-label="Open in Explorer"
+                title={t('agent.workspace.openInExplorer')}
+                aria-label={t('agent.workspace.openInExplorerAria')}
               >
                 <Folder className="w-3 h-3" />
               </Button>
@@ -677,8 +679,8 @@ export function AgentWorkspacePanel() {
                 size="sm"
                 onClick={handleOpenInTerminal}
                 className="h-6 px-2 text-xs"
-                title="Open in Terminal"
-                aria-label="Open in Terminal"
+                title={t('agent.workspace.openInTerminal')}
+                aria-label={t('agent.workspace.openInTerminalAria')}
               >
                 <Terminal className="w-3 h-3" />
               </Button>
@@ -687,8 +689,8 @@ export function AgentWorkspacePanel() {
                 size="sm"
                 onClick={() => loadDirectory(rootPath)}
                 className="h-6 w-6 p-0"
-                title="Refresh"
-                aria-label="Refresh workspace files"
+                title={t('agent.workspace.refresh')}
+                aria-label={t('agent.workspace.refreshAria')}
               >
                 <RefreshCw
                   className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
@@ -702,12 +704,12 @@ export function AgentWorkspacePanel() {
             <div className="flex gap-2">
               <Input
                 type="text"
-                placeholder="No workspace override (click Browse to select)"
+                placeholder={t('agent.workspace.overridePlaceholder')}
                 value={workspaceOverride}
                 readOnly
                 className="h-7 text-xs flex-1"
                 disabled={isOverrideActive}
-                aria-label="Workspace override path"
+                aria-label={t('agent.workspace.overrideAria')}
               />
               {!isOverrideActive && (
                 <Button
@@ -716,7 +718,7 @@ export function AgentWorkspacePanel() {
                   variant="outline"
                   className="h-7 text-xs whitespace-nowrap"
                 >
-                  Browse...
+                  {t('agent.workspace.browse')}
                 </Button>
               )}
               {!isOverrideActive ? (
@@ -726,7 +728,7 @@ export function AgentWorkspacePanel() {
                   className="h-7 text-xs"
                   disabled={!workspaceOverride.trim() || isSettingOverride}
                 >
-                  {isSettingOverride ? 'Setting...' : 'Set'}
+                  {isSettingOverride ? t('agent.workspace.setting') : t('agent.workspace.set')}
                 </Button>
               ) : (
                 <Button
@@ -736,14 +738,14 @@ export function AgentWorkspacePanel() {
                   className="h-7 text-xs"
                   disabled={isCancelingOverride}
                 >
-                  {isCancelingOverride ? 'Canceling...' : 'Cancel'}
+                  {isCancelingOverride ? t('agent.workspace.canceling') : t('agent.workspace.cancel')}
                 </Button>
               )}
             </div>
             {isOverrideActive && (
               <p className="text-xs text-warning flex items-center gap-1">
                 <AlertTriangle className="w-3 h-3" />
-                Using custom workspace
+                {t('agent.workspace.usingCustom')}
               </p>
             )}
           </div>
@@ -766,7 +768,7 @@ export function AgentWorkspacePanel() {
           {loading && fileTree.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-              <span className="text-xs text-muted-foreground">Loading...</span>
+              <span className="text-xs text-muted-foreground">{t('agent.workspace.loading')}</span>
             </div>
           ) : (
             <div className="space-y-0">
@@ -781,7 +783,7 @@ export function AgentWorkspacePanel() {
 
               {fileTree.length === 0 && !loading && (
                 <div className="text-xs text-muted-foreground text-center py-8">
-                  No files found
+                  {t('agent.workspace.noFilesFound')}
                 </div>
               )}
             </div>
@@ -801,7 +803,7 @@ export function AgentWorkspacePanel() {
               handleUploadClick();
             }
           }}
-          aria-label="Upload files to workspace"
+          aria-label={t('agent.workspace.uploadAria')}
           aria-disabled={isUploading}
         >
           {isUploading ? (
@@ -809,7 +811,7 @@ export function AgentWorkspacePanel() {
           ) : (
             <Upload className="w-4 h-4 mx-auto mb-1" />
           )}
-          {isUploading ? 'Uploading...' : 'Drop files here or click to upload'}
+          {isUploading ? t('agent.workspace.uploading') : t('agent.workspace.dropFiles')}
         </div>
       </Card>
     </div>
