@@ -189,7 +189,7 @@ mod tests {
     fn test_compute_next_run_accuracy() {
         // Cron: every minute at 0 seconds
         let cron = "0 * * * * * *";
-        
+
         // 1. Reference is exactly at boundary :00 (12:00:00)
         let ref_ms = 1740988800000; // 2025-03-03 12:00:00 UTC
         let next = compute_next_run(cron, ref_ms).unwrap();
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(next, ref_ms + 60000);
 
         // 2. Reference is just before boundary :59 (11:59:59)
-        let ref_ms = 1740988799000; 
+        let ref_ms = 1740988799000;
         let next = compute_next_run(cron, ref_ms).unwrap();
         // Should be 12:01:00 (ref + 1s buffer makes it 12:00:00, .after() takes us to 12:01:00)
         assert_eq!(next, 1740988860000);
