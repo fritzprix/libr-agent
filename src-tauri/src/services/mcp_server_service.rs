@@ -62,10 +62,15 @@ impl McpServerService {
             tools.len()
         );
 
-        // 6. Persist tool count to DB (best-effort)
-        if let Err(e) = repo.update_tool_count(server_id, tools.len() as i32).await {
+        // 6. Persist tool list (names + descriptions) to DB (best-effort)
+        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+
+        if let Err(e) = repo
+            .update_cached_tools(server_id, tools.len() as i32, tools_json_str)
+            .await
+        {
             log::warn!(
-                "[probe] Failed to cache tool count for '{}': {}",
+                "[probe] Failed to cache tool list for '{}': {}",
                 server_id,
                 e
             );
