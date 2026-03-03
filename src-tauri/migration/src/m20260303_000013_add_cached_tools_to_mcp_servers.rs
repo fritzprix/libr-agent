@@ -10,11 +10,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(McpServers::Table)
-                    .add_column(
-                        ColumnDef::new(McpServers::CachedTools)
-                            .text()
-                            .null(),
-                    )
+                    .add_column(ColumnDef::new(McpServers::CachedTools).text().null())
                     .to_owned(),
             )
             .await

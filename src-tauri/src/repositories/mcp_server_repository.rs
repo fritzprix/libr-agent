@@ -134,8 +134,9 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             }
             if let Some(new_config) = config {
                 active.config = Set(new_config.to_string());
-                // Invalidate cached tool list when config changes — it may be stale
+                // Invalidate both cached_tools AND tool_count when config changes — they may be stale
                 active.cached_tools = Set(None);
+                active.tool_count = Set(None);
             }
             active.updated_at = Set(now);
             active.update(&self.db).await?
@@ -326,5 +327,96 @@ mod tests {
 
         let result = repo.get(&created.id).await.expect("Failed to get").unwrap();
         assert_eq!(result.tool_count, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_update_cached_tools() {
+        let repo = setup_test_db().await;
+        let created = repo
+            .create("cache_server", serde_json::json!({}))
+            .await
+            .unwrap();
+
+        let tools_json = r#"[{"name":"foo","description":"does foo"}]"#.to_string();
+        repo.update_cached_tools(&created.id, 1, tools_json.clone())
+            .await
+            .expect("Failed to update cached tools");
+
+        let result = repo.get(&created.id).await.unwrap().unwrap();
+        assert_eq!(result.tool_count, Some(1));
+        assert_eq!(result.cached_tools.as_deref(), Some(tools_json.as_str()));
+    }
+
+    #[tokio::test]
+    async fn test_config_update_invalidates_tool_cache() {
+        // Regression: updating config must clear BOTH cached_tools AND tool_count.
+        let repo = setup_test_db().await;
+        let created = repo
+            .create("invalidate_server", serde_json::json!({"v": 1}))
+            .await
+            .unwrap();
+
+        // Populate cache
+        repo.update_cached_tools(
+            &created.id,
+            5,
+            r#"[{"name":"t1","description":""}]"#.to_string(),
+        )
+        .await
+        .unwrap();
+
+        // Verify cache is populated
+        let cached = repo.get(&created.id).await.unwrap().unwrap();
+        assert_eq!(cached.tool_count, Some(5));
+        assert!(cached.cached_tools.is_some());
+
+        // Update config — must invalidate both
+        repo.update(&created.id, None, Some(serde_json::json!({"v": 2})))
+            .await
+            .expect("Failed to update config");
+
+        let after = repo.get(&created.id).await.unwrap().unwrap();
+        assert!(
+            after.tool_count.is_none(),
+            "tool_count must be cleared when config changes"
+        );
+        assert!(
+            after.cached_tools.is_none(),
+            "cached_tools must be cleared when config changes"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_name_only_update_preserves_tool_cache() {
+        // Regression: renaming a server must NOT invalidate the tool cache.
+        let repo = setup_test_db().await;
+        let created = repo
+            .create("before_rename", serde_json::json!({}))
+            .await
+            .unwrap();
+
+        repo.update_cached_tools(
+            &created.id,
+            3,
+            r#"[{"name":"t1","description":""}]"#.to_string(),
+        )
+        .await
+        .unwrap();
+
+        // Rename only — no config change
+        repo.update(&created.id, Some("after_rename"), None)
+            .await
+            .expect("Failed to rename");
+
+        let after = repo.get(&created.id).await.unwrap().unwrap();
+        assert_eq!(
+            after.tool_count,
+            Some(3),
+            "tool_count must be preserved on name-only update"
+        );
+        assert!(
+            after.cached_tools.is_some(),
+            "cached_tools must be preserved on name-only update"
+        );
     }
 }

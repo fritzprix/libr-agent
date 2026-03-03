@@ -60,17 +60,7 @@ pub async fn probe_mcp_server(server_id: String) -> Result<Vec<MCPTool>, String>
     );
 
     // 6. Persist tool list (names + descriptions) to DB (best-effort)
-    let tools_json: Vec<serde_json::Value> = tools
-        .iter()
-        .map(|t| {
-            serde_json::json!({
-                "name": t.name,
-                "description": t.description
-            })
-        })
-        .collect();
-    let tools_json_str =
-        serde_json::to_string(&tools_json).unwrap_or_else(|_| "[]".to_string());
+    let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
 
     if let Err(e) = repo
         .update_cached_tools(&server_id, tools.len() as i32, tools_json_str)

@@ -81,9 +81,18 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
     // Generate human-readable list with transport details and tool counts
     let servers_text = models_slice
         .iter()
-        .map(|model| {
-            let config: MCPServerConfig = serde_json::from_str(&model.config)
-                .unwrap_or_else(|_| panic!("Invalid config for {}", model.name));
+        .filter_map(|model| {
+            let config: MCPServerConfig = match serde_json::from_str(&model.config) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!(
+                        "Skipping server '{}' with corrupted config: {}",
+                        model.name,
+                        e
+                    );
+                    return None;
+                }
+            };
 
             let transport_type = match config.transport {
                 crate::mcp::types::TransportConfig::Stdio { ref command, .. } => {
@@ -99,6 +108,15 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
                 .map(|c| format!(" [{} tools]", c))
                 .unwrap_or_default();
 
+            // Show description if available
+            let description_str = config
+                .metadata
+                .as_ref()
+                .and_then(|m| m.description.as_deref())
+                .filter(|d| !d.trim().is_empty())
+                .map(|d| format!("\n  {}", d))
+                .unwrap_or_default();
+
             // Show cached tool names if available (populated by verifyServer)
             let cached_tools_str = model
                 .cached_tools
@@ -108,20 +126,23 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
                     if tools.is_empty() {
                         String::new()
                     } else {
-                        let names: Vec<&str> = tools
-                            .iter()
-                            .filter_map(|t| t["name"].as_str())
-                            .collect();
+                        let names: Vec<&str> =
+                            tools.iter().filter_map(|t| t["name"].as_str()).collect();
                         format!("\n  Tools: {}", names.join(", "))
                     }
                 })
                 .unwrap_or_default();
 
             // Show both name and ID for clarity
-            format!(
-                "• {}{}\n  ID: {}\n  Type: {}{}",
-                model.name, tool_count_str, model.id, transport_type, cached_tools_str
-            )
+            Some(format!(
+                "• {}{}\n  ID: {}\n  Type: {}{}{}",
+                model.name,
+                tool_count_str,
+                model.id,
+                transport_type,
+                description_str,
+                cached_tools_str
+            ))
         })
         .collect::<Vec<_>>()
         .join("\n\n");

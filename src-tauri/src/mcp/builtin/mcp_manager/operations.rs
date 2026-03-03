@@ -448,16 +448,7 @@ async fn test_server_connection(
 
     /// Serialize a tool list to a compact JSON cache string.
     fn serialize_tools(tools: &[rmcp::model::Tool]) -> String {
-        let arr: Vec<serde_json::Value> = tools
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "name": t.name,
-                    "description": t.description.as_deref().unwrap_or("")
-                })
-            })
-            .collect();
-        serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
+        crate::mcp::utils::serialize_rmcp_tools(tools)
     }
 
     match &config.transport {
