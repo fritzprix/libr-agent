@@ -39,6 +39,10 @@ export class GroqService extends BaseAIService {
    * Initiates a streaming chat session with the Groq API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
    * @yields A JSON string for each chunk of the response.
    */
   protected async *doStreamChat(

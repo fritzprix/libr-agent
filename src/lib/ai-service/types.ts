@@ -132,6 +132,11 @@ export interface IAIService {
    * Initiates a streaming chat session with the AI service.
    * @param messages An array of messages representing the conversation history.
    * @param options Optional parameters for the chat session, including model name, tools, etc.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.forceToolUse Whether to force the model to use tools.
    * @returns An async generator that yields chunks of the response as strings.
    */
   streamChat(
@@ -149,6 +154,9 @@ export interface IAIService {
    * Performs a non-streaming text generation (sampling) request from a single prompt.
    * @param prompt The prompt to send to the model.
    * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
    * @returns A promise that resolves to a `SamplingResponse`.
    */
   sampleText(

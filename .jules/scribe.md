@@ -129,3 +129,5 @@
 
 **Drift:** JSDoc for `useEditorField` was written in Korean, violating the project's English language policy.
 **Reality:** Translated the description and `@param fieldName` documentation to English.
+
+## 2026-03-03 - [src/lib/ai-service/*] **Drift:** [Functions missing JSDoc @param declarations for various properties or deeply nested properties like context.options.modelName] **Reality:** [Function implementations accurately declare their parameters via TypeScript signatures, but JSDocs were missing @param tags for complex objects or were out of sync]
