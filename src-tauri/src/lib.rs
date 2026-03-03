@@ -10,6 +10,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod models;
 pub mod repositories; // Make public for integration tests
+mod scheduled; // Cron-backed scheduled task background worker
 mod search;
 pub mod server;
 pub mod services;
@@ -35,7 +36,8 @@ use commands::agent_commands::{
     agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
-    create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant,
+    batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
+    update_assistant,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
@@ -63,6 +65,10 @@ use commands::messages_commands::{
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
     update_playbook,
+};
+use commands::scheduled_task_commands::{
+    create_scheduled_task, delete_scheduled_task, get_scheduled_task, list_scheduled_tasks,
+    toggle_scheduled_task, update_scheduled_task,
 };
 use commands::session_commands::remove_session;
 use commands::settings_commands::{
@@ -230,6 +236,7 @@ pub fn run() {
                 delete_assistant,
                 list_assistants,
                 get_assistant,
+                batch_upsert_assistants,
                 create_mcp_server_config,
                 update_mcp_server_config,
                 delete_mcp_server_config,
@@ -241,6 +248,12 @@ pub fn run() {
                 get_playbook,
                 list_playbooks,
                 toggle_playbook_bookmark,
+                create_scheduled_task,
+                list_scheduled_tasks,
+                get_scheduled_task,
+                update_scheduled_task,
+                toggle_scheduled_task,
+                delete_scheduled_task,
                 set_setting,
                 update_settings,
                 get_setting,

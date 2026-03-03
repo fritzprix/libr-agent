@@ -123,6 +123,47 @@ describe('GeminiService Tool Result Handling', () => {
         expect(firstPart).toHaveProperty('text', 'Result content');
     });
 
+    it('should prepend synthetic user message when first message is model (e.g. playbook start on fresh session)', () => {
+        const toolCallId = 'call_playbook';
+
+        // Simulates: start button injects [assistantToolCall, toolResult] with no prior user message
+        const messages: Message[] = [
+            {
+                id: '1',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'assistant',
+                content: [],
+                tool_calls: [
+                    {
+                        id: toolCallId,
+                        type: 'function',
+                        function: {
+                            name: 'playbook__selectPlaybook',
+                            arguments: JSON.stringify({ id: 'pb_123' }),
+                        },
+                    },
+                ],
+            },
+            {
+                id: '2',
+                sessionId: 's1',
+                threadId: 's1',
+                role: 'tool',
+                tool_call_id: toolCallId,
+                content: [{ type: 'text', text: 'Playbook loaded.' }],
+            },
+        ];
+
+        const result = convertToGeminiMessages(messages);
+
+        // Must start with user, then model (tool call), then user (tool result)
+        expect(result.length).toBe(3);
+        expect(result[0]?.role).toBe('user');
+        expect(result[1]?.role).toBe('model');
+        expect(result[2]?.role).toBe('user');
+    });
+
     it('should attach dummy thought signature to first functionCall when missing', () => {
         const messages: Message[] = [
             {
@@ -143,7 +184,7 @@ describe('GeminiService Tool Result Handling', () => {
                         id: 'call_1',
                         type: 'function',
                         function: {
-                            name: 'builtin_workspace__executePendingShell',
+                            name: 'workspace__executePendingShell',
                             arguments: JSON.stringify({ executionId: 'abc' }),
                         },
                     },
@@ -166,7 +207,7 @@ describe('GeminiService Tool Result Handling', () => {
         };
 
         expect(firstPart.functionCall?.name).toBe(
-            'builtin_workspace__executePendingShell',
+            'workspace__executePendingShell',
         );
         expect(firstPart.thoughtSignature).toBe(
             'skip_thought_signature_validator',

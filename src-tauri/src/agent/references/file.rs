@@ -47,13 +47,30 @@ impl ReferenceResolver for FileReferenceResolver {
             return None;
         }
 
-        tokio::fs::read_to_string(&canonical_target)
-            .await
-            .ok()
-            .map(|content| {
-                // Prepend the workspace-relative path so the AI knows exactly which file this is
-                format!("Path: {}\n\n{}", rel.replace('\\', "/"), content)
-            })
+        // Guard: reject files that are too large to inject into context
+        const MAX_INLINE_BYTES: u64 = 100 * 1024; // 100 KB
+        let metadata = tokio::fs::metadata(&canonical_target).await.ok()?;
+        let rel_path = rel.replace('\\', "/");
+        if metadata.len() > MAX_INLINE_BYTES {
+            return Some(format!(
+                "# File `{}`\n\n⚠️ File is too large to inline ({} KB). Use `workspace__readFile` tool to read it.",
+                rel_path,
+                metadata.len() / 1024
+            ));
+        }
+
+        // Guard: read raw bytes first to detect binary files
+        let raw = tokio::fs::read(&canonical_target).await.ok()?;
+        match String::from_utf8(raw) {
+            Ok(content) => Some(format!(
+                "# File `{}`\n\n```\n{}\n```",
+                rel_path, content
+            )),
+            Err(_) => Some(format!(
+                "# File `{}`\n\n⚠️ Binary file — cannot be inlined as text. Use `workspace__readFile` tool if needed.",
+                rel_path
+            )),
+        }
     }
 }
 

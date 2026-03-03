@@ -57,13 +57,8 @@ impl HttpSessionManager {
         server_name: &str,
         config: MCPServerConfig,
     ) -> anyhow::Result<()> {
-        let (url, headers, enable_sse) = match &config.transport {
-            TransportConfig::Http {
-                url,
-                headers,
-                enable_sse,
-                ..
-            } => (url.clone(), headers.clone(), *enable_sse),
+        let (url, headers) = match &config.transport {
+            TransportConfig::Http { url, headers, .. } => (url.clone(), headers.clone()),
             _ => return Err(anyhow!("Not an HTTP server config")),
         };
 
@@ -101,9 +96,12 @@ impl HttpSessionManager {
             .context("Failed to build HTTP client")?;
 
         let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url);
-        if let Some(sse) = enable_sse {
-            transport_config.allow_stateless = !sse;
-        }
+        // Always allow stateless so servers that omit Mcp-Session-Id (e.g. exa) connect
+        // successfully regardless of the enable_sse config flag.  Stateful servers that do
+        // return a session ID still work correctly — allow_stateless only matters when the
+        // server omits the header.  This matches the MCPServerManager (probe) path which
+        // hardcodes allow_stateless = true.
+        transport_config.allow_stateless = true;
 
         let transport = StreamableHttpClientTransport::with_client(client, transport_config);
 

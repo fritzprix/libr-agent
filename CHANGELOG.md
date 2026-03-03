@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.26] - 2026-03-03
+
+### 🐛 Fixes
+
+- **[HIGH] Security: Command injection in platform utilities**: Fixed a critical command injection vulnerability in cross-platform utility functions — shell metacharacters can no longer be injected through tool arguments on any platform.
+- **Scheduled task timing accuracy**: Added a 1-second buffer to scheduled task execution timing and now records skipped runs, preventing drift and improving reliability on restart recovery.
+- **Scratchpad guidance messages**: Improved user-facing guidance in the `listScratchpad` and `readScratchpad` tool responses for clearer agent feedback.
+- **@mention reference size guards**: `@file:` and `@skill:` references now reject files larger than 100 KB and binary files instead of silently injecting oversized or garbled content into context.
+- **Agent session proxy readiness**: Sessions started by the scheduler now wait for the MCP service proxy to be fully ready before invoking the LLM, preventing tool-not-found errors on fresh sessions.
+
+### 🚀 Features
+
+- **Native dialog UX**: Enhanced responsiveness and layout polish across native dialog action flows.
+- **i18n — Agent chat fully localized**: Agent chat components (headers, labels, status indicators) are now fully translated with expanded EN/KO coverage.
+
+### 🔧 Internal
+
+- **MCP & Playbook service decoupling**: Architectural separation of MCP server management from Playbook service logic, reducing cross-cutting concerns and improving testability.
+- **IPC boundary optimization**: File Manager commands and batched assistant upserts (`saveAll`) tightened for performance and type safety at the Tauri IPC boundary.
+- **`@mention` resolution moved to Rust backend**: `@skill:` reference resolution removed from the frontend and unified with `@file:` and `@playbook:` handling in the backend's `ReferenceRegistry`, ensuring consistent resolution across all mention types.
+- **Tool routing refactor**: Removed `builtin_` prefix from internal tool routing; tool names are now cleaner and consistent across the proxy layer.
+- **Test coverage**: Expanded hook tests covering `useDebounce` and `useAgentTools`.
+- **Dependency updates**: `chrono` → 0.4.44, `tempfile` → 3.26.0, `anyhow` → 1.0.102.
+
+## [0.5.25] - 2026-03-02
+
+### 🚀 Features
+
+- **Scheduled Tasks**: Full cron-based task automation — create scheduled tasks that fire agent sessions on a schedule, with persistent session reuse and missed-task recovery on restart.
+- **@playbook Mention**: Type `@` in the agent chat input to reference playbook entries directly, injecting structured context into agent turns.
+- **OpenRouter Provider**: New OpenRouter integration with live model listing via the public metadata API, dynamic pricing, and context-length discovery — no hardcoded model list required.
+- **Workspace `searchLines` Directory Support**: `searchLines` tool now accepts a directory path and recursively searches all files within it, not just individual files.
+
+### 🐛 Fixes
+
+- **Scheduled task session shows "Unknown Assistant"**: Sessions created by the scheduler now correctly inherit the assistant's display name from the database instead of defaulting to `"Unknown Assistant"`.
+- **HTTP MCP transport fixes**: Resolved connection and session management issues in the HTTP MCP backend.
+- **Dynamic model discovery**: Removed all hardcoded `supportsDynamic` provider allowlists; model listing is now fully dynamic across all providers including OpenRouter.
+
+### 🔧 Internal
+
+- **Assistant Editor UX**: Improved responsiveness and layout in the assistant editor panel.
+- **MCP Server page i18n**: Localized subtitle and expanded EN/KO translation coverage.
+- **`searchLines` refactor**: Improved readability and error handling in the workspace search logic, with added regression tests.
+- **OpenRouter regression tests**: New test suite covering `listModels` API override and metadata parsing.
+
 ## [0.5.24] - 2026-03-02
 
 ### 🚀 Features

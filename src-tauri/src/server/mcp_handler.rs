@@ -1,35 +1,7 @@
-use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::types::{MCPError, MCPResponse, MCPResponseResult, ServerCapabilities, ServerInfo};
 use crate::state::get_mcp_service_proxy_manager;
 use serde::Deserialize;
 use warp::{http::StatusCode, Rejection};
-
-/// Strip the internal `builtin_` prefix from a tool name for external MCP clients.
-/// "builtin_planning__addScratchpad" → "planning__addScratchpad"
-fn strip_builtin_prefix(name: &str) -> String {
-    name.strip_prefix("builtin_").unwrap_or(name).to_string()
-}
-
-/// Restore the `builtin_` prefix for routing when an external client calls a builtin tool
-/// using the public name (without the prefix).
-///
-/// Uses `BuiltinServiceId::from_alias()` to detect known builtin groups — this is the
-/// same source of truth used everywhere else, so adding a new builtin group is one change.
-///
-/// "planning__addScratchpad"  → "builtin_planning__addScratchpad"
-/// "github__search_code"      → "github__search_code" (unchanged — external server)
-/// "builtin_planning__x"      → "builtin_planning__x" (already canonical)
-fn resolve_tool_name(name: &str) -> String {
-    if name.starts_with("builtin_") {
-        return name.to_string();
-    }
-    if let Some((group, _)) = name.split_once("__") {
-        if BuiltinServiceId::from_alias(group).is_some() {
-            return format!("builtin_{}", name);
-        }
-    }
-    name.to_string()
-}
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
@@ -97,18 +69,7 @@ async fn handle_tools_list(session_id: &str, id: Option<serde_json::Value>) -> M
 
     let mut tools = Vec::new();
     for server_id in proxy.builtin_tool_ids() {
-        tools.extend(
-            proxy
-                .get_builtin_server_tools(&server_id)
-                .into_iter()
-                .map(|mut t| {
-                    // Strip the internal `builtin_` prefix so external clients see
-                    // clean names like "planning__addScratchpad" instead of
-                    // "builtin_planning__addScratchpad".
-                    t.name = strip_builtin_prefix(&t.name);
-                    t
-                }),
-        );
+        tools.extend(proxy.get_builtin_server_tools(&server_id));
     }
 
     ok_response(id, MCPResponseResult::ToolsList { tools })
@@ -134,12 +95,7 @@ async fn handle_tools_call(
         .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
 
     let proxy_manager = get_mcp_service_proxy_manager();
-    // External clients use the public name (without `builtin_`); restore it for internal routing.
-    let routing_name = resolve_tool_name(&call.name);
-    match proxy_manager
-        .call_tool(session_id, &routing_name, args)
-        .await
-    {
+    match proxy_manager.call_tool(session_id, &call.name, args).await {
         Ok(mcp_response) => {
             if let Some(MCPResponseResult::ToolCall(result)) = mcp_response.result {
                 // Strip structured_content before sending to external MCP clients.

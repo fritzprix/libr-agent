@@ -3,12 +3,17 @@ import { cn } from '@/lib/utils';
 import type { TokenType } from '../hooks/useInputToken';
 import type { SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
+import type { Playbook } from '@/types/playbook';
 
 type DropdownMode =
   | { kind: 'types'; items: TokenType[] }
   | { kind: 'skills'; items: SkillMetadata[] }
   | { kind: 'tools'; items: MCPTool[] }
-  | { kind: 'files'; items: string[] };
+  | { kind: 'files'; items: string[] }
+  | {
+      kind: 'playbooks';
+      items: (Playbook & { id: string; createdAt: Date; updatedAt: Date })[];
+    };
 
 interface InputTokenDropdownProps {
   mode: DropdownMode;
@@ -42,16 +47,21 @@ export function InputTokenDropdown({
         setActiveIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        const item = mode.items[activeIndex];
-        if (!item) return;
         if (mode.kind === 'types') {
-          onSelectType((item as TokenType).name);
+          const item = mode.items[activeIndex];
+          if (item) onSelectType(item.name);
         } else if (mode.kind === 'files') {
-          onSelectArg(item as string);
+          const item = mode.items[activeIndex];
+          if (item) onSelectArg(item);
         } else if (mode.kind === 'tools') {
-          onSelectArg((item as MCPTool).name);
+          const item = mode.items[activeIndex];
+          if (item) onSelectArg(item.name);
+        } else if (mode.kind === 'playbooks') {
+          const item = mode.items[activeIndex];
+          if (item) onSelectArg(item.goal);
         } else {
-          onSelectArg((item as SkillMetadata).name);
+          const item = mode.items[activeIndex];
+          if (item) onSelectArg(item.name);
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -145,31 +155,60 @@ export function InputTokenDropdown({
                   </span>
                 </li>
               ))
-            : mode.items.map((skill, i) => (
-                <li
-                  key={skill.name}
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  className={cn(
-                    'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
-                    i === activeIndex
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-accent/50',
-                  )}
-                  onMouseEnter={() => setActiveIndex(i)}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onSelectArg(skill.name);
-                  }}
-                >
-                  <span className="font-medium">@skill:{skill.name}</span>
-                  {skill.description && (
-                    <span className="text-xs text-muted-foreground line-clamp-1">
-                      {skill.description}
+            : mode.kind === 'playbooks'
+              ? mode.items.map((playbook, i) => (
+                  <li
+                    key={playbook.id}
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    className={cn(
+                      'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
+                      i === activeIndex
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/50',
+                    )}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelectArg(playbook.goal);
+                    }}
+                  >
+                    <span className="font-medium font-mono text-xs truncate">
+                      @playbook:{playbook.goal}
                     </span>
-                  )}
-                </li>
-              ))}
+                    {playbook.workflow.length > 0 && (
+                      <span className="text-xs text-muted-foreground">
+                        {playbook.workflow.length} step
+                        {playbook.workflow.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </li>
+                ))
+              : mode.items.map((skill, i) => (
+                  <li
+                    key={skill.name}
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    className={cn(
+                      'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
+                      i === activeIndex
+                        ? 'bg-accent text-accent-foreground'
+                        : 'hover:bg-accent/50',
+                    )}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelectArg(skill.name);
+                    }}
+                  >
+                    <span className="font-medium">@skill:{skill.name}</span>
+                    {skill.description && (
+                      <span className="text-xs text-muted-foreground line-clamp-1">
+                        {skill.description}
+                      </span>
+                    )}
+                  </li>
+                ))}
     </ul>
   );
 }

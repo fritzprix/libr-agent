@@ -70,6 +70,12 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
 describe('AgentWorkspacePanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,19 +86,19 @@ describe('AgentWorkspacePanel', () => {
 
     // Wait for initial load
     await waitFor(() => {
-        expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
     });
 
     // Check buttons by aria-label
-    expect(screen.getByLabelText('Open in Explorer')).toBeInTheDocument();
-    expect(screen.getByLabelText('Open in Terminal')).toBeInTheDocument();
-    expect(screen.getByLabelText('Refresh workspace files')).toBeInTheDocument();
+    expect(screen.getByLabelText('agent.workspace.openInExplorerAria')).toBeInTheDocument();
+    expect(screen.getByLabelText('agent.workspace.openInTerminalAria')).toBeInTheDocument();
+    expect(screen.getByLabelText('agent.workspace.refreshAria')).toBeInTheDocument();
 
     // Check input by aria-label
-    expect(screen.getByLabelText('Workspace override path')).toBeInTheDocument();
+    expect(screen.getByLabelText('agent.workspace.overrideAria')).toBeInTheDocument();
 
     // Check upload zone by aria-label
-    const uploadZone = screen.getByLabelText('Upload files to workspace');
+    const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
     expect(uploadZone).toBeInTheDocument();
     expect(uploadZone).toHaveAttribute('role', 'button');
     expect(uploadZone).toHaveAttribute('tabIndex', '0');
@@ -102,15 +108,15 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
     });
 
-    const uploadZone = screen.getByLabelText('Upload files to workspace');
+    const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
     fireEvent.click(uploadZone);
 
     expect(vi.mocked(open)).toHaveBeenCalledWith({
       multiple: true,
-      title: 'Select files to upload',
+      title: 'agent.workspace.selectFilesTitle',
     });
   });
 
@@ -118,15 +124,15 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
     });
 
-    const uploadZone = screen.getByLabelText('Upload files to workspace');
+    const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
     fireEvent.keyDown(uploadZone, { key: 'Enter' });
 
     expect(vi.mocked(open)).toHaveBeenCalledWith({
       multiple: true,
-      title: 'Select files to upload',
+      title: 'agent.workspace.selectFilesTitle',
     });
   });
 
@@ -134,15 +140,15 @@ describe('AgentWorkspacePanel', () => {
     render(<AgentWorkspacePanel />);
 
     await waitFor(() => {
-      expect(screen.getByText('Workspace Files')).toBeInTheDocument();
+      expect(screen.getByText('agent.workspace.title')).toBeInTheDocument();
     });
 
-    const uploadZone = screen.getByLabelText('Upload files to workspace');
+    const uploadZone = screen.getByLabelText('agent.workspace.uploadAria');
     fireEvent.keyDown(uploadZone, { key: ' ' });
 
     expect(vi.mocked(open)).toHaveBeenCalledWith({
       multiple: true,
-      title: 'Select files to upload',
+      title: 'agent.workspace.selectFilesTitle',
     });
   });
 });

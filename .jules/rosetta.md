@@ -41,3 +41,9 @@
 **Extracted:** 1
 **Languages updated:** [EN, KO]
 **Notes:** Replaced hardcoded "Manage your AI extensions and tools" string with `mcpServer.pageSubtitle` in `MCPServerPage.tsx`. Updated corresponding translations in English and Korean common.json.
+
+## 2026-03-03 - [Agent Chat Components]
+
+**Extracted:** 62
+**Languages updated:** [EN, KO]
+**Notes:** Localized hardcoded strings, toasts, placeholders, aria-labels, and tooltips across multiple Agent chat components including `AgentChatHeader`, `AgentWorkspacePanel`, `AgentChatStatusBar`, `AgentChatInput`, and the `useAgentFileAttachment` hook. Created new nested namespaces within `agent` (`header`, `workspace`, `statusBar`, `attachment`, `input`) in `common.json`.

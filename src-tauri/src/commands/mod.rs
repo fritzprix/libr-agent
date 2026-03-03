@@ -9,6 +9,7 @@ pub mod mcp_commands;
 pub mod mcp_server_config_commands;
 pub mod messages_commands;
 pub mod playbook_commands;
+pub mod scheduled_task_commands;
 pub mod session_commands;
 pub mod settings_commands;
 pub mod skill_commands;

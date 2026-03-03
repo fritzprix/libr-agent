@@ -21,3 +21,9 @@
 **Vulnerability:** When verifying an MCP server connection in `mcp_manager/operations.rs`, `tokio::process::Command` inherited the parent environment by default, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted tools via the `test_server_connection` function.
 **Learning:** Even short-lived, verification or testing processes must follow the same isolation guarantees as the main process lifecycle. `Command` builder configuration requires explicit variable clearing in all places where a child process executes untrusted components.
 **Prevention:** Always use `cmd.env_clear()` before spawning any isolated process, followed by applying an explicit whitelist for required system variables (`PATH`, `HOME`, etc.).
+
+## 2026-03-02 - [Command Injection via String Formatting in Shell Commands]
+
+**Vulnerability:** Command injection vulnerability identified in `get_command_path` and `command_exists` when running `sh -c` with `format!("command -v {}", cmd)`. If `cmd` includes shell metacharacters, it allows executing arbitrary commands.
+**Learning:** Never use string formatting (`format!`) to build arguments for shell execution (`sh -c`).
+**Prevention:** Use positional arguments when calling shell commands. E.g., `sh -c 'command -v "$1"' -- cmd`.

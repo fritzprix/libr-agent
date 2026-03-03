@@ -2,9 +2,11 @@ use async_trait::async_trait;
 use regex::Regex;
 
 mod file;
+mod playbook;
 mod skill;
 
 pub use file::{list_workspace_relative_paths, FileReferenceResolver};
+pub use playbook::PlaybookReferenceResolver;
 pub use skill::SkillReferenceResolver;
 
 /// Resolves a single `@type:arg` reference to its injectable text content.
@@ -102,9 +104,18 @@ impl Default for ReferenceRegistry {
 
 /// Build the default registry with all built-in resolvers pre-registered.
 /// Requires `session_id` so file resolver can access the correct workspace.
-pub async fn build_default_registry(session_id: &str) -> ReferenceRegistry {
+/// Requires `assistant_id` so playbook resolver can scope lookups to the assistant.
+pub async fn build_default_registry(
+    session_id: &str,
+    assistant_id: Option<&str>,
+) -> ReferenceRegistry {
     let mut registry = ReferenceRegistry::new();
     registry.register(Box::new(SkillReferenceResolver));
     registry.register(Box::new(FileReferenceResolver::new(session_id)));
+    if let Some(aid) = assistant_id {
+        if !aid.is_empty() {
+            registry.register(Box::new(PlaybookReferenceResolver::new(aid)));
+        }
+    }
     registry
 }

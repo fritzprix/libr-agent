@@ -357,13 +357,16 @@ pub async fn list_scratchpad(
         })
         .collect();
 
-    let hint = SuccessHint::new(
-        text_output,
+    let guidance = if total_items == 0 {
+        vec!["Use addScratchpad to create new notes".to_string()]
+    } else {
         vec![
             "Use readScratchpad(ids) to read full content of specific items".to_string(),
             "Use addScratchpad to create new notes".to_string(),
-        ],
-    );
+        ]
+    };
+
+    let hint = SuccessHint::new(text_output, guidance);
 
     Ok(hint.to_mcp_result_with_data(Some(json!({
         "items": json_items,
@@ -449,13 +452,19 @@ pub async fn read_scratchpad(
         }
     }
 
-    let hint = SuccessHint::new(
-        text_output,
+    let guidance = if items.is_empty() {
+        vec![
+            "Use listScratchpad to see all available items and their IDs".to_string(),
+            "Verify the IDs you provided are correct".to_string(),
+        ]
+    } else {
         vec![
             "Use updateScratchpad to modify these items".to_string(),
             "Use clearScratchpad to remove them".to_string(),
-        ],
-    );
+        ]
+    };
+
+    let hint = SuccessHint::new(text_output, guidance);
 
     Ok(hint.to_mcp_result_with_data(Some(json!({ "items": items }))))
 }

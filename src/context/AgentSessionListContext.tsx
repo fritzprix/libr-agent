@@ -223,7 +223,6 @@ export function AgentSessionListProvider({
         const agentConfig: AgentConfig = {
           // Map Assistant fields to AgentConfig fields
           id: freshAssistant.id,
-          assistantId: freshAssistant.id,
           name: freshAssistant.name,
           description: freshAssistant.description,
           systemPrompt: freshAssistant.systemPrompt,
