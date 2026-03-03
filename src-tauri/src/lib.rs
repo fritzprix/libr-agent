@@ -35,7 +35,8 @@ use commands::agent_commands::{
     agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
-    create_assistant, delete_assistant, get_assistant, list_assistants, update_assistant, batch_upsert_assistants,
+    batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
+    update_assistant,
 };
 use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;

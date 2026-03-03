@@ -104,7 +104,7 @@ export async function upsertAssistant(assistant: Assistant): Promise<void> {
  * Upserts multiple assistants
  */
 export async function upsertAssistants(assistants: Assistant[]): Promise<void> {
-  const payloads = assistants.map(a => {
+  const payloads = assistants.map((a) => {
     const params = serializeAssistant(a);
     return {
       id: params.id,
@@ -114,7 +114,9 @@ export async function upsertAssistants(assistants: Assistant[]): Promise<void> {
   });
 
   if (payloads.length > 0) {
-    await safeInvoke<AssistantDto[]>('batch_upsert_assistants', { assistants: payloads });
+    await safeInvoke<AssistantDto[]>('batch_upsert_assistants', {
+      assistants: payloads,
+    });
   }
 }
 

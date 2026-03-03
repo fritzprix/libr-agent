@@ -1,4 +1,4 @@
-import { safeInvoke as invoke } from '@/lib/backend/core';
+import { safeInvoke } from '@/lib/backend/core';
 import type { Assistant } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { createPage } from '@/lib/db/crud';
@@ -49,7 +49,7 @@ export class RustAssistantService implements IAssistantService {
 
   async getAll(): Promise<Assistant[]> {
     try {
-      const dtos = await invoke<AssistantDto[]>('list_assistants');
+      const dtos = await safeInvoke<AssistantDto[]>('list_assistants');
       return dtos.map(mapDtoToAssistant);
     } catch (error) {
       logger.error('Failed to get all assistants', error);
@@ -98,7 +98,9 @@ export class RustAssistantService implements IAssistantService {
 
   async getById(id: string): Promise<Assistant | undefined> {
     try {
-      const dto = await invoke<AssistantDto | null>('get_assistant', { id });
+      const dto = await safeInvoke<AssistantDto | null>('get_assistant', {
+        id,
+      });
       return dto ? mapDtoToAssistant(dto) : undefined;
     } catch (error) {
       logger.error(`Failed to get assistant ${id}`, error);
@@ -122,7 +124,7 @@ export class RustAssistantService implements IAssistantService {
       let resultDto: AssistantDto;
 
       if (existing) {
-        resultDto = await invoke<AssistantDto>('update_assistant', {
+        resultDto = await safeInvoke<AssistantDto>('update_assistant', {
           id,
           name,
           config,
@@ -133,7 +135,7 @@ export class RustAssistantService implements IAssistantService {
           entityId: id!,
         });
       } else {
-        resultDto = await invoke<AssistantDto>('create_assistant', {
+        resultDto = await safeInvoke<AssistantDto>('create_assistant', {
           id: id!,
           name,
           config,
@@ -156,8 +158,9 @@ export class RustAssistantService implements IAssistantService {
     if (assistants.length === 0) return [];
 
     try {
-      const payloads = assistants.map(a => {
-        const { id, name, ...config } = a;
+      const payloads = assistants.map((a) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { id, name, createdAt, updatedAt, ...config } = a;
         return {
           id: id!,
           name,
@@ -165,7 +168,9 @@ export class RustAssistantService implements IAssistantService {
         };
       });
 
-      const dtos = await safeInvoke<AssistantDto[]>('batch_upsert_assistants', { assistants: payloads });
+      const dtos = await safeInvoke<AssistantDto[]>('batch_upsert_assistants', {
+        assistants: payloads,
+      });
 
       // Emit revalidate for each saved assistant
       for (const dto of dtos) {
@@ -185,7 +190,7 @@ export class RustAssistantService implements IAssistantService {
 
   async delete(id: string): Promise<void> {
     try {
-      await invoke<void>('delete_assistant', { id });
+      await safeInvoke<void>('delete_assistant', { id });
       this.emitRevalidate({
         entity: 'assistants',
         action: 'delete',
