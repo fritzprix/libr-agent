@@ -99,10 +99,28 @@ pub async fn list_servers(args: Value) -> Result<MCPResult, String> {
                 .map(|c| format!(" [{} tools]", c))
                 .unwrap_or_default();
 
+            // Show cached tool names if available (populated by verifyServer)
+            let cached_tools_str = model
+                .cached_tools
+                .as_deref()
+                .and_then(|json_str| serde_json::from_str::<Vec<serde_json::Value>>(json_str).ok())
+                .map(|tools| {
+                    if tools.is_empty() {
+                        String::new()
+                    } else {
+                        let names: Vec<&str> = tools
+                            .iter()
+                            .filter_map(|t| t["name"].as_str())
+                            .collect();
+                        format!("\n  Tools: {}", names.join(", "))
+                    }
+                })
+                .unwrap_or_default();
+
             // Show both name and ID for clarity
             format!(
-                "• {}{}\n  ID: {}\n  Type: {}",
-                model.name, tool_count_str, model.id, transport_type
+                "• {}{}\n  ID: {}\n  Type: {}{}",
+                model.name, tool_count_str, model.id, transport_type, cached_tools_str
             )
         })
         .collect::<Vec<_>>()

@@ -59,10 +59,25 @@ pub async fn probe_mcp_server(server_id: String) -> Result<Vec<MCPTool>, String>
         tools.len()
     );
 
-    // 6. Persist tool count to DB (best-effort)
-    if let Err(e) = repo.update_tool_count(&server_id, tools.len() as i32).await {
+    // 6. Persist tool list (names + descriptions) to DB (best-effort)
+    let tools_json: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "name": t.name,
+                "description": t.description
+            })
+        })
+        .collect();
+    let tools_json_str =
+        serde_json::to_string(&tools_json).unwrap_or_else(|_| "[]".to_string());
+
+    if let Err(e) = repo
+        .update_cached_tools(&server_id, tools.len() as i32, tools_json_str)
+        .await
+    {
         log::warn!(
-            "[probe] Failed to cache tool count for '{}': {}",
+            "[probe] Failed to cache tool list for '{}': {}",
             server_id,
             e
         );

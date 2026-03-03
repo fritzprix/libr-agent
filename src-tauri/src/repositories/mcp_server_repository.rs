@@ -32,6 +32,15 @@ pub trait MCPServerRepository: Send + Sync {
 
     /// Update tool count for an MCP server after verification/connection
     async fn update_tool_count(&self, id: &str, tool_count: i32) -> Result<(), DbError>;
+
+    /// Update cached tool list (name + description) after verification.
+    /// `tools_json` is a JSON array string: [{"name":"..","description":".."}]
+    async fn update_cached_tools(
+        &self,
+        id: &str,
+        tool_count: i32,
+        tools_json: String,
+    ) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -74,6 +83,7 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             name: Set(name.to_string()),
             config: Set(config.to_string()),
             tool_count: Set(None), // NULL initially - will be populated during verification/connection
+            cached_tools: Set(None), // NULL initially - populated after verifyServer or probe
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -124,6 +134,8 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             }
             if let Some(new_config) = config {
                 active.config = Set(new_config.to_string());
+                // Invalidate cached tool list when config changes — it may be stale
+                active.cached_tools = Set(None);
             }
             active.updated_at = Set(now);
             active.update(&self.db).await?
@@ -159,6 +171,28 @@ impl MCPServerRepository for SqliteMCPServerRepository {
         if let Some(model) = existing {
             let mut active: mcp_server::ActiveModel = model.into();
             active.tool_count = Set(Some(tool_count));
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn update_cached_tools(
+        &self,
+        id: &str,
+        tool_count: i32,
+        tools_json: String,
+    ) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.tool_count = Set(Some(tool_count));
+            active.cached_tools = Set(Some(tools_json));
             active.updated_at = Set(now);
             active.update(&self.db).await?;
             Ok(())

@@ -13,6 +13,7 @@ pub struct Model {
     pub name: String, // User-visible identifier (mutable, but unique)
     pub config: String,          // JSON stored as TEXT
     pub tool_count: Option<i32>, // Cached tool count (from last verification/connection)
+    pub cached_tools: Option<String>, // JSON array of {name, description} (from last verify)
     pub created_at: i64,
     pub updated_at: i64,
 }

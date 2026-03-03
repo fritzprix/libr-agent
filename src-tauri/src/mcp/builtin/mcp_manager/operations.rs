@@ -2,6 +2,7 @@ use crate::agent::events;
 use crate::mcp::builtin::error_guidance::{
     guided_error, missing_param_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
 };
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::types::{MCPResult, MCPServerConfig, TransportConfig};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
@@ -75,6 +76,19 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
         }
         None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
+
+    if BuiltinServiceId::from_alias(&name).is_some() {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Server name '{}' is reserved for a builtin service. Choose a different name.",
+                name
+            ),
+            ToolGroup::McpManager,
+        )
+        .with_guidance(vec!["Use a unique name that doesn't match a builtin service (e.g. planning, browser, workspace)".to_string()])
+        .to_mcp_result());
+    }
 
     let transport_val = match args.get("transport") {
         Some(t) => t,
@@ -220,6 +234,19 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         Option::None => return Ok(missing_param_error("name", ToolGroup::McpManager)),
     };
 
+    if BuiltinServiceId::from_alias(name).is_some() {
+        return Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Server name '{}' is reserved for a builtin service. Choose a different name.",
+                name
+            ),
+            ToolGroup::McpManager,
+        )
+        .with_guidance(vec!["Use a unique name that doesn't match a builtin service (e.g. planning, browser, workspace)".to_string()])
+        .to_mcp_result());
+    }
+
     let transport = match args.get("transport") {
         Some(t) => t,
         Option::None => return Ok(missing_param_error("transport", ToolGroup::McpManager)),
@@ -334,12 +361,15 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     events::emit_resource_updated("mcpServer", "verify", Some(name.to_string()));
 
     match verification_result {
-        Ok(tool_count) => {
-            // Persist tool count to database for UI display
+        Ok((tool_count, tools_json)) => {
+            // Persist tool list to database (count + names/descriptions)
             let repo = get_mcp_server_repository();
-            if let Err(e) = repo.update_tool_count(&id, tool_count as i32).await {
+            if let Err(e) = repo
+                .update_cached_tools(&id, tool_count as i32, tools_json)
+                .await
+            {
                 log::warn!(
-                    "Failed to cache tool count for '{}' (ID: {}): {}",
+                    "Failed to cache tool list for '{}' (ID: {}): {}",
                     name,
                     id,
                     e
@@ -352,7 +382,7 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {} (cached)\n\
+                Available tools: {} (cached — visible in listExternalServers)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
                 name, id, transport_type, transport_details, tool_count, latency_ms
@@ -404,15 +434,31 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
     }
 }
 
-/// Test server connection by spawning/connecting and calling listTools
+/// Test server connection by spawning/connecting and calling listTools.
+/// Returns `(tool_count, tools_json)` where `tools_json` is a JSON array of
+/// `{"name": "...", "description": "..."}` entries for caching.
 async fn test_server_connection(
     config: &crate::mcp::types::MCPServerConfig,
     server_name: &str,
-) -> Result<usize, String> {
+) -> Result<(usize, String), String> {
     use crate::mcp::types::TransportConfig;
     use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
     use rmcp::ServiceExt;
     use std::time::Duration;
+
+    /// Serialize a tool list to a compact JSON cache string.
+    fn serialize_tools(tools: &[rmcp::model::Tool]) -> String {
+        let arr: Vec<serde_json::Value> = tools
+            .iter()
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "description": t.description.as_deref().unwrap_or("")
+                })
+            })
+            .collect();
+        serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
+    }
 
     match &config.transport {
         TransportConfig::Stdio { command, args, env } => {
@@ -467,7 +513,8 @@ async fn test_server_connection(
                 tools.len()
             );
 
-            Ok(tools.len())
+            let tools_json = serialize_tools(&tools);
+            Ok((tools.len(), tools_json))
         }
         TransportConfig::Http { url, headers, .. } => {
             use rmcp::transport::streamable_http_client::{
@@ -523,7 +570,8 @@ async fn test_server_connection(
                 tools.len()
             );
 
-            Ok(tools.len())
+            let tools_json = serialize_tools(&tools);
+            Ok((tools.len(), tools_json))
         }
     }
 }
