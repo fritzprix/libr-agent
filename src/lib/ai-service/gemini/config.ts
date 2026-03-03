@@ -24,6 +24,8 @@ export function mapReasoningEffortToBudget(
 
 /**
  * Check if a model supports thinking mode
+ * @param modelId The ID of the model.
+ * @param modelCache The cache object containing model properties.
  */
 export async function checkThinkingSupport(
   modelId: string,
@@ -77,6 +79,7 @@ export function getDefaultSafetySettings(): Array<{
 
 /**
  * Prepares the safety settings based on the provided configuration or defaults.
+ * @param config Optional AI service configuration.
  */
 export function prepareSafetySettings(
   config: AIServiceConfig,

@@ -9,6 +9,7 @@ import { MCPContent } from '@/lib/mcp';
 
 /**
  * Type guard for AIServiceProvider
+ * @param value A dynamic value to check.
  */
 export function isAIServiceProvider(
   value: unknown,
@@ -18,6 +19,7 @@ export function isAIServiceProvider(
 
 /**
  * Safely parse JSON string into a value or return undefined on failure.
+ * @param input Raw input string to attempt to parse.
  */
 export function tryParse<T = unknown>(input?: string): T | undefined {
   if (!input) return undefined;
@@ -30,6 +32,7 @@ export function tryParse<T = unknown>(input?: string): T | undefined {
 
 /**
  * Safely stringify a value to JSON. Falls back to '{}' on failure.
+ * @param value A dynamic value to check.
  */
 export function safeJsonStringify(value: unknown): string {
   try {
@@ -41,6 +44,9 @@ export function safeJsonStringify(value: unknown): string {
 
 /**
  * Create a normalized tool_call object expected by the rest of the codebase.
+ * @param id The tool call identifier.
+ * @param name The name of the tool being called.
+ * @param args Parsed tool arguments payload.
  */
 export function formatToolCall(id: string, name: string, args: unknown) {
   return {
@@ -63,6 +69,7 @@ export function generateToolCallId(): string {
  * Normalizes a message from Rust (camelCase) to the internal Message format (snake_case for tool fields).
  * Rust backend sends messages with camelCase fields (toolCalls, toolCallId) due to serde settings,
  * but the frontend Message interface expects snake_case (tool_calls, tool_call_id).
+ * @param msg The raw message object from Rust/UI.
  */
 export function normalizeRustMessage(msg: RustMessage | Message): Message {
   // Check if it's a RustMessage (has camelCase fields or numeric timestamp)
@@ -83,6 +90,8 @@ export function normalizeRustMessage(msg: RustMessage | Message): Message {
 
 /**
  * Calculate tokens per second from usage metrics
+ * @param usage Output usage stats returned by a model provider.
+ * @param durationMs The total duration in milliseconds that generation took.
  */
 export function calculateTokensPerSecond(
   usage: import('./types').TokenUsage,
@@ -94,6 +103,7 @@ export function calculateTokensPerSecond(
 
 /**
  * Format usage metrics for display
+ * @param usage Output usage stats returned by a model provider.
  */
 export function formatUsageMetrics(usage: import('./types').TokenUsage): {
   input: string;
@@ -114,6 +124,7 @@ export function formatUsageMetrics(usage: import('./types').TokenUsage): {
 /**
  * Processes an array of `MCPContent` parts into a single string,
  * extracting only the text content.
+ * @param content The content of the message.
  */
 export function processMessageContent(content: string | MCPContent[]): string {
   if (typeof content === 'string') {

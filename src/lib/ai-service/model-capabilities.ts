@@ -73,6 +73,7 @@ const FALLBACK_THINKING_PATTERNS: Record<string, string[]> = {
 
 /**
  * Checks if a cached capability is still valid.
+ * @param cached A previously cached value.
  */
 function isCacheValid(cached: CapabilityCache): boolean {
   return Date.now() - cached.timestamp < CACHE_TTL;
@@ -80,6 +81,8 @@ function isCacheValid(cached: CapabilityCache): boolean {
 
 /**
  * Gets a cache key for a model.
+ * @param provider The AI Service Provider enum identifier.
+ * @param modelName The identifier of the model.
  */
 function getCacheKey(provider: AIServiceProvider, modelName: string): string {
   return `${provider}:${modelName}`;
@@ -155,6 +158,8 @@ export async function fetchOllamaModelInfo(
  * @param modelName - The name of the model to check
  * @param provider - The AI service provider
  * @param options - Optional configuration (apiBase for Ollama)
+ * @param options.apiBase The base URL for the API.
+ * @param options.skipCache Whether to bypass any internal caches.
  * @returns Promise<boolean> - True if the model likely supports thinking mode
  *
  * @example
@@ -266,6 +271,8 @@ export async function supportsThinking(
  * @param modelName - The name of the model to check
  * @param provider - The AI service provider
  * @param options - Optional configuration (apiBase for Ollama)
+ * @param options.apiBase The base URL for the API.
+ * @param options.skipCache Whether to bypass any internal caches.
  * @returns Promise<number> - Context window size in tokens
  *
  * @example
@@ -387,6 +394,7 @@ export async function getContextWindow(
  * Higher-tier models default to higher reasoning levels.
  *
  * @param modelName - The model identifier
+ * @param provider The AI Service Provider enum identifier.
  * @returns Recommended reasoning effort level
  */
 export function getRecommendedReasoningLevel(

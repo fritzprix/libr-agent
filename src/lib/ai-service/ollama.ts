@@ -86,6 +86,7 @@ export class OllamaService extends BaseAIService {
   /**
    * Ollama runs locally and doesn't require API key validation.
    * Override base class validation to allow empty API keys.
+   * @param apiKey API key used for authentication.
    * @protected
    */
   protected validateApiKey(apiKey: string): void {
