@@ -382,20 +382,12 @@ export async function getContextWindow(
 }
 
 /**
- * Gets the recommended thinking level for a model.
- * Some models have different default levels for optimal performance.
- *
- * @param modelName - The name of the model
- * @param provider - The AI service provider
- * @returns Recommended thinking level ('low' | 'medium' | 'high')
- */
-/**
  * Get recommended reasoning level based on model capabilities.
  * Higher-tier models default to higher reasoning levels.
  *
  * @param modelName - The model identifier
- * @param provider The AI Service Provider enum identifier.
- * @returns Recommended reasoning effort level
+ * @param provider - The AI service provider
+ * @returns Recommended reasoning effort level ('low' | 'medium' | 'high')
  */
 export function getRecommendedReasoningLevel(
   modelName: string,

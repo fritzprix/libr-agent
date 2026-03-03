@@ -32,7 +32,7 @@ export function tryParse<T = unknown>(input?: string): T | undefined {
 
 /**
  * Safely stringify a value to JSON. Falls back to '{}' on failure.
- * @param value A dynamic value to check.
+ * @param value The value to JSON-stringify; falls back to '{}' if serialization fails.
  */
 export function safeJsonStringify(value: unknown): string {
   try {
