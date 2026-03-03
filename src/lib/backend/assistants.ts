@@ -104,9 +104,17 @@ export async function upsertAssistant(assistant: Assistant): Promise<void> {
  * Upserts multiple assistants
  */
 export async function upsertAssistants(assistants: Assistant[]): Promise<void> {
-  // Serial execution for now to ensure correctness
-  for (const a of assistants) {
-    await upsertAssistant(a);
+  const payloads = assistants.map(a => {
+    const params = serializeAssistant(a);
+    return {
+      id: params.id,
+      name: params.name,
+      config: JSON.parse(params.config),
+    };
+  });
+
+  if (payloads.length > 0) {
+    await safeInvoke<AssistantDto[]>('batch_upsert_assistants', { assistants: payloads });
   }
 }
 

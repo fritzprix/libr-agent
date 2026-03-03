@@ -91,3 +91,41 @@ pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
 
     Ok(assistant.map(|a| a.into()))
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertAssistantPayload {
+    pub id: String,
+    pub name: String,
+    pub config: Value,
+}
+
+#[command]
+pub async fn batch_upsert_assistants(
+    assistants: Vec<UpsertAssistantPayload>,
+) -> Result<Vec<AssistantDto>, String> {
+    let repo = get_assistant_repository();
+    let mut results = Vec::new();
+
+    for payload in assistants {
+        let exists = repo
+            .get_assistant(&payload.id)
+            .await
+            .map_err(|e| format!("Failed to check existence for assistant {}: {}", payload.id, e))?;
+
+        let config_str = payload.config.to_string();
+        let result = if exists.is_some() {
+            repo.update_assistant(&payload.id, Some(payload.name), Some(config_str))
+                .await
+                .map_err(|e| format!("Failed to update assistant {}: {}", payload.id, e))?
+        } else {
+            repo.create_assistant(payload.id.clone(), payload.name, config_str)
+                .await
+                .map_err(|e| format!("Failed to create assistant {}: {}", payload.id, e))?
+        };
+
+        results.push(result.into());
+    }
+
+    Ok(results)
+}

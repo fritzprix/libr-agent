@@ -153,11 +153,34 @@ export class RustAssistantService implements IAssistantService {
   }
 
   async saveAll(assistants: Assistant[]): Promise<Assistant[]> {
-    const results: Assistant[] = [];
-    for (const assistant of assistants) {
-      results.push(await this.save(assistant));
+    if (assistants.length === 0) return [];
+
+    try {
+      const payloads = assistants.map(a => {
+        const { id, name, ...config } = a;
+        return {
+          id: id!,
+          name,
+          config,
+        };
+      });
+
+      const dtos = await safeInvoke<AssistantDto[]>('batch_upsert_assistants', { assistants: payloads });
+
+      // Emit revalidate for each saved assistant
+      for (const dto of dtos) {
+        this.emitRevalidate({
+          entity: 'assistants',
+          action: 'save',
+          entityId: dto.id,
+        });
+      }
+
+      return dtos.map(mapDtoToAssistant);
+    } catch (error) {
+      logger.error('Failed to batch save assistants', error);
+      throw error;
     }
-    return results;
   }
 
   async delete(id: string): Promise<void> {
