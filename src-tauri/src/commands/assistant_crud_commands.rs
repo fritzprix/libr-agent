@@ -91,3 +91,46 @@ pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
 
     Ok(assistant.map(|a| a.into()))
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpsertAssistantPayload {
+    pub id: String,
+    pub name: String,
+    pub config: Value,
+}
+
+#[command]
+pub async fn batch_upsert_assistants(
+    assistants: Vec<UpsertAssistantPayload>,
+) -> Result<Vec<AssistantDto>, String> {
+    let repo = get_assistant_repository();
+    let mut results = Vec::new();
+
+    for payload in assistants {
+        let config_str = payload.config.to_string();
+
+        let update_result = repo
+            .update_assistant(
+                &payload.id,
+                Some(payload.name.clone()),
+                Some(config_str.clone()),
+            )
+            .await;
+
+        let result = match update_result {
+            Ok(model) => model,
+            Err(crate::repositories::DbError::NotFound(_)) => repo
+                .create_assistant(payload.id.clone(), payload.name, config_str)
+                .await
+                .map_err(|e| format!("Failed to create assistant {}: {}", payload.id, e))?,
+            Err(e) => {
+                return Err(format!("Failed to update assistant {}: {}", payload.id, e));
+            }
+        };
+
+        results.push(result.into());
+    }
+
+    Ok(results)
+}

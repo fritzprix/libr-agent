@@ -189,6 +189,8 @@ export function AgentWorkspacePanel() {
   const [isSettingOverride, setIsSettingOverride] = useState(false);
   const [isCancelingOverride, setIsCancelingOverride] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isOpeningNative, setIsOpeningNative] = useState(false);
+  const openingNativeLock = useRef(false);
 
   // Component lifecycle logging
   useEffect(() => {
@@ -555,22 +557,32 @@ export function AgentWorkspacePanel() {
   };
 
   const handleOpenInExplorer = async () => {
-    if (!session?.id) return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    openingNativeLock.current = true;
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInExplorer(session.id);
     } catch (error) {
       logger.error('Failed to open explorer', error);
       toast.error(`Failed to open explorer: ${error}`);
+    } finally {
+      setIsOpeningNative(false);
+      openingNativeLock.current = false;
     }
   };
 
   const handleOpenInTerminal = async () => {
-    if (!session?.id) return;
+    if (!session?.id || isOpeningNative || openingNativeLock.current) return;
+    openingNativeLock.current = true;
+    setIsOpeningNative(true);
     try {
       await openWorkspaceInTerminal(session.id);
     } catch (error) {
       logger.error('Failed to open terminal', error);
       toast.error(`Failed to open terminal: ${error}`);
+    } finally {
+      setIsOpeningNative(false);
+      openingNativeLock.current = false;
     }
   };
 
@@ -669,6 +681,7 @@ export function AgentWorkspacePanel() {
                 className="h-6 px-2 text-xs"
                 title="Open in Explorer"
                 aria-label="Open in Explorer"
+                disabled={isOpeningNative}
               >
                 <Folder className="w-3 h-3" />
               </Button>
@@ -679,6 +692,7 @@ export function AgentWorkspacePanel() {
                 className="h-6 px-2 text-xs"
                 title="Open in Terminal"
                 aria-label="Open in Terminal"
+                disabled={isOpeningNative}
               >
                 <Terminal className="w-3 h-3" />
               </Button>
