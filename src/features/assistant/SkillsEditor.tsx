@@ -340,9 +340,9 @@ export default function SkillsEditor() {
               {t('common.cancel')}
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={async (e) => {
+              onClick={(e) => {
                 e.preventDefault();
-                await confirmReset();
+                void confirmReset();
               }}
               disabled={isResetting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

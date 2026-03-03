@@ -37,6 +37,7 @@ function GeneralTabComponent({
   const [skills, setSkills] = useState<SkillMetadata[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isOpeningDir, setIsOpeningDir] = useState(false);
 
   useEffect(() => {
     async function verifySkills() {
@@ -100,10 +101,11 @@ function GeneralTabComponent({
   };
 
   const handleOpenDirectory = async () => {
-    if (!skillsDirectory) {
-      logger.warn('handleOpenDirectory called but skillsDirectory is empty');
+    if (!skillsDirectory || isOpeningDir) {
+      logger.warn('handleOpenDirectory called but skillsDirectory is empty or already opening');
       return;
     }
+    setIsOpeningDir(true);
     logger.info(`Attempting to open directory: ${skillsDirectory}`);
     try {
       await invoke<void>('open_skills_directory_in_explorer', {
@@ -113,6 +115,8 @@ function GeneralTabComponent({
     } catch (error) {
       logger.error('Failed to open directory', error);
       // Optional: show toast error
+    } finally {
+      setIsOpeningDir(false);
     }
   };
 
@@ -167,6 +171,7 @@ function GeneralTabComponent({
                 onClick={handleOpenDirectory}
                 title={t('settings.general.openInExplorer', 'Open in Explorer')}
                 className="px-3"
+                disabled={isOpeningDir}
               >
                 <FolderOutput className="w-4 h-4" />
               </Button>
