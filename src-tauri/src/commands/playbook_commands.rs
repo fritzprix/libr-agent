@@ -54,21 +54,21 @@ pub async fn update_playbook(
 }
 
 #[command]
-pub async fn delete_playbook(id: String, agent_id: String) -> Result<(), String> {
+pub async fn delete_playbook(id: String, assistant_id: String) -> Result<(), String> {
     let repo = get_playbook_repository();
 
-    repo.delete_playbook(&id, &agent_id)
+    repo.delete_playbook(&id, &assistant_id)
         .await
         .map_err(|e| format!("Failed to delete playbook: {}", e))?;
     Ok(())
 }
 
 #[command]
-pub async fn get_playbook(id: String, agent_id: String) -> Result<Option<PlaybookDto>, String> {
+pub async fn get_playbook(id: String, assistant_id: String) -> Result<Option<PlaybookDto>, String> {
     let repo = get_playbook_repository();
 
     let result = repo
-        .get_playbook(&id, &agent_id)
+        .get_playbook(&id, &assistant_id)
         .await
         .map_err(|e| format!("Failed to get playbook: {}", e))?;
 
@@ -78,12 +78,12 @@ pub async fn get_playbook(id: String, agent_id: String) -> Result<Option<Playboo
 #[command]
 pub async fn toggle_playbook_bookmark(
     id: String,
-    agent_id: String,
+    assistant_id: String,
     bookmarked: bool,
 ) -> Result<(), String> {
     let repo = get_playbook_repository();
 
-    repo.update_playbook(&id, &agent_id, None, None, Some(bookmarked))
+    repo.update_playbook(&id, &assistant_id, None, None, Some(bookmarked))
         .await
         .map_err(|e| format!("Failed to toggle bookmark: {}", e))?;
 
@@ -92,9 +92,9 @@ pub async fn toggle_playbook_bookmark(
 
 #[command]
 pub async fn list_playbooks(
-    agent_id: String,
+    assistant_id: String,
     sort_by: Option<String>,
     bookmark_first: Option<bool>,
 ) -> Result<Vec<PlaybookDto>, String> {
-    PlaybookService::list_playbooks(agent_id, sort_by, bookmark_first).await
+    PlaybookService::list_playbooks(assistant_id, sort_by, bookmark_first).await
 }

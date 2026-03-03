@@ -39,9 +39,20 @@ impl McpServerService {
             .map_err(|e| format!("Failed to connect to '{}': {}", server_name, e))?;
 
         // 5. List tools
-        let tools = probe_manager
-            .list_tools(&server_name)
-            .await
+        let tools_result = probe_manager.list_tools(&server_name).await;
+
+        // 7. Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
+        // We do this here (before early return) to guarantee cleanup even if tool listing fails
+        if let Err(e) = probe_manager.stop_server(&server_name).await {
+            log::warn!(
+                "[probe] Failed to stop MCP server '{}' cleanly: {}",
+                server_name,
+                e
+            );
+        }
+
+        // Now process the tool listing result
+        let tools = tools_result
             .map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))?;
 
         log::info!(
@@ -56,15 +67,6 @@ impl McpServerService {
             log::warn!(
                 "[probe] Failed to cache tool count for '{}': {}",
                 server_id,
-                e
-            );
-        }
-
-        // 7. Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
-        if let Err(e) = probe_manager.stop_server(&server_name).await {
-            log::warn!(
-                "[probe] Failed to stop MCP server '{}' cleanly: {}",
-                server_name,
                 e
             );
         }

@@ -69,16 +69,16 @@ impl PlaybookService {
     }
 
     pub async fn list_playbooks(
-        agent_id: String,
+        assistant_id: String,
         sort_by: Option<String>,
         bookmark_first: Option<bool>,
     ) -> Result<Vec<PlaybookDto>, String> {
         let repo = crate::state::get_playbook_repository();
 
-        let assistant_id = if agent_id.is_empty() {
+        let assistant_id_filter = if assistant_id.is_empty() {
             None
         } else {
-            Some(agent_id.as_str())
+            Some(assistant_id.as_str())
         };
 
         // For now, use list_playbooks without pagination
@@ -89,20 +89,29 @@ impl PlaybookService {
         };
 
         let page = repo
-            .list_playbooks(assistant_id, pagination)
+            .list_playbooks(assistant_id_filter, pagination)
             .await
             .map_err(|e| format!("Failed to list playbooks: {}", e))?;
 
         let mut playbooks: Vec<PlaybookDto> = page.items.into_iter().map(|p| p.into()).collect();
 
         // Apply sorting
-        if bookmark_first.unwrap_or(false) {
-            playbooks.sort_by(|a, b| b.is_bookmarked.cmp(&a.is_bookmarked));
-        }
-
+        let bookmark_first = bookmark_first.unwrap_or(false);
         match sort_by.as_deref() {
-            Some("assistant") => playbooks.sort_by(|a, b| a.assistant_id.cmp(&b.assistant_id)),
-            _ => playbooks.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+            Some("assistant") => playbooks.sort_by(|a, b| {
+                if bookmark_first && a.is_bookmarked != b.is_bookmarked {
+                    b.is_bookmarked.cmp(&a.is_bookmarked)
+                } else {
+                    a.assistant_id.cmp(&b.assistant_id)
+                }
+            }),
+            _ => playbooks.sort_by(|a, b| {
+                if bookmark_first && a.is_bookmarked != b.is_bookmarked {
+                    b.is_bookmarked.cmp(&a.is_bookmarked)
+                } else {
+                    b.created_at.cmp(&a.created_at)
+                }
+            }),
         };
 
         Ok(playbooks)
