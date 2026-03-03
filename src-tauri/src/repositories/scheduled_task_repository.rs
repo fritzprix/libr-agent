@@ -1,0 +1,197 @@
+//! Scheduled task repository for database operations.
+//!
+//! The `message` field supports `@mention` syntax (e.g. `@playbook:goal`,
+//! `@skill:name`) which is expanded at execution time by `resolve_message_references`.
+
+use crate::entity::scheduled_task::{self, Entity as ScheduledTaskEntity};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, Order,
+    QueryFilter, QueryOrder, Set,
+};
+
+/// Scheduled task repository trait for abstraction and testability
+#[async_trait::async_trait]
+pub trait ScheduledTaskRepository: Send + Sync {
+    /// Create a new scheduled task
+    async fn create_scheduled_task(
+        &self,
+        id: String,
+        name: String,
+        cron_expression: String,
+        assistant_id: String,
+        message: String,
+        next_run_at: Option<i64>,
+    ) -> Result<scheduled_task::Model, DbErr>;
+
+    /// Get a scheduled task by ID
+    async fn get_scheduled_task(&self, id: &str) -> Result<Option<scheduled_task::Model>, DbErr>;
+
+    /// List all scheduled tasks (optionally filtered by assistant)
+    async fn list_scheduled_tasks(
+        &self,
+        assistant_id: Option<&str>,
+    ) -> Result<Vec<scheduled_task::Model>, DbErr>;
+
+    /// List enabled tasks whose next_run_at is <= the given epoch ms (due tasks)
+    async fn list_due_tasks(&self, now_ms: i64) -> Result<Vec<scheduled_task::Model>, DbErr>;
+
+    /// Update mutable fields of a scheduled task
+    async fn update_scheduled_task(
+        &self,
+        id: &str,
+        name: Option<String>,
+        cron_expression: Option<String>,
+        message: Option<String>,
+        enabled: Option<bool>,
+        next_run_at: Option<Option<i64>>,
+    ) -> Result<scheduled_task::Model, DbErr>;
+
+    /// Record that a task has just run: update session_id, last_run_at, next_run_at
+    async fn record_run(
+        &self,
+        id: &str,
+        session_id: Option<String>,
+        last_run_at: i64,
+        next_run_at: Option<i64>,
+    ) -> Result<(), DbErr>;
+
+    /// Delete a scheduled task
+    async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr>;
+}
+
+// ─── SQLite implementation ───────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct SqliteScheduledTaskRepository {
+    db: DatabaseConnection,
+}
+
+impl SqliteScheduledTaskRepository {
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
+    }
+
+    async fn fetch_task(&self, id: &str) -> Result<scheduled_task::ActiveModel, DbErr> {
+        ScheduledTaskEntity::find_by_id(id)
+            .one(&self.db)
+            .await?
+            .ok_or_else(|| DbErr::RecordNotFound(format!("ScheduledTask {id} not found")))
+            .map(|t| t.into_active_model())
+    }
+}
+
+#[async_trait::async_trait]
+impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
+    async fn create_scheduled_task(
+        &self,
+        id: String,
+        name: String,
+        cron_expression: String,
+        assistant_id: String,
+        message: String,
+        next_run_at: Option<i64>,
+    ) -> Result<scheduled_task::Model, DbErr> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let model = scheduled_task::ActiveModel {
+            id: Set(id),
+            name: Set(name),
+            cron_expression: Set(cron_expression),
+            assistant_id: Set(assistant_id),
+            message: Set(message),
+            session_id: Set(None),
+            enabled: Set(true),
+            last_run_at: Set(None),
+            next_run_at: Set(next_run_at),
+            created_at: Set(now),
+            updated_at: Set(now),
+        };
+        model.insert(&self.db).await
+    }
+
+    async fn get_scheduled_task(&self, id: &str) -> Result<Option<scheduled_task::Model>, DbErr> {
+        ScheduledTaskEntity::find_by_id(id).one(&self.db).await
+    }
+
+    async fn list_scheduled_tasks(
+        &self,
+        assistant_id: Option<&str>,
+    ) -> Result<Vec<scheduled_task::Model>, DbErr> {
+        let query =
+            ScheduledTaskEntity::find().order_by(scheduled_task::Column::CreatedAt, Order::Asc);
+
+        if let Some(aid) = assistant_id {
+            query
+                .filter(scheduled_task::Column::AssistantId.eq(aid))
+                .all(&self.db)
+                .await
+        } else {
+            query.all(&self.db).await
+        }
+    }
+
+    async fn list_due_tasks(&self, now_ms: i64) -> Result<Vec<scheduled_task::Model>, DbErr> {
+        ScheduledTaskEntity::find()
+            .filter(scheduled_task::Column::Enabled.eq(true))
+            .filter(scheduled_task::Column::NextRunAt.lte(now_ms))
+            .all(&self.db)
+            .await
+    }
+
+    async fn update_scheduled_task(
+        &self,
+        id: &str,
+        name: Option<String>,
+        cron_expression: Option<String>,
+        message: Option<String>,
+        enabled: Option<bool>,
+        next_run_at: Option<Option<i64>>,
+    ) -> Result<scheduled_task::Model, DbErr> {
+        let mut active = self.fetch_task(id).await?;
+        let now = chrono::Utc::now().timestamp_millis();
+
+        if let Some(v) = name {
+            active.name = Set(v);
+        }
+        if let Some(v) = cron_expression {
+            active.cron_expression = Set(v);
+        }
+        if let Some(v) = message {
+            active.message = Set(v);
+        }
+        if let Some(v) = enabled {
+            active.enabled = Set(v);
+        }
+        if let Some(v) = next_run_at {
+            active.next_run_at = Set(v);
+        }
+        active.updated_at = Set(now);
+
+        active.update(&self.db).await
+    }
+
+    async fn record_run(
+        &self,
+        id: &str,
+        session_id: Option<String>,
+        last_run_at: i64,
+        next_run_at: Option<i64>,
+    ) -> Result<(), DbErr> {
+        let mut active = self.fetch_task(id).await?;
+        let now = chrono::Utc::now().timestamp_millis();
+
+        if session_id.is_some() {
+            active.session_id = Set(session_id);
+        }
+        active.last_run_at = Set(Some(last_run_at));
+        active.next_run_at = Set(next_run_at);
+        active.updated_at = Set(now);
+
+        active.update(&self.db).await?;
+        Ok(())
+    }
+
+    async fn delete_scheduled_task(&self, id: &str) -> Result<(), DbErr> {
+        ScheduledTaskEntity::delete_by_id(id).exec(&self.db).await?;
+        Ok(())
+    }
+}

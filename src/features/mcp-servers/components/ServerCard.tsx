@@ -1,5 +1,5 @@
-import React from 'react';
-import { Server, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Server, CheckCircle2, XCircle, Loader2, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import {
@@ -12,6 +12,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import type { VerificationStatus } from '../hooks/useMCPServerManagement';
+import { ServerToolsModal } from './ServerToolsModal';
 
 interface ServerCardProps {
   server: MCPServerEntity;
@@ -33,6 +34,7 @@ export const ServerCard = React.memo(
   }: ServerCardProps) => {
     const { t } = useTranslation('common');
     const serverName = server.name || t('mcpServer.unnamed', 'Unnamed Server');
+    const [isToolsOpen, setIsToolsOpen] = useState(false);
 
     return (
       <Card className="relative overflow-hidden">
@@ -184,6 +186,22 @@ export const ServerCard = React.memo(
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
+            {server.toolCount !== undefined &&
+              server.toolCount !== null &&
+              server.toolCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsToolsOpen(true)}
+                  aria-label={t('mcpServer.browseTools', {
+                    name: serverName,
+                    defaultValue: 'Browse tools for {{name}}',
+                  })}
+                >
+                  <Wrench className="h-3 w-3 mr-1" />
+                  {t('mcpServer.tools', 'Tools')}
+                </Button>
+              )}
             <Button
               variant="outline"
               size="sm"
@@ -208,6 +226,12 @@ export const ServerCard = React.memo(
             </Button>
           </div>
         </CardContent>
+        <ServerToolsModal
+          serverId={server.id}
+          serverName={serverName}
+          isOpen={isToolsOpen}
+          onClose={() => setIsToolsOpen(false)}
+        />
       </Card>
     );
   },

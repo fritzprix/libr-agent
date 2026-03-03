@@ -141,19 +141,19 @@ impl BuiltinMCPServer for KnowledgeServer {
         let target_assistant_id = _assistant_id.unwrap_or_else(|| self.assistant_id.clone());
 
         match tool_name {
-            "saveKnowledge" | "builtin_knowledge__saveKnowledge" => {
+            "saveKnowledge" => {
                 operations::save_knowledge(self, args, &target_assistant_id).await
             }
-            "readKnowledge" | "builtin_knowledge__readKnowledge" => {
+            "readKnowledge" => {
                 queries::read_knowledge(self, args, &target_assistant_id).await
             }
-            "deleteKnowledge" | "builtin_knowledge__deleteKnowledge" => {
+            "deleteKnowledge" => {
                 operations::delete_knowledge(self, args, &target_assistant_id).await
             }
-            "searchKnowledge" | "builtin_knowledge__searchKnowledge" => {
+            "searchKnowledge" => {
                 queries::search_knowledge(self, args, &target_assistant_id).await
             }
-            "listKnowledge" | "builtin_knowledge__listKnowledge" => {
+            "listKnowledge" => {
                 queries::list_knowledge(self, args, &target_assistant_id).await
             }
             _ => Err(format!(

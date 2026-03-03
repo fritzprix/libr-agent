@@ -68,7 +68,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
 - For file list: listContent(sessionId: "${attachment.sessionId}")`
         : attachment.workspacePath
           ? `This file is in your workspace (may not be indexed in content store yet):
-- To read it via workspace: builtin_workspace__readFile(path: "${attachment.workspacePath}")
+- To read it via workspace: workspace__readFile(path: "${attachment.workspacePath}")
 - To check if it has been indexed: listContent(sessionId: "${attachment.sessionId}")
 - If listed, use readContent(sessionId: "${attachment.sessionId}", contentId: <id from listContent>)`
           : `File metadata only — use listContent(sessionId: "${attachment.sessionId}") to find available files`;

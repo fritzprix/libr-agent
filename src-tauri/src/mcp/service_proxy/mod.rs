@@ -5,11 +5,10 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-use super::builtin::service_id::builtin_tool_name;
 use super::builtin::BuiltinMCPServer;
 use super::error_normalization::{external_tool_error_result, ExternalMcpErrorCategory};
 use super::session_isolation::{HttpSessionManager, SessionMCPManager};
-use super::types::{MCPContent, MCPResponse, MCPResponseResult, MCPTool, ServiceContext};
+use super::types::{MCPResponse, MCPTool, ServiceContext};
 use crate::session::SessionManager;
 
 pub mod builder;
@@ -131,11 +130,11 @@ impl MCPServiceProxy {
     /// Call a tool through this proxy
     ///
     /// Routes the call to either:
-    /// - Builtin server (if tool_name starts with "builtin_")
+    /// - Builtin server (if tool_name's service prefix matches a known builtin service)
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "builtin_attachments__addContent")
+    /// * `tool_name` - Full tool name (e.g., "attachments__addContent")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -150,63 +149,42 @@ impl MCPServiceProxy {
                 ToolRouting::Builtin {
                     server_id,
                     tool_name: real_tool_name,
-                } => {
-                    match self.builtin_servers.get(&server_id) {
-                        Some(server) => {
-                            log::debug!(
-                                "Calling builtin tool '{}' for session '{}'",
-                                tool_name,
-                                self.session_id
-                            );
-                            let result = server
-                                .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
-                                .await?;
-                            Ok(MCPResponse {
-                                jsonrpc: "2.0".to_string(),
-                                id: Some(super::types::JsonRpcId::String(
-                                    uuid::Uuid::new_v4().to_string(),
-                                )),
-                                result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                error: None,
-                            })
-                        }
-                        None => {
-                            // The LLM may have hallucinated the 'builtin_' prefix for an external
-                            // server. Fall back to external routing before giving up, and inject a
-                            // correction hint so the AI uses the right name on the next call.
-                            if let Some(response) = self
-                                .try_dispatch_external(&server_id, &real_tool_name, args)
-                                .await
-                            {
-                                let correct_name = format!("{}__{}", server_id, real_tool_name);
-                                log::warn!(
-                                    "Tool '{}' called with 'builtin_' prefix but '{}' is an \
-                                     external server. Rerouted to '{}'. Correction hint injected.",
-                                    tool_name,
-                                    server_id,
-                                    correct_name
-                                );
-                                return response.map(|resp| {
-                                    Self::inject_routing_correction(resp, tool_name, &correct_name)
-                                });
-                            }
-                            let available = self
-                                .builtin_servers
-                                .keys()
-                                .map(|k| format!("'{}'", k))
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            Err(format!(
-                                "Built-in server '{}' not enabled in this session.\n\n\
+                } => match self.builtin_servers.get(&server_id) {
+                    Some(server) => {
+                        log::debug!(
+                            "Calling builtin tool '{}' for session '{}'",
+                            tool_name,
+                            self.session_id
+                        );
+                        let result = server
+                            .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
+                            .await?;
+                        Ok(MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: Some(super::types::JsonRpcId::String(
+                                uuid::Uuid::new_v4().to_string(),
+                            )),
+                            result: Some(super::types::MCPResponseResult::ToolCall(result)),
+                            error: None,
+                        })
+                    }
+                    None => {
+                        let available = self
+                            .builtin_servers
+                            .keys()
+                            .map(|k| format!("'{}'", k))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        Err(format!(
+                            "Built-in server '{}' not enabled in this session.\n\n\
                                     Available servers: [{}]\n\n\
                                     💡 To fix: Update the assistant's \
                                     'allowedBuiltInServiceAliases' configuration to include \
                                     \"{}\"",
-                                server_id, available, server_id
-                            ))
-                        }
+                            server_id, available, server_id
+                        ))
                     }
-                }
+                },
                 ToolRouting::External {
                     server_name,
                     tool_name: real_tool_name,
@@ -282,25 +260,6 @@ impl MCPServiceProxy {
                             })
                         }
                         None => {
-                            // The LLM may have hallucinated the 'builtin_' prefix for an external
-                            // server. Fall back to external routing before giving up, and inject a
-                            // correction hint so the AI uses the right name on the next call.
-                            if let Some(response) = self
-                                .try_dispatch_external(&server_id, &real_tool_name, args)
-                                .await
-                            {
-                                let correct_name = format!("{}__{}", server_id, real_tool_name);
-                                log::warn!(
-                                    "Tool '{}' called with 'builtin_' prefix but '{}' is an \
-                                     external server. Rerouted to '{}'. Correction hint injected.",
-                                    tool_name,
-                                    server_id,
-                                    correct_name
-                                );
-                                return response.map(|resp| {
-                                    Self::inject_routing_correction(resp, tool_name, &correct_name)
-                                });
-                            }
                             let available = self
                                 .builtin_servers
                                 .keys()
@@ -399,7 +358,7 @@ impl MCPServiceProxy {
                         // Normalize tool name to include builtin prefix and server ID
                         // This ensures the orchestrator can correctly route the tool call back to this proxy
                         // format: builtin_{server_id}__{tool_name}
-                        tool.name = builtin_tool_name(server_id, &tool.name);
+                        tool.name = format!("{}__{}", server_id, &tool.name);
                         tool
                     })
                     .collect()
@@ -407,38 +366,7 @@ impl MCPServiceProxy {
             .unwrap_or_default()
     }
 
-    /// Injects a routing-correction hint at the top of a tool response's text content.
-    ///
-    /// This is used when the LLM called an external server tool with the `builtin_` prefix.
-    /// The hint is visible to the AI on its next token budget so it self-corrects the
-    /// tool name in subsequent calls.
-    fn inject_routing_correction(
-        mut response: MCPResponse,
-        wrong_name: &str,
-        correct_name: &str,
-    ) -> MCPResponse {
-        let hint = format!(
-            "⚠️ Routing correction: '{}' is an external MCP server, not a built-in. \
-             Use '{}' for future calls to this tool.\n\n",
-            wrong_name, correct_name
-        );
-        if let Some(MCPResponseResult::ToolCall(ref mut result)) = response.result {
-            let correction = MCPContent::Text {
-                text: hint,
-                is_error: None,
-            };
-            match result.content {
-                Some(ref mut v) => v.insert(0, correction),
-                None => result.content = Some(vec![correction]),
-            }
-        }
-        response
-    }
-
     /// Attempts to dispatch a tool call to an external MCP server (HTTP or Stdio).
-    ///
-    /// This is used both for normal external routing and as a fallback when an LLM
-    /// mistakenly calls an external server tool with the `builtin_` prefix.
     ///
     /// # Returns
     /// * `Some(result)` if the server was found and the call was dispatched

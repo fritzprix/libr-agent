@@ -9,6 +9,7 @@ import {
   BookOpen,
   Blocks,
   Circle,
+  Clock,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -172,6 +173,18 @@ export default function AppSidebar() {
                   <Link to="/mcp-servers">
                     <Blocks size={16} />
                     <span>{t('sidebar.extensions')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname === '/scheduled-tasks'}
+                  tooltip="Scheduled Tasks"
+                >
+                  <Link to="/scheduled-tasks">
+                    <Clock size={16} />
+                    <span>Scheduled Tasks</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

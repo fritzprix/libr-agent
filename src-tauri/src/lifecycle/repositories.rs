@@ -3,15 +3,15 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SettingsRepository, SqliteAssistantRepository, SqliteContentStoreRepository,
     SqliteKnowledgeRepository, SqliteMCPServerRepository, SqliteMessageRepository,
-    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteSessionRepository,
-    SqliteSettingsRepository,
+    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
+    SqliteSessionRepository, SqliteSettingsRepository,
 };
 use crate::services;
 use crate::state::{
     set_assistant_repository, set_content_store_repository, set_database_connection,
     set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
     set_message_repository, set_planning_repository, set_playbook_repository,
-    set_session_repository, set_settings_repository,
+    set_scheduled_task_repository, set_session_repository, set_settings_repository,
 };
 use log::{error, info};
 use sea_orm::DatabaseConnection;
@@ -59,6 +59,7 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     set_playbook_repository(SqlitePlaybookRepository::new(db.clone()));
     set_knowledge_repository(SqliteKnowledgeRepository::new(db.clone()));
     set_planning_repository(SqlitePlanningRepository::new(db.clone()));
+    set_scheduled_task_repository(SqliteScheduledTaskRepository::new(db.clone()));
 
     info!("✅ Repository instances initialized");
 

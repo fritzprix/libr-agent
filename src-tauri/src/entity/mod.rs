@@ -19,6 +19,7 @@ pub mod content;
 pub mod knowledge;
 pub mod mcp_server;
 pub mod playbook;
+pub mod scheduled_task;
 pub mod settings;
 pub mod store;
 

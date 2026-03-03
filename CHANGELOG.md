@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.25] - 2026-03-02
+
+### 🚀 Features
+
+- **Scheduled Tasks**: Full cron-based task automation — create scheduled tasks that fire agent sessions on a schedule, with persistent session reuse and missed-task recovery on restart.
+- **@playbook Mention**: Type `@` in the agent chat input to reference playbook entries directly, injecting structured context into agent turns.
+- **OpenRouter Provider**: New OpenRouter integration with live model listing via the public metadata API, dynamic pricing, and context-length discovery — no hardcoded model list required.
+- **Workspace `searchLines` Directory Support**: `searchLines` tool now accepts a directory path and recursively searches all files within it, not just individual files.
+
+### 🐛 Fixes
+
+- **Scheduled task session shows "Unknown Assistant"**: Sessions created by the scheduler now correctly inherit the assistant's display name from the database instead of defaulting to `"Unknown Assistant"`.
+- **HTTP MCP transport fixes**: Resolved connection and session management issues in the HTTP MCP backend.
+- **Dynamic model discovery**: Removed all hardcoded `supportsDynamic` provider allowlists; model listing is now fully dynamic across all providers including OpenRouter.
+
+### 🔧 Internal
+
+- **Assistant Editor UX**: Improved responsiveness and layout in the assistant editor panel.
+- **MCP Server page i18n**: Localized subtitle and expanded EN/KO translation coverage.
+- **`searchLines` refactor**: Improved readability and error handling in the workspace search logic, with added regression tests.
+- **OpenRouter regression tests**: New test suite covering `listModels` API override and metadata parsing.
+
 ## [0.5.24] - 2026-03-02
 
 ### 🚀 Features

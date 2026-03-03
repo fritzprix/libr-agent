@@ -7,3 +7,5 @@
 ## 2026-02-26 - Playbook Auto-Start **Bottleneck:** `AgentChatStartView` auto-started playbooks without disabling UI interactions, risking double submits. **Flow Restored:** Added `isCreating` true state during the async operation.
 
 ## 2026-02-26 - Drag and Drop File Attachments **Bottleneck:** Dropped files on `AgentDraftChatView` processed asynchronously without any loading indication. **Flow Restored:** Added `isAttachmentLoading` to UI to show "Uploading..." and disable input buttons.
+
+## 2026-02-26 - Assistant Editor Save **Bottleneck:** Assistant dialog closed immediately on click before `commit` finished, and Save button didn't disable during save. **Flow Restored:** Added `await commit()` to `handleSave` and utilized `isLoading` state to disable buttons and prevent premature closure.

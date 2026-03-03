@@ -13,7 +13,7 @@ import {
 } from '@/lib/chat-utils';
 import { handleUserToolCall } from '@/lib/backend';
 import { createId } from '@paralleldrive/cuid2';
-import { isBuiltinTool, BUILTIN_PREFIX } from '@/lib/tool-call-utils';
+import { isBuiltinTool } from '@/lib/tool-call-utils';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -172,15 +172,8 @@ export function useUIActionHandler(
                 });
 
                 if (isBaseName) {
-                  // Web MCP (BuiltInWeb) & Native (BuiltInRust) tools need builtin_ prefix
-                  if (
-                    serviceInfo.backendType === 'BuiltInWeb' ||
-                    serviceInfo.backendType === 'BuiltInRust'
-                  ) {
-                    finalToolName = `${BUILTIN_PREFIX}${serviceInfo.serverName}__${toolName}`;
-                  } else {
-                    finalToolName = `${serviceInfo.serverName}__${toolName}`;
-                  }
+                  // All tools (both builtin and external) use the same format: server__tool
+                  finalToolName = `${serviceInfo.serverName}__${toolName}`;
                 }
               } else {
                 logger.warn(
