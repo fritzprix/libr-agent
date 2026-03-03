@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { safeInvoke as invoke } from '@/lib/backend/core';
@@ -38,6 +38,7 @@ function GeneralTabComponent({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOpeningDir, setIsOpeningDir] = useState(false);
+  const openingDirLock = useRef(false);
 
   useEffect(() => {
     async function verifySkills() {
@@ -101,10 +102,13 @@ function GeneralTabComponent({
   };
 
   const handleOpenDirectory = async () => {
-    if (!skillsDirectory || isOpeningDir) {
-      logger.warn('handleOpenDirectory called but skillsDirectory is empty or already opening');
+    if (!skillsDirectory || isOpeningDir || openingDirLock.current) {
+      logger.warn(
+        'handleOpenDirectory called but skillsDirectory is empty or already opening',
+      );
       return;
     }
+    openingDirLock.current = true;
     setIsOpeningDir(true);
     logger.info(`Attempting to open directory: ${skillsDirectory}`);
     try {
@@ -117,6 +121,7 @@ function GeneralTabComponent({
       // Optional: show toast error
     } finally {
       setIsOpeningDir(false);
+      openingDirLock.current = false;
     }
   };
 
