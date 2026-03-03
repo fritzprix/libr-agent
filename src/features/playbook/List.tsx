@@ -205,6 +205,7 @@ export default function PlaybookList() {
               onClick={() => fetchData()}
               disabled={loading}
               className="h-9 w-9"
+              aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
             >
               <RefreshCw
                 className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
