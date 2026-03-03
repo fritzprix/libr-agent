@@ -120,7 +120,7 @@ pub(crate) fn evaluate_circuit_breaker_count(
     let tool_name = &tool_call.function.name;
     let args = &tool_call.function.arguments;
 
-    if tool_name == "builtin_ui__circuitBreak" {
+    if tool_name == "ui__circuitBreak" {
         return None;
     }
 
@@ -202,7 +202,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "builtin_planning__clearScratchpad",
+                    "planning__clearScratchpad",
                     r#"{"id":191}"#,
                 )]),
                 None,
@@ -220,7 +220,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "builtin_planning__clearScratchpad",
+                    "planning__clearScratchpad",
                     r#"{"id":192}"#,
                 )]),
                 None,
@@ -238,7 +238,7 @@ mod tests {
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
         let current_batch = vec![test_tool_call(
             "tc-3",
-            "builtin_planning__clearScratchpad",
+            "planning__clearScratchpad",
             r#"{"id":193}"#,
         )];
 
@@ -261,7 +261,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "builtin_planning__clearScratchpad",
+                    "planning__clearScratchpad",
                     repeated_args,
                 )]),
                 None,
@@ -272,7 +272,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "builtin_planning__clearScratchpad",
+                    "planning__clearScratchpad",
                     repeated_args,
                 )]),
                 None,
@@ -297,7 +297,7 @@ mod tests {
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
         let current_batch = vec![test_tool_call(
             "tc-3",
-            "builtin_planning__clearScratchpad",
+            "planning__clearScratchpad",
             repeated_args,
         )];
 
@@ -320,7 +320,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -332,7 +332,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -342,11 +342,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call(
-            "tc-3",
-            "builtin_planning__checkTodo",
-            repeated_args,
-        )];
+        let current_batch = vec![test_tool_call("tc-3", "planning__checkTodo", repeated_args)];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
@@ -367,7 +363,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -379,7 +375,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -391,7 +387,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-3",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -403,7 +399,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-4",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -415,7 +411,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-5",
-                    "builtin_planning__checkTodo",
+                    "planning__checkTodo",
                     repeated_args,
                 )]),
                 None,
@@ -425,11 +421,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call(
-            "tc-6",
-            "builtin_planning__checkTodo",
-            repeated_args,
-        )];
+        let current_batch = vec![test_tool_call("tc-6", "planning__checkTodo", repeated_args)];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
@@ -452,8 +444,8 @@ mod tests {
     /// result, returning 0.
     #[test]
     fn circuit_breaker_does_not_trigger_after_success_following_different_tool_failures() {
-        let health_check = "builtin_swarm__healthCheck";
-        let read_file = "builtin_workspace__readFile";
+        let health_check = "swarm__healthCheck";
+        let read_file = "workspace__readFile";
         let empty_args = "{}";
 
         let messages = vec![

@@ -105,7 +105,7 @@ describe('message-preprocessor', () => {
       expect(processed.content).toHaveLength(2);
       const text = (processed.content[1] as MCPTextContent).text;
 
-      expect(text).toContain('builtin_workspace__readFile(path: "/path/to/file.txt")');
+      expect(text).toContain('workspace__readFile(path: "/path/to/file.txt")');
       expect(text).toContain('listContent(sessionId: "session-1")');
     });
 

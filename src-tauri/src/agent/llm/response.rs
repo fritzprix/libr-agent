@@ -138,7 +138,7 @@ pub async fn handle_llm_response(
                     let circuit_break_call = ToolCall {
                         id: uuid::Uuid::new_v4().to_string(),
                         function: ToolCallFunction {
-                            name: "builtin_ui__circuitBreak".to_string(),
+                            name: "ui__circuitBreak".to_string(),
                             arguments: serde_json::json!({
                                 "toolName": name,
                                 "repetitionCount": count,

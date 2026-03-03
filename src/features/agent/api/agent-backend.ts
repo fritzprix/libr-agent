@@ -32,11 +32,11 @@ export async function saveAgentFile(
     metadata?: AddContentMetadata;
   },
 ): Promise<unknown> {
-  // Note: The tool name must be namespaced for the proxy: builtin_{server_name}__{tool_name}
+  // Note: The tool name must be namespaced for the proxy: {server_name}__{tool_name}
   // Server ID is 'attachments' in extract_builtin_tool_ids (tools.rs)
   const response = await agentCallBuiltinTool(
     sessionId,
-    'builtin_attachments__addContent',
+    'attachments__addContent',
     {
       ...args,
       metadata: {

@@ -2,82 +2,46 @@ import { describe, it, expect } from 'vitest';
 import { extractBuiltInServiceAlias, isValidServiceAlias } from '../utils';
 
 describe('extractBuiltInServiceAlias', () => {
-  it('should extract simple alias without underscores', () => {
-    expect(extractBuiltInServiceAlias('builtin_browser__clickElement')).toBe(
-      'browser',
-    );
-    expect(extractBuiltInServiceAlias('builtin_workspace__readFile')).toBe(
-      'workspace',
-    );
+  it('should extract simple alias for known builtin services', () => {
+    expect(extractBuiltInServiceAlias('browser__clickElement')).toBe('browser');
+    expect(extractBuiltInServiceAlias('workspace__readFile')).toBe('workspace');
+    expect(extractBuiltInServiceAlias('planning__addTodo')).toBe('planning');
   });
 
-  it('should extract alias with underscores', () => {
-    expect(extractBuiltInServiceAlias('builtin_mcp_manager__list_servers')).toBe(
+  it('should extract alias with underscores for known services', () => {
+    expect(extractBuiltInServiceAlias('mcp_manager__list_servers')).toBe(
       'mcp_manager',
     );
-    expect(extractBuiltInServiceAlias('builtin_attachments__search')).toBe(
+    expect(extractBuiltInServiceAlias('attachments__search')).toBe(
       'attachments',
+    );
+    expect(extractBuiltInServiceAlias('content_store__read')).toBe(
+      'content_store',
     );
   });
 
-  it('should extract alias with multiple underscores', () => {
-    expect(
-      extractBuiltInServiceAlias('builtin_my_long_service_name__doSomething'),
-    ).toBe('my_long_service_name');
-  });
-
-  it('should handle tool names with underscores', () => {
-    expect(
-      extractBuiltInServiceAlias('builtin_mcp_manager__search_server'),
-    ).toBe('mcp_manager');
-    expect(
-      extractBuiltInServiceAlias('builtin_browser__execute_async_script'),
-    ).toBe('browser');
+  it('should return null for unknown services', () => {
+    expect(extractBuiltInServiceAlias('my_long_service_name__doSomething')).toBeNull();
+    expect(extractBuiltInServiceAlias('external_server__tool')).toBeNull();
   });
 
   it('should return null for invalid patterns', () => {
     expect(extractBuiltInServiceAlias('invalid_tool_name')).toBeNull();
-    expect(extractBuiltInServiceAlias('builtin_onlyonepart')).toBeNull();
-    expect(extractBuiltInServiceAlias('no_builtin_prefix__tool')).toBeNull();
     expect(extractBuiltInServiceAlias('')).toBeNull();
+    expect(extractBuiltInServiceAlias('no_double_underscore')).toBeNull();
   });
 
-  it('should use non-greedy matching (stop at first __)', () => {
-    // Should match 'service' not 'service__another'
-    expect(
-      extractBuiltInServiceAlias('builtin_service__another__tool'),
-    ).toBe('service');
+  it('should stop at first __ (important: service names should NOT contain __)', () => {
+    expect(extractBuiltInServiceAlias('browser__another__tool')).toBe('browser');
   });
 
   describe('edge cases', () => {
-    it('should handle service names with many consecutive underscores', () => {
-      expect(extractBuiltInServiceAlias('builtin_a_a_a_a__tool')).toBe(
-        'a_a_a_a',
-      );
-      expect(
-        extractBuiltInServiceAlias('builtin_a_b_c_d_e_f__tool_name'),
-      ).toBe('a_b_c_d_e_f');
+    it('should handle missing tool name after __', () => {
+      expect(extractBuiltInServiceAlias('browser__')).toBe('browser');
     });
 
-    it('should handle service names starting with underscores (edge case)', () => {
-      // Note: This is not recommended naming, but the regex handles it
-      expect(extractBuiltInServiceAlias('builtin___service__tool')).toBe(
-        '__service',
-      );
-    });
-
-    it('should stop at first __ (important: service names should NOT contain __)', () => {
-      // If a service name contains __, only the part before __ is extracted
-      // This is why service names MUST NOT contain double underscores
-      expect(extractBuiltInServiceAlias('builtin_a__b__tool')).toBe('a');
-    });
-
-    it('should handle empty service name (edge case)', () => {
-      expect(extractBuiltInServiceAlias('builtin___tool')).toBeNull();
-    });
-
-    it('should handle missing tool name', () => {
-      expect(extractBuiltInServiceAlias('builtin_service__')).toBe('service');
+    it('should return null if server part is empty', () => {
+      expect(extractBuiltInServiceAlias('__tool')).toBeNull();
     });
   });
 });

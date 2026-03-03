@@ -100,13 +100,13 @@ function AgentChatInner() {
     try {
       const result = await agentCallBuiltinTool<{ content: MCPContent[] }>(
         session.id,
-        'builtin_playbook__selectPlaybook',
+        'playbook__selectPlaybook',
         { id: playbookId },
       );
 
       const toolCallId = createId();
       const [toolCallMsg, toolResultMsg] = createToolMessagePair(
-        'builtin_playbook__selectPlaybook',
+        'playbook__selectPlaybook',
         { id: playbookId },
         result.content ?? [],
         toolCallId,

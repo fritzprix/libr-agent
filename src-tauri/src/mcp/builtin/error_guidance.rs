@@ -473,11 +473,11 @@ impl SuccessHint {
             ],
 
             // Assistant tools
-            ("builtin_assistant__createAssistant", ToolGroup::Assistant) => vec![
+            ("assistant__createAssistant", ToolGroup::Assistant) => vec![
                 "Use builtin_assistant__listAssistants to see all assistants".to_string(),
                 "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
             ],
-            ("builtin_assistant__updateAssistant", ToolGroup::Assistant) => {
+            ("assistant__updateAssistant", ToolGroup::Assistant) => {
                 vec!["Use builtin_assistant__getAssistant to verify changes".to_string()]
             }
 

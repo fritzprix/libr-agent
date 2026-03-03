@@ -96,13 +96,13 @@ describe('tool-call-utils', () => {
 
   describe('parseToolName', () => {
     it('should return group/tool display for builtin tool names', () => {
-      expect(parseToolName('builtin_server__toolName')).toBe(
-        'server / toolName',
+      expect(parseToolName('planning__addScratchpad')).toBe(
+        'planning / addScratchpad',
       );
     });
 
     it('should return group/tool display for builtin tool with underscore group', () => {
-      expect(parseToolName('builtin_mcp_manager__listServers')).toBe(
+      expect(parseToolName('mcp_manager__listServers')).toBe(
         'mcp_manager / listServers',
       );
     });

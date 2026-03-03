@@ -95,7 +95,7 @@ impl BuiltinServiceId {
 
     /// Current canonical alias for this service.
     ///
-    /// This is the name used in tool IDs (`builtin_<name>__<tool>`) and what
+    /// This is the name used in tool IDs (`<name>__<tool>`) and what
     /// new `allowedBuiltInServiceAliases` records should contain.
     ///
     /// **Safe to rename**: changing this only affects new records and display;
@@ -122,42 +122,6 @@ impl fmt::Display for BuiltinServiceId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
     }
-}
-
-// ── Tool-name helpers ────────────────────────────────────────────────────────
-//
-// All builtin tool names follow the pattern:  builtin_<group>__<tool>
-//
-// These helpers are the SINGLE change-point for the naming convention.
-// Routing code, proxy assembly, and external-API translation all go through
-// these functions so that renaming the prefix is a one-line change here.
-
-/// The prefix that distinguishes builtin tool names from external MCP tool names.
-pub const BUILTIN_PREFIX: &str = "builtin_";
-
-/// Build the canonical internal tool name for a builtin tool.
-///
-/// ```text
-/// builtin_tool_name("planning", "addScratchpad") → "builtin_planning__addScratchpad"
-/// ```
-pub fn builtin_tool_name(group: &str, tool: &str) -> String {
-    format!("{}{}__{}", BUILTIN_PREFIX, group, tool)
-}
-
-/// Return `true` if `tool_name` is an internal builtin tool name.
-pub fn is_builtin_tool_name(tool_name: &str) -> bool {
-    tool_name.starts_with(BUILTIN_PREFIX)
-}
-
-/// Strip the builtin prefix, returning `(group, tool)` or `None` for non-builtin names.
-///
-/// ```text
-/// parse_builtin_tool_name("builtin_planning__addScratchpad") → Some(("planning", "addScratchpad"))
-/// parse_builtin_tool_name("github__search_code")             → None
-/// ```
-pub fn parse_builtin_tool_name(tool_name: &str) -> Option<(&str, &str)> {
-    let suffix = tool_name.strip_prefix(BUILTIN_PREFIX)?;
-    suffix.split_once("__")
 }
 
 #[cfg(test)]
