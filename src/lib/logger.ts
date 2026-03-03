@@ -36,7 +36,6 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { safeInvoke } from '@/lib/backend/core';
 
 // Log level enum
 enum LogLevel {
@@ -190,19 +189,19 @@ export interface LogFileManager {
  */
 class TauriLogFileManager implements LogFileManager {
   async getLogDirectory(): Promise<string> {
-    return await safeInvoke<string>('get_app_logs_dir');
+    return await invoke<string>('get_app_logs_dir');
   }
 
   async backupCurrentLog(): Promise<string> {
-    return await safeInvoke<string>('backup_current_log');
+    return await invoke<string>('backup_current_log');
   }
 
   async clearCurrentLog(): Promise<void> {
-    await safeInvoke<void>('clear_current_log');
+    await invoke<void>('clear_current_log');
   }
 
   async listLogFiles(): Promise<string[]> {
-    return await safeInvoke<string[]>('list_log_files');
+    return await invoke<string[]>('list_log_files');
   }
 }
 
