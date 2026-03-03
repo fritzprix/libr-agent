@@ -4,6 +4,7 @@ import { useAgentTools } from '../use-agent-tools';
 import { getAgentAvailableTools } from '@/lib/backend/agent-commands';
 import { validateMCPTools } from '@/lib/schemas/mcp-tool';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
+import type { MCPTool } from '@/lib/mcp/protocol/tool';
 
 // Mock dependencies
 vi.mock('@/lib/backend/agent-commands', () => ({
@@ -43,16 +44,16 @@ describe('useAgentTools', () => {
 
   it('should fetch and validate tools successfully', async () => {
     const mockSessionId = 'test-session-123';
-    const mockBackendResponse = [
-      { name: 'tool1', description: 'test1' },
-      { name: 'tool2', description: 'test2' },
+    const mockBackendResponse: MCPTool[] = [
+      { name: 'tool1', description: 'test1', inputSchema: { type: 'object', properties: {} } },
+      { name: 'tool2', description: 'test2', inputSchema: { type: 'object', properties: {} } },
     ];
-    const mockValidatedTools = [
-      { name: 'tool1', description: 'test1' },
+    const mockValidatedTools: MCPTool[] = [
+      { name: 'tool1', description: 'test1', inputSchema: { type: 'object', properties: {} } },
     ];
 
     vi.mocked(getAgentAvailableTools).mockResolvedValue(mockBackendResponse);
-    vi.mocked(validateMCPTools).mockReturnValue(mockValidatedTools as any);
+    vi.mocked(validateMCPTools).mockReturnValue(mockValidatedTools);
     vi.mocked(isBuiltinTool).mockReturnValue(false);
 
     const { result } = renderHook(() => useAgentTools(mockSessionId));
@@ -108,7 +109,7 @@ describe('useAgentTools', () => {
     const mockSessionId = 'test-session-123';
     const invalidResponse = { name: 'tool1' }; // Not an array
 
-    vi.mocked(getAgentAvailableTools).mockResolvedValue(invalidResponse as any);
+    vi.mocked(getAgentAvailableTools).mockResolvedValue(invalidResponse as unknown as MCPTool[]);
 
     const { result } = renderHook(() => useAgentTools(mockSessionId));
 
@@ -122,23 +123,28 @@ describe('useAgentTools', () => {
 
   it('should handle unmounting before fetch completes', async () => {
     const mockSessionId = 'test-session-123';
-    let resolvePromise: (val: any) => void;
-    const promise = new Promise((resolve) => {
+    let resolvePromise: (val: MCPTool[]) => void;
+    const promise = new Promise<MCPTool[]>((resolve) => {
       resolvePromise = resolve;
     });
 
-    vi.mocked(getAgentAvailableTools).mockReturnValue(promise as any);
+    vi.mocked(getAgentAvailableTools).mockReturnValue(promise);
 
     const { result, unmount } = renderHook(() => useAgentTools(mockSessionId));
 
     expect(result.current.isLoading).toBe(true);
+    expect(result.current.availableTools).toEqual([]);
 
     unmount();
 
     // Resolve after unmount
     resolvePromise!([]);
 
-    // We can't wait for the state update, but we can verify it doesn't crash
-    // and ideally the loading state wouldn't be updated (though React 18 handles this better)
+    // Wait for the promise microtask to flush; state should not change after unmount.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // React 18 keeps the last snapshot; verify it did not update post-unmount.
+    expect(result.current.isLoading).toBe(true);
+    expect(result.current.availableTools).toEqual([]);
   });
 });
