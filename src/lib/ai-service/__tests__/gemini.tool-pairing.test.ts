@@ -139,7 +139,7 @@ describe('GeminiService Tool Result Handling', () => {
                         id: toolCallId,
                         type: 'function',
                         function: {
-                            name: 'builtin_playbook__selectPlaybook',
+                            name: 'playbook__selectPlaybook',
                             arguments: JSON.stringify({ id: 'pb_123' }),
                         },
                     },
@@ -184,7 +184,7 @@ describe('GeminiService Tool Result Handling', () => {
                         id: 'call_1',
                         type: 'function',
                         function: {
-                            name: 'builtin_workspace__executePendingShell',
+                            name: 'workspace__executePendingShell',
                             arguments: JSON.stringify({ executionId: 'abc' }),
                         },
                     },
@@ -207,7 +207,7 @@ describe('GeminiService Tool Result Handling', () => {
         };
 
         expect(firstPart.functionCall?.name).toBe(
-            'builtin_workspace__executePendingShell',
+            'workspace__executePendingShell',
         );
         expect(firstPart.thoughtSignature).toBe(
             'skip_thought_signature_validator',

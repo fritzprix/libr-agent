@@ -179,30 +179,14 @@ impl BuiltinMCPServer for PlaybookServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "createPlaybook" | "builtin_playbook__createPlaybook" => {
-                operations::create_playbook(&self.assistant_id, args).await
-            }
-            "selectPlaybook" | "builtin_playbook__selectPlaybook" => {
-                operations::select_playbook(&self.assistant_id, args).await
-            }
-            "listPlaybooks" | "builtin_playbook__listPlaybooks" => {
-                operations::list_playbooks(&self.assistant_id, args, false).await
-            }
-            "showPlaybooks" | "builtin_playbook__showPlaybooks" => {
-                operations::list_playbooks(&self.assistant_id, args, true).await
-            }
-            "getPlaybookPage" | "builtin_playbook__getPlaybookPage" => {
-                operations::list_playbooks(&self.assistant_id, args, true).await
-            }
-            "deletePlaybook" | "builtin_playbook__deletePlaybook" => {
-                operations::delete_playbook(&self.assistant_id, args).await
-            }
-            "getPlaybook" | "builtin_playbook__getPlaybook" => {
-                operations::get_playbook(&self.assistant_id, args).await
-            }
-            "updatePlaybook" | "builtin_playbook__updatePlaybook" => {
-                operations::update_playbook(&self.assistant_id, args).await
-            }
+            "createPlaybook" => operations::create_playbook(&self.assistant_id, args).await,
+            "selectPlaybook" => operations::select_playbook(&self.assistant_id, args).await,
+            "listPlaybooks" => operations::list_playbooks(&self.assistant_id, args, false).await,
+            "showPlaybooks" => operations::list_playbooks(&self.assistant_id, args, true).await,
+            "getPlaybookPage" => operations::list_playbooks(&self.assistant_id, args, true).await,
+            "deletePlaybook" => operations::delete_playbook(&self.assistant_id, args).await,
+            "getPlaybook" => operations::get_playbook(&self.assistant_id, args).await,
+            "updatePlaybook" => operations::update_playbook(&self.assistant_id, args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

@@ -279,7 +279,9 @@ fn get_command_path(cmd: &str) -> Option<String> {
         // Unix-like: Use 'command -v'
         let output = Command::new("sh")
             .arg("-c")
-            .arg(format!("command -v {}", cmd))
+            .arg("command -v \"$1\"")
+            .arg("--")
+            .arg(cmd)
             .output()
             .ok()?;
 
@@ -456,5 +458,33 @@ mod tests {
             !command_exists("this_command_definitely_does_not_exist_12345"),
             "Non-existent command should return false"
         );
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_get_command_path_injection() {
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("vuln_test_get_command_path");
+        let _ = std::fs::remove_file(&test_file);
+
+        let malicious_cmd = format!("ls; touch {}", test_file.display());
+        let result = get_command_path(&malicious_cmd);
+
+        assert!(result.is_none());
+        assert!(
+            !test_file.exists(),
+            "Command injection succeeded: side effect occurred"
+        );
+
+        let malicious_cmd2 = format!("ls $(touch {})", test_file.display());
+        let result2 = get_command_path(&malicious_cmd2);
+
+        assert!(result2.is_none());
+        assert!(
+            !test_file.exists(),
+            "Command injection succeeded: side effect occurred"
+        );
+
+        let _ = std::fs::remove_file(test_file);
     }
 }

@@ -57,8 +57,10 @@ export function ScheduledTaskModal({
       .catch((e: unknown) => logger.error('Failed to load assistants', e));
   }, []);
 
-  // Populate form when editing
+  // Populate form when modal opens or when switching between edit/create mode.
+  // Does NOT depend on assistants — default assistantId is handled separately.
   useEffect(() => {
+    if (!open) return;
     if (task) {
       setName(task.name);
       setCronExpression(task.cronExpression);
@@ -67,10 +69,17 @@ export function ScheduledTaskModal({
     } else {
       setName('');
       setCronExpression('0 9 * * *');
-      setAssistantId(assistants[0]?.id ?? '');
+      setAssistantId('');
       setMessage('');
     }
-  }, [task, assistants, open]);
+  }, [task, open]);
+
+  // Set default assistantId for new tasks once assistants finish loading.
+  // Uses functional update so user selections made before load completes are preserved.
+  useEffect(() => {
+    if (!open || task) return;
+    setAssistantId((prev) => prev || assistants[0]?.id || '');
+  }, [open, task, assistants]);
 
   const handleSave = async () => {
     if (

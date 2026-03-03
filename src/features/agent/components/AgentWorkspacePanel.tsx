@@ -390,7 +390,7 @@ export function AgentWorkspacePanel() {
           // Call builtin workspace tool (returns MCPResult directly after fix)
           const response = (await agentCallBuiltinTool(
             session.id,
-            'builtin_workspace__importFile',
+            'workspace__importFile',
             {
               src_abs_path: srcPath,
               dest_rel_path: destRelPath,
@@ -461,7 +461,7 @@ export function AgentWorkspacePanel() {
           }
 
           const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-            'builtin_workspace__importFile',
+            'workspace__importFile',
             { src_abs_path: srcPath, dest_rel_path: destRelPath },
             stringToMCPContentArray(resultText),
             toolCallId,

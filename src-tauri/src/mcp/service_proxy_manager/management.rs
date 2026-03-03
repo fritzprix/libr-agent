@@ -1,7 +1,7 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::types::MCPResponse;
 use super::MCPServiceProxyManager;
-use crate::mcp::builtin::service_id::is_builtin_tool_name;
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use std::sync::Arc;
 
 impl MCPServiceProxyManager {
@@ -111,7 +111,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call
-    /// * `tool_name` - Name of the tool to invoke (e.g., "builtin_attachments__addContent" or "filesystem__read_file")
+    /// * `tool_name` - Name of the tool to invoke (e.g., "attachments__addContent" or "filesystem__read_file")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -122,7 +122,7 @@ impl MCPServiceProxyManager {
     /// ```rust,ignore
     /// let result = manager.call_tool(
     ///     "session-123",
-    ///     "builtin_attachments__addContent",
+    ///     "attachments__addContent",
     ///     json!({"title": "My Note", "content": "Content"})
     /// ).await?;
     /// ```
@@ -132,8 +132,12 @@ impl MCPServiceProxyManager {
         tool_name: &str,
         args: serde_json::Value,
     ) -> Result<MCPResponse, String> {
-        // Builtin tools route through proxy
-        if is_builtin_tool_name(tool_name) {
+        // Builtin tools route through proxy (identified by known service alias prefix)
+        let is_builtin = tool_name
+            .split_once("__")
+            .map(|(server, _)| BuiltinServiceId::from_alias(server).is_some())
+            .unwrap_or(false);
+        if is_builtin {
             let proxy = match self.get_proxy(session_id).await {
                 Some(proxy) => proxy,
                 None => {

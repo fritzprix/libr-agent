@@ -147,11 +147,7 @@ mod tests {
 
         // Test 3: Call detectPlatform tool
         let result = proxy_manager
-            .call_tool(
-                "test-session-1",
-                "builtin_bootstrap__detectPlatform",
-                json!({}),
-            )
+            .call_tool("test-session-1", "bootstrap__detectPlatform", json!({}))
             .await
             .expect("Tool call should succeed");
 
@@ -173,7 +169,7 @@ mod tests {
         let result = proxy_manager
             .call_tool(
                 "test-session-1",
-                "builtin_bootstrap__getBootstrapGuide",
+                "bootstrap__getBootstrapGuide",
                 json!({
                     "tool": "node",
                     "platform": "auto"
@@ -250,12 +246,12 @@ mod tests {
 
         // Both should be able to call tools independently
         let result1 = proxy_manager
-            .call_tool("session-1", "builtin_bootstrap__detectPlatform", json!({}))
+            .call_tool("session-1", "bootstrap__detectPlatform", json!({}))
             .await
             .expect("Session 1 tool call failed");
 
         let result2 = proxy_manager
-            .call_tool("session-2", "builtin_bootstrap__detectPlatform", json!({}))
+            .call_tool("session-2", "bootstrap__detectPlatform", json!({}))
             .await
             .expect("Session 2 tool call failed");
 
@@ -297,9 +293,9 @@ mod tests {
         for i in 0..5 {
             let manager = proxy_manager.clone();
             let tool = if i % 2 == 0 {
-                "builtin_bootstrap__detectPlatform"
+                "bootstrap__detectPlatform"
             } else {
-                "builtin_bootstrap__getBootstrapGuide"
+                "bootstrap__getBootstrapGuide"
             };
 
             let args = if i % 2 == 0 {
@@ -348,11 +344,7 @@ mod tests {
 
         // Test 1: Call tool on non-existent session
         let result = proxy_manager
-            .call_tool(
-                "nonexistent",
-                "builtin_bootstrap__detectPlatform",
-                json!({}),
-            )
+            .call_tool("nonexistent", "bootstrap__detectPlatform", json!({}))
             .await;
 
         assert!(result.is_err());
@@ -370,7 +362,7 @@ mod tests {
             .expect("Failed to create proxy");
 
         let result = proxy_manager
-            .call_tool("test-errors", "builtin_bootstrap__unknownTool", json!({}))
+            .call_tool("test-errors", "bootstrap__unknownTool", json!({}))
             .await;
 
         assert!(result.is_err());
@@ -426,7 +418,7 @@ mod tests {
         proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_playbook__createPlaybook",
+                "playbook__createPlaybook",
                 json!({
                     "goal": "Data Processing Workflow",
                     "initialCommand": "process data",
@@ -448,7 +440,7 @@ mod tests {
         proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_playbook__createPlaybook",
+                "playbook__createPlaybook",
                 json!({
                     "goal": "API Integration",
                     "initialCommand": "connect api",
@@ -469,7 +461,7 @@ mod tests {
 
         // Test listPlaybooks with UI rendering
         let response = proxy_manager
-            .call_tool(&session_id, "builtin_playbook__showPlaybooks", json!({}))
+            .call_tool(&session_id, "playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list playbooks");
 
@@ -582,7 +574,7 @@ mod tests {
         proxy_manager
             .call_tool(
                 "session-ui-1",
-                "builtin_playbook__createPlaybook",
+                "playbook__createPlaybook",
                 json!({
                     "goal": "Session 1 Playbook",
                     "initialCommand": "s1",
@@ -605,7 +597,7 @@ mod tests {
         proxy_manager
             .call_tool(
                 "session-ui-2",
-                "builtin_playbook__createPlaybook",
+                "playbook__createPlaybook",
                 json!({
                     "goal": "Session 2 Playbook",
                     "initialCommand": "s2",
@@ -626,7 +618,7 @@ mod tests {
 
         // List from session 1
         let response1 = proxy_manager
-            .call_tool("session-ui-1", "builtin_playbook__showPlaybooks", json!({}))
+            .call_tool("session-ui-1", "playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list from session 1");
 
@@ -645,7 +637,7 @@ mod tests {
 
         // List from session 2
         let response2 = proxy_manager
-            .call_tool("session-ui-2", "builtin_playbook__showPlaybooks", json!({}))
+            .call_tool("session-ui-2", "playbook__showPlaybooks", json!({}))
             .await
             .expect("Failed to list from session 2");
 
@@ -694,7 +686,7 @@ mod tests {
         let response = proxy_manager
             .call_tool(
                 &session_id,
-                "builtin_workspace__runInPersistentShell",
+                "workspace__runInPersistentShell",
                 json!({
                     "command": "pwd",
                     "runMode": "sync"
