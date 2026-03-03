@@ -175,3 +175,12 @@ pub async fn collect_descendant_snapshot(
 
     Ok((rows, truncated))
 }
+
+pub async fn count_session_turns(session_id: &str) -> usize {
+    let repo = crate::state::get_message_repository();
+    let messages = repo
+        .get_messages_by_session(session_id, 1000)
+        .await
+        .unwrap_or_default();
+    messages.iter().filter(|m| m.role == "assistant").count()
+}
