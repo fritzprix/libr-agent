@@ -61,7 +61,7 @@ export function DangerZoneSettings({
                 type="button"
                 variant="destructive"
                 disabled={isDeleting}
-                onClick={async (e) => {
+                onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   setConfirmOpen(true);
@@ -103,10 +103,9 @@ export function DangerZoneSettings({
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         e.preventDefault();
-                        await onDelete();
-                        setConfirmOpen(false);
+                        void onDelete().then(() => setConfirmOpen(false));
                       }}
                       disabled={isDeleting}
                     >
@@ -183,10 +182,9 @@ export function DangerZoneSettings({
                       {t('common.cancel', 'Cancel')}
                     </AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         e.preventDefault();
-                        await onReset();
-                        setResetConfirmOpen(false);
+                        void onReset().then(() => setResetConfirmOpen(false));
                       }}
                       disabled={isResetting}
                     >
