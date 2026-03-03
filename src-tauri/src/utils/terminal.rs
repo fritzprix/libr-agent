@@ -11,8 +11,8 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
             return Err("Required system command 'cmd' not found.".to_string());
         }
 
-        // Normalize path to use backslashes for Windows cmd
-        let path_str = path.to_string_lossy().replace("/", "\\");
+        // Let Windows normalize paths via PathBuf
+        let path_str = path.to_string_lossy().into_owned();
 
         Ok((
             "cmd".to_string(),
@@ -36,10 +36,10 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
 
         let path_str = path.to_string_lossy();
         // Quote for shell: replace ' with '\'' and wrap in '
-        let shell_quoted = format!("'{}'", path_str.replace("'", "'\\''"));
+        let shell_quoted = format!("'{}'", path_str.replace('\'', "'\\''"));
         // Escape for AppleScript string: replace \ with \\ and " with \"
         let script_cmd = format!("cd {}", shell_quoted);
-        let applescript_escaped = script_cmd.replace("\\", "\\\\").replace("\"", "\\\"");
+        let applescript_escaped = script_cmd.replace('\\', "\\\\").replace('\"', "\\\"");
 
         let script = format!(
             "tell application \"Terminal\" to do script \"{}\"",
@@ -76,7 +76,7 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
                     args.push("sh".to_string());
                     args.push("-c".to_string());
                     // Escape single quotes for shell
-                    let path_quoted = format!("'{}'", path_str.replace("'", "'\\''"));
+                    let path_quoted = format!("'{}'", path_str.replace('\'', "'\\''"));
                     args.push(format!("cd {} && exec $SHELL", path_quoted));
                 }
 
