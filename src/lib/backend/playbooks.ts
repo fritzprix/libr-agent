@@ -107,7 +107,7 @@ export async function deletePlaybook(
   id: string,
   agentId: string,
 ): Promise<void> {
-  await safeInvoke<void>('delete_playbook', { id, agentId });
+  await safeInvoke<void>('delete_playbook', { id, assistantId: agentId });
 }
 
 export interface ListPlaybooksOptions extends Record<string, unknown> {
@@ -125,7 +125,9 @@ export async function listPlaybooks(options: ListPlaybooksOptions): Promise<
   })[]
 > {
   // If agentId is undefined, pass empty string for global listing
-  const payload = { ...options, agentId: options.agentId || '' };
+  const assistantId = options.agentId || '';
+  const payload = { ...options, assistantId };
+  delete payload.agentId;
   const dtos = await safeInvoke<PlaybookDto[]>('list_playbooks', payload);
   return dtos.map(deserializePlaybook);
 }
@@ -137,7 +139,7 @@ export async function togglePlaybookBookmark(
 ): Promise<void> {
   await safeInvoke<void>('toggle_playbook_bookmark', {
     id,
-    agentId,
+    assistantId: agentId,
     bookmarked,
   });
 }
@@ -150,7 +152,7 @@ export async function getPlaybook(
 > {
   const dto = await safeInvoke<PlaybookDto | null>('get_playbook', {
     id,
-    agentId,
+    assistantId: agentId,
   });
   return dto ? deserializePlaybook(dto) : undefined;
 }
