@@ -11,8 +11,9 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
             return Err("Required system command 'cmd' not found.".to_string());
         }
 
-        // Let Windows normalize paths via PathBuf
-        let path_str = path.to_string_lossy().into_owned();
+        // Normalize path separators for cmd.exe (/D expects Windows-style backslashes)
+        let raw_path = path.to_string_lossy();
+        let path_str = raw_path.replace('/', std::path::MAIN_SEPARATOR);
 
         Ok((
             "cmd".to_string(),
