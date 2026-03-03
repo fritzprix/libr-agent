@@ -31,6 +31,11 @@ const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const MCPServerPage = lazy(
   () => import('@/features/mcp-servers/MCPServerPage'),
 );
+const ScheduledTasksPage = lazy(() =>
+  import('@/features/scheduled-tasks/ScheduledTasksPage').then((m) => ({
+    default: m.ScheduledTasksPage,
+  })),
+);
 function App() {
   return (
     <div className="h-screen w-full">
@@ -102,6 +107,10 @@ function App() {
                                       <Route
                                         path="/mcp-servers"
                                         element={<MCPServerPage />}
+                                      />
+                                      <Route
+                                        path="/scheduled-tasks"
+                                        element={<ScheduledTasksPage />}
                                       />
                                     </Routes>
                                   </Suspense>

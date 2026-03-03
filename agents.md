@@ -881,6 +881,45 @@ pub async fn command_name(param: Type) -> Result<ReturnType, String> {
 - Verify cross-platform compatibility
 - Test MCP server integration scenarios
 
+#### ⚠️ Rust Test Architecture — CRITICAL
+
+CI runs **`cargo test --tests`**, NOT `cargo test --lib`. This means:
+
+- `#[cfg(test)]` blocks inside `src/` **are never executed in CI**
+- Only tests in the `tests/` directory (integration tests) run in CI
+- On Windows, `cargo test --lib` also crashes with `STATUS_ENTRYPOINT_NOT_FOUND` due to DLL shadowing from Anaconda
+
+**Rule: All Rust tests MUST be written as integration tests in `src-tauri/tests/`.**
+
+```
+src-tauri/
+└── tests/
+    ├── seaorm_migration_verification.rs   ← template: uses Migrator::up() on in-memory SQLite
+    ├── mcp_server_repository_tests.rs     ← repository + cache invalidation tests
+    └── mcp_utils_tests.rs                 ← serialization helper tests
+```
+
+Integration test boilerplate (see `tests/seaorm_migration_verification.rs`):
+
+```rust
+use sqlx::sqlite::SqlitePoolOptions;
+use sea_orm::SqlxSqliteConnector;
+use tauri_mcp_agent_lib::migration::Migrator;
+use sea_orm_migration::MigratorTrait;
+
+async fn setup_db() -> sea_orm::DatabaseConnection {
+    let pool = SqlitePoolOptions::new()
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+    Migrator::up(&db, None).await.unwrap();
+    db
+}
+```
+
+Do **not** add `#[cfg(test)]` blocks to lib source files — they give a false sense of test coverage.
+
 ### Refactoring Guidelines
 
 **Before completing any refactoring work, always run the following commands to ensure code quality and build integrity:**

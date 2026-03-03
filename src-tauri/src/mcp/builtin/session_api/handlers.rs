@@ -210,17 +210,19 @@ pub async fn handle_tool_call(
             };
 
             let final_status = extract_session_status(&session_data);
+            let turn_count = count_session_turns(&child_id_owned).await;
 
             if !include_last_assistant_message {
                 return Ok(success_result(
                     format!(
-                        "Child session {} (depth: {}, lineage: {}) reached terminal status '{}' after {} polls.",
-                        child_id_owned, depth, lineage, final_status, poll_count
+                        "Child session {} (depth: {}, lineage: {}) reached terminal status '{}' after {} polls ({} turns).",
+                        child_id_owned, depth, lineage, final_status, poll_count, turn_count
                     ),
                     json!({
                         "session": session_data,
                         "status": final_status,
                         "pollCount": poll_count,
+                        "turnCount": turn_count,
                         "messages": Value::Null
                     }),
                 ));
@@ -247,13 +249,13 @@ pub async fn handle_tool_call(
                 latest_assistant_message_text(&messages, assistant_message_max_chars)
             {
                 format!(
-                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls.\n\nLatest assistant result [{}]:\n{}",
-                    child_id_owned, depth, lineage, final_status, poll_count, message_id, assistant_text
+                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nLatest assistant result [{}]:\n{}",
+                    child_id_owned, depth, lineage, final_status, poll_count, turn_count, message_id, assistant_text
                 )
             } else {
                 format!(
-                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls.\n\nNo assistant text message found in the latest {} messages.",
-                    child_id_owned, depth, lineage, final_status, poll_count, result_message_limit
+                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nNo assistant text message found in the latest {} messages.",
+                    child_id_owned, depth, lineage, final_status, poll_count, turn_count, result_message_limit
                 )
             };
 
@@ -263,6 +265,7 @@ pub async fn handle_tool_call(
                     "session": session_data,
                     "status": final_status,
                     "pollCount": poll_count,
+                    "turnCount": turn_count,
                     "messages": messages_data
                 }),
             ))
@@ -420,17 +423,19 @@ pub async fn handle_tool_call(
             };
 
             let final_status = extract_session_status(&session_data);
+            let turn_count = count_session_turns(&session_id).await;
 
             if !include_last_assistant_message {
                 return Ok(success_result(
                     format!(
-                        "Session {} reached terminal status '{}' after {} polls.",
-                        session_id, final_status, poll_count
+                        "Session {} reached terminal status '{}' after {} polls ({} turns).",
+                        session_id, final_status, poll_count, turn_count
                     ),
                     json!({
                         "session": session_data,
                         "status": final_status,
                         "pollCount": poll_count,
+                        "turnCount": turn_count,
                         "messages": Value::Null
                     }),
                 ));
@@ -457,13 +462,13 @@ pub async fn handle_tool_call(
                 latest_assistant_message_text(&messages, assistant_message_max_chars)
             {
                 format!(
-                    "Session {} reached terminal status '{}' after {} polls.\n\nLatest assistant result [{}]:\n{}",
-                    session_id, final_status, poll_count, message_id, assistant_text
+                    "Session {} reached terminal status '{}' after {} polls ({} turns).\n\nLatest assistant result [{}]:\n{}",
+                    session_id, final_status, poll_count, turn_count, message_id, assistant_text
                 )
             } else {
                 format!(
-                    "Session {} reached terminal status '{}' after {} polls.\n\nNo assistant text message was found in the latest {} messages.",
-                    session_id, final_status, poll_count, result_message_limit
+                    "Session {} reached terminal status '{}' after {} polls ({} turns).\n\nNo assistant text message was found in the latest {} messages.",
+                    session_id, final_status, poll_count, turn_count, result_message_limit
                 )
             };
 
@@ -473,6 +478,7 @@ pub async fn handle_tool_call(
                     "session": session_data,
                     "status": final_status,
                     "pollCount": poll_count,
+                    "turnCount": turn_count,
                     "messages": messages_data
                 }),
             ))

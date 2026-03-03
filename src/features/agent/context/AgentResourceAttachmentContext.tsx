@@ -100,7 +100,7 @@ export function AgentResourceAttachmentProvider({
         // Use Agent V2 session-specific proxy to call listContent
         const response = await agentCallBuiltinTool<{
           contents: ContentStoreItem[];
-        }>(sessionId, 'builtin_attachments__listContent', {
+        }>(sessionId, 'attachments__listContent', {
           sessionId,
         });
 
@@ -583,7 +583,7 @@ export function AgentResourceAttachmentProvider({
         try {
           await agentCallBuiltinTool(
             currentSession.id,
-            'builtin_attachments__deleteContent',
+            'attachments__deleteContent',
             { contentId: ref.contentId },
           );
           await mutateSessionFiles();

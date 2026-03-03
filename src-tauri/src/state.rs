@@ -10,7 +10,8 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
     SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
     SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
-    SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
+    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
+    SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -54,6 +55,9 @@ static KNOWLEDGE_REPOSITORY: OnceLock<SqliteKnowledgeRepository> = OnceLock::new
 
 /// A global, thread-safe, once-initialized planning repository.
 static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized scheduled task repository.
+static SCHEDULED_TASK_REPOSITORY: OnceLock<SqliteScheduledTaskRepository> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized Tauri AppHandle for event emission.
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -335,6 +339,26 @@ pub fn get_planning_repository() -> &'static SqlitePlanningRepository {
     PLANNING_REPOSITORY
         .get()
         .expect("Planning repository not initialized. Call set_planning_repository() first.")
+}
+
+/// Sets the global scheduled task repository instance.
+///
+/// # Panics
+/// This function will panic if the repository is already set.
+pub fn set_scheduled_task_repository(repo: SqliteScheduledTaskRepository) {
+    SCHEDULED_TASK_REPOSITORY
+        .set(repo)
+        .expect("Scheduled task repository already initialized");
+}
+
+/// Gets a reference to the global scheduled task repository.
+///
+/// # Panics
+/// Panics if the repository has not been initialized.
+pub fn get_scheduled_task_repository() -> &'static SqliteScheduledTaskRepository {
+    SCHEDULED_TASK_REPOSITORY.get().expect(
+        "Scheduled task repository not initialized. Call set_scheduled_task_repository() first.",
+    )
 }
 
 // ── SP1: SessionBus ───────────────────────────────────────────────────────────

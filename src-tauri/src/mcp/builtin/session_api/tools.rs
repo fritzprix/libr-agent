@@ -31,7 +31,7 @@ pub fn create_child_session_tool() -> MCPTool {
     MCPTool {
         name: "spawnAgent".to_string(),
         title: Some("Spawn Agent".to_string()),
-        description: "Spawn a child agent with a specific task. Set awaitCompletion=true (default) to block until the child finishes and return its final result in a single call — results flow back to parent context (DFS-style). Set awaitCompletion=false to return immediately and poll with awaitAgent separately."
+        description: "Spawn a NEW child agent with a specific task. To send a message to an EXISTING agent, use the messageAgent tool instead! Set awaitCompletion=true (default) to block until the child finishes and return its final result in a single call — results flow back to parent context (DFS-style). Set awaitCompletion=false to return immediately and poll with awaitAgent separately."
             .to_string(),
         input_schema: object_prop(
             vec![

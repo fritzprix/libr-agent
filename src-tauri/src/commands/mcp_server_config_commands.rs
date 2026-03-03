@@ -1,3 +1,4 @@
+use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 use crate::state::get_mcp_server_repository;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,12 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
 
 #[command]
 pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
+    if BuiltinServiceId::from_alias(&name).is_some() {
+        return Err(format!(
+            "Server name '{}' is reserved for a builtin service.",
+            name
+        ));
+    }
     let repo = get_mcp_server_repository();
     let model = repo
         .create(&name, config)
@@ -44,6 +51,14 @@ pub async fn update_mcp_server_config(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
+    if let Some(ref n) = name {
+        if BuiltinServiceId::from_alias(n).is_some() {
+            return Err(format!(
+                "Server name '{}' is reserved for a builtin service.",
+                n
+            ));
+        }
+    }
     let repo = get_mcp_server_repository();
 
     let updated = repo

@@ -10,6 +10,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod models;
 pub mod repositories; // Make public for integration tests
+mod scheduled; // Cron-backed scheduled task background worker
 mod search;
 pub mod server;
 pub mod services;
@@ -64,6 +65,10 @@ use commands::messages_commands::{
 use commands::playbook_commands::{
     create_playbook, delete_playbook, get_playbook, list_playbooks, toggle_playbook_bookmark,
     update_playbook,
+};
+use commands::scheduled_task_commands::{
+    create_scheduled_task, delete_scheduled_task, get_scheduled_task, list_scheduled_tasks,
+    toggle_scheduled_task, update_scheduled_task,
 };
 use commands::session_commands::remove_session;
 use commands::settings_commands::{
@@ -243,6 +248,12 @@ pub fn run() {
                 get_playbook,
                 list_playbooks,
                 toggle_playbook_bookmark,
+                create_scheduled_task,
+                list_scheduled_tasks,
+                get_scheduled_task,
+                update_scheduled_task,
+                toggle_scheduled_task,
+                delete_scheduled_task,
                 set_setting,
                 update_settings,
                 get_setting,

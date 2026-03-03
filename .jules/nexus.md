@@ -43,3 +43,15 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `agent_commands.rs` still contained business logic such as session creation (repository selection based on ephemeral flags, workspace overrides), initial message orchestration, builtin tool calling, and service context fetching.
 - **Action:** Extracted `create_session`, `create_session_with_initial_message`, `call_builtin_tool`, and `get_service_contexts` from `agent_commands.rs` into `AgentService`.
 - **Result:** `agent_commands.rs` is strictly a framework boundary now, merely passing arguments to `AgentService`. Domain logic regarding agent lifecycle management has been centralized.
+
+## 2026-03-03 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** `mcp_commands.rs` contained complex logic for probing MCP servers, including DB lookup, configuration parsing, server manager instantiation, tool probing, and clean-up.
+- **Action:** Extracted the logic from `probe_mcp_server` into `McpServerService`.
+- **Result:** `mcp_commands.rs` is strictly a framework boundary now, delegating to `McpServerService`.
+
+## 2026-03-03 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** `playbook_commands.rs` contained business logic for playbooks, including resolving assistant ID from session and playbook sorting and listing.
+- **Action:** Extracted the logic into `PlaybookService` and created `PlaybookDto`.
+- **Result:** `playbook_commands.rs` delegates complex logic to `PlaybookService`.

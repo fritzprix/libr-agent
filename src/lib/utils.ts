@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { BUILTIN_PREFIX } from './tool-call-utils';
+import { BUILTIN_SERVICE_NAMES } from './tool-call-utils';
 
 /**
  * Converts a string to an array of MCPContent objects with type 'text'.
@@ -163,7 +163,7 @@ export function toValidJsName(name: string): string {
 
 /**
  * Extracts the service alias from a built-in tool name.
- * Parses the proxy-namespaced format: `builtin_<alias>__<toolname>`
+ * Parses the proxy-namespaced format: `<alias>__<toolname>`
  *
  * This format is used by `MCPServiceProxy` to route tool calls to the appropriate
  * session-isolated built-in server instance.
@@ -172,19 +172,18 @@ export function toValidJsName(name: string): string {
  * but MUST NOT contain double underscores (`__`) as that is the delimiter between alias and tool name.
  *
  * Examples:
- * - `builtin_browser__clickElement` → `browser`
- * - `builtin_mcp_manager__list_servers` → `mcp_manager`
- * - `builtin_a_b_c__tool` → `a_b_c` (multiple underscores OK)
- * - `builtin_a__b__tool` → `a` (stops at first `__`, so `a__b` is INVALID service name)
+ * - `browser__clickElement` → `browser`
+ * - `mcp_manager__list_servers` → `mcp_manager`
+ * - `unknown_server__tool` → `null` (not a known builtin service)
  *
  * @param toolName The tool name to extract the alias from
- * @returns The service alias or null if the tool name doesn't match the pattern
+ * @returns The service alias or null if the tool name doesn't match a known builtin service
  */
 export function extractBuiltInServiceAlias(toolName: string): string | null {
-  // Delegates to the shared prefix constant so naming is centralized in tool-call-utils.ts
-  const re = new RegExp(`^${BUILTIN_PREFIX}(.+?)__`);
-  const match = toolName.match(re);
-  return match ? match[1] : null;
+  const idx = toolName.indexOf('__');
+  if (idx === -1) return null;
+  const server = toolName.slice(0, idx);
+  return BUILTIN_SERVICE_NAMES.has(server) ? server : null;
 }
 
 /**

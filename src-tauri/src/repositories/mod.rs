@@ -7,6 +7,7 @@ pub mod mcp_server_repository;
 pub mod message_repository;
 pub mod planning_repository;
 pub mod playbook_repository;
+pub mod scheduled_task_repository;
 pub mod session_repository;
 pub mod settings_repository;
 
@@ -21,6 +22,7 @@ pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
 pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};
 pub use playbook_repository::{PlaybookRepository, SqlitePlaybookRepository};
+pub use scheduled_task_repository::{ScheduledTaskRepository, SqliteScheduledTaskRepository};
 pub use session_repository::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };

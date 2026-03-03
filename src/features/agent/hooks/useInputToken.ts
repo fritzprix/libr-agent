@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import type { SkillMetadata } from '@/types/skills';
 import type { MCPTool } from '@/lib/mcp';
+import type { Playbook } from '@/types/playbook';
 
 /** Stage of the input token UX state machine. */
 type TokenStage =
@@ -36,6 +37,11 @@ export const BUILTIN_TOKEN_TYPES: TokenType[] = [
     label: 'tool:',
     description: 'Add soft attention hint for a specific tool',
   },
+  {
+    name: 'playbook',
+    label: 'playbook:',
+    description: 'Execute a saved playbook workflow',
+  },
 ];
 
 /** Regex: matches `@word` with no `:` yet (typing type name). */
@@ -54,6 +60,12 @@ export interface UseInputTokenResult {
   toolResults: MCPTool[];
   /** File path candidates to show when stage is `typing-arg` with type=file. */
   fileResults: string[];
+  /** Playbook candidates to show when stage is `typing-arg` with type=playbook. */
+  playbookResults: (Playbook & {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+  })[];
   /** Call on every textarea value+cursor change. */
   onInputChange: (value: string, cursorPos: number) => void;
   /** Select a token type — inserts `@type:` and switches to arg stage. */
@@ -178,12 +190,20 @@ export function useInputToken(
   // Filter file results (pre-filtered by useWorkspaceFiles; just pass through as empty — handled by consumer)
   const fileResults: string[] = [];
 
+  // Playbook results are pre-filtered by usePlaybookSearch; pass through as empty — handled by consumer
+  const playbookResults: (Playbook & {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+  })[] = [];
+
   return {
     stage,
     typeResults,
     skillResults,
     toolResults,
     fileResults,
+    playbookResults,
     onInputChange,
     onTypeSelect,
     onArgSelect,

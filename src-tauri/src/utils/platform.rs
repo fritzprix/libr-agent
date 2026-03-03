@@ -37,9 +37,48 @@ pub fn command_exists(cmd: &str) -> bool {
     {
         std::process::Command::new("sh")
             .arg("-c")
-            .arg(format!("command -v {}", cmd))
+            .arg("command -v \"$1\"")
+            .arg("--")
+            .arg(cmd)
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_command_exists_injection() {
+        // Create a temporary file to verify no side effects occur
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("vuln_test_command_exists");
+        let _ = std::fs::remove_file(&test_file);
+
+        // Attempt command injection using ';'
+        let malicious_cmd = format!("ls; touch {}", test_file.display());
+        let result = command_exists(&malicious_cmd);
+
+        assert!(!result);
+        assert!(
+            !test_file.exists(),
+            "Command injection succeeded: side effect occurred"
+        );
+
+        // Attempt command injection using '$()'
+        let malicious_cmd2 = format!("ls $(touch {})", test_file.display());
+        let result2 = command_exists(&malicious_cmd2);
+
+        assert!(!result2);
+        assert!(
+            !test_file.exists(),
+            "Command injection succeeded: side effect occurred"
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(test_file);
     }
 }
