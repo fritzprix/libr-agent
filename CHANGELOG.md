@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.26] - 2026-03-03
+
+### 🐛 Fixes
+
+- **[HIGH] Security: Command injection in platform utilities**: Fixed a critical command injection vulnerability in cross-platform utility functions — shell metacharacters can no longer be injected through tool arguments on any platform.
+- **Scheduled task timing accuracy**: Added a 1-second buffer to scheduled task execution timing and now records skipped runs, preventing drift and improving reliability on restart recovery.
+- **Scratchpad guidance messages**: Improved user-facing guidance in the `listScratchpad` and `readScratchpad` tool responses for clearer agent feedback.
+
+### 🚀 Features
+
+- **Native dialog UX**: Enhanced responsiveness and layout polish across native dialog action flows.
+- **i18n — Agent chat fully localized**: Agent chat components (headers, labels, status indicators) are now fully translated with expanded EN/KO coverage.
+
+### 🔧 Internal
+
+- **MCP & Playbook service decoupling**: Architectural separation of MCP server management from Playbook service logic, reducing cross-cutting concerns and improving testability.
+- **IPC boundary optimization**: File Manager commands and batched assistant upserts (`saveAll`) tightened for performance and type safety at the Tauri IPC boundary.
+- **Tool routing refactor**: Removed `builtin_` prefix from internal tool routing; tool names are now cleaner and consistent across the proxy layer.
+- **Test coverage**: Expanded hook tests covering `useDebounce` and `useAgentTools`.
+- **Dependency updates**: `chrono` → 0.4.44, `tempfile` → 3.26.0, `anyhow` → 1.0.102.
+
 ## [0.5.25] - 2026-03-02
 
 ### 🚀 Features
