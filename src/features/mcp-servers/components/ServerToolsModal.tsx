@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Wrench, ChevronDown } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import {
   Dialog,
   DialogContent,
@@ -43,7 +43,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
     setError(null);
     setTools([]);
 
-    invoke<MCPTool[]>('probe_mcp_server', { serverId })
+    safeInvoke<MCPTool[]>('probe_mcp_server', { serverId })
       .then((result) => {
         setTools(result);
       })

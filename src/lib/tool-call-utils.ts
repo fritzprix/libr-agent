@@ -76,9 +76,14 @@ export const BUILTIN_SERVICE_NAMES = new Set([
   'mcp_manager',
 ]);
 
-/** Returns true if the raw tool name belongs to a builtin service. */
+/** Returns true if the raw tool name belongs to a builtin service.
+ * Requires the `server__tool` delimiter — bare service names (e.g. `'planning'`)
+ * are NOT considered builtin tools.
+ */
 export function isBuiltinTool(name: string): boolean {
-  const server = name.split('__')[0];
+  const idx = name.indexOf('__');
+  if (idx === -1) return false;
+  const server = name.slice(0, idx);
   return BUILTIN_SERVICE_NAMES.has(server);
 }
 
