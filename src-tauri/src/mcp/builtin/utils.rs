@@ -54,7 +54,8 @@ impl SecurityValidator {
         );
 
         // 경로 구분자 정규화 및 정리
-        let normalized_path = user_path.replace('\\', "/");
+        // Normalize both Unix ('/') and Windows ('\') style separators to '/' for consistent, cross-platform behavior.
+        let normalized_path = user_path.replace(['\\', '/'], "/");
         let mut clean_path = PathBuf::from(normalized_path).clean();
 
         // 절대경로 처리: base_dir 내부에 있으면 허용하고 상대경로로 변환
