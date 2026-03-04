@@ -38,6 +38,7 @@ function GeneralTabComponent({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOpeningDir, setIsOpeningDir] = useState(false);
+  const [isBrowsing, setIsBrowsing] = useState(false);
   const openingDirLock = useRef(false);
 
   useEffect(() => {
@@ -83,6 +84,8 @@ function GeneralTabComponent({
   }, [skillsDirectory]);
 
   const handleBrowseEvents = async () => {
+    if (isBrowsing) return;
+    setIsBrowsing(true);
     try {
       const selected = await openDialog({
         directory: true,
@@ -98,6 +101,8 @@ function GeneralTabComponent({
       }
     } catch (error) {
       logger.error('Failed to open folder dialog', error);
+    } finally {
+      setIsBrowsing(false);
     }
   };
 
@@ -163,12 +168,17 @@ function GeneralTabComponent({
               onClick={handleBrowseEvents}
               title={t('settings.general.browse', 'Browse')}
               className="px-3"
+              disabled={isBrowsing}
               aria-label={t(
                 'settings.general.browseAriaLabel',
                 'Browse skills directory',
               )}
             >
-              <FolderOpen className="w-4 h-4" />
+              {isBrowsing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <FolderOpen className="w-4 h-4" />
+              )}
             </Button>
             {skillsDirectory && (
               <Button
