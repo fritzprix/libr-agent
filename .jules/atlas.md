@@ -2,6 +2,8 @@
 
 This log tracks platform-specific fixes, assumptions resolved, and cross-platform abstractions implemented.
 
+## 2024-05-18 - [Path Resolution] **Platform Bug:** [Hardcoded backslashes and panicking unwrap calls on file paths] **Resolved:** [Replaced hardcoded `['/', '\\']` with `std::path::is_separator` and added `unwrap_or_default` to `file_stem()` calls in database backup to prevent panics]
+
 ## 2025-05-23 - [src-tauri/src/mcp/builtin/workspace/persistent_shell.rs] **Platform Bug:** Hardcoded Unix path string formatting `format!("{}/.local/bin", home)` **Resolved:** Replaced with `PathBuf::join` for robust path construction.
 
 ## 2025-05-23 - [src-tauri/src/utils/terminal.rs] **Platform Bug:** Missing terminal emulator support on Linux **Status:** Linux is not yet supported — `open_in_terminal` returns a descriptive error on Linux. Implementation of fallback logic for `x-terminal-emulator`, `gnome-terminal`, etc. is deferred.

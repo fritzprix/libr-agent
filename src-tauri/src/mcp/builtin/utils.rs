@@ -54,7 +54,7 @@ impl SecurityValidator {
         );
 
         // 경로 구분자 정규화 및 정리
-        // Normalize both Unix ('/') and Windows ('\') style separators to '/' for consistent, cross-platform behavior.
+        // Normalize both Unix ('/') and Windows ('\\') style separators to '/' for consistent, cross-platform behavior.
         let normalized_path = user_path.replace(['\\', '/'], "/");
         let mut clean_path = PathBuf::from(normalized_path).clean();
 
@@ -90,7 +90,7 @@ impl SecurityValidator {
         }
 
         // 상위 디렉터리 탐색 금지
-        let traversal_check_path = user_path.replace('\\', "/");
+        let traversal_check_path = user_path.replace(['\\', '/'], "/");
 
         if Path::new(&traversal_check_path)
             .components()
@@ -167,7 +167,7 @@ impl SecurityValidator {
             "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
             "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         ];
-        let path_for_check = PathBuf::from(user_path.replace('\\', "/"));
+        let path_for_check = PathBuf::from(user_path.replace(['\\', '/'], "/"));
         for component in path_for_check.components() {
             if let Component::Normal(name) = component {
                 // Strip extension (CON.txt → CON) before checking.
@@ -190,7 +190,7 @@ impl SecurityValidator {
     /// Validate a path for read-only operations. Absolute paths outside the base directory are
     /// permitted, while relative paths continue to be constrained to the base directory.
     pub fn validate_path_for_read(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
-        let normalized = user_path.replace('\\', "/");
+        let normalized = user_path.replace(['\\', '/'], "/");
 
         // Detect Windows drive-letter absolute paths like C:\foo
         let is_windows_absolute = normalized.len() >= 2 && normalized.as_bytes()[1] == b':';
@@ -220,7 +220,7 @@ impl SecurityValidator {
     /// Normalize path separators to forward slashes for cross-platform compatibility.
     /// This is useful for storing paths in databases or ZIP archives.
     pub fn normalize_path_separators(path: &str) -> String {
-        path.replace('\\', "/")
+        path.replace(['\\', '/'], "/")
     }
 
     /// Extract filename from a path, supporting both / and \\ separators.
