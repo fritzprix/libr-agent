@@ -67,3 +67,8 @@
 
 **Split:** `src-tauri/src/mcp/session_isolation/stdio_manager/` (`lifecycle.rs`, `execution.rs`, `cleanup.rs`, `tests.rs`, `mod.rs`)
 **Improvement:** Decoupled `SessionMCPManager` struct implementation into distinct submodules based on functionality (lifecycle, execution, cleanup). Moved tests to a dedicated file. Reduced the monolithic file size of ~900 lines into manageable components, improving readability and maintainability.
+
+## 2026-03-05 - src-tauri/src/server/handlers.rs
+
+**Split:** `types.rs`, `helpers.rs`, `sessions.rs`, `messages.rs`, `assistants.rs`, `health.rs`, `mod.rs`
+**Improvement:** Decoupled warp HTTP handler endpoints into focused, domain-specific submodules. Extracted DTO structs and generic utility functions. Eliminated the 800+ line monolith while safely re-exporting endpoints for `routes.rs`.
