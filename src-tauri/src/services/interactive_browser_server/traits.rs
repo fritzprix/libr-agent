@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 /// Trait defining the environment adapter for the InteractiveBrowserServer.
 /// This decouples the domain logic from the underlying framework (e.g., Tauri).
 pub trait BrowserEnvironment: Send + Sync {

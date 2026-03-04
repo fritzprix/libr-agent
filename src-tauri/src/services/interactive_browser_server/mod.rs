@@ -54,7 +54,7 @@ impl InteractiveBrowserServer {
     /// Creates a new instance of the `InteractiveBrowserServer`.
     ///
     /// # Arguments
-    /// * `app_handle` - A handle to the Tauri application instance.
+    /// * `env` - The browser environment adapter (e.g., Tauri-backed or mock for testing).
     /// * `action_timeout` - The timeout duration for web actions.
     pub fn new(env: Arc<dyn BrowserEnvironment>, action_timeout: Duration) -> Self {
         info!(
@@ -169,7 +169,12 @@ impl InteractiveBrowserServer {
             visible,
             on_page_load,
             on_close,
-        )?;
+        )
+        .map_err(|e| {
+            // Clean up the pre-registered waiter to avoid leaking stale entries
+            self.page_load_waiters.remove(&session_id);
+            e
+        })?;
 
         // Register session
 
@@ -490,7 +495,11 @@ try {{
         let script = format!("window.location.href = {}", url_json);
 
         self.env.execute_script(&window_label, &script)
-            .map_err(|e| format!("Failed to navigate: {e}"))?;
+            .map_err(|e| {
+                // Clean up the pre-registered waiter to avoid leaking stale entries
+                self.page_load_waiters.remove(session_id);
+                format!("Failed to navigate: {e}")
+            })?;
 
         // Update session URL in the store
         {

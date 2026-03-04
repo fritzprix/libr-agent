@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use log::info;
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::webview::PageLoadEvent;
