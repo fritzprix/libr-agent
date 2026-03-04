@@ -131,7 +131,11 @@ impl FileExportService {
                     Err(_) => continue,
                 };
 
-                let archive_path = rel_path.to_string_lossy().replace('\\', "/");
+                let archive_path = rel_path
+                    .components()
+                    .map(|comp| comp.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
                 if !added_archive_paths.insert(archive_path.clone()) {
                     continue;
                 }
