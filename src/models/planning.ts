@@ -21,49 +21,14 @@ export interface TodoWithComputedState extends SimpleTodo {
   canStart: boolean;
 }
 
-/** Represents a scratchpad item for storing notes and context */
-export interface ScratchpadItem {
-  id: number;
-  title?: string;
-  content: string;
-  tags?: string[];
-  source?: string;
-}
-
-/** Represents a single thought in the sequential-thinking tool */
-export interface ThoughtData {
-  thought: string;
-  thoughtNumber: number;
-  totalThoughts: number;
-  isRevision?: boolean;
-  revisesThought?: number;
-  branchFromThought?: number;
-  branchId?: string;
-  needsMoreThoughts?: boolean;
-  nextThoughtNeeded: boolean;
-  category?: string;
-  relatedTodoId?: number;
-  nextAction?: string;
-}
-
-/** Represents a single reflection entry */
-export interface ReflectionData {
-  critique: string;
-  reflection: string;
-  nextAction: string;
-}
-
 /**
  * Complete planning state for a session.
- * This is returned as structured_state in ServiceContext.
+ * This is returned as structured_state in ServiceContext from the planning server.
  */
 export interface PlanningState {
   goal: string | null;
   todos: SimpleTodo[];
-  scratchpad: ScratchpadItem[];
-  thoughts: ThoughtData[];
-  reflections: ReflectionData[];
-  lastUpdated: string;
+  lastUpdated?: string;
 }
 
 /**
@@ -73,9 +38,6 @@ export interface PlanningMetadata {
   totalTodos: number;
   completedTodos: number;
   activeTodos: number;
-  scratchpadCount: number;
-  thoughtCount: number;
-  reflectionCount: number;
 }
 
 /**
@@ -89,9 +51,6 @@ export function calculatePlanningMetadata(
       totalTodos: 0,
       completedTodos: 0,
       activeTodos: 0,
-      scratchpadCount: 0,
-      thoughtCount: 0,
-      reflectionCount: 0,
     };
   }
 
@@ -103,8 +62,5 @@ export function calculatePlanningMetadata(
     totalTodos,
     completedTodos,
     activeTodos,
-    scratchpadCount: state.scratchpad?.length || 0,
-    thoughtCount: state.thoughts?.length || 0,
-    reflectionCount: state.reflections?.length || 0,
   };
 }

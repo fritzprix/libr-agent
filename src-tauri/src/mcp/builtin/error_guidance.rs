@@ -42,6 +42,7 @@ pub enum ErrorCategory {
 pub enum ToolGroup {
     Browser,
     Planning,
+    Memory,
     Workspace,
     Assistant,
     ContentStore,
@@ -348,6 +349,24 @@ impl ErrorGuidance {
             (ErrorCategory::InternalError, ToolGroup::Swarm) => vec![
                 "Retry the operation — this is likely a transient error".to_string(),
                 "Check application logs for details".to_string(),
+            ],
+
+            // Memory tool errors
+            (ErrorCategory::ResourceNotFound, ToolGroup::Memory) => vec![
+                "Use memory__list to see available notes".to_string(),
+                "Verify the ID is correct".to_string(),
+            ],
+            (ErrorCategory::DuplicateResource, ToolGroup::Memory) => vec![
+                "Use a different title for the new note".to_string(),
+                "Use memory__update to modify the existing note".to_string(),
+            ],
+            (ErrorCategory::InvalidInput, ToolGroup::Memory) => vec![
+                "Ensure all required parameters are provided".to_string(),
+                "Use memory__list to see current notes for reference".to_string(),
+            ],
+            (ErrorCategory::InvalidState, ToolGroup::Memory) => vec![
+                "Use memory__clear to remove old items".to_string(),
+                "Use memory__update to modify existing notes".to_string(),
             ],
 
             // Generic fallbacks

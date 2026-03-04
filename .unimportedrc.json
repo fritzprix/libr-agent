@@ -1,15 +1,6 @@
 {
-  "entry": [
-    "src/main.tsx",
-    "src/app/App.tsx",
-    "src/app/main.tsx"
-  ],
-  "extensions": [
-    ".ts",
-    ".tsx",
-    ".js",
-    ".jsx"
-  ],
+  "entry": ["src/main.tsx", "src/app/App.tsx", "src/app/main.tsx"],
+  "extensions": [".ts", ".tsx", ".js", ".jsx"],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",
@@ -31,30 +22,16 @@
     "../../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../../lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/features/tools/WebMCPToolProvider.tsx"
-      ]
+      ["src/features/tools/WebMCPToolProvider.tsx"]
     ],
     "../lib/web-mcp/mcp-worker.ts?worker",
     [
       "../lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/hooks/use-web-mcp-server.ts"
-      ]
+      ["src/hooks/use-web-mcp-server.ts"]
     ],
     "@/lib/web-mcp/mcp-worker.ts?worker at src/context/WebMCPContext.tsx",
-    [
-      "@/lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src/context/WebMCPContext.tsx"
-      ]
-    ],
-    [
-      "@/lib/web-mcp/mcp-worker.ts?worker",
-      [
-        "src\\context\\WebMCPContext.tsx"
-      ]
-    ]
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src/context/WebMCPContext.tsx"]],
+    ["@/lib/web-mcp/mcp-worker.ts?worker", ["src\\context\\WebMCPContext.tsx"]]
   ],
   "ignoreUnused": [
     "@hypothesi/tauri-plugin-mcp-bridge",
@@ -74,7 +51,5 @@
     "src/hooks/__tests__/helpers.ts",
     "src/test/setup.ts"
   ],
-  "ignoreDependencies": [
-    "handlebars"
-  ]
+  "ignoreDependencies": ["handlebars"]
 }

@@ -14,6 +14,7 @@ pub mod content_store;
 pub mod error_guidance;
 pub mod knowledge;
 pub mod mcp_manager;
+pub mod memory;
 pub mod planning;
 pub mod playbook;
 pub mod service_id;

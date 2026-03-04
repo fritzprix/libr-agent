@@ -46,11 +46,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         })
         .collect();
 
-    // 3. Fetch Scratchpad
-    let scratchpad = repo.list_scratchpad(session_id).await.unwrap_or_else(|e| {
-        log::error!("Failed to fetch scratchpad: {}", e);
-        Vec::new()
-    });
+    // 3. (Scratchpad moved to MemoryServer)
 
     // --- Format Output ---
 
@@ -145,29 +141,10 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         parts.push("*Use 'addTodo' to create your first task.*".to_string());
     }
 
-    // Scratchpad Section
-    if !scratchpad.is_empty() {
-        parts.push(format!("\n**Scratchpad:** {} items", scratchpad.len()));
-        for (idx, item) in scratchpad.iter().enumerate() {
-            let content = item.content.replace(['\n', '\r'], " ");
-            let summary = if content.chars().count() > 80 {
-                let s: String = content.chars().take(77).collect();
-                format!("{}...", s)
-            } else {
-                content
-            };
-
-            let title = item.title.as_deref().unwrap_or("Note");
-            parts.push(format!("{}. **{}**: {}", idx + 1, title, summary));
-        }
-    }
-
     let structured_state = json!({
          "goal": goal,
          "todos": structured_todos,
-         "scratchpad": scratchpad,
-         "todos_count": todos.len(),
-         "scratchpad_count": scratchpad.len()
+         "todos_count": todos.len()
     });
 
     ServiceContext {

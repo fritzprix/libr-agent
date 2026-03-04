@@ -23,6 +23,10 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
+        canonical: "memory",
+        optional: false,
+    },
+    BuiltinServiceEntry {
         canonical: "workspace",
         optional: false,
     },
@@ -70,8 +74,9 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
 
 // ─── Derived helpers ────────────────────────────────────────────────────────────────────
 
-pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
+pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 11] = [
     "planning",
+    "memory",
     "workspace",
     "knowledge",
     "assistant",

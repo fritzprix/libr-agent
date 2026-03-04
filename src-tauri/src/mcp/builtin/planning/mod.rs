@@ -1,6 +1,5 @@
 mod context;
 mod goals;
-mod scratchpad;
 mod todos;
 mod tools;
 
@@ -16,8 +15,8 @@ use std::sync::Arc;
 
 /// Planning MCP Server
 ///
-/// Provides goal/todo/scratchpad management for agent sessions.
-/// Session-scoped: Each session gets dedicated planning state.
+/// Provides goal and todo management for agent sessions.
+/// Session-scoped: each session gets dedicated planning state.
 #[derive(Debug)]
 pub struct PlanningServer {
     session_id: String,
@@ -59,7 +58,7 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     fn description(&self) -> &str {
-        "Session-scoped planning tools for goal/todo/scratchpad management"
+        "Session-scoped planning tools for goal and todo management"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -99,21 +98,6 @@ impl BuiltinMCPServer for PlanningServer {
                     .to_mcp_result()),
                 }
             }
-            "addScratchpad" => {
-                scratchpad::add_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "updateScratchpad" => {
-                scratchpad::update_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "listScratchpad" => {
-                scratchpad::list_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "readScratchpad" => {
-                scratchpad::read_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "clearScratchpad" => {
-                scratchpad::clear_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
             "getCurrentState" => {
                 // Reuse get_service_context but return as tool result
                 let context =
@@ -123,8 +107,6 @@ impl BuiltinMCPServer for PlanningServer {
                     context.structured_state.clone().unwrap_or(json!({})),
                 ))
             }
-            "pauseAndThink" => scratchpad::pause_and_think(args).await,
-            "critiqueAndReflection" => scratchpad::critique_and_reflection(args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }
