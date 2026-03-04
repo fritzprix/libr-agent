@@ -8,6 +8,7 @@ pub mod references;
 pub mod session_bus;
 pub mod session_manager;
 pub mod state;
+pub mod tool_approvals;
 pub mod tools;
 pub mod types;
 pub mod workflow;

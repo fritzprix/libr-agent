@@ -57,6 +57,13 @@ export type AgentEventPayload =
       success: boolean;
     }
   | {
+      type: 'toolExecutionRequiresApproval';
+      sessionId: string;
+      toolCallId: string;
+      toolName: string;
+      arguments: string;
+    }
+  | {
       type: 'initializationStep';
       sessionId: string;
       step: string;
@@ -75,7 +82,14 @@ export type WorkflowPhase =
   | 'thinking' // Waiting for LLM response to start
   | 'answering' // LLM is streaming response
   | 'using_tools' // Executing tool calls
+  | 'waiting_approval' // Blocked waiting for user approval
   | 'error'; // Error occurred
+
+export interface PendingApproval {
+  toolCallId: string;
+  toolName: string;
+  arguments: string;
+}
 
 // --- STATE CONTEXT ---
 interface AgentSessionStateContextValue {
@@ -90,6 +104,7 @@ interface AgentSessionStateContextValue {
     step: string;
     status: 'running' | 'complete' | 'error';
   } | null;
+  pendingApprovals: PendingApproval[];
 }
 
 const AgentSessionStateContext = createContext<
@@ -115,6 +130,10 @@ interface AgentSessionActionsContextValue {
 
   addMessage: (message: Message) => void;
   resumeSession: () => Promise<void>;
+  respondToToolApproval: (
+    toolCallId: string,
+    approved: boolean,
+  ) => Promise<void>;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -149,6 +168,9 @@ export function AgentSessionProvider({
     step: string;
     status: 'running' | 'complete' | 'error';
   } | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
+    [],
+  );
 
   /**
    * Load messages for the current session
@@ -360,6 +382,22 @@ export function AgentSessionProvider({
               break;
             }
 
+            case 'toolExecutionRequiresApproval': {
+              setWorkflowPhase('waiting_approval');
+              setPendingApprovals((prev) => [
+                ...prev,
+                {
+                  toolCallId: payload.toolCallId,
+                  toolName: payload.toolName,
+                  arguments: payload.arguments,
+                },
+              ]);
+              logger.info('Workflow phase: waiting_approval', {
+                toolName: payload.toolName,
+              });
+              break;
+            }
+
             case 'toolExecutionCompleted': {
               // Stay in using_tools or switch back to thinking/answering depending on flow
               // Usually handled by subsequent messages or status changes
@@ -547,6 +585,28 @@ export function AgentSessionProvider({
     }
   }, [session]);
 
+  const respondToToolApproval = useCallback(
+    async (toolCallId: string, approved: boolean) => {
+      if (!session) return;
+      try {
+        await invoke<AgentResponse>('agent_respond_tool_approval', {
+          sessionId: session.id,
+          toolCallId,
+          approved,
+        });
+
+        // Remove from pending list
+        setPendingApprovals((prev) =>
+          prev.filter((p) => p.toolCallId !== toolCallId),
+        );
+      } catch (err) {
+        logger.error('Failed to respond to tool approval', err);
+        throw err;
+      }
+    },
+    [session],
+  );
+
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
       session,
@@ -557,6 +617,7 @@ export function AgentSessionProvider({
       workflowStatus,
       workflowPhase,
       initializationStep,
+      pendingApprovals,
     }),
     [
       session,
@@ -567,6 +628,7 @@ export function AgentSessionProvider({
       workflowStatus,
       workflowPhase,
       initializationStep,
+      pendingApprovals,
     ],
   );
 
@@ -577,8 +639,16 @@ export function AgentSessionProvider({
       resumeSession,
       addMessage,
       setError,
+      respondToToolApproval,
     }),
-    [sendMessage, stopSession, resumeSession, addMessage, setError],
+    [
+      sendMessage,
+      stopSession,
+      resumeSession,
+      addMessage,
+      setError,
+      respondToToolApproval,
+    ],
   );
 
   return (
