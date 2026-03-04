@@ -8,6 +8,7 @@ describe('retry-utils', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('sleep', () => {
@@ -157,6 +158,7 @@ describe('retry-utils', () => {
       await vi.advanceTimersByTimeAsync(30); // total 60ms > 50ms jitter
       await expect(promise).resolves.toBe('ok');
       expect(operation).toHaveBeenCalledTimes(2);
+      vi.restoreAllMocks();
     });
 
     it('withRetry: jitter=true scales delay by Math.random factor (max 1.5x)', async () => {
@@ -210,6 +212,118 @@ describe('retry-utils', () => {
       expect(result.success).toBe(true);
       expect(result.result).toBe('recovered');
       expect(result.attemptCount).toBe(2);
+      vi.restoreAllMocks();
+    });
+  });
+
+  describe('withRetryResult extra edge cases', () => {
+    it('should use baseDelay without exponential backoff', async () => {
+       const operation = vi.fn().mockRejectedValue(new Error('fail'));
+       const promise = withRetryResult(operation, { baseDelay: 100, maxRetries: 2, exponentialBackoff: false });
+
+       // Attempt 1 fails
+       await vi.advanceTimersByTimeAsync(100);
+       expect(operation).toHaveBeenCalledTimes(2);
+
+       // Attempt 2 fails
+       await vi.advanceTimersByTimeAsync(100);
+       expect(operation).toHaveBeenCalledTimes(3);
+
+       const result = await promise;
+       expect(result.success).toBe(false);
+    });
+
+    it('should use timeout per attempt', async () => {
+       const operation = vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 2000)));
+       const promise = withRetryResult(operation, { timeout: 1000, maxRetries: 0 });
+
+       await vi.advanceTimersByTimeAsync(1000);
+
+       const result = await promise;
+       expect(result.success).toBe(false);
+       expect(result.error?.message).toBe('Operation timed out');
+    });
+
+    it('should use timeout per attempt with withRetry', async () => {
+       const operation = vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 2000)));
+       const promise = withRetry(operation, { timeout: 1000, maxRetries: 0 });
+
+       const assertPromise = expect(promise).rejects.toThrow('Operation failed after 1 attempts: Operation timed out');
+       await vi.advanceTimersByTimeAsync(1000);
+       await assertPromise;
+    });
+
+    it('withRetryResult: jitter=true scales delay by Math.random factor (max 1.5x)', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(1); // max delay (1.5x)
+
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValue('recovered');
+
+      const promise = withRetryResult(operation, { baseDelay: 100, maxRetries: 2, jitter: true });
+
+      await vi.advanceTimersByTimeAsync(110);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(50); // total 160ms
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(result.result).toBe('recovered');
+      expect(result.attemptCount).toBe(2);
+    });
+
+    it('withRetryResult: jitter=false uses exact exponential delay unchanged', async () => {
+      // Without jitter, delay at attempt 0 = baseDelay = 100ms exactly
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('ok');
+
+      const promise = withRetryResult(operation, { baseDelay: 100, maxRetries: 2, jitter: false });
+
+      await vi.advanceTimersByTimeAsync(90);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(20); // total 110ms > 100ms
+      await expect(promise).resolves.toEqual({ success: true, result: 'ok', attemptCount: 2 });
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+
+
+    it('withRetry: uses exact base delay unchanged if exponentialBackoff=false', async () => {
+      const operation = vi.fn()
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValue('ok');
+
+      const promise = withRetry(operation, { baseDelay: 100, maxRetries: 2, exponentialBackoff: false, jitter: false });
+
+      await vi.advanceTimersByTimeAsync(90);
+      expect(operation).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(20); // total 110ms > 100ms
+      await expect(promise).resolves.toBe('ok');
+      expect(operation).toHaveBeenCalledTimes(2);
+    });
+
+    it('withRetry: resolves if operation completes within timeout', async () => {
+      const operation = vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(() => resolve('success'), 500)));
+      const promise = withRetry(operation, { timeout: 1000 });
+
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(promise).resolves.toBe('success');
+    });
+
+    it('withRetryResult: resolves if operation completes within timeout', async () => {
+      const operation = vi.fn().mockImplementation(() => new Promise(resolve => setTimeout(() => resolve('success'), 500)));
+      const promise = withRetryResult(operation, { timeout: 1000 });
+
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(promise).resolves.toEqual({
+         success: true,
+         result: 'success',
+         attemptCount: 1
+      });
     });
   });
 });
