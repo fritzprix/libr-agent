@@ -28,7 +28,7 @@ pub async fn resolve_secure_path(base_dir: &Path, relative_path: &str) -> Result
     // 2. Prevent absolute paths in relative_path from bypassing the join.
     // We treat the input as strictly relative to the base.
     // Remove leading separators and check for drive letters.
-    let safe_relative = relative_path.trim_start_matches(['/', '\\']);
+    let safe_relative = relative_path.trim_start_matches(std::path::is_separator);
 
     // Reject Windows drive letters (e.g. "C:...") only on Windows, and only when the
     // first character is an ASCII alphabetic drive letter.

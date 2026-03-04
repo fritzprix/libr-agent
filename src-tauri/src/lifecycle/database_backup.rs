@@ -49,7 +49,7 @@ impl BackupManager {
 
         let backup_path = backup_dir.join(format!(
             "{}.backup.{}.db",
-            self.db_path.file_stem().unwrap().to_string_lossy(),
+            self.db_path.file_stem().unwrap_or_default().to_string_lossy(),
             timestamp
         ));
 
@@ -81,7 +81,7 @@ impl BackupManager {
             return Ok(Vec::new());
         }
 
-        let stem = self.db_path.file_stem().unwrap().to_string_lossy();
+        let stem = self.db_path.file_stem().unwrap_or_default().to_string_lossy();
         let pattern = format!("{}.backup.", stem);
 
         let mut backups: Vec<PathBuf> = fs::read_dir(&backup_dir)
