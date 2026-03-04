@@ -187,6 +187,10 @@ function GeneralTabComponent({
                 title={t('settings.general.openInExplorer', 'Open in Explorer')}
                 className="px-3"
                 disabled={isOpeningDir}
+                aria-label={t(
+                  'settings.general.openInExplorerAriaLabel',
+                  'Open skills directory in Explorer',
+                )}
               >
                 <FolderOutput className="w-4 h-4" />
               </Button>
