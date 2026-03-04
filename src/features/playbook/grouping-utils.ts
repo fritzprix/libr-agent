@@ -1,9 +1,4 @@
-import type { Playbook } from '@/types/playbook';
-
-export type PlaybookWithMeta = Playbook & {
-  id: string;
-  createdAt: Date;
-};
+import type { PlaybookWithMeta } from './types';
 
 // Keys must match common.json playbook.group keys
 const GROUP_KEYS = {

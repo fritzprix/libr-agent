@@ -11,8 +11,7 @@ import {
   getGroupOrder,
 } from './grouping-utils';
 import { getLogger } from '@/lib/logger';
-import type { PlaybookWithMeta } from './grouping-utils';
-import type { PlaybookSortState } from './types';
+import type { PlaybookWithMeta, PlaybookSortState } from './types';
 
 const logger = getLogger('usePlaybooks');
 
@@ -40,7 +39,7 @@ export function usePlaybooks(
         listAssistants(),
       ]);
 
-      setPlaybooks(playbooksData as PlaybookWithMeta[]);
+      setPlaybooks(playbooksData);
 
       const assistantMap = assistantsData.reduce<
         Record<string, { name: string }>

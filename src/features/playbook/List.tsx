@@ -24,9 +24,8 @@ import { PlaybookGroup } from './PlaybookGroup';
 import { SortControls } from './SortControls';
 import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
-import type { PlaybookWithMeta } from './grouping-utils';
 import { usePlaybooks } from './usePlaybooks';
-import type { PlaybookSortState } from './types';
+import type { PlaybookSortState, PlaybookWithMeta } from './types';
 
 export default function PlaybookList() {
   const { t } = useTranslation();
@@ -217,7 +216,8 @@ export default function PlaybookList() {
                       <PlaybookGroup
                         key={key}
                         title={
-                          sortState.groupMode === 'time' || key.startsWith('playbook.')
+                          sortState.groupMode === 'time' ||
+                          key.startsWith('playbook.')
                             ? t(key)
                             : key
                         }
@@ -260,7 +260,10 @@ export default function PlaybookList() {
               <AlertDialogCancel disabled={isDeleting}>
                 {t('playbook.deleteDialog.cancel')}
               </AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmDelete} disabled={isDeleting}>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+              >
                 {isDeleting && <LoadingSpinner className="mr-2 h-4 w-4" />}
                 {t('playbook.deleteDialog.confirm')}
               </AlertDialogAction>
