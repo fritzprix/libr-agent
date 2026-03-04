@@ -1,9 +1,9 @@
-pub mod assistants;
-pub mod health;
-pub mod helpers;
-pub mod messages;
-pub mod sessions;
-pub mod types;
+mod assistants;
+mod health;
+mod helpers;
+mod messages;
+mod sessions;
+mod types;
 
 // Re-export endpoints so existing routes.rs does not break
 pub use assistants::{get_assistant, get_assistants};

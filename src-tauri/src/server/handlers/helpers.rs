@@ -4,7 +4,7 @@ use tokio::sync::RwLock as TokioRwLock;
 
 use super::types::SessionLineageMeta;
 
-pub static SESSION_LINEAGE: OnceLock<TokioRwLock<HashMap<String, SessionLineageMeta>>> =
+pub(crate) static SESSION_LINEAGE: OnceLock<TokioRwLock<HashMap<String, SessionLineageMeta>>> =
     OnceLock::new();
 
 pub fn lineage_store() -> &'static TokioRwLock<HashMap<String, SessionLineageMeta>> {
