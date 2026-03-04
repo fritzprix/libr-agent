@@ -365,23 +365,18 @@ impl WorkspaceServer {
                             )
                             .await;
                     }
-                    match tokio::fs::read_to_string(&safe_path).await {
+                    use super::utils::read_file_as_string;
+                    match read_file_as_string(&safe_path).await {
                         Ok(s) => s,
                         Err(e) => {
-                            let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
-                                "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
-                            } else {
-                                e.to_string()
-                            };
-
                             return Ok(guided_error(
                                 ErrorCategory::OperationFailed,
-                                &error_msg,
+                                &e,
                                 ToolGroup::Workspace,
                             )
                             .guidance(vec![
                                 "Verify the file exists with listDirectory".to_string(),
-                                "Check file permissions".to_string(),
+                                "Check file permissions or size limits".to_string(),
                                 "Ensure the path is correct".to_string(),
                             ])
                             .to_mcp_result());
@@ -677,6 +672,13 @@ impl WorkspaceServer {
                     | "woff2"
             ) {
                 continue;
+            }
+
+            let max_size = crate::config::max_file_size() as u64;
+            if let Ok(metadata) = tokio::fs::metadata(path).await {
+                if metadata.len() > max_size {
+                    continue; // skip files that are too large
+                }
             }
 
             let content = match tokio::fs::read_to_string(path).await {

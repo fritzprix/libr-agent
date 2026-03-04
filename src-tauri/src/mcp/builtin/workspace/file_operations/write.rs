@@ -116,23 +116,18 @@ impl WorkspaceServer {
                 .to_mcp_result());
             } else {
                 // File exists and overwrite is true - read old content for diff
-                match tokio::fs::read_to_string(&safe_path).await {
+                use super::utils::read_file_as_string;
+                match read_file_as_string(&safe_path).await {
                     Ok(c) => old_content = c,
                     Err(e) => {
-                        let error_msg = if e.kind() == std::io::ErrorKind::InvalidData {
-                            "Failed to read file: Content appears to be binary or contains invalid UTF-8 characters. Please use a specialized tool for binary files.".to_string()
-                        } else {
-                            e.to_string()
-                        };
-
                         return Ok(guided_error(
                             ErrorCategory::OperationFailed,
-                            &error_msg,
+                            &e,
                             ToolGroup::Workspace,
                         )
                         .guidance(vec![
                             "File exists but could not be read".to_string(),
-                            "Check file permissions".to_string(),
+                            "Check file permissions or size limits".to_string(),
                         ])
                         .to_mcp_result());
                     }

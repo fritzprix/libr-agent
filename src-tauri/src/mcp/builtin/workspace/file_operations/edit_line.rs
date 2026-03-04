@@ -278,7 +278,7 @@ impl WorkspaceServer {
                 )
                 .guidance(vec![
                     "Verify the file exists with listDirectory".to_string(),
-                    "Check file permissions".to_string(),
+                    "Check file permissions or size limits".to_string(),
                 ])
                 .to_mcp_result());
             }

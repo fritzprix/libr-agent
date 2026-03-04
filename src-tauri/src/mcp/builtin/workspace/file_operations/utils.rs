@@ -126,6 +126,17 @@ pub fn validate_path_with_error_for_write(
 
 /// Read file as string (helper for edit operations)
 pub async fn read_file_as_string(path: &std::path::Path) -> Result<String, String> {
+    // Security check: validate file size before reading to prevent OOM
+    let max_size = crate::config::max_file_size() as u64;
+    if let Ok(metadata) = tokio::fs::metadata(path).await {
+        if metadata.len() > max_size {
+            return Err(format!(
+                "File exceeds the maximum allowed size of {} bytes",
+                max_size
+            ));
+        }
+    }
+
     tokio::fs::read_to_string(path)
         .await
         .map_err(|e| {

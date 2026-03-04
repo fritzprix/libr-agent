@@ -27,3 +27,7 @@
 **Vulnerability:** Command injection vulnerability identified in `get_command_path` and `command_exists` when running `sh -c` with `format!("command -v {}", cmd)`. If `cmd` includes shell metacharacters, it allows executing arbitrary commands.
 **Learning:** Never use string formatting (`format!`) to build arguments for shell execution (`sh -c`).
 **Prevention:** Use positional arguments when calling shell commands. E.g., `sh -c 'command -v "$1"' -- cmd`.
+## 2026-03-04 - Prevent OOM on unchecked file reads
+**Vulnerability:** Missing file size limit checks before calling `tokio::fs::read_to_string` in workspace operations (edit, search).
+**Learning:** While `SecureFileManager` properly checked file sizes on read/write, local workspace utilities like `utils::read_file_as_string` bypassed it, leading to potential memory exhaustion (DoS) when reading massive files.
+**Prevention:** Always check `tokio::fs::metadata(path).len()` against `crate::config::max_file_size()` before reading file contents entirely into memory strings.
