@@ -49,7 +49,6 @@ interface AgentChatStateContextValue {
   error: string | null;
   llmError: string | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
-  agentModeEnabled: boolean;
   serviceContexts: Record<string, ServiceContext>;
 }
 
@@ -74,11 +73,6 @@ interface AgentChatActionsContextValue {
    * Retry the last failed message
    */
   retryMessage: () => Promise<void>;
-
-  /**
-   * Toggle agent mode (autonomous tool use loop)
-   */
-  toggleAgentMode: () => void;
 
   /**
    * Manually update service contexts from backend
@@ -127,34 +121,15 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, addMessage, resumeSession } = useAgentSessionActions();
 
-  const {
-    streamingMessages,
-    setAgentMode: setLLMAgentMode,
-    cancelCompletionRequest,
-  } = useLLMService();
+  const { streamingMessages, cancelCompletionRequest } = useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
     Record<string, ServiceContext>
   >({});
 
-  // Agent Mode state (local UI state, synced to LLMService)
-  const [agentModeEnabled, setAgentModeEnabled] = useState(false);
-
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
-
-  // Sync agent mode to LLMServiceContext when session or toggle changes
-  useEffect(() => {
-    if (session?.id) {
-      setLLMAgentMode(session.id, agentModeEnabled);
-    }
-  }, [session?.id, agentModeEnabled, setLLMAgentMode]);
-
-  // Reset agent mode when session changes
-  useEffect(() => {
-    setAgentModeEnabled(false);
-  }, [session?.id]);
 
   /**
    * Internal submit handler for merged messages
@@ -531,14 +506,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
   }, [session?.id, resumeSession]);
 
-  /**
-   * Toggle agent mode
-   */
-  const toggleAgentMode = useCallback(() => {
-    setAgentModeEnabled((prev) => !prev);
-    logger.info(`Agent mode ${!agentModeEnabled ? 'enabled' : 'disabled'}`);
-  }, [agentModeEnabled]);
-
   // Combine state values
   const stateValue: AgentChatStateContextValue = useMemo(
     () => ({
@@ -548,7 +515,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       error,
       llmError,
       workflowStatus,
-      agentModeEnabled,
       serviceContexts,
     }),
     [
@@ -558,7 +524,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       error,
       llmError,
       workflowStatus,
-      agentModeEnabled,
       serviceContexts,
     ],
   );
@@ -569,7 +534,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       submit,
       cancel,
       retryMessage,
-      toggleAgentMode,
       updateServiceContexts,
       injectMessages,
       resume: resumeSession,
@@ -578,7 +542,6 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       submit,
       cancel,
       retryMessage,
-      toggleAgentMode,
       updateServiceContexts,
       injectMessages,
       resumeSession,

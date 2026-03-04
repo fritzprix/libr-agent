@@ -4,6 +4,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { safeInvoke as invoke } from '@/lib/backend/core';
@@ -105,6 +106,7 @@ interface AgentSessionStateContextValue {
     status: 'running' | 'complete' | 'error';
   } | null;
   pendingApprovals: PendingApproval[];
+  yoloModeEnabled: boolean;
 }
 
 const AgentSessionStateContext = createContext<
@@ -134,6 +136,7 @@ interface AgentSessionActionsContextValue {
     toolCallId: string,
     approved: boolean,
   ) => Promise<void>;
+  toggleYoloMode: () => void;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -171,6 +174,12 @@ export function AgentSessionProvider({
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>(
     [],
   );
+  const [yoloModeEnabled, setYoloModeEnabled] = useState(false);
+  const yoloModeRef = useRef(yoloModeEnabled);
+
+  useEffect(() => {
+    yoloModeRef.current = yoloModeEnabled;
+  }, [yoloModeEnabled]);
 
   /**
    * Load messages for the current session
@@ -383,6 +392,29 @@ export function AgentSessionProvider({
             }
 
             case 'toolExecutionRequiresApproval': {
+              if (yoloModeRef.current) {
+                logger.info(
+                  'YOLO Mode enabled: Auto-approving tool execution',
+                  {
+                    toolName: payload.toolName,
+                    toolCallId: payload.toolCallId,
+                  },
+                );
+
+                // Auto-approve the tool call
+                invoke<AgentResponse>('agent_respond_tool_approval', {
+                  sessionId,
+                  toolCallId: payload.toolCallId,
+                  approved: true,
+                }).catch((err) => {
+                  logger.error('Failed to auto-approve tool in YOLO mode', err);
+                });
+
+                // Set phase to using_tools since we are immediately continuing
+                setWorkflowPhase('using_tools');
+                break;
+              }
+
               setWorkflowPhase('waiting_approval');
               setPendingApprovals((prev) => [
                 ...prev,
@@ -607,6 +639,11 @@ export function AgentSessionProvider({
     [session],
   );
 
+  const toggleYoloMode = useCallback(() => {
+    setYoloModeEnabled((prev) => !prev);
+    logger.info(`YOLO mode ${!yoloModeEnabled ? 'enabled' : 'disabled'}`);
+  }, [yoloModeEnabled]);
+
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
       session,
@@ -618,6 +655,7 @@ export function AgentSessionProvider({
       workflowPhase,
       initializationStep,
       pendingApprovals,
+      yoloModeEnabled,
     }),
     [
       session,
@@ -629,6 +667,7 @@ export function AgentSessionProvider({
       workflowPhase,
       initializationStep,
       pendingApprovals,
+      yoloModeEnabled,
     ],
   );
 
@@ -640,6 +679,7 @@ export function AgentSessionProvider({
       addMessage,
       setError,
       respondToToolApproval,
+      toggleYoloMode,
     }),
     [
       sendMessage,
@@ -648,6 +688,7 @@ export function AgentSessionProvider({
       addMessage,
       setError,
       respondToToolApproval,
+      toggleYoloMode,
     ],
   );
 

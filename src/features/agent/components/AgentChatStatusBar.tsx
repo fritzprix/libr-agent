@@ -1,6 +1,6 @@
 import type { AgentResponse } from '@/models/agent-ipc';
 import { useAgentChat } from '@/context/AgentChatContext';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useAgentSession } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
 import {
   AlertCircle,
@@ -11,7 +11,7 @@ import {
   RefreshCw,
   Wrench,
   AlertTriangle,
-  Bot,
+  Zap,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
@@ -30,16 +30,9 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
-  const { session } = useAgentSessionState();
-  const {
-    workflowStatus,
-    error,
-    llmError,
-    retryMessage,
-    resume,
-    agentModeEnabled,
-    toggleAgentMode,
-  } = useAgentChat();
+  const { session, yoloModeEnabled, toggleYoloMode } = useAgentSession();
+  const { workflowStatus, error, llmError, retryMessage, resume } =
+    useAgentChat();
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -287,25 +280,29 @@ export function AgentChatStatusBar() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={toggleAgentMode}
+            onClick={toggleYoloMode}
             className={`h-6 px-2 text-xs flex items-center gap-1 ${
-              agentModeEnabled
+              yoloModeEnabled
                 ? 'text-primary bg-primary/10 hover:bg-primary/20'
                 : 'text-muted-foreground hover:bg-muted'
             }`}
             title={
-              agentModeEnabled
-                ? t('agent.statusBar.agentModeOnTitle')
-                : t('agent.statusBar.agentModeOffTitle')
+              yoloModeEnabled
+                ? t(
+                    'agent.statusBar.yoloModeOnTitle',
+                    'YOLO Mode is ON. Tools will execute without asking for approval.',
+                  )
+                : t(
+                    'agent.statusBar.yoloModeOffTitle',
+                    'YOLO Mode is OFF. Sensitive tools require approval.',
+                  )
             }
           >
-            <Bot
+            <Zap
               size={14}
-              className={agentModeEnabled ? 'animate-pulse' : ''}
+              className={yoloModeEnabled ? 'fill-primary text-primary' : ''}
             />
-            {agentModeEnabled
-              ? t('agent.statusBar.agentMode')
-              : t('agent.statusBar.chatMode')}
+            YOLO Mode
           </Button>
 
           {/* Token Metrics Badge - Show if metrics exist */}
