@@ -464,8 +464,19 @@ async fn test_server_connection(
                 final_args
             );
 
+            #[cfg(windows)]
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+
             // Spawn process
-            let cmd = tokio::process::Command::new(&final_command).configure(|cmd| {
+            #[allow(unused_mut)]
+            let mut cmd_builder = tokio::process::Command::new(&final_command);
+
+            #[cfg(windows)]
+            {
+                cmd_builder.creation_flags(CREATE_NO_WINDOW);
+            }
+
+            let cmd = cmd_builder.configure(|cmd| {
                 for arg in &final_args {
                     cmd.arg(arg);
                 }
