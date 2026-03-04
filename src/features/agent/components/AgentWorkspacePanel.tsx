@@ -384,9 +384,10 @@ export function AgentWorkspacePanel() {
           // OS-agnostic path parsing: support both / and \\ separators
           const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
           const destPath = await join(rootPath, fileName);
-          const destRelPath = destPath.startsWith('./')
-            ? destPath.slice(2)
-            : destPath;
+          let destRelPath = destPath.replace(/\\/g, '/');
+          if (destRelPath.startsWith('./')) {
+            destRelPath = destRelPath.slice(2);
+          }
 
           // Call builtin workspace tool (returns MCPResult directly after fix)
           const response = (await agentCallBuiltinTool(
