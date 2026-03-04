@@ -13,7 +13,7 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
 
         // Normalize path separators for cmd.exe (/D expects Windows-style backslashes)
         let raw_path = path.to_string_lossy();
-        let path_str = raw_path.replace('/', std::path::MAIN_SEPARATOR);
+        let path_str = raw_path.replace('/', std::path::MAIN_SEPARATOR_STR);
 
         Ok((
             "cmd".to_string(),

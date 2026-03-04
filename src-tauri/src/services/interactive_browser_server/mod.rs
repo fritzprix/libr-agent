@@ -156,25 +156,27 @@ impl InteractiveBrowserServer {
 
         let on_page_load = Box::new(move || {
             // Dynamically look up the current Notify object to avoid stale references
-            if let Some(current_notify) = page_load_waiters_clone_for_load.get(&session_id_clone_for_load) {
+            if let Some(current_notify) =
+                page_load_waiters_clone_for_load.get(&session_id_clone_for_load)
+            {
                 current_notify.notify_one();
             }
         });
 
-        self.env.create_browser_window(
-            &session_id,
-            &window_label,
-            &validated_url,
-            session_title,
-            visible,
-            on_page_load,
-            on_close,
-        )
-        .map_err(|e| {
-            // Clean up the pre-registered waiter to avoid leaking stale entries
-            self.page_load_waiters.remove(&session_id);
-            e
-        })?;
+        self.env
+            .create_browser_window(traits::CreateWindowParams {
+                session_id: &session_id,
+                window_label: &window_label,
+                url: &validated_url,
+                title: session_title,
+                visible,
+                on_page_load,
+                on_close,
+            })
+            .inspect_err(|_| {
+                // Clean up the pre-registered waiter to avoid leaking stale entries
+                self.page_load_waiters.remove(&session_id);
+            })?;
 
         // Register session
 
@@ -317,7 +319,10 @@ try {{
         );
 
         // Execute the script
-        if let Err(e) = self.env.execute_script(&session.window_label, &execution_call) {
+        if let Err(e) = self
+            .env
+            .execute_script(&session.window_label, &execution_call)
+        {
             // Cleanup on eval failure
             self.result_waiters.remove(&request_id);
             error!("Failed to execute script wrapper in session {session_id}: {e}");
@@ -490,11 +495,12 @@ try {{
             .insert(session_id.to_string(), notify.clone());
 
         // Use eval to set window.location.href with proper JSON encoding to prevent injection
-        let url_json = serde_json::to_string(&target_url)
-            .map_err(|e| format!("Failed to encode URL: {e}"))?;
+        let url_json =
+            serde_json::to_string(&target_url).map_err(|e| format!("Failed to encode URL: {e}"))?;
         let script = format!("window.location.href = {}", url_json);
 
-        self.env.execute_script(&window_label, &script)
+        self.env
+            .execute_script(&window_label, &script)
             .map_err(|e| {
                 // Clean up the pre-registered waiter to avoid leaking stale entries
                 self.page_load_waiters.remove(session_id);
@@ -603,7 +609,8 @@ try {{
             })?
         };
 
-        self.env.execute_script(&session.window_label, script)
+        self.env
+            .execute_script(&session.window_label, script)
             .map_err(|e| format!("Failed to execute script: {e}"))
     }
 

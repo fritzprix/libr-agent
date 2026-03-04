@@ -1,9 +1,9 @@
 use log::info;
-use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use super::constants::INIT_SCRIPT;
-use super::traits::BrowserEnvironment;
+use super::traits::{BrowserEnvironment, CreateWindowParams};
 
 /// An implementation of `BrowserEnvironment` specifically for the Tauri framework.
 pub struct TauriBrowserEnvironment {
@@ -22,16 +22,16 @@ impl TauriBrowserEnvironment {
 }
 
 impl BrowserEnvironment for TauriBrowserEnvironment {
-    fn create_browser_window(
-        &self,
-        session_id: &str,
-        window_label: &str,
-        url: &str,
-        title: &str,
-        visible: bool,
-        on_page_load: Box<dyn Fn() + Send + Sync>,
-        on_close: Box<dyn Fn() + Send + Sync>,
-    ) -> Result<(), String> {
+    fn create_browser_window(&self, params: CreateWindowParams<'_>) -> Result<(), String> {
+        let CreateWindowParams {
+            session_id,
+            window_label,
+            url,
+            title,
+            visible,
+            on_page_load,
+            on_close,
+        } = params;
         let parsed_url = url::Url::parse(url).map_err(|e| format!("Invalid URL format: {e}"))?;
 
         let session_id_clone = session_id.to_string();
