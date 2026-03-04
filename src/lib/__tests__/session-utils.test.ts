@@ -94,4 +94,17 @@ describe('filterSessions', () => {
   it('returns empty array if no match found', () => {
     expect(filterSessions(mockSessions, 'xyz123')).toHaveLength(0);
   });
+
+  it('handles sessions with missing assistant gracefully', () => {
+    const sessionWithoutAssistant: AgentSession = {
+      id: 'session-no-assistant',
+      status: 'idle',
+      model: 'gpt-4',
+      provider: 'openai',
+      createdAt: new Date(),
+    };
+
+    expect(filterSessions([sessionWithoutAssistant], 'doesnotexist')).toHaveLength(0);
+    expect(filterSessions([sessionWithoutAssistant], 'no-assistant')).toHaveLength(1);
+  });
 });
