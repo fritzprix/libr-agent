@@ -131,3 +131,4 @@
 **Reality:** Translated the description and `@param fieldName` documentation to English.
 
 ## 2026-03-03 - [src/lib/ai-service/*] **Drift:** [Functions missing JSDoc @param declarations for various properties or deeply nested properties like context.options.modelName] **Reality:** [Function implementations accurately declare their parameters via TypeScript signatures, but JSDocs were missing @param tags for complex objects or were out of sync]
+## 2024-05-18 - [src/lib/logger.ts] **Drift:** [`@param` definitions mismatched actual arguments (e.g., `initialize`, `Logger` methods with context overrides)] **Reality:** [Context is no longer passed explicitly as the last parameter to logging methods; standard `...args` approach is used and `getLogger` handles context injection via bind/closure]

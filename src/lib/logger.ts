@@ -295,10 +295,9 @@ export class Logger {
 
   /**
    * Formats a log message and its arguments, and extracts a context.
-   * If the last argument is a string, it is treated as the context.
    * Other arguments are stringified and appended to the message.
    * @param message The main log message.
-   * @param args The array of arguments to log.
+   * @param args Additional arguments to log.
    * @param defaultContext The default context to use if none is provided in the arguments.
    * @returns An object containing the formatted message and the context.
    * @private
@@ -348,7 +347,7 @@ export class Logger {
   /**
    * Logs a debug message.
    * @param message The message to log.
-   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   * @param args Additional arguments to log.
    */
   static async debug(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('debug')) return;
@@ -368,7 +367,7 @@ export class Logger {
   /**
    * Logs an info message.
    * @param message The message to log.
-   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   * @param args Additional arguments to log.
    */
   static async info(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('info')) return;
@@ -388,7 +387,7 @@ export class Logger {
   /**
    * Logs a warning message.
    * @param message The message to log.
-   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   * @param args Additional arguments to log.
    */
   static async warn(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('warn')) return;
@@ -408,7 +407,7 @@ export class Logger {
   /**
    * Logs an error message. If the last argument is an `Error` object, its message will be appended.
    * @param message The message to log.
-   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   * @param args Additional arguments to log.
    */
   static async error(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('error')) return;
@@ -445,7 +444,7 @@ export class Logger {
   /**
    * Logs a trace message.
    * @param message The message to log.
-   * @param args Additional arguments to log. If the last argument is a string, it will be used as the context.
+   * @param args Additional arguments to log.
    */
   static async trace(message: string, ...args: unknown[]): Promise<void> {
     if (!Logger.shouldLog('trace')) return;
