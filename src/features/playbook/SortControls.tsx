@@ -1,3 +1,4 @@
+import { Dispatch, SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -7,34 +8,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import { Calendar, User, Bookmark, SlidersHorizontal } from 'lucide-react';
 
-export type SortMode = 'created_at' | 'assistant';
-export type SortOrder = 'asc' | 'desc';
-export type GroupMode = 'none' | 'time' | 'assistant';
+import type {
+  PlaybookSortState,
+  SortMode,
+  SortOrder,
+  GroupMode,
+} from './types';
 
 interface SortControlsProps {
-  sortMode: SortMode;
-  setSortMode: (mode: SortMode) => void;
-  sortOrder: SortOrder;
-  setSortOrder: (order: SortOrder) => void;
-  groupMode: GroupMode;
-  setGroupMode: (mode: GroupMode) => void;
-  bookmarkFirst: boolean;
-  onBookmarkFirstToggle: () => void;
+  sortState: PlaybookSortState;
+  setSortState: Dispatch<SetStateAction<PlaybookSortState>>;
 }
 
-export function SortControls({
-  sortMode,
-  setSortMode,
-  sortOrder,
-  setSortOrder,
-  groupMode,
-  setGroupMode,
-  bookmarkFirst,
-  onBookmarkFirstToggle,
-}: SortControlsProps) {
+export function SortControls({ sortState, setSortState }: SortControlsProps) {
   const { t } = useTranslation();
 
   return (
@@ -48,60 +39,62 @@ export function SortControls({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel>{t('playbook.sort.sortBy')}</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem
-            checked={sortMode === 'created_at'}
-            onCheckedChange={() => setSortMode('created_at')}
+          <DropdownMenuRadioGroup
+            value={sortState.sortMode}
+            onValueChange={(v) =>
+              setSortState((s) => ({ ...s, sortMode: v as SortMode }))
+            }
           >
-            <Calendar className="mr-2 h-4 w-4" />{' '}
-            {t('playbook.sort.dateCreated')}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={sortMode === 'assistant'}
-            onCheckedChange={() => setSortMode('assistant')}
-          >
-            <User className="mr-2 h-4 w-4" /> {t('playbook.sort.assistant')}
-          </DropdownMenuCheckboxItem>
+            <DropdownMenuRadioItem value="created_at">
+              <Calendar className="mr-2 h-4 w-4" />{' '}
+              {t('playbook.sort.dateCreated')}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="assistant">
+              <User className="mr-2 h-4 w-4" /> {t('playbook.sort.assistant')}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t('playbook.sort.order')}</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem
-            checked={sortOrder === 'desc'}
-            onCheckedChange={() => setSortOrder('desc')}
+          <DropdownMenuRadioGroup
+            value={sortState.sortOrder}
+            onValueChange={(v) =>
+              setSortState((s) => ({ ...s, sortOrder: v as SortOrder }))
+            }
           >
-            {t('playbook.sort.newestFirst')}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={sortOrder === 'asc'}
-            onCheckedChange={() => setSortOrder('asc')}
-          >
-            {t('playbook.sort.oldestFirst')}
-          </DropdownMenuCheckboxItem>
+            <DropdownMenuRadioItem value="desc">
+              {t('playbook.sort.newestFirst')}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="asc">
+              {t('playbook.sort.oldestFirst')}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t('playbook.sort.grouping')}</DropdownMenuLabel>
-          <DropdownMenuCheckboxItem
-            checked={groupMode === 'none'}
-            onCheckedChange={() => setGroupMode('none')}
+          <DropdownMenuRadioGroup
+            value={sortState.groupMode}
+            onValueChange={(v) =>
+              setSortState((s) => ({ ...s, groupMode: v as GroupMode }))
+            }
           >
-            {t('playbook.sort.none')}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={groupMode === 'time'}
-            onCheckedChange={() => setGroupMode('time')}
-          >
-            {t('playbook.sort.byTime')}
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuCheckboxItem
-            checked={groupMode === 'assistant'}
-            onCheckedChange={() => setGroupMode('assistant')}
-          >
-            {t('playbook.sort.byAssistant')}
-          </DropdownMenuCheckboxItem>
+            <DropdownMenuRadioItem value="none">
+              {t('playbook.sort.none')}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="time">
+              {t('playbook.sort.byTime')}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="assistant">
+              {t('playbook.sort.byAssistant')}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
 
           <DropdownMenuSeparator />
           <DropdownMenuCheckboxItem
-            checked={bookmarkFirst}
-            onCheckedChange={onBookmarkFirstToggle}
+            checked={sortState.bookmarkFirst}
+            onCheckedChange={() =>
+              setSortState((s) => ({ ...s, bookmarkFirst: !s.bookmarkFirst }))
+            }
           >
             <Bookmark className="mr-2 h-4 w-4" />{' '}
             {t('playbook.sort.bookmarksFirst')}
