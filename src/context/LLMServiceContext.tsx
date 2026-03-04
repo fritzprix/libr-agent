@@ -63,18 +63,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     Map<string, SessionStatus>
   >(new Map());
 
-  const [sessionAgentModes, setSessionAgentModes] = useState<
-    Map<string, boolean>
-  >(new Map());
-
-  const setAgentMode = useCallback((sessionId: string, enabled: boolean) => {
-    setSessionAgentModes((prev) => {
-      const next = new Map(prev);
-      next.set(sessionId, enabled);
-      return next;
-    });
-  }, []);
-
   /**
    * Get session status
    */
@@ -99,13 +87,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     [],
   );
 
-  const getAgentMode = useCallback(
-    (sessionId: string) => {
-      return sessionAgentModes.get(sessionId) ?? false;
-    },
-    [sessionAgentModes],
-  );
-
   /**
    * Clear streaming message for a specific session
    * This is called by AgentChatContext after persisting the message
@@ -127,7 +108,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
       streamingMessages,
       setStreamingMessages,
       updateSessionStatus,
-      sessionAgentModes,
     },
   );
 
@@ -143,8 +123,6 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     clearStreamingMessage,
     executeCompletionRequest,
     cancelCompletionRequest,
-    setAgentMode,
-    getAgentMode,
   };
 
   return (

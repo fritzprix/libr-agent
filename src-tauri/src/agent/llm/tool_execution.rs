@@ -5,7 +5,7 @@ use crate::repositories::SessionRepository;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::AppHandle;
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 
 pub async fn execute_tool_calls(
     session_repo: Arc<dyn SessionRepository>,
@@ -60,6 +60,71 @@ pub async fn execute_tool_calls(
         };
 
         // Call tool
+        let requires_approval =
+            crate::agent::tool_approvals::is_approval_required(&tool_name).await;
+
+        if requires_approval {
+            let (tx, rx) = oneshot::channel();
+
+            // Add tx to pending approvals
+            {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    let mut approvals = session.pending_approvals.write().await;
+                    approvals.insert(tool_call_id.clone(), tx);
+                }
+            }
+
+            // Emit approval event
+            let event = crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+                session_id: session_id.clone(),
+                tool_call_id: tool_call_id.clone(),
+                tool_name: tool_name.clone(),
+                arguments: args_str.clone(),
+            };
+            if let Err(e) = crate::agent::events::emit_agent_event(&app_handle, event) {
+                log::error!("Failed to emit ToolExecutionRequiresApproval event: {}", e);
+            }
+
+            // Wait for approval response
+            match rx.await {
+                Ok(approved) => {
+                    if !approved {
+                        // User rejected
+                        let result = crate::commands::agent_commands::ToolExecutionResult {
+                            success: false,
+                            content: String::from("User rejected the tool execution."),
+                            error: None,
+                            is_error: true,
+                            mcp_content: None,
+                        };
+
+                        if let Err(e) = crate::agent::workflow::continue_workflow_after_tool(
+                            &session_repo,
+                            &active_sessions,
+                            &proxy_manager,
+                            &app_handle,
+                            session_id.clone(),
+                            tool_call_id,
+                            result,
+                        )
+                        .await
+                        {
+                            log::error!("Error continuing workflow after tool rejection: {}", e);
+                        }
+                        return; // Halt this loop, workflow continues normally handling rejection
+                    }
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Approval channel closed before receiving a response for {}",
+                        tool_name
+                    );
+                    continue; // Skip execution if channel dropped
+                }
+            }
+        }
+
         let result = match proxy_manager.call_tool(&session_id, &tool_name, args).await {
             Ok(response) => {
                 // Derive is_error from both the JSON-RPC protocol error AND the

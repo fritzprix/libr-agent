@@ -76,16 +76,6 @@ export interface LLMServiceContextValue {
   ) => Promise<Message>;
 
   /**
-   * Set agent mode (auto-tool use) for a session
-   */
-  setAgentMode: (sessionId: string, enabled: boolean) => void;
-
-  /**
-   * Get agent mode status for a session
-   */
-  getAgentMode: (sessionId: string) => boolean;
-
-  /**
    * Cancel an ongoing completion request for a session
    */
   cancelCompletionRequest: (sessionId: string) => void;

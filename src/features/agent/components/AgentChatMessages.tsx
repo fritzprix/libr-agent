@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
-import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useAgentSession } from '@/context/AgentSessionContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useChatScroll } from '@/features/agent/hooks/useChatScroll';
 import { useFileRefetcher } from '@/features/agent/hooks/useFileRefetcher';
@@ -10,6 +10,7 @@ import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
+import { PendingApprovalWidget } from './PendingApprovalWidget';
 
 export function AgentChatMessages() {
   const {
@@ -20,7 +21,8 @@ export function AgentChatMessages() {
     retryMessage,
     workflowStatus,
   } = useAgentChat();
-  const { session } = useAgentSessionState();
+  const { session, pendingApprovals, respondToToolApproval } =
+    useAgentSession();
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
   // Use custom hooks for side effects
@@ -177,6 +179,16 @@ export function AgentChatMessages() {
               </div>
             </div>
           )}
+
+        {/* Pending Approvals */}
+        {pendingApprovals && pendingApprovals.length > 0 && (
+          <div className="flex justify-start mb-8 mt-3">
+            <PendingApprovalWidget
+              approvals={pendingApprovals}
+              onRespond={respondToToolApproval}
+            />
+          </div>
+        )}
 
         <div ref={messagesEndRef} />
       </div>

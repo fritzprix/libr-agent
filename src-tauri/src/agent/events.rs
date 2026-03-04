@@ -50,6 +50,15 @@ pub enum AgentEvent {
         tool_name: String,
     },
 
+    /// Tool execution blocked waiting for user approval
+    #[serde(rename_all = "camelCase")]
+    ToolExecutionRequiresApproval {
+        session_id: String,
+        tool_call_id: String,
+        tool_name: String,
+        arguments: String,
+    },
+
     /// Tool execution completed
     #[serde(rename_all = "camelCase")]
     ToolExecutionCompleted {
