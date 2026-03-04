@@ -25,7 +25,7 @@ NOTE: Memory has a strict limit of 10 items. If you reach this limit, use update
         input_schema: object_prop(
             vec![
                 (
-                    "note".to_string(),
+                    "content".to_string(),
                     string_prop_required(
                         r#"The content to add to memory (e.g., "User requested feature X", "File path: src/main.ts")."#,
                     ),
@@ -54,7 +54,7 @@ NOTE: Memory has a strict limit of 10 items. If you reach this limit, use update
                     ),
                 ),
             ],
-            vec!["note".to_string()],
+            vec!["content".to_string()],
             None,
         ),
         output_schema: None,
@@ -78,7 +78,7 @@ fn update_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "note".to_string(),
+                    "content".to_string(),
                     string_prop_required("The new content for the note."),
                 ),
                 (
@@ -86,7 +86,7 @@ fn update_tool() -> MCPTool {
                     string_prop(None, None, Some("Optional: New title for the note.")),
                 ),
             ],
-            vec!["id".to_string(), "note".to_string()],
+            vec!["id".to_string(), "content".to_string()],
             None,
         ),
         output_schema: None,

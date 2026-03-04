@@ -14,17 +14,16 @@ pub async fn add(
     args: Value,
 ) -> Result<MCPResult, String> {
     let note = args
-        .get("note")
+        .get("content")
+        .or_else(|| args.get("note"))
         .and_then(|v| v.as_str())
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
 
     let note_content = match note {
         Some(n) => n,
-        None => return Ok(missing_param_error("note", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("content", ToolGroup::Memory)),
     };
-
-    let title = args.get("title").and_then(|v| v.as_str()).map(|s| s.trim());
     let source = args
         .get("source")
         .and_then(|v| v.as_str())
@@ -33,6 +32,7 @@ pub async fn add(
 
     let session_id_owned = session_id.to_string();
     let note_owned = note_content.to_string();
+    let title = args.get("title").and_then(|v| v.as_str()).map(|s| s.trim());
     let title_owned = title.map(|s| s.to_string());
     let source_owned = source.map(|s| s.to_string());
 
@@ -137,7 +137,8 @@ pub async fn update(
 ) -> Result<MCPResult, String> {
     let id = args.get("id").and_then(|v| v.as_i64());
     let note = args
-        .get("note")
+        .get("content")
+        .or_else(|| args.get("note"))
         .and_then(|v| v.as_str())
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
@@ -148,7 +149,7 @@ pub async fn update(
     };
     let note_val = match note {
         Some(n) => n,
-        None => return Ok(missing_param_error("note", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("content", ToolGroup::Memory)),
     };
 
     let new_title = args
