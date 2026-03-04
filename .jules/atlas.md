@@ -33,3 +33,5 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 ## 2025-02-28 - [Server Handlers] **Platform Bug:** [Using hardcoded `/` and string concatenation for restricted path checks] **Resolved:** [Replaced with OS-conditional logic and `PathBuf::starts_with` for exact and case-insensitive component matching on Windows/Unix]
 
 ## 2025-02-28 - [Session Directory] **Platform Bug:** [Hardcoded Unix-only `welcome.sh` bash script created on all platforms] **Resolved:** [Added `#[cfg(target_os = "windows")]` logic to create an equivalent `welcome.ps1` PowerShell script instead]
+
+## 2025-03-01 - [src/features/agent/components/AgentWorkspacePanel.tsx] **Platform Bug:** Hardcoded forward slashes and regex replacement for path construction in React frontend. **Resolved:** Replaced with Tauri's `@tauri-apps/api/path` `join` function for cross-platform correctness.

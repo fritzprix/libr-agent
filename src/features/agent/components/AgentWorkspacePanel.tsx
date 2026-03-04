@@ -38,6 +38,7 @@ import { createId } from '@paralleldrive/cuid2';
 
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { join } from '@tauri-apps/api/path';
 
 const logger = getLogger('AgentWorkspacePanel');
 
@@ -386,10 +387,11 @@ export function AgentWorkspacePanel() {
         for (const srcPath of paths) {
           // OS-agnostic path parsing: support both / and \\ separators
           const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
-          const destPath = `${rootPath}/${fileName}`.replace(/\/+/g, '/');
-          const destRelPath = destPath.startsWith('./')
-            ? destPath.slice(2)
-            : destPath;
+          const destPath = await join(rootPath, fileName);
+          let destRelPath = destPath.replace(/\\/g, '/');
+          if (destRelPath.startsWith('./')) {
+            destRelPath = destRelPath.slice(2);
+          }
 
           // Call builtin workspace tool (returns MCPResult directly after fix)
           const response = (await agentCallBuiltinTool(
