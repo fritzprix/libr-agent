@@ -55,3 +55,4 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `playbook_commands.rs` contained business logic for playbooks, including resolving assistant ID from session and playbook sorting and listing.
 - **Action:** Extracted the logic into `PlaybookService` and created `PlaybookDto`.
 - **Result:** `playbook_commands.rs` delegates complex logic to `PlaybookService`.
+## 2025-02-28 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling - InteractiveBrowserServer directly instantiating Tauri app handles] **Resolution:** [Dependency Inversion - Extracted BrowserEnvironment trait and Tauri adapter]

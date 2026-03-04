@@ -7,6 +7,7 @@ const logger = getLogger('GeminiModelManager');
 /**
  * Fetches the list of available models from the Gemini API.
  * Uses pagination to retrieve all models.
+ * @param genAI The internal Gemini API instance.
  */
 export async function fetchGeminiModels(
   genAI: GoogleGenAI,
