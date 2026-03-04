@@ -13,6 +13,7 @@
     "log:default",
     "dialog:default",
     "updater:default",
+    "mcp-bridge:default",
     {
       "identifier": "http:default",
       "allow": [
