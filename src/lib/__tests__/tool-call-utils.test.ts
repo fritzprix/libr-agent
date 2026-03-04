@@ -243,7 +243,7 @@ describe('tool-call-utils', () => {
 
     it('returns { raw } and logs correctly if error is not instanceof Error', () => {
       // Mock JSON.parse to throw a string instead of an Error object
-      const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation(() => { throw 'String error'; });
+      const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation(() => { throw { message: 'String error' }; });
 
       try {
         expect(parseToolArguments('{ syntaxError')).toEqual({ raw: '{ syntaxError' });

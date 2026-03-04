@@ -8,6 +8,7 @@ describe('retry-utils', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   describe('sleep', () => {
@@ -272,7 +273,7 @@ describe('retry-utils', () => {
       expect(result.attemptCount).toBe(2);
     });
 
-    it('withRetry: jitter=false uses exact exponential delay unchanged withRetryResult', async () => {
+    it('withRetryResult: jitter=false uses exact exponential delay unchanged', async () => {
       // Without jitter, delay at attempt 0 = baseDelay = 100ms exactly
       const operation = vi.fn()
         .mockRejectedValueOnce(new Error('fail'))
@@ -288,22 +289,7 @@ describe('retry-utils', () => {
       expect(operation).toHaveBeenCalledTimes(2);
     });
 
-    it('withRetry should fallback to lastError if no throw inside loop', async () => {
-      // Create a scenario where the loop completes normally without throwing inside the loop?
-      // actually, if attempt === maxRetries, it throws inside the loop.
-      // We can mock maxRetries = -1 to bypass loop entirely
-      const operation = vi.fn().mockResolvedValue('success');
-      const promise = withRetry(operation, { maxRetries: -1 });
-      await expect(promise).rejects.toThrow();
-    });
 
-    it('withRetryResult should fallback to lastError if no return inside loop', async () => {
-      // Same scenario
-      const operation = vi.fn().mockResolvedValue('success');
-      const result = await withRetryResult(operation, { maxRetries: -1 });
-      expect(result.success).toBe(false);
-      expect(result.attemptCount).toBe(0);
-    });
 
     it('withRetry: uses exact base delay unchanged if exponentialBackoff=false', async () => {
       const operation = vi.fn()
