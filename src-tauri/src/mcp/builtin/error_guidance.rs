@@ -280,9 +280,9 @@ impl ErrorGuidance {
 
             // MCP Manager tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::McpManager) => vec![
-                "Use listServers to see available MCP servers".to_string(),
+                "Use listTools to see available MCP servers".to_string(),
                 "Verify the server name is correct".to_string(),
-                "Use searchServer to find servers by name".to_string(),
+                "Use listTools with a query to search servers by name".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::McpManager) => vec![
                 "Ensure server name is provided".to_string(),
@@ -292,7 +292,7 @@ impl ErrorGuidance {
             (ErrorCategory::OperationFailed, ToolGroup::McpManager) => vec![
                 "Check server configuration is correct".to_string(),
                 "Verify the server binary/command exists".to_string(),
-                "Use listServers to see server status".to_string(),
+                "Use listTools to see server status".to_string(),
             ],
 
             // Playbook tool errors
@@ -467,10 +467,15 @@ impl SuccessHint {
             ("checkTodo", ToolGroup::Planning) => vec![
                 "Use getCurrentState to see remaining tasks".to_string(),
                 "Use addTodo to create follow-up tasks".to_string(),
+                "When all todos are done, use reflect to review progress".to_string(),
             ],
             ("getCurrentState", ToolGroup::Planning) => vec![
                 "Use checkTodo to mark items as complete".to_string(),
                 "Use addTodo to create new tasks".to_string(),
+            ],
+            ("reflect", ToolGroup::Planning) => vec![
+                "Proceed with the next action identified in your reflection".to_string(),
+                "Use createGoal if starting a new task after reflection".to_string(),
             ],
 
             // Workspace tools
@@ -512,12 +517,12 @@ impl SuccessHint {
             }
 
             // MCP Manager tools
-            ("listServers", ToolGroup::McpManager) => vec![
-                "Use connectServer to connect to a server".to_string(),
-                "Use registerServer to register new servers".to_string(),
+            ("listTools", ToolGroup::McpManager) => vec![
+                "Use registerServer to add new external servers".to_string(),
+                "Use updateAssistant to give an assistant access to found servers".to_string(),
             ],
             ("registerServer", ToolGroup::McpManager) => {
-                vec!["Use listServers to verify server was created".to_string()]
+                vec!["Use listTools to verify server was created".to_string()]
             }
             ("connectServer", ToolGroup::McpManager) => {
                 vec!["Server is now available for tool calls".to_string()]

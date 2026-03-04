@@ -10,7 +10,6 @@ pub fn all_tools() -> Vec<MCPTool> {
         read_tool(),
         clear_tool(),
         think_tool(),
-        reflect_tool(),
     ]
 }
 
@@ -182,38 +181,6 @@ fn think_tool() -> MCPTool {
                 ),
             ],
             vec!["thought".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-fn reflect_tool() -> MCPTool {
-    MCPTool {
-        name: "reflect".to_string(),
-        title: Some("Reflect".to_string()),
-        description: "Critically reflect on your progress. Evaluate what went wrong or could be improved, then commit to a corrective next action. Use when you detect a mistake, loop, or suboptimal approach.".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "critique".to_string(),
-                    string_prop_required("What went wrong or could be improved."),
-                ),
-                (
-                    "reflection".to_string(),
-                    string_prop_required("What you learned and how you will approach this differently."),
-                ),
-                (
-                    "nextAction".to_string(),
-                    string_prop_required("Concrete next action based on this reflection."),
-                ),
-            ],
-            vec![
-                "critique".to_string(),
-                "reflection".to_string(),
-                "nextAction".to_string(),
-            ],
             None,
         ),
         output_schema: None,

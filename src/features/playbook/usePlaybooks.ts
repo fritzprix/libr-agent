@@ -106,13 +106,12 @@ export function usePlaybooks(
   // Filter and Process Playbooks
   const processedPlaybooks = useMemo(() => {
     const lowerQuery = searchQuery.toLowerCase();
-    let filtered = playbooks.filter((p) => {
+    return playbooks.filter((p) => {
       return (
         p.goal.toLowerCase().includes(lowerQuery) ||
         (assistants[p.agentId]?.name || '').toLowerCase().includes(lowerQuery)
       );
     });
-    return filtered;
   }, [playbooks, searchQuery, assistants]);
 
   const groups = useMemo(() => {

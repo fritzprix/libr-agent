@@ -20,6 +20,20 @@ import type {
   GroupMode,
 } from './types';
 
+const SORT_MODES: SortMode[] = ['created_at', 'assistant'];
+const SORT_ORDERS: SortOrder[] = ['asc', 'desc'];
+const GROUP_MODES: GroupMode[] = ['none', 'time', 'assistant'];
+
+function toSortMode(v: string): SortMode {
+  return SORT_MODES.includes(v as SortMode) ? (v as SortMode) : 'created_at';
+}
+function toSortOrder(v: string): SortOrder {
+  return SORT_ORDERS.includes(v as SortOrder) ? (v as SortOrder) : 'desc';
+}
+function toGroupMode(v: string): GroupMode {
+  return GROUP_MODES.includes(v as GroupMode) ? (v as GroupMode) : 'none';
+}
+
 interface SortControlsProps {
   sortState: PlaybookSortState;
   setSortState: Dispatch<SetStateAction<PlaybookSortState>>;
@@ -42,7 +56,7 @@ export function SortControls({ sortState, setSortState }: SortControlsProps) {
           <DropdownMenuRadioGroup
             value={sortState.sortMode}
             onValueChange={(v) =>
-              setSortState((s) => ({ ...s, sortMode: v as SortMode }))
+              setSortState((s) => ({ ...s, sortMode: toSortMode(v) }))
             }
           >
             <DropdownMenuRadioItem value="created_at">
@@ -59,7 +73,7 @@ export function SortControls({ sortState, setSortState }: SortControlsProps) {
           <DropdownMenuRadioGroup
             value={sortState.sortOrder}
             onValueChange={(v) =>
-              setSortState((s) => ({ ...s, sortOrder: v as SortOrder }))
+              setSortState((s) => ({ ...s, sortOrder: toSortOrder(v) }))
             }
           >
             <DropdownMenuRadioItem value="desc">
@@ -75,7 +89,7 @@ export function SortControls({ sortState, setSortState }: SortControlsProps) {
           <DropdownMenuRadioGroup
             value={sortState.groupMode}
             onValueChange={(v) =>
-              setSortState((s) => ({ ...s, groupMode: v as GroupMode }))
+              setSortState((s) => ({ ...s, groupMode: toGroupMode(v) }))
             }
           >
             <DropdownMenuRadioItem value="none">

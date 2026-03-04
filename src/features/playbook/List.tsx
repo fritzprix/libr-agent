@@ -93,11 +93,7 @@ export default function PlaybookList() {
   };
 
   const onFetchDataWrapper = async () => {
-    try {
-      await fetchData();
-    } catch {
-      toast.error(t('playbook.toasts.loadFailed'));
-    }
+    await fetchData();
   };
 
   // Render list regardless of session state

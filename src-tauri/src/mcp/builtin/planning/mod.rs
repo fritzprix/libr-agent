@@ -3,7 +3,9 @@ mod goals;
 mod todos;
 mod tools;
 
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -106,6 +108,31 @@ impl BuiltinMCPServer for PlanningServer {
                     &context.context_prompt,
                     context.structured_state.clone().unwrap_or(json!({})),
                 ))
+            }
+            "reflect" => {
+                let critique = match args.get("critique").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("critique", ToolGroup::Planning)),
+                };
+                let reflection = match args.get("reflection").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("reflection", ToolGroup::Planning)),
+                };
+                let next_action = match args.get("nextAction").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("nextAction", ToolGroup::Planning)),
+                };
+                let message = format!(
+                    "## Reflection & Critique\n\n**Critique:**\n{}\n\n**Reflection:**\n{}\n\n**Next Action:**\n{}\n\n> Based on this reflection, proceed with the \"Next Action\" carefully.",
+                    critique, reflection, next_action
+                );
+                let hint =
+                    SuccessHint::new(message, vec![format!("Proceed with: {}", next_action)]);
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "critique": critique,
+                    "reflection": reflection,
+                    "nextAction": next_action
+                }))))
             }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

@@ -12,6 +12,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         cancel_todo_tool(),
         clear_session_tool(),
         get_current_state_tool(),
+        reflect_tool(),
     ]
 }
 
@@ -184,6 +185,38 @@ fn get_current_state_tool() -> MCPTool {
                 ),
             ],
             vec![],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
+fn reflect_tool() -> MCPTool {
+    MCPTool {
+        name: "reflect".to_string(),
+        title: Some("Reflect".to_string()),
+        description: "Critically reflect on progress after completing todos. Evaluate what went wrong or could be improved, then commit to a corrective next action.".to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "critique".to_string(),
+                    string_prop_required("What went wrong or could be improved."),
+                ),
+                (
+                    "reflection".to_string(),
+                    string_prop_required("What you learned and how you will approach this differently."),
+                ),
+                (
+                    "nextAction".to_string(),
+                    string_prop_required("Concrete next action based on this reflection."),
+                ),
+            ],
+            vec![
+                "critique".to_string(),
+                "reflection".to_string(),
+                "nextAction".to_string(),
+            ],
             None,
         ),
         output_schema: None,

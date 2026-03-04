@@ -36,7 +36,7 @@ impl MemoryServer {
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
             display_name: "Memory".to_string(),
-            description: "Working memory notes, thinking, and reflection".to_string(),
+            description: "Working memory notes and thinking tools".to_string(),
             icon: None,
         }
     }
@@ -78,7 +78,6 @@ impl BuiltinMCPServer for MemoryServer {
             "read" => handlers::read(self.db.as_ref(), &target_session_id, args).await,
             "clear" => handlers::clear(self.db.as_ref(), &target_session_id, args).await,
             "think" => handlers::think(args).await,
-            "reflect" => handlers::reflect(args).await,
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

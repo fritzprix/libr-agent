@@ -522,32 +522,3 @@ pub async fn think(args: Value) -> Result<MCPResult, String> {
         "nextAction": next_action
     }))))
 }
-
-pub async fn reflect(args: Value) -> Result<MCPResult, String> {
-    let critique = match args.get("critique").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        None => return Ok(missing_param_error("critique", ToolGroup::Memory)),
-    };
-    let reflection = match args.get("reflection").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        None => return Ok(missing_param_error("reflection", ToolGroup::Memory)),
-    };
-    let next_action = match args.get("nextAction").and_then(|v| v.as_str()) {
-        Some(v) => v,
-        None => return Ok(missing_param_error("nextAction", ToolGroup::Memory)),
-    };
-
-    let response_id = cuid2::create_id();
-
-    let message = format!(
-        "## Reflection & Critique\n\n**Critique:**\n{}\n\n**Reflection:**\n{}\n\n**Next Action:**\n{}\n\n> Based on this reflection, proceed with the \"Next Action\" carefully.",
-        critique, reflection, next_action
-    );
-
-    let hint = SuccessHint::new(message, vec![format!("Proceed with: {}", next_action)]);
-
-    Ok(hint.to_mcp_result_with_data(Some(json!({
-        "id": response_id,
-        "args": args
-    }))))
-}

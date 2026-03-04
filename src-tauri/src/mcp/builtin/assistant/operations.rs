@@ -348,7 +348,7 @@ pub async fn update_assistant(
                     ToolGroup::Assistant,
                 )
                 .with_guidance(vec![
-                    "Use builtin_mcp_manager__listServers to see available servers".to_string(),
+                    "Use builtin_mcp_manager__listTools to see available servers".to_string(),
                 ])
                 .to_mcp_result());
             }
