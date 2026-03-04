@@ -35,4 +35,112 @@ impl SessionCleanupService {
 
         Ok(())
     }
+
+    /// Recursively collect all descendant session IDs (children, grandchildren, etc.)
+    pub async fn collect_descendant_ids(session_id: &str) -> Result<Vec<String>, String> {
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        let session_repo = crate::state::get_session_repository();
+        let mut all_descendants = Vec::new();
+        let mut queue = vec![session_id.to_string()];
+
+        while let Some(current_id) = queue.pop() {
+            let children = session_repo
+                .get_child_session_ids(&current_id)
+                .await
+                .map_err(|e| format!("Failed to get children for {}: {}", current_id, e))?;
+
+            for child_id in children {
+                all_descendants.push(child_id.clone());
+                queue.push(child_id);
+            }
+        }
+
+        Ok(all_descendants)
+    }
+
+    /// Delete workspace directory for a session
+    pub async fn delete_session_workspace(session_id: &str) -> Result<(), String> {
+        match crate::session::get_session_manager() {
+            Ok(manager) => {
+                // Ensure workspace is loaded into pool before attempting removal
+                let _ = manager.get_session_workspace_dir_by_id(session_id);
+                if let Err(e) = manager.remove_session(session_id).await {
+                    log::warn!(
+                        "Failed to remove workspace for session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("Failed to get session manager for workspace cleanup: {}", e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Delete an agent session data cascade
+    ///
+    /// **Cascade Philosophy:** "부모를 지우면 자식도 지워진다"
+    /// - DB-level CASCADE automatically deletes child session records
+    /// - Manually deletes workspace directories for all descendants before DB deletion
+    pub async fn delete_session_data_cascade(session_id: &str) -> Result<(), String> {
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        let descendant_ids = Self::collect_descendant_ids(session_id).await?;
+
+        for descendant_id in &descendant_ids {
+            Self::delete_session_workspace(descendant_id).await?;
+
+            if let Err(e) = crate::search::index_storage::delete_index(descendant_id) {
+                log::warn!(
+                    "Failed to delete search index for descendant {}: {}",
+                    descendant_id,
+                    e
+                );
+            }
+        }
+
+        Self::delete_session_workspace(session_id).await?;
+
+        if let Err(e) = crate::search::index_storage::delete_index(session_id) {
+            log::warn!(
+                "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .delete_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Delete only this session data, leaving children as orphaned top-level sessions.
+    pub async fn delete_session_data_only(session_id: &str) -> Result<(), String> {
+        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
+
+        Self::delete_session_workspace(session_id).await?;
+
+        if let Err(e) = crate::search::index_storage::delete_index(session_id) {
+            log::warn!(
+                "Failed to delete search index for session {}: {}",
+                session_id,
+                e
+            );
+        }
+
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .orphan_and_delete_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to delete session metadata: {}", e))?;
+
+        Ok(())
+    }
 }
