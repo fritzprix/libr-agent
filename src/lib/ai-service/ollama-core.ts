@@ -72,6 +72,8 @@ export interface SimpleOllamaMessage {
 
 /**
  * Converts MCP tools to Ollama tool format
+ * @param mcpTools An array of generic MCP tools.
+ * @param logger Logger instance to track events.
  */
 export function convertMCPToolsToOllamaTools(
   mcpTools?: MCPTool[],
@@ -136,6 +138,7 @@ export function convertMCPToolsToOllamaTools(
 
 /**
  * Processes content from Message to string format
+ * @param content The content of the message.
  */
 export function processMessageContent(content: Message['content']): string {
   if (!content) return '';
@@ -156,6 +159,8 @@ export function processMessageContent(content: Message['content']): string {
  * Converts a user message to Ollama format.
  * For vision-capable models, image content is extracted from `message.content`
  * and placed in the `images` field as base64 strings (Ollama native API format).
+ * @param message The chat message object.
+ * @param logger Logger instance to track events.
  */
 export function convertUserMessage(
   message: Message,
@@ -190,6 +195,8 @@ export function convertUserMessage(
 
 /**
  * Converts an assistant message to Ollama format
+ * @param message The chat message object.
+ * @param logger Logger instance to track events.
  */
 export function convertAssistantMessage(
   message: Message,
@@ -228,6 +235,8 @@ export function convertAssistantMessage(
 
 /**
  * Converts a single Message to SimpleOllamaMessage
+ * @param message The chat message object.
+ * @param logger Logger instance to track events.
  */
 export function convertMessage(
   message: Message,
@@ -297,6 +306,9 @@ export function convertMessage(
 
 /**
  * Converts array of Messages to Ollama format with optional system prompt
+ * @param messages Array of chat messages.
+ * @param systemPrompt The high level instruction given to the model.
+ * @param logger Logger instance to track events.
  */
 export function convertToOllamaMessages(
   messages: Message[],
@@ -385,6 +397,9 @@ const MAX_ACCUMULATOR_AGE_MS = 30_000;
 
 /**
  * Processes a streaming chunk from Ollama API with partial JSON accumulation
+ * @param chunk A single chunk from the stream.
+ * @param logger Logger instance to track events.
+ * @param accumulators Aggregated state of ongoing multipart tool calls.
  */
 export function processChunk(
   chunk: unknown,
@@ -654,6 +669,7 @@ export function processChunk(
 
 /**
  * Checks if a model name supports tool calling
+ * @param modelName The identifier of the model.
  */
 export function getModelToolSupport(modelName: string): boolean {
   const toolSupportModels = [
@@ -673,6 +689,10 @@ export function getModelToolSupport(modelName: string): boolean {
 
 /**
  * Determines reasoning parameter based on config
+ * @param enableReasoning True if reasoning output should be enabled.
+ * @param reasoningEffort The requested effort or tokens given to the model to reason.
+ * @param modelSupportsThinking True if the given model natively supports thinking mechanisms.
+ * @param logger Logger instance to track events.
  */
 export function determineThinkParam(
   enableReasoning: boolean,

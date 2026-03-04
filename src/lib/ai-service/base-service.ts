@@ -231,6 +231,13 @@ export abstract class BaseAIService implements IAIService {
    * and throws a standardized `AIServiceError`.
    * @param error The error that occurred.
    * @param context The context of the operation, including messages and options.
+   * @param context.messages The array of messages.
+   * @param context.options The options for the request.
+   * @param context.options.modelName The model name.
+   * @param context.options.systemPrompt The system prompt.
+   * @param context.options.availableTools Tools available.
+   * @param context.options.config The service configuration.
+   * @param context.config The current AI configuration.
    * @throws `AIServiceError`
    * @protected
    */
@@ -294,6 +301,7 @@ export abstract class BaseAIService implements IAIService {
   /**
    * Merges the provided options with the default service configuration.
    * @param options The options to merge.
+   * @param options.config Optional configuration for the service.
    * @returns The merged `AIServiceConfig`.
    * @protected
    */
@@ -308,6 +316,10 @@ export abstract class BaseAIService implements IAIService {
    * merges configuration, converts tools, and sanitizes messages.
    * @param messages The input messages.
    * @param options The options for the chat stream.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
    * @returns An object containing the final configuration, converted tools, and sanitized messages.
    * @protected
    */
@@ -432,6 +444,11 @@ export abstract class BaseAIService implements IAIService {
    * This method wraps the `doStreamChat` method to provide common logging functionality.
    * @param messages An array of messages representing the conversation history.
    * @param options Optional parameters for the chat session, including model name, tools, etc.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.forceToolUse Whether to force the model to use tools.
    * @returns An async generator that yields chunks of the response as strings.
    */
   async *streamChat(
@@ -533,6 +550,11 @@ export abstract class BaseAIService implements IAIService {
    * Must be implemented by subclasses.
    * @param messages An array of messages representing the conversation history.
    * @param options Optional parameters for the chat session.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.forceToolUse Whether to force the model to use tools.
    * @returns An async generator that yields chunks of the response as strings.
    * @protected
    * @abstract
@@ -554,6 +576,9 @@ export abstract class BaseAIService implements IAIService {
    * Subclasses should override this method if they support non-streaming sampling.
    * @param prompt The prompt to send to the model.
    * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
    * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(

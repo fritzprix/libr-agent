@@ -22,6 +22,7 @@ export function generateToolCallId(): string {
 
 /**
  * Helper to format content for Gemini API, supporting multimodal parts.
+ * @param content The content of the message.
  */
 export function formatGeminiContent(content: MCPContent[]): Part[] {
   const multimodal = processMultiModalContent(content);
@@ -49,6 +50,7 @@ export function formatGeminiContent(content: MCPContent[]): Part[] {
 /**
  * Attempts to parse tool result content into a structured object.
  * If parsing fails or content is not text, wraps it in a standard response object.
+ * @param content The content of the message.
  */
 export function tryParseResult(content: MCPContent[]): Record<string, unknown> {
   const text = processMessageContent(content);
@@ -62,6 +64,7 @@ export function tryParseResult(content: MCPContent[]): Record<string, unknown> {
 /**
  * Converts an array of standard `Message` objects into the `Content` format
  * required by the Gemini API.
+ * @param messages Array of chat messages.
  */
 export function convertToGeminiMessages(messages: Message[]): Content[] {
   if (messages.length === 0) return [];
@@ -330,6 +333,7 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
 
 /**
  * Converts a single `Message` into the format expected by the Gemini API.
+ * @param message The chat message object.
  */
 export function convertSingleMessage(message: Message): unknown {
   logger.debug('🔄 convertSingleMessage called', {

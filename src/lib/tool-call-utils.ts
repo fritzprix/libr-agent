@@ -60,6 +60,7 @@ export function hasUIResource(toolResult?: Message): boolean {
 /** Canonical builtin service aliases — must mirror BuiltinServiceId::from_alias() in Rust. */
 export const BUILTIN_SERVICE_NAMES = new Set([
   'planning',
+  'memory',
   'workspace',
   'knowledge',
   'assistant',

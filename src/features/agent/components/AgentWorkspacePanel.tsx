@@ -12,6 +12,7 @@ import {
   Upload,
   Terminal,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
@@ -38,6 +39,7 @@ import { createId } from '@paralleldrive/cuid2';
 
 import { createToolMessagePair } from '@/lib/chat-utils';
 import { stringToMCPContentArray } from '@/lib/utils';
+import { join } from '@tauri-apps/api/path';
 
 const logger = getLogger('AgentWorkspacePanel');
 
@@ -192,6 +194,7 @@ export function AgentWorkspacePanel() {
   const [isCancelingOverride, setIsCancelingOverride] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
+  const [isBrowsing, setIsBrowsing] = useState(false);
   const openingNativeLock = useRef(false);
 
   // Component lifecycle logging
@@ -386,10 +389,11 @@ export function AgentWorkspacePanel() {
         for (const srcPath of paths) {
           // OS-agnostic path parsing: support both / and \\ separators
           const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
-          const destPath = `${rootPath}/${fileName}`.replace(/\/+/g, '/');
-          const destRelPath = destPath.startsWith('./')
-            ? destPath.slice(2)
-            : destPath;
+          const destPath = await join(rootPath, fileName);
+          let destRelPath = destPath.replace(/\\/g, '/');
+          if (destRelPath.startsWith('./')) {
+            destRelPath = destRelPath.slice(2);
+          }
 
           // Call builtin workspace tool (returns MCPResult directly after fix)
           const response = (await agentCallBuiltinTool(
@@ -589,6 +593,8 @@ export function AgentWorkspacePanel() {
   };
 
   const handleBrowseFolder = async () => {
+    if (isBrowsing) return;
+    setIsBrowsing(true);
     try {
       const selected = await open({
         directory: true,
@@ -602,6 +608,8 @@ export function AgentWorkspacePanel() {
     } catch (error) {
       logger.error('Failed to open folder dialog', error);
       toast.error(t('agent.workspace.openFolderDialogError', { error }));
+    } finally {
+      setIsBrowsing(false);
     }
   };
 
@@ -733,7 +741,11 @@ export function AgentWorkspacePanel() {
                   size="sm"
                   variant="outline"
                   className="h-7 text-xs whitespace-nowrap"
+                  disabled={isBrowsing}
                 >
+                  {isBrowsing ? (
+                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                  ) : null}
                   {t('agent.workspace.browse')}
                 </Button>
               )}

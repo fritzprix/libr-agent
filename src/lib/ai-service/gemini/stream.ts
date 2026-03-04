@@ -67,6 +67,9 @@ function isFunctionCallPart(part: GeminiChunkPart): part is GeminiChunkPart & {
 
 /**
  * Processes the Gemini stream result and yields formatted JSON strings.
+ * @param result Result stream from the provider API.
+ * @param signal Optional AbortSignal to cancel the stream.
+ * @param logger Logger instance to track events.
  */
 export async function* processGeminiStream(
   result: AsyncIterable<GeminiStreamChunk>,

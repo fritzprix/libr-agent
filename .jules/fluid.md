@@ -13,3 +13,7 @@
 ## 2026-03-03 - [DangerZoneSettings, SkillsEditor, MCPServerManagement] **Bottleneck:** [Naked async onClick handlers lacking proper void return or UI state isolation] **Flow Restored:** [Eradicated naked async handlers by refactoring to use proper void functions and chaining for promise resolution]
 
 ## 2026-03-03 - [AgentWorkspacePanel, GeneralTab] **Bottleneck:** [Naked await causing potential duplicate native window invocations on double-click] **Flow Restored:** [Added loading UI state for Open in Explorer and Open in Terminal invocations]
+
+## 2024-05-18 - [GeneralTab/handleBrowseEvents] **Bottleneck:** [Missing loading state on directory browse native OS dialog causing double submits] **Flow Restored:** [Added isBrowsing state, disabled button, and spinner]
+
+## 2024-05-18 - [AgentWorkspacePanel/handleBrowseFolder] **Bottleneck:** [Missing loading state on directory browse native OS dialog causing double submits] **Flow Restored:** [Added isBrowsing state, disabled button, and spinner]

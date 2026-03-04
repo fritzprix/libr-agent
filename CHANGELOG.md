@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.27] - 2026-03-04
+
+### 🐛 Fixes
+
+- **Cross-platform terminal pathing**: Fixed terminal launch path handling on Windows, macOS, and Linux — Windows now correctly normalizes separators for `cmd.exe /D`, macOS uses proper AppleScript string escaping for paths with special characters, and Linux drops unsafe string concatenation.
+- **Browser window creation**: Extracted `CreateWindowParams` struct and corrected `MAIN_SEPARATOR_STR` usage, improving browser automation reliability across platforms.
+
+### 🚀 Features
+
+- **Accessibility — Playbook icon buttons**: Added `aria-label` attributes to icon-only buttons in the Playbook feature for improved screen reader support.
+
+### 🔧 Internal
+
+- **Interactive Browser Server decoupling**: Introduced `BrowserEnvironment` trait to isolate domain logic from the Tauri framework, with `TauriBrowserEnvironment` as the concrete adapter — improves testability and separation of concerns.
+
 ## [0.5.26] - 2026-03-03
 
 ### 🐛 Fixes

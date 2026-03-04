@@ -34,6 +34,7 @@
     ["@/lib/web-mcp/mcp-worker.ts?worker", ["src\\context\\WebMCPContext.tsx"]]
   ],
   "ignoreUnused": [
+    "@hypothesi/tauri-plugin-mcp-bridge",
     "@mcp-ui/server",
     "@radix-ui/react-alert-dialog",
     "@radix-ui/react-collapsible",
@@ -47,8 +48,8 @@
     "src/components/ui/alert-dialog.tsx",
     "src/components/ui/collapsible.tsx",
     "src/components/ui/sonner.tsx",
-    "src/test/setup.ts",
-    "src/hooks/__tests__/helpers.ts"
+    "src/hooks/__tests__/helpers.ts",
+    "src/test/setup.ts"
   ],
   "ignoreDependencies": ["handlebars"]
 }

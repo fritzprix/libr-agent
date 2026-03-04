@@ -210,6 +210,11 @@ export class AnthropicService extends BaseAIService {
    *
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat, including model name, system prompt, and tools.
+   * @param options.modelName The name of the model.
+   * @param options.systemPrompt The system prompt.
+   * @param options.availableTools Optional array of tools available to the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.forceToolUse Whether to force the model to use tools.
    * @yields A JSON string for each chunk of the response. The format can be `{ content: string }`
    *         for text, `{ thinking: object }` for thinking state, or `{ tool_calls: [...] }` for tool calls.
    */
@@ -684,6 +689,7 @@ export class AnthropicService extends BaseAIService {
 
   /**
    * Helper to format content for Anthropic API, supporting multimodal parts.
+   * @param content The content of the message.
    */
   private formatAnthropicContent(
     content: MCPContent[],

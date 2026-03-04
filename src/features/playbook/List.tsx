@@ -1,7 +1,5 @@
 import {
   useState,
-  useEffect,
-  useMemo,
   useCallback,
   useDeferredValue,
   type MouseEvent,
@@ -23,159 +21,80 @@ import {
 } from '@/components/ui/alert-dialog';
 import { PlaybookCard } from './Card';
 import { PlaybookGroup } from './PlaybookGroup';
-import { SortControls, SortMode, SortOrder, GroupMode } from './SortControls';
-import {
-  listPlaybooks,
-  deletePlaybook,
-  togglePlaybookBookmark,
-} from '@/lib/backend/playbooks';
-import { listAssistants } from '@/lib/backend/assistants';
-import {
-  groupPlaybooksByTime,
-  groupPlaybooksByAssistant,
-  getGroupOrder,
-} from './grouping-utils';
+import { SortControls } from './SortControls';
 import { toast } from 'sonner';
 import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
-import { getLogger } from '@/lib/logger';
-import { Playbook } from '@/types/playbook';
-
-const logger = getLogger('PlaybookList');
-
-// Type for playbooks with metadata
-type PlaybookWithMeta = Playbook & {
-  id: string;
-  createdAt: Date;
-  updatedAt: Date;
-};
+import { usePlaybooks } from './usePlaybooks';
+import type { PlaybookSortState, PlaybookWithMeta } from './types';
 
 export default function PlaybookList() {
   const { t } = useTranslation();
-  const [playbooks, setPlaybooks] = useState<PlaybookWithMeta[]>([]);
-  const [assistants, setAssistants] = useState<
-    Record<string, { name: string }>
-  >({});
-  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const [sortMode, setSortMode] = useState<SortMode>('created_at');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [groupMode, setGroupMode] = useState<GroupMode>('none');
-  const [bookmarkFirst, setBookmarkFirst] = useState(false);
+  const [sortState, setSortState] = useState<PlaybookSortState>({
+    sortMode: 'created_at',
+    sortOrder: 'desc',
+    groupMode: 'none',
+    bookmarkFirst: false,
+  });
+
+  const handleError = useCallback(() => {
+    toast.error(t('playbook.toasts.loadFailed'));
+  }, [t]);
+
+  const {
+    playbooks: processedPlaybooks,
+    originalPlaybooksLength,
+    assistants,
+    loading,
+    isDeleting,
+    groups,
+    groupKeys,
+    fetchData,
+    handleBookmarkToggle,
+    confirmDelete: _confirmDelete,
+  } = usePlaybooks(deferredSearchQuery, sortState, handleError);
+
   const [playbookToDelete, setPlaybookToDelete] =
     useState<PlaybookWithMeta | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [playbooksData, assistantsData] = await Promise.all([
-        listPlaybooks({
-          sortBy: sortMode,
-          sortOrder: sortOrder,
-          bookmarkFirst: bookmarkFirst,
-        }),
-        listAssistants(),
-      ]);
-
-      setPlaybooks(playbooksData);
-
-      const assistantMap = assistantsData.reduce<
-        Record<string, { name: string }>
-      >((acc, curr) => {
-        if (curr && curr.id) {
-          acc[curr.id] = { name: curr.name };
-        }
-        return acc;
-      }, {});
-      setAssistants(assistantMap);
-    } catch (error) {
-      logger.error('Failed to load playbooks', error);
-      toast.error(t('playbook.toasts.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [sortMode, sortOrder, bookmarkFirst, t]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleBookmarkToggle = async (
-    id: string,
-    isBookmarked: boolean,
-    agentId: string,
-  ) => {
-    try {
-      // Optimistic update
-      setPlaybooks((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, isBookmarked } : p)),
-      );
-
-      await togglePlaybookBookmark(id, isBookmarked, agentId);
-    } catch (error) {
-      logger.error('Failed to toggle bookmark', error);
-      toast.error(t('playbook.toasts.bookmarkFailed'));
-      fetchData(); // Revert on failure
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    const playbook = playbooks.find((p) => p.id === id);
+  const handleDeleteClick = (id: string) => {
+    // We could find the playbook from original list or processed list.
+    const playbook = processedPlaybooks.find((p) => p.id === id);
     if (playbook) {
       setPlaybookToDelete(playbook);
     }
   };
 
-  const confirmDelete = async (e: MouseEvent) => {
-    if (!playbookToDelete) return;
+  const handleConfirmDelete = async (e: MouseEvent) => {
     e.preventDefault();
-    setIsDeleting(true);
+    if (!playbookToDelete) return;
 
     try {
-      await deletePlaybook(playbookToDelete.id, playbookToDelete.agentId);
-      setPlaybooks((prev) => prev.filter((p) => p.id !== playbookToDelete.id));
+      await _confirmDelete(playbookToDelete);
       toast.success(t('playbook.toasts.deleted'));
       setPlaybookToDelete(null);
-    } catch (error) {
-      logger.error('Failed to delete playbook', error);
+    } catch {
       toast.error(t('playbook.toasts.deleteFailed'));
-    } finally {
-      setIsDeleting(false);
     }
   };
 
-  // Filter and Process Playbooks
-  const processedPlaybooks = useMemo(() => {
-    let filtered = playbooks.filter((p) => {
-      const query = deferredSearchQuery.toLowerCase();
-      return (
-        p.goal.toLowerCase().includes(query) ||
-        (assistants[p.agentId]?.name || '').toLowerCase().includes(query)
-      );
-    });
-    return filtered;
-  }, [playbooks, deferredSearchQuery, assistants]);
-
-  const groups = useMemo(() => {
-    if (groupMode === 'time') {
-      return groupPlaybooksByTime(processedPlaybooks);
-    } else if (groupMode === 'assistant') {
-      return groupPlaybooksByAssistant(processedPlaybooks, assistants);
+  const onBookmarkToggleWrapper = async (
+    id: string,
+    val: boolean,
+    agentId: string,
+  ) => {
+    try {
+      await handleBookmarkToggle(id, val, agentId);
+    } catch {
+      toast.error(t('playbook.toasts.bookmarkFailed'));
     }
-    return null;
-  }, [groupMode, processedPlaybooks, assistants]);
+  };
 
-  const groupKeys = useMemo(() => {
-    if (groupMode === 'none') return [];
-    if (groupMode === 'time')
-      return getGroupOrder('time').filter(
-        (k) => groups?.[k] && groups[k].length > 0,
-      );
-    if (groupMode === 'assistant') return Object.keys(groups || {}).sort();
-    return [];
-  }, [groupMode, groups]);
+  const onFetchDataWrapper = async () => {
+    await fetchData();
+  };
 
   // Render list regardless of session state
 
@@ -202,9 +121,10 @@ export default function PlaybookList() {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => fetchData()}
+              onClick={onFetchDataWrapper}
               disabled={loading}
               className="h-9 w-9"
+              aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
             >
               <RefreshCw
                 className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
@@ -220,22 +140,13 @@ export default function PlaybookList() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <SortControls
-              sortMode={sortMode}
-              setSortMode={setSortMode}
-              sortOrder={sortOrder}
-              setSortOrder={setSortOrder}
-              groupMode={groupMode}
-              setGroupMode={setGroupMode}
-              bookmarkFirst={bookmarkFirst}
-              onBookmarkFirstToggle={() => setBookmarkFirst(!bookmarkFirst)}
-            />
+            <SortControls sortState={sortState} setSortState={setSortState} />
           </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
-          {loading && playbooks.length === 0 ? (
+          {loading && originalPlaybooksLength === 0 ? (
             <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
               <Loader2 className="h-10 w-10 animate-spin mb-4" />
               <p>{t('playbook.loading')}</p>
@@ -276,7 +187,7 @@ export default function PlaybookList() {
             </div>
           ) : (
             <div className="space-y-8 pb-8">
-              {groupMode === 'none' ? (
+              {sortState.groupMode === 'none' ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {processedPlaybooks.map((playbook) => (
                     <PlaybookCard
@@ -287,9 +198,9 @@ export default function PlaybookList() {
                         t('playbook.card.unknownAssistant')
                       }
                       onBookmarkToggle={(id, val) =>
-                        handleBookmarkToggle(id, val, playbook.agentId)
+                        onBookmarkToggleWrapper(id, val, playbook.agentId)
                       }
-                      onDelete={handleDelete}
+                      onDelete={handleDeleteClick}
                     />
                   ))}
                 </div>
@@ -301,20 +212,21 @@ export default function PlaybookList() {
                       <PlaybookGroup
                         key={key}
                         title={
-                          groupMode === 'time' || key.startsWith('playbook.')
+                          sortState.groupMode === 'time' ||
+                          key.startsWith('playbook.')
                             ? t(key)
                             : key
                         }
                         playbooks={groups[key]}
                         assistantMap={assistants}
                         onBookmarkToggle={(id, val) =>
-                          handleBookmarkToggle(
+                          onBookmarkToggleWrapper(
                             id,
                             val,
                             groups[key].find((p) => p.id === id)?.agentId || '',
                           )
                         }
-                        onDelete={handleDelete}
+                        onDelete={handleDeleteClick}
                       />
                     ),
                 )
@@ -344,7 +256,10 @@ export default function PlaybookList() {
               <AlertDialogCancel disabled={isDeleting}>
                 {t('playbook.deleteDialog.cancel')}
               </AlertDialogCancel>
-              <AlertDialogAction onClick={confirmDelete} disabled={isDeleting}>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+              >
                 {isDeleting && <LoadingSpinner className="mr-2 h-4 w-4" />}
                 {t('playbook.deleteDialog.confirm')}
               </AlertDialogAction>
