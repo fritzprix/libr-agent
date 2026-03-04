@@ -28,3 +28,9 @@
 
 - Removed the redundant `useSessionTools` hook, which duplicated the functionality of `useAgentTools`.
 - Updated `AgentChatInput` to use the more robust, centralized `useAgentTools` hook, providing validation, loading state, and error handling out of the box.
+
+## 2026-03-03 - [PlaybookList] **Eradicated:** [God Component / Prop Hoarder] **Woven:** [Custom Hook Pattern / Unified State]
+
+- Extracted complex data fetching, filtering, grouping, and deletion logic into a new custom hook `usePlaybooks`.
+- Replaced 8 individual props passed to `<SortControls />` with a unified `PlaybookSortState` object.
+- **Benefits:** `PlaybookList` is now a lean presentation component, and `SortControls` has a significantly reduced prop surface area.
