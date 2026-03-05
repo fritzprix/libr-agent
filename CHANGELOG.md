@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.29] - 2026-03-06
+
+### 🚀 Features
+
+- **Agent Session Manager**: Introduced `AgentSessionManager` to consolidate agent session lifecycle management, tool approvals, and robust background cleanup services.
+- **Scheduled Tasks UX**: Improved localization (i18n) and screen reader accessibility (ARIA labels) for the Scheduled Tasks feature.
+- **Refactoring Skill**: Added `refactor-builtin-tool` skill for AI agents to enforce context economy and design principles.
+- **Weaver's Journal**: Created a dedicated journal to document refactoring patterns and architectural improvements.
+
+### 🐛 Fixes
+
+- **Logger Recursion Loop**: Reverted `safeInvoke` usage in `TauriLogFileManager` to prevent potential infinite recursion during logging.
+- **Session Deletion Logic**: Decoupled session deletion domain logic from the UI framework (Nexus).
+
+### 🔧 Internal
+
+- **MCP Validation Sync**: Enforced synchronous validation for external MCP server registration, ensuring database state integrity and improving `listTools` visibility.
+- **Tool Consolidation**: Merged `exportFile` and `exportZip` into a unified `export` tool, reducing duplication and AI cognitive load by over 200 lines.
+- **UI Tool Context Economy**: Removed internal callback tools (`getUserAnswer`, `circuitBreak`, etc.) from the AI context to prevent hallucinated tool calls.
+- **Logger File Management**: Optimized IPC boundaries for Logger File Management (Hermes).
+- **Design Principles**: Added comprehensive documentation on built-in tool design principles and anti-patterns.
+- **Task Components State**: Cleaned up and removed unnecessary derived state from scheduled tasks UI components.
+
 ## [0.5.28] - 2026-03-05
 
 ### 🚀 Features
