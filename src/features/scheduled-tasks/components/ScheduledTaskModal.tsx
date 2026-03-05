@@ -147,7 +147,9 @@ function ScheduledTaskForm({
       <div className="grid gap-4 py-2">
         {/* Task name */}
         <div className="grid gap-1.5">
-          <Label htmlFor="task-name">{t('scheduledTasks.modal.nameLabel')}</Label>
+          <Label htmlFor="task-name">
+            {t('scheduledTasks.modal.nameLabel')}
+          </Label>
           <Input
             id="task-name"
             value={name}
@@ -161,7 +163,9 @@ function ScheduledTaskForm({
           <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
           <Select value={assistantId} onValueChange={setAssistantId}>
             <SelectTrigger>
-              <SelectValue placeholder={t('scheduledTasks.modal.assistantPlaceholder')} />
+              <SelectValue
+                placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
+              />
             </SelectTrigger>
             <SelectContent>
               {assistants.map((a) => (
@@ -187,7 +191,8 @@ function ScheduledTaskForm({
           <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
           <p className="text-xs text-muted-foreground">
             <Trans i18nKey="scheduledTasks.modal.messageHint">
-              Use <code className="font-mono">@playbook:</code> or <code className="font-mono">@skill:</code> for autocomplete
+              Use <code className="font-mono">@playbook:</code> or{' '}
+              <code className="font-mono">@skill:</code> for autocomplete
             </Trans>
           </p>
           <MentionTextarea

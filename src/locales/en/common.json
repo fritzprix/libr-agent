@@ -712,6 +712,8 @@
       "on": "On",
       "onDay": "On day",
       "at": "At",
+      "hour": "Hour",
+      "minute": "Minute",
       "modes": {
         "minutes": "Every N minutes",
         "hours": "Every N hours",

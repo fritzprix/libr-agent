@@ -102,18 +102,25 @@ export function describeCron(cron: string, t: TFunction): string {
   const timeStr = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
   switch (s.mode) {
     case 'minutes':
-      return t('scheduledTasks.schedule.describe.minutes', { count: s.minuteInterval });
+      return t('scheduledTasks.schedule.describe.minutes', {
+        count: s.minuteInterval,
+      });
     case 'hours':
-      return t('scheduledTasks.schedule.describe.hours', { count: s.hourInterval });
+      return t('scheduledTasks.schedule.describe.hours', {
+        count: s.hourInterval,
+      });
     case 'daily':
       return t('scheduledTasks.schedule.describe.daily', { time: timeStr });
     case 'weekly':
       return t('scheduledTasks.schedule.describe.weekly', {
         day: t(`scheduledTasks.schedule.days.${s.weekDay}`),
-        time: timeStr
+        time: timeStr,
       });
     case 'monthly':
-      return t('scheduledTasks.schedule.describe.monthly', { day: s.monthDay, time: timeStr });
+      return t('scheduledTasks.schedule.describe.monthly', {
+        day: s.monthDay,
+        time: timeStr,
+      });
   }
 }
 
@@ -154,11 +161,21 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="minutes">{t('scheduledTasks.schedule.modes.minutes')}</SelectItem>
-            <SelectItem value="hours">{t('scheduledTasks.schedule.modes.hours')}</SelectItem>
-            <SelectItem value="daily">{t('scheduledTasks.schedule.modes.daily')}</SelectItem>
-            <SelectItem value="weekly">{t('scheduledTasks.schedule.modes.weekly')}</SelectItem>
-            <SelectItem value="monthly">{t('scheduledTasks.schedule.modes.monthly')}</SelectItem>
+            <SelectItem value="minutes">
+              {t('scheduledTasks.schedule.modes.minutes')}
+            </SelectItem>
+            <SelectItem value="hours">
+              {t('scheduledTasks.schedule.modes.hours')}
+            </SelectItem>
+            <SelectItem value="daily">
+              {t('scheduledTasks.schedule.modes.daily')}
+            </SelectItem>
+            <SelectItem value="weekly">
+              {t('scheduledTasks.schedule.modes.weekly')}
+            </SelectItem>
+            <SelectItem value="monthly">
+              {t('scheduledTasks.schedule.modes.monthly')}
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -180,7 +197,9 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
               }
               className="w-20"
             />
-            <span className="text-sm text-muted-foreground">{t('scheduledTasks.schedule.units.minutes')}</span>
+            <span className="text-sm text-muted-foreground">
+              {t('scheduledTasks.schedule.units.minutes')}
+            </span>
           </div>
         </div>
       )}
@@ -202,7 +221,9 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
               }
               className="w-20"
             />
-            <span className="text-sm text-muted-foreground">{t('scheduledTasks.schedule.units.hours')}</span>
+            <span className="text-sm text-muted-foreground">
+              {t('scheduledTasks.schedule.units.hours')}
+            </span>
           </div>
         </div>
       )}
@@ -262,7 +283,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
                 update({ hour: clamp(parseInt(e.target.value) || 0, 0, 23) })
               }
               className="w-16 text-center"
-              aria-label="Hour"
+              aria-label={t('scheduledTasks.schedule.hour')}
             />
             <span className="text-muted-foreground font-semibold">:</span>
             <Input
@@ -274,7 +295,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
                 update({ minute: clamp(parseInt(e.target.value) || 0, 0, 59) })
               }
               className="w-16 text-center"
-              aria-label="Minute"
+              aria-label={t('scheduledTasks.schedule.minute')}
             />
           </div>
         </div>
@@ -282,7 +303,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
 
       {/* Live summary */}
       <p className="text-xs text-muted-foreground">
-        {t('scheduledTasks.schedule.summary')}{' '}
+        {t('scheduledTasks.schedule.summary')}
         <span className="font-medium text-foreground">
           {describeCron(toCron(state), t)}
         </span>

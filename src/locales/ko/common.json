@@ -618,6 +618,8 @@
       "on": "요일",
       "onDay": "날짜",
       "at": "시간",
+      "hour": "시",
+      "minute": "분",
       "modes": {
         "minutes": "N분마다",
         "hours": "N시간마다",
