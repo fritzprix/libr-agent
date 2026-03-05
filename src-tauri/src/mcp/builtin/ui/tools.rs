@@ -104,7 +104,7 @@ pub fn wait_for_user_resume_tool() -> MCPTool {
 }
 
 /// Returns all UI tools intended for the AI agent
-/// Note: Internal callback tools (getUserAnswer, resumeFromWait, circuitBreak, resumeCircuitBreak) 
+/// Note: Internal callback tools (getUserAnswer, resumeFromWait, circuitBreak, resumeCircuitBreak)
 /// are NOT included here to prevent the AI from hallucinating calls to them.
 pub fn all_tools() -> Vec<MCPTool> {
     vec![

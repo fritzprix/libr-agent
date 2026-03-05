@@ -21,7 +21,12 @@ impl WorkspaceServer {
         // Layer 1: Parameter validation
         let paths_array = match args.get("paths").and_then(|v| v.as_array()) {
             Some(paths) if !paths.is_empty() => paths,
-            _ => return Ok(missing_param_error("paths (must be a non-empty array)", ToolGroup::Workspace)),
+            _ => {
+                return Ok(missing_param_error(
+                    "paths (must be a non-empty array)",
+                    ToolGroup::Workspace,
+                ))
+            }
         };
 
         let target_session_id = session_id
@@ -106,7 +111,7 @@ impl WorkspaceServer {
             let relative_path = PathBuf::from("exports")
                 .join("files")
                 .join(&export_filename);
-            
+
             return Ok(self.build_ui_response(
                 &format!("File Export: {display_name}"),
                 &[single_file_rel_path_str],
@@ -114,7 +119,10 @@ impl WorkspaceServer {
                 &relative_path.to_string_lossy(),
                 &display_name,
                 "export",
-                &format!("✓ File '{}' exported successfully\n\nDownload link available below", display_name),
+                &format!(
+                    "✓ File '{}' exported successfully\n\nDownload link available below",
+                    display_name
+                ),
             ));
         }
 
@@ -136,14 +144,27 @@ impl WorkspaceServer {
         if !missing_files.is_empty() {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
-                format!("The following {} file(s)/folder(s) were not found: {}", missing_files.len(), missing_files.join(", ")),
+                format!(
+                    "The following {} file(s)/folder(s) were not found: {}",
+                    missing_files.len(),
+                    missing_files.join(", ")
+                ),
                 ToolGroup::Workspace,
-            ).to_mcp_result());
+            )
+            .to_mcp_result());
         }
 
         let zip_file = match std::fs::File::create(&zip_path) {
             Ok(file) => file,
-            Err(e) => return Ok(guided_error(ErrorCategory::InvalidState, "Create ZIP file failed".to_string(), ToolGroup::Workspace).guidance(vec![format!("Error: {}", e)]).to_mcp_result()),
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create ZIP file failed".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![format!("Error: {}", e)])
+                .to_mcp_result())
+            }
         };
 
         let mut zip = zip::ZipWriter::new(zip_file);
@@ -157,12 +178,19 @@ impl WorkspaceServer {
         for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
                 let source_path = workspace_dir_canon.join(path_str);
-                if !source_path.exists() { continue; }
+                if !source_path.exists() {
+                    continue;
+                }
 
                 let roots: Vec<PathBuf> = if source_path.is_file() {
                     vec![source_path]
                 } else if source_path.is_dir() {
-                    WalkDir::new(&source_path).into_iter().filter_map(Result::ok).filter(|e| e.file_type().is_file()).map(|e| e.into_path()).collect()
+                    WalkDir::new(&source_path)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                        .filter(|e| e.file_type().is_file())
+                        .map(|e| e.into_path())
+                        .collect()
                 } else {
                     continue;
                 };
@@ -172,16 +200,26 @@ impl WorkspaceServer {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
-                    if !abs_canon.starts_with(&workspace_dir_canon) { continue; }
+                    if !abs_canon.starts_with(&workspace_dir_canon) {
+                        continue;
+                    }
                     let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
-                    let archive_path = rel_path.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<String>>().join("/");
-                    
-                    if !added_archive_paths.insert(archive_path.clone()) { continue; }
-                    if zip.start_file(&archive_path, options).is_err() { continue; }
-                    
+                    let archive_path = rel_path
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                        .collect::<Vec<String>>()
+                        .join("/");
+
+                    if !added_archive_paths.insert(archive_path.clone()) {
+                        continue;
+                    }
+                    if zip.start_file(&archive_path, options).is_err() {
+                        continue;
+                    }
+
                     match std::fs::read(&abs_canon) {
                         Ok(content) => {
                             if zip.write_all(&content).is_ok() {
@@ -195,15 +233,28 @@ impl WorkspaceServer {
         }
 
         if let Err(e) = zip.finish() {
-            return Ok(guided_error(ErrorCategory::InvalidState, "Finalize ZIP file failed".to_string(), ToolGroup::Workspace).guidance(vec![format!("Error: {}", e)]).to_mcp_result());
+            return Ok(guided_error(
+                ErrorCategory::InvalidState,
+                "Finalize ZIP file failed".to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![format!("Error: {}", e)])
+            .to_mcp_result());
         }
 
         if processed_files.is_empty() {
-            return Ok(guided_error(ErrorCategory::OperationFailed, "No files were successfully added to ZIP".to_string(), ToolGroup::Workspace).to_mcp_result());
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                "No files were successfully added to ZIP".to_string(),
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result());
         }
 
-        let relative_path = PathBuf::from("exports").join("packages").join(&zip_filename);
-        
+        let relative_path = PathBuf::from("exports")
+            .join("packages")
+            .join(&zip_filename);
+
         Ok(self.build_ui_response(
             &format!("ZIP Package: {package_name}"),
             &processed_files,
@@ -232,13 +283,8 @@ impl WorkspaceServer {
             .filter_map(|c| c.to_digit(36))
             .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
 
-        let html_content = ui_resources::create_html_export_ui(
-            title,
-            items,
-            type_label,
-            relative_path,
-            filename,
-        );
+        let html_content =
+            ui_resources::create_html_export_ui(title, items, type_label, relative_path, filename);
 
         let ui_resource = ui_resources::create_export_ui_resource(
             ui_request_id,
