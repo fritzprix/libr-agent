@@ -36,7 +36,6 @@ interface UseLLMExecutionProps {
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
   updateSessionStatus: (sessionId: string, status: SessionStatus) => void;
-  sessionAgentModes: Map<string, boolean>;
 }
 
 export function useLLMExecution({
@@ -44,7 +43,6 @@ export function useLLMExecution({
   streamingMessages,
   setStreamingMessages,
   updateSessionStatus,
-  sessionAgentModes,
 }: UseLLMExecutionProps) {
   // Track active service instances for cleanup
   const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
@@ -324,7 +322,7 @@ export function useLLMExecution({
           systemPrompt: finalSystemPrompt,
           availableTools: availableTools || [],
           config,
-          forceToolUse: sessionAgentModes.get(sessionId) ?? false,
+          forceToolUse: false,
         });
 
         const content: MCPContent[] = [];
@@ -713,13 +711,7 @@ export function useLLMExecution({
         throw error;
       }
     },
-    [
-      updateSessionStatus,
-      settingsRef,
-      streamingMessages,
-      setStreamingMessages,
-      sessionAgentModes,
-    ],
+    [updateSessionStatus, settingsRef, streamingMessages, setStreamingMessages],
   );
 
   const cancelCompletionRequest = useCallback((sessionId: string) => {

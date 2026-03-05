@@ -156,6 +156,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 pending_events: Arc::new(RwLock::new(
                     crate::agent::state::PendingEventManager::new(),
                 )),
+                pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 context_registry,
             },
         );

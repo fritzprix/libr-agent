@@ -47,9 +47,17 @@ impl BackupManager {
             fs::create_dir_all(&backup_dir).map_err(DatabaseError::IoError)?;
         }
 
+        let file_stem = self
+            .db_path
+            .file_stem()
+            .ok_or_else(|| DatabaseError::BackupFailed {
+                path: self.db_path.display().to_string(),
+                error: "Database path has no filename".to_string(),
+            })?;
+
         let backup_path = backup_dir.join(format!(
             "{}.backup.{}.db",
-            self.db_path.file_stem().unwrap().to_string_lossy(),
+            file_stem.to_string_lossy(),
             timestamp
         ));
 
@@ -81,7 +89,16 @@ impl BackupManager {
             return Ok(Vec::new());
         }
 
-        let stem = self.db_path.file_stem().unwrap().to_string_lossy();
+        let stem = self
+            .db_path
+            .file_stem()
+            .ok_or_else(|| {
+                DatabaseError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Database path has no filename",
+                ))
+            })?
+            .to_string_lossy();
         let pattern = format!("{}.backup.", stem);
 
         let mut backups: Vec<PathBuf> = fs::read_dir(&backup_dir)

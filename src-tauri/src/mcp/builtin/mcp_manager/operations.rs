@@ -160,7 +160,7 @@ pub async fn register_server(server: &MCPManagerServer, args: Value) -> Result<M
             name, id
         ),
         vec![
-            "Use listExternalServers to view all registered servers".to_string(),
+            "Use listTools to view all registered servers".to_string(),
             format!("Use connectServer('{}') to start this server in a session", name),
             "The Server ID is required when configuring an assistant's mcpServerIds".to_string(),
         ],
@@ -201,7 +201,7 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
         )
         .with_guidance(vec![
             "Verify database permissions".to_string(),
-            "Target 'listServers' to ensure the name exists".to_string(),
+            "Use listTools to confirm the name exists".to_string(),
         ])
         .to_mcp_result());
     }
@@ -213,7 +213,7 @@ pub async fn delete_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     let hint = SuccessHint::new(
         format!("Excluded server '{}' from configuration", name),
-        vec!["Use listServers to verify remaining servers".to_string()],
+        vec!["Use listTools to verify remaining servers".to_string()],
     );
     Ok(hint.to_mcp_result())
 }
@@ -313,7 +313,7 @@ pub async fn update_server(server: &MCPManagerServer, args: Value) -> Result<MCP
 
     let hint = SuccessHint::new(
         format!("✓ Server configuration updated for '{}' (ID: {})", name, id),
-        vec!["Use listExternalServers to verify changes".to_string()],
+        vec!["Use listTools to verify changes".to_string()],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))
 }
@@ -382,7 +382,7 @@ pub async fn verify_server(server: &MCPManagerServer, args: Value) -> Result<MCP
                 Transport: {}\n\
                 {}\n\
                 Status: Connected and responsive\n\
-                Available tools: {} (cached — visible in listExternalServers)\n\
+                Available tools: {} (cached — use listTools to see)\n\
                 Connection latency: {}ms\n\n\
                 The server is properly configured and ready to use.",
                 name, id, transport_type, transport_details, tool_count, latency_ms
@@ -464,8 +464,19 @@ async fn test_server_connection(
                 final_args
             );
 
+            #[cfg(windows)]
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+
             // Spawn process
-            let cmd = tokio::process::Command::new(&final_command).configure(|cmd| {
+            #[allow(unused_mut)]
+            let mut cmd_builder = tokio::process::Command::new(&final_command);
+
+            #[cfg(windows)]
+            {
+                cmd_builder.creation_flags(CREATE_NO_WINDOW);
+            }
+
+            let cmd = cmd_builder.configure(|cmd| {
                 for arg in &final_args {
                     cmd.arg(arg);
                 }
@@ -565,4 +576,219 @@ async fn test_server_connection(
             Ok((tools.len(), tools_json))
         }
     }
+}
+
+/// Unified tool discovery across builtin and external MCP servers.
+pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
+    use crate::mcp::types::MCPServerConfig;
+
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("all");
+
+    let force_verify = args
+        .get("forceVerify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let include_internal = matches!(scope, "internal" | "all");
+    let include_external = matches!(scope, "external" | "all");
+
+    let mut result_sections: Vec<String> = Vec::new();
+    let mut total_tools = 0usize;
+    let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
+
+    // --- Internal (builtin) tools ---
+    if include_internal {
+        let all_tools = crate::mcp::server::tools::get_all_static_builtin_tools();
+        let matched: Vec<_> = all_tools
+            .iter()
+            .filter(|t| {
+                query.is_empty()
+                    || t.name.to_lowercase().contains(&query)
+                    || t.description.to_lowercase().contains(&query)
+            })
+            .collect();
+
+        if !matched.is_empty() {
+            let lines: Vec<String> = matched
+                .iter()
+                .map(|t| {
+                    // Truncate description to keep output compact
+                    let desc = if t.description.len() > 80 {
+                        let mut end = 77;
+                        while end > 0 && !t.description.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        format!("{}...", &t.description[..end])
+                    } else {
+                        t.description.clone()
+                    };
+                    format!("• {} — {}", t.name, desc)
+                })
+                .collect();
+
+            result_sections.push(format!(
+                "## Builtin Tools ({} matched)\n{}",
+                matched.len(),
+                lines.join("\n")
+            ));
+            total_tools += matched.len();
+        }
+    }
+
+    // --- External (user-registered) tools ---
+    if include_external {
+        let repo = get_mcp_server_repository();
+        let models = match repo.list().await {
+            Ok(m) => m,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::DatabaseError,
+                    format!("Failed to query MCP server list: {}", e),
+                    ToolGroup::McpManager,
+                )
+                .with_guidance(vec!["Check database connectivity".to_string()])
+                .to_mcp_result())
+            }
+        };
+
+        for model in &models {
+            // Determine tool source: live (forceVerify) or cached
+            let tools_json_str: Option<String> = if force_verify {
+                let config: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
+                if let Some(config) = config {
+                    match test_server_connection(&config, &model.name).await {
+                        Ok((_, json_str)) => Some(json_str),
+                        Err(e) => {
+                            log::warn!("listTools: live verify failed for '{}': {}", model.name, e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            } else {
+                model.cached_tools.clone()
+            };
+
+            let cached_tools: Vec<Value> = tools_json_str
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+
+            let server_matches_query =
+                query.is_empty() || model.name.to_lowercase().contains(&query);
+
+            let matched_tools: Vec<&Value> = if query.is_empty() {
+                cached_tools.iter().collect()
+            } else {
+                cached_tools
+                    .iter()
+                    .filter(|t| {
+                        let name_match = t["name"]
+                            .as_str()
+                            .map(|n| n.to_lowercase().contains(&query))
+                            .unwrap_or(false);
+                        let desc_match = t["description"]
+                            .as_str()
+                            .map(|d| d.to_lowercase().contains(&query))
+                            .unwrap_or(false);
+                        name_match || desc_match || server_matches_query
+                    })
+                    .collect()
+            };
+
+            if !matched_tools.is_empty() {
+                let verify_note = if force_verify { " [live]" } else { " [cached]" };
+                let tool_lines: Vec<String> = matched_tools
+                    .iter()
+                    .map(|t| {
+                        let name = t["name"].as_str().unwrap_or("?");
+                        let desc = t["description"].as_str().unwrap_or("");
+                        format!("• {} — {}", name, desc)
+                    })
+                    .collect();
+
+                result_sections.push(format!(
+                    "## External: {}{} (ID: {})\n{}",
+                    model.name,
+                    verify_note,
+                    model.id,
+                    tool_lines.join("\n")
+                ));
+                total_tools += matched_tools.len();
+                found_external_ids.push((model.name.clone(), model.id.clone()));
+            }
+        }
+    }
+
+    if total_tools == 0 {
+        let hint_text = if query.is_empty() {
+            "No tools found. Use registerServer to add external MCP servers.".to_string()
+        } else {
+            format!(
+                "No tools found matching '{}'. Try a broader query or scope='all'.",
+                query
+            )
+        };
+        return Ok(SuccessHint::new(
+            hint_text,
+            vec![
+                "Use scope='all' to search both builtin and external tools".to_string(),
+                "Use listTools to browse all available tools".to_string(),
+            ],
+        )
+        .to_mcp_result());
+    }
+
+    let header = if query.is_empty() {
+        format!("Found {} tools (scope: {}):\n\n", total_tools, scope)
+    } else {
+        format!(
+            "Found {} tools matching '{}' (scope: {}):\n\n",
+            total_tools, query, scope
+        )
+    };
+
+    let body = result_sections.join("\n\n");
+
+    // Build actionable next-step section for external servers
+    let external_action = if !found_external_ids.is_empty() {
+        let ids_list: Vec<String> = found_external_ids
+            .iter()
+            .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
+            .collect();
+        let ids_array = found_external_ids
+            .iter()
+            .map(|(_, id)| format!("\"{}\"", id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "\n\n---\n📌 To attach external server(s) to an assistant:\n\
+            Server IDs found:\n{}\n\n\
+            Call:\n  updateAssistant(id: \"<assistantId>\", mcpServerIds: [{}])\n\n\
+            Use listAssistants to find your assistant ID.",
+            ids_list.join("\n"),
+            ids_array
+        )
+    } else {
+        String::new()
+    };
+
+    let mut hints = vec![
+        "Builtin tools are always available; external tools must be attached via updateAssistant(mcpServerIds: [...])".to_string(),
+    ];
+    if !force_verify && include_external {
+        hints.push(
+            "Use forceVerify=true to get a live tool list from external servers (slower)"
+                .to_string(),
+        );
+    }
+
+    Ok(SuccessHint::new(format!("{}{}{}", header, body, external_action), hints).to_mcp_result())
 }

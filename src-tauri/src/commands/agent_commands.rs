@@ -321,6 +321,25 @@ pub async fn agent_handle_tool_result(
     })
 }
 
+/// Respond to a pending tool execution approval
+#[command]
+pub async fn agent_respond_tool_approval(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    tool_call_id: String,
+    approved: bool,
+) -> Result<AgentResponse, String> {
+    manager
+        .respond_tool_approval(&session_id, &tool_call_id, approved)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Tool approval responded for {}: {}", tool_call_id, approved),
+        data: None,
+    })
+}
+
 /// Handle LLM error from frontend (called by LLMServiceProvider in TS)
 #[command]
 pub async fn agent_handle_llm_error(

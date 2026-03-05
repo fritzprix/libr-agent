@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.28] - 2026-03-05
+
+### 🚀 Features
+
+- **YOLO Mode & Blocking Tool Approvals**: Implemented a blocking UX for tool execution approvals, allowing users to explicitly allow or block tool calls in-flight. Introduced "YOLO Mode" for autonomous operation.
+- **Windows Process Stealth**: Added `CREATE_NO_WINDOW` flag to all spawned processes on Windows, preventing terminal flash/flicker during MCP server verification and tool execution.
+
+### 🐛 Fixes
+
+- **Tool Approval Fallback**: Corrected the fallback configuration for tool approvals, ensuring agents respect user settings when explicit approval config is missing.
+- **Cross-platform Path Normalization**: Improved path handling and normalization across Windows, macOS, and Linux for file operations and database backups, resolving issues with mixed separators.
+
+### 🔧 Internal
+
+- **Fractal: Handler Refactoring**: Refactored `src-tauri/src/server/handlers.rs` into focused sub-modules, reducing visibility of internal state and improving maintainability.
+- **Atlas: Pathing & Backup Alignment**: Unified cross-platform alignment for file system pathing and backup operations.
+- **Test Coverage**: Added regression tests for tool approval fallbacks and path normalization.
+
+## [0.5.27] - 2026-03-04
+
+### 🐛 Fixes
+
+- **Cross-platform terminal pathing**: Fixed terminal launch path handling on Windows, macOS, and Linux — Windows now correctly normalizes separators for `cmd.exe /D`, macOS uses proper AppleScript string escaping for paths with special characters, and Linux drops unsafe string concatenation.
+- **Browser window creation**: Extracted `CreateWindowParams` struct and corrected `MAIN_SEPARATOR_STR` usage, improving browser automation reliability across platforms.
+
+### 🚀 Features
+
+- **Accessibility — Playbook icon buttons**: Added `aria-label` attributes to icon-only buttons in the Playbook feature for improved screen reader support.
+
+### 🔧 Internal
+
+- **Interactive Browser Server decoupling**: Introduced `BrowserEnvironment` trait to isolate domain logic from the Tauri framework, with `TauriBrowserEnvironment` as the concrete adapter — improves testability and separation of concerns.
+
 ## [0.5.26] - 2026-03-03
 
 ### 🐛 Fixes

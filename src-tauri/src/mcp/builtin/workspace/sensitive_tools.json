@@ -1,0 +1,17 @@
+{
+    "requires_approval": [
+        "workspace__writeFile",
+        "workspace__deleteFile",
+        "workspace__replaceLines",
+        "workspace__runShell",
+        "workspace__runInPersistentShell",
+        "workspace__spawnProcess",
+        "workspace__runPowerShell",
+        "workspace__runInPersistentPowerShell",
+        "workspace__runCmd",
+        "workspace__runInPersistentCmd",
+        "workspace__stopProcess",
+        "workspace__exportFile",
+        "workspace__exportZip"
+    ]
+}

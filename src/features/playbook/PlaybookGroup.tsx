@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { PlaybookCard } from './Card';
-import type { PlaybookWithMeta } from './grouping-utils';
+import type { PlaybookWithMeta } from './types';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 

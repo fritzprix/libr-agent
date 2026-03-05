@@ -6,7 +6,7 @@ import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { getLogger } from '@/lib/logger';
-import type { ScratchpadItem, PlanningState } from '@/models/planning';
+import type { PlanningState } from '@/models/planning';
 
 const logger = getLogger('AgentPlanningPanel');
 
@@ -125,27 +125,7 @@ export function AgentPlanningPanel() {
           </div>
         </div>
 
-        {/* Notes Section */}
-        <div>
-          <h4 className="font-medium text-sm text-muted-foreground mb-2">
-            Scratchpad
-          </h4>
-          <div className="max-h-32 overflow-y-auto space-y-1">
-            {planningState?.scratchpad &&
-            planningState.scratchpad.length > 0 ? (
-              planningState.scratchpad.map((m: ScratchpadItem) => (
-                <div
-                  key={m.id}
-                  className="text-xs p-2 bg-accent/50 rounded-sm border-l-2 border-accent"
-                >
-                  {m.content}
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground">No notes</div>
-            )}
-          </div>
-        </div>
+        {/* Notes section moved to Memory panel */}
       </CardContent>
     </Card>
   );

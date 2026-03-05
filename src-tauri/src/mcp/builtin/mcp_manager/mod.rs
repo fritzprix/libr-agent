@@ -63,9 +63,7 @@ impl BuiltinMCPServer for MCPManagerServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "listExternalServers" => queries::list_servers(args).await,
-            "listInternalTools" => queries::list_builtin_tools(args).await,
-            "searchServer" => queries::search_server(args).await,
+            "listTools" => operations::list_tools(args).await,
             "registerServer" => operations::register_server(self, args).await,
             "updateServer" => operations::update_server(self, args).await,
             "deleteServer" => operations::delete_server(self, args).await,

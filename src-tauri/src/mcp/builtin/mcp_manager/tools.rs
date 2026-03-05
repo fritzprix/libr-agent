@@ -37,92 +37,6 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
     )
 }
 
-/// List all registered MCP servers
-pub fn list_servers_tool() -> MCPTool {
-    MCPTool {
-        name: "listServers".to_string(),
-        title: Some("List Servers".to_string()),
-        description: "List all registered MCP servers
-                
-⚠️ MANDATORY:
-1. Extract the 'name' from the list for subsequent target operations.
-2. Use this tool if server status is unknown.
-"
-        .to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number for pagination")),
-                ),
-                (
-                    "pageSize".to_string(),
-                    integer_prop(Some(1), Some(50), Some("Items per page (max 50)")),
-                ),
-                (
-                    "filterByAssistant".to_string(),
-                    boolean_prop(Some("Filter servers by assistant capability")),
-                ),
-                (
-                    "includeInactive".to_string(),
-                    boolean_prop(Some("Include inactive/disconnected servers")),
-                ),
-            ],
-            vec![],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Search for MCP servers by name
-pub fn search_server_tool() -> MCPTool {
-    let weights_schema = object_prop(
-        vec![
-            ("name".to_string(), number_prop(None, None, None)),
-            ("description".to_string(), number_prop(None, None, None)),
-        ],
-        vec![],
-        Some("Target search weights for fields"),
-    );
-
-    MCPTool {
-        name: "searchServer".to_string(),
-        title: Some("Search Server".to_string()),
-        description: "Search for MCP servers by name".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "query".to_string(),
-                    string_prop_required("Search target query"),
-                ),
-                (
-                    "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number for pagination")),
-                ),
-                (
-                    "pageSize".to_string(),
-                    integer_prop(Some(1), Some(50), Some("Items per page (max 50)")),
-                ),
-                (
-                    "searchMode".to_string(),
-                    enum_prop(
-                        vec!["simple", "bm25"],
-                        "simple",
-                        Some("Search mode (simple or bm25)"),
-                    ),
-                ),
-                ("weights".to_string(), weights_schema),
-            ],
-            vec!["query".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
 /// Register a new MCP server configuration
 pub fn register_server_tool() -> MCPTool {
     let transport_schema = transport_config_schema(Some("Transport configuration"));
@@ -194,17 +108,7 @@ pub fn update_server_tool() -> MCPTool {
     MCPTool {
         name: "updateServer".to_string(),
         title: Some("Update Server".to_string()),
-        description: "Update configuration for an existing MCP server.
-
-⚠️ PREREQUISITES:
-1. Use listExternalServers to find the target server 'name'
-2. Server will restart automatically if currently running
-
-Returns:
-• Update status
-• Server ID
-"
-        .to_string(),
+        description: "Update configuration for an existing MCP server. Use listTools to find the server name first.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -234,15 +138,11 @@ pub fn delete_server_tool() -> MCPTool {
     MCPTool {
         name: "deleteServer".to_string(),
         title: Some("Delete Server".to_string()),
-        description: "Delete an MCP server configuration.
-                
-⚠️ WARNING: This action is permanent.
-"
-        .to_string(),
+        description: "Delete an MCP server configuration. ⚠️ Permanent.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
-                string_prop_required("Target name of the server to exclude from configuration"),
+                string_prop_required("Name of the server to delete"),
             )],
             vec!["name".to_string()],
             None,
@@ -257,20 +157,7 @@ pub fn verify_server_tool() -> MCPTool {
     MCPTool {
         name: "verifyServer".to_string(),
         title: Some("Verify Server".to_string()),
-        description:
-            "Verify that an MCP server configuration is correct and the server can be connected.
-                
-This tool tests the server by:
-- Validating configuration exists
-- Attempting to spawn/connect (stdio/http)
-- Calling listTools to verify functionality
-- Reporting diagnostics (transport type, tool count, latency, errors)
-                
-⚠️ MANDATORY:
-1. Extract the 'name' from 'listServers' FIRST.
-2. This creates a temporary test connection and does not affect active sessions.
-"
-            .to_string(),
+        description: "Test-connect an MCP server and cache its tool list. Use listTools to find the server name first.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -284,38 +171,35 @@ This tool tests the server by:
     }
 }
 
-/// List all available internal LibrAgent tools (NEW NAME)
-pub fn list_internal_tools_tool() -> MCPTool {
+/// Find tools across all sources in one call (unified discovery)
+pub fn list_tools_tool() -> MCPTool {
     MCPTool {
-        name: "listInternalTools".to_string(),
-        title: Some("List Internal Tools".to_string()),
-        description: "List tool schemas from INTERNAL LibrAgent services.
-
-⚠️ IMPORTANT: This tool does NOT work with external MCP servers.
-
-🏠 INTERNAL SERVICES (this tool):
-• planning, knowledge, browser, workspace
-• attachments, assistant, playbook
-• bootstrap, ui, mcp_manager
-
-🌐 EXTERNAL SERVERS (not supported):
-• Use listExternalServers to see user-registered servers
-• Use verifyExternalServer to check specific server tools
-• Add to assistant via updateAssistant(mcpServerIds: [...])
-
-PAGINATION:
-Results are paginated (20 tools per page) for large result sets.
-"
-        .to_string(),
+        name: "listTools".to_string(),
+        title: Some("Find Tools".to_string()),
+        description: "Search tools across builtin services and external MCP servers.".to_string(),
         input_schema: object_prop(
-            vec![(
-                "serverName".to_string(),
-                string_prop(
-                    None,
-                    None,
-                    Some("Optional: Internal service name to filter by. Valid: planning, knowledge, browser, workspace, attachments, assistant, playbook, bootstrap, ui, mcp_manager"),
+            vec![
+                (
+                    "query".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Search term (tool name, description, server name). Empty = list all."),
+                    ),
                 ),
-            )],
+                (
+                    "scope".to_string(),
+                    enum_prop(
+                        vec!["all", "internal", "external"],
+                        "all",
+                        Some("'all' (default), 'internal' (builtin only), 'external' (registered servers only)"),
+                    ),
+                ),
+                (
+                    "forceVerify".to_string(),
+                    boolean_prop(Some("Connect live to external servers. Default: false (uses cached).")),
+                ),
+            ],
             vec![],
             None,
         ),
@@ -324,33 +208,10 @@ Results are paginated (20 tools per page) for large result sets.
     }
 }
 
-/// List all registered external MCP servers (NEW NAME)
-pub fn list_external_servers_tool() -> MCPTool {
-    let mut tool = list_servers_tool();
-    tool.name = "listExternalServers".to_string();
-    tool.title = Some("List External Servers".to_string());
-    tool.description = "List all registered EXTERNAL MCP servers.
-
-🌐 EXTERNAL SERVERS (this tool):
-• User-registered MCP servers (yahoo-finance-mcp, ddg-search, etc.)
-
-🏠 INTERNAL SERVICES (use listInternalTools):
-• LibrAgent built-in services (planning, knowledge, browser, workspace, etc.)
-
-⚠️ MANDATORY:
-1. Extract the 'name' from the list for subsequent operations.
-2. Use this tool if server status is unknown.
-"
-    .to_string();
-    tool
-}
-
 /// Returns all MCP Manager tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
-        list_external_servers_tool(),
-        list_internal_tools_tool(),
-        search_server_tool(),
+        list_tools_tool(),
         register_server_tool(),
         update_server_tool(),
         delete_server_tool(),

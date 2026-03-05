@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   hasToolCallError,
   hasUIResource,
+  isBuiltinTool,
+  parseBuiltinToolName,
   parseToolName,
   parseToolArguments,
   formatExecutionTime,
@@ -193,6 +195,61 @@ describe('tool-call-utils', () => {
       expect(formatToolArgumentsSummary(null)).toBe('');
       // @ts-expect-error - testing invalid input
       expect(formatToolArgumentsSummary(undefined)).toBe('');
+    });
+  });
+
+  describe('isBuiltinTool', () => {
+
+    it('returns true for known builtin prefixes', () => {
+      expect(isBuiltinTool('planning__addScratchpad')).toBe(true);
+      expect(isBuiltinTool('mcp_manager__listServers')).toBe(true);
+    });
+
+    it('returns false for unknown prefixes', () => {
+      expect(isBuiltinTool('github__search_code')).toBe(false);
+      expect(isBuiltinTool('unknown__tool')).toBe(false);
+    });
+
+    it('returns false for strings without delimiter', () => {
+      expect(isBuiltinTool('planning')).toBe(false);
+      expect(isBuiltinTool('planning_tool')).toBe(false);
+    });
+  });
+
+  describe('parseBuiltinToolName', () => {
+
+    it('returns parsed parts for builtin tools', () => {
+      expect(parseBuiltinToolName('planning__addScratchpad')).toEqual({ serviceId: 'planning', toolName: 'addScratchpad' });
+    });
+
+    it('returns null for unknown prefixes', () => {
+      expect(parseBuiltinToolName('github__search_code')).toBe(null);
+    });
+
+    it('returns null for missing delimiter', () => {
+      expect(parseBuiltinToolName('planning')).toBe(null);
+    });
+
+    it('returns null for empty tool name', () => {
+      expect(parseBuiltinToolName('planning__')).toBe(null);
+    });
+  });
+
+  describe('parseToolArguments runtime errors', () => {
+
+    it('returns { raw } for syntax errors in JSON', () => {
+      expect(parseToolArguments('{ syntaxError')).toEqual({ raw: '{ syntaxError' });
+    });
+
+    it('returns { raw } and logs correctly if error is not instanceof Error', () => {
+      // Mock JSON.parse to throw a string instead of an Error object
+      const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation(() => { throw { message: 'String error' }; });
+
+      try {
+        expect(parseToolArguments('{ syntaxError')).toEqual({ raw: '{ syntaxError' });
+      } finally {
+        parseSpy.mockRestore();
+      }
     });
   });
 });

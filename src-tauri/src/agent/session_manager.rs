@@ -427,6 +427,27 @@ impl AgentSessionManager {
         .await
     }
 
+    /// Respond to a pending tool execution approval
+    pub async fn respond_tool_approval(
+        &self,
+        session_id: &str,
+        tool_call_id: &str,
+        approved: bool,
+    ) -> Result<(), String> {
+        let active = self.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let mut approvals = session.pending_approvals.write().await;
+            if let Some(sender) = approvals.remove(tool_call_id) {
+                let _ = sender.send(approved);
+                return Ok(());
+            }
+        }
+        Err(format!(
+            "Pending approval not found for tool call: {}",
+            tool_call_id
+        ))
+    }
+
     /// Handle LLM error from frontend
     pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(

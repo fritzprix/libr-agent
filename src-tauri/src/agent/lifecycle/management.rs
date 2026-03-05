@@ -17,7 +17,7 @@ pub async fn resume_session(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
-    context_registry: Arc<ContextRegistry>,
+    _context_registry: Arc<ContextRegistry>,
     session_id: &str,
 ) -> Result<SessionMetadata, String> {
     // Get session metadata from database using injected repository
@@ -82,7 +82,8 @@ pub async fn resume_session(
                 pending_events: Arc::new(RwLock::new(
                     crate::agent::state::PendingEventManager::new(),
                 )),
-                context_registry,
+                pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
+                context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
             },
         );
     }

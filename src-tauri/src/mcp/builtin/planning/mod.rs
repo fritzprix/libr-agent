@@ -1,10 +1,11 @@
 mod context;
 mod goals;
-mod scratchpad;
 mod todos;
 mod tools;
 
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -16,8 +17,8 @@ use std::sync::Arc;
 
 /// Planning MCP Server
 ///
-/// Provides goal/todo/scratchpad management for agent sessions.
-/// Session-scoped: Each session gets dedicated planning state.
+/// Provides goal and todo management for agent sessions.
+/// Session-scoped: each session gets dedicated planning state.
 #[derive(Debug)]
 pub struct PlanningServer {
     session_id: String,
@@ -59,7 +60,7 @@ impl BuiltinMCPServer for PlanningServer {
     }
 
     fn description(&self) -> &str {
-        "Session-scoped planning tools for goal/todo/scratchpad management"
+        "Session-scoped planning tools for goal and todo management"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -99,21 +100,6 @@ impl BuiltinMCPServer for PlanningServer {
                     .to_mcp_result()),
                 }
             }
-            "addScratchpad" => {
-                scratchpad::add_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "updateScratchpad" => {
-                scratchpad::update_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "listScratchpad" => {
-                scratchpad::list_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "readScratchpad" => {
-                scratchpad::read_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
-            "clearScratchpad" => {
-                scratchpad::clear_scratchpad(self.db.as_ref(), &target_session_id, args).await
-            }
             "getCurrentState" => {
                 // Reuse get_service_context but return as tool result
                 let context =
@@ -123,8 +109,31 @@ impl BuiltinMCPServer for PlanningServer {
                     context.structured_state.clone().unwrap_or(json!({})),
                 ))
             }
-            "pauseAndThink" => scratchpad::pause_and_think(args).await,
-            "critiqueAndReflection" => scratchpad::critique_and_reflection(args).await,
+            "reflect" => {
+                let critique = match args.get("critique").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("critique", ToolGroup::Planning)),
+                };
+                let reflection = match args.get("reflection").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("reflection", ToolGroup::Planning)),
+                };
+                let next_action = match args.get("nextAction").and_then(|v| v.as_str()) {
+                    Some(v) => v.to_string(),
+                    None => return Ok(missing_param_error("nextAction", ToolGroup::Planning)),
+                };
+                let message = format!(
+                    "## Reflection & Critique\n\n**Critique:**\n{}\n\n**Reflection:**\n{}\n\n**Next Action:**\n{}\n\n> Based on this reflection, proceed with the \"Next Action\" carefully.",
+                    critique, reflection, next_action
+                );
+                let hint =
+                    SuccessHint::new(message, vec![format!("Proceed with: {}", next_action)]);
+                Ok(hint.to_mcp_result_with_data(Some(json!({
+                    "critique": critique,
+                    "reflection": reflection,
+                    "nextAction": next_action
+                }))))
+            }
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

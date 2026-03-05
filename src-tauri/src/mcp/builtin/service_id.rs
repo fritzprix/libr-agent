@@ -41,6 +41,7 @@ use std::fmt;
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinServiceId {
     Planning,
+    Memory,
     Workspace,
     Knowledge,
     Assistant,
@@ -75,6 +76,8 @@ impl BuiltinServiceId {
     pub fn from_alias(alias: &str) -> Option<Self> {
         match alias.trim().to_lowercase().as_str() {
             "planning" => Some(Self::Planning),
+            // "scratchpad" is the legacy alias for memory — keep for backward compat.
+            "memory" | "scratchpad" => Some(Self::Memory),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
             "assistant" | "assistant_manager" => Some(Self::Assistant),
@@ -103,6 +106,7 @@ impl BuiltinServiceId {
     pub fn name(self) -> &'static str {
         match self {
             Self::Planning => "planning",
+            Self::Memory => "memory",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
             Self::Assistant => "assistant",
@@ -134,6 +138,7 @@ mod tests {
     fn from_alias_canonical_names_resolve() {
         let cases = [
             ("planning", BuiltinServiceId::Planning),
+            ("memory", BuiltinServiceId::Memory),
             ("workspace", BuiltinServiceId::Workspace),
             ("knowledge", BuiltinServiceId::Knowledge),
             ("assistant", BuiltinServiceId::Assistant),
@@ -221,6 +226,7 @@ mod tests {
     fn serde_roundtrip_all_variants() {
         let variants = [
             BuiltinServiceId::Planning,
+            BuiltinServiceId::Memory,
             BuiltinServiceId::Workspace,
             BuiltinServiceId::Knowledge,
             BuiltinServiceId::Assistant,
@@ -247,6 +253,7 @@ mod tests {
     fn name_resolves_back_via_from_alias() {
         let variants = [
             BuiltinServiceId::Planning,
+            BuiltinServiceId::Memory,
             BuiltinServiceId::Workspace,
             BuiltinServiceId::Knowledge,
             BuiltinServiceId::Assistant,

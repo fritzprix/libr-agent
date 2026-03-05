@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::oneshot;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -104,6 +105,10 @@ pub struct AgentSession {
 
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
+
+    /// Channels for pending tool execution approvals
+    /// Maps tool_call_id to a oneshot Sender that unblocks the workflow with a bool (approved)
+    pub pending_approvals: Arc<RwLock<HashMap<String, oneshot::Sender<bool>>>>,
 
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,

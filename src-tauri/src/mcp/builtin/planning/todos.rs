@@ -190,12 +190,33 @@ pub async fn check_todo(
         .await
         .unwrap_or_default();
 
+    // Check if all todos are now done (only when checking as done)
+    let next_hints = if checked {
+        let updated_todos = repo.list_todos(session_id, true).await.unwrap_or_default();
+        let remaining = updated_todos.iter().filter(|t| !t.is_checked).count();
+        if remaining == 0 && !updated_todos.is_empty() {
+            vec![
+                "All todos complete! Use reflect to review what went well and what could improve."
+                    .to_string(),
+            ]
+        } else if remaining > 0 {
+            vec![format!(
+                "{} todo(s) remaining — use getCurrentState to see the list",
+                remaining
+            )]
+        } else {
+            vec![]
+        }
+    } else {
+        vec!["Use checkTodo to mark as done when completed".to_string()]
+    };
+
     let hint = SuccessHint::new(
         format!(
             "Todo #{} (position {}) marked {}: {}{}",
             todo_id, index, action, todo_content, summary_text
         ),
-        vec![],
+        next_hints,
     );
 
     Ok(hint.to_mcp_result_with_data(Some(json!({

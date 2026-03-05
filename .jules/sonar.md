@@ -29,3 +29,9 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-03-01 - src/lib/mcp/schema/builders.ts, src/hooks/use-settings.ts **Coverage Expanded:** JSON Schema Builders, useSettings Hook **Assertions:** Verified robust typed schema object creation, expected error handling outside context providers, and data retrieval inside providers.
 
 ## 2026-03-03 - src/hooks/useDebounce.ts, src/hooks/use-agent-tools.ts **Coverage Expanded:** Debounce Timing, Agent Tool Loading Hook **Assertions:** Verified accurate timer delays/cancellations using fake timers and verified API fetching, validation, error handling, and component unmount safety.
+
+## 2026-03-03 - src/lib/retry-utils.ts **Coverage Expanded:** withRetry, withRetryResult **Assertions:** Verified timeout behavior per attempt, correct exact base delay without exponential backoff, loop termination edge cases, and jitter bounds scaling accurately via fake timers.
+
+## 2026-03-03 - src/lib/session-utils.ts **Coverage Expanded:** filterSessions **Assertions:** Verified graceful handling of AgentSession objects missing an assistant field during query filtering.
+
+## 2026-03-03 - src/lib/tool-call-utils.ts **Coverage Expanded:** isBuiltinTool, parseBuiltinToolName, parseToolArguments **Assertions:** Verified boundary conditions for extracting tool prefixes and ensured robust recovery (returning '{ raw: string }') when JSON parsing throws non-Error objects.
