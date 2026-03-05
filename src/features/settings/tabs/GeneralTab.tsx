@@ -188,8 +188,8 @@ function GeneralTabComponent({
                 className="px-3"
                 disabled={isOpeningDir}
                 aria-label={t(
-                  'settings.general.openInExplorerAriaLabel',
-                  'Open skills directory in Explorer',
+                  'settings.general.openInExplorer',
+                  'Open in Explorer',
                 )}
               >
                 <FolderOutput className="w-4 h-4" />

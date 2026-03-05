@@ -161,7 +161,7 @@ export function ScheduledTasksPage() {
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => openEdit(task)}
-                  aria-label="Edit task"
+                  aria-label={`Edit task: ${task.name}`}
                 >
                   <Pencil className="w-4 h-4" />
                 </Button>
@@ -170,7 +170,7 @@ export function ScheduledTasksPage() {
                   size="icon"
                   className="h-8 w-8 text-destructive hover:text-destructive"
                   onClick={() => void handleDelete(task.id)}
-                  aria-label="Delete task"
+                  aria-label={`Delete task: ${task.name}`}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
