@@ -50,7 +50,9 @@ mod tests {
             serde_json::from_str(default_config_str).unwrap_or_default();
 
         assert!(!config.requires_approval.is_empty());
-        assert!(config.requires_approval.contains(&"workspace__writeFile".to_string()));
+        assert!(config
+            .requires_approval
+            .contains(&"workspace__writeFile".to_string()));
     }
 
     #[test]
