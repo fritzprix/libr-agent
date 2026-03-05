@@ -3,6 +3,47 @@ use crate::mcp::{MCPServerManager, MCPTool};
 pub struct McpServerService;
 
 impl McpServerService {
+    /// Connects to the server defined by `config`, lists its tools, and disconnects.
+    /// Returns the list of tools if successful.
+    pub async fn verify_config(
+        config: crate::mcp::types::MCPServerConfig,
+    ) -> Result<Vec<MCPTool>, String> {
+        let server_name = config
+            .name
+            .clone()
+            .unwrap_or_else(|| "unnamed_server".to_string());
+
+        // Create a throw-away MCPServerManager (no builtins needed)
+        let probe_manager = MCPServerManager {
+            connections: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            builtin_servers: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            oauth_manager: std::sync::Arc::new(crate::mcp::oauth::OAuthManager::new()),
+        };
+
+        // Connect — this blocks until the MCP handshake completes
+        probe_manager
+            .start_server(config)
+            .await
+            .map_err(|e| format!("Failed to connect to '{}': {}", server_name, e))?;
+
+        // List tools
+        let tools_result = probe_manager.list_tools(&server_name).await;
+
+        // Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
+        if let Err(e) = probe_manager.stop_server(&server_name).await {
+            log::warn!(
+                "[probe] Failed to stop MCP server '{}' cleanly: {}",
+                server_name,
+                e
+            );
+        }
+
+        // Return tools or error
+        tools_result.map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))
+    }
+
     /// Probe a single MCP server by ID: connect, list tools, disconnect.
     pub async fn probe_server(server_id: &str) -> Result<Vec<MCPTool>, String> {
         use crate::repositories::mcp_server_repository::MCPServerRepository;
@@ -23,37 +64,8 @@ impl McpServerService {
         let server_name = config.name.unwrap_or_else(|| model.name.clone());
         config.name = Some(server_name.clone());
 
-        // 3. Create a throw-away MCPServerManager (no builtins needed)
-        let probe_manager = MCPServerManager {
-            connections: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            builtin_servers: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
-            oauth_manager: std::sync::Arc::new(crate::mcp::oauth::OAuthManager::new()),
-        };
-
-        // 4. Connect — this blocks until the MCP handshake completes
-        probe_manager
-            .start_server(config)
-            .await
-            .map_err(|e| format!("Failed to connect to '{}': {}", server_name, e))?;
-
-        // 5. List tools
-        let tools_result = probe_manager.list_tools(&server_name).await;
-
-        // 7. Disconnect — explicitly stop the MCP server to ensure subprocess cleanup
-        // We do this here (before early return) to guarantee cleanup even if tool listing fails
-        if let Err(e) = probe_manager.stop_server(&server_name).await {
-            log::warn!(
-                "[probe] Failed to stop MCP server '{}' cleanly: {}",
-                server_name,
-                e
-            );
-        }
-
-        // Now process the tool listing result
-        let tools = tools_result
-            .map_err(|e| format!("Failed to list tools from '{}': {}", server_name, e))?;
+        // 3. Verify config
+        let tools = Self::verify_config(config).await?;
 
         log::info!(
             "[probe] '{}' ({}) → {} tool(s)",
@@ -62,7 +74,7 @@ impl McpServerService {
             tools.len()
         );
 
-        // 6. Persist tool list (names + descriptions) to DB (best-effort)
+        // 4. Persist tool list (names + descriptions) to DB (best-effort)
         let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
 
         if let Err(e) = repo

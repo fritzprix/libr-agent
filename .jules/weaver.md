@@ -34,3 +34,9 @@
 - Extracted complex data fetching, filtering, grouping, and deletion logic into a new custom hook `usePlaybooks`.
 - Replaced 8 individual props passed to `<SortControls />` with a unified `PlaybookSortState` object.
 - **Benefits:** `PlaybookList` is now a lean presentation component, and `SortControls` has a significantly reduced prop surface area.
+
+## 2026-03-05 - [Scheduled Tasks Components] **Eradicated:** [Derived State and Action-Effect Chains] **Woven:** [Component Composition and Declarative State]
+
+- Collapsed multiple scheduled-task state mirrors into a single source of truth owned by a parent coordinator component.
+- Replaced imperative “update-and-sync” effects with declarative props and callbacks wired through small, focused child components.
+- **Benefits:** Eliminated redundant derived state and action-effect loops, making scheduled task flows easier to reason about and less prone to subtle desync bugs.

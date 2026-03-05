@@ -43,10 +43,7 @@ pub fn code_tools() -> Vec<MCPTool> {
 }
 
 pub fn export_tools() -> Vec<MCPTool> {
-    vec![
-        export_tools::create_export_file_tool(),
-        export_tools::create_export_zip_tool(),
-    ]
+    vec![export_tools::create_export_tool()]
 }
 
 pub fn terminal_tools() -> Vec<MCPTool> {

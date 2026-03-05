@@ -13,171 +13,30 @@ use crate::mcp::builtin::error_guidance::{
 use crate::mcp::types::MCPResult;
 
 impl WorkspaceServer {
-    pub async fn handle_export_file(
+    pub async fn handle_export(
         &self,
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        // Layer 1: Parameter existence validation
-        let path = match args.get("path").and_then(|v| v.as_str()) {
-            Some(path) => path,
+        // Layer 1: Parameter validation
+        let paths_value = args.get("paths");
+        let paths_array = match paths_value {
             None => {
-                return Ok(missing_param_error("path", ToolGroup::Workspace));
+                return Ok(missing_param_error("paths", ToolGroup::Workspace));
             }
+            Some(v) => match v.as_array() {
+                Some(paths) if !paths.is_empty() => paths,
+                _ => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "Invalid 'paths' parameter",
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec!["The 'paths' argument must be provided as a non-empty array of workspace-relative paths to export.".to_string()])
+                    .to_mcp_result());
+                }
+            },
         };
-        let display_name = args
-            .get("displayName")
-            .or_else(|| args.get("display_name"))
-            .and_then(|v| v.as_str())
-            .unwrap_or(path)
-            .to_string();
-
-        // Layer 3: Business logic - file existence validation
-        let target_session_id = session_id
-            .clone()
-            .unwrap_or_else(|| self.session_id.clone());
-        let source_path = self
-            .session_manager
-            .get_session_workspace_dir_by_id(&target_session_id)
-            .join(path);
-        if !source_path.exists() || !source_path.is_file() {
-            return Ok(guided_error(
-                ErrorCategory::ResourceNotFound,
-                "File not found or is not a regular file".to_string(),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Use listDirectory to verify the file exists".to_string(),
-                "Ensure the path points to a file, not a directory".to_string(),
-                "Check the file path is correct".to_string(),
-            ])
-            .to_mcp_result());
-        }
-
-        let exports_dir = match self.ensure_exports_directory(&target_session_id) {
-            Ok(dir) => dir,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidState,
-                    "Create exports directory failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Check workspace directory permissions".to_string(),
-                    "Ensure sufficient disk space".to_string(),
-                    "Verify workspace path is accessible".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let file_stem = source_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file");
-        let file_ext = source_path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let export_filename = if file_ext.is_empty() {
-            format!("{file_stem}_{timestamp}")
-        } else {
-            format!("{file_stem}_{timestamp}.{file_ext}")
-        };
-
-        let export_path = exports_dir.join("files").join(&export_filename);
-        if let Err(e) = std::fs::copy(&source_path, &export_path) {
-            return Ok(guided_error(
-                ErrorCategory::InvalidState,
-                "Export file failed".to_string(),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Check source file permissions".to_string(),
-                "Ensure sufficient disk space in exports directory".to_string(),
-                "Verify the file is not locked by another process".to_string(),
-                format!("Error: {}", e),
-            ])
-            .to_mcp_result());
-        }
-
-        let relative_path = PathBuf::from("exports")
-            .join("files")
-            .join(&export_filename);
-        let relative_path_str = relative_path.to_string_lossy();
-        let source_path_str = path;
-
-        let uid = cuid2::create_id();
-        let ui_request_id: u64 = uid
-            .chars()
-            .filter_map(|c| c.to_digit(36))
-            .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
-
-        let html_content = ui_resources::create_html_export_ui(
-            &format!("File Export: {display_name}"),
-            &[source_path_str.to_string()],
-            "Single File",
-            &relative_path_str,
-            &display_name,
-        );
-
-        let ui_resource = ui_resources::create_export_ui_resource(
-            ui_request_id,
-            &format!("File Export: {display_name}"),
-            &[source_path_str.to_string()],
-            "Single File",
-            &relative_path_str,
-            html_content,
-        );
-
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            ui_resource["uri"].as_str().unwrap(),
-            "text/html",
-            ui_resource["text"].as_str().unwrap(),
-            "workspace",
-            "exportFile",
-            Some(&format!(
-                "✓ File '{}' exported successfully\n\nDownload link available below\n\n💡 Next: Use exportZip to export multiple files at once",
-                display_name
-            )),
-        ))
-    }
-
-    pub async fn handle_export_zip(
-        &self,
-        args: Value,
-        session_id: Option<String>,
-    ) -> Result<MCPResult, String> {
-        // Layer 1: Parameter existence validation
-        let files_array = match args.get("files").and_then(|v| v.as_array()) {
-            Some(files) => files,
-            None => {
-                return Ok(missing_param_error("files", ToolGroup::Workspace));
-            }
-        };
-        let package_name = args
-            .get("packageName")
-            .or_else(|| args.get("package_name"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("workspace_export")
-            .to_string();
-
-        // Layer 2: Value constraints validation
-        if files_array.is_empty() {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                "Files array cannot be empty",
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Include at least one file path in the files array".to_string(),
-                "Use listDirectory to find files to export".to_string(),
-                "Example: {\"files\": [\"file1.txt\", \"folder/file2.txt\"]}".to_string(),
-            ])
-            .to_mcp_result());
-        }
 
         let target_session_id = session_id
             .clone()
@@ -190,9 +49,102 @@ impl WorkspaceServer {
         let workspace_dir_canon =
             std::fs::canonicalize(&workspace_dir).unwrap_or(workspace_dir.clone());
 
-        // Validate all files exist before proceeding
+        // Layer 2: Determine mode (Single File vs ZIP)
+        // If there's exactly 1 path and it's a regular file -> Single File Export
+        // Otherwise (multiple paths, or single path is a directory) -> ZIP Export
+        let mut is_single_file_mode = false;
+        let mut single_file_path: Option<PathBuf> = None;
+        let mut single_file_rel_path_str = String::new();
+
+        if paths_array.len() == 1 {
+            if let Some(path_str) = paths_array[0].as_str() {
+                let check_path = workspace_dir_canon.join(path_str);
+                // Canonicalize the candidate path and ensure it stays within the workspace
+                if let Ok(canon_check) = std::fs::canonicalize(&check_path) {
+                    if canon_check.starts_with(&workspace_dir_canon) && canon_check.is_file() {
+                        is_single_file_mode = true;
+                        single_file_path = Some(canon_check);
+                        single_file_rel_path_str = path_str.to_string();
+                    }
+                }
+            }
+        }
+
+        let name_param = args
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let exports_dir = match self.ensure_exports_directory(&target_session_id) {
+            Ok(dir) => dir,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Create exports directory failed".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![format!("Error: {}", e)])
+                .to_mcp_result());
+            }
+        };
+
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+
+        if is_single_file_mode {
+            // === SINGLE FILE EXPORT ===
+            let source_path = single_file_path.unwrap();
+            let display_name = name_param.unwrap_or_else(|| single_file_rel_path_str.clone());
+
+            let file_stem = source_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file");
+            let file_ext = source_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let export_filename = if file_ext.is_empty() {
+                format!("{file_stem}_{timestamp}")
+            } else {
+                format!("{file_stem}_{timestamp}.{file_ext}")
+            };
+
+            let export_path = exports_dir.join("files").join(&export_filename);
+            if let Err(e) = std::fs::copy(&source_path, &export_path) {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidState,
+                    "Export file failed".to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![format!("Error: {}", e)])
+                .to_mcp_result());
+            }
+
+            let relative_path = PathBuf::from("exports")
+                .join("files")
+                .join(&export_filename);
+
+            return Ok(self.build_ui_response(
+                &format!("File Export: {display_name}"),
+                &[single_file_rel_path_str],
+                "Single File",
+                &relative_path.to_string_lossy(),
+                &display_name,
+                "export",
+                &format!(
+                    "✓ File '{}' exported successfully\n\nDownload link available below",
+                    display_name
+                ),
+            ));
+        }
+
+        // === ZIP PACKAGE EXPORT ===
+        let package_name = name_param.unwrap_or_else(|| "workspace_export".to_string());
+        let zip_filename = format!("{package_name}_{timestamp}.zip");
+        let zip_path = exports_dir.join("packages").join(&zip_filename);
+
         let mut missing_files = Vec::new();
-        for file_value in files_array {
+        for file_value in paths_array {
             if let Some(path_str) = file_value.as_str() {
                 let file_path = workspace_dir_canon.join(path_str);
                 if !file_path.exists() {
@@ -205,41 +157,14 @@ impl WorkspaceServer {
             return Ok(guided_error(
                 ErrorCategory::ResourceNotFound,
                 format!(
-                    "The following {} file(s) were not found: {}",
+                    "The following {} file(s)/folder(s) were not found: {}",
                     missing_files.len(),
                     missing_files.join(", ")
                 ),
                 ToolGroup::Workspace,
             )
-            .guidance(vec![
-                "Use listDirectory to verify file paths".to_string(),
-                "Check for typos in filenames".to_string(),
-                "Ensure files are within the workspace".to_string(),
-            ])
             .to_mcp_result());
         }
-
-        let exports_dir = match self.ensure_exports_directory(&target_session_id) {
-            Ok(dir) => dir,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidState,
-                    "Create exports directory failed".to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Check workspace directory permissions".to_string(),
-                    "Ensure sufficient disk space".to_string(),
-                    "Verify workspace path is accessible".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let zip_filename = format!("{package_name}_{timestamp}.zip");
-        let zip_path = exports_dir.join("packages").join(&zip_filename);
 
         let zip_file = match std::fs::File::create(&zip_path) {
             Ok(file) => file,
@@ -249,13 +174,8 @@ impl WorkspaceServer {
                     "Create ZIP file failed".to_string(),
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    "Check exports directory permissions".to_string(),
-                    "Ensure sufficient disk space".to_string(),
-                    "Verify the path is accessible".to_string(),
-                    format!("Error: {}", e),
-                ])
-                .to_mcp_result());
+                .guidance(vec![format!("Error: {}", e)])
+                .to_mcp_result())
             }
         };
 
@@ -266,68 +186,59 @@ impl WorkspaceServer {
 
         let mut processed_files = Vec::new();
         let mut added_archive_paths = HashSet::<String>::new();
-        for file_value in files_array {
-            let file_path = match file_value.as_str() {
-                Some(path) => path,
-                None => continue,
-            };
 
-            let source_path = workspace_dir_canon.join(file_path);
-            if !source_path.exists() {
-                continue;
-            }
+        for file_value in paths_array {
+            if let Some(path_str) = file_value.as_str() {
+                let source_path = workspace_dir_canon.join(path_str);
+                if !source_path.exists() {
+                    continue;
+                }
 
-            let roots: Vec<PathBuf> = if source_path.is_file() {
-                vec![source_path]
-            } else if source_path.is_dir() {
-                WalkDir::new(&source_path)
-                    .into_iter()
-                    .filter_map(Result::ok)
-                    .filter(|e| e.file_type().is_file())
-                    .map(|e| e.into_path())
-                    .collect()
-            } else {
-                continue;
-            };
-
-            for abs_path in roots {
-                let abs_canon = match std::fs::canonicalize(&abs_path) {
-                    Ok(p) => p,
-                    Err(_) => continue,
+                let roots: Vec<PathBuf> = if source_path.is_file() {
+                    vec![source_path]
+                } else if source_path.is_dir() {
+                    WalkDir::new(&source_path)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                        .filter(|e| e.file_type().is_file())
+                        .map(|e| e.into_path())
+                        .collect()
+                } else {
+                    continue;
                 };
 
-                if !abs_canon.starts_with(&workspace_dir_canon) {
-                    continue;
-                }
-
-                let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-
-                let archive_path = rel_path
-                    .components()
-                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                    .collect::<Vec<String>>()
-                    .join("/");
-                if !added_archive_paths.insert(archive_path.clone()) {
-                    continue;
-                }
-
-                if zip.start_file(&archive_path, options).is_err() {
-                    continue;
-                }
-
-                match std::fs::read(&abs_canon) {
-                    Ok(content) => {
-                        if zip.write_all(&content).is_err() {
-                            continue;
-                        }
-                        processed_files.push(archive_path);
-                    }
-                    Err(e) => {
-                        error!("Failed to read file {}: {}", abs_canon.display(), e);
+                for abs_path in roots {
+                    let abs_canon = match std::fs::canonicalize(&abs_path) {
+                        Ok(p) => p,
+                        Err(_) => continue,
+                    };
+                    if !abs_canon.starts_with(&workspace_dir_canon) {
                         continue;
+                    }
+                    let rel_path = match abs_canon.strip_prefix(&workspace_dir_canon) {
+                        Ok(p) => p,
+                        Err(_) => continue,
+                    };
+                    let archive_path = rel_path
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                        .collect::<Vec<String>>()
+                        .join("/");
+
+                    if !added_archive_paths.insert(archive_path.clone()) {
+                        continue;
+                    }
+                    if zip.start_file(&archive_path, options).is_err() {
+                        continue;
+                    }
+
+                    match std::fs::read(&abs_canon) {
+                        Ok(content) => {
+                            if zip.write_all(&content).is_ok() {
+                                processed_files.push(archive_path);
+                            }
+                        }
+                        Err(e) => error!("Failed to read file {}: {}", abs_canon.display(), e),
                     }
                 }
             }
@@ -339,12 +250,7 @@ impl WorkspaceServer {
                 "Finalize ZIP file failed".to_string(),
                 ToolGroup::Workspace,
             )
-            .guidance(vec![
-                "Check if the ZIP writer encountered an error".to_string(),
-                "Verify disk space is sufficient".to_string(),
-                "Try exporting fewer files".to_string(),
-                format!("Error: {}", e),
-            ])
+            .guidance(vec![format!("Error: {}", e)])
             .to_mcp_result());
         }
 
@@ -354,54 +260,61 @@ impl WorkspaceServer {
                 "No files were successfully added to ZIP".to_string(),
                 ToolGroup::Workspace,
             )
-            .guidance(vec![
-                "Verify the file paths are correct with listDirectory".to_string(),
-                "Check that the files exist and are readable".to_string(),
-                "If you provided a directory, ensure it contains readable files".to_string(),
-            ])
             .to_mcp_result());
         }
 
         let relative_path = PathBuf::from("exports")
             .join("packages")
             .join(&zip_filename);
-        let relative_path_str = relative_path.to_string_lossy();
 
+        Ok(self.build_ui_response(
+            &format!("ZIP Package: {package_name}"),
+            &processed_files,
+            "ZIP Package",
+            &relative_path.to_string_lossy(),
+            &zip_filename,
+            "export",
+            &format!("✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below", package_name, processed_files.len()),
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_ui_response(
+        &self,
+        title: &str,
+        items: &[String],
+        type_label: &str,
+        relative_path: &str,
+        filename: &str,
+        tool_name: &str,
+        text_response: &str,
+    ) -> MCPResult {
         let uid = cuid2::create_id();
         let ui_request_id: u64 = uid
             .chars()
             .filter_map(|c| c.to_digit(36))
             .fold(0u64, |acc, d| acc.wrapping_mul(36).wrapping_add(d as u64));
 
-        let html_content = ui_resources::create_html_export_ui(
-            &format!("ZIP Package: {package_name}"),
-            &processed_files,
-            "ZIP Package",
-            &relative_path_str,
-            &zip_filename,
-        );
+        let html_content =
+            ui_resources::create_html_export_ui(title, items, type_label, relative_path, filename);
 
         let ui_resource = ui_resources::create_export_ui_resource(
             ui_request_id,
-            &format!("ZIP Package: {package_name}"),
-            &processed_files,
-            "ZIP Package",
-            &relative_path_str,
+            title,
+            items,
+            type_label,
+            relative_path,
             html_content,
         );
 
-        Ok(crate::mcp::builtin::utils::create_resource_response(
+        crate::mcp::builtin::utils::create_resource_response(
             ui_resource["uri"].as_str().unwrap(),
             "text/html",
             ui_resource["text"].as_str().unwrap(),
             "workspace",
-            "exportZip",
-            Some(&format!(
-                "✓ ZIP package '{}' created successfully\n\nContains {} files\nDownload link available below\n\n💡 Next: Use exportFile to export individual files",
-                package_name,
-                processed_files.len()
-            )),
-        ))
+            tool_name,
+            Some(text_response),
+        )
     }
 
     fn ensure_exports_directory(&self, session_id: &str) -> Result<std::path::PathBuf, String> {

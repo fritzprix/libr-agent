@@ -127,7 +127,8 @@
     "recentSessions": "최근 세션",
     "seeAllSessions": "모든 세션 보기 →",
     "settings": "설정",
-    "history": "기록"
+    "history": "기록",
+    "scheduledTasks": "예약된 작업"
   },
   "sessionHistory": {
     "heading": "세션 기록",
@@ -582,6 +583,73 @@
       "cancelTooltip": "취소",
       "sendAriaLabel": "메시지 보내기",
       "sendTooltip": "보내기"
+    }
+  },
+  "scheduledTasks": {
+    "title": "예약된 작업",
+    "subtitle": "에이전트 워크플로를 자동으로 트리거하는 백그라운드 작업입니다",
+    "newTask": "새 작업",
+    "noTasks": "아직 예약된 작업이 없습니다",
+    "createFirst": "첫 번째 작업 만들기",
+    "disabled": "비활성화됨",
+    "nextRun": "다음 실행: {{time}}",
+    "nextRunNone": "—",
+    "editTaskAria": "작업 편집: {{name}}",
+    "deleteTaskAria": "작업 삭제: {{name}}",
+    "modal": {
+      "titleNew": "새 예약 작업",
+      "titleEdit": "예약 작업 편집",
+      "nameLabel": "작업 이름",
+      "namePlaceholder": "일일 스탠드업 요약",
+      "assistantLabel": "어시스턴트",
+      "assistantPlaceholder": "어시스턴트를 선택하세요…",
+      "scheduleLabel": "일정",
+      "messageLabel": "메시지",
+      "messageHint": "자동 완성을 위해 <1>@playbook:</1> 또는 <3>@skill:</3>을 사용하세요",
+      "messagePlaceholder": "메시지를 입력하세요… 자동 완성을 위해 @playbook: 또는 @skill:을 사용하세요",
+      "cancel": "취소",
+      "saveChanges": "변경사항 저장",
+      "createTask": "작업 생성",
+      "saving": "저장 중…"
+    },
+    "schedule": {
+      "repeat": "반복",
+      "every": "매",
+      "on": "요일",
+      "onDay": "날짜",
+      "at": "시간",
+      "hour": "시",
+      "minute": "분",
+      "modes": {
+        "minutes": "N분마다",
+        "hours": "N시간마다",
+        "daily": "매일",
+        "weekly": "매주",
+        "monthly": "매월"
+      },
+      "units": {
+        "minutes": "분",
+        "hours": "시간"
+      },
+      "summary": "일정: ",
+      "describe": {
+        "minutes_one": "매 {{count}}분마다",
+        "minutes_other": "매 {{count}}분마다",
+        "hours_one": "매 {{count}}시간마다",
+        "hours_other": "매 {{count}}시간마다",
+        "daily": "매일 {{time}}",
+        "weekly": "매주 {{day}} {{time}}",
+        "monthly": "매월 {{day}}일 {{time}}"
+      },
+      "days": {
+        "0": "일요일",
+        "1": "월요일",
+        "2": "화요일",
+        "3": "수요일",
+        "4": "목요일",
+        "5": "금요일",
+        "6": "토요일"
+      }
     }
   }
 }

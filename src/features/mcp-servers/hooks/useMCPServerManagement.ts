@@ -4,7 +4,6 @@ import useSWRImmutable from 'swr/immutable';
 import { useTranslation } from 'react-i18next';
 import { createId } from '@paralleldrive/cuid2';
 import { toast } from 'sonner';
-import { safeInvoke as invoke } from '@/lib/backend/core';
 import { MCPServerEntity } from '@/models/chat';
 import { McpServerService } from '@/lib/services/mcp-server-service';
 import {
@@ -15,7 +14,6 @@ import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
 import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
 import { sanitizePresetEnv, buildPresetMetadata } from '../utils/preset-utils';
-import type { MCPTool } from '@/lib/mcp/protocol/tool';
 
 export type VerificationStatus = 'pending' | 'success' | 'error';
 
@@ -127,44 +125,35 @@ export function useMCPServerManagement(service?: McpServerService) {
   const handleSave = useCallback(
     async (server: MCPServerEntity) => {
       try {
+        setVerificationStatus((prev) => ({ ...prev, [server.id]: 'pending' }));
+
         const saved = await saveServer({
           ...server,
           createdAt: server.createdAt ?? new Date(),
           updatedAt: new Date(),
         });
+
         await mutateServers();
         setEditingServer(null);
         toast.success(
           t('mcpServer.toasts.saved', 'Extension saved successfully'),
         );
 
-        // Background dry-run: probe using the DB-assigned ID from the saved entity.
-        // For new servers, server.id is a temporary createId(); saved.id is the real DB ID.
-        setVerificationStatus((prev) => ({ ...prev, [saved.id]: 'pending' }));
-        try {
-          // Spawns the server process, fetches tools, tears down — all in one Rust call.
-          // tool_count is also persisted to DB automatically inside the command.
-          const tools = await invoke<MCPTool[]>('probe_mcp_server', {
-            serverId: saved.id,
-          });
-
-          if (tools.length === 0) {
-            throw new Error(
-              `No tools returned from server "${saved.name}" — connection may have failed silently`,
-            );
-          }
-
-          await mutateServers();
-          setVerificationStatus((prev) => ({
+        // Verification is now handled synchronously by the backend during saveServer.
+        // If saveServer succeeds, it means verification passed.
+        setVerificationStatus((prev) => {
+          const next: Record<string, VerificationStatus> = {
             ...prev,
             [saved.id]: 'success',
-          }));
-          logger.info(`Verified "${saved.name}": ${tools.length} tool(s)`);
-        } catch (verifyErr) {
-          setVerificationStatus((prev) => ({ ...prev, [saved.id]: 'error' }));
-          logger.warn(`Verification failed for "${saved.name}"`, verifyErr);
-        }
+          };
+          if (saved.id !== server.id) {
+            // Clean up the temporary verification status keyed by the optimistic ID.
+            delete next[server.id];
+          }
+          return next;
+        });
       } catch (error) {
+        setVerificationStatus((prev) => ({ ...prev, [server.id]: 'error' }));
         const message =
           error instanceof Error ? error.message : 'Unknown error';
         toast.error(

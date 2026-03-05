@@ -37,11 +37,34 @@ pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCP
             name
         ));
     }
+
+    // 1. Parse config into MCPServerConfig for verification
+    let mut mcp_config: crate::mcp::types::MCPServerConfig = serde_json::from_value(config.clone())
+        .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
+
+    // Ensure name is set in the config
+    mcp_config.name = Some(name.clone());
+
+    // 2. Verify the configuration connects and provides tools before saving
+    let tools =
+        crate::services::mcp_server_service::McpServerService::verify_config(mcp_config).await?;
+    let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+
+    // 3. Save to database
     let repo = get_mcp_server_repository();
     let model = repo
         .create(&name, config)
         .await
         .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+
+    // 4. Update the cached tools immediately since we just verified it
+    repo.update_cached_tools(&model.id, tools.len() as i32, tools_json_str)
+        .await
+        .map_err(|e| format!("Failed to update cached tools: {}", e))?;
+
+    // Reload the model to get the updated tool count
+    let model = repo.get(&model.id).await.unwrap().unwrap_or(model);
+
     Ok(model.into())
 }
 
@@ -59,12 +82,47 @@ pub async fn update_mcp_server_config(
             ));
         }
     }
+
     let repo = get_mcp_server_repository();
 
+    // 1. Get the current configuration and merge with updates
+    let existing = repo
+        .get(&id)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("MCP server '{}' not found", id))?;
+
+    let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
+    let final_config_val = config
+        .clone()
+        .unwrap_or_else(|| serde_json::from_str(&existing.config).unwrap_or(Value::Null));
+
+    // 2. Parse config into MCPServerConfig for verification
+    let mut mcp_config: crate::mcp::types::MCPServerConfig =
+        serde_json::from_value(final_config_val.clone())
+            .map_err(|e| format!("Invalid MCP server configuration: {}", e))?;
+
+    // Ensure name is set in the config
+    mcp_config.name = Some(final_name.clone());
+
+    // 3. Verify the configuration connects and provides tools before saving
+    let tools =
+        crate::services::mcp_server_service::McpServerService::verify_config(mcp_config).await?;
+    let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+
+    // 4. Save to database
     let updated = repo
         .update(&id, name.as_deref(), config)
         .await
         .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
+
+    // 5. Update the cached tools immediately since we just verified it
+    repo.update_cached_tools(&updated.id, tools.len() as i32, tools_json_str)
+        .await
+        .map_err(|e| format!("Failed to update cached tools: {}", e))?;
+
+    // Reload the model to get the updated tool count
+    let updated = repo.get(&updated.id).await.unwrap().unwrap_or(updated);
 
     Ok(updated.into())
 }
