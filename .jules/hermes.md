@@ -69,3 +69,5 @@
 
 - **Centralized Wrapper:** Refactored `TauriLogFileManager` to use `safeInvoke` for all file management operations, ensuring consistent error handling.
 - **IPC Fix:** Retained standard `invoke` from `@tauri-apps/api/core` for `log_batch` within `LogQueue` to prevent an infinite recursion loop where `safeInvoke` triggers logging which triggers another `safeInvoke`.
+
+## 2026-03-05 - get_app_logs_dir, backup_current_log, clear_current_log, list_log_files **IPC Fix:** Bypassing centralized error handling wrapper **Optimized:** Refactored TauriLogFileManager to use safeInvoke for file management operations.
