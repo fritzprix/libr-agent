@@ -141,10 +141,17 @@ export function useMCPServerManagement(service?: McpServerService) {
 
         // Verification is now handled synchronously by the backend during saveServer.
         // If saveServer succeeds, it means verification passed.
-        setVerificationStatus((prev) => ({
-          ...prev,
-          [saved.id]: 'success',
-        }));
+        setVerificationStatus((prev) => {
+          const next: Record<string, VerificationStatus> = {
+            ...prev,
+            [saved.id]: 'success',
+          };
+          if (saved.id !== server.id) {
+            // Clean up the temporary verification status keyed by the optimistic ID.
+            delete next[server.id];
+          }
+          return next;
+        });
       } catch (error) {
         setVerificationStatus((prev) => ({ ...prev, [server.id]: 'error' }));
         const message =

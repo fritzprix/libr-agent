@@ -19,14 +19,23 @@ impl WorkspaceServer {
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         // Layer 1: Parameter validation
-        let paths_array = match args.get("paths").and_then(|v| v.as_array()) {
-            Some(paths) if !paths.is_empty() => paths,
-            _ => {
-                return Ok(missing_param_error(
-                    "paths (must be a non-empty array)",
-                    ToolGroup::Workspace,
-                ))
+        let paths_value = args.get("paths");
+        let paths_array = match paths_value {
+            None => {
+                return Ok(missing_param_error("paths", ToolGroup::Workspace));
             }
+            Some(v) => match v.as_array() {
+                Some(paths) if !paths.is_empty() => paths,
+                _ => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "Invalid 'paths' parameter",
+                        ToolGroup::Workspace,
+                    )
+                    .guidance(vec!["The 'paths' argument must be provided as a non-empty array of workspace-relative paths to export.".to_string()])
+                    .to_mcp_result());
+                }
+            },
         };
 
         let target_session_id = session_id
@@ -50,10 +59,13 @@ impl WorkspaceServer {
         if paths_array.len() == 1 {
             if let Some(path_str) = paths_array[0].as_str() {
                 let check_path = workspace_dir_canon.join(path_str);
-                if check_path.exists() && check_path.is_file() {
-                    is_single_file_mode = true;
-                    single_file_path = Some(check_path);
-                    single_file_rel_path_str = path_str.to_string();
+                // Canonicalize the candidate path and ensure it stays within the workspace
+                if let Ok(canon_check) = std::fs::canonicalize(&check_path) {
+                    if canon_check.starts_with(&workspace_dir_canon) && canon_check.is_file() {
+                        is_single_file_mode = true;
+                        single_file_path = Some(canon_check);
+                        single_file_rel_path_str = path_str.to_string();
+                    }
                 }
             }
         }

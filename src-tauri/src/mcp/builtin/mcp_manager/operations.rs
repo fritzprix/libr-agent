@@ -487,6 +487,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
 
     let mut result_sections: Vec<String> = Vec::new();
     let mut total_tools = 0usize;
+    let mut sections_added = 0usize;
     let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
 
     // --- Internal (builtin) tools ---
@@ -532,6 +533,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                 lines.join("\n")
             ));
             total_tools += matched.len();
+            sections_added += 1;
         }
     }
 
@@ -645,12 +647,13 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                     model.name, verify_note, model.id, server_desc, tool_list_str
                 ));
                 total_tools += matched_tools.len();
+                sections_added += 1;
                 found_external_ids.push((model.name.clone(), model.id.clone()));
             }
         }
     }
 
-    if total_tools == 0 {
+    if sections_added == 0 {
         let hint_text = if query.is_empty() {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
