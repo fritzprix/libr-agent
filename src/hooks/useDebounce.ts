@@ -4,8 +4,8 @@ import { useEffect, useRef, useCallback } from 'react';
  * Custom hook for debouncing function calls with proper TypeScript typing.
  * Delays execution until after the specified delay has elapsed since the last call.
  *
- * @param callback - Function to debounce
- * @param delay - Delay in milliseconds
+ * @param callback Function to debounce
+ * @param delay Delay in milliseconds
  * @returns Debounced function and methods to cancel or flush
  *
  * @example
