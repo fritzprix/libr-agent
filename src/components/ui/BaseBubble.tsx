@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface BaseBubbleProps {
   title: string;
@@ -10,6 +11,7 @@ interface BaseBubbleProps {
   collapsedSummary?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  ariaLabel?: string;
 }
 
 export const BaseBubble: React.FC<BaseBubbleProps> = ({
@@ -21,9 +23,12 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
   collapsedSummary,
   children,
   className = '',
+  ariaLabel,
 }) => {
+  const { t } = useTranslation('common');
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const contentId = useId();
 
   const copyToClipboard = async () => {
     if (!copyData) return;
@@ -50,7 +55,10 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
           </div>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-expanded={isExpanded}
+            aria-controls={contentId}
+            aria-label={ariaLabel || t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {isExpanded ? (
               <ChevronDown size={16} />
@@ -67,10 +75,11 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
         {copyData && (
           <button
             onClick={copyToClipboard}
-            className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-colors"
+            aria-label={t('baseBubble.copy', { title, defaultValue: `Copy ${title} to clipboard` })}
+            className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? 'Copied!' : 'Copy'}
+            {copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
           </button>
         )}
       </div>
@@ -82,7 +91,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
       )}
 
       {isExpanded && (
-        <div className="p-4 max-h-96 overflow-auto bg-background">
+        <div id={contentId} className="p-4 max-h-96 overflow-auto bg-background">
           {children}
         </div>
       )}
