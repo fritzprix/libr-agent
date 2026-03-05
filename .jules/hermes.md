@@ -61,13 +61,11 @@
 - **Centralized Wrapper:** Introduced `safeInvoke` in `src/lib/backend/core.ts` to wrap Tauri `invoke` with standardized error handling, logging, and typed responses.
 - **Refactor:** Replaced explicit `invoke` usages across all Tauri command call sites with `safeInvoke`, ensuring consistent IPC behavior and observability.
 
-## 2026-03-05 - File Manager IPC Error Handling
+## 2026-03-05 - File Manager IPC Safety
 
-**Problem:** Direct `invoke` calls for Tauri file manager commands (`get_app_logs_dir`, `backup_current_log`, `clear_current_log`, `list_log_files`) in `src/lib/logger.ts` were bypassing the centralized error handling and logging wrapper (`safeInvoke`).
+**Problem:** Potential infinite recursion if `TauriLogFileManager` uses the centralized `safeInvoke` wrapper, as `safeInvoke` triggers logging which in turn may trigger file management (e.g., startup backup).
 
 **Action:**
 
-- **Centralized Wrapper:** Refactored `TauriLogFileManager` to use `safeInvoke` for all file management operations, ensuring consistent error handling.
-- **IPC Fix:** Retained standard `invoke` from `@tauri-apps/api/core` for `log_batch` within `LogQueue` to prevent an infinite recursion loop where `safeInvoke` triggers logging which triggers another `safeInvoke`.
-
-## 2026-03-05 - get_app_logs_dir, backup_current_log, clear_current_log, list_log_files **IPC Fix:** Bypassing centralized error handling wrapper **Optimized:** Refactored TauriLogFileManager to use safeInvoke for file management operations.
+- **IPC Safety:** Retained raw `invoke` from `@tauri-apps/api/core` for all methods in `TauriLogFileManager` (`get_app_logs_dir`, `backup_current_log`, `clear_current_log`, `list_log_files`) to avoid logger-IPC circular dependencies.
+- **IPC Fix:** Likewise retained standard `invoke` for `log_batch` within `LogQueue` to prevent the same infinite recursion loop.
