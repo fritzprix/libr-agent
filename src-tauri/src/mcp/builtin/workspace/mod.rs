@@ -639,8 +639,7 @@ impl BuiltinMCPServer for WorkspaceServer {
                     .await
             }
             // Export tools
-            "exportFile" => self.handle_export_file(args, session_id).await,
-            "exportZip" => self.handle_export_zip(args, session_id).await,
+            "export" => self.handle_export(args, session_id).await,
             // Terminal/Process management tools
             "readProcessOutput" => {
                 self.handle_read_process_output(args, &target_session_id)
