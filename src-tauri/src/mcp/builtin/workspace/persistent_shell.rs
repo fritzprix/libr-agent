@@ -153,6 +153,12 @@ impl PersistentShell {
             }
         };
 
+        // Apply environment isolation to prevent leaking host secrets
+        cmd.env_clear();
+        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
+
         // Set working directory to workspace
         cmd.current_dir(&workspace_path);
 
