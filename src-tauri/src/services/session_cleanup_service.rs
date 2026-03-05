@@ -1,3 +1,4 @@
+use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
 use crate::repositories::MessageRepository;
 use crate::search::index_storage::delete_index;
 use log::{error, info};
@@ -38,8 +39,6 @@ impl SessionCleanupService {
 
     /// Recursively collect all descendant session IDs (children, grandchildren, etc.)
     pub async fn collect_descendant_ids(session_id: &str) -> Result<Vec<String>, String> {
-        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
-
         let session_repo = crate::state::get_session_repository();
         let mut all_descendants = Vec::new();
         let mut queue = vec![session_id.to_string()];
@@ -85,15 +84,14 @@ impl SessionCleanupService {
     /// **Cascade Philosophy:** "부모를 지우면 자식도 지워진다"
     /// - DB-level CASCADE automatically deletes child session records
     /// - Manually deletes workspace directories for all descendants before DB deletion
-    pub async fn delete_session_data_cascade(session_id: &str) -> Result<(), String> {
-        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
-
-        let descendant_ids = Self::collect_descendant_ids(session_id).await?;
-
-        for descendant_id in &descendant_ids {
+    pub async fn delete_session_data_cascade(
+        session_id: &str,
+        descendant_ids: &[String],
+    ) -> Result<(), String> {
+        for descendant_id in descendant_ids {
             Self::delete_session_workspace(descendant_id).await?;
 
-            if let Err(e) = crate::search::index_storage::delete_index(descendant_id) {
+            if let Err(e) = delete_index(descendant_id) {
                 log::warn!(
                     "Failed to delete search index for descendant {}: {}",
                     descendant_id,
@@ -104,7 +102,7 @@ impl SessionCleanupService {
 
         Self::delete_session_workspace(session_id).await?;
 
-        if let Err(e) = crate::search::index_storage::delete_index(session_id) {
+        if let Err(e) = delete_index(session_id) {
             log::warn!(
                 "Failed to delete search index for session {}: {}",
                 session_id,
@@ -123,11 +121,9 @@ impl SessionCleanupService {
 
     /// Delete only this session data, leaving children as orphaned top-level sessions.
     pub async fn delete_session_data_only(session_id: &str) -> Result<(), String> {
-        use crate::repositories::session_repository::SessionRepository as SessionRepositoryTrait;
-
         Self::delete_session_workspace(session_id).await?;
 
-        if let Err(e) = crate::search::index_storage::delete_index(session_id) {
+        if let Err(e) = delete_index(session_id) {
             log::warn!(
                 "Failed to delete search index for session {}: {}",
                 session_id,

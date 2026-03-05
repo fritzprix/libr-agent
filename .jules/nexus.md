@@ -57,4 +57,5 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Result:** `playbook_commands.rs` delegates complex logic to `PlaybookService`.
 
 ## 2025-02-28 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling - InteractiveBrowserServer directly instantiating Tauri app handles] **Resolution:** [Dependency Inversion - Extracted BrowserEnvironment trait and Tauri adapter]
-## 2025-01-31 - Architecture **Anti-Pattern:** Spaghetti/Coupling in AgentSessionManager **Resolution:** Extracted Domain Logic into SessionCleanupService
+
+## 2025-03-01 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling in AgentSessionManager] **Resolution:** [Extracted Domain Logic into SessionCleanupService]

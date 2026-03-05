@@ -471,7 +471,8 @@ impl AgentSessionManager {
             "Collecting descendants for cascade workspace cleanup: {}",
             session_id
         );
-        let descendant_ids = crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await?;
+        let descendant_ids =
+            crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await?;
 
         if !descendant_ids.is_empty() {
             log::info!(
@@ -491,7 +492,11 @@ impl AgentSessionManager {
         self.active_sessions.write().await.remove(&session_id);
 
         // 3. Delete workspaces and DB cascade
-        crate::services::SessionCleanupService::delete_session_data_cascade(&session_id).await?;
+        crate::services::SessionCleanupService::delete_session_data_cascade(
+            &session_id,
+            &descendant_ids,
+        )
+        .await?;
 
         log::info!(
             "✅ Deleted agent session: {} (cascade removed {} descendants)",
@@ -516,7 +521,10 @@ impl AgentSessionManager {
         // 3. Delete workspace and db
         crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
 
-        log::info!("✅ Deleted session only (children orphaned): {}", session_id);
+        log::info!(
+            "✅ Deleted session only (children orphaned): {}",
+            session_id
+        );
         Ok(())
     }
 
