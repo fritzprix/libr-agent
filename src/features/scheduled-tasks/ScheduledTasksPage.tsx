@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('ScheduledTasksPage');
 
 export function ScheduledTasksPage() {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -88,7 +90,7 @@ export function ScheduledTasksPage() {
   };
 
   const formatNextRun = (ms: number | null): string => {
-    if (!ms) return '—';
+    if (!ms) return t('scheduledTasks.nextRunNone');
     const d = new Date(ms);
     return d.toLocaleString();
   };
@@ -96,7 +98,7 @@ export function ScheduledTasksPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-32 text-muted-foreground">
-        Loading…
+        {t('common.loading')}
       </div>
     );
   }
@@ -105,23 +107,23 @@ export function ScheduledTasksPage() {
     <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Scheduled Tasks</h1>
+          <h1 className="text-xl font-semibold">{t('scheduledTasks.title')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Cron-backed tasks that trigger agent workflows automatically
+            {t('scheduledTasks.subtitle')}
           </p>
         </div>
         <Button onClick={openCreate} size="sm">
           <Plus className="w-4 h-4 mr-1" />
-          New task
+          {t('scheduledTasks.newTask')}
         </Button>
       </div>
 
       {tasks.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 border border-dashed rounded-lg text-muted-foreground">
           <Clock className="w-8 h-8 opacity-40" />
-          <p className="text-sm">No scheduled tasks yet</p>
+          <p className="text-sm">{t('scheduledTasks.noTasks')}</p>
           <Button variant="outline" size="sm" onClick={openCreate}>
-            Create your first task
+            {t('scheduledTasks.createFirst')}
           </Button>
         </div>
       ) : (
@@ -140,11 +142,11 @@ export function ScheduledTasksPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium truncate">{task.name}</span>
                   <Badge variant="secondary" className="text-xs shrink-0">
-                    {describeCron(task.cronExpression)}
+                    {describeCron(task.cronExpression, t)}
                   </Badge>
                   {!task.enabled && (
                     <Badge variant="outline" className="text-xs shrink-0">
-                      disabled
+                      {t('scheduledTasks.disabled')}
                     </Badge>
                   )}
                 </div>
@@ -152,7 +154,9 @@ export function ScheduledTasksPage() {
                   {task.message}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Next run: {formatNextRun(task.nextRunAt)}
+                  {t('scheduledTasks.nextRun', {
+                    time: formatNextRun(task.nextRunAt),
+                  })}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
@@ -161,7 +165,9 @@ export function ScheduledTasksPage() {
                   size="icon"
                   className="h-8 w-8"
                   onClick={() => openEdit(task)}
-                  aria-label={`Edit task: ${task.name}`}
+                  aria-label={t('scheduledTasks.editTaskAria', {
+                    name: task.name,
+                  })}
                 >
                   <Pencil className="w-4 h-4" />
                 </Button>
@@ -170,7 +176,9 @@ export function ScheduledTasksPage() {
                   size="icon"
                   className="h-8 w-8 text-destructive hover:text-destructive"
                   onClick={() => void handleDelete(task.id)}
-                  aria-label={`Delete task: ${task.name}`}
+                  aria-label={t('scheduledTasks.deleteTaskAria', {
+                    name: task.name,
+                  })}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>

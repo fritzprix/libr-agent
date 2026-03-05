@@ -47,3 +47,9 @@
 **Extracted:** 62
 **Languages updated:** [EN, KO]
 **Notes:** Localized hardcoded strings, toasts, placeholders, aria-labels, and tooltips across multiple Agent chat components including `AgentChatHeader`, `AgentWorkspacePanel`, `AgentChatStatusBar`, `AgentChatInput`, and the `useAgentFileAttachment` hook. Created new nested namespaces within `agent` (`header`, `workspace`, `statusBar`, `attachment`, `input`) in `common.json`.
+
+## 2026-03-03 - [Scheduled Tasks]
+
+**Extracted:** ~50
+**Languages updated:** [EN, KO]
+**Notes:** Localized `ScheduledTasksPage`, `ScheduledTaskModal`, `MentionTextarea`, and `ScheduleBuilder`. Created `scheduledTasks` namespace in `common.json` handling page structure, modal forms, and complex chron descriptions with standard pluralization.

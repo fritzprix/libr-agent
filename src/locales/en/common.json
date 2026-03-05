@@ -127,7 +127,8 @@
     "recentSessions": "Recent Sessions",
     "seeAllSessions": "See all sessions →",
     "settings": "Settings",
-    "history": "History"
+    "history": "History",
+    "scheduledTasks": "Scheduled Tasks"
   },
   "sessionHistory": {
     "heading": "Session History",
@@ -676,6 +677,73 @@
       "errorDetails": "Error Details",
       "result": "Result",
       "executing": "Executing tool..."
+    }
+  },
+  "scheduledTasks": {
+    "title": "Scheduled Tasks",
+    "subtitle": "Cron-backed tasks that trigger agent workflows automatically",
+    "newTask": "New task",
+    "noTasks": "No scheduled tasks yet",
+    "createFirst": "Create your first task",
+    "disabled": "disabled",
+    "nextRun": "Next run: {{time}}",
+    "nextRunNone": "—",
+    "editTaskAria": "Edit task: {{name}}",
+    "deleteTaskAria": "Delete task: {{name}}",
+    "modal": {
+      "titleNew": "New Scheduled Task",
+      "titleEdit": "Edit Scheduled Task",
+      "nameLabel": "Task name",
+      "namePlaceholder": "Daily standup summary",
+      "assistantLabel": "Assistant",
+      "assistantPlaceholder": "Select an assistant…",
+      "scheduleLabel": "Schedule",
+      "messageLabel": "Message",
+      "messageHint": "Use <1>@playbook:</1> or <3>@skill:</3> for autocomplete",
+      "messagePlaceholder": "Type a message… use @playbook: or @skill: for autocomplete",
+      "cancel": "Cancel",
+      "saveChanges": "Save changes",
+      "createTask": "Create task",
+      "saving": "Saving…"
+    },
+    "schedule": {
+      "repeat": "Repeat",
+      "every": "Every",
+      "on": "On",
+      "onDay": "On day",
+      "at": "At",
+      "hour": "Hour",
+      "minute": "Minute",
+      "modes": {
+        "minutes": "Every N minutes",
+        "hours": "Every N hours",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly"
+      },
+      "units": {
+        "minutes": "minutes",
+        "hours": "hours"
+      },
+      "summary": "Schedule: ",
+      "describe": {
+        "minutes_one": "Every {{count}} minute",
+        "minutes_other": "Every {{count}} minutes",
+        "hours_one": "Every {{count}} hour",
+        "hours_other": "Every {{count}} hours",
+        "daily": "Daily at {{time}}",
+        "weekly": "Every {{day}} at {{time}}",
+        "monthly": "Monthly on day {{day}} at {{time}}"
+      },
+      "days": {
+        "0": "Sunday",
+        "1": "Monday",
+        "2": "Tuesday",
+        "3": "Wednesday",
+        "4": "Thursday",
+        "5": "Friday",
+        "6": "Saturday"
+      }
     }
   }
 }
