@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   Select,
   SelectContent,
@@ -130,22 +130,14 @@ interface ScheduleBuilderProps {
  * Users never need to see or type cron syntax.
  */
 export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
-  const [state, setState] = useState<ScheduleState>(() => fromCron(value));
-
-  // Sync inbound cron changes (e.g. switching from edit mode to create mode)
-  useEffect(() => {
-    setState(fromCron(value));
-  }, [value]);
+  const state = useMemo(() => fromCron(value), [value]);
 
   const update = useCallback(
     (patch: Partial<ScheduleState>) => {
-      setState((prev) => {
-        const next = { ...prev, ...patch };
-        onChange(toCron(next));
-        return next;
-      });
+      const next = { ...state, ...patch };
+      onChange(toCron(next));
     },
-    [onChange],
+    [state, onChange],
   );
 
   const clamp = (v: number, min: number, max: number) =>
