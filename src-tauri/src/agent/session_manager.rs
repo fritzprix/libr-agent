@@ -462,7 +462,7 @@ impl AgentSessionManager {
 
     /// Delete an agent session and all its data
     ///
-    /// **Cascade Philosophy:** "부모를 지우면 자식도 지워진다"
+    /// **Cascade Philosophy:** "When a parent is deleted, its children are also deleted"
     /// - DB-level CASCADE automatically deletes child session records
     /// - We must manually delete workspace directories for all descendants before DB deletion
     pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
@@ -488,8 +488,14 @@ impl AgentSessionManager {
             let _ = self.terminate_session(descendant_id.clone()).await;
         }
 
-        // 2. Remove from active sessions (parent only - descendants might not be in memory)
-        self.active_sessions.write().await.remove(&session_id);
+        // 2. Remove from active sessions (parent + any loaded descendants)
+        {
+            let mut sessions = self.active_sessions.write().await;
+            sessions.remove(&session_id);
+            for descendant_id in &descendant_ids {
+                sessions.remove(descendant_id);
+            }
+        }
 
         // 3. Delete workspaces and DB cascade
         crate::services::SessionCleanupService::delete_session_data_cascade(

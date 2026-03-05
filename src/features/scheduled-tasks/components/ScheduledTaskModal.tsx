@@ -139,8 +139,9 @@ function ScheduledTaskForm({
     }
   };
 
-  const isValid =
-    name.trim() && cronExpression.trim() && assistantId && message.trim();
+  const isValid = Boolean(
+    name.trim() && cronExpression.trim() && assistantId && message.trim(),
+  );
 
   return (
     <>
