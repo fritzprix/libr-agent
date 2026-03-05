@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSkills } from '@/context/SkillsContext';
 import { useInputToken } from '@/features/agent/hooks/useInputToken';
 import { InputTokenDropdown } from '@/features/agent/components/InputTokenDropdown';
@@ -26,11 +27,15 @@ export function MentionTextarea({
   value,
   onChange,
   assistantId,
-  placeholder = 'Type a message… use @playbook: or @skill: for autocomplete',
+  placeholder,
   className,
   rows = 3,
 }: MentionTextareaProps) {
+  const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const defaultPlaceholder = t('scheduledTasks.modal.messagePlaceholder');
+  const finalPlaceholder = placeholder || defaultPlaceholder;
   const { skills } = useSkills();
 
   const {
@@ -124,7 +129,7 @@ export function MentionTextarea({
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        placeholder={placeholder}
+        placeholder={finalPlaceholder}
         rows={rows}
         className={cn('resize-none', className)}
       />

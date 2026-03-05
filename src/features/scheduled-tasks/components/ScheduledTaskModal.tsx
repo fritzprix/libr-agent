@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ export function ScheduledTaskModal({
   onClose,
   onSave,
 }: ScheduledTaskModalProps) {
+  const { t } = useTranslation();
   const [assistants, setAssistants] = useState<Assistant[]>([]);
 
   // Load assistants once
@@ -57,7 +59,9 @@ export function ScheduledTaskModal({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {task ? 'Edit Scheduled Task' : 'New Scheduled Task'}
+            {task
+              ? t('scheduledTasks.modal.titleEdit')
+              : t('scheduledTasks.modal.titleNew')}
           </DialogTitle>
         </DialogHeader>
 
@@ -93,6 +97,7 @@ function ScheduledTaskForm({
   onClose,
   onSave,
 }: ScheduledTaskFormProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(task?.name ?? '');
   const [cronExpression, setCronExpression] = useState(
     task?.cronExpression ?? '0 9 * * *',
@@ -142,21 +147,21 @@ function ScheduledTaskForm({
       <div className="grid gap-4 py-2">
         {/* Task name */}
         <div className="grid gap-1.5">
-          <Label htmlFor="task-name">Task name</Label>
+          <Label htmlFor="task-name">{t('scheduledTasks.modal.nameLabel')}</Label>
           <Input
             id="task-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Daily standup summary"
+            placeholder={t('scheduledTasks.modal.namePlaceholder')}
           />
         </div>
 
         {/* Assistant */}
         <div className="grid gap-1.5">
-          <Label>Assistant</Label>
+          <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
           <Select value={assistantId} onValueChange={setAssistantId}>
             <SelectTrigger>
-              <SelectValue placeholder="Select an assistant…" />
+              <SelectValue placeholder={t('scheduledTasks.modal.assistantPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {assistants.map((a) => (
@@ -170,7 +175,7 @@ function ScheduledTaskForm({
 
         {/* Human-readable schedule builder */}
         <div className="grid gap-1.5">
-          <Label>Schedule</Label>
+          <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
           <ScheduleBuilder
             value={cronExpression}
             onChange={setCronExpression}
@@ -179,10 +184,11 @@ function ScheduledTaskForm({
 
         {/* Message with @mention support */}
         <div className="grid gap-1.5">
-          <Label>Message</Label>
+          <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
           <p className="text-xs text-muted-foreground">
-            Use <code className="font-mono">@playbook:</code> or{' '}
-            <code className="font-mono">@skill:</code> for autocomplete
+            <Trans i18nKey="scheduledTasks.modal.messageHint">
+              Use <code className="font-mono">@playbook:</code> or <code className="font-mono">@skill:</code> for autocomplete
+            </Trans>
           </p>
           <MentionTextarea
             value={message}
@@ -195,10 +201,14 @@ function ScheduledTaskForm({
 
       <DialogFooter>
         <Button variant="ghost" onClick={onClose} disabled={saving}>
-          Cancel
+          {t('scheduledTasks.modal.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!isValid || saving}>
-          {saving ? 'Saving…' : task ? 'Save changes' : 'Create task'}
+          {saving
+            ? t('scheduledTasks.modal.saving')
+            : task
+              ? t('scheduledTasks.modal.saveChanges')
+              : t('scheduledTasks.modal.createTask')}
         </Button>
       </DialogFooter>
     </>

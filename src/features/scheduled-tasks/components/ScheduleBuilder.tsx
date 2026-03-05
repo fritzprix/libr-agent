@@ -1,4 +1,6 @@
 import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   Select,
   SelectContent,
@@ -31,15 +33,7 @@ const DEFAULT_STATE: ScheduleState = {
   monthDay: 1,
 };
 
-const WEEK_DAYS = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
+const WEEK_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 function toCron(s: ScheduleState): string {
   switch (s.mode) {
@@ -103,20 +97,23 @@ function fromCron(cron: string): ScheduleState {
 }
 
 /** Format a ScheduleState into a human-readable summary string. */
-export function describeCron(cron: string): string {
+export function describeCron(cron: string, t: TFunction): string {
   const s = fromCron(cron);
   const timeStr = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
   switch (s.mode) {
     case 'minutes':
-      return `Every ${s.minuteInterval} minute${s.minuteInterval === 1 ? '' : 's'}`;
+      return t('scheduledTasks.schedule.describe.minutes', { count: s.minuteInterval });
     case 'hours':
-      return `Every ${s.hourInterval} hour${s.hourInterval === 1 ? '' : 's'}`;
+      return t('scheduledTasks.schedule.describe.hours', { count: s.hourInterval });
     case 'daily':
-      return `Daily at ${timeStr}`;
+      return t('scheduledTasks.schedule.describe.daily', { time: timeStr });
     case 'weekly':
-      return `Every ${WEEK_DAYS[s.weekDay]} at ${timeStr}`;
+      return t('scheduledTasks.schedule.describe.weekly', {
+        day: t(`scheduledTasks.schedule.days.${s.weekDay}`),
+        time: timeStr
+      });
     case 'monthly':
-      return `Monthly on day ${s.monthDay} at ${timeStr}`;
+      return t('scheduledTasks.schedule.describe.monthly', { day: s.monthDay, time: timeStr });
   }
 }
 
@@ -130,6 +127,7 @@ interface ScheduleBuilderProps {
  * Users never need to see or type cron syntax.
  */
 export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
+  const { t } = useTranslation();
   const state = useMemo(() => fromCron(value), [value]);
 
   const update = useCallback(
@@ -147,7 +145,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
     <div className="grid gap-3">
       {/* Repeat mode */}
       <div className="grid gap-1.5">
-        <Label>Repeat</Label>
+        <Label>{t('scheduledTasks.schedule.repeat')}</Label>
         <Select
           value={state.mode}
           onValueChange={(v) => update({ mode: v as RepeatMode })}
@@ -156,11 +154,11 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="minutes">Every N minutes</SelectItem>
-            <SelectItem value="hours">Every N hours</SelectItem>
-            <SelectItem value="daily">Daily</SelectItem>
-            <SelectItem value="weekly">Weekly</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
+            <SelectItem value="minutes">{t('scheduledTasks.schedule.modes.minutes')}</SelectItem>
+            <SelectItem value="hours">{t('scheduledTasks.schedule.modes.hours')}</SelectItem>
+            <SelectItem value="daily">{t('scheduledTasks.schedule.modes.daily')}</SelectItem>
+            <SelectItem value="weekly">{t('scheduledTasks.schedule.modes.weekly')}</SelectItem>
+            <SelectItem value="monthly">{t('scheduledTasks.schedule.modes.monthly')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -168,7 +166,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
       {/* Every N minutes */}
       {state.mode === 'minutes' && (
         <div className="grid gap-1.5">
-          <Label>Every</Label>
+          <Label>{t('scheduledTasks.schedule.every')}</Label>
           <div className="flex items-center gap-2">
             <Input
               type="number"
@@ -182,7 +180,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
               }
               className="w-20"
             />
-            <span className="text-sm text-muted-foreground">minutes</span>
+            <span className="text-sm text-muted-foreground">{t('scheduledTasks.schedule.units.minutes')}</span>
           </div>
         </div>
       )}
@@ -190,7 +188,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
       {/* Every N hours */}
       {state.mode === 'hours' && (
         <div className="grid gap-1.5">
-          <Label>Every</Label>
+          <Label>{t('scheduledTasks.schedule.every')}</Label>
           <div className="flex items-center gap-2">
             <Input
               type="number"
@@ -204,7 +202,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
               }
               className="w-20"
             />
-            <span className="text-sm text-muted-foreground">hours</span>
+            <span className="text-sm text-muted-foreground">{t('scheduledTasks.schedule.units.hours')}</span>
           </div>
         </div>
       )}
@@ -212,7 +210,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
       {/* Day of week (weekly only) */}
       {state.mode === 'weekly' && (
         <div className="grid gap-1.5">
-          <Label>On</Label>
+          <Label>{t('scheduledTasks.schedule.on')}</Label>
           <Select
             value={String(state.weekDay)}
             onValueChange={(v) => update({ weekDay: parseInt(v) })}
@@ -221,9 +219,9 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {WEEK_DAYS.map((day, i) => (
-                <SelectItem key={day} value={String(i)}>
-                  {day}
+              {WEEK_DAYS.map((dayIndex) => (
+                <SelectItem key={dayIndex} value={String(dayIndex)}>
+                  {t(`scheduledTasks.schedule.days.${dayIndex}`)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -234,7 +232,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
       {/* Day of month (monthly only) */}
       {state.mode === 'monthly' && (
         <div className="grid gap-1.5">
-          <Label>On day</Label>
+          <Label>{t('scheduledTasks.schedule.onDay')}</Label>
           <Input
             type="number"
             min={1}
@@ -253,7 +251,7 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
         state.mode === 'weekly' ||
         state.mode === 'monthly') && (
         <div className="grid gap-1.5">
-          <Label>At</Label>
+          <Label>{t('scheduledTasks.schedule.at')}</Label>
           <div className="flex items-center gap-1.5">
             <Input
               type="number"
@@ -284,9 +282,9 @@ export function ScheduleBuilder({ value, onChange }: ScheduleBuilderProps) {
 
       {/* Live summary */}
       <p className="text-xs text-muted-foreground">
-        Schedule:{' '}
+        {t('scheduledTasks.schedule.summary')}{' '}
         <span className="font-medium text-foreground">
-          {describeCron(toCron(state))}
+          {describeCron(toCron(state), t)}
         </span>
       </p>
     </div>
