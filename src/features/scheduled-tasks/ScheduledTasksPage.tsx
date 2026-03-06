@@ -22,6 +22,8 @@ export function ScheduledTasksPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
+  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -60,20 +62,34 @@ export function ScheduledTasksPage() {
   };
 
   const handleToggle = async (task: ScheduledTask) => {
+    setTogglingIds((prev) => new Set(prev).add(task.id));
     try {
       const updated = await toggleScheduledTask(task.id, !task.enabled);
       setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     } catch (e: unknown) {
       logger.error('Failed to toggle task', e);
+    } finally {
+      setTogglingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(task.id);
+        return next;
+      });
     }
   };
 
   const handleDelete = async (id: string) => {
+    setDeletingIds((prev) => new Set(prev).add(id));
     try {
       await deleteScheduledTask(id);
       setTasks((prev) => prev.filter((t) => t.id !== id));
     } catch (e: unknown) {
       logger.error('Failed to delete task', e);
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -135,6 +151,7 @@ export function ScheduledTasksPage() {
                 checked={task.enabled}
                 onCheckedChange={() => void handleToggle(task)}
                 className="mt-0.5 shrink-0"
+                disabled={togglingIds.has(task.id) || deletingIds.has(task.id)}
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -171,8 +188,13 @@ export function ScheduledTasksPage() {
                   className="h-8 w-8 text-destructive hover:text-destructive"
                   onClick={() => void handleDelete(task.id)}
                   aria-label={`Delete task: ${task.name}`}
+                  disabled={deletingIds.has(task.id)}
                 >
-                  <Trash2 className="w-4 h-4" />
+                  {deletingIds.has(task.id) ? (
+                    <Clock className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
                 </Button>
               </div>
             </li>
