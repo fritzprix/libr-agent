@@ -176,12 +176,12 @@ pub fn create_run_powershell_tool() -> MCPTool {
     MCPTool {
         name: "runPowerShell".to_string(),
         title: Some("Run PowerShell Command (Isolated)".to_string()),
-        description: "Execute a synchronous PowerShell command. This is the PRIMARY tool for all Windows command-line tasks (replaces CMD).\n\
-                      IMPORTANT SYNTAX:\n\
-                      - NEVER use '&&' for chaining; use ';' instead (PowerShell 5.1 compatibility).\n\
-                      - Access env vars with $env:VARNAME (not %VARNAME%).\n\
-                      - Stateless: each call starts at workspace root. Use 'Set-Location dir; command' for subdirectories.\n\
-                      - For persistent state (cd/env vars): runInPersistentPowerShell."
+        description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.
+
+Guidelines:
+- Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.
+- Access environment variables using '$env:VARNAME'.
+- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
