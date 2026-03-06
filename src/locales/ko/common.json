@@ -107,7 +107,13 @@
     "cancel": "취소",
     "close": "닫기",
     "delete": "삭제",
-    "restartNow": "지금 재시작"
+    "restartNow": "지금 재시작",
+    "copy": "복사",
+    "copied": "복사됨!"
+  },
+  "baseBubble": {
+    "copy": "{{title}} 클립보드에 복사",
+    "toggle": "{{title}} 펼치기/접기"
   },
   "error": {
     "title": "오류가 발생했습니다",
