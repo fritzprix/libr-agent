@@ -72,3 +72,8 @@
 
 **Split:** `types.rs`, `helpers.rs`, `sessions.rs`, `messages.rs`, `assistants.rs`, `health.rs`, `mod.rs`
 **Improvement:** Decoupled warp HTTP handler endpoints into focused, domain-specific submodules. Extracted DTO structs and generic utility functions. Eliminated the 800+ line monolith while safely re-exporting endpoints for `routes.rs`.
+
+## 2026-03-05 - src-tauri/src/mcp/builtin/workspace/file_operations/search_query.rs
+
+**Split:** `search_files.rs`, `search_lines.rs`, `list_dir.rs`
+**Improvement:** Decoupled `handle_search_files`, `handle_search_lines` and `handle_list_directory` logic into focused, isolated modules. Reduced the 1122 line `search_query.rs` file into dedicated modules around ~300 lines or less for better maintainability and clarity.
