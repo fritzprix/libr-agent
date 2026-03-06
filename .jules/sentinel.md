@@ -27,3 +27,9 @@
 **Vulnerability:** Command injection vulnerability identified in `get_command_path` and `command_exists` when running `sh -c` with `format!("command -v {}", cmd)`. If `cmd` includes shell metacharacters, it allows executing arbitrary commands.
 **Learning:** Never use string formatting (`format!`) to build arguments for shell execution (`sh -c`).
 **Prevention:** Use positional arguments when calling shell commands. E.g., `sh -c 'command -v "$1"' -- cmd`.
+
+## 2026-03-03 - Environment Variable Leakage in Persistent Shell
+
+**Vulnerability:** In `PersistentShell::new` (`src-tauri/src/mcp/builtin/workspace/persistent_shell.rs`), `tokio::process::Command` inherited the parent environment by default, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted code executed within the persistent shell session.
+**Learning:** `env_clear()` must be used universally for all shells and external processes spawned that might execute untrusted code or commands. Process spawning in the workspace module is just as critical as MCP server spawn points.
+**Prevention:** Always use `cmd.env_clear()` before spawning any shell process or isolated process. Afterwards, securely re-apply only the whitelisted essential system variables using `crate::mcp::utils::env::get_isolated_env()`.
