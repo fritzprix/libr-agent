@@ -74,6 +74,14 @@ impl PendingEventManager {
     }
 }
 
+/// Data for a pending tool execution approval
+#[derive(Debug)]
+pub struct PendingApprovalData {
+    pub sender: oneshot::Sender<bool>,
+    pub tool_name: String,
+    pub arguments: String,
+}
+
 /// Represents an active agent session with its runtime state
 #[derive(Debug)]
 pub struct AgentSession {
@@ -107,8 +115,8 @@ pub struct AgentSession {
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
     /// Channels for pending tool execution approvals
-    /// Maps tool_call_id to a oneshot Sender that unblocks the workflow with a bool (approved)
-    pub pending_approvals: Arc<RwLock<HashMap<String, oneshot::Sender<bool>>>>,
+    /// Maps tool_call_id to PendingApprovalData (which unblocks the workflow with a bool)
+    pub pending_approvals: Arc<RwLock<HashMap<String, PendingApprovalData>>>,
 
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,

@@ -416,14 +416,20 @@ export function AgentSessionProvider({
               }
 
               setWorkflowPhase('waiting_approval');
-              setPendingApprovals((prev) => [
-                ...prev,
-                {
-                  toolCallId: payload.toolCallId,
-                  toolName: payload.toolName,
-                  arguments: payload.arguments,
-                },
-              ]);
+              setPendingApprovals((prev) => {
+                // Prevent duplicate entries on session resume
+                if (prev.some((p) => p.toolCallId === payload.toolCallId)) {
+                  return prev;
+                }
+                return [
+                  ...prev,
+                  {
+                    toolCallId: payload.toolCallId,
+                    toolName: payload.toolName,
+                    arguments: payload.arguments,
+                  },
+                ];
+              });
               logger.info('Workflow phase: waiting_approval', {
                 toolName: payload.toolName,
               });
@@ -640,9 +646,28 @@ export function AgentSessionProvider({
   );
 
   const toggleYoloMode = useCallback(() => {
-    setYoloModeEnabled((prev) => !prev);
-    logger.info(`YOLO mode ${!yoloModeEnabled ? 'enabled' : 'disabled'}`);
-  }, [yoloModeEnabled]);
+    const newVal = !yoloModeEnabled;
+    setYoloModeEnabled(newVal);
+    logger.info(`YOLO mode ${newVal ? 'enabled' : 'disabled'}`);
+
+    // If turned ON, auto-approve any currently pending approvals
+    if (newVal && pendingApprovals.length > 0) {
+      logger.info('Auto-approving pending tools due to YOLO toggle', {
+        count: pendingApprovals.length,
+      });
+      pendingApprovals.forEach((p) => {
+        invoke<AgentResponse>('agent_respond_tool_approval', {
+          sessionId,
+          toolCallId: p.toolCallId,
+          approved: true,
+        }).catch((err) => {
+          logger.error('Failed to auto-approve tool upon YOLO toggle', err);
+        });
+      });
+      setPendingApprovals([]);
+      setWorkflowPhase('using_tools');
+    }
+  }, [yoloModeEnabled, pendingApprovals, sessionId]);
 
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({

@@ -71,7 +71,14 @@ pub async fn execute_tool_calls(
                 let active = active_sessions.read().await;
                 if let Some(session) = active.get(&session_id) {
                     let mut approvals = session.pending_approvals.write().await;
-                    approvals.insert(tool_call_id.clone(), tx);
+                    approvals.insert(
+                        tool_call_id.clone(),
+                        crate::agent::state::PendingApprovalData {
+                            sender: tx,
+                            tool_name: tool_name.clone(),
+                            arguments: args_str.clone(),
+                        },
+                    );
                 }
             }
 
@@ -94,7 +101,7 @@ pub async fn execute_tool_calls(
                         let result = crate::commands::agent_commands::ToolExecutionResult {
                             success: false,
                             content: String::from("User rejected the tool execution."),
-                            error: None,
+                            error: Some(String::from("User rejected the tool execution.")),
                             is_error: true,
                             mcp_content: None,
                         };
