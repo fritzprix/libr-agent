@@ -36,6 +36,30 @@ impl WorkspaceServer {
             }
         };
 
+        // If the validated path is actually a file, return a clear InvalidInput-style error
+        if safe_path.is_file() {
+            info!(
+                "listDirectory called with file path instead of directory: {:?}",
+                safe_path
+            );
+            return Ok(
+                guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "The path '{}' points to a file, not a directory. Use readFile to read file contents.",
+                        path_str
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Provide a directory path when using listDirectory".to_string(),
+                    "Use readFile to read the contents of a single file".to_string(),
+                    "Use listDirectory on the parent directory to see available files and subdirectories".to_string(),
+                ])
+                .to_mcp_result(),
+            );
+        }
+
         match fs::read_dir(&safe_path).await {
             Ok(mut entries) => {
                 let mut items = Vec::new();
@@ -140,7 +164,7 @@ impl WorkspaceServer {
                     let listing_str = item_lines.join("\n");
                     SuccessHint::new(
                         format!(
-                            "Directory listing for '{}':\n\n{}{} \n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use grep to search for content in files",
+                            "Directory listing for '{}':\n\n{}{}\n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use searchLines to search for content in files",
                             path_str, listing_str, truncation_note, path_str, path_str
                         ),
                         vec![],

@@ -115,7 +115,7 @@ impl WorkspaceServer {
                     text.push_str(
                         "\n**Next Steps:**\n\
                         - Use readFile to view file contents\n\
-                        - Use grep to search within matching files\n\
+                        - Use searchLines to search within matching files\n\
                         - Refine pattern for more specific results",
                     );
 
@@ -182,13 +182,17 @@ impl WorkspaceServer {
             }
 
             let file_name = path.file_name().and_then(|n| n.to_str());
-            if matches_glob(&glob_pattern, path, file_name) {
+            
+            // Get relative path for matching
+            let relative_path = path.strip_prefix(root_path).unwrap_or(path);
+            
+            if matches_glob(&glob_pattern, relative_path, file_name) {
                 let metadata = entry
                     .metadata()
                     .map_err(|e| format!("Metadata error: {e}"))?;
 
                 results.push(json!({
-                    "path": path.to_string_lossy(),
+                    "path": relative_path.to_string_lossy(),
                     "name": file_name.unwrap_or(""),
                     "type": if is_dir { "directory" } else { "file" },
                     "size": if is_file { Some(metadata.len()) } else { None }
