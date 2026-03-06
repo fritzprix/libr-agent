@@ -66,7 +66,7 @@ mod tests {
     fn test_code_tools_returns_platform_tool() {
         let tools = code_tools();
         // Updated to expect same tool counts by platform after CMD removal:
-        // runShell/runPowerShell, runInPersistentShell/runInPersistentPowerShell, 
+        // runShell/runPowerShell, runInPersistentShell/runInPersistentPowerShell,
         // spawnProcess, executePendingShell, cancelPendingExecution = 5 tools
         assert_eq!(tools.len(), 5);
 
