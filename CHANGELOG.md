@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.30] - 2026-03-06
+
+### 🚀 Features
+
+- **YOLO Mode Persistence**: YOLO mode (autonomous operation) is now persisted in the Rust backend and synchronized with the UI, including improved tool approval behavior.
+- **Multimedia & Video Support**: Enhanced tool specs to support video content and improved multimedia rendering in the UI.
+- **Fluid UX Improvements**: Enhanced responsiveness and UX in the Scheduled Tasks page and modals.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Shell Security**: Fixed environment variable leakage in the persistent shell and implemented isolated environments for shell execution.
+- **Windows Shell Stability**: Added UTF-8 BOM to PowerShell scripts to prevent hangs with non-ASCII characters and improved cross-platform shell type handling.
+- **Architectural Decoupling**: Decoupled command handlers (Nexus) and refactored search logic into sub-modules (Fractal).
+- **Workspace Security**: Improved security for workspace exports and addressed path traversal/validation in tool arguments.
+
+### 🔧 Internal
+
+- **Accessibility & i18n**: Added ARIA attributes to BaseBubble buttons and addressed localization feedback.
+- **Code Quality**: Removed derived state in favor of declarative state during rendering and standardized JSDoc documentation.
+- **Tool Consolidation**: Consolidated legacy shell tools into a unified PowerShell-based execution model for Windows.
+- **Documentation**: Updated documentation for core libraries and hooks (Scribe).
+
 ## [0.5.29] - 2026-03-06
 
 ### 🚀 Features
