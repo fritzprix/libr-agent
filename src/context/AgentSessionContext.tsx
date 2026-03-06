@@ -649,7 +649,7 @@ export function AgentSessionProvider({
   const toggleYoloMode = useCallback(async () => {
     const newVal = !yoloModeEnabled;
     try {
-      await invoke('agent_set_yolo_mode', {
+      await invoke<void>('agent_set_yolo_mode', {
         sessionId,
         enabled: newVal,
       });
