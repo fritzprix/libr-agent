@@ -1,5 +1,6 @@
 import { safeInvoke } from './core';
 import type { Session, Assistant } from '@/models/chat';
+import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Page } from '@/lib/db/types';
 
 interface SessionDto {
@@ -79,7 +80,7 @@ export async function createSession(session: Session): Promise<Session> {
     throw new Error('Cannot create session without an assistant');
   }
 
-  await safeInvoke('agent_create_session', {
+  await safeInvoke<AgentSessionMetadata>('agent_create_session', {
     request: {
       sessionId: session.id,
       name: session.name,
@@ -109,18 +110,18 @@ export async function listSessions(): Promise<Session[]> {
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  await safeInvoke('agent_delete_session', { sessionId: id });
+  await safeInvoke<AgentResponse>('agent_delete_session', { sessionId: id });
 }
 
 export async function deleteSessionOnly(id: string): Promise<void> {
-  await safeInvoke('agent_delete_session_only', { sessionId: id });
+  await safeInvoke<AgentResponse>('agent_delete_session_only', { sessionId: id });
 }
 
 export async function toggleSessionBookmark(
   id: string,
   bookmarked: boolean,
 ): Promise<void> {
-  await safeInvoke('agent_toggle_session_bookmark', {
+  await safeInvoke<void>('agent_toggle_session_bookmark', {
     sessionId: id,
     bookmarked,
   });
@@ -169,7 +170,7 @@ export async function upsertSession(session: Session): Promise<void> {
     const assistant = session.assistants[0];
     if (!assistant) return;
 
-    await safeInvoke('agent_update_session_config', {
+    await safeInvoke<AgentResponse>('agent_update_session_config', {
       request: {
         sessionId: session.id,
         agentConfig: {

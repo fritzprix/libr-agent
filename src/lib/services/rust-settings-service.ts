@@ -166,7 +166,7 @@ export class RustSettingsService implements ISettingsService {
 
       // Perform a single batch update
       if (Object.keys(changes).length > 0) {
-        await safeInvoke('update_settings', { settings: changes });
+        await safeInvoke<void>('update_settings', { settings: changes });
       }
 
       // Return updated settings

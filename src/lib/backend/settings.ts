@@ -18,7 +18,7 @@ function deserializeSetting<T>(dto: SettingDto): DatabaseObject<T> {
 }
 
 export async function setSetting(key: string, value: unknown): Promise<void> {
-  await safeInvoke('set_setting', { key, value });
+  await safeInvoke<void>('set_setting', { key, value });
 }
 
 export async function getSetting<T>(
@@ -31,7 +31,7 @@ export async function getSetting<T>(
 }
 
 export async function deleteSetting(key: string): Promise<void> {
-  await safeInvoke('delete_setting', { key });
+  await safeInvoke<void>('delete_setting', { key });
 }
 
 export async function listSettings(): Promise<DatabaseObject<unknown>[]> {
