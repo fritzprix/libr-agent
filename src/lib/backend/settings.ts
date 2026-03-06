@@ -18,7 +18,7 @@ function deserializeSetting<T>(dto: SettingDto): DatabaseObject<T> {
 }
 
 export async function setSetting(key: string, value: unknown): Promise<void> {
-  await safeInvoke<void>('set_setting', { key, value });
+  await safeInvoke<SettingDto>('set_setting', { key, value });
 }
 
 export async function getSetting<T>(

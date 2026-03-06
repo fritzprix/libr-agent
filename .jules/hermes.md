@@ -75,4 +75,4 @@
 **Problem:** Several `invoke` calls for various Tauri backend commands (`agent_set_yolo_mode`, `restart_app`, `agent_create_session`, `agent_delete_session`, `agent_delete_session_only`, `agent_toggle_session_bookmark`, `agent_update_session_config`, `set_setting`, `delete_setting`, `update_settings`) were still missing explicit TypeScript generic types, bypassing `invoke`'s type safety.
 **Action:**
 
-- **Type Sync:** Applied strict generic return types (`invoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, and `<void>`).
+- **Type Sync:** Applied strict generic return types (`safeInvoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, `SettingDto`, `SettingDto[]`, and `<void>`).
