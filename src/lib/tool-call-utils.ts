@@ -30,14 +30,22 @@ export function hasToolCallError(toolResult?: Message): boolean {
 
 /**
  * Checks if a tool result message contains a UI resource.
- * UI resources are content items with type 'resource' and a mimeType.
+ * UI resources are content items with type 'resource' and a mimeType,
+ * or multimedia content like 'image', 'audio', and 'video'.
  */
 export function hasUIResource(toolResult?: Message): boolean {
-  return (
-    toolResult?.content?.some(
-      (c) => c.type === 'resource' && c.resource?.mimeType,
-    ) || false
-  );
+  if (!toolResult?.content) return false;
+
+  return toolResult.content.some((c) => {
+    // 1. Rich UI Resources (mcp-ui)
+    if (c.type === 'resource' && c.resource?.mimeType) return true;
+
+    // 2. Multimedia content
+    if (c.type === 'image' || c.type === 'audio' || c.type === 'video')
+      return true;
+
+    return false;
+  });
 }
 
 /**

@@ -276,20 +276,22 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
             const imageItem = contentItem as {
               data?: string;
               source?: { data?: string; uri?: string };
+              uri?: string;
               mimeType?: string;
             };
             const rawData = imageItem.data || imageItem.source?.data;
-            const uri = imageItem.source?.uri;
+            const uri = imageItem.uri || imageItem.source?.uri;
+            const mimeType = imageItem.mimeType || 'image/png';
             let imageSrc: string | undefined;
+
             if (rawData) {
-              const mimeType = imageItem.mimeType || 'image/png';
-              // Build a proper data URL if the data doesn't already have one
               imageSrc = rawData.startsWith('data:')
                 ? rawData
                 : `data:${mimeType};base64,${rawData}`;
             } else if (uri) {
               imageSrc = uri;
             }
+
             return imageSrc ? (
               <img
                 key={itemKey}
@@ -302,18 +304,65 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
           case 'audio': {
             const audioItem = contentItem as {
               data?: string;
+              source?: { data?: string; uri?: string };
+              uri?: string;
               mimeType?: string;
             };
-            if (!audioItem.data) return null;
             const mimeType = audioItem.mimeType || 'audio/mpeg';
-            const audioSrc = audioItem.data.startsWith('data:')
-              ? audioItem.data
-              : `data:${mimeType};base64,${audioItem.data}`;
+            let audioSrc: string | undefined;
+
+            const rawData = audioItem.data || audioItem.source?.data;
+            const uri = audioItem.uri || audioItem.source?.uri;
+
+            if (rawData) {
+              audioSrc = rawData.startsWith('data:')
+                ? rawData
+                : `data:${mimeType};base64,${rawData}`;
+            } else if (uri) {
+              audioSrc = uri;
+            }
+
+            if (!audioSrc) return null;
+
             return (
               <audio key={itemKey} controls className="w-full">
                 <source src={audioSrc} type={mimeType} />
                 Your browser does not support the audio element.
               </audio>
+            );
+          }
+          case 'video': {
+            const videoItem = contentItem as {
+              data?: string;
+              source?: { data?: string; uri?: string };
+              uri?: string;
+              mimeType?: string;
+            };
+            const mimeType = videoItem.mimeType || 'video/mp4';
+            let videoSrc: string | undefined;
+
+            const rawData = videoItem.data || videoItem.source?.data;
+            const uri = videoItem.uri || videoItem.source?.uri;
+
+            if (rawData) {
+              videoSrc = rawData.startsWith('data:')
+                ? rawData
+                : `data:${mimeType};base64,${rawData}`;
+            } else if (uri) {
+              videoSrc = uri;
+            }
+
+            if (!videoSrc) return null;
+
+            return (
+              <video
+                key={itemKey}
+                controls
+                className="w-full rounded-lg shadow-sm"
+              >
+                <source src={videoSrc} type={mimeType} />
+                Your browser does not support the video element.
+              </video>
             );
           }
           case 'resource_link': {

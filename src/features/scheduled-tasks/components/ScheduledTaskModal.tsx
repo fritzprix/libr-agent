@@ -107,11 +107,11 @@ function ScheduledTaskForm({
   );
   const [message, setMessage] = useState(task?.message ?? '');
   const [saving, setSaving] = useState(false);
-  const [prevAssistantsLength, setPrevAssistantsLength] = useState(0);
+  const [prevAssistants, setPrevAssistants] = useState(assistants);
 
   // Set default assistantId for new tasks if assistants finish loading after the form mounts
-  if (assistants.length !== prevAssistantsLength) {
-    setPrevAssistantsLength(assistants.length);
+  if (assistants !== prevAssistants) {
+    setPrevAssistants(assistants);
     if (!task && !assistantId && assistants.length > 0) {
       setAssistantId(assistants[0].id);
     }
