@@ -132,7 +132,14 @@ pub async fn create_basic_isolated_command(
         full_command
     );
 
-    tokio::fs::write(&script_path, &script_content)
+    // ✅ CRITICAL FIX: Add UTF-8 BOM (Byte Order Mark) so Windows PowerShell 5.1
+    // correctly recognizes the file as UTF-8. Without this, it uses the system
+    // ANSI code page (e.g., CP949 on Korean Windows), which garbles non-ASCII
+    // characters and can cause parsing hangs if misinterpreted as unclosed quotes/blocks.
+    let mut bom_content = vec![0xEF, 0xBB, 0xBF];
+    bom_content.extend_from_slice(script_content.as_bytes());
+
+    tokio::fs::write(&script_path, &bom_content)
         .await
         .map_err(|e| format!("Failed to write command script: {}", e))?;
 
