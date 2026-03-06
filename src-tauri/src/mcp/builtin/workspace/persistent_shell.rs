@@ -70,6 +70,7 @@ pub struct PersistentShell {
     stdout: BufReader<ChildStdout>,
     stderr: BufReader<ChildStderr>,
     session_id: String,
+    shell_type: ShellType,
     last_known_cwd: String,
 }
 
@@ -219,6 +220,7 @@ impl PersistentShell {
             stdout,
             stderr,
             session_id,
+            shell_type,
             last_known_cwd: initial_cwd,
         };
 
@@ -284,16 +286,32 @@ impl PersistentShell {
         // Send command
         #[cfg(windows)]
         {
-            // Encode command to Base64 to avoid encoding issues in the pipe
-            // This ensures that characters like Korean are transmitted correctly
-            // regardless of the current console code page.
-            let encoded = general_purpose::STANDARD.encode(command);
-            // We use Invoke-Expression to execute the decoded string
-            let wrapper = format!(
-                "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
-                encoded
-            );
-            self.stdin.write_all(wrapper.as_bytes()).await?;
+            match self.shell_type {
+                ShellType::PowerShell => {
+                    // Encode command to Base64 to avoid encoding issues in the pipe
+                    // This ensures that characters like Korean are transmitted correctly
+                    // regardless of the current console code page.
+                    let encoded = general_purpose::STANDARD.encode(command);
+                    // We use Invoke-Expression to execute the decoded string
+                    let wrapper = format!(
+                        "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
+                        encoded
+                    );
+                    self.stdin.write_all(wrapper.as_bytes()).await?;
+                }
+                ShellType::Cmd => {
+                    // cmd.exe doesn't have an easy Base64 wrapper like PowerShell.
+                    // We rely on the 'chcp 65001' set during initialization.
+                    // We ensure it ends with a newline to trigger execution.
+                    self.stdin.write_all(command.as_bytes()).await?;
+                    if !command.ends_with('\n') {
+                        self.stdin.write_all(b"\n").await?;
+                    }
+                }
+                ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+            }
         }
 
         #[cfg(unix)]
@@ -320,24 +338,44 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
-            self.stdin
-                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-                .await?;
+            match self.shell_type {
+                ShellType::PowerShell => {
+                    self.stdin
+                        .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+                        .await?;
 
-            // Capture CWD
-            self.stdin
-                .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-                .await?;
+                    // Capture CWD
+                    self.stdin
+                        .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+                        .await?;
 
-            // Robust exit code capture for PowerShell (PS 5.1 compatible):
-            // If $LASTEXITCODE is non-zero OR $? is false:
-            //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
-            //   Else return $LASTEXITCODE.
-            // Else return 0.
-            // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
-            self.stdin
-                .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-                .await?;
+                    // Robust exit code capture for PowerShell (PS 5.1 compatible):
+                    // If $LASTEXITCODE is non-zero OR $? is false:
+                    //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
+                    //   Else return $LASTEXITCODE.
+                    // Else return 0.
+                    // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
+                    self.stdin
+                        .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+                        .await?;
+                }
+                ShellType::Cmd => {
+                    self.stdin
+                        .write_all(format!("echo {}\n", sentinel).as_bytes())
+                        .await?;
+
+                    // Capture CWD
+                    self.stdin
+                        .write_all("echo __CWD__%cd%\n".as_bytes())
+                        .await?;
+
+                    // Exit code capture for cmd.exe
+                    self.stdin
+                        .write_all("echo EXIT_CODE_%errorlevel%\n".as_bytes())
+                        .await?;
+                }
+                ShellType::Bash => {}
+            }
         }
 
         self.stdin.flush().await?;
