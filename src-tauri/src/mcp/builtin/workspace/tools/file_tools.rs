@@ -40,20 +40,18 @@ pub fn create_read_file_tool() -> MCPTool {
     props.insert(
         "showLineHashes".to_string(),
         boolean_prop(Some(
-            "Emit hashline format: '{N}:{hash}|{content}' (DEFAULT: true). The 2-char FNV-1a hash is a stable fingerprint of the line — pass it as `line_hash` in replaceLines for staleness-safe editing. Set to false only for raw content output (e.g. copy-paste).",
+            "Optional: include a 2-char hash for each line (e.g. '42:a3|...'). Use this when you plan to edit specific lines with high precision using replaceLines.",
         )),
     );
 
     MCPTool {
         name: "readFile".to_string(),
         title: Some("Read File".to_string()),
-        description: "Read a file. Default output is hashline format: `{N}:{hash}|{content}` (e.g. `42:a3|fn foo() {`).
+        description: "Read the contents of a file.
 
-The 2-char hash is a staleness fingerprint — pass it as `line_hash` in replaceLines to detect concurrent changes.
-
-- readFile(path) — entire file with hashlines
-- readFile(path, startLine, endLine) — specific range
-- readFile(path, showLineHashes=false) — raw content (copy-paste)"
+- For general reading: just provide the 'path'.
+- For precise editing: set 'showLineHashes: true' to get staleness-safe identifiers for replaceLines.
+- For large files: use 'startLine' and 'endLine' to read specific segments."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
@@ -288,37 +286,19 @@ pub fn create_replace_lines_tool() -> MCPTool {
     MCPTool {
         name: "replaceLines".to_string(),
         title: Some("Edit Multiple Lines in File".to_string()),
-        description:
-            "Replace lines in a file. All edits in one call are atomic — all succeed or all fail.\n\
-\n\
-MODES:\n\
-  Replace:     { line, line_hash?, new_value }           — replaces the line\n\
-  Range:       { line, endLine, line_hash?, endHash?,    — replaces lines [line..endLine]\n\
-                 new_value }\n\
-  Delete:      { line, new_value: \"\" }                  — empty string removes the line(s)\n\
-  Insert-after: { line, line_hash?, insertAfter: true,  — inserts AFTER anchor, anchor untouched\n\
-                  new_value }                            — new_value may contain \\n\n\
-\n\
-Workflow: readFile → copy hash from '42:a3|...' prefix → pass as line_hash.\n\
-\n\
-Examples:\n\
-  // replace with staleness check\n\
-  { path: 'src/main.rs', edits: [{ line: 42, line_hash: 'a3', new_value: 'let x = 2;' }] }\n\
-\n\
-  // delete line 10\n\
-  { path: 'src/lib.rs', edits: [{ line: 10, new_value: '' }] }\n\
-\n\
-  // insert two lines after line 42 (anchor hash guards staleness)\n\
-  { path: 'src/lib.rs', edits: [{ line: 42, line_hash: 'a3', insertAfter: true,\n\
-    new_value: 'fn bar() {\\n    todo!()\\n}' }] }\n\
-\n\
-  // range replacement\n\
-  { path: 'src/lib.rs', edits: [{ line: 42, endLine: 58, line_hash: 'a3', endHash: '0e',\n\
-    new_value: 'fn foo() {\\n    todo!()\\n}' }] }\n\
-\n\
-  // batch\n\
-  { path: 'src/main.rs', edits: [{ line: 10, new_value: 'x' }, { line: 25, new_value: 'y' }] }"
-                .to_string(),
+        description: r#"Edit specific lines in a file. Edits are atomic (all-or-nothing).
+
+MODES:
+  Replace: { line, new_value }
+  Insert:  { line, insertAfter: true, new_value }
+  Delete:  { line, new_value: "" }
+  Range:   { line, endLine, new_value } (replaces multiple lines)
+
+SAFETY (Optional):
+  Provide 'line_hash' from readFile(showLineHashes=true) to ensure you are editing the exact version of the line you saw.
+
+Example:
+  { path: 'main.rs', edits: [{ line: 10, new_value: 'let x = 1;' }] }"#.to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
         output_schema: None,
         annotations: None,

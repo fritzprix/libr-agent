@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useSettings } from '@/hooks/use-settings';
 import { AIServiceProvider } from '@/lib/ai-service';
 import type {
@@ -17,13 +17,14 @@ export function useSettingsForm() {
   const { value: globalSettings, update: updateGlobal } = useSettings();
 
   // Initialize form state from global settings
-  const [formState, setFormState] = useState<SettingsFormState>(() => ({
-    ...globalSettings,
-  }));
+  const [formState, setFormState] = useState<SettingsFormState>(globalSettings);
+  const [prevGlobalSettings, setPrevGlobalSettings] = useState(globalSettings);
 
-  useEffect(() => {
+  // Sync form state if globalSettings changes externally
+  if (globalSettings !== prevGlobalSettings) {
+    setPrevGlobalSettings(globalSettings);
     setFormState(globalSettings);
-  }, [globalSettings]);
+  }
 
   // Generic update for top-level keys
   const update = useCallback(

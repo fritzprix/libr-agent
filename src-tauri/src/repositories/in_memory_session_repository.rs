@@ -204,6 +204,14 @@ impl SessionRepository for InMemorySessionRepository {
         }
         Ok(())
     }
+
+    async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.yolo_mode = enabled;
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -236,6 +244,7 @@ mod tests {
             max_fanout: None,
             created_at: 1234567890,
             updated_at: 1234567890,
+            yolo_mode: false,
         };
 
         // Upsert session
@@ -266,6 +275,7 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -308,6 +318,7 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -343,6 +354,7 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                yolo_mode: false,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -373,6 +385,7 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                yolo_mode: false,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -411,6 +424,7 @@ mod tests {
                     depth: None,
                     max_depth: None,
                     max_fanout: None,
+                    yolo_mode: false,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });

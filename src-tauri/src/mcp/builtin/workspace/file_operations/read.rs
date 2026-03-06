@@ -67,7 +67,7 @@ impl WorkspaceServer {
         let show_line_hashes = args
             .get("showLineHashes")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true); // Default ON: agents always get stable hashes for replaceLines
+            .unwrap_or(false); // Default OFF: reduce noise unless precise editing is needed
 
         // 3. Line range validation (moved before file access for efficiency)
         if let (Some(start), Some(end)) = (start_line, end_line) {

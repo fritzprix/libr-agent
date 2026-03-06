@@ -133,3 +133,28 @@
 ## 2026-03-03 - [src/lib/ai-service/*] **Drift:** [Functions missing JSDoc @param declarations for various properties or deeply nested properties like context.options.modelName] **Reality:** [Function implementations accurately declare their parameters via TypeScript signatures, but JSDocs were missing @param tags for complex objects or were out of sync]
 
 ## 2024-05-18 - [src/lib/logger.ts] **Drift:** [`@param` definitions mismatched actual arguments (e.g., `initialize`, `Logger` methods with context overrides)] **Reality:** [Logger methods now accept an optional trailing context string via `...args`, and `getLogger(contextName)` binds that context by appending it as the final argument so callers do not supply it manually; the logging pipeline (including `formatLogMessage`) still interprets a trailing string argument as the log context]
+
+## 2026-03-05 - src/context/EditorContext.tsx
+
+**Drift:** JSDoc for `useEditorField` claimed `@param fieldName - The key of the field to update` while the function uses `fieldName` without the hyphen in description.
+**Reality:** Updated to `@param fieldName The key of the field to update`.
+
+## 2026-03-05 - src/hooks/useDebounce.ts
+
+**Drift:** JSDoc contained hyphens in `@param callback - Function` and `@param delay - Delay`.
+**Reality:** Removed hyphens to match standard JSDoc style.
+
+## 2026-03-05 - src/hooks/useThrottle.ts
+
+**Drift:** JSDoc contained hyphens in `@param callback - Function` and `@param delay - Minimum delay`.
+**Reality:** Removed hyphens to match standard JSDoc style.
+
+## 2026-03-05 - src/lib/utils.ts
+
+**Drift:** JSDoc for `cn` claimed `@param inputs` instead of `@param ...inputs`.
+**Reality:** Updated to `@param inputs` and documented that it is a rest parameter.
+
+## 2026-03-05 - src/lib/ai-service/base-service.ts
+
+**Drift:** JSDoc for `constructor` missed `@param config`.
+**Reality:** Added `@param config Optional configuration to override the defaults.`

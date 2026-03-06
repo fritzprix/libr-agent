@@ -176,9 +176,12 @@ pub fn create_run_powershell_tool() -> MCPTool {
     MCPTool {
         name: "runPowerShell".to_string(),
         title: Some("Run PowerShell Command (Isolated)".to_string()),
-        description: "Run a synchronous PowerShell command. Stateless — each call starts fresh at workspace root.\n\
-                      Use ';' to chain commands (never '&&' — PowerShell 5.1 rejects it).\n\
-                      For persistent Set-Location/$env:: runInPersistentPowerShell. For commands >30s: spawnProcess."
+        description: "Execute a synchronous PowerShell command on Windows. This is the primary tool for Windows command-line tasks.
+
+Guidelines:
+- Use ';' to chain multiple commands (e.g. 'cd src; pnpm test'). Note: '&&' is not supported in PowerShell 5.1.
+- Access environment variables using '$env:VARNAME'.
+- Each call starts fresh at the workspace root. For persistent state, use runInPersistentPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -212,14 +215,13 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some("Timeout in seconds (default: 30)"),
         ),
     );
-    props.insert(
-        "requireUserInput".to_string(),
-        {
-            let mut schema = boolean_prop(Some("Request user input before execution. Must be explicitly set on Windows (no auto-detection)."));
-            schema.default = Some(json!(false));
-            schema
-        },
-    );
+    props.insert("requireUserInput".to_string(), {
+        let mut schema = boolean_prop(Some(
+            "Request user input before execution (e.g., for interactive prompts).",
+        ));
+        schema.default = Some(json!(false));
+        schema
+    });
     props.insert(
         "inputPrompt".to_string(),
         string_prop(None, None, Some("Custom prompt message for user input")),
@@ -236,9 +238,10 @@ pub fn create_execute_shell_tool() -> MCPTool {
     MCPTool {
         name: "runInPersistentPowerShell".to_string(),
         title: Some("Execute PowerShell Command (Persistent Session)".to_string()),
-        description: "Run a PowerShell command in a persistent session that preserves location and env vars across calls.\n\
-                      Use when you need 'Set-Location' to stick, '$env:' to carry forward, or interactive commands.\n\
-                      For simple stateless commands: runPowerShell."
+        description: "Run PowerShell in a persistent session that preserves location (Set-Location) and env vars across calls.\n\
+                      - Replaces legacy CMD persistent sessions.\n\
+                      - Use ';' to chain commands.\n\
+                      - For simple stateless commands: runPowerShell."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,
@@ -259,7 +262,7 @@ pub fn create_spawn_process_tool() -> MCPTool {
             vec![
                 json!("Set-Location src; npm run build"),
                 json!("python train_model.py --epochs 100"),
-                json!("cd ./project; make all"),
+                json!("Set-Location ./project; make all"),
             ],
         ),
     );
@@ -279,86 +282,6 @@ pub fn create_spawn_process_tool() -> MCPTool {
         description: "Start a command as a non-blocking background process. Returns process_id immediately.\n\
                       Stateless — starts from workspace root each call. No interactive input.\n\
                       Use waitForProcess(id) to wait for completion, readProcessOutput(id) to get output."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-// Windows platform tool (CMD.exe) - PRIMARY TOOL (Isolated CMD)
-#[cfg(windows)]
-pub fn create_run_cmd_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("CMD command to execute"),
-            vec![
-                json!("dir"),
-                json!("type README.md"),
-                json!("findstr /R \"pattern\" *.txt"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runCmd".to_string(),
-        title: Some("Run CMD Command (Isolated)".to_string()),
-        description: "Run a synchronous CMD command (cmd.exe). Stateless — each call starts fresh at workspace root.\n\
-                      Use 'cd dir && command' for subdirectories. Env vars are %VARNAME% syntax.\n\
-                      For persistent cd/set: runInPersistentCmd. For commands >30s: spawnProcess."
-            .to_string(),
-        input_schema: object_schema(props, vec!["command".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-// Windows platform tool (CMD.exe) - ADVANCED TOOL (Persistent CMD)
-#[cfg(windows)]
-pub fn create_run_in_persistent_cmd_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "command".to_string(),
-        string_prop_with_examples(
-            Some(1),
-            Some(1000),
-            Some("CMD command to execute"),
-            vec![
-                json!("dir"),
-                json!("cd src && dir"),
-                json!("set MY_VAR=value && echo %MY_VAR%"),
-            ],
-        ),
-    );
-    props.insert(
-        "timeout".to_string(),
-        integer_prop_with_default(
-            Some(1),
-            Some(crate::config::max_execution_timeout() as i64),
-            crate::config::default_execution_timeout() as i64,
-            Some("Timeout in seconds (default: 30)"),
-        ),
-    );
-
-    MCPTool {
-        name: "runInPersistentCmd".to_string(),
-        title: Some("Execute CMD Command (Persistent Session)".to_string()),
-        description: "Run a CMD command in a persistent session that preserves working directory and env vars across calls.\n\
-                      Note: readFile/listDirectory always use workspace root, unaffected by cd in this shell.\n\
-                      For simple stateless commands: runCmd."
             .to_string(),
         input_schema: object_schema(props, vec!["command".to_string()]),
         output_schema: None,

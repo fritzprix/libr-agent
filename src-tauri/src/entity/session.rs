@@ -18,6 +18,7 @@ pub struct Model {
     pub created_at: i64,
     pub updated_at: i64,
     pub is_bookmarked: bool,
+    pub yolo_mode: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

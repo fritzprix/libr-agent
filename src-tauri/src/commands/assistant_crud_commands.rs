@@ -1,6 +1,5 @@
 use crate::entity::assistant::Model as AssistantModel;
-use crate::repositories::AssistantRepository;
-use crate::state::get_assistant_repository;
+use crate::services::AssistantService;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -33,14 +32,7 @@ pub async fn create_assistant(
     name: String,
     config: Value,
 ) -> Result<AssistantDto, String> {
-    let repo = get_assistant_repository();
-    let config_str = config.to_string();
-
-    let result = repo
-        .create_assistant(id, name, config_str)
-        .await
-        .map_err(|e| format!("Failed to create assistant: {}", e))?;
-
+    let result = AssistantService::create_assistant(id, name, config).await?;
     Ok(result.into())
 }
 
@@ -50,45 +42,24 @@ pub async fn update_assistant(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<AssistantDto, String> {
-    let repo = get_assistant_repository();
-    let config_str = config.map(|c| c.to_string());
-
-    let result = repo
-        .update_assistant(&id, name, config_str)
-        .await
-        .map_err(|e| format!("Failed to update assistant: {}", e))?;
-
+    let result = AssistantService::update_assistant(&id, name, config).await?;
     Ok(result.into())
 }
 
 #[command]
 pub async fn delete_assistant(id: String) -> Result<(), String> {
-    let repo = get_assistant_repository();
-    repo.delete_assistant(&id)
-        .await
-        .map_err(|e| format!("Failed to delete assistant: {}", e))?;
-    Ok(())
+    AssistantService::delete_assistant(&id).await
 }
 
 #[command]
 pub async fn list_assistants() -> Result<Vec<AssistantDto>, String> {
-    let repo = get_assistant_repository();
-    let assistants = repo
-        .list_assistants()
-        .await
-        .map_err(|e| format!("Failed to list assistants: {}", e))?;
-
+    let assistants = AssistantService::list_assistants().await?;
     Ok(assistants.into_iter().map(|a| a.into()).collect())
 }
 
 #[command]
 pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
-    let repo = get_assistant_repository();
-    let assistant = repo
-        .get_assistant(&id)
-        .await
-        .map_err(|e| format!("Failed to get assistant: {}", e))?;
-
+    let assistant = AssistantService::get_assistant(&id).await?;
     Ok(assistant.map(|a| a.into()))
 }
 
@@ -104,33 +75,17 @@ pub struct UpsertAssistantPayload {
 pub async fn batch_upsert_assistants(
     assistants: Vec<UpsertAssistantPayload>,
 ) -> Result<Vec<AssistantDto>, String> {
-    let repo = get_assistant_repository();
-    let mut results = Vec::new();
+    let service_payloads = assistants
+        .into_iter()
+        .map(
+            |p| crate::services::assistant_service::AssistantUpsertPayload {
+                id: p.id,
+                name: p.name,
+                config: p.config,
+            },
+        )
+        .collect();
 
-    for payload in assistants {
-        let config_str = payload.config.to_string();
-
-        let update_result = repo
-            .update_assistant(
-                &payload.id,
-                Some(payload.name.clone()),
-                Some(config_str.clone()),
-            )
-            .await;
-
-        let result = match update_result {
-            Ok(model) => model,
-            Err(crate::repositories::DbError::NotFound(_)) => repo
-                .create_assistant(payload.id.clone(), payload.name, config_str)
-                .await
-                .map_err(|e| format!("Failed to create assistant {}: {}", payload.id, e))?,
-            Err(e) => {
-                return Err(format!("Failed to update assistant {}: {}", payload.id, e));
-            }
-        };
-
-        results.push(result.into());
-    }
-
-    Ok(results)
+    let results = AssistantService::batch_upsert_assistants(service_payloads).await?;
+    Ok(results.into_iter().map(|a| a.into()).collect())
 }

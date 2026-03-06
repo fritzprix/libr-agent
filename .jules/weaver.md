@@ -40,3 +40,11 @@
 - Collapsed multiple scheduled-task state mirrors into a single source of truth owned by a parent coordinator component.
 - Replaced imperative “update-and-sync” effects with declarative props and callbacks wired through small, focused child components.
 - **Benefits:** Eliminated redundant derived state and action-effect loops, making scheduled task flows easier to reason about and less prone to subtle desync bugs.
+
+## 2024-05-19 - useMCPServerForm hook **Eradicated:** Derived State (URL parsing in useEffect on mount) **Woven:** Direct State Initialization
+
+## 2024-05-19 - useSettingsForm hook **Eradicated:** Derived State (Syncing globalSettings to formState in useEffect) **Woven:** Adjusting State During Render
+
+## 2024-05-19 - InputTokenDropdown component **Eradicated:** Derived State (Resetting activeIndex via useEffect on mode change) **Woven:** Adjusting State During Render
+
+## 2024-05-19 - ScheduledTaskModal component **Eradicated:** Derived State (Setting default assistantId via useEffect on load) **Woven:** Adjusting State During Render

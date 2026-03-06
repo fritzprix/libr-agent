@@ -1,6 +1,4 @@
-use crate::repositories::PlaybookRepository;
 use crate::services::playbook_service::{PlaybookDto, PlaybookService};
-use crate::state::get_playbook_repository;
 use serde_json::Value;
 use tauri::command;
 
@@ -13,16 +11,7 @@ pub async fn create_playbook(
     workflow: Value,
     _success_criteria: Option<Value>,
 ) -> Result<PlaybookDto, String> {
-    let repo = get_playbook_repository();
-
-    // Get assistant_id from session
-    let assistant_id = PlaybookService::get_assistant_id_from_session(&session_id).await?;
-
-    let result = repo
-        .create_playbook(id, assistant_id, goal, workflow.to_string())
-        .await
-        .map_err(|e| format!("Failed to create playbook: {}", e))?;
-
+    let result = PlaybookService::create_playbook(id, &session_id, goal, workflow).await?;
     Ok(result.into())
 }
 
@@ -34,44 +23,18 @@ pub async fn update_playbook(
     workflow: Option<Value>,
     _success_criteria: Option<Value>,
 ) -> Result<PlaybookDto, String> {
-    let repo = get_playbook_repository();
-
-    // Get assistant_id from session
-    let assistant_id = PlaybookService::get_assistant_id_from_session(&session_id).await?;
-
-    let result = repo
-        .update_playbook(
-            &id,
-            &assistant_id,
-            goal,
-            workflow.map(|v| v.to_string()),
-            None,
-        )
-        .await
-        .map_err(|e| format!("Failed to update playbook: {}", e))?;
-
+    let result = PlaybookService::update_playbook(&id, &session_id, goal, workflow).await?;
     Ok(result.into())
 }
 
 #[command]
 pub async fn delete_playbook(id: String, assistant_id: String) -> Result<(), String> {
-    let repo = get_playbook_repository();
-
-    repo.delete_playbook(&id, &assistant_id)
-        .await
-        .map_err(|e| format!("Failed to delete playbook: {}", e))?;
-    Ok(())
+    PlaybookService::delete_playbook(&id, &assistant_id).await
 }
 
 #[command]
 pub async fn get_playbook(id: String, assistant_id: String) -> Result<Option<PlaybookDto>, String> {
-    let repo = get_playbook_repository();
-
-    let result = repo
-        .get_playbook(&id, &assistant_id)
-        .await
-        .map_err(|e| format!("Failed to get playbook: {}", e))?;
-
+    let result = PlaybookService::get_playbook(&id, &assistant_id).await?;
     Ok(result.map(|m| m.into()))
 }
 
@@ -81,13 +44,7 @@ pub async fn toggle_playbook_bookmark(
     assistant_id: String,
     bookmarked: bool,
 ) -> Result<(), String> {
-    let repo = get_playbook_repository();
-
-    repo.update_playbook(&id, &assistant_id, None, None, Some(bookmarked))
-        .await
-        .map_err(|e| format!("Failed to toggle bookmark: {}", e))?;
-
-    Ok(())
+    PlaybookService::toggle_playbook_bookmark(&id, &assistant_id, bookmarked).await
 }
 
 #[command]

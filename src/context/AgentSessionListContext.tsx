@@ -170,9 +170,9 @@ export function AgentSessionListProvider({
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
           isBookmarked: s.isBookmarked ?? false,
+          yoloMode: s.yoloMode ?? false,
         };
       });
-
       // Sort by updated at desc (or created at desc)
       sessionList.sort((a, b) => {
         const timeA = a.updatedAt?.getTime() || a.createdAt.getTime();
@@ -280,6 +280,7 @@ export function AgentSessionListProvider({
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
+          yoloMode: response.yoloMode ?? false,
         };
 
         // Add to list

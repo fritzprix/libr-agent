@@ -4,7 +4,9 @@
 pub mod delete;
 pub mod edit_line;
 pub mod import;
+pub mod list_dir;
 pub mod read;
-pub mod search_query;
+pub mod search_files;
+pub mod search_lines;
 pub mod utils;
 pub mod write;

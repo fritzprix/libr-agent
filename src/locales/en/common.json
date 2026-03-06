@@ -107,7 +107,13 @@
     "cancel": "Cancel",
     "close": "Close",
     "delete": "Delete",
-    "restartNow": "Restart now"
+    "restartNow": "Restart now",
+    "copy": "Copy",
+    "copied": "Copied!"
+  },
+  "baseBubble": {
+    "copy": "Copy {{title}} to clipboard",
+    "toggle": "Toggle {{title}}"
   },
   "error": {
     "title": "Something went wrong",

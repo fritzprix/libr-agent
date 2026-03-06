@@ -155,7 +155,7 @@ impl AgentSessionManager {
 
     /// Resume an existing session by loading it into active sessions
     pub async fn resume_session(&self, session_id: &str) -> Result<SessionMetadata, String> {
-        crate::agent::lifecycle::resume_session(
+        let result = crate::agent::lifecycle::resume_session(
             &self.session_repo,
             &self.active_sessions,
             &self.proxy_manager,
@@ -163,7 +163,35 @@ impl AgentSessionManager {
             self.context_registry.clone(),
             session_id,
         )
-        .await
+        .await?;
+
+        let pending_events = {
+            let mut evs = Vec::new();
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                let approvals = session.pending_approvals.read().await;
+                for (tool_call_id, data) in approvals.iter() {
+                    evs.push(
+                        crate::agent::events::AgentEvent::ToolExecutionRequiresApproval {
+                            session_id: session_id.to_string(),
+                            tool_call_id: tool_call_id.clone(),
+                            tool_name: data.tool_name.clone(),
+                            arguments: data.arguments.clone(),
+                        },
+                    );
+                }
+            }
+            evs
+        };
+
+        // Emit the existing pending approvals
+        for event in pending_events {
+            if let Err(e) = crate::agent::events::emit_agent_event(&self.app_handle, event) {
+                log::error!("Failed to re-emit pending approval event on resume: {}", e);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Start an agent workflow for a session
@@ -437,8 +465,8 @@ impl AgentSessionManager {
         let active = self.active_sessions.read().await;
         if let Some(session) = active.get(session_id) {
             let mut approvals = session.pending_approvals.write().await;
-            if let Some(sender) = approvals.remove(tool_call_id) {
-                let _ = sender.send(approved);
+            if let Some(data) = approvals.remove(tool_call_id) {
+                let _ = data.sender.send(approved);
                 return Ok(());
             }
         }
@@ -446,6 +474,27 @@ impl AgentSessionManager {
             "Pending approval not found for tool call: {}",
             tool_call_id
         ))
+    }
+
+    /// Set YOLO mode for a session
+    pub async fn set_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
+        // 1. Update in-memory state
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                session
+                    .yolo_mode
+                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        // 2. Persist to DB via partial update
+        self.session_repo
+            .update_yolo_mode(session_id, enabled)
+            .await
+            .map_err(|e| format!("Failed to update session YOLO mode: {}", e))?;
+
+        Ok(())
     }
 
     /// Handle LLM error from frontend

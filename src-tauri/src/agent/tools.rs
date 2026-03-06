@@ -431,7 +431,10 @@ pub async fn handle_tool_result(
                         create_error_tool_result(
                             &session_id,
                             &tool_call_id,
-                            result.error.as_deref().unwrap_or("Unknown error"),
+                            result
+                                .error
+                                .as_deref()
+                                .unwrap_or("Tool execution failed without error message"),
                         )
                     }
                 } else if let Some(mcp_content) = result.mcp_content {
