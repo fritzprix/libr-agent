@@ -62,6 +62,7 @@ export function ScheduledTasksPage() {
   };
 
   const handleToggle = async (task: ScheduledTask) => {
+    if (togglingIds.has(task.id) || deletingIds.has(task.id)) return;
     setTogglingIds((prev) => new Set(prev).add(task.id));
     try {
       const updated = await toggleScheduledTask(task.id, !task.enabled);
@@ -78,6 +79,7 @@ export function ScheduledTasksPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingIds.has(id) || togglingIds.has(id)) return;
     setDeletingIds((prev) => new Set(prev).add(id));
     try {
       await deleteScheduledTask(id);
@@ -188,7 +190,9 @@ export function ScheduledTasksPage() {
                   className="h-8 w-8 text-destructive hover:text-destructive"
                   onClick={() => void handleDelete(task.id)}
                   aria-label={`Delete task: ${task.name}`}
-                  disabled={deletingIds.has(task.id)}
+                  disabled={
+                    deletingIds.has(task.id) || togglingIds.has(task.id)
+                  }
                 >
                   {deletingIds.has(task.id) ? (
                     <Clock className="w-4 h-4 animate-spin" />

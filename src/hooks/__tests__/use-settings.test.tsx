@@ -5,11 +5,15 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import React from 'react';
 import { DEFAULT_SETTING } from '@/lib/services/settings-service';
 
-// Mock console.error to prevent act warnings from cluttering output during the expected error test
+// Mock console.error to prevent act warnings and expected error logs from cluttering output
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args) => {
-    if (typeof args[0] === 'string' && args[0].includes('The above error occurred in the <TestComponent> component:')) {
+    const message = typeof args[0] === 'string' ? args[0] : '';
+    if (
+      message.includes('The above error occurred in the <TestComponent> component:') ||
+      message.includes('useSettings must be used within a SettingsProvider')
+    ) {
       return;
     }
     originalError.call(console, ...args);
