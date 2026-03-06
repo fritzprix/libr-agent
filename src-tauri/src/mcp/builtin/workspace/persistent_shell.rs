@@ -70,6 +70,7 @@ pub struct PersistentShell {
     stdout: BufReader<ChildStdout>,
     stderr: BufReader<ChildStderr>,
     session_id: String,
+    #[cfg(windows)]
     shell_type: ShellType,
     last_known_cwd: String,
 }
@@ -205,6 +206,7 @@ impl PersistentShell {
             stdout,
             stderr,
             session_id,
+            #[cfg(windows)]
             shell_type,
             last_known_cwd: initial_cwd,
         };
