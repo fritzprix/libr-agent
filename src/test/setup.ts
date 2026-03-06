@@ -14,6 +14,7 @@ i18n.use(initReactI18next).init({
   defaultNS: 'common',
   resources: { en: { common: enCommon } },
   interpolation: { escapeValue: false }, // not needed for React as it escapes by default
+  react: { useSuspense: false },
 });
 
 // Mock Tauri APIs for testing environment
