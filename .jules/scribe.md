@@ -148,7 +148,7 @@
 
 ## 2026-03-05 - src/lib/utils.ts
 **Drift:** JSDoc for `cn` claimed `@param inputs` instead of `@param ...inputs`.
-**Reality:** Updated to `@param ...inputs` to reflect the rest parameter usage.
+**Reality:** Updated to `@param inputs` and documented that it is a rest parameter.
 
 ## 2026-03-05 - src/lib/ai-service/base-service.ts
 **Drift:** JSDoc for `constructor` missed `@param config`.

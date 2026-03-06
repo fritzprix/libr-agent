@@ -22,7 +22,7 @@ export function stringToMCPContentArray(
  * `clsx` allows for conditional class names, and `tailwind-merge`
  * intelligently merges Tailwind CSS classes without conflicts.
  *
- * @param ...inputs The class values to merge. These can be strings, arrays, or objects.
+ * @param inputs The class values to merge as a rest parameter. These can be strings, arrays, or objects.
  * @returns A string of merged class names.
  */
 export function cn(...inputs: ClassValue[]) {
