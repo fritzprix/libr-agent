@@ -112,13 +112,6 @@ impl PersistentShell {
                 debug!("Creating persistent PowerShell session for: {}", session_id);
                 c
             }
-            ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
-                c.arg("/Q"); // Echo off
-                c.arg("/K"); // Keep running (don't exit after first command)
-                debug!("Creating persistent Cmd shell for: {}", session_id);
-                c
-            }
             ShellType::Bash => {
                 return Err(anyhow::anyhow!(
                     "Bash shell type is not supported on Windows"
@@ -194,14 +187,6 @@ impl PersistentShell {
                     stdin.flush().await?;
                     debug!("Configuring PowerShell encoding to UTF-8");
                 }
-                ShellType::Cmd => {
-                    // Set encoding to UTF-8 for cmd.exe to handle non-ASCII characters correctly
-                    // chcp 65001 sets the code page to UTF-8
-                    let setup_cmd = "chcp 65001 >nul\r\n";
-                    stdin.write_all(setup_cmd.as_bytes()).await?;
-                    stdin.flush().await?;
-                    debug!("Configuring cmd.exe encoding to UTF-8 (chcp 65001)");
-                }
                 ShellType::Bash => {
                     // Should not reach here on Windows
                 }
@@ -228,7 +213,6 @@ impl PersistentShell {
         {
             // Force UTF-8 encoding for console I/O and pipe output
             // This is critical for handling non-ASCII characters in filenames/output
-            debug!("Configuring PowerShell encoding to UTF-8");
             let _ = shell.execute("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Encoding]::UTF8").await?;
         }
 
@@ -299,15 +283,6 @@ impl PersistentShell {
                     );
                     self.stdin.write_all(wrapper.as_bytes()).await?;
                 }
-                ShellType::Cmd => {
-                    // cmd.exe doesn't have an easy Base64 wrapper like PowerShell.
-                    // We rely on the 'chcp 65001' set during initialization.
-                    // We ensure it ends with a newline to trigger execution.
-                    self.stdin.write_all(command.as_bytes()).await?;
-                    if !command.ends_with('\n') {
-                        self.stdin.write_all(b"\n").await?;
-                    }
-                }
                 ShellType::Bash => {
                     // Should not reach here on Windows
                 }
@@ -357,21 +332,6 @@ impl PersistentShell {
                     // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
                     self.stdin
                         .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-                        .await?;
-                }
-                ShellType::Cmd => {
-                    self.stdin
-                        .write_all(format!("echo {}\n", sentinel).as_bytes())
-                        .await?;
-
-                    // Capture CWD
-                    self.stdin
-                        .write_all("echo __CWD__%cd%\n".as_bytes())
-                        .await?;
-
-                    // Exit code capture for cmd.exe
-                    self.stdin
-                        .write_all("echo EXIT_CODE_%errorlevel%\n".as_bytes())
                         .await?;
                 }
                 ShellType::Bash => {}

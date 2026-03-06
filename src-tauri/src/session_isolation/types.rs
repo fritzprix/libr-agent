@@ -7,7 +7,6 @@ use std::path::PathBuf;
 pub enum ShellType {
     Bash,
     PowerShell,
-    Cmd,
 }
 
 impl ShellType {
@@ -16,13 +15,12 @@ impl ShellType {
         match self {
             ShellType::Bash => "bash",
             ShellType::PowerShell => "powershell.exe",
-            ShellType::Cmd => "cmd.exe",
         }
     }
 
     /// Check if this is a Windows shell
     pub fn is_windows(&self) -> bool {
-        matches!(self, ShellType::PowerShell | ShellType::Cmd)
+        matches!(self, ShellType::PowerShell)
     }
 }
 

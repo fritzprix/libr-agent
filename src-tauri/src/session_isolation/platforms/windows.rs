@@ -13,14 +13,6 @@ pub async fn create_basic_isolated_command(
 ) -> Result<AsyncCommand, String> {
     let shell_type = config.shell_type.unwrap_or(ShellType::PowerShell);
 
-    if shell_type == ShellType::Cmd {
-        return Err("Isolated execution for Cmd shell is not yet implemented on Windows. Use PowerShell instead.".to_string());
-    }
-
-    if shell_type == ShellType::Bash {
-        return Err("Bash shell is not supported on Windows for isolated execution. Use PowerShell instead.".to_string());
-    }
-
     // All commands are written to a temp .ps1 file and executed with `powershell -File`.
     // This avoids two classes of bugs:
     //   1. Naive split_whitespace arg-passing broke `powershell -Command "..."` patterns.

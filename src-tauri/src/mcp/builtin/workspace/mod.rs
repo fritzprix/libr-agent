@@ -621,11 +621,6 @@ impl BuiltinMCPServer for WorkspaceServer {
             "runInPersistentPowerShell" => {
                 self.handle_execute_shell(args, &target_session_id).await
             }
-            // CMD execution tools (Windows only, alternative to PowerShell)
-            #[cfg(windows)]
-            "runCmd" => self.handle_run_shell(args, &target_session_id).await,
-            #[cfg(windows)]
-            "runInPersistentCmd" => self.handle_execute_shell(args, &target_session_id).await,
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)

@@ -1,6 +1,6 @@
+use std::env;
 use tauri_mcp_agent_lib::mcp::builtin::workspace::persistent_shell::PersistentShell;
 use tauri_mcp_agent_lib::session_isolation::types::ShellType;
-use std::env;
 
 #[tokio::test]
 async fn test_persistent_shell_environment_isolation() {
@@ -37,11 +37,18 @@ async fn test_persistent_shell_environment_isolation() {
         format!("echo ${}", secret_key)
     };
 
-    let (stdout, _stderr, _exit_code, _cwd) = shell.execute(&cmd).await.expect("Failed to execute command");
+    let (stdout, _stderr, _exit_code, _cwd) = shell
+        .execute(&cmd)
+        .await
+        .expect("Failed to execute command");
 
     // 6. Assert the secret is NOT found in the output
-    assert!(!stdout.contains(secret_value), "Secret environment variable leaked into persistent shell! Output: {}", stdout);
-    
+    assert!(
+        !stdout.contains(secret_value),
+        "Secret environment variable leaked into persistent shell! Output: {}",
+        stdout
+    );
+
     // 7. Verify whitelisted variables ARE present
     // For example, PATH (or Path on Windows) should exist
     let path_cmd = if cfg!(windows) {
@@ -49,7 +56,13 @@ async fn test_persistent_shell_environment_isolation() {
     } else {
         "echo $PATH"
     };
-    
-    let (path_output, _, _, _) = shell.execute(path_cmd).await.expect("Failed to execute path command");
-    assert!(!path_output.trim().is_empty(), "PATH environment variable missing in persistent shell!");
+
+    let (path_output, _, _, _) = shell
+        .execute(path_cmd)
+        .await
+        .expect("Failed to execute path command");
+    assert!(
+        !path_output.trim().is_empty(),
+        "PATH environment variable missing in persistent shell!"
+    );
 }
