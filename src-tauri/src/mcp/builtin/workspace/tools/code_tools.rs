@@ -215,14 +215,13 @@ pub fn create_execute_shell_tool() -> MCPTool {
             Some("Timeout in seconds (default: 30)"),
         ),
     );
-    props.insert(
-        "requireUserInput".to_string(),
-        {
-            let mut schema = boolean_prop(Some("Request user input before execution (e.g., for interactive prompts)."));
-            schema.default = Some(json!(false));
-            schema
-        },
-    );
+    props.insert("requireUserInput".to_string(), {
+        let mut schema = boolean_prop(Some(
+            "Request user input before execution (e.g., for interactive prompts).",
+        ));
+        schema.default = Some(json!(false));
+        schema
+    });
     props.insert(
         "inputPrompt".to_string(),
         string_prop(None, None, Some("Custom prompt message for user input")),
