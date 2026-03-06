@@ -77,3 +77,8 @@
 
 **Split:** `search_files.rs`, `search_lines.rs`, `list_dir.rs`
 **Improvement:** Decoupled `handle_search_files`, `handle_search_lines` and `handle_list_directory` logic into focused, isolated modules. Reduced the 1122 line `search_query.rs` file into dedicated modules around ~300 lines or less for better maintainability and clarity.
+
+## 2026-03-06 - src-tauri/src/mcp/builtin/workspace/persistent_shell
+
+**Split:** `session.rs`, `manager.rs`, `mod.rs`
+**Improvement:** Decoupled `PersistentShell` and `PersistentShellManager` from the main workspace module. Improved maintainability by moving them to a dedicated `persistent_shell` submodule directory.
