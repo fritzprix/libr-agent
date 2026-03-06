@@ -8,8 +8,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
-use super::persistent_shell::PersistentShell;
-use super::ShellType;
+use super::session::PersistentShell;
+use crate::session_isolation::types::ShellType;
 
 /// Manager for persistent shell sessions
 ///
