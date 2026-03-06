@@ -22,8 +22,8 @@ export interface AgentSession {
   lineageId?: string;
   depth?: number;
   isBookmarked?: boolean;
+  yoloMode: boolean;
 }
-
 /**
  * Agent configuration for creating a new session
  */

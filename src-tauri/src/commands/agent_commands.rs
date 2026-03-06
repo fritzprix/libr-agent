@@ -451,6 +451,16 @@ pub async fn agent_toggle_session_bookmark(
         .map_err(|e| format!("Failed to toggle bookmark: {}", e))
 }
 
+/// Set YOLO mode for a session
+#[command]
+pub async fn agent_set_yolo_mode(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    manager.set_yolo_mode(&session_id, enabled).await
+}
+
 /// Factory reset the agent system (used for "Reset All Data & Settings" feature)
 /// Deletes all sessions, assistants, playbooks, mcp servers, and logs.
 #[command]

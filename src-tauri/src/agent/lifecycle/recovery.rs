@@ -154,12 +154,14 @@ pub async fn recover_sessions(
                 // the correct status here explicitly to avoid start_workflow seeing Busy.
                 let mut recovered_metadata = session.clone();
                 recovered_metadata.status = SessionStatus::Paused;
+                let yolo_mode = recovered_metadata.yolo_mode;
                 active.insert(
                     session.id.clone(),
                     AgentSession {
                         metadata: recovered_metadata,
                         is_running: false,
                         cancellation_token: CancellationToken::new(),
+                        yolo_mode: Arc::new(AtomicBool::new(yolo_mode)),
                         cancel_pending: Arc::new(AtomicBool::new(false)),
                         pending_execution: None,
                         messages: Arc::new(RwLock::new(Vec::new())),

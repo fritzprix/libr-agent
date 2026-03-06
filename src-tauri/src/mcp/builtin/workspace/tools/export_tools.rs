@@ -1,71 +1,32 @@
 use crate::mcp::{utils::schema_builder::*, MCPTool};
 use std::collections::HashMap;
 
-pub fn create_export_file_tool() -> MCPTool {
+pub fn create_export_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to export (from workspace root)"),
-        ),
-    );
-    props.insert(
-        "displayName".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Filename to display for download (optional)"),
-        ),
-    );
-    props.insert(
-        "description".to_string(),
-        string_prop(None, None, Some("File description (optional)")),
-    );
-
-    MCPTool {
-        name: "exportFile".to_string(),
-        title: Some("Export Single File".to_string()),
-        description: "Export a single file from workspace for download with interactive UI"
-            .to_string(),
-        input_schema: object_schema(props, vec!["path".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_export_zip_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "files".to_string(),
+        "paths".to_string(),
         array_schema(
             string_prop(Some(1), Some(1000), None),
-            Some(
-                "Array of relative file or directory paths to export (from workspace root). Directories are included recursively",
-            ),
+            Some("Array of relative file or directory paths to export (from workspace root)"),
         ),
     );
     props.insert(
-        "packageName".to_string(),
+        "name".to_string(),
         string_prop(
             None,
             Some(50),
-            Some("ZIP package name (optional, default: workspace_export)"),
+            Some("Display name or package name (optional). If omitted, a name is auto-generated."),
         ),
-    );
-    props.insert(
-        "description".to_string(),
-        string_prop(None, None, Some("Package description (optional)")),
     );
 
     MCPTool {
-        name: "exportZip".to_string(),
-        title: Some("Export ZIP Package".to_string()),
-        description:
-            "Export multiple files or directories as a ZIP package for download with interactive UI"
-                .to_string(),
-        input_schema: object_schema(props, vec!["files".to_string()]),
+        name: "export".to_string(),
+        title: Some("Export Files".to_string()),
+        description: "Export one or more files/directories for download with an interactive UI.\n\
+                      - If you pass a single file, it's exported as a raw file.\n\
+                      - If you pass multiple files or any directory, they are automatically compressed into a ZIP package."
+            .to_string(),
+        input_schema: object_schema(props, vec!["paths".to_string()]),
         output_schema: None,
         annotations: None,
     }

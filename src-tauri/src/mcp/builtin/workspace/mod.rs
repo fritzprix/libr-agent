@@ -621,11 +621,6 @@ impl BuiltinMCPServer for WorkspaceServer {
             "runInPersistentPowerShell" => {
                 self.handle_execute_shell(args, &target_session_id).await
             }
-            // CMD execution tools (Windows only, alternative to PowerShell)
-            #[cfg(windows)]
-            "runCmd" => self.handle_run_shell(args, &target_session_id).await,
-            #[cfg(windows)]
-            "runInPersistentCmd" => self.handle_execute_shell(args, &target_session_id).await,
             // Background process execution (platform-agnostic)
             "spawnProcess" => self.handle_spawn_process(args, &target_session_id).await,
             // Interactive shell execution (2nd tool for user input)
@@ -639,8 +634,7 @@ impl BuiltinMCPServer for WorkspaceServer {
                     .await
             }
             // Export tools
-            "exportFile" => self.handle_export_file(args, session_id).await,
-            "exportZip" => self.handle_export_zip(args, session_id).await,
+            "export" => self.handle_export(args, session_id).await,
             // Terminal/Process management tools
             "readProcessOutput" => {
                 self.handle_read_process_output(args, &target_session_id)

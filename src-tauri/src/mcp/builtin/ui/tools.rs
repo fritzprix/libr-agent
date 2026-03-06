@@ -38,36 +38,6 @@ pub fn prompt_user_tool() -> MCPTool {
     }
 }
 
-/// Receive user response from prompt UI
-pub fn reply_prompt_tool() -> MCPTool {
-    MCPTool {
-        name: "replyPrompt".to_string(),
-        title: Some("Reply Prompt".to_string()),
-        description: "Receive user response from prompt UI (automatically called by UI action)"
-            .to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "messageId".to_string(),
-                    string_prop_required("ID of the prompt being replied to"),
-                ),
-                (
-                    "answer".to_string(),
-                    string_prop(None, None, Some("User answer")),
-                ),
-                (
-                    "cancelled".to_string(),
-                    boolean_prop(Some("Whether the user cancelled the prompt")),
-                ),
-            ],
-            vec!["messageId".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
 /// Create a simple data visualization
 pub fn visualize_data_tool() -> MCPTool {
     let data_item_schema = object_prop(
@@ -133,94 +103,13 @@ pub fn wait_for_user_resume_tool() -> MCPTool {
     }
 }
 
-/// Resume from wait state
-pub fn resume_from_wait_tool() -> MCPTool {
-    MCPTool {
-        name: "resumeFromWait".to_string(),
-        title: Some("Resume From Wait".to_string()),
-        description: "Resume from wait state".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "resumeInstruction".to_string(),
-                    string_prop_required("Resume instruction"),
-                ),
-                (
-                    "startedAt".to_string(),
-                    number_prop(None, None, Some("Timestamp when wait started")),
-                ),
-            ],
-            vec!["resumeInstruction".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Display circuit breaker UI when agent is looping
-pub fn circuit_break_tool() -> MCPTool {
-    MCPTool {
-        name: "circuitBreak".to_string(),
-        title: Some("Circuit Break".to_string()),
-        description: "Display circuit breaker UI when agent is looping".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "toolName".to_string(),
-                    string_prop_required("Name of the tool that is looping"),
-                ),
-                (
-                    "repetitionCount".to_string(),
-                    number_prop(None, None, Some("Number of repetitions detected")),
-                ),
-                (
-                    "args".to_string(),
-                    string_prop(None, None, Some("Tool arguments as string")),
-                ),
-            ],
-            vec!["toolName".to_string(), "repetitionCount".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Resume from circuit breaker
-pub fn resume_circuit_break_tool() -> MCPTool {
-    MCPTool {
-        name: "resumeCircuitBreak".to_string(),
-        title: Some("Resume Circuit Break".to_string()),
-        description: "Resume from circuit breaker".to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "toolName".to_string(),
-                    string_prop_required("Name of the tool that was looping"),
-                ),
-                (
-                    "repetitionCount".to_string(),
-                    number_prop(None, None, Some("Number of repetitions that were detected")),
-                ),
-            ],
-            vec!["toolName".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-/// Returns all UI tools
+/// Returns all UI tools intended for the AI agent
+/// Note: Internal callback tools (getUserAnswer, resumeFromWait, circuitBreak, resumeCircuitBreak)
+/// are NOT included here to prevent the AI from hallucinating calls to them.
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
         prompt_user_tool(),
-        reply_prompt_tool(),
         visualize_data_tool(),
         wait_for_user_resume_tool(),
-        resume_from_wait_tool(),
-        circuit_break_tool(),
-        resume_circuit_break_tool(),
     ]
 }

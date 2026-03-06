@@ -19,6 +19,13 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<String, String> 
         .as_ref()
         .ok_or_else(|| "Server name is required".to_string())?;
 
+    // 1. Verify the configuration before saving
+    let tools =
+        crate::services::mcp_server_service::McpServerService::verify_config(config.clone())
+            .await
+            .map_err(|e| format!("Verification failed: {}", e))?;
+    let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+
     let config_value = serde_json::to_value(config).map_err(|e| e.to_string())?;
 
     // Try to update first (by name lookup), create if doesn't exist
@@ -38,6 +45,12 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<String, String> 
         }
         Err(e) => return Err(format!("DB query error: {}", e)),
     };
+
+    // Update the cached tools immediately since we just verified it
+    let _ = repo
+        .update_cached_tools(&id, tools.len() as i32, tools_json_str)
+        .await;
+
     Ok(id)
 }
 
@@ -441,141 +454,15 @@ async fn test_server_connection(
     config: &crate::mcp::types::MCPServerConfig,
     server_name: &str,
 ) -> Result<(usize, String), String> {
-    use crate::mcp::types::TransportConfig;
-    use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
-    use rmcp::ServiceExt;
-    use std::time::Duration;
-
-    /// Serialize a tool list to a compact JSON cache string.
-    fn serialize_tools(tools: &[rmcp::model::Tool]) -> String {
-        crate::mcp::utils::serialize_rmcp_tools(tools)
+    let mut cloned = config.clone();
+    if cloned.name.is_none() {
+        cloned.name = Some(server_name.to_string());
     }
 
-    match &config.transport {
-        TransportConfig::Stdio { command, args, env } => {
-            // Prepare command with cross-platform support (Windows .cmd/.bat wrapping)
-            let (final_command, final_args) =
-                crate::mcp::utils::command_helper::prepare_command(command, args);
-
-            log::debug!(
-                "Testing stdio server '{}': {} {:?}",
-                server_name,
-                final_command,
-                final_args
-            );
-
-            #[cfg(windows)]
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-            // Spawn process
-            #[allow(unused_mut)]
-            let mut cmd_builder = tokio::process::Command::new(&final_command);
-
-            #[cfg(windows)]
-            {
-                cmd_builder.creation_flags(CREATE_NO_WINDOW);
-            }
-
-            let cmd = cmd_builder.configure(|cmd| {
-                for arg in &final_args {
-                    cmd.arg(arg);
-                }
-
-                // Apply environment isolation to prevent leaking host secrets (e.g. API keys)
-                // to untrusted MCP server processes.
-                cmd.env_clear();
-                for (k, v) in crate::mcp::utils::env::get_isolated_env() {
-                    cmd.env(k, v);
-                }
-
-                // Apply user-defined variables from config (can override system vars)
-                for (key, value) in env {
-                    cmd.env(key, value);
-                }
-            });
-
-            let transport = TokioChildProcess::new(cmd)
-                .map_err(|e| format!("Failed to spawn process: {}", e))?;
-
-            // Initialize with timeout
-            let client = tokio::time::timeout(Duration::from_secs(30), ().serve(transport))
-                .await
-                .map_err(|_| "Initialization timeout (30s)".to_string())?
-                .map_err(|e| format!("Initialization failed: {}", e))?;
-
-            // List tools
-            let tools = client
-                .list_all_tools()
-                .await
-                .map_err(|e| format!("Failed to list tools: {}", e))?;
-
-            log::info!(
-                "Stdio server '{}' verified: {} tools available",
-                server_name,
-                tools.len()
-            );
-
-            let tools_json = serialize_tools(&tools);
-            Ok((tools.len(), tools_json))
-        }
-        TransportConfig::Http { url, headers, .. } => {
-            use rmcp::transport::streamable_http_client::{
-                StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
-            };
-
-            log::debug!("Testing HTTP server '{}': {}", server_name, url);
-
-            // Build header map
-            let mut header_map = reqwest::header::HeaderMap::new();
-            if let Some(headers) = headers {
-                for (k, v) in headers {
-                    if let (Ok(k), Ok(v)) = (
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(v),
-                    ) {
-                        header_map.insert(k, v);
-                    }
-                }
-            }
-
-            let http_client = reqwest::Client::builder()
-                .default_headers(header_map)
-                .build()
-                .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-            let mut transport_config = StreamableHttpClientTransportConfig::with_uri(url.as_str());
-            // Always allow stateless so servers that omit Mcp-Session-Id (e.g. exa) connect
-            // successfully regardless of the enable_sse config flag.  Stateful servers that do
-            // return a session ID still work correctly — allow_stateless only matters when the
-            // server omits the header.  This matches the MCPServerManager (probe) path which
-            // hardcodes allow_stateless = true.
-            transport_config.allow_stateless = true;
-
-            let transport =
-                StreamableHttpClientTransport::with_client(http_client, transport_config);
-
-            // Initialize with timeout
-            let client = tokio::time::timeout(Duration::from_secs(30), ().serve(transport))
-                .await
-                .map_err(|_| "Initialization timeout (30s)".to_string())?
-                .map_err(|e| format!("Initialization failed: {}", e))?;
-
-            // List tools
-            let tools = client
-                .list_all_tools()
-                .await
-                .map_err(|e| format!("Failed to list tools: {}", e))?;
-
-            log::info!(
-                "HTTP server '{}' verified: {} tools available",
-                server_name,
-                tools.len()
-            );
-
-            let tools_json = serialize_tools(&tools);
-            Ok((tools.len(), tools_json))
-        }
-    }
+    let tools =
+        crate::services::mcp_server_service::McpServerService::verify_config(cloned).await?;
+    let tools_json = crate::mcp::utils::serialize_mcp_tools(&tools);
+    Ok((tools.len(), tools_json))
 }
 
 /// Unified tool discovery across builtin and external MCP servers.
@@ -600,6 +487,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
 
     let mut result_sections: Vec<String> = Vec::new();
     let mut total_tools = 0usize;
+    let mut sections_added = 0usize;
     let mut found_external_ids: Vec<(String, String)> = Vec::new(); // (name, id)
 
     // --- Internal (builtin) tools ---
@@ -615,22 +503,29 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
             .collect();
 
         if !matched.is_empty() {
-            let lines: Vec<String> = matched
-                .iter()
-                .map(|t| {
-                    // Truncate description to keep output compact
-                    let desc = if t.description.len() > 80 {
-                        let mut end = 77;
-                        while end > 0 && !t.description.is_char_boundary(end) {
-                            end -= 1;
-                        }
-                        format!("{}...", &t.description[..end])
-                    } else {
-                        t.description.clone()
-                    };
-                    format!("• {} — {}", t.name, desc)
-                })
-                .collect();
+            let lines: Vec<String> = if query.is_empty() {
+                // Compact view when no query is specified
+                let names: Vec<String> = matched.iter().map(|t| t.name.clone()).collect();
+                vec![format!("Tools: {}", names.join(", "))]
+            } else {
+                // Detailed view
+                matched
+                    .iter()
+                    .map(|t| {
+                        // Truncate description to keep output compact
+                        let desc = if t.description.len() > 80 {
+                            let mut end = 77;
+                            while end > 0 && !t.description.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            format!("{}...", &t.description[..end])
+                        } else {
+                            t.description.clone()
+                        };
+                        format!("• {} — {}", t.name, desc)
+                    })
+                    .collect()
+            };
 
             result_sections.push(format!(
                 "## Builtin Tools ({} matched)\n{}",
@@ -638,6 +533,7 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                 lines.join("\n")
             ));
             total_tools += matched.len();
+            sections_added += 1;
         }
     }
 
@@ -658,11 +554,12 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
         };
 
         for model in &models {
+            let config_opt: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
+
             // Determine tool source: live (forceVerify) or cached
             let tools_json_str: Option<String> = if force_verify {
-                let config: Option<MCPServerConfig> = serde_json::from_str(&model.config).ok();
-                if let Some(config) = config {
-                    match test_server_connection(&config, &model.name).await {
+                if let Some(ref config) = config_opt {
+                    match test_server_connection(config, &model.name).await {
                         Ok((_, json_str)) => Some(json_str),
                         Err(e) => {
                             log::warn!("listTools: live verify failed for '{}': {}", model.name, e);
@@ -703,31 +600,60 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
                     .collect()
             };
 
-            if !matched_tools.is_empty() {
+            // Display the server if it matches the query, even if no tools matched.
+            // If the server matches the query, matched_tools will contain ALL tools of that server due to `|| server_matches_query` above.
+            // However, if the server has NO tools cached/available, matched_tools is empty. We still want to show the server.
+            let should_display = !matched_tools.is_empty() || server_matches_query;
+
+            if should_display {
                 let verify_note = if force_verify { " [live]" } else { " [cached]" };
-                let tool_lines: Vec<String> = matched_tools
-                    .iter()
-                    .map(|t| {
-                        let name = t["name"].as_str().unwrap_or("?");
-                        let desc = t["description"].as_str().unwrap_or("");
-                        format!("• {} — {}", name, desc)
-                    })
-                    .collect();
+
+                let server_desc = config_opt
+                    .as_ref()
+                    .and_then(|c| c.metadata.as_ref())
+                    .and_then(|m| m.description.as_deref())
+                    .map(|d| format!("  Description: {}\n", d))
+                    .unwrap_or_default();
+
+                let tool_list_str = if matched_tools.is_empty() {
+                    if tools_json_str.is_none() {
+                        "  (No tools cached. Run with forceVerify=true to discover tools)"
+                            .to_string()
+                    } else {
+                        "  (No tools provided by this server)".to_string()
+                    }
+                } else if query.is_empty() {
+                    // Compact view for tools
+                    let names: Vec<String> = matched_tools
+                        .iter()
+                        .map(|t| t["name"].as_str().unwrap_or("?").to_string())
+                        .collect();
+                    format!("  Tools: {}", names.join(", "))
+                } else {
+                    // Detailed view
+                    let tool_lines: Vec<String> = matched_tools
+                        .iter()
+                        .map(|t| {
+                            let name = t["name"].as_str().unwrap_or("?");
+                            let desc = t["description"].as_str().unwrap_or("");
+                            format!("• {} — {}", name, desc)
+                        })
+                        .collect();
+                    tool_lines.join("\n")
+                };
 
                 result_sections.push(format!(
-                    "## External: {}{} (ID: {})\n{}",
-                    model.name,
-                    verify_note,
-                    model.id,
-                    tool_lines.join("\n")
+                    "## External: {}{} (ID: {})\n{}{}",
+                    model.name, verify_note, model.id, server_desc, tool_list_str
                 ));
                 total_tools += matched_tools.len();
+                sections_added += 1;
                 found_external_ids.push((model.name.clone(), model.id.clone()));
             }
         }
     }
 
-    if total_tools == 0 {
+    if sections_added == 0 {
         let hint_text = if query.is_empty() {
             "No tools found. Use registerServer to add external MCP servers.".to_string()
         } else {
@@ -763,18 +689,12 @@ pub async fn list_tools(args: Value) -> Result<MCPResult, String> {
             .iter()
             .map(|(name, id)| format!("  • {} → \"{}\"", name, id))
             .collect();
-        let ids_array = found_external_ids
-            .iter()
-            .map(|(_, id)| format!("\"{}\"", id))
-            .collect::<Vec<_>>()
-            .join(", ");
         format!(
             "\n\n---\n📌 To attach external server(s) to an assistant:\n\
             Server IDs found:\n{}\n\n\
-            Call:\n  updateAssistant(id: \"<assistantId>\", mcpServerIds: [{}])\n\n\
+            To attach, call:\n  updateAssistant(id: \"<assistantId>\", mcpServerIds: [\"<id_1>\", \"...\"])\n\n\
             Use listAssistants to find your assistant ID.",
-            ids_list.join("\n"),
-            ids_array
+            ids_list.join("\n")
         )
     } else {
         String::new()

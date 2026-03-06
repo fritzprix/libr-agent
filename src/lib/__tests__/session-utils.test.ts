@@ -20,6 +20,7 @@ describe('filterSessions', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
+      yoloMode: false,
     },
     {
       id: 'session-2',
@@ -37,6 +38,7 @@ describe('filterSessions', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
+      yoloMode: false,
     },
     {
       id: 'uuid-123-abc',
@@ -54,6 +56,7 @@ describe('filterSessions', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       },
+      yoloMode: false,
     },
   ];
 
@@ -102,6 +105,7 @@ describe('filterSessions', () => {
       model: 'gpt-4',
       provider: 'openai',
       createdAt: new Date(),
+      yoloMode: false,
     };
 
     expect(filterSessions([sessionWithoutAssistant], 'doesnotexist')).toHaveLength(0);

@@ -81,7 +81,7 @@ impl SessionCleanupService {
 
     /// Delete an agent session data cascade
     ///
-    /// **Cascade Philosophy:** "부모를 지우면 자식도 지워진다"
+    /// **Cascade Philosophy:** "When a parent is deleted, its children are also deleted"
     /// - DB-level CASCADE automatically deletes child session records
     /// - Manually deletes workspace directories for all descendants before DB deletion
     pub async fn delete_session_data_cascade(

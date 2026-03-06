@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation, Trans } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -43,12 +44,8 @@ export function ScheduledTaskModal({
   onClose,
   onSave,
 }: ScheduledTaskModalProps) {
-  const [name, setName] = useState('');
-  const [cronExpression, setCronExpression] = useState('0 9 * * *');
-  const [assistantId, setAssistantId] = useState('');
-  const [message, setMessage] = useState('');
+  const { t } = useTranslation();
   const [assistants, setAssistants] = useState<Assistant[]>([]);
-  const [saving, setSaving] = useState(false);
 
   // Load assistants once
   useEffect(() => {
@@ -57,29 +54,66 @@ export function ScheduledTaskModal({
       .catch((e: unknown) => logger.error('Failed to load assistants', e));
   }, []);
 
-  // Populate form when modal opens or when switching between edit/create mode.
-  // Does NOT depend on assistants — default assistantId is handled separately.
-  useEffect(() => {
-    if (!open) return;
-    if (task) {
-      setName(task.name);
-      setCronExpression(task.cronExpression);
-      setAssistantId(task.assistantId);
-      setMessage(task.message);
-    } else {
-      setName('');
-      setCronExpression('0 9 * * *');
-      setAssistantId('');
-      setMessage('');
-    }
-  }, [task, open]);
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {task
+              ? t('scheduledTasks.modal.titleEdit')
+              : t('scheduledTasks.modal.titleNew')}
+          </DialogTitle>
+        </DialogHeader>
 
-  // Set default assistantId for new tasks once assistants finish loading.
-  // Uses functional update so user selections made before load completes are preserved.
+        {open && (
+          <ScheduledTaskForm
+            key={task?.id || 'new'}
+            task={task}
+            assistants={assistants}
+            onClose={onClose}
+            onSave={onSave}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ScheduledTaskFormProps {
+  task?: ScheduledTask | null;
+  assistants: Assistant[];
+  onClose: () => void;
+  onSave: (data: {
+    name: string;
+    cronExpression: string;
+    assistantId: string;
+    message: string;
+  }) => Promise<void>;
+}
+
+function ScheduledTaskForm({
+  task,
+  assistants,
+  onClose,
+  onSave,
+}: ScheduledTaskFormProps) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(task?.name ?? '');
+  const [cronExpression, setCronExpression] = useState(
+    task?.cronExpression ?? '0 9 * * *',
+  );
+  const [assistantId, setAssistantId] = useState(
+    task?.assistantId ?? assistants[0]?.id ?? '',
+  );
+  const [message, setMessage] = useState(task?.message ?? '');
+  const [saving, setSaving] = useState(false);
+
+  // Set default assistantId for new tasks if assistants finish loading after the form mounts
   useEffect(() => {
-    if (!open || task) return;
-    setAssistantId((prev) => prev || assistants[0]?.id || '');
-  }, [open, task, assistants]);
+    if (!task && !assistantId && assistants.length > 0) {
+      setAssistantId(assistants[0].id);
+    }
+  }, [task, assistantId, assistants]);
 
   const handleSave = async () => {
     if (
@@ -105,81 +139,84 @@ export function ScheduledTaskModal({
     }
   };
 
-  const isValid =
-    name.trim() && cronExpression.trim() && assistantId && message.trim();
+  const isValid = Boolean(
+    name.trim() && cronExpression.trim() && assistantId && message.trim(),
+  );
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {task ? 'Edit Scheduled Task' : 'New Scheduled Task'}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-2">
-          {/* Task name */}
-          <div className="grid gap-1.5">
-            <Label htmlFor="task-name">Task name</Label>
-            <Input
-              id="task-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Daily standup summary"
-            />
-          </div>
-
-          {/* Assistant */}
-          <div className="grid gap-1.5">
-            <Label>Assistant</Label>
-            <Select value={assistantId} onValueChange={setAssistantId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an assistant…" />
-              </SelectTrigger>
-              <SelectContent>
-                {assistants.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Human-readable schedule builder */}
-          <div className="grid gap-1.5">
-            <Label>Schedule</Label>
-            <ScheduleBuilder
-              value={cronExpression}
-              onChange={setCronExpression}
-            />
-          </div>
-
-          {/* Message with @mention support */}
-          <div className="grid gap-1.5">
-            <Label>Message</Label>
-            <p className="text-xs text-muted-foreground">
-              Use <code className="font-mono">@playbook:</code> or{' '}
-              <code className="font-mono">@skill:</code> for autocomplete
-            </p>
-            <MentionTextarea
-              value={message}
-              onChange={setMessage}
-              assistantId={assistantId}
-              rows={3}
-            />
-          </div>
+    <>
+      <div className="grid gap-4 py-2">
+        {/* Task name */}
+        <div className="grid gap-1.5">
+          <Label htmlFor="task-name">
+            {t('scheduledTasks.modal.nameLabel')}
+          </Label>
+          <Input
+            id="task-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('scheduledTasks.modal.namePlaceholder')}
+          />
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!isValid || saving}>
-            {saving ? 'Saving…' : task ? 'Save changes' : 'Create task'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {/* Assistant */}
+        <div className="grid gap-1.5">
+          <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
+          <Select value={assistantId} onValueChange={setAssistantId}>
+            <SelectTrigger>
+              <SelectValue
+                placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {assistants.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Human-readable schedule builder */}
+        <div className="grid gap-1.5">
+          <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
+          <ScheduleBuilder
+            value={cronExpression}
+            onChange={setCronExpression}
+          />
+        </div>
+
+        {/* Message with @mention support */}
+        <div className="grid gap-1.5">
+          <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
+          <p className="text-xs text-muted-foreground">
+            <Trans i18nKey="scheduledTasks.modal.messageHint">
+              Use <code className="font-mono">@playbook:</code> or{' '}
+              <code className="font-mono">@skill:</code> for autocomplete
+            </Trans>
+          </p>
+          <MentionTextarea
+            value={message}
+            onChange={setMessage}
+            assistantId={assistantId}
+            rows={3}
+          />
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button variant="ghost" onClick={onClose} disabled={saving}>
+          {t('scheduledTasks.modal.cancel')}
+        </Button>
+        <Button onClick={handleSave} disabled={!isValid || saving}>
+          {saving
+            ? t('scheduledTasks.modal.saving')
+            : task
+              ? t('scheduledTasks.modal.saveChanges')
+              : t('scheduledTasks.modal.createTask')}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

@@ -1,6 +1,4 @@
-use crate::mcp::builtin::service_id::BuiltinServiceId;
-use crate::repositories::mcp_server_repository::MCPServerRepository;
-use crate::state::get_mcp_server_repository;
+use crate::services::McpServerService;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -31,17 +29,7 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
 
 #[command]
 pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
-    if BuiltinServiceId::from_alias(&name).is_some() {
-        return Err(format!(
-            "Server name '{}' is reserved for a builtin service.",
-            name
-        ));
-    }
-    let repo = get_mcp_server_repository();
-    let model = repo
-        .create(&name, config)
-        .await
-        .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
+    let model = McpServerService::create_server_config(name, config).await?;
     Ok(model.into())
 }
 
@@ -51,40 +39,18 @@ pub async fn update_mcp_server_config(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
-    if let Some(ref n) = name {
-        if BuiltinServiceId::from_alias(n).is_some() {
-            return Err(format!(
-                "Server name '{}' is reserved for a builtin service.",
-                n
-            ));
-        }
-    }
-    let repo = get_mcp_server_repository();
-
-    let updated = repo
-        .update(&id, name.as_deref(), config)
-        .await
-        .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
-
+    let updated = McpServerService::update_server_config(id, name, config).await?;
     Ok(updated.into())
 }
 
 #[command]
 pub async fn delete_mcp_server_config(id: String) -> Result<(), String> {
-    let repo = get_mcp_server_repository();
-    repo.delete(&id)
-        .await
-        .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
-    Ok(())
+    McpServerService::delete_server_config(&id).await
 }
 
 #[command]
 pub async fn list_mcp_server_configs() -> Result<Vec<MCPServerDto>, String> {
-    let repo = get_mcp_server_repository();
-    let models = repo
-        .list()
-        .await
-        .map_err(|e| format!("Failed to list MCP server configs: {}", e))?;
+    let models = McpServerService::list_server_configs().await?;
     Ok(models.into_iter().map(|s| s.into()).collect())
 }
 

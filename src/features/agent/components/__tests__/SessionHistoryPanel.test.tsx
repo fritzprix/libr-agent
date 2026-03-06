@@ -30,10 +30,10 @@ global.ResizeObserver = class ResizeObserver {
 describe('SessionHistoryPanel descendant counts', () => {
   it('correctly calculates descendant counts for a session tree', () => {
     const sessions: AgentSession[] = [
-      { id: 'root', name: 'Root', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: undefined },
-      { id: 'child1', name: 'Child 1', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'root' },
-      { id: 'child2', name: 'Child 2', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'root' },
-      { id: 'grandchild1', name: 'Grandchild 1', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'child2' },
+      { id: 'root', name: 'Root', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: undefined, yoloMode: false },
+      { id: 'child1', name: 'Child 1', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'root', yoloMode: false },
+      { id: 'child2', name: 'Child 2', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'root', yoloMode: false },
+      { id: 'grandchild1', name: 'Grandchild 1', status: 'idle', model: 'test-model', provider: 'test-provider', createdAt: new Date(), updatedAt: new Date(), parentSessionId: 'child2', yoloMode: false },
     ];
 
     render(

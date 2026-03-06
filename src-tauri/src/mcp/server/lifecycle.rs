@@ -65,7 +65,16 @@ async fn start_stdio_server(
     );
 
     // Create command with rmcp - configure returns the modified command
-    let cmd = Command::new(&final_command).configure(|cmd| {
+    #[allow(unused_mut)]
+    let mut cmd_builder = Command::new(&final_command);
+
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd_builder.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let cmd = cmd_builder.configure(|cmd| {
         for arg in &final_args {
             cmd.arg(arg);
         }

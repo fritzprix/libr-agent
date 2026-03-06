@@ -42,8 +42,8 @@ pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValida
     validate_table_exists(db, "messages").await?;
     validate_table_exists(db, "assistants").await?;
 
-    // Validate sessions table has is_bookmarked column (added in migration #11)
-    validate_table_columns(db, "sessions", &["id", "is_bookmarked"]).await?;
+    // Validate sessions table has is_bookmarked and yolo_mode columns
+    validate_table_columns(db, "sessions", &["id", "is_bookmarked", "yolo_mode"]).await?;
 
     // Validate planning module tables with specific columns
     validate_table_columns(

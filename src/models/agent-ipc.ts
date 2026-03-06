@@ -137,4 +137,5 @@ export interface AgentSessionMetadata {
   createdAt: number;
   updatedAt?: number;
   isBookmarked?: boolean;
+  yoloMode: boolean;
 }
