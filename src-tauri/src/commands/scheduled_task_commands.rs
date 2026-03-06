@@ -1,12 +1,9 @@
 //! Tauri commands for managing scheduled tasks.
 
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
-use crate::repositories::ScheduledTaskRepository;
-use crate::scheduled::runner::compute_next_run;
-use crate::state::get_scheduled_task_repository;
+use crate::services::ScheduledTaskService;
 use serde::{Deserialize, Serialize};
 use tauri::command;
-use uuid::Uuid;
 
 /// Data-transfer object for scheduled tasks returned to the frontend
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,25 +67,14 @@ pub struct UpdateScheduledTaskRequest {
 pub async fn create_scheduled_task(
     request: CreateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let next_run_at = compute_next_run(&request.cron_expression, now_ms).ok_or_else(|| {
-        format!(
-            "Invalid cron expression '{}': no future occurrences found",
-            request.cron_expression
-        )
-    })?;
-    get_scheduled_task_repository()
-        .create_scheduled_task(
-            Uuid::new_v4().to_string(),
-            request.name,
-            request.cron_expression,
-            request.assistant_id,
-            request.message,
-            Some(next_run_at),
-        )
-        .await
-        .map(ScheduledTaskDto::from)
-        .map_err(|e| e.to_string())
+    ScheduledTaskService::create_scheduled_task(
+        request.name,
+        request.cron_expression,
+        request.assistant_id,
+        request.message,
+    )
+    .await
+    .map(ScheduledTaskDto::from)
 }
 
 /// List scheduled tasks, optionally filtered by assistant
@@ -96,21 +82,17 @@ pub async fn create_scheduled_task(
 pub async fn list_scheduled_tasks(
     assistant_id: Option<String>,
 ) -> Result<Vec<ScheduledTaskDto>, String> {
-    get_scheduled_task_repository()
-        .list_scheduled_tasks(assistant_id.as_deref())
+    ScheduledTaskService::list_scheduled_tasks(assistant_id.as_deref())
         .await
         .map(|v| v.into_iter().map(ScheduledTaskDto::from).collect())
-        .map_err(|e| e.to_string())
 }
 
 /// Get a single scheduled task by ID
 #[command]
 pub async fn get_scheduled_task(id: String) -> Result<Option<ScheduledTaskDto>, String> {
-    get_scheduled_task_repository()
-        .get_scheduled_task(&id)
+    ScheduledTaskService::get_scheduled_task(&id)
         .await
         .map(|opt| opt.map(ScheduledTaskDto::from))
-        .map_err(|e| e.to_string())
 }
 
 /// Update a scheduled task
@@ -119,48 +101,27 @@ pub async fn update_scheduled_task(
     id: String,
     request: UpdateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
-    // Recompute next_run_at if the cron expression changed; reject invalid cron
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let next_run_at: Option<Option<i64>> = request
-        .cron_expression
-        .as_deref()
-        .map(|expr| {
-            compute_next_run(expr, now_ms).ok_or_else(|| {
-                format!("Invalid cron expression '{expr}': no future occurrences found")
-            })
-        })
-        .transpose()?
-        .map(Some);
-
-    get_scheduled_task_repository()
-        .update_scheduled_task(
-            &id,
-            request.name,
-            request.cron_expression,
-            request.message,
-            request.enabled,
-            next_run_at,
-        )
-        .await
-        .map(ScheduledTaskDto::from)
-        .map_err(|e| e.to_string())
+    ScheduledTaskService::update_scheduled_task(
+        &id,
+        request.name,
+        request.cron_expression,
+        request.message,
+        request.enabled,
+    )
+    .await
+    .map(ScheduledTaskDto::from)
 }
 
 /// Toggle enabled/disabled state of a scheduled task
 #[command]
 pub async fn toggle_scheduled_task(id: String, enabled: bool) -> Result<ScheduledTaskDto, String> {
-    get_scheduled_task_repository()
-        .update_scheduled_task(&id, None, None, None, Some(enabled), None)
+    ScheduledTaskService::toggle_scheduled_task(&id, enabled)
         .await
         .map(ScheduledTaskDto::from)
-        .map_err(|e| e.to_string())
 }
 
 /// Delete a scheduled task
 #[command]
 pub async fn delete_scheduled_task(id: String) -> Result<(), String> {
-    get_scheduled_task_repository()
-        .delete_scheduled_task(&id)
-        .await
-        .map_err(|e| e.to_string())
+    ScheduledTaskService::delete_scheduled_task(&id).await
 }
