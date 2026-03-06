@@ -21,6 +21,7 @@ export async function listWorkspaceFiles(
  * Writes content to a file within the application's workspace directory.
  * @param filePath The relative path within the workspace to write to.
  * @param content An array of numbers representing the byte content to write.
+ * @param sessionId The optional session ID to specify which session's workspace to use.
  * @returns A promise that resolves when the write operation is complete.
  */
 export async function workspaceWriteFile(
