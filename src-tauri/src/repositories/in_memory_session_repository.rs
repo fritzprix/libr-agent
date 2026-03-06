@@ -204,6 +204,14 @@ impl SessionRepository for InMemorySessionRepository {
         }
         Ok(())
     }
+
+    async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.yolo_mode = enabled;
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {

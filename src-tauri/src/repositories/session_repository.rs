@@ -125,6 +125,9 @@ pub trait SessionRepository: Send + Sync {
 
     /// Toggle the bookmark flag for a session
     async fn toggle_bookmark(&self, session_id: &str, bookmarked: bool) -> Result<(), DbError>;
+
+    /// Update the YOLO mode flag for a session
+    async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -293,6 +296,18 @@ impl SessionRepository for SqliteSessionRepository {
         session::ActiveModel {
             id: Set(session_id.to_string()),
             is_bookmarked: Set(bookmarked),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError> {
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            yolo_mode: Set(enabled),
             ..Default::default()
         }
         .update(&self.db)

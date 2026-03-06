@@ -488,19 +488,11 @@ impl AgentSessionManager {
             }
         }
 
-        // 2. Persist to DB
-        let mut metadata = self
-            .session_repo
-            .get_session(session_id)
-            .await
-            .map_err(|e| format!("Failed to get session metadata: {}", e))?
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        metadata.yolo_mode = enabled;
+        // 2. Persist to DB via partial update
         self.session_repo
-            .upsert_session(&metadata)
+            .update_yolo_mode(session_id, enabled)
             .await
-            .map_err(|e| format!("Failed to update session metadata: {}", e))?;
+            .map_err(|e| format!("Failed to update session YOLO mode: {}", e))?;
 
         Ok(())
     }
