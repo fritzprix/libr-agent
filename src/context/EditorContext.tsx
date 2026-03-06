@@ -156,7 +156,7 @@ export function useEditor<T>(): EditorContextValue<T> {
 
 /**
  * A helper hook that returns the value of a specific field and a function to update that value.
- * @param fieldName - The key of the field to update
+ * @param fieldName The key of the field to update
  */
 export function useEditorField<T extends object, K extends keyof T>(
   fieldName: K,

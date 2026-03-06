@@ -70,6 +70,7 @@ pub struct PersistentShell {
     stdout: BufReader<ChildStdout>,
     stderr: BufReader<ChildStderr>,
     session_id: String,
+    shell_type: ShellType,
     last_known_cwd: String,
 }
 
@@ -100,6 +101,32 @@ impl PersistentShell {
             }
             Command::new("bash")
         };
+
+        #[cfg(windows)]
+        let mut cmd = match shell_type {
+            ShellType::PowerShell => {
+                let mut c = Command::new("powershell.exe");
+                c.arg("-NoProfile");
+                c.arg("-NoLogo");
+                c.arg("-NonInteractive"); // Critical: removes prompts and echo
+                debug!("Creating persistent PowerShell session for: {}", session_id);
+                c
+            }
+            ShellType::Bash => {
+                return Err(anyhow::anyhow!(
+                    "Bash shell type is not supported on Windows"
+                ));
+            }
+        };
+
+        // Apply environment isolation to prevent leaking host secrets
+        // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
+        // to ensure whitelisted variables are isolated but specialized ones are preserved.
+        cmd.env_clear();
+        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
+
         #[cfg(unix)]
         {
             cmd.arg("--norc");
@@ -128,30 +155,6 @@ impl PersistentShell {
 
             debug!("Creating persistent bash shell for session: {}", session_id);
         }
-
-        #[cfg(windows)]
-        let mut cmd = match shell_type {
-            ShellType::PowerShell => {
-                let mut c = Command::new("powershell.exe");
-                c.arg("-NoProfile");
-                c.arg("-NoLogo");
-                c.arg("-NonInteractive"); // Critical: removes prompts and echo
-                debug!("Creating persistent PowerShell session for: {}", session_id);
-                c
-            }
-            ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
-                c.arg("/Q"); // Echo off
-                c.arg("/K"); // Keep running (don't exit after first command)
-                debug!("Creating persistent Cmd shell for: {}", session_id);
-                c
-            }
-            ShellType::Bash => {
-                return Err(anyhow::anyhow!(
-                    "Bash shell type is not supported on Windows"
-                ));
-            }
-        };
 
         // Set working directory to workspace
         cmd.current_dir(&workspace_path);
@@ -184,14 +187,6 @@ impl PersistentShell {
                     stdin.flush().await?;
                     debug!("Configuring PowerShell encoding to UTF-8");
                 }
-                ShellType::Cmd => {
-                    // Set encoding to UTF-8 for cmd.exe to handle non-ASCII characters correctly
-                    // chcp 65001 sets the code page to UTF-8
-                    let setup_cmd = "chcp 65001 >nul\r\n";
-                    stdin.write_all(setup_cmd.as_bytes()).await?;
-                    stdin.flush().await?;
-                    debug!("Configuring cmd.exe encoding to UTF-8 (chcp 65001)");
-                }
                 ShellType::Bash => {
                     // Should not reach here on Windows
                 }
@@ -210,6 +205,7 @@ impl PersistentShell {
             stdout,
             stderr,
             session_id,
+            shell_type,
             last_known_cwd: initial_cwd,
         };
 
@@ -217,7 +213,6 @@ impl PersistentShell {
         {
             // Force UTF-8 encoding for console I/O and pipe output
             // This is critical for handling non-ASCII characters in filenames/output
-            debug!("Configuring PowerShell encoding to UTF-8");
             let _ = shell.execute("[Console]::InputEncoding = [Console]::OutputEncoding = $OutputEncoding = [System.Text.Encoding]::UTF8").await?;
         }
 
@@ -275,16 +270,23 @@ impl PersistentShell {
         // Send command
         #[cfg(windows)]
         {
-            // Encode command to Base64 to avoid encoding issues in the pipe
-            // This ensures that characters like Korean are transmitted correctly
-            // regardless of the current console code page.
-            let encoded = general_purpose::STANDARD.encode(command);
-            // We use Invoke-Expression to execute the decoded string
-            let wrapper = format!(
-                "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
-                encoded
-            );
-            self.stdin.write_all(wrapper.as_bytes()).await?;
+            match self.shell_type {
+                ShellType::PowerShell => {
+                    // Encode command to Base64 to avoid encoding issues in the pipe
+                    // This ensures that characters like Korean are transmitted correctly
+                    // regardless of the current console code page.
+                    let encoded = general_purpose::STANDARD.encode(command);
+                    // We use Invoke-Expression to execute the decoded string
+                    let wrapper = format!(
+                        "Invoke-Expression ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{}')))\n",
+                        encoded
+                    );
+                    self.stdin.write_all(wrapper.as_bytes()).await?;
+                }
+                ShellType::Bash => {
+                    // Should not reach here on Windows
+                }
+            }
         }
 
         #[cfg(unix)]
@@ -311,24 +313,29 @@ impl PersistentShell {
 
         #[cfg(windows)]
         {
-            self.stdin
-                .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
-                .await?;
+            match self.shell_type {
+                ShellType::PowerShell => {
+                    self.stdin
+                        .write_all(format!("Write-Output '{}'\n", sentinel).as_bytes())
+                        .await?;
 
-            // Capture CWD
-            self.stdin
-                .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
-                .await?;
+                    // Capture CWD
+                    self.stdin
+                        .write_all("Write-Output \"__CWD__$((Get-Location).Path)\"\n".as_bytes())
+                        .await?;
 
-            // Robust exit code capture for PowerShell (PS 5.1 compatible):
-            // If $LASTEXITCODE is non-zero OR $? is false:
-            //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
-            //   Else return $LASTEXITCODE.
-            // Else return 0.
-            // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
-            self.stdin
-                .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
-                .await?;
+                    // Robust exit code capture for PowerShell (PS 5.1 compatible):
+                    // If $LASTEXITCODE is non-zero OR $? is false:
+                    //   If $LASTEXITCODE is 0 (meaning $? was false but LASTEXITCODE wasn't set), return 1.
+                    //   Else return $LASTEXITCODE.
+                    // Else return 0.
+                    // Note: Ternary operator (?:) is not supported in PS 5.1, so we use if/else statements.
+                    self.stdin
+                        .write_all("Write-Output \"EXIT_CODE_$(if ($LASTEXITCODE -ne 0 -or -not $?) { if ($LASTEXITCODE -eq 0) { 1 } else { $LASTEXITCODE } } else { 0 })\"\n".as_bytes())
+                        .await?;
+                }
+                ShellType::Bash => {}
+            }
         }
 
         self.stdin.flush().await?;
