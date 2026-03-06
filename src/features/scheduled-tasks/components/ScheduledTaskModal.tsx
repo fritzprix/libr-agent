@@ -107,13 +107,15 @@ function ScheduledTaskForm({
   );
   const [message, setMessage] = useState(task?.message ?? '');
   const [saving, setSaving] = useState(false);
+  const [prevAssistants, setPrevAssistants] = useState(assistants);
 
   // Set default assistantId for new tasks if assistants finish loading after the form mounts
-  useEffect(() => {
+  if (assistants !== prevAssistants) {
+    setPrevAssistants(assistants);
     if (!task && !assistantId && assistants.length > 0) {
       setAssistantId(assistants[0].id);
     }
-  }, [task, assistantId, assistants]);
+  }
 
   const handleSave = async () => {
     if (

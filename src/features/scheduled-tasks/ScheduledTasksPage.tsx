@@ -198,7 +198,9 @@ export function ScheduledTasksPage() {
                   aria-label={t('scheduledTasks.deleteTaskAria', {
                     name: task.name,
                   })}
-                  disabled={deletingIds.has(task.id) || togglingIds.has(task.id)}
+                  disabled={
+                    deletingIds.has(task.id) || togglingIds.has(task.id)
+                  }
                 >
                   {deletingIds.has(task.id) ? (
                     <Clock className="w-4 h-4 animate-spin" />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
@@ -50,7 +50,44 @@ export interface MCPServerMetadata {
 
 export function useMCPServerForm(server: MCPServerEntity) {
   const { t } = useTranslation('common');
-  const [draft, setDraft] = useState(server);
+  const [draft, setDraft] = useState(() => {
+    const initDraft = { ...server };
+    if (
+      ((initDraft.transport.type as string) === 'http' ||
+        initDraft.transport.type === 'http-sse') &&
+      'url' in initDraft.transport &&
+      initDraft.transport.url
+    ) {
+      try {
+        const urlObj = new URL(initDraft.transport.url);
+        const varDefs = (initDraft.metadata as MCPServerMetadata | undefined)
+          ?.variableDefinitions;
+        let changed = false;
+
+        if (varDefs) {
+          Object.entries(varDefs).forEach(([key, def]) => {
+            if (def.target === 'url-param' && urlObj.searchParams.has(key)) {
+              urlObj.searchParams.delete(key);
+              changed = true;
+            }
+          });
+        }
+
+        if (changed) {
+          return {
+            ...initDraft,
+            transport: {
+              ...initDraft.transport,
+              url: urlObj.toString(),
+            } as TransportConfig,
+          };
+        }
+      } catch {
+        // invalid URL
+      }
+    }
+    return initDraft;
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -166,44 +203,6 @@ export function useMCPServerForm(server: MCPServerEntity) {
     }
     return {};
   });
-
-  // Clean the URL in the draft state to hide url-params
-  useEffect(() => {
-    if (
-      ((draft.transport.type as string) === 'http' ||
-        draft.transport.type === 'http-sse') &&
-      'url' in draft.transport &&
-      draft.transport.url
-    ) {
-      try {
-        const urlObj = new URL(draft.transport.url);
-        const varDefs = (draft.metadata as MCPServerMetadata | undefined)
-          ?.variableDefinitions;
-        let changed = false;
-
-        if (varDefs) {
-          Object.entries(varDefs).forEach(([key, def]) => {
-            if (def.target === 'url-param' && urlObj.searchParams.has(key)) {
-              urlObj.searchParams.delete(key);
-              changed = true;
-            }
-          });
-        }
-
-        if (changed) {
-          setDraft((prev) => ({
-            ...prev,
-            transport: {
-              ...prev.transport,
-              url: urlObj.toString(),
-            } as TransportConfig,
-          }));
-        }
-      } catch {
-        // invalid URL
-      }
-    }
-  }, []);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 

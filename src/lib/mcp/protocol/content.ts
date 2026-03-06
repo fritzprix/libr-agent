@@ -42,7 +42,9 @@ export interface MCPErrorContent extends MCPTextContent {
 export interface MCPImageContent {
   type: 'image';
   /** The image data encoded in base64. */
-  data: string;
+  data?: string;
+  /** The image source URI. */
+  uri?: string;
   mimeType: string;
   annotations?: Record<string, unknown>;
   serviceInfo?: ServiceInfo;
@@ -54,7 +56,23 @@ export interface MCPImageContent {
 export interface MCPAudioContent {
   type: 'audio';
   /** The audio data encoded in base64. */
-  data: string;
+  data?: string;
+  /** The audio source URI. */
+  uri?: string;
+  mimeType: string;
+  annotations?: Record<string, unknown>;
+  serviceInfo?: ServiceInfo;
+}
+
+/**
+ * Represents a video content part in an MCP message.
+ */
+export interface MCPVideoContent {
+  type: 'video';
+  /** The video data encoded in base64. */
+  data?: string;
+  /** The video source URI. */
+  uri?: string;
   mimeType: string;
   annotations?: Record<string, unknown>;
   serviceInfo?: ServiceInfo;
@@ -89,6 +107,7 @@ export type MCPContent =
   | MCPErrorContent
   | MCPImageContent
   | MCPAudioContent
+  | MCPVideoContent
   | MCPResourceLinkContent
   | MCPResourceContent
   | MCPThinkingContent

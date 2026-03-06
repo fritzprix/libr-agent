@@ -30,11 +30,13 @@ export function InputTokenDropdown({
 }: InputTokenDropdownProps) {
   const count = mode.items.length;
   const [activeIndex, setActiveIndex] = useState(0);
+  const [prevMode, setPrevMode] = useState(mode);
   const listRef = useRef<HTMLUListElement>(null);
 
-  useEffect(() => {
+  if (mode !== prevMode) {
+    setPrevMode(mode);
     setActiveIndex(0);
-  }, [mode]);
+  }
 
   useEffect(() => {
     if (!count) return;

@@ -58,7 +58,8 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
             aria-expanded={isExpanded}
             aria-controls={contentId}
             aria-label={
-              toggleAriaLabel || t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })
+              toggleAriaLabel ||
+              t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })
             }
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
@@ -77,7 +78,10 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
         {copyData && (
           <button
             onClick={copyToClipboard}
-            aria-label={t('baseBubble.copy', { title, defaultValue: `Copy ${title} to clipboard` })}
+            aria-label={t('baseBubble.copy', {
+              title,
+              defaultValue: `Copy ${title} to clipboard`,
+            })}
             className="flex items-center gap-2 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
