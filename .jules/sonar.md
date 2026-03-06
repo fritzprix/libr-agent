@@ -35,3 +35,5 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-03-03 - src/lib/session-utils.ts **Coverage Expanded:** filterSessions **Assertions:** Verified graceful handling of AgentSession objects missing an assistant field during query filtering.
 
 ## 2026-03-03 - src/lib/tool-call-utils.ts **Coverage Expanded:** isBuiltinTool, parseBuiltinToolName, parseToolArguments **Assertions:** Verified boundary conditions for extracting tool prefixes and ensured robust recovery (returning '{ raw: string }') when JSON parsing throws non-Error objects.
+
+## 2026-03-03 - src/test/setup.ts **Coverage Expanded:** Global Test Architecture **Assertions:** Initialized a dummy `i18next` instance in global setup to eradicate `NO_I18NEXT_INSTANCE` console warning spew during unit tests. Preserves `useTranslation` hook signature while eliminating React warnings. Tests correctly fallback to English JSON keys.

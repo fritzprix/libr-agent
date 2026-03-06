@@ -2,6 +2,19 @@ import { expect, afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import 'fake-indexeddb/auto';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import enCommon from '@/locales/en/common.json';
+
+// Initialize dummy i18next instance to silence NO_I18NEXT_INSTANCE warnings
+i18n.use(initReactI18next).init({
+  lng: 'en',
+  fallbackLng: 'en',
+  ns: ['common'],
+  defaultNS: 'common',
+  resources: { en: { common: enCommon } },
+  interpolation: { escapeValue: false }, // not needed for React as it escapes by default
+});
 
 // Mock Tauri APIs for testing environment
 Object.defineProperty(window, '__TAURI_INTERNALS__', {
