@@ -100,6 +100,39 @@ impl PersistentShell {
             }
             Command::new("bash")
         };
+
+        #[cfg(windows)]
+        let mut cmd = match shell_type {
+            ShellType::PowerShell => {
+                let mut c = Command::new("powershell.exe");
+                c.arg("-NoProfile");
+                c.arg("-NoLogo");
+                c.arg("-NonInteractive"); // Critical: removes prompts and echo
+                debug!("Creating persistent PowerShell session for: {}", session_id);
+                c
+            }
+            ShellType::Cmd => {
+                let mut c = Command::new("cmd.exe");
+                c.arg("/Q"); // Echo off
+                c.arg("/K"); // Keep running (don't exit after first command)
+                debug!("Creating persistent Cmd shell for: {}", session_id);
+                c
+            }
+            ShellType::Bash => {
+                return Err(anyhow::anyhow!(
+                    "Bash shell type is not supported on Windows"
+                ));
+            }
+        };
+
+        // Apply environment isolation to prevent leaking host secrets
+        // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
+        // to ensure whitelisted variables are isolated but specialized ones are preserved.
+        cmd.env_clear();
+        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
+
         #[cfg(unix)]
         {
             cmd.arg("--norc");
@@ -127,36 +160,6 @@ impl PersistentShell {
             }
 
             debug!("Creating persistent bash shell for session: {}", session_id);
-        }
-
-        #[cfg(windows)]
-        let mut cmd = match shell_type {
-            ShellType::PowerShell => {
-                let mut c = Command::new("powershell.exe");
-                c.arg("-NoProfile");
-                c.arg("-NoLogo");
-                c.arg("-NonInteractive"); // Critical: removes prompts and echo
-                debug!("Creating persistent PowerShell session for: {}", session_id);
-                c
-            }
-            ShellType::Cmd => {
-                let mut c = Command::new("cmd.exe");
-                c.arg("/Q"); // Echo off
-                c.arg("/K"); // Keep running (don't exit after first command)
-                debug!("Creating persistent Cmd shell for: {}", session_id);
-                c
-            }
-            ShellType::Bash => {
-                return Err(anyhow::anyhow!(
-                    "Bash shell type is not supported on Windows"
-                ));
-            }
-        };
-
-        // Apply environment isolation to prevent leaking host secrets
-        cmd.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
-            cmd.env(k, v);
         }
 
         // Set working directory to workspace
