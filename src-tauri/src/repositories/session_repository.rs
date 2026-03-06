@@ -63,6 +63,7 @@ pub struct SessionMetadata {
     pub created_at: i64,
     pub updated_at: i64,
     pub is_bookmarked: bool,
+    pub yolo_mode: bool,
 }
 
 impl TryFrom<session::Model> for SessionMetadata {
@@ -84,6 +85,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             created_at: model.created_at,
             updated_at: model.updated_at,
             is_bookmarked: model.is_bookmarked,
+            yolo_mode: model.yolo_mode,
         })
     }
 }
@@ -158,6 +160,7 @@ impl SessionRepository for SqliteSessionRepository {
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
             is_bookmarked: Set(session.is_bookmarked),
+            yolo_mode: Set(session.yolo_mode),
         };
 
         Session::insert(model)
@@ -175,6 +178,7 @@ impl SessionRepository for SqliteSessionRepository {
                         session::Column::MaxDepth,
                         session::Column::MaxFanout,
                         session::Column::UpdatedAt,
+                        session::Column::YoloMode,
                     ])
                     .to_owned(),
             )
@@ -336,6 +340,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             is_bookmarked: false,
+            yolo_mode: false,
         };
 
         // Test upsert
@@ -375,6 +380,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             is_bookmarked: false,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session)
@@ -421,6 +427,7 @@ mod tests {
                 created_at: now,
                 updated_at: now + i,
                 is_bookmarked: false,
+                yolo_mode: false,
             };
 
             repo.upsert_session(&session)
@@ -488,6 +495,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             is_bookmarked: false,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session)
@@ -505,6 +513,7 @@ mod tests {
             created_at: now,
             updated_at: now + 1000,
             is_bookmarked: false,
+            yolo_mode: false,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -546,6 +555,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             is_bookmarked: false,
+            yolo_mode: false,
             parent_session_id: None,
             lineage_id: None,
             depth: None,
@@ -591,6 +601,7 @@ mod tests {
             created_at: now,
             updated_at: now,
             is_bookmarked: false,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session)

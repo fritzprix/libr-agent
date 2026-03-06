@@ -63,7 +63,15 @@ pub async fn execute_tool_calls(
         let requires_approval =
             crate::agent::tool_approvals::is_approval_required(&tool_name).await;
 
-        if requires_approval {
+        let yolo_enabled = {
+            let active = active_sessions.read().await;
+            active
+                .get(&session_id)
+                .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
+                .unwrap_or(false)
+        };
+
+        if requires_approval && !yolo_enabled {
             let (tx, rx) = oneshot::channel();
 
             // Add tx to pending approvals

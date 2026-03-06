@@ -486,11 +486,12 @@ export function AgentSessionProvider({
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
+          yoloMode: response.yoloMode,
         };
 
         setSession(sessionData);
         setWorkflowStatus(sessionData.status);
-
+        setYoloModeEnabled(sessionData.yoloMode);
         // 2. Resume session in Rust backend (ensure active in memory)
         // This triggers proxy creation which emits InitializationStep events
         await invoke<AgentSessionMetadata>('agent_resume_session', {
@@ -645,27 +646,36 @@ export function AgentSessionProvider({
     [session],
   );
 
-  const toggleYoloMode = useCallback(() => {
+  const toggleYoloMode = useCallback(async () => {
     const newVal = !yoloModeEnabled;
-    setYoloModeEnabled(newVal);
-    logger.info(`YOLO mode ${newVal ? 'enabled' : 'disabled'}`);
+    try {
+      await invoke('agent_set_yolo_mode', {
+        sessionId,
+        enabled: newVal,
+      });
+      setYoloModeEnabled(newVal);
+      logger.info(`YOLO mode ${newVal ? 'enabled' : 'disabled'}`);
 
-    // If turned ON, auto-approve any currently pending approvals
-    if (newVal && pendingApprovals.length > 0) {
-      logger.info('Auto-approving pending tools due to YOLO toggle', {
-        count: pendingApprovals.length,
-      });
-      pendingApprovals.forEach((p) => {
-        invoke<AgentResponse>('agent_respond_tool_approval', {
-          sessionId,
-          toolCallId: p.toolCallId,
-          approved: true,
-        }).catch((err) => {
-          logger.error('Failed to auto-approve tool upon YOLO toggle', err);
+      // If turned ON, auto-approve any currently pending approvals
+      // (This part is still useful for immediate UI feedback on pending items)
+      if (newVal && pendingApprovals.length > 0) {
+        logger.info('Auto-approving pending tools due to YOLO toggle', {
+          count: pendingApprovals.length,
         });
-      });
-      setPendingApprovals([]);
-      setWorkflowPhase('using_tools');
+        pendingApprovals.forEach((p) => {
+          invoke<AgentResponse>('agent_respond_tool_approval', {
+            sessionId,
+            toolCallId: p.toolCallId,
+            approved: true,
+          }).catch((err) => {
+            logger.error('Failed to auto-approve tool upon YOLO toggle', err);
+          });
+        });
+        setPendingApprovals([]);
+        setWorkflowPhase('using_tools');
+      }
+    } catch (err) {
+      logger.error('Failed to toggle YOLO mode on backend', err);
     }
   }, [yoloModeEnabled, pendingApprovals, sessionId]);
 

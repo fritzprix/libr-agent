@@ -73,6 +73,7 @@ pub async fn resume_session(
                 metadata: session.clone(),
                 is_running: false,
                 cancellation_token: CancellationToken::new(),
+                yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),

@@ -236,6 +236,7 @@ mod tests {
             max_fanout: None,
             created_at: 1234567890,
             updated_at: 1234567890,
+            yolo_mode: false,
         };
 
         // Upsert session
@@ -266,6 +267,7 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -308,6 +310,7 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            yolo_mode: false,
         };
 
         repo.upsert_session(&session).await.unwrap();
@@ -343,6 +346,7 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                yolo_mode: false,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -373,6 +377,7 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                yolo_mode: false,
             };
             repo.upsert_session(&session).await.unwrap();
         }
@@ -411,6 +416,7 @@ mod tests {
                     depth: None,
                     max_depth: None,
                     max_fanout: None,
+                    yolo_mode: false,
                 };
                 repo_clone.upsert_session(&session).await.unwrap();
             });

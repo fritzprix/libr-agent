@@ -476,6 +476,35 @@ impl AgentSessionManager {
         ))
     }
 
+    /// Set YOLO mode for a session
+    pub async fn set_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), String> {
+        // 1. Update in-memory state
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                session
+                    .yolo_mode
+                    .store(enabled, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+
+        // 2. Persist to DB
+        let mut metadata = self
+            .session_repo
+            .get_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to get session metadata: {}", e))?
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        metadata.yolo_mode = enabled;
+        self.session_repo
+            .upsert_session(&metadata)
+            .await
+            .map_err(|e| format!("Failed to update session metadata: {}", e))?;
+
+        Ok(())
+    }
+
     /// Handle LLM error from frontend
     pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(

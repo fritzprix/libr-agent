@@ -101,6 +101,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         is_bookmarked: false,
         created_at: now,
         updated_at: now,
+        yolo_mode: false,
     };
 
     // Persist to database using injected repository
@@ -147,6 +148,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 metadata: session.clone(),
                 is_running: false,
                 cancellation_token: CancellationToken::new(),
+                yolo_mode: Arc::new(AtomicBool::new(session.yolo_mode)),
                 cancel_pending: Arc::new(AtomicBool::new(false)),
                 pending_execution: None,
                 messages: Arc::new(RwLock::new(Vec::new())),

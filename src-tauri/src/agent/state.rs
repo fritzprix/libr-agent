@@ -90,6 +90,9 @@ pub struct AgentSession {
     /// Cancellation token to abort running workflows
     pub cancellation_token: CancellationToken,
 
+    /// YOLO mode: execute tools without requiring approval
+    pub yolo_mode: Arc<AtomicBool>,
+
     /// Cancel-pending flag to block post-cancel recursion/re-entry
     pub cancel_pending: Arc<AtomicBool>,
 
