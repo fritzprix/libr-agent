@@ -182,10 +182,10 @@ impl WorkspaceServer {
             }
 
             let file_name = path.file_name().and_then(|n| n.to_str());
-            
+
             // Get relative path for matching
             let relative_path = path.strip_prefix(root_path).unwrap_or(path);
-            
+
             if matches_glob(&glob_pattern, relative_path, file_name) {
                 let metadata = entry
                     .metadata()
