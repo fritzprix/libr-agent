@@ -1,14 +1,13 @@
-use crate::commands::workspace_commands::get_app_logs_dir;
+use crate::session::get_session_manager;
 use chrono::Utc;
-use std::fs;
+use tokio::fs;
 
 pub struct LogService;
 
 impl LogService {
     /// Creates a timestamped backup of the current main log file.
     pub async fn backup_current_log() -> Result<String, String> {
-        let log_dir_str = get_app_logs_dir().await?;
-        let log_dir = std::path::PathBuf::from(log_dir_str);
+        let log_dir = get_session_manager()?.get_logs_dir();
 
         // Find the current log file (using the specified filename)
         let log_file = log_dir.join("libragent.log");
@@ -22,19 +21,22 @@ impl LogService {
         let backup_file = log_dir.join(format!("libragent_{timestamp}.log.bak"));
 
         // Copy the file
-        fs::copy(&log_file, &backup_file).map_err(|e| format!("Failed to backup log file: {e}"))?;
+        fs::copy(&log_file, &backup_file)
+            .await
+            .map_err(|e| format!("Failed to backup log file: {e}"))?;
 
         Ok(backup_file.to_string_lossy().to_string())
     }
 
     /// Clears the content of the current main log file.
     pub async fn clear_current_log() -> Result<(), String> {
-        let log_dir_str = get_app_logs_dir().await?;
-        let log_dir = std::path::PathBuf::from(log_dir_str);
+        let log_dir = get_session_manager()?.get_logs_dir();
         let log_file = log_dir.join("libragent.log");
 
         if log_file.exists() {
-            fs::write(&log_file, "").map_err(|e| format!("Failed to clear log file: {e}"))?;
+            fs::write(&log_file, "")
+                .await
+                .map_err(|e| format!("Failed to clear log file: {e}"))?;
         }
 
         Ok(())
@@ -42,19 +44,22 @@ impl LogService {
 
     /// Lists all log files (`.log`) and log backups (`.log.bak`) in the log directory.
     pub async fn list_log_files() -> Result<Vec<String>, String> {
-        let log_dir_str = get_app_logs_dir().await?;
-        let log_dir = std::path::PathBuf::from(log_dir_str);
+        let log_dir = get_session_manager()?.get_logs_dir();
 
         if !log_dir.exists() {
             return Ok(vec![]);
         }
 
-        let entries =
-            fs::read_dir(&log_dir).map_err(|e| format!("Failed to read log directory: {e}"))?;
+        let mut read_dir = fs::read_dir(&log_dir)
+            .await
+            .map_err(|e| format!("Failed to read log directory: {e}"))?;
 
         let mut log_files = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| format!("Failed to read directory entry: {e}"))?
+        {
             let path = entry.path();
 
             if path.is_file() {
