@@ -11,7 +11,7 @@ interface BaseBubbleProps {
   collapsedSummary?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
-  ariaLabel?: string;
+  toggleAriaLabel?: string;
 }
 
 export const BaseBubble: React.FC<BaseBubbleProps> = ({
@@ -23,7 +23,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
   collapsedSummary,
   children,
   className = '',
-  ariaLabel,
+  toggleAriaLabel,
 }) => {
   const { t } = useTranslation('common');
   const [copied, setCopied] = useState(false);
@@ -48,7 +48,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
     >
       <div className="px-4 py-3 bg-muted border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5" aria-hidden="true">
             <div className="w-3 h-3 bg-destructive rounded-full"></div>
             <div className="w-3 h-3 bg-warning rounded-full"></div>
             <div className="w-3 h-3 bg-success rounded-full"></div>
@@ -57,7 +57,9 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
             onClick={() => setIsExpanded(!isExpanded)}
             aria-expanded={isExpanded}
             aria-controls={contentId}
-            aria-label={ariaLabel || t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })}
+            aria-label={
+              toggleAriaLabel || t('baseBubble.toggle', { title, defaultValue: `Toggle ${title}` })
+            }
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {isExpanded ? (
@@ -90,11 +92,12 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
         </div>
       )}
 
-      {isExpanded && (
-        <div id={contentId} className="p-4 max-h-96 overflow-auto bg-background">
-          {children}
-        </div>
-      )}
+      <div
+        id={contentId}
+        className={`p-4 max-h-96 overflow-auto bg-background ${!isExpanded ? 'hidden' : ''}`}
+      >
+        {children}
+      </div>
     </div>
   );
 };
