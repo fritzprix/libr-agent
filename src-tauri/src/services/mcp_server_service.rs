@@ -131,7 +131,11 @@ impl McpServerService {
             .map_err(|e| format!("Failed to update cached tools: {}", e))?;
 
         // Reload the model to get the updated tool count
-        let model = repo.get(&model.id).await.unwrap().unwrap_or(model);
+        let model = repo
+            .get(&model.id)
+            .await
+            .map_err(|e| format!("Failed to reload MCP server config after creation: {}", e))?
+            .unwrap_or(model);
 
         Ok(model)
     }
@@ -160,9 +164,11 @@ impl McpServerService {
             .ok_or_else(|| format!("MCP server '{}' not found", id))?;
 
         let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
-        let final_config_val = config
-            .clone()
-            .unwrap_or_else(|| serde_json::from_str(&existing.config).unwrap_or(Value::Null));
+        let final_config_val = match config.as_ref() {
+            Some(c) => c.clone(),
+            None => serde_json::from_str(&existing.config)
+                .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?,
+        };
 
         // 2. Parse config into MCPServerConfig for verification
         let mut mcp_config: crate::mcp::types::MCPServerConfig =
@@ -188,7 +194,11 @@ impl McpServerService {
             .map_err(|e| format!("Failed to update cached tools: {}", e))?;
 
         // Reload the model to get the updated tool count
-        let updated = repo.get(&updated.id).await.unwrap().unwrap_or(updated);
+        let updated = repo
+            .get(&updated.id)
+            .await
+            .map_err(|e| format!("Failed to reload MCP server config after update: {}", e))?
+            .unwrap_or(updated);
 
         Ok(updated)
     }

@@ -3,6 +3,12 @@ use crate::repositories::AssistantRepository;
 use crate::state::get_assistant_repository;
 use serde_json::Value;
 
+pub struct AssistantUpsertPayload {
+    pub id: String,
+    pub name: String,
+    pub config: Value,
+}
+
 pub struct AssistantService;
 
 impl AssistantService {
@@ -54,7 +60,7 @@ impl AssistantService {
     }
 
     pub async fn batch_upsert_assistants(
-        assistants: Vec<crate::commands::assistant_crud_commands::UpsertAssistantPayload>,
+        assistants: Vec<AssistantUpsertPayload>,
     ) -> Result<Vec<AssistantModel>, String> {
         let repo = get_assistant_repository();
         let mut results = Vec::new();

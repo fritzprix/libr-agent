@@ -68,19 +68,15 @@ impl ScheduledTaskService {
             .map(Some);
 
         get_scheduled_task_repository()
-            .update_scheduled_task(
-                id,
-                name,
-                cron_expression,
-                message,
-                enabled,
-                next_run_at,
-            )
+            .update_scheduled_task(id, name, cron_expression, message, enabled, next_run_at)
             .await
             .map_err(|e| e.to_string())
     }
 
-    pub async fn toggle_scheduled_task(id: &str, enabled: bool) -> Result<ScheduledTaskModel, String> {
+    pub async fn toggle_scheduled_task(
+        id: &str,
+        enabled: bool,
+    ) -> Result<ScheduledTaskModel, String> {
         get_scheduled_task_repository()
             .update_scheduled_task(id, None, None, None, Some(enabled), None)
             .await

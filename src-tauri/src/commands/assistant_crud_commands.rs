@@ -75,6 +75,17 @@ pub struct UpsertAssistantPayload {
 pub async fn batch_upsert_assistants(
     assistants: Vec<UpsertAssistantPayload>,
 ) -> Result<Vec<AssistantDto>, String> {
-    let results = AssistantService::batch_upsert_assistants(assistants).await?;
+    let service_payloads = assistants
+        .into_iter()
+        .map(
+            |p| crate::services::assistant_service::AssistantUpsertPayload {
+                id: p.id,
+                name: p.name,
+                config: p.config,
+            },
+        )
+        .collect();
+
+    let results = AssistantService::batch_upsert_assistants(service_payloads).await?;
     Ok(results.into_iter().map(|a| a.into()).collect())
 }
