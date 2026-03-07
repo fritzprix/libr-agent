@@ -70,7 +70,7 @@ pub fn validate_timeout(timeout: Option<u64>) -> u64 {
 /// to prevent revealing sensitive implementation details like stdin-based password transmission.
 ///
 /// # Examples
-/// ```ignore
+/// ```rust
 /// use tauri_mcp_agent_lib::mcp::builtin::workspace::utils::sanitize_command_for_logging;
 ///
 /// let cmd = "sudo -S apt install vim";

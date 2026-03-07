@@ -120,10 +120,11 @@ impl MCPServiceProxyManager {
     ///
     /// # Example
     /// ```rust,ignore
+    /// // Example needs DatabaseConnection and SessionManager initialized, so we use ignore
     /// let result = manager.call_tool(
     ///     "session-123",
     ///     "attachments__addContent",
-    ///     json!({"title": "My Note", "content": "Content"})
+    ///     serde_json::json!({"title": "My Note", "content": "Content"})
     /// ).await?;
     /// ```
     pub async fn call_tool(

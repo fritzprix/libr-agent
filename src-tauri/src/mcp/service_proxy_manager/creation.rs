@@ -82,6 +82,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Example
     /// ```rust,ignore
+    /// // Example needs DatabaseConnection and SessionManager initialized, so we use ignore
     /// let proxy = manager.create_proxy(
     ///     "session-123".to_string(),
     ///     vec!["knowledge".to_string(), "planning".to_string()],
