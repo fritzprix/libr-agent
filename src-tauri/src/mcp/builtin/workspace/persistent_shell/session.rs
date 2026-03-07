@@ -229,22 +229,6 @@ impl PersistentShell {
     /// Execute a command in the persistent shell
     ///
     /// # Arguments
-    /// * `command` - Shell command to execute
-    ///
-    /// # Returns
-    /// Tuple of (stdout, stderr, exit_code)
-    ///
-    /// # Algorithm
-    /// 1. Send command + newline
-    /// 2. Send unique sentinel marker
-    /// 3. Send exit code capture command
-    /// 4. Read stdout/stderr until sentinel found
-    /// 5. Parse exit code from next line
-    /// 6. Return collected output
-    ///
-    /// Execute a command in the persistent shell
-    ///
-    /// # Arguments
     ///
     /// * `command` - Shell command to execute
     ///
@@ -505,12 +489,13 @@ impl PersistentShell {
 
             self.stdin.write_all(heredoc_cmd.as_bytes()).await?;
 
-            // Send sentinel markers for exit code capture
+            // Capture exit code BEFORE echoing sentinel (which would reset $?)
             self.stdin
-                .write_all(format!("echo '{sentinel}'\n").as_bytes())
+                .write_all(
+                    format!("__code=$?; echo '{sentinel}'; echo \"__CWD__$(pwd)\"; echo \"EXIT_CODE_$__code\"\n")
+                        .as_bytes(),
+                )
                 .await?;
-            self.stdin.write_all(b"echo \"__CWD__$(pwd)\"\n").await?;
-            self.stdin.write_all(b"echo \"EXIT_CODE_$?\"\n").await?;
         }
 
         #[cfg(windows)]

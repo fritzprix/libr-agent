@@ -1,0 +1,77 @@
+use crate::session::get_session_manager;
+use chrono::Utc;
+use tokio::fs;
+
+pub struct LogService;
+
+impl LogService {
+    /// Creates a timestamped backup of the current main log file.
+    pub async fn backup_current_log() -> Result<String, String> {
+        let log_dir = get_session_manager()?.get_logs_dir();
+
+        // Find the current log file (using the specified filename)
+        let log_file = log_dir.join("libragent.log");
+
+        if !log_file.exists() {
+            return Err("No current log file found".to_string());
+        }
+
+        // Create backup filename (including timestamp)
+        let timestamp = Utc::now().format("%Y%m%d_%H%M%S").to_string();
+        let backup_file = log_dir.join(format!("libragent_{timestamp}.log.bak"));
+
+        // Copy the file
+        fs::copy(&log_file, &backup_file)
+            .await
+            .map_err(|e| format!("Failed to backup log file: {e}"))?;
+
+        Ok(backup_file.to_string_lossy().to_string())
+    }
+
+    /// Clears the content of the current main log file.
+    pub async fn clear_current_log() -> Result<(), String> {
+        let log_dir = get_session_manager()?.get_logs_dir();
+        let log_file = log_dir.join("libragent.log");
+
+        if log_file.exists() {
+            fs::write(&log_file, "")
+                .await
+                .map_err(|e| format!("Failed to clear log file: {e}"))?;
+        }
+
+        Ok(())
+    }
+
+    /// Lists all log files (`.log`) and log backups (`.log.bak`) in the log directory.
+    pub async fn list_log_files() -> Result<Vec<String>, String> {
+        let log_dir = get_session_manager()?.get_logs_dir();
+
+        if !log_dir.exists() {
+            return Ok(vec![]);
+        }
+
+        let mut read_dir = fs::read_dir(&log_dir)
+            .await
+            .map_err(|e| format!("Failed to read log directory: {e}"))?;
+
+        let mut log_files = Vec::new();
+        while let Some(entry) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| format!("Failed to read directory entry: {e}"))?
+        {
+            let path = entry.path();
+
+            if path.is_file() {
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if filename.ends_with(".log") || filename.ends_with(".log.bak") {
+                        log_files.push(filename.to_string());
+                    }
+                }
+            }
+        }
+
+        log_files.sort();
+        Ok(log_files)
+    }
+}

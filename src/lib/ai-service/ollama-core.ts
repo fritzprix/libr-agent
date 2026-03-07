@@ -399,7 +399,7 @@ const MAX_ACCUMULATOR_AGE_MS = 30_000;
  * Processes a streaming chunk from Ollama API with partial JSON accumulation
  * @param chunk A single chunk from the stream.
  * @param logger Logger instance to track events.
- * @param accumulators Aggregated state of ongoing multipart tool calls.
+ * @param accumulators Map of partial JSON states for multipart tool calls.
  */
 export function processChunk(
   chunk: unknown,

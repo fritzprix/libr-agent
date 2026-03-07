@@ -36,8 +36,15 @@ pub async fn create_basic_isolated_command(
     let detected_python = detect_python_path().await;
     let python_path_str = detected_python.as_ref().map(|p| p.to_string_lossy());
 
-    // Configure base environment
-    // Windows: DO NOT use env_clear() as it breaks process execution
+    // Apply environment isolation: clear all inherited environment variables
+    cmd.env_clear();
+
+    // Re-apply whitelisted essential system variables
+    for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        cmd.env(k, v);
+    }
+
+    // Configure base environment overrides
     cmd.env("USERPROFILE", &config.workspace_path);
     cmd.env("HOME", &config.workspace_path);
     cmd.env("TEMP", config.workspace_path.join("tmp"));

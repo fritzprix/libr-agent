@@ -35,9 +35,15 @@ pub async fn create_high_isolated_command(
 
     // Set environment and working directory
     cmd.current_dir(&config.workspace_path);
+
+    // Apply environment isolation
+    cmd.env_clear();
+    for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        cmd.env(k, v);
+    }
+
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);
-    // PATH and other envs inherited
 
     for (key, value) in &config.env_vars {
         cmd.env(key, value);

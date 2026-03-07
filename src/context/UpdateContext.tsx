@@ -169,7 +169,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
         id: toastId,
         duration: 2000,
       });
-      await safeInvoke('restart_app');
+      await safeInvoke<void>('restart_app');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('Update installation failed:', err);
