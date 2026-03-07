@@ -167,7 +167,8 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
   return (
     <button
       type="button"
-      className="flex items-center justify-center p-2 border-t border-muted w-full cursor-pointer hover:bg-muted/50 transition-colors"
+      aria-expanded={isExpanded}
+      className="flex items-center justify-center p-2 border-t border-muted w-full cursor-pointer hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-b-lg"
       onClick={onToggle}
     >
       <span className="text-xs text-muted-foreground font-medium">
