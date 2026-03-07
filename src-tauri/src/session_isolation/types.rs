@@ -30,7 +30,7 @@ pub struct IsolationConfig {
     pub resource_limits: ResourceLimits,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResourceLimits {
     #[allow(dead_code)] // Planned for future use
     pub max_memory_mb: Option<u64>,

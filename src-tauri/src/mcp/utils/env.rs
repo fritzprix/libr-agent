@@ -34,7 +34,10 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
 
         // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
         // isolated processes have no business accessing them.
-        if is_preserved || key.starts_with("LC_") || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR") {
+        if is_preserved
+            || key.starts_with("LC_")
+            || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
+        {
             envs.push((key, value));
         }
     }

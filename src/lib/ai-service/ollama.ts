@@ -4,6 +4,7 @@ import type {
   ListResponse,
   ModelResponse,
   Message as OllamaMessage,
+  Tool,
 } from 'ollama';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
@@ -96,6 +97,13 @@ export class OllamaService extends BaseAIService {
   }
 
   /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): Tool[] {
+    return convertMCPToolsToOllamaTools(mcpTools, coreLogger);
+  }
+
+  /**
    * Cancels any ongoing streams by calling the Ollama client's abort method.
    * This will abort all running requests on the client instance.
    */
@@ -167,7 +175,10 @@ export class OllamaService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config } = this.prepareStreamChat(messages, options);
+    const { config, tools: ollamaTools } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     logger.info('🔵 Ollama doStreamChat called', {
       inputMessageCount: messages.length,
@@ -182,16 +193,12 @@ export class OllamaService extends BaseAIService {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
-      const ollamaTools = convertMCPToolsToOllamaTools(
-        options.availableTools,
-        coreLogger,
-      );
 
       logger.info('📨 Converted messages for Ollama', {
         originalCount: messages.length,
         convertedCount: ollamaMessages.length,
         model,
-        toolCount: ollamaTools.length,
+        toolCount: (ollamaTools ?? []).length,
         messageRoles: ollamaMessages.map((m) => m.role).join(','),
       });
 
@@ -227,7 +234,7 @@ export class OllamaService extends BaseAIService {
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
         ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
-        tools: ollamaTools,
+        tools: ollamaTools as Tool[] | undefined,
         keep_alive: '5m',
         options: {
           temperature: config.temperature || 0.7,

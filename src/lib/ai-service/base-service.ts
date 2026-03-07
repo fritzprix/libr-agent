@@ -13,7 +13,6 @@ import {
 } from './types';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
-import { convertMCPToolsToProviderTools } from './tool-converters';
 import { MessageNormalizer } from './message-normalizer';
 import { getLogger } from '../logger';
 
@@ -342,10 +341,7 @@ export abstract class BaseAIService implements IAIService {
     this.abortController = new AbortController();
 
     const tools = options.availableTools
-      ? convertMCPToolsToProviderTools(
-          options.availableTools,
-          this.getProvider(),
-        )
+      ? this.convertTools(options.availableTools)
       : undefined;
 
     // Apply vendor-specific message sanitization
@@ -603,6 +599,15 @@ export abstract class BaseAIService implements IAIService {
    * @abstract
    */
   abstract getProvider(): AIServiceProvider;
+
+  /**
+   * Converts an array of MCPTool objects to the provider-specific format.
+   * Each service class must implement this to return the correct tool representation.
+   * @param mcpTools The array of MCPTool objects to convert.
+   * @returns An array of tools in the provider-specific format.
+   * @abstract
+   */
+  abstract convertTools(mcpTools: MCPTool[]): unknown[];
 
   /**
    * Cleans up any resources used by the service instance.

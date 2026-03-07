@@ -14,6 +14,7 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
+import { convertMCPToolToGemini } from '../tool-converters';
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
@@ -42,6 +43,13 @@ export class GeminiService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Gemini;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): FunctionDeclaration[] {
+    return mcpTools.map(convertMCPToolToGemini);
   }
 
   /**

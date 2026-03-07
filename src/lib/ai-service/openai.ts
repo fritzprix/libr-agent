@@ -7,6 +7,7 @@ import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import { convertMCPToolToOpenAI } from './tool-converters';
 const logger = getLogger('OpenAIService');
 
 /**
@@ -39,6 +40,13 @@ export class OpenAIService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.OpenAI;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): OpenAIChatCompletionTool[] {
+    return mcpTools.map(convertMCPToolToOpenAI);
   }
 
   /**

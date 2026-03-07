@@ -11,6 +11,7 @@ import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import { convertMCPToolToAnthropic } from './tool-converters';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
@@ -73,6 +74,13 @@ export class AnthropicService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Anthropic;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
+    return mcpTools.map(convertMCPToolToAnthropic);
   }
 
   /**

@@ -6,6 +6,7 @@ import { MCPTool } from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
+import { convertMCPToolToGroq } from './tool-converters';
 const logger = getLogger('GroqService');
 
 /**
@@ -33,6 +34,13 @@ export class GroqService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Groq;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): GroqChatCompletionTool[] {
+    return mcpTools.map(convertMCPToolToGroq);
   }
 
   /**

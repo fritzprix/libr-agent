@@ -4,7 +4,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolsToCerebrasTools } from './tool-converters';
+import { convertMCPToolToCerebras } from './tool-converters';
 
 const logger = getLogger('CerebrasService');
 
@@ -74,6 +74,15 @@ export class CerebrasService extends BaseAIService {
   }
 
   /**
+   * @inheritdoc
+   */
+  convertTools(
+    mcpTools: MCPTool[],
+  ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
+    return mcpTools.map(convertMCPToolToCerebras);
+  }
+
+  /**
    * Initiates a streaming chat session with the Cerebras API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat, including model name, system prompt, and tools.
@@ -83,14 +92,13 @@ export class CerebrasService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config } = this.prepareStreamChat(messages, options);
+    const { config, tools } = this.prepareStreamChat(messages, options);
 
     try {
       const cerebrasMessages = this.convertToCerebrasMessages(
         messages,
         options.systemPrompt,
       );
-      const tools = this.prepareTools(options.availableTools);
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
 
       const stream = await this.withRetry(
@@ -104,7 +112,9 @@ export class CerebrasService extends BaseAIService {
               messages: cerebrasMessages,
               model,
               stream: true,
-              tools,
+              tools: tools as
+                | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[]
+                | undefined,
               tool_choice: tools ? 'auto' : undefined,
             },
             { signal: this.getAbortSignal() },
@@ -211,27 +221,6 @@ export class CerebrasService extends BaseAIService {
       'choices' in chunk &&
       Array.isArray(chunk.choices)
     );
-  }
-
-  /**
-   * Converts an array of `MCPTool` objects to the format required by the Cerebras API.
-   * @param availableTools The array of `MCPTool` objects.
-   * @returns An array of Cerebras-compatible tool objects, or undefined if no tools are provided.
-   * @private
-   */
-  private prepareTools(
-    availableTools?: MCPTool[],
-  ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] | undefined {
-    if (!availableTools?.length) {
-      return undefined;
-    }
-
-    try {
-      return convertMCPToolsToCerebrasTools(availableTools);
-    } catch (error: unknown) {
-      logger.error('Failed to convert tools', { error });
-      return undefined;
-    }
   }
 
   /**

@@ -177,6 +177,12 @@ export interface IAIService {
   listModels(): Promise<ModelInfo[]>;
 
   /**
+   * Converts an array of MCPTool objects to the provider-specific format.
+   * Each service class implements this to return the correct tool representation.
+   */
+  convertTools(mcpTools: MCPTool[]): unknown[];
+
+  /**
    * Cancels any in-progress streaming requests initiated by `streamChat`.
    * Implementations should abort network requests and stop yielding further
    * values from `streamChat` as soon as possible.
