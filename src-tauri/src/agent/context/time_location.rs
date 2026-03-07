@@ -117,7 +117,7 @@ mod tests {
         let provider = TimeLocationContextProvider::new();
 
         assert_eq!(provider.provider_id(), "time_location");
-        assert_eq!(provider.priority(), 5);
+        assert_eq!(provider.priority(), 1000);
         assert!(provider.is_enabled().await);
 
         let context = provider.get_context(None).await;

@@ -16,7 +16,19 @@ async function main() {
       model: 'gemini-2.5-flash',
       config: {
         systemInstruction: 'You are a helpful assistant.',
-        contents: [{ role: 'user', parts: [{ text: 'Hello. '.repeat(100) }] }],
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                // Gemini context caching requires at least 32K tokens.
+                // This payload (~150K chars ≈ 37K tokens) satisfies that minimum.
+                text: 'LibrAgent is a next-generation desktop AI agent platform combining Tauri with React. '
+                  .repeat(1800),
+              },
+            ],
+          },
+        ],
       },
     });
     console.log('Cache created!', response.name);

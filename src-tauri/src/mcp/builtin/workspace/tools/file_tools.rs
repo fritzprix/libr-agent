@@ -201,14 +201,14 @@ pub fn create_search_lines_tool() -> MCPTool {
 
 Modes: `regex` (default) or `exact`. Set `ignoreCase=true` for case-insensitive.
 
-Use the returned line numbers directly in replaceLines. For finding files by name, use searchFiles instead.".to_string(),
+Use the returned line numbers directly in editFile. For finding files by name, use searchFiles instead.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "pattern".to_string()]),
         output_schema: None,
         annotations: None,
     }
 }
 
-pub fn create_replace_lines_tool() -> MCPTool {
+pub fn create_edit_file_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
@@ -222,25 +222,35 @@ pub fn create_replace_lines_tool() -> MCPTool {
     // Define the edits array schema
     let mut edit_item_props = HashMap::new();
     edit_item_props.insert(
-        "insertAfter".to_string(),
-        boolean_prop(Some(
-            "Insert-after mode (default: false). When true, new_value is inserted AFTER line N without modifying it. line_hash validates the anchor line for staleness. new_value may contain \\n.",
-        )),
+        "action".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("Type of edit: 'REPLACE' (default), 'INSERT_AFTER', or 'DELETE'. 'REPLACE' swaps lines [line..endLine] with 'new_value'. 'INSERT_AFTER' adds 'new_value' after 'line'. 'DELETE' removes lines [line..endLine]."),
+        ),
     );
     edit_item_props.insert(
         "line".to_string(),
-        integer_prop(Some(1), None, Some("Start line number (1-based, required). Must reference an existing line. For range edit this is the first line of the replaced range. To append at end, use insertAfter=true with the current last line as anchor.")),
+        integer_prop(Some(0), None, Some("Start line number (1-based, required). Use line: 0 ONLY with action='INSERT_AFTER' to insert at the very beginning of the file. For range edits, this is the first line of the affected range.")),
     );
     edit_item_props.insert(
         "endLine".to_string(),
-        integer_prop(Some(1), None, Some("End line number (1-based, optional). When provided, lines [line..endLine] are replaced with new_value. new_value may contain \\n for multi-line replacement. Must be ≥ line.")),
+        integer_prop(Some(1), None, Some("End line number (1-based, optional). For REPLACE and DELETE ranges (inclusive). Defaults to 'line'. Ignored for INSERT_AFTER.")),
+    );
+    edit_item_props.insert(
+        "new_value".to_string(),
+        string_prop(
+            None,
+            None,
+            Some("New content for the line(s). Required for REPLACE and INSERT_AFTER. For single-line REPLACE, must not contain \\n. Use \"\" for DELETE (though 'action' is preferred)."),
+        ),
     );
     edit_item_props.insert(
         "line_hash".to_string(),
         string_prop(
             None,
             None,
-            Some("Optional: 2-char FNV-1a hash of the START line from readFile(showLineHashes=true). Detects staleness. Alias: 'startHash'. Copy directly from '{N}:{hash}|content' prefix."),
+            Some("Staleness-safe 2-char hash from readFile(showLineHashes=true). Strongly recommended to prevent editing the wrong version of the file. Alias: 'startHash'."),
         ),
     );
     edit_item_props.insert(
@@ -248,29 +258,13 @@ pub fn create_replace_lines_tool() -> MCPTool {
         string_prop(
             None,
             None,
-            Some("Optional: 2-char hash of the END line (range mode only). Provides staleness detection on both boundaries."),
-        ),
-    );
-    edit_item_props.insert(
-        "old_value".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Optional: exact current content of the line for validation (single-line mode only). Ignored in range mode. Prefer line_hash instead."),
-        ),
-    );
-    edit_item_props.insert(
-        "new_value".to_string(),
-        string_prop(
-            None,
-            None,
-            Some("Replacement content. Use empty string \"\" to DELETE the line(s). Single-line mode: no \\n allowed. Range mode (endLine present): \\n is allowed and each \\n-separated segment becomes a new line."),
+            Some("Optional: 2-char hash of the end line (range mode only). Provides staleness detection on both boundaries."),
         ),
     );
 
     let edit_item_schema = object_schema(
         edit_item_props,
-        vec!["line".to_string(), "new_value".to_string()],
+        vec!["line".to_string()], // line is always required
     );
 
     props.insert(
@@ -278,27 +272,27 @@ pub fn create_replace_lines_tool() -> MCPTool {
         array_schema(
             edit_item_schema,
             Some(
-                "Array of line edit operations. Each edit must have 'line' and 'new_value' fields.",
+                "Array of edit operations. Each edit must have 'line' and either 'new_value' or 'action' defined.",
             ),
         ),
     );
 
     MCPTool {
-        name: "replaceLines".to_string(),
+        name: "editFile".to_string(),
         title: Some("Edit Multiple Lines in File".to_string()),
-        description: r#"Edit specific lines in a file. Edits are atomic (all-or-nothing).
+        description: r#"Advanced line-based editor. Supports atomic replacement, insertion, and deletion.
 
 MODES:
-  Replace: { line, new_value }
-  Insert:  { line, insertAfter: true, new_value }
-  Delete:  { line, new_value: "" }
-  Range:   { line, endLine, new_value } (replaces multiple lines)
+  REPLACE (default): Swaps lines [line..endLine] with new_value.
+  INSERT_AFTER:    Adds new_value after 'line'. Use line: 0 to insert at top.
+  DELETE:          Removes lines [line..endLine].
 
-SAFETY (Optional):
-  Provide 'line_hash' from readFile(showLineHashes=true) to ensure you are editing the exact version of the line you saw.
+SAFETY:
+  Provide 'line_hash' from readFile(showLineHashes=true) to detect if the file changed since you last read it.
+  The tool handles line-number shifts automatically for multiple edits in one call.
 
-Example:
-  { path: 'main.rs', edits: [{ line: 10, new_value: 'let x = 1;' }] }"#.to_string(),
+Example (Insert at top):
+  { path: 'main.rs', edits: [{ line: 0, action: 'INSERT_AFTER', new_value: '// Copyright 2026\n' }] }"#.to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
         output_schema: None,
         annotations: None,
@@ -321,7 +315,7 @@ pub fn create_delete_file_tool() -> MCPTool {
         title: Some("Delete File".to_string()),
         description: "Permanently delete a file from the workspace. Irreversible.
 
-For partial content changes, use replaceLines instead."
+For partial content changes, use editFile instead."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,

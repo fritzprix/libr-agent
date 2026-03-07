@@ -117,113 +117,113 @@ Gemini uses `maxToolCallsPerMessage: 100` to prevent splitting turns with a `thi
 
 ### Summary of Proposal
 
-- Context length 설정: 모델 정보 우선, 없으면 8K/16K/32K/64K/128K/256K 슬라이더 fallback
-- 입력 토큰이 컨텍스트 윈도우의 **90%를 초과**하면 비동기 compact 실행
-- compact 진행 중에도 streamChat은 정상 처리
-- compact 완료 후: `[pinned, compacted_summary, recent_messages]` 구조로 재구성
-- compact 완료 전 100% 도달 시: compact 완료를 대기
+- Context length setting: model info first; if unavailable, 8K/16K/32K/64K/128K/256K slider fallback
+- When input tokens exceed **90% of the context window**, trigger async compact
+- `streamChat` continues processing normally while compact is in progress
+- After compact completes: rebuild the stack as `[pinned, compacted_summary, recent_messages]`
+- If 100% is reached before compact finishes: wait for compact to complete
 
 ---
 
 ### Assessment
 
-전반적으로 옳은 방향입니다. 특히 **prompt cache와의 정렬**이 핵심 장점입니다. Anthropic의 `cache_control` breakpoint는 "prefix가 안정적일 때" 캐시 히트를 냅니다. compact된 summary가 최신 메시지 앞에 고정되면 캐시 히트율이 크게 올라갑니다.
+The overall direction is correct. The key advantage is **alignment with prompt caching**. Anthropic's `cache_control` breakpoint yields cache hits when "the prefix is stable." If the compacted summary is anchored before the recent messages, cache hit rates improve significantly.
 
-다만 구체적인 구현 단계에서 해결해야 할 문제들이 있습니다.
+However, there are issues that need to be addressed in the concrete implementation.
 
 ---
 
 ### Issues to Address
 
-#### 1. 100% 대기는 UX 블로킹
+#### 1. Blocking on 100% is a UX problem
 
-> "compact가 완료되지 않았는데 100%가 되면 compact를 기다림"
+> "If 100% is reached before compact finishes, wait for compact"
 
-이 경우 사용자는 응답 없음 상태를 봅니다. 완전한 블로킹보다 **graceful fallback** 이 필요합니다.
+In this case, the user sees a non-responsive state. A **graceful fallback** is needed instead of a hard block.
 
-**권고:** compact 대기 중 100% 도달 시, 기존 `selectMessagesWithinContext` 슬라이딩 윈도우를 임시 fallback으로 사용하고, compact 완료 후 다음 요청부터 적용합니다.
+**Recommendation:** When 100% is reached while compact is pending, use the existing `selectMessagesWithinContext` sliding window as a temporary fallback, and apply the compact result from the next request onwards.
 
-#### 2. compact 트리거를 90%보다 낮게
+#### 2. Lower the compact trigger threshold below 90%
 
-90% 트리거는 compact가 완료되기 전에 100%에 도달할 여유가 거의 없습니다. compact 호출 자체도 LLM 요청이기 때문에 수 초에서 수십 초가 걸릴 수 있습니다.
+A 90% trigger leaves almost no room for compact to finish before 100% is reached. The compact call itself is an LLM request and can take seconds to tens of seconds.
 
-**권고:** 트리거를 **75~80%** 로 낮춥니다. 이 구간에서 compact가 완료되면, 100% 블로킹 상황이 사실상 발생하지 않습니다.
+**Recommendation:** Lower the trigger to **75–80%**. If compact finishes in this range, the 100% blocking scenario effectively never occurs.
 
-#### 3. re-compact 문제 (lossy × lossy)
+#### 3. Re-compact problem (lossy × lossy)
 
-compact 결과 자체가 메시지 스택에 들어가면, 다음 compact 사이클에서 그 summary가 또 compact의 대상이 됩니다. 요약의 요약은 품질이 급격히 저하됩니다.
+If the compact result is placed back on the message stack, the next compact cycle will try to compact that summary again. Summarising a summary degrades quality rapidly.
 
-**권고:** compact된 메시지에 `compacted: true` 플래그를 추가하고, compact 대상 선택 시 해당 메시지는 항상 제외합니다. 즉, compact는 `compacted: false`인 메시지에만 적용합니다.
+**Recommendation:** Add a `compacted: true` flag to compacted messages and always exclude them from compact selection. In other words, compact applies only to messages where `compacted: false`.
 
 ```typescript
-// Message 모델에 추가 필요
+// To be added to the Message model
 interface Message {
-  // ... 기존 필드
-  compacted?: boolean; // compact summary임을 표시
+  // ... existing fields
+  compacted?: boolean; // marks this message as a compact summary
 }
 ```
 
-#### 4. Tool chain / thinking signature 무결성
+#### 4. Tool chain / thinking signature integrity
 
-현재 `batchToolCallsInMessages`는 `thinkingSignature`가 있는 메시지의 분할을 금지합니다. compact도 동일한 제약이 필요합니다.
+The current `batchToolCallsInMessages` prohibits splitting messages that have a `thinkingSignature`. Compact must enforce the same constraint.
 
-compact LLM에 보낼 "compaction target messages"를 선택할 때:
+When selecting "compaction target messages" to send to the compact LLM:
 
-- `tool_calls`가 있는 assistant 메시지와 그 tool result들은 **반드시 하나의 묶음으로** compact해야 합니다 (중간에 자르면 Anthropic/Gemini API 오류 발생).
-- `thinkingSignature`가 있는 turn 전체를 atomic하게 처리합니다.
+- Assistant messages with `tool_calls` and their tool results **must be compacted as a single unit** (splitting mid-chain causes Anthropic/Gemini API errors).
+- Turns with a `thinkingSignature` must be handled atomically.
 
-**권고:** compact 경계를 항상 완전한 turn 단위(user → assistant → [tool → tool_result]\*) 로 정렬합니다.
+**Recommendation:** Always align compact boundaries to complete turn units (user → assistant → [tool → tool_result]*).
 
-#### 5. compact에 사용할 모델
+#### 5. Model to use for compact
 
-현재 사용자의 primary model로 compact를 실행하면:
+If the user's primary model is used for compact:
 
-- Claude Opus, GPT-4o 등 고비용 모델 사용 시 compact 비용이 큼
-- compact latency가 primary stream 지연으로 이어질 수 있음
+- High-cost models like Claude Opus or GPT-4o make compact expensive.
+- Compact latency can spill into primary stream latency.
 
-**권고:** compact 전용 모델을 별도로 설정할 수 있게 합니다 (기본값: 같은 provider의 가장 저렴한 모델, 또는 인냉할 수 있게 하기 settings에 추가). compact는 요약 품질보다 속도/비용이 중요합니다.
+**Recommendation:** Allow configuring a separate model for compact (default: cheapest model from the same provider, or user-configurable via settings). For compact, speed and cost matter more than summarisation quality.
 
-#### 6. Anthropic prompt cache breakpoint 배치
+#### 6. Anthropic prompt cache breakpoint placement
 
-Anthropic에서 최대 캐시 히트를 얻으려면 `cache_control: { type: "ephemeral" }` breakpoint를 compact summary 메시지 바로 뒤에 배치해야 합니다. 현재 `AnthropicService`는 이 필드를 취급하지 않습니다.
+To maximise cache hits on Anthropic, the `cache_control: { type: "ephemeral" }` breakpoint must be placed immediately after the compact summary message. The current `AnthropicService` does not handle this field.
 
-**권고:** compact summary 메시지에 provider-specific metadata 필드를 추가하고, `AnthropicService.convertToAnthropicMessages()`에서 해당 메시지 뒤에 `cache_control` breakpoint를 삽입합니다.
+**Recommendation:** Add a provider-specific metadata field to compact summary messages, and in `AnthropicService.convertToAnthropicMessages()` insert the `cache_control` breakpoint after that message.
 
 ---
 
 ### Revised Data Flow
 
 ```
-매 streamChat 호출 전:
+Before each streamChat call:
 
-[토큰 측정]
+[TOKEN MEASURE]
   │
-  ├── < 75%  → 정상 진행
+  ├── < 75%   → proceed normally
   │
-  ├── 75~99%  → compact 비동기 시작 (이미 진행 중이면 skip)
-  │             현재 요청은 기존 스택으로 정상 처리
+  ├── 75–99%  → start async compact (skip if already running)
+  │             process current request using the existing stack
   │
-  └── ≥ 100% → compact 완료 여부 확인
-                ├── 완료됨 → 재구성된 스택 사용
-                └── 미완    → 슬라이딩 윈도우 fallback 사용 (블로킹 없음)
+  └── ≥ 100% → check compact completion
+                ├── done    → use rebuilt stack
+                └── pending → use sliding window fallback (non-blocking)
 
 
-compact 완료 후 메시지 스택 재구성:
+After compact completes, rebuild message stack:
 
-  [system]                         ← 항상 고정
-  [pinned_first_user]              ← 항상 고정 (현재 구조 유지)
-  [compacted_summary, compacted:true]  ← compact 결과, breakpoint 배치 지점
-  [recent_messages...]             ← compact에 포함되지 않은 최신 메시지들
+  [system]                              ← always anchored
+  [pinned_first_user]                   ← always anchored (existing structure preserved)
+  [compacted_summary, compacted:true]   ← compact result; place cache breakpoint here
+  [recent_messages...]                  ← messages not included in compact
 ```
 
 ---
 
 ### Context Length Settings UI
 
-제안한 8K → 256K fallback 슬라이더는 타당합니다. 다만 두 가지를 추가합니다:
+The proposed 8K → 256K fallback slider is reasonable, with two additions:
 
-1. 모델 정보가 있을 경우 슬라이더 대신 **모델 정보 기반 자동값 표시** + override 허용
-2. 현재 `getContextWindow()`는 async (OpenRouter API 조회)이므로, UI에서 로딩 상태 처리 필요. 캐시 히트 시 즉시 표시, miss 시 fallback 먼저 보여주고 나중에 갱신하는 구조가 적합합니다.
+1. When model info is available, show **model-info-based automatic value** instead of the slider, with an override option
+2. The current `getContextWindow()` is async (OpenRouter API call), so the UI needs loading state handling. On cache hit, display immediately; on cache miss, show the fallback first and update once the API call returns.
 
 ---
 
@@ -233,106 +233,106 @@ compact 완료 후 메시지 스택 재구성:
 
 ### Current System Prompt Assembly Order
 
-`build_system_prompt()` in `src-tauri/src/agent/llm/prompt.rs` 기준:
+`build_system_prompt()` in `src-tauri/src/agent/llm/prompt.rs`:
 
 ```
 [1] Agent Identity & Strategy        ← agent_config.system_prompt
-[2] Workspace Instructions           ← agents.md / CLAUDE.md / soul.md (파일 내용)
+[2] Workspace Instructions           ← agents.md / CLAUDE.md / soul.md (file contents)
 [3] Session Context                  ← session.metadata.name
-[4] ContextRegistry providers        ← registry.build_context() 결과
-    ├── TimeLocationContextProvider  (priority: 5, 가장 먼저)
-    └── (기타 providers, priority 순)
-[5] Service Contexts                 ← proxy.get_service_contexts() 결과
-    ├── bootstrap   (플랫폼 정보)
-    ├── planning    (현재 goal, todo list)
-    ├── browser     (현재 URL, 세션)
-    ├── mcp_manager (연결된 MCP 서버 목록)
-    ├── assistant   (에이전트 설명)
-    └── skills      (사용 가능한 skills)
+[4] ContextRegistry providers        ← registry.build_context() result
+    ├── TimeLocationContextProvider  (priority: 1000, last)
+    └── (other providers, in priority order)
+[5] Service Contexts                 ← proxy.get_service_contexts() result
+    ├── bootstrap   (platform info)
+    ├── planning    (current goal, todo list)
+    ├── browser     (current URL, session)
+    ├── mcp_manager (connected MCP server list)
+    ├── assistant   (agent description)
+    └── skills      (available skills)
 ```
 
 ### Volatility Map
 
-| 섹션                                           | 위치     | 변경 주기                 | Cache 관점         |
-| ---------------------------------------------- | -------- | ------------------------- | ------------------ |
-| [1] Agent Identity                             | 앞       | 에이전트 편집 시          | ✅ Stable          |
-| [2] Workspace Instructions                     | 앞       | 파일 변경 시              | ✅ Stable          |
-| [3] Session Context (name)                     | 앞       | 세션당 1회                | ✅ Stable          |
-| [4] **TimeLocation** (priority 5, **첫 번째**) | **중간** | **매 초** (HH:MM:SS 포함) | 🔴 **Kills cache** |
-| [5] planning                                   | 뒤       | 매 tool call              | 🔴 Volatile        |
-| [5] browser                                    | 뒤       | 매 navigation             | 🔴 Volatile        |
-| [5] bootstrap                                  | 뒤       | 세션당 1회                | ✅ Stable          |
-| [5] mcp_manager                                | 뒤       | MCP 연결 변경 시          | 🟡 Semi-stable     |
-| [5] skills                                     | 뒤       | skills 디렉토리 변경 시   | 🟡 Semi-stable     |
+| Section                                                  | Position   | Change frequency              | Cache perspective  |
+| -------------------------------------------------------- | ---------- | ----------------------------- | ------------------ |
+| [1] Agent Identity                                       | front      | on agent edit                 | ✅ Stable          |
+| [2] Workspace Instructions                               | front      | on file change                | ✅ Stable          |
+| [3] Session Context (name)                               | front      | once per session              | ✅ Stable          |
+| [4] **TimeLocation** (priority 1000, **last**)           | **middle** | **every second** (HH:MM:SS)   | 🔴 **Kills cache** |
+| [5] planning                                             | back       | every tool call               | 🔴 Volatile        |
+| [5] browser                                              | back       | every navigation              | 🔴 Volatile        |
+| [5] bootstrap                                            | back       | once per session              | ✅ Stable          |
+| [5] mcp_manager                                          | back       | on MCP connection change      | 🟡 Semi-stable     |
+| [5] skills                                               | back       | on skills directory change    | 🟡 Semi-stable     |
 
-### 핵심 문제
+### Core Problem
 
-**Anthropic prompt caching은 "가장 긴 stable prefix"에 breakpoint를 명시해야 작동합니다.**
+**Anthropic prompt caching requires an explicit breakpoint at the "longest stable prefix."**
 
-현재 구조에서 stable한 섹션은 [1], [2], [3] — 보통 수천~수만 토큰의 agent identity + workspace instructions입니다. 그런데 [4]의 `TimeLocationContextProvider`가 **초 단위 타임스탬프**를 포함하므로 매 요청마다 prefix가 달라집니다.
+In the current structure, the stable sections are [1], [2], [3] — typically thousands to tens of thousands of tokens of agent identity and workspace instructions. However, `TimeLocationContextProvider` at [4] includes a **second-granularity timestamp**, causing the prefix to differ on every request.
 
 ```
 Current effective cache boundary:
-  [1][2][3]  ← stable (cache 가능한 구간)
+  [1][2][3]  ← stable (cacheable range)
        ↓
-  [4] TimeLocation "Current Time: 14:23:07"  ← 1초마다 변경
-                                               ← 실질적 cache prefix 경계
+  [4] TimeLocation "Current Time: 14:23:07"  ← changes every second
+                                               ← effective cache prefix boundary
   [5] planning / browser ...
 ```
 
-결과: **섹션 [1][2][3]을 포함한 모든 내용이 매 요청 cache miss** — `cache_control` breakpoint가 없으므로 Anthropic SDK는 현재 아무것도 캐시하지 않습니다. 설령 breakpoint를 추가해도 [4]가 먼저 나오기 때문에 stable prefix 길이가 0에 가깝습니다.
+Result: **All content including sections [1][2][3] is a cache miss on every request** — the Anthropic SDK currently caches nothing because there is no `cache_control` breakpoint. Even if a breakpoint were added, the stable prefix length would be near zero because [4] comes first.
 
-### 필요한 구조 변경
+### Required Structural Changes
 
-Prompt cache 효과를 얻으려면 **stable → volatile 순서**가 보장되어야 하고, `cache_control` breakpoint를 stable 구간 끝에 배치해야 합니다:
+To benefit from prompt caching, **stable → volatile ordering must be guaranteed** and a `cache_control` breakpoint placed at the end of the stable range:
 
 ```
-# 목표 시스템 프롬프트 구조
+# Target system prompt structure
 
-[STATIC — cache_control breakpoint 여기까지]
+[STATIC — cache_control breakpoint up to here]
   [1] Agent Identity
   [2] Workspace Instructions
   [3] Session Context (name)
   [4a] Semi-stable service contexts (bootstrap, mcp_manager, skills, assistant)
 ─── cache_control: { type: "ephemeral" } ───────────────
-[VOLATILE — 매 요청 달라지는 부분]
-  [4b] TimeLocation (시간 정보)
-  [5]  Planning (현재 goal, todos)
-  [5]  Browser (현재 URL)
+[VOLATILE — changes on every request]
+  [4b] TimeLocation (time info)
+  [5]  Planning (current goal, todos)
+  [5]  Browser (current URL)
 ```
 
-### 수정 방향
+### Remediation Directions
 
-#### 1. TimeLocation에서 초(seconds) 제거
+#### 1. Remove seconds from TimeLocation
 
-가장 빠른 fix. `HH:MM` 수준을 유지하면 분당 1회로 cache miss 빈도가 줄지만, 근본 해결은 아닙니다.
+The fastest fix. Keeping `HH:MM` granularity reduces cache miss frequency to once per minute, but is not a complete solution.
 
 ```rust
-// time_location.rs — 현재
+// time_location.rs — current
 let current_time = format!("{:02}:{:02}:{:02} {}", now.hour(), now.minute(), now.second(), ...);
-// 수정 후 (초 제거)
+// after fix (remove seconds)
 let current_time = format!("{:02}:{:02} {}", now.hour(), now.minute(), ...);
 ```
 
-#### 2. TimeLocation 섹션을 프롬프트 **맨 끝**으로 이동
+#### 2. Move TimeLocation section to the **end** of the prompt
 
-`ContextProvider.priority()` 시스템을 활용하여 volatile providers는 높은 숫자(늦은 순서)로 배치합니다:
+Use the `ContextProvider.priority()` system to place volatile providers at a high number (later order):
 
 ```
-TimeLocationContextProvider::priority() → 현재: 5
-                                         변경 후: 1000 (가장 마지막)
+TimeLocationContextProvider::priority() → current: 5
+                                          after:   1000 (last)
 ```
 
-또는 `build_system_prompt()`에서 stable/volatile 그룹을 분리하여 순서를 명시적으로 제어합니다.
+Alternatively, explicitly separate stable/volatile groups in `build_system_prompt()` to control ordering.
 
-#### 3. `AnthropicService`에 `cache_control` breakpoint 추가
+#### 3. Add `cache_control` breakpoint to `AnthropicService`
 
-현재 `AnthropicService`는 `cache_control` 필드를 일절 사용하지 않습니다. Stable prefix 끝 (섹션 [1]~[4a] 사이) 또는 system prompt 전체에 breakpoint를 삽입해야 합니다.
+The current `AnthropicService` does not use the `cache_control` field at all. A breakpoint must be inserted at the end of the stable prefix (between sections [1]–[4a]).
 
 ```rust
-// convertToAnthropicMessages 또는 doStreamChat에서
-// system prompt를 stable / volatile 두 블록으로 분할하고
-// stable 블록 끝에 cache_control 삽입
+// in convertToAnthropicMessages or doStreamChat
+// split system prompt into stable / volatile blocks
+// and insert cache_control at end of stable block
 system: vec![
     TextBlockParam {
         text: stable_prefix,
@@ -345,19 +345,19 @@ system: vec![
 ]
 ```
 
-Anthropic은 system prompt를 `string` 대신 `array of TextBlockParam`으로도 받을 수 있어 이 분할이 가능합니다.
+Anthropic can accept the system prompt as an `array of TextBlockParam` instead of a `string`, making this split possible.
 
 ### Implementation Priority
 
-| 우선순위 | 항목                                                                             | 근거                                    |
-| -------- | -------------------------------------------------------------------------------- | --------------------------------------- |
-| P0       | `TimeLocationContextProvider` priority를 1000으로 변경 → 프롬프트 맨 끝으로 이동 | 현재 cache를 **완전히 무효화**하는 주범 |
-| P0       | `TimeLocation` 시간 포맷에서 초(seconds) 제거                                    | P0 위의 보완책, 단독으로도 효과 있음    |
-| P0       | `Message.compacted` 플래그 + re-compact 방지                                     | compact 루프 방지                       |
-| P0       | compact 경계 turn-alignment (tool chain 무결성)                                  | Anthropic/Gemini API 400 방지           |
-| P1       | `AnthropicService`에 stable/volatile 분할 + `cache_control` breakpoint 삽입      | 실제 cache hit 발생 조건                |
-| P1       | compact 트리거를 75~80%로 조정                                                   | 100% hard blocking 방지                 |
-| P1       | 100% fallback을 슬라이딩 윈도우로 (비블로킹)                                     | UX 보호                                 |
-| P2       | semi-stable service contexts (bootstrap, mcp_manager)를 stable 그룹으로 분류     | cache 구간 극대화                       |
-| P2       | compact 전용 모델 설정                                                           | 비용/지연 최적화                        |
-| P3       | Context length 설정 UI (모델 자동감지 + 슬라이더 override)                       | 사용자 제어권                           |
+| Priority | Item                                                                                               | Rationale                                              |
+| -------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| P0       | Change `TimeLocationContextProvider` priority to 1000 → move to end of prompt                     | The root cause **completely invalidating** the cache   |
+| P0       | Remove seconds from `TimeLocation` time format                                                     | Complements P0 above; effective standalone too         |
+| P0       | `Message.compacted` flag + prevent re-compact                                                      | Prevents compact loop degradation                      |
+| P0       | compact boundary turn-alignment (tool chain integrity)                                             | Prevents Anthropic/Gemini API 400 errors               |
+| P1       | Add stable/volatile split + `cache_control` breakpoint to `AnthropicService`                      | Required for actual cache hits to occur                |
+| P1       | Lower compact trigger to 75–80%                                                                    | Prevents 100% hard blocking                            |
+| P1       | Use sliding window as 100% fallback (non-blocking)                                                 | Protects UX                                            |
+| P2       | Classify semi-stable service contexts (bootstrap, mcp_manager) into the stable group              | Maximises cacheable range                              |
+| P2       | Separate compact model configuration                                                               | Cost/latency optimisation                              |
+| P3       | Context length settings UI (auto-detect from model + slider override)                             | User control                                           |

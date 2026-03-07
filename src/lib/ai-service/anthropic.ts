@@ -43,7 +43,7 @@ function buildSystemBlocks(
 
   const idx = systemPrompt.indexOf(VOLATILE_CONTEXT_MARKER);
 
-  if (idx <= 0) {
+  if (idx < 0) {
     // No volatile section — cache the whole prompt
     return [
       {
@@ -52,6 +52,11 @@ function buildSystemBlocks(
         cache_control: { type: 'ephemeral' },
       },
     ];
+  }
+
+  if (idx === 0) {
+    // Entire prompt starts with volatile content — return a single uncached block
+    return [{ type: 'text', text: systemPrompt }];
   }
 
   const stablePrefix = systemPrompt.slice(0, idx).trimEnd();
