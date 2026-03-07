@@ -48,3 +48,10 @@
 ## 2024-05-19 - InputTokenDropdown component **Eradicated:** Derived State (Resetting activeIndex via useEffect on mode change) **Woven:** Adjusting State During Render
 
 ## 2024-05-19 - ScheduledTaskModal component **Eradicated:** Derived State (Setting default assistantId via useEffect on load) **Woven:** Adjusting State During Render
+
+## 2026-03-05 - [SessionFilesPopover / usePlaybookSearch / useWorkspaceFiles] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render & React Key Pattern]
+
+- **SessionFilesPopover:** Removed derived state variables (`prevSessionId`, etc.) and internal `useEffect` state resetting logic. Replaced with declarative **React Key Pattern** (`<SessionFilesPopover key={session.id} />`) in `AgentChatHeader`, forcing natural unmount/remount on session change.
+- **usePlaybookSearch:** Eradicated the anti-pattern of copying props to state and using an effect to clear the `playbooks` array on `query === null`. Refactored to compute directly by returning an empty array dynamically during the render cycle if `query` is null, preventing flashes of stale data.
+- **useWorkspaceFiles:** Fixed similar issues as `usePlaybookSearch`, while preserving the purity of the render phase (preventing ref mutations inside the render block).
+- **Renders Saved:** Eliminated the "State Duplicator" anti-pattern and the accompanying double-renders on prop changes, restoring declarative rendering integrity.
