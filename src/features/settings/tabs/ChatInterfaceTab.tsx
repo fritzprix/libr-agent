@@ -1,13 +1,19 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { AdvancedSettings, DisplaySettings } from '@/context/SettingsContext';
+import {
+  AdvancedSettings,
+  DisplaySettings,
+  ContextStrategy,
+} from '@/context/SettingsContext';
 import { Input } from '@/components/ui';
 
 interface ChatInterfaceTabProps {
+  localContextStrategy: ContextStrategy;
   localWindowSize: number;
   localToolCallGroupVisibleCount: number;
   localAdvancedSettings: AdvancedSettings;
   localDisplay: DisplaySettings;
+  onContextStrategyChange: (strategy: ContextStrategy) => void;
   onWindowSizeChange: (size: number) => void;
   onToolCallGroupVisibleCountChange: (count: number) => void;
   onAdvancedSettingsChange: (
@@ -21,10 +27,12 @@ interface ChatInterfaceTabProps {
 }
 
 function ChatInterfaceTabComponent({
+  localContextStrategy,
   localWindowSize,
   localToolCallGroupVisibleCount,
   localAdvancedSettings,
   localDisplay,
+  onContextStrategyChange,
   onWindowSizeChange,
   onToolCallGroupVisibleCountChange,
   onAdvancedSettingsChange,
@@ -34,6 +42,48 @@ function ChatInterfaceTabComponent({
 
   return (
     <div className="space-y-6">
+      {/* Context Strategy Selector */}
+      <div>
+        <label className="block text-muted-foreground mb-2 font-medium">
+          {t('settings.contextStrategy', 'Context Management Strategy')}
+        </label>
+        <div className="grid grid-cols-2 gap-3 max-w-lg">
+          {(['window', 'compact'] as ContextStrategy[]).map((strategy) => {
+            const isSelected = localContextStrategy === strategy;
+            return (
+              <button
+                key={strategy}
+                type="button"
+                onClick={() => onContextStrategyChange(strategy)}
+                className={[
+                  'flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors',
+                  isSelected
+                    ? 'border-primary bg-primary/5 text-foreground'
+                    : 'border-border bg-background text-muted-foreground hover:border-primary/50',
+                ].join(' ')}
+              >
+                <span className="font-medium text-sm">
+                  {strategy === 'window'
+                    ? t('settings.contextStrategy.window', 'Sliding Window')
+                    : t('settings.contextStrategy.compact', 'Compact')}
+                </span>
+                <span className="text-xs leading-snug">
+                  {strategy === 'window'
+                    ? t(
+                        'settings.contextStrategy.windowDescription',
+                        'Keep the N most recent messages. Simple and predictable.',
+                      )
+                    : t(
+                        'settings.contextStrategy.compactDescription',
+                        'Summarize old turns and keep a recent window. Better for long sessions.',
+                      )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
@@ -49,10 +99,15 @@ function ChatInterfaceTabComponent({
             className="bg-background border text-foreground w-full max-w-xs"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            {t(
-              'settings.messageWindowSizeDescription',
-              'Number of messages to keep in conversation history',
-            )}
+            {localContextStrategy === 'compact'
+              ? t(
+                  'settings.messageWindowSizeRecentDescription',
+                  'Number of recent messages to keep after a compact summary',
+                )
+              : t(
+                  'settings.messageWindowSizeDescription',
+                  'Number of messages to keep in conversation history',
+                )}
           </p>
         </div>
 
@@ -276,6 +331,7 @@ function ChatInterfaceTabComponent({
 
 export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
   return (
+    prev.localContextStrategy === next.localContextStrategy &&
     prev.localWindowSize === next.localWindowSize &&
     prev.localToolCallGroupVisibleCount ===
       next.localToolCallGroupVisibleCount &&
@@ -289,6 +345,7 @@ export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
     prev.localDisplay.compactMetrics === next.localDisplay.compactMetrics &&
     prev.localDisplay.toolDetailLevel === next.localDisplay.toolDetailLevel &&
     prev.onWindowSizeChange === next.onWindowSizeChange &&
+    prev.onContextStrategyChange === next.onContextStrategyChange &&
     prev.onToolCallGroupVisibleCountChange ===
       next.onToolCallGroupVisibleCountChange &&
     prev.onAdvancedSettingsChange === next.onAdvancedSettingsChange &&

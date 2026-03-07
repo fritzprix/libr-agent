@@ -240,15 +240,19 @@ export function useLLMExecution({
         }
 
         // Select messages within context window and message count limit
-        const { windowSize } = settingsRef.current;
-        logger.info('🎯 Applying windowSize constraint from settings', {
+        const { windowSize, contextStrategy } = settingsRef.current;
+        logger.info('🎯 Applying context management strategy', {
           sessionId,
           inputMessageCount: messages.length,
+          contextStrategy: contextStrategy ?? 'window',
           windowSize,
           provider,
           model,
           safeInputTokenLimit: safeInputTokenLimit || 'auto(90%)',
         });
+        // TODO(compact): When contextStrategy === 'compact', replace this call with
+        // the compact-based selection (summarize old turns, keep recent window).
+        // Both strategies share the same interface; simply swap the implementation here.
         const contextMessages = selectMessagesWithinContext(
           messages,
           provider,

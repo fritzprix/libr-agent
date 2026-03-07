@@ -5,7 +5,7 @@ import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import type { ServiceConfig } from '@/context/SettingsContext';
+import type { ServiceConfig, ContextStrategy } from '@/context/SettingsContext';
 import {
   Button,
   Tabs,
@@ -209,6 +209,10 @@ export default function SettingsPage() {
     (value: number) => update('windowSize', value),
     [update],
   );
+  const handleContextStrategyChange = useCallback(
+    (strategy: ContextStrategy) => update('contextStrategy', strategy),
+    [update],
+  );
   const handleToolCallGroupVisibleCountChange = useCallback(
     (count: number) => update('toolCallGroupVisibleCount', count),
     [update],
@@ -337,12 +341,14 @@ export default function SettingsPage() {
 
             <TabsContent value="chat-interface">
               <ChatInterfaceTab
+                localContextStrategy={formState.contextStrategy}
                 localWindowSize={formState.windowSize}
                 localToolCallGroupVisibleCount={
                   formState.toolCallGroupVisibleCount
                 }
                 localAdvancedSettings={formState.advanced}
                 localDisplay={formState.display}
+                onContextStrategyChange={handleContextStrategyChange}
                 onWindowSizeChange={handleWindowSizeChange}
                 onToolCallGroupVisibleCountChange={
                   handleToolCallGroupVisibleCountChange

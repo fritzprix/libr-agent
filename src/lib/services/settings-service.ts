@@ -45,6 +45,12 @@ export interface DisplaySettings {
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
 
+/** Context management strategy:
+ * - 'window': sliding window — keep the N most recent messages (existing behavior)
+ * - 'compact': async compaction — summarize old turns, keep recent window
+ */
+export type ContextStrategy = 'window' | 'compact';
+
 export interface SystemSettings {
   maxFileUploadSizeMB: number;
   workspaceCapacityMB: number;
@@ -63,6 +69,7 @@ export interface Settings {
   serviceConfigs: Record<AIServiceProvider, ServiceConfig>;
   preferredModel: ModelChoice;
   fallbackModel?: ModelChoice;
+  contextStrategy: ContextStrategy;
   windowSize: number;
   uiLanguage: string;
   toolCallGroupVisibleCount: number;
@@ -87,6 +94,7 @@ export const DEFAULT_SETTING: Settings = {
     model: DEFAULT_MODEL?.modelId || '',
   },
   fallbackModel: undefined,
+  contextStrategy: 'window',
   windowSize: 20,
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,

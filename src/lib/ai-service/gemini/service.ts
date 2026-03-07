@@ -23,7 +23,10 @@ export class GeminiService extends BaseAIService {
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
-  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
+  private readonly CACHE_TTL = 3600000;
+  private cachedContentName?: string;
+  private cachedSystemPrompt?: string;
+  private cachedToolsHash?: string;
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -43,6 +46,23 @@ export class GeminiService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Gemini;
+  }
+
+  /**
+   * Splits the system prompt into a static prefix (cacheable) and dynamic suffix (volatile).
+   * @param prompt The complete system prompt.
+   * @returns A tuple of [stablePrefix, dynamicContext].
+   */
+  private splitSystemPrompt(prompt: string): [string, string] {
+    const delimiter = '# Current Context Information';
+    const parts = prompt.split(delimiter);
+    if (parts.length > 1) {
+      return [
+        parts[0].trim(),
+        `${delimiter}\n${parts.slice(1).join(delimiter).trim()}`,
+      ];
+    }
+    return [prompt, ''];
   }
 
   /**
@@ -127,19 +147,85 @@ export class GeminiService extends BaseAIService {
       const model =
         options.modelName || config.defaultModel || getDefaultModel();
 
+      // --- CONTEXT CACHING ABSTRACTION BEGIN ---
+      const [stablePrefix, dynamicContext] = options.systemPrompt
+        ? this.splitSystemPrompt(options.systemPrompt)
+        : ['', ''];
+
+      const toolsHash = geminiTools ? JSON.stringify(geminiTools) : '';
+      let shouldUseCache = false;
+
+      if (
+        (model.includes('gemini-1.5') || model.includes('gemini-2')) &&
+        stablePrefix.length > 50000 // Google GenAI enforces a 32,768 token minimum (~100k chars). We check conservatively.
+      ) {
+        if (
+          !this.cachedContentName ||
+          this.cachedSystemPrompt !== stablePrefix ||
+          this.cachedToolsHash !== toolsHash
+        ) {
+          try {
+            if (this.cachedContentName) {
+              await this.genAI.caches
+                .delete({ name: this.cachedContentName })
+                .catch(() => {});
+            }
+            this.logger.debug(
+              'Creating Gemini Context Cache for stable prefix & tools...',
+            );
+            const cacheResponse = await this.genAI.caches.create({
+              model,
+              config: {
+                systemInstruction: stablePrefix,
+                tools: geminiTools,
+                ttl: '3600s',
+              },
+            });
+            this.cachedContentName = cacheResponse.name;
+            this.cachedSystemPrompt = stablePrefix;
+            this.cachedToolsHash = toolsHash;
+            this.logger.info(
+              `Gemini Context Cache created successfully: ${cacheResponse.name}`,
+            );
+          } catch (e) {
+            this.logger.warn(
+              'Failed to create Gemini context cache, falling back to standard request. Note: Context must be >32k tokens.',
+              e,
+            );
+            this.cachedContentName = undefined;
+            this.cachedSystemPrompt = undefined;
+            this.cachedToolsHash = undefined;
+          }
+        }
+        if (this.cachedContentName) shouldUseCache = true;
+      }
+      // --- CONTEXT CACHING ABSTRACTION END ---
+
       const geminiConfig: GeminiServiceConfig = {
         responseMimeType: 'text/plain',
       };
 
-      if (geminiTools) {
-        geminiConfig.tools = geminiTools;
-        if (options.forceToolUse) {
-          geminiConfig.functionCallingConfig = { mode: 'any' };
+      if (shouldUseCache && this.cachedContentName) {
+        geminiConfig.cachedContent = this.cachedContentName;
+        // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
+        // Therefore, we inject the dynamic context into the first user message.
+        if (dynamicContext && geminiMessages.length > 0) {
+          if (geminiMessages[0].parts) {
+            geminiMessages[0].parts.unshift({
+              text: `[System Context Update]\n${dynamicContext}\n\n`,
+            });
+          }
         }
-      }
-
-      if (options.systemPrompt) {
-        geminiConfig.systemInstruction = [{ text: options.systemPrompt }];
+      } else {
+        if (geminiTools) {
+          geminiConfig.tools = geminiTools;
+          if (options.forceToolUse) {
+            geminiConfig.functionCallingConfig = { mode: 'any' };
+          }
+        }
+        if (options.systemPrompt) {
+          geminiConfig.systemInstruction = [{ text: options.systemPrompt }];
+        }
       }
 
       if (config.maxTokens) {
