@@ -26,17 +26,16 @@ export function useWorkspaceFiles(
   const [allPaths, setAllPaths] = useState<string[]>([]);
   const lastDepthRef = useRef<number>(0);
 
-  // Reset cache when session changes or dropdown closes (query → null).
-  // This ensures workspace override changes are reflected on the next @file: open.
+  // Reset cache when session changes.
   useEffect(() => {
     lastDepthRef.current = 0;
     setAllPaths([]);
   }, [sessionId]);
 
+  // Reset depth when query becomes null so the next open refetches.
   useEffect(() => {
     if (query === null) {
       lastDepthRef.current = 0;
-      // Don't clear allPaths here — avoids flicker if user quickly reopens
     }
   }, [query]);
 

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, FolderOpen, FileText } from 'lucide-react';
 import {
@@ -36,15 +36,6 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   const currentSessionFiles = useMemo(() => {
     return sessionFiles.filter((file) => file.sessionId === sessionId);
   }, [sessionFiles, sessionId]);
-
-  // Reset state when session changes
-  useEffect(() => {
-    logger.debug('Session changed, resetting popover state', { sessionId });
-    setIsOpen(false);
-    setSelectedFile(null);
-    setFileContent('');
-    setIsLoadingContent(false);
-  }, [sessionId]);
 
   const handleFileClick = useCallback(async (file: AttachmentReference) => {
     setSelectedFile(file);
