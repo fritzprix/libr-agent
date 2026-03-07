@@ -5,7 +5,7 @@ import { Message } from '@/models/chat';
 import { MCPTool, MCPContent } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
-import { llmConfigManager } from '../llm-config-manager';
+import { llmConfigManager, ModelInfo } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
 import { convertMCPToolToOpenAI } from './tool-converters';
 const logger = getLogger('OpenAIService');
@@ -16,7 +16,7 @@ const logger = getLogger('OpenAIService');
  */
 export class OpenAIService extends BaseAIService {
   protected openai: OpenAI;
-  private modelCache?: import('../llm-config-manager').ModelInfo[];
+  private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
   private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
 
@@ -54,7 +54,7 @@ export class OpenAIService extends BaseAIService {
    * Maps provider-specific model metadata into the project's `ModelInfo` shape.
    * On error, returns an empty array and logs the failure.
    */
-  async listModels(): Promise<import('../llm-config-manager').ModelInfo[]> {
+  async listModels(): Promise<ModelInfo[]> {
     const logger = getLogger('OpenAIService.listModels');
 
     // Return cached models if still valid
@@ -114,7 +114,7 @@ export class OpenAIService extends BaseAIService {
           (Array.isArray(e.permission) ? e.permission.join(',') : undefined) ||
           id;
 
-        const modelInfo: import('../llm-config-manager').ModelInfo = {
+        const modelInfo: ModelInfo = {
           id,
           name,
           contextWindow,
@@ -129,7 +129,7 @@ export class OpenAIService extends BaseAIService {
       });
 
       const models = (await Promise.all(modelPromises)).filter(
-        (v): v is import('../llm-config-manager').ModelInfo => v !== null,
+        (v): v is ModelInfo => v !== null,
       );
 
       // Cache the results
@@ -469,7 +469,7 @@ export class OpenAIService extends BaseAIService {
    * @private
    */
   private fallbackToStaticModels(): Promise<
-    import('../llm-config-manager').ModelInfo[]
+    ModelInfo[]
   > {
     const logger = getLogger('OpenAIService.fallbackToStaticModels');
     logger.info('Using static config models');

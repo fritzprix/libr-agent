@@ -13,6 +13,9 @@ import * as settingsBackend from '@/lib/backend/settings';
 import * as sessionsBackend from '@/lib/backend/session-crud';
 import * as messagesBackend from '@/lib/backend/messages';
 import * as playbooksBackend from '@/lib/backend/playbooks';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('DBCrud');
 
 /**
  * Validates pagination parameters and returns defaults if invalid
@@ -209,7 +212,7 @@ export const messagesCRUD: CRUD<Message> = {
   read: async (id: string) => {
     // Backend migration: Read single message not directly supported yet.
     // Simulating or returning undefined. logic flow usually doesn't need single message read by ID except internally.
-    console.warn(
+    logger.warn(
       'Single message read not supported in backend migration yet. returning undefined for id:',
       id,
     );

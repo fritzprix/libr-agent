@@ -54,7 +54,7 @@ export default function AssistantList() {
         });
         setBuiltinToolsMap(map);
       } catch (err) {
-        console.error('Failed to load builtin definitions', err);
+        logger.error('Failed to load builtin definitions', err);
       }
     }
     loadDefinitions();

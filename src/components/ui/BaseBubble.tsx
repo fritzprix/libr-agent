@@ -1,6 +1,9 @@
 import React, { useState, useId } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { getLogger } from '@/lib/logger';
+
+const logger = getLogger('BaseBubble');
 
 interface BaseBubbleProps {
   title: string;
@@ -38,7 +41,7 @@ export const BaseBubble: React.FC<BaseBubbleProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy data: ', err);
+      logger.error('Failed to copy data: ', err);
     }
   };
 
