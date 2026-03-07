@@ -124,6 +124,8 @@
     "toggle": "테마 전환"
   },
   "sidebar": {
+    "mobileTitle": "사이드바",
+    "mobileDescription": "모바일 사이드바를 표시합니다.",
     "toggle": "사이드바 전환",
     "library": "라이브러리",
     "chat": "채팅",

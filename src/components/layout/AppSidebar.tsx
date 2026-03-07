@@ -180,11 +180,11 @@ export default function AppSidebar() {
                 <SidebarMenuButton
                   asChild
                   isActive={location.pathname === '/scheduled-tasks'}
-                  tooltip="Scheduled Tasks"
+                  tooltip={t('sidebar.scheduledTasks')}
                 >
                   <Link to="/scheduled-tasks">
                     <Clock size={16} />
-                    <span>Scheduled Tasks</span>
+                    <span>{t('sidebar.scheduledTasks')}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
