@@ -1,5 +1,4 @@
 use crate::services::SessionCleanupService;
-use crate::session::get_session_manager;
 use log::info;
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -24,23 +23,7 @@ pub struct SessionResponse {
 pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
     info!("🗑️  Removing session via services: {session_id}");
 
-    // 1. Clean up auxiliary resources (Index, DB) via SessionCleanupService
-    // This handles the "side effects" and external data.
-    let message_repo = crate::state::get_message_repository();
-
-    // Pass the message repository reference directly, trusting it implements MessageRepository trait
-    SessionCleanupService::cleanup_auxiliary_resources(&session_id, message_repo)
-        .await
-        .map_err(|e| format!("Failed to cleanup auxiliary resources: {e}"))?;
-
-    // 2. Remove workspace directory and update internal session pool via SessionManager
-    // This handles the core "session existence" and filesystem.
-    let session_manager =
-        get_session_manager().map_err(|e| format!("Failed to get session manager: {e}"))?;
-    session_manager
-        .remove_session(&session_id)
-        .await
-        .map_err(|e| format!("Failed to remove session workspace: {e}"))?;
+    SessionCleanupService::remove_session_complete(&session_id).await?;
 
     info!("✅ Fully removed session: {session_id}");
 

@@ -28,12 +28,6 @@ pub async fn create_browser_session(
 ) -> Result<CreateSessionResponse, String> {
     info!("Command: create_browser_session called with URL: {url}");
 
-    // Validate required parameter
-    if url.trim().is_empty() {
-        error!("create_browser_session called with empty URL");
-        return Err("The 'url' parameter is required".to_string());
-    }
-
     match server
         .create_browser_session(&url, title.as_deref(), true)
         .await

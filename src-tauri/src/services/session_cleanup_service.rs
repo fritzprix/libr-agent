@@ -6,6 +6,25 @@ use log::{error, info};
 pub struct SessionCleanupService;
 
 impl SessionCleanupService {
+    /// Fully removes a session, including its auxiliary resources and workspace.
+    pub async fn remove_session_complete(session_id: &str) -> Result<(), String> {
+        let message_repo = crate::state::get_message_repository();
+
+        Self::cleanup_auxiliary_resources(session_id, message_repo)
+            .await
+            .map_err(|e| format!("Failed to cleanup auxiliary resources: {e}"))?;
+
+        let session_manager = crate::session::get_session_manager()
+            .map_err(|e| format!("Failed to get session manager: {e}"))?;
+
+        session_manager
+            .remove_session(session_id)
+            .await
+            .map_err(|e| format!("Failed to remove session workspace: {e}"))?;
+
+        Ok(())
+    }
+
     /// Remove auxiliary resources for a session:
     /// 1. Search Index (Filesystem)
     /// 2. Database Metadata (SQL)
