@@ -49,7 +49,7 @@ impl ReferenceResolver for SkillReferenceResolver {
         let base_dir = path.parent().unwrap_or(&path);
 
         // Pre-inject content with explicit Base Directory metadata.
-        // This gives the AI immediate access to instructions while clarifying the 
+        // This gives the AI immediate access to instructions while clarifying the
         // absolute path context for any relative resources or templates mentioned in the skill.
         Some(format!(
             "# Follow Instruction `{}`\n\
