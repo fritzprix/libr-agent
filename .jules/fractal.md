@@ -82,3 +82,4 @@
 
 **Split:** `session.rs`, `manager.rs`, `mod.rs`
 **Improvement:** Decoupled `PersistentShell` and `PersistentShellManager` from the main workspace module. Improved maintainability by moving them to a dedicated `persistent_shell` submodule directory.
+## 2024-05-18 - [mcp/builtin/workspace/persistent_shell] **Split:** [tests/session_tests.rs, tests/manager_tests.rs] **Improvement:** [Extracted large test suites to their own files, reducing file size and clutter in session.rs and manager.rs.]
