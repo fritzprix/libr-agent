@@ -205,7 +205,7 @@ export class GeminiService extends BaseAIService {
         responseMimeType: 'text/plain',
       };
 
-      if (shouldUseCache && this.cachedContentName) {
+      if (shouldUseCache && this.cachedContentName && !options.forceToolUse) {
         geminiConfig.cachedContent = this.cachedContentName;
         // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
         // Therefore, we inject the dynamic context into the first user message.

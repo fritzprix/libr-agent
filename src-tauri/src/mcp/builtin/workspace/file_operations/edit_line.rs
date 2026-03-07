@@ -340,6 +340,20 @@ impl WorkspaceServer {
                 .to_mcp_result());
             }
 
+            if matches!(edit.action, EditAction::Replace | EditAction::Delete)
+                && edit.end_line > line_count
+            {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "End line {} does not exist (file has {} lines)",
+                        edit.end_line, line_count
+                    ),
+                    ToolGroup::Workspace,
+                )
+                .to_mcp_result());
+            }
+
             // Hash validation
             if edit.start_line > 0 {
                 if let Some(ref expected) = edit.start_hash {
@@ -369,10 +383,23 @@ impl WorkspaceServer {
         };
 
         let file_manager = self.get_file_manager(session_id.clone());
-        file_manager
+        if let Err(e) = file_manager
             .write_file_string(path_str, &new_content)
             .await
-            .map_err(|e| e.to_string())?;
+        {
+            return Ok(
+                guided_error(
+                    ErrorCategory::OperationFailed,
+                    e.to_string(),
+                    ToolGroup::Workspace,
+                )
+                .guidance(vec![
+                    "Check file permissions".to_string(),
+                    "Ensure sufficient disk space".to_string(),
+                ])
+                .to_mcp_result(),
+            );
+        }
 
         self.invalidate_context_cache().await;
 
@@ -465,9 +492,7 @@ mod tests {
             start_line: line,
             end_line: line,
             new_value: val.to_string(),
-            old_value: None,
             start_hash: None,
-            end_hash: None,
             action,
         }
     }

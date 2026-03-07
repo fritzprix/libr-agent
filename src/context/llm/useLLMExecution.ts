@@ -250,6 +250,11 @@ export function useLLMExecution({
           model,
           safeInputTokenLimit: safeInputTokenLimit || 'auto(90%)',
         });
+        if ((contextStrategy ?? 'window') === 'compact') {
+          throw new Error(
+            'Compact context strategy is not yet implemented. Please switch to the "window" strategy in Settings → Chat Interface.',
+          );
+        }
         // TODO(compact): When contextStrategy === 'compact', replace this call with
         // the compact-based selection (summarize old turns, keep recent window).
         // Both strategies share the same interface; simply swap the implementation here.

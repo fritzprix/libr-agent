@@ -47,13 +47,19 @@ function ChatInterfaceTabComponent({
         <label className="block text-muted-foreground mb-2 font-medium">
           {t('settings.contextStrategy', 'Context Management Strategy')}
         </label>
-        <div className="grid grid-cols-2 gap-3 max-w-lg">
+        <div
+          className="grid grid-cols-2 gap-3 max-w-lg"
+          role="radiogroup"
+          aria-label={t('settings.contextStrategy', 'Context Management Strategy')}
+        >
           {(['window', 'compact'] as ContextStrategy[]).map((strategy) => {
             const isSelected = localContextStrategy === strategy;
             return (
               <button
                 key={strategy}
                 type="button"
+                role="radio"
+                aria-checked={isSelected}
                 onClick={() => onContextStrategyChange(strategy)}
                 className={[
                   'flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors',
