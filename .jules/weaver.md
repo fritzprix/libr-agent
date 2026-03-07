@@ -51,7 +51,7 @@
 
 ## 2026-03-05 - [SessionFilesPopover / usePlaybookSearch / useWorkspaceFiles] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render & React Key Pattern]
 
-- **SessionFilesPopover:** Removed derived state variables (`prevSessionId`, etc.) and internal `useEffect` state resetting logic. Replaced with declarative **React Key Pattern** (`<SessionFilesPopover key={session.id} />`) in `AgentChatHeader`, forcing natural unmount/remount on session change.
+- **SessionFilesPopover:** Removed the `useEffect` that manually reset local state (`setIsOpen(false)`, `setSelectedFile(null)`, etc.) when `sessionId` changed. Replaced this effect-based reset with a declarative **React Key Pattern** (`<SessionFilesPopover key={session.id} />`) in `AgentChatHeader`, forcing natural unmount/remount on session change.
 - **usePlaybookSearch:** Eradicated the anti-pattern of copying props to state and using an effect to clear the `playbooks` array on `query === null`. Refactored to compute directly by returning an empty array dynamically during the render cycle if `query` is null, preventing flashes of stale data.
-- **useWorkspaceFiles:** Fixed similar issues as `usePlaybookSearch`, while preserving the purity of the render phase (preventing ref mutations inside the render block).
+- **useWorkspaceFiles:** Aligned comments and inline documentation with the current behavior; no structural refactor was required for this hook.
 - **Renders Saved:** Eliminated the "State Duplicator" anti-pattern and the accompanying double-renders on prop changes, restoring declarative rendering integrity.
