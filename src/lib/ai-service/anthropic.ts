@@ -6,7 +6,7 @@ import {
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent } from '@/lib/mcp';
+import { MCPTool, MCPContent, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
@@ -890,6 +890,61 @@ export class AnthropicService extends BaseAIService {
       logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
       return null;
     }
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Anthropic API.
+   * Used by the base-class `compact()` for context summarisation.
+   * @param prompt The user prompt to send.
+   * @param options Optional model name, sampling parameters, and service config.
+   * @returns A resolved `SamplingResponse` with the generated text.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const config = this.mergeConfig(options);
+    const model =
+      options?.modelName || config.defaultModel || this.getDefaultModel();
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.anthropic.messages.create({
+        model,
+        max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        top_k: s?.topK,
+        stop_sequences: s?.stopSequences,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    );
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    const text = textBlock?.type === 'text' ? textBlock.text : '';
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason:
+            response.stop_reason === 'end_turn' ? 'stop' : 'length',
+          usage: {
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
+            totalTokens:
+              response.usage.input_tokens + response.usage.output_tokens,
+          },
+          model: response.model,
+        },
+      },
+    };
   }
 
   /**

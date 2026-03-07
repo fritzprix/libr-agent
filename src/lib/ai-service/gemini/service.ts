@@ -1,7 +1,7 @@
-import { FunctionDeclaration, GoogleGenAI } from '@google/genai';
+import { FunctionDeclaration, FinishReason, GoogleGenAI } from '@google/genai';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
@@ -345,6 +345,63 @@ export class GeminiService extends BaseAIService {
     const logger = getLogger('GeminiService.fallbackToStaticModels');
     logger.info('Using static config models');
     return super.listModels();
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Gemini API.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const rawConfig = this.mergeConfig(options) as AIServiceConfig &
+      GeminiServiceConfig;
+    const model =
+      options?.modelName || rawConfig.defaultModel || getDefaultModel();
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.genAI.models.generateContent({
+        model,
+        config: {
+          maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
+          temperature: s?.temperature ?? rawConfig.temperature,
+          topP: s?.topP,
+          topK: s?.topK,
+          stopSequences: s?.stopSequences,
+        },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      }),
+    );
+
+    const candidate = response.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text ?? '';
+    const finishReason = candidate?.finishReason ?? FinishReason.STOP;
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason:
+            finishReason === FinishReason.STOP ? 'stop' : 'length',
+          usage: response.usageMetadata
+            ? {
+                promptTokens: response.usageMetadata.promptTokenCount ?? 0,
+                completionTokens:
+                  response.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: response.usageMetadata.totalTokenCount ?? 0,
+              }
+            : undefined,
+          model,
+        },
+      },
+    };
   }
 
   /**
