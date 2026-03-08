@@ -199,6 +199,5 @@ pub fn all_tools() -> Vec<MCPTool> {
         get_assistant_tool(),
         create_assistant_tool(),
         update_assistant_tool(),
-        delete_assistant_tool(),
     ]
 }
