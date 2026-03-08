@@ -1,4 +1,4 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, memo, useId } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -51,6 +51,7 @@ interface ExpandToggleProps {
   isExpanded: boolean;
   totalCalls: number;
   onToggle: () => void;
+  ariaControls?: string;
 }
 
 /**
@@ -162,12 +163,14 @@ const ExpandToggle: React.FC<ExpandToggleProps> = ({
   isExpanded,
   totalCalls,
   onToggle,
+  ariaControls,
 }) => {
   const { t } = useTranslation('common');
   return (
     <button
       type="button"
       aria-expanded={isExpanded}
+      aria-controls={ariaControls}
       className="flex items-center justify-center p-2 border-t border-muted w-full cursor-pointer hover:bg-muted/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-b-lg"
       onClick={onToggle}
     >
@@ -200,6 +203,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
   visibleCount = 3, // Default to 3 if not provided
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const listId = useId();
   const {
     value: { display },
   } = useSettings();
@@ -275,7 +279,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
       )}
 
       {/* Tool Call List - Compact items without individual borders */}
-      <div className="px-2 py-2 space-y-0.5">
+      <div id={listId} className="px-2 py-2 space-y-0.5">
         {visibleCalls.map((toolCall, index) => {
           // Optimization: Access result directly by parallel index instead of O(N) indexOf search
           const toolResult = visibleResults[index];
@@ -297,6 +301,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
           isExpanded={isExpanded}
           totalCalls={toolGroup.calls.length}
           onToggle={() => setIsExpanded(!isExpanded)}
+          ariaControls={listId}
         />
       )}
     </div>
