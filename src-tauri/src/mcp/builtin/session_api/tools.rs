@@ -47,11 +47,27 @@ pub fn create_child_session_tool() -> MCPTool {
                     string_prop(None, None, Some("Optional child session name")),
                 ),
                 (
-                    "workspacePath".to_string(),
-                    string_prop(
-                        None,
-                        None,
-                        Some("Optional absolute workspace override path"),
+                    "workspace".to_string(),
+                    object_prop(
+                        vec![
+                            (
+                                "mode".to_string(),
+                                enum_prop(
+                                    vec!["private", "share"],
+                                    "private",
+                                    Some("'private': child gets its own isolated workspace (default). 'share': child uses the same workspace directory as the parent."),
+                                ),
+                            ),
+                            (
+                                "copyFiles".to_string(),
+                                array_schema(
+                                    string_prop(None, None, Some("Relative path within the parent workspace to copy into the child workspace")),
+                                    Some("Files to copy from the parent workspace into the child workspace (only for mode='private'). Paths must be relative and within the parent workspace."),
+                                ),
+                            ),
+                        ],
+                        vec![],
+                        Some("Workspace sharing mode. Default: private (isolated). Use share to give the child the same workspace as the parent."),
                     ),
                 ),
                 (

@@ -12,6 +12,8 @@ pub struct CreateSessionRequest {
     pub name: Option<String>,
     pub assistant_id: String, // Replaces agent_config
     pub workspace_path: Option<String>,
+    pub workspace_mode: Option<String>,       // "share" | "private" (default: "private")
+    pub workspace_copy_files: Option<Vec<String>>, // files to copy from parent workspace when mode="private"
     pub request: String,
     pub parent_session_id: Option<String>,
     pub max_depth: Option<u32>,
