@@ -32,7 +32,12 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
         #[cfg(not(windows))]
         let is_preserved = preserved_vars.contains(&key.as_str());
 
-        if is_preserved || key.starts_with("LC_") || key.starts_with("XDG_") {
+        // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
+        // isolated processes have no business accessing them.
+        if is_preserved
+            || key.starts_with("LC_")
+            || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
+        {
             envs.push((key, value));
         }
     }

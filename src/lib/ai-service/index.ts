@@ -9,12 +9,6 @@ export type { AIServiceConfig, IAIService } from './types';
 
 export { AIServiceProvider, AIServiceError } from './types';
 
-// Re-export tool conversion utilities
-export {
-  convertMCPToolsToProviderTools,
-  convertMCPToolsToCerebrasTools,
-} from './tool-converters';
-
 // Re-export base service class
 export { BaseAIService } from './base-service';
 

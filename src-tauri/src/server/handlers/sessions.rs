@@ -283,6 +283,15 @@ pub async fn create_session(
                 .await
                 .insert(session_id.clone(), lineage_meta.clone());
 
+            // SP20: inherit yolo_mode from parent session.
+            if let Some(parent_id) = lineage_meta.parent_session_id.as_deref() {
+                if manager.get_yolo_mode(parent_id).await {
+                    if let Err(e) = manager.set_yolo_mode(&session_id, true).await {
+                        log::warn!("Failed to inherit yolo_mode from parent: {}", e);
+                    }
+                }
+            }
+
             // Check for initial message to trigger workflow
             let content = body.request;
             let message_id = Uuid::new_v4().to_string();

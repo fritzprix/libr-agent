@@ -27,29 +27,6 @@ pub fn read_required_string(args: &Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("Missing required parameter: {key}"))
 }
 
-pub fn resolve_parent_session_id(
-    provided_parent: Option<&str>,
-    caller_session_id: Option<&str>,
-) -> Result<Option<String>, String> {
-    let normalized = provided_parent
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
-    match normalized {
-        // "current" is a magic keyword meaning "use my own session as parent"
-        Some(value) if value.eq_ignore_ascii_case("current") => match caller_session_id {
-            Some(caller_id) => Ok(Some(caller_id.to_string())),
-            None => Err(
-                "parentSessionId='current' requires caller session context. Provide an explicit parentSessionId or call from within a session.".to_string(),
-            ),
-        },
-        // Explicit ID provided → use it directly (existence validated by the HTTP endpoint)
-        Some(value) => Ok(Some(value.to_string())),
-        // Not provided → fall back to caller session
-        None => Ok(caller_session_id.map(str::to_string)),
-    }
-}
-
 pub fn read_message_summary_options(args: &Value) -> MessageSummaryOptions {
     let summary_only = args
         .get("summaryOnly")

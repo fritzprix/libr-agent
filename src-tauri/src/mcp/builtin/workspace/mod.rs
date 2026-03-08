@@ -8,11 +8,11 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 use super::BuiltinMCPServer;
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
 use crate::session::SessionManager;
-use crate::session_isolation::types::ShellType;
 
 // Platform-specific persistent shell tool name
 #[cfg(unix)]
@@ -26,7 +26,6 @@ pub mod export_operations;
 pub mod file_operations;
 pub mod handlers; // NEW: Organized handler modules
 pub mod persistent_shell;
-pub mod persistent_shell_manager;
 pub mod terminal_manager;
 pub mod tools;
 pub mod ui_resources;
@@ -98,7 +97,7 @@ pub struct WorkspaceServer {
     pub(crate) isolation_manager: crate::session_isolation::SessionIsolationManager,
     pub(crate) process_registry: terminal_manager::ProcessRegistry,
     pub(crate) pending_executions: Arc<PendingExecutions>,
-    pub(crate) shell_manager: Arc<persistent_shell_manager::PersistentShellManager>,
+    pub(crate) shell_manager: Arc<persistent_shell::PersistentShellManager>,
     pub(crate) context_cache: Arc<tokio::sync::RwLock<Option<(String, std::time::Instant)>>>,
     cleanup_shutdown: Arc<AtomicBool>,
     cleanup_tasks: Vec<JoinHandle<()>>,
@@ -127,7 +126,7 @@ impl WorkspaceServer {
             isolation_manager: crate::session_isolation::SessionIsolationManager::new(),
             process_registry,
             pending_executions,
-            shell_manager: Arc::new(persistent_shell_manager::PersistentShellManager::new()),
+            shell_manager: Arc::new(persistent_shell::PersistentShellManager::new()),
             context_cache: Arc::new(tokio::sync::RwLock::new(None)),
             cleanup_shutdown,
             cleanup_tasks: vec![process_cleanup_task, pending_cleanup_task],
@@ -603,7 +602,8 @@ impl BuiltinMCPServer for WorkspaceServer {
             "importFile" => self.handle_import_file(args, session_id).await,
             "searchLines" => self.handle_search_lines(args, session_id).await,
             "searchFiles" => self.handle_search_files(args, session_id).await,
-            "replaceLines" => self.handle_replace_lines(args, session_id).await,
+            "editFile" => self.handle_edit_file(args, session_id).await,
+            "replaceLines" => self.handle_edit_file(args, session_id).await,
             // Code execution tools
             // Note: Python/TypeScript execution were removed from the public tool
             // interface to avoid external runtime dependencies and to prevent
@@ -654,6 +654,12 @@ impl BuiltinMCPServer for WorkspaceServer {
 
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
+        .or_else(|e| {
+            if e.contains("cancelled") || e.contains("interrupted") {
+                return Err(e);
+            }
+            Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Workspace).to_mcp_result())
+        })
     }
 }
 

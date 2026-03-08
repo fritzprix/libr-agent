@@ -94,7 +94,8 @@
     "size": "Size:",
     "created": "Created:",
     "workspace": "Workspace:",
-    "sessionId": "Session ID:"
+    "sessionId": "Session ID:",
+    "workspaceValue": "Workspace"
   },
   "fileAttachment": {
     "attachFiles": "Attach files",
@@ -124,6 +125,8 @@
     "toggle": "Toggle theme"
   },
   "sidebar": {
+    "mobileTitle": "Sidebar",
+    "mobileDescription": "Displays the mobile sidebar.",
     "toggle": "Toggle Sidebar",
     "library": "Library",
     "chat": "Chat",
@@ -134,7 +137,8 @@
     "seeAllSessions": "See all sessions →",
     "settings": "Settings",
     "history": "History",
-    "scheduledTasks": "Scheduled Tasks"
+    "scheduledTasks": "Scheduled Tasks",
+    "session": "Session"
   },
   "sessionHistory": {
     "heading": "Session History",
@@ -244,6 +248,8 @@
     "messageWindowSize": "Message Window Size",
     "messageWindowSizeDescription": "Number of messages to keep in conversation history",
     "messageWindowSizePlaceholder": "e.g., 50",
+    "maxInputContext": "Max Input Context",
+    "maxInputContextDescription": "Maximum token count before summarizing old turns. Higher values keep more detail but increase cost.",
     "toolCallGroupVisibleCount": "Tool Calls Visible Count",
     "toolCallGroupVisibleCountDescription": "Number of tool calls to show in collapsed group view",
     "toolCallGroupVisibleCountPlaceholder": "e.g., 4",
@@ -633,6 +639,8 @@
       "loadingTools": "Loading tools...",
       "toolsError": "Tools error",
       "toolsCount": "{{totalCount}}({{mcpCount}}) available • builtin {{builtinCount}}",
+      "statusCompacting": "Compressing conversation context in background...",
+      "statusAwaitingCompact": "Waiting for context compression to complete...",
       "statusError": "An error occurred: {{error}}",
       "statusIdle": "Ready for input. Type a message to start.",
       "statusBusy": "Processing your request... Agent is thinking and using tools.",
@@ -683,6 +691,10 @@
       "errorDetails": "Error Details",
       "result": "Result",
       "executing": "Executing tool..."
+    },
+    "compactDivider": {
+      "label": "Context compressed above",
+      "ariaLabel": "Context compressed at this point"
     }
   },
   "scheduledTasks": {

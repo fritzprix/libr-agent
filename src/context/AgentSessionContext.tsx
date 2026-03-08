@@ -1,3 +1,4 @@
+import { safeInvoke } from '@/lib/backend/core';
 import React, {
   createContext,
   useCallback,
@@ -7,7 +8,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import type { Message, RustMessage } from '@/models/chat';
@@ -187,7 +188,7 @@ export function AgentSessionProvider({
   const loadMessages = useCallback(async (sid: string) => {
     try {
       // Load first page (large size to get all for now)
-      const page = await invoke<Page<RustMessage>>('messages_get_page', {
+      const page = await safeInvoke<Page<RustMessage>>('messages_get_page', {
         sessionId: sid,
         page: 1,
         pageSize: 1000,
@@ -369,7 +370,7 @@ export function AgentSessionProvider({
                 // We use setTimeout to allow the UI to render the thinking bubble state first
                 // and to avoid immediate state thrashing
                 setTimeout(() => {
-                  invoke<AgentResponse>('agent_resume_workflow', {
+                  safeInvoke<AgentResponse>('agent_resume_workflow', {
                     sessionId,
                   }).catch((err) => {
                     logger.error(
@@ -402,7 +403,7 @@ export function AgentSessionProvider({
                 );
 
                 // Auto-approve the tool call
-                invoke<AgentResponse>('agent_respond_tool_approval', {
+                safeInvoke<AgentResponse>('agent_respond_tool_approval', {
                   sessionId,
                   toolCallId: payload.toolCallId,
                   approved: true,
@@ -453,7 +454,7 @@ export function AgentSessionProvider({
         });
 
         // 1. Get session metadata
-        const response = await invoke<AgentSessionMetadata | null>(
+        const response = await safeInvoke<AgentSessionMetadata | null>(
           'agent_get_session',
           {
             sessionId,
@@ -494,12 +495,12 @@ export function AgentSessionProvider({
         setYoloModeEnabled(sessionData.yoloMode);
         // 2. Resume session in Rust backend (ensure active in memory)
         // This triggers proxy creation which emits InitializationStep events
-        await invoke<AgentSessionMetadata>('agent_resume_session', {
+        await safeInvoke<AgentSessionMetadata>('agent_resume_session', {
           sessionId,
         });
 
         // 3. Initialize session cache with messages in Rust
-        await invoke<AgentResponse>('agent_init_session_with_messages', {
+        await safeInvoke<AgentResponse>('agent_init_session_with_messages', {
           sessionId,
         });
 
@@ -583,7 +584,7 @@ export function AgentSessionProvider({
           message: rustMessage,
         };
 
-        await invoke<AgentResponse>('agent_send_message', { request });
+        await safeInvoke<AgentResponse>('agent_send_message', { request });
       } catch (err) {
         logger.error('Failed to send message', err);
         throw err;
@@ -599,7 +600,7 @@ export function AgentSessionProvider({
     if (!session) return;
 
     try {
-      await invoke<AgentResponse>('agent_terminate_workflow', {
+      await safeInvoke<AgentResponse>('agent_terminate_workflow', {
         sessionId: session.id,
       });
     } catch (err) {
@@ -614,7 +615,7 @@ export function AgentSessionProvider({
     if (!session) return;
 
     try {
-      await invoke<AgentResponse>('agent_resume_workflow', {
+      await safeInvoke<AgentResponse>('agent_resume_workflow', {
         sessionId: session.id,
       });
       // Status update will come via event
@@ -628,7 +629,7 @@ export function AgentSessionProvider({
     async (toolCallId: string, approved: boolean) => {
       if (!session) return;
       try {
-        await invoke<AgentResponse>('agent_respond_tool_approval', {
+        await safeInvoke<AgentResponse>('agent_respond_tool_approval', {
           sessionId: session.id,
           toolCallId,
           approved,
@@ -649,7 +650,7 @@ export function AgentSessionProvider({
   const toggleYoloMode = useCallback(async () => {
     const newVal = !yoloModeEnabled;
     try {
-      await invoke('agent_set_yolo_mode', {
+      await safeInvoke<void>('agent_set_yolo_mode', {
         sessionId,
         enabled: newVal,
       });
@@ -663,7 +664,7 @@ export function AgentSessionProvider({
           count: pendingApprovals.length,
         });
         pendingApprovals.forEach((p) => {
-          invoke<AgentResponse>('agent_respond_tool_approval', {
+          safeInvoke<AgentResponse>('agent_respond_tool_approval', {
             sessionId,
             toolCallId: p.toolCallId,
             approved: true,

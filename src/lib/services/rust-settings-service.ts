@@ -85,7 +85,15 @@ export class RustSettingsService implements ISettingsService {
             | ModelChoice
             | null
             | undefined) ?? DEFAULT_SETTING.fallbackModel,
+        contextStrategy: getTypedValue(
+          'contextStrategy',
+          DEFAULT_SETTING.contextStrategy,
+        ),
         windowSize: getTypedValue('windowSize', DEFAULT_SETTING.windowSize),
+        maxInputContext: getTypedValue(
+          'maxInputContext',
+          DEFAULT_SETTING.maxInputContext,
+        ),
         uiLanguage: getTypedValue('uiLanguage', DEFAULT_SETTING.uiLanguage),
         toolCallGroupVisibleCount: getTypedValue(
           'toolCallGroupVisibleCount',
@@ -135,8 +143,16 @@ export class RustSettingsService implements ISettingsService {
         changes['fallbackModel'] = settings.fallbackModel ?? null;
       }
 
+      if (settings.contextStrategy != null) {
+        changes['contextStrategy'] = settings.contextStrategy;
+      }
+
       if (settings.windowSize != null) {
         changes['windowSize'] = settings.windowSize;
+      }
+
+      if (settings.maxInputContext != null) {
+        changes['maxInputContext'] = settings.maxInputContext;
       }
 
       if (settings.uiLanguage != null) {
@@ -166,7 +182,9 @@ export class RustSettingsService implements ISettingsService {
 
       // Perform a single batch update
       if (Object.keys(changes).length > 0) {
-        await safeInvoke('update_settings', { settings: changes });
+        await safeInvoke<SettingDto[]>('update_settings', {
+          settings: changes,
+        });
       }
 
       // Return updated settings

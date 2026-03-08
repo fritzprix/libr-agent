@@ -121,14 +121,9 @@ pub async fn handle_tool_call(
             let assistant_id = read_required_string(&args, "assistantId")?;
             let request = read_required_string(&args, "request")?;
 
-            let parent_session_id = resolve_parent_session_id(
-                args.get("parentSessionId").and_then(|v| v.as_str()),
-                caller_session_id.as_deref(),
-            )?
-            .ok_or_else(|| {
-                "Missing parent session context: provide explicit parentSessionId or call from within a parent session"
-                    .to_string()
-            })?;
+            let parent_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "spawnAgent requires a caller session context".to_string())?;
 
             let mut body = json!({
                 "parentSessionId": parent_session_id,
@@ -144,14 +139,6 @@ pub async fn handle_tool_call(
                 body["workspacePath"] = Value::String(path.to_string());
             }
 
-            if let Some(max_depth) = args.get("maxDepth").and_then(|v| v.as_u64()) {
-                body["maxDepth"] = Value::Number(max_depth.into());
-            }
-
-            if let Some(max_fanout) = args.get("maxFanout").and_then(|v| v.as_u64()) {
-                body["maxFanout"] = Value::Number(max_fanout.into());
-            }
-
             let await_completion = args
                 .get("awaitCompletion")
                 .and_then(|v| v.as_bool())
@@ -160,20 +147,6 @@ pub async fn handle_tool_call(
                 .get("timeoutSeconds")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(180);
-            let include_last_assistant_message = args
-                .get("includeLastAssistantMessage")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let result_message_limit = args
-                .get("resultMessageLimit")
-                .and_then(|v| v.as_u64())
-                .map(|v| v.clamp(1, 200))
-                .unwrap_or(20);
-            let assistant_message_max_chars = args
-                .get("assistantMessageMaxChars")
-                .and_then(|v| v.as_u64())
-                .map(|v| v.min(200000) as usize)
-                .filter(|v| *v > 0);
 
             let data = call_json(Method::POST, "/api/sessions", Some(body), None).await?;
 
@@ -212,30 +185,11 @@ pub async fn handle_tool_call(
             let final_status = extract_session_status(&session_data);
             let turn_count = count_session_turns(&child_id_owned).await;
 
-            if !include_last_assistant_message {
-                return Ok(success_result(
-                    format!(
-                        "Child session {} (depth: {}, lineage: {}) reached terminal status '{}' after {} polls ({} turns).",
-                        child_id_owned, depth, lineage, final_status, poll_count, turn_count
-                    ),
-                    json!({
-                        "session": session_data,
-                        "status": final_status,
-                        "pollCount": poll_count,
-                        "turnCount": turn_count,
-                        "messages": Value::Null
-                    }),
-                ));
-            }
-
             let messages_data = call_json(
                 Method::GET,
                 &format!("/api/sessions/{}/messages", child_id_owned),
                 None,
-                Some(vec![(
-                    "limit".to_string(),
-                    result_message_limit.to_string(),
-                )]),
+                Some(vec![("limit".to_string(), "20".to_string())]),
             )
             .await?;
 
@@ -246,7 +200,7 @@ pub async fn handle_tool_call(
                 .unwrap_or_default();
 
             let text = if let Some((message_id, assistant_text)) =
-                latest_assistant_message_text(&messages, assistant_message_max_chars)
+                latest_assistant_message_text(&messages, None)
             {
                 format!(
                     "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nLatest assistant result [{}]:\n{}",
@@ -254,8 +208,8 @@ pub async fn handle_tool_call(
                 )
             } else {
                 format!(
-                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nNo assistant text message found in the latest {} messages.",
-                    child_id_owned, depth, lineage, final_status, poll_count, turn_count, result_message_limit
+                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nNo assistant text message found.",
+                    child_id_owned, depth, lineage, final_status, poll_count, turn_count
                 )
             };
 
@@ -543,7 +497,9 @@ pub async fn handle_tool_call(
             Ok(success_result(final_text, data))
         }
         "getChildAgents" => {
-            let parent_session_id = read_required_string(&args, "parentSessionId")?;
+            let parent_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
 
             let data = call_json(
                 Method::GET,

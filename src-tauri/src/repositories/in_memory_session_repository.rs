@@ -29,7 +29,7 @@ impl InMemorySessionRepository {
     /// Create a new in-memory session repository
     ///
     /// # Example
-    /// ```ignore
+    /// ```rust
     /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;
     /// let repo = InMemorySessionRepository::new();
     /// ```

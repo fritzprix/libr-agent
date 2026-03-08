@@ -124,7 +124,9 @@ export function AgentChatHeader({
             </TooltipContent>
           </Tooltip>
 
-          {session?.id && <SessionFilesPopover sessionId={session.id} />}
+          {session?.id && (
+            <SessionFilesPopover key={session.id} sessionId={session.id} />
+          )}
         </div>
       </div>
     </AgentTerminalHeader>

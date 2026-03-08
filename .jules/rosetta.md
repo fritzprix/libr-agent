@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-03-04 - [Sidebar Navigation]
+
+**Extracted:** 3
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AppSidebar` and `ui/sidebar`. Extracted "Scheduled Tasks" and hidden SR-only attributes like `SheetTitle` and `SheetDescription` for the mobile sidebar.
+
 ## 2024-05-22 - [MCP Server Management]
 
 **Extracted:** ~50
@@ -53,3 +59,9 @@
 **Extracted:** ~50
 **Languages updated:** [EN, KO]
 **Notes:** Localized `ScheduledTasksPage`, `ScheduledTaskModal`, `MentionTextarea`, and `ScheduleBuilder`. Created `scheduledTasks` namespace in `common.json` handling page structure, modal forms, and complex chron descriptions with standard pluralization.
+
+## 2026-03-08 - [SessionFilesPopover]
+
+**Extracted:** 1
+**Languages updated:** [EN, KO]
+**Notes:** Localized `SessionFilesPopover` strings for file listing, counts, and actions, using English as placeholders for Korean where needed.

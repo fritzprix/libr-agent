@@ -177,6 +177,12 @@ export interface IAIService {
   listModels(): Promise<ModelInfo[]>;
 
   /**
+   * Converts an array of MCPTool objects to the provider-specific format.
+   * Each service class implements this to return the correct tool representation.
+   */
+  convertTools(mcpTools: MCPTool[]): unknown[];
+
+  /**
    * Cancels any in-progress streaming requests initiated by `streamChat`.
    * Implementations should abort network requests and stop yielding further
    * values from `streamChat` as soon as possible.
@@ -185,6 +191,23 @@ export interface IAIService {
    * when no stream is active should be safe and have no effect.
    */
   cancel(): void;
+
+  /**
+   * Compresses a slice of conversation messages into a single summary string
+   * by calling `sampleText()` internally. The default implementation in
+   * `BaseAIService` builds a plain-text summarisation prompt; individual
+   * providers may override for cost or caching optimisations.
+   * @param messages The messages to compress.
+   * @param options Optional model name and service configuration overrides.
+   * @returns A promise that resolves to the summary text.
+   */
+  compact(
+    messages: Message[],
+    options?: {
+      modelName?: string;
+      config?: AIServiceConfig;
+    },
+  ): Promise<string>;
 
   /**
    * Cleans up any resources used by the service instance.

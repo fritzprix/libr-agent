@@ -100,7 +100,7 @@ describe('AgentToolCallGroup Rendering', () => {
     );
 
     // Click "Show All"
-    const toggle = screen.getByText(/Show All/);
+    const toggle = screen.getByText(/Show All/i);
     fireEvent.click(toggle);
 
     // Should see all 5 items

@@ -268,5 +268,11 @@ impl BuiltinMCPServer for BrowserServer {
 
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
+        .or_else(|e| {
+            if e.contains("cancelled") || e.contains("interrupted") {
+                return Err(e);
+            }
+            Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Browser).to_mcp_result())
+        })
     }
 }

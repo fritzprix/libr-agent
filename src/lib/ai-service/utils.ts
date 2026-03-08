@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import { AIServiceProvider } from './types';
+import { AIServiceProvider, TokenUsage } from './types';
 import {
   type Message,
   type RustMessage,
@@ -94,7 +94,7 @@ export function normalizeRustMessage(msg: RustMessage | Message): Message {
  * @param durationMs The total duration in milliseconds that generation took.
  */
 export function calculateTokensPerSecond(
-  usage: import('./types').TokenUsage,
+  usage: TokenUsage,
   durationMs: number,
 ): number {
   if (usage.completionTokens === 0 || durationMs === 0) return 0;
@@ -105,7 +105,7 @@ export function calculateTokensPerSecond(
  * Format usage metrics for display
  * @param usage Output usage stats returned by a model provider.
  */
-export function formatUsageMetrics(usage: import('./types').TokenUsage): {
+export function formatUsageMetrics(usage: TokenUsage): {
   input: string;
   output: string;
   total: string;

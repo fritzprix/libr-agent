@@ -5,7 +5,7 @@ import { AIServiceProvider } from '@/lib/ai-service';
 import { useSettings } from '@/hooks/use-settings';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/lib/i18n';
-import type { ServiceConfig } from '@/context/SettingsContext';
+import type { ServiceConfig, ContextStrategy } from '@/context/SettingsContext';
 import {
   Button,
   Tabs,
@@ -26,6 +26,7 @@ import GeneralTab from './tabs/GeneralTab';
 import AIModelsTab from './tabs/AIModelsTab';
 import ChatInterfaceTab from './tabs/ChatInterfaceTab';
 import AdvancedTab from './tabs/AdvancedTab';
+import DevTab from './tabs/DevTab';
 
 const logger = getLogger('SettingsPage');
 
@@ -209,6 +210,14 @@ export default function SettingsPage() {
     (value: number) => update('windowSize', value),
     [update],
   );
+  const handleContextStrategyChange = useCallback(
+    (strategy: ContextStrategy) => update('contextStrategy', strategy),
+    [update],
+  );
+  const handleMaxInputContextChange = useCallback(
+    (value: number) => update('maxInputContext', value),
+    [update],
+  );
   const handleToolCallGroupVisibleCountChange = useCallback(
     (count: number) => update('toolCallGroupVisibleCount', count),
     [update],
@@ -310,6 +319,11 @@ export default function SettingsPage() {
               <TabsTrigger value="advanced">
                 {t('settings.tabs.advanced', 'Advanced')}
               </TabsTrigger>
+              {import.meta.env.DEV && (
+                <TabsTrigger value="dev" className="text-yellow-500">
+                  Dev
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="general">
@@ -337,13 +351,17 @@ export default function SettingsPage() {
 
             <TabsContent value="chat-interface">
               <ChatInterfaceTab
+                localContextStrategy={formState.contextStrategy}
                 localWindowSize={formState.windowSize}
+                localMaxInputContext={formState.maxInputContext}
                 localToolCallGroupVisibleCount={
                   formState.toolCallGroupVisibleCount
                 }
                 localAdvancedSettings={formState.advanced}
                 localDisplay={formState.display}
+                onContextStrategyChange={handleContextStrategyChange}
                 onWindowSizeChange={handleWindowSizeChange}
+                onMaxInputContextChange={handleMaxInputContextChange}
                 onToolCallGroupVisibleCountChange={
                   handleToolCallGroupVisibleCountChange
                 }
@@ -360,6 +378,12 @@ export default function SettingsPage() {
                 dangerZoneProps={dangerZoneProps}
               />
             </TabsContent>
+
+            {import.meta.env.DEV && (
+              <TabsContent value="dev">
+                <DevTab serviceConfigs={formState.serviceConfigs} />
+              </TabsContent>
+            )}
           </Tabs>
         </div>
       </div>

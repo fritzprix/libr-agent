@@ -1,7 +1,8 @@
+import { safeInvoke } from '@/lib/backend/core';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -236,10 +237,10 @@ function DraftChatInner() {
     const loadMetadata = async () => {
       try {
         const [services, servers] = await Promise.all([
-          invoke<BuiltinServerInfo[]>(
+          safeInvoke<BuiltinServerInfo[]>(
             'list_available_builtin_server_definitions',
           ),
-          invoke<MCPServerDto[]>('list_mcp_server_configs'),
+          safeInvoke<MCPServerDto[]>('list_mcp_server_configs'),
         ]);
         setBuiltinServices(services);
         setMcpServers(servers);
@@ -260,7 +261,7 @@ function DraftChatInner() {
       }
 
       try {
-        const rawData = await invoke<AssistantDto | null>('get_assistant', {
+        const rawData = await safeInvoke<AssistantDto | null>('get_assistant', {
           id: assistantId,
         });
 
@@ -451,7 +452,7 @@ function DraftChatInner() {
         if (!toastId) toastId = toast.loading('Creating session...');
 
         // Step 1: Create session — this initializes MCPServiceProxy + Content Store
-        await invoke<AgentSessionMetadata>('agent_create_session', {
+        await safeInvoke<AgentSessionMetadata>('agent_create_session', {
           request: {
             sessionId: newSessionId,
             name: shortName,
@@ -557,7 +558,7 @@ function DraftChatInner() {
           ...rustMessage,
           ...(attachments.length > 0 ? { attachments } : {}),
         };
-        await invoke<AgentResponse>('agent_send_message', {
+        await safeInvoke<AgentResponse>('agent_send_message', {
           request: {
             sessionId: newSessionId,
             message: finalRustMessage,

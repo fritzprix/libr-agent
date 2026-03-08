@@ -2,6 +2,12 @@
 
 Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] **Resolution:** [Design Pattern Applied]`
 
+## 2025-03-06 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** The `log_commands.rs`, `content_store_commands.rs`, and `file_commands.rs` modules contained significant filesystem I/O and DB business logic.
+- **Action:** Extracted `LogService`, `ContentStoreService`, and enhanced `WorkspaceService` to handle domain logic independently of Tauri's IPC boundary.
+- **Result:** Command files now cleanly act as thin adapters, delegating domain responsibilities to isolated services.
+
 ## 2024-05-23 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
 
 - **Context:** The `workspace_commands.rs` module contained significant business logic for listing files, managing workspace overrides, and platform-specific terminal launching.
@@ -61,3 +67,15 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 ## 2025-03-01 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling in AgentSessionManager] **Resolution:** [Extracted Domain Logic into SessionCleanupService]
 
 ## 2025-03-05 - [Architecture] **Anti-Pattern:** Fat Command Handlers / Framework Coupling **Resolution:** Extracted Domain and DB logic into dedicated `AssistantService`, `McpServerService`, `PlaybookService`, and `ScheduledTaskService`, leaving Tauri commands as thin framework boundaries.
+
+## 2026-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
+- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.
+- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.
+- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.
+
+## 2026-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation
+
+- **Context:** `browser_commands.rs` duplicated URL validation checks (`url.trim().is_empty()`) before passing it down to `InteractiveBrowserServer`.
+- **Action:** Removed the redundant URL validation from the command layer.
+- **Result:** `InteractiveBrowserServer` handles its own parameter validation natively, allowing `browser_commands.rs` to remain a pure framework entry point.

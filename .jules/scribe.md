@@ -158,3 +158,38 @@
 
 **Drift:** JSDoc for `constructor` missed `@param config`.
 **Reality:** Added `@param config Optional configuration to override the defaults.`
+
+## 2024-10-24 - src/lib/ai-service/ollama-core.ts
+
+**Drift:** Documented param `accumulators` had duplicate/outdated description.
+**Reality:** Fixed description.
+
+## 2024-10-24 - src/lib/workspace-sync-service.ts
+
+**Drift:** Missing param `sessionId` in JSDoc for `syncFileToWorkspace`.
+**Reality:** Added documentation for `sessionId`.
+
+## 2024-10-24 - src/lib/backend/workspace.ts
+
+**Drift:** Missing param `sessionId` in JSDoc for `workspaceWriteFile`.
+**Reality:** Added documentation for `sessionId`.
+
+## 2026-03-08 - src-tauri/src/mcp/builtin/workspace/utils.rs
+
+**Drift:** Code example was ignored and unverified.
+**Reality:** Example compiles correctly when tested with `cargo test --doc`.
+
+## 2026-03-08 - src-tauri/src/mcp/service_proxy_manager/creation.rs
+
+**Drift:** Code example was ignored without explanation.
+**Reality:** Example is ignored because it requires valid, initialized DB connection and session manager, which is now documented.
+
+## 2026-03-08 - src-tauri/src/mcp/service_proxy_manager/management.rs
+
+**Drift:** Code example was ignored without explanation and had syntactical error.
+**Reality:** Example is ignored because it requires initialized connections; also fixed `json!` macro to `serde_json::json!`.
+
+## 2026-03-08 - src-tauri/src/repositories/in_memory_session_repository.rs
+
+**Drift:** Code example was ignored and import was incorrect.
+**Reality:** Fixed import statement to accurately reflect the correct module path `in_memory_session_repository` so the example can be successfully verified.

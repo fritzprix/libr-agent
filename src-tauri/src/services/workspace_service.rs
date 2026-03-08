@@ -216,4 +216,27 @@ impl WorkspaceService {
             }
         }
     }
+
+    /// A session-aware method to write a file to the current session's workspace.
+    ///
+    /// This ensures that file operations are contained within the active session's
+    /// designated workspace directory, preventing writes to unintended locations.
+    pub async fn workspace_write_file(
+        file_path: &str,
+        content: &[u8],
+        session_id: Option<String>,
+    ) -> Result<(), String> {
+        let session_manager =
+            get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
+
+        // Session ID is mandatory for workspace operations in V2 logic
+        if let Some(sid) = session_id {
+            let workspace_dir = session_manager.get_session_workspace_dir_by_id(&sid);
+            // Create a temporary secure file manager for this operation
+            let manager = crate::services::SecureFileManager::new_with_base_dir(workspace_dir);
+            return manager.write_file(file_path, content).await;
+        }
+
+        Err("Session ID is required for workspace write operations".to_string())
+    }
 }

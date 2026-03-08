@@ -3,7 +3,6 @@ import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources
 import { Tool as AnthropicTool } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { MCPTool, JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../logger';
-import { AIServiceProvider, AIServiceError } from './types';
 import {
   FunctionDeclaration,
   Type,
@@ -35,7 +34,7 @@ interface OllamaTool {
 }
 
 /** Represents an array of provider-specific tools. @internal */
-type ProviderToolsType = ProviderToolType[];
+export type ProviderToolsType = ProviderToolType[];
 
 /**
  * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
@@ -295,7 +294,7 @@ function validateTool(tool: MCPTool): void {
  * @returns The tool in Cerebras-specific format.
  * @internal
  */
-function convertMCPToolToCerebras(
+export function convertMCPToolToCerebras(
   mcpTool: MCPTool,
 ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool {
   validateTool(mcpTool);
@@ -332,7 +331,9 @@ function convertMCPToolToCerebras(
  * @returns The tool in OpenAI-compatible format.
  * @internal
  */
-function convertMCPToolToOpenAI(mcpTool: MCPTool): OpenAIChatCompletionTool {
+export function convertMCPToolToOpenAI(
+  mcpTool: MCPTool,
+): OpenAIChatCompletionTool {
   validateTool(mcpTool);
 
   const properties = mcpTool.inputSchema.properties || {};
@@ -360,7 +361,7 @@ function convertMCPToolToOpenAI(mcpTool: MCPTool): OpenAIChatCompletionTool {
  * @returns The tool in Groq-specific format.
  * @internal
  */
-function convertMCPToolToGroq(mcpTool: MCPTool): GroqChatCompletionTool {
+export function convertMCPToolToGroq(mcpTool: MCPTool): GroqChatCompletionTool {
   validateTool(mcpTool);
 
   const properties = mcpTool.inputSchema.properties || {};
@@ -388,7 +389,7 @@ function convertMCPToolToGroq(mcpTool: MCPTool): GroqChatCompletionTool {
  * @returns The tool in Anthropic-specific format.
  * @internal
  */
-function convertMCPToolToAnthropic(mcpTool: MCPTool): AnthropicTool {
+export function convertMCPToolToAnthropic(mcpTool: MCPTool): AnthropicTool {
   validateTool(mcpTool);
 
   const properties = mcpTool.inputSchema.properties || {};
@@ -413,7 +414,7 @@ function convertMCPToolToAnthropic(mcpTool: MCPTool): AnthropicTool {
  * @returns The tool in Gemini-specific format.
  * @internal
  */
-function convertMCPToolToGemini(mcpTool: MCPTool): FunctionDeclaration {
+export function convertMCPToolToGemini(mcpTool: MCPTool): FunctionDeclaration {
   validateTool(mcpTool);
 
   // Convert the entire inputSchema to Gemini format
@@ -429,98 +430,4 @@ function convertMCPToolToGemini(mcpTool: MCPTool): FunctionDeclaration {
       required: mcpTool.inputSchema.required || [],
     },
   } satisfies FunctionDeclaration;
-}
-
-/**
- * Converts a single MCPTool to the Ollama-specific format.
- * @param mcpTool The MCPTool to convert.
- * @returns The tool in Ollama-specific format.
- * @internal
- */
-function convertMCPToolToOllama(mcpTool: MCPTool): OllamaTool {
-  validateTool(mcpTool);
-
-  const properties = mcpTool.inputSchema.properties || {};
-  const required = mcpTool.inputSchema.required || [];
-
-  const commonParameters = ensureSchemaTypeField({
-    type: 'object' as const,
-    properties: properties,
-    required: required,
-  });
-
-  return {
-    type: 'function',
-    function: {
-      name: mcpTool.name,
-      description: mcpTool.description,
-      parameters: commonParameters,
-    },
-  } satisfies OllamaTool;
-}
-
-/**
- * Converts a single `MCPTool` object into the format required by a specific AI service provider.
- * This function acts as a dispatcher to provider-specific conversion functions.
- * @param mcpTool The `MCPTool` to convert.
- * @param provider The target `AIServiceProvider`.
- * @returns The tool in the provider-specific format.
- * @throws An `AIServiceError` if tool conversion is not supported for the provider.
- * @internal
- */
-function convertMCPToolToProviderFormat(
-  mcpTool: MCPTool,
-  provider: AIServiceProvider,
-): ProviderToolType {
-  switch (provider) {
-    case AIServiceProvider.OpenAI:
-    case AIServiceProvider.Fireworks:
-    case AIServiceProvider.OpenRouter:
-      return convertMCPToolToOpenAI(mcpTool);
-    case AIServiceProvider.Groq:
-      return convertMCPToolToGroq(mcpTool);
-    case AIServiceProvider.Anthropic:
-      return convertMCPToolToAnthropic(mcpTool);
-    case AIServiceProvider.Gemini:
-      return convertMCPToolToGemini(mcpTool);
-    case AIServiceProvider.Cerebras:
-      return convertMCPToolToCerebras(mcpTool);
-    case AIServiceProvider.Ollama:
-      return convertMCPToolToOllama(mcpTool);
-    case AIServiceProvider.Empty:
-      throw new AIServiceError(
-        `Tool conversion not supported for Empty AIServiceProvider`,
-        AIServiceProvider.Empty,
-      );
-  }
-}
-
-/**
- * Converts an array of `MCPTool` objects into the format required by a specific AI service provider.
- * @param mcpTools The array of `MCPTool` objects to convert.
- * @param provider The target `AIServiceProvider`.
- * @returns An array of tools in the provider-specific format.
- */
-export function convertMCPToolsToProviderTools(
-  mcpTools: MCPTool[],
-  provider: AIServiceProvider,
-): ProviderToolsType {
-  if (provider === AIServiceProvider.Gemini) {
-    return mcpTools.map(
-      (tool) =>
-        convertMCPToolToProviderFormat(tool, provider) as FunctionDeclaration,
-    );
-  }
-  return mcpTools.map((tool) => convertMCPToolToProviderFormat(tool, provider));
-}
-
-/**
- * A type-safe function specifically for converting MCP tools to the Cerebras format.
- * @param mcpTools The array of `MCPTool` objects to convert.
- * @returns An array of tools in the Cerebras-specific format.
- */
-export function convertMCPToolsToCerebrasTools(
-  mcpTools: MCPTool[],
-): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
-  return mcpTools.map(convertMCPToolToCerebras);
 }

@@ -1,7 +1,7 @@
-import { FunctionDeclaration, GoogleGenAI } from '@google/genai';
+import { FunctionDeclaration, FinishReason, GoogleGenAI } from '@google/genai';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
@@ -14,6 +14,7 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
+import { convertMCPToolToGemini } from '../tool-converters';
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
@@ -22,7 +23,10 @@ export class GeminiService extends BaseAIService {
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
-  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
+  private readonly CACHE_TTL = 3600000;
+  private cachedContentName?: string;
+  private cachedSystemPrompt?: string;
+  private cachedToolsHash?: string;
 
   /**
    * Initializes a new instance of the `GeminiService`.
@@ -42,6 +46,30 @@ export class GeminiService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Gemini;
+  }
+
+  /**
+   * Splits the system prompt into a static prefix (cacheable) and dynamic suffix (volatile).
+   * @param prompt The complete system prompt.
+   * @returns A tuple of [stablePrefix, dynamicContext].
+   */
+  private splitSystemPrompt(prompt: string): [string, string] {
+    const delimiter = '# Current Context Information';
+    const parts = prompt.split(delimiter);
+    if (parts.length > 1) {
+      return [
+        parts[0].trim(),
+        `${delimiter}\n${parts.slice(1).join(delimiter).trim()}`,
+      ];
+    }
+    return [prompt, ''];
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): FunctionDeclaration[] {
+    return mcpTools.map(convertMCPToolToGemini);
   }
 
   /**
@@ -119,19 +147,85 @@ export class GeminiService extends BaseAIService {
       const model =
         options.modelName || config.defaultModel || getDefaultModel();
 
+      // --- CONTEXT CACHING ABSTRACTION BEGIN ---
+      const [stablePrefix, dynamicContext] = options.systemPrompt
+        ? this.splitSystemPrompt(options.systemPrompt)
+        : ['', ''];
+
+      const toolsHash = geminiTools ? JSON.stringify(geminiTools) : '';
+      let shouldUseCache = false;
+
+      if (
+        (model.includes('gemini-1.5') || model.includes('gemini-2')) &&
+        stablePrefix.length > 50000 // Google GenAI enforces a 32,768 token minimum (~100k chars). We check conservatively.
+      ) {
+        if (
+          !this.cachedContentName ||
+          this.cachedSystemPrompt !== stablePrefix ||
+          this.cachedToolsHash !== toolsHash
+        ) {
+          try {
+            if (this.cachedContentName) {
+              await this.genAI.caches
+                .delete({ name: this.cachedContentName })
+                .catch(() => {});
+            }
+            this.logger.debug(
+              'Creating Gemini Context Cache for stable prefix & tools...',
+            );
+            const cacheResponse = await this.genAI.caches.create({
+              model,
+              config: {
+                systemInstruction: stablePrefix,
+                tools: geminiTools,
+                ttl: '3600s',
+              },
+            });
+            this.cachedContentName = cacheResponse.name;
+            this.cachedSystemPrompt = stablePrefix;
+            this.cachedToolsHash = toolsHash;
+            this.logger.info(
+              `Gemini Context Cache created successfully: ${cacheResponse.name}`,
+            );
+          } catch (e) {
+            this.logger.warn(
+              'Failed to create Gemini context cache, falling back to standard request. Note: Context must be >32k tokens.',
+              e,
+            );
+            this.cachedContentName = undefined;
+            this.cachedSystemPrompt = undefined;
+            this.cachedToolsHash = undefined;
+          }
+        }
+        if (this.cachedContentName) shouldUseCache = true;
+      }
+      // --- CONTEXT CACHING ABSTRACTION END ---
+
       const geminiConfig: GeminiServiceConfig = {
         responseMimeType: 'text/plain',
       };
 
-      if (geminiTools) {
-        geminiConfig.tools = geminiTools;
-        if (options.forceToolUse) {
-          geminiConfig.functionCallingConfig = { mode: 'any' };
+      if (shouldUseCache && this.cachedContentName && !options.forceToolUse) {
+        geminiConfig.cachedContent = this.cachedContentName;
+        // The Google GenAI API does not allow overriding system_instruction or tools when cached_content is provided.
+        // Therefore, we inject the dynamic context into the first user message.
+        if (dynamicContext && geminiMessages.length > 0) {
+          if (geminiMessages[0].parts) {
+            geminiMessages[0].parts.unshift({
+              text: `[System Context Update]\n${dynamicContext}\n\n`,
+            });
+          }
         }
-      }
-
-      if (options.systemPrompt) {
-        geminiConfig.systemInstruction = [{ text: options.systemPrompt }];
+      } else {
+        if (geminiTools) {
+          geminiConfig.tools = geminiTools;
+          if (options.forceToolUse) {
+            geminiConfig.functionCallingConfig = { mode: 'any' };
+          }
+        }
+        if (options.systemPrompt) {
+          geminiConfig.systemInstruction = [{ text: options.systemPrompt }];
+        }
       }
 
       if (config.maxTokens) {
@@ -251,6 +345,62 @@ export class GeminiService extends BaseAIService {
     const logger = getLogger('GeminiService.fallbackToStaticModels');
     logger.info('Using static config models');
     return super.listModels();
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Gemini API.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const rawConfig = this.mergeConfig(options) as AIServiceConfig &
+      GeminiServiceConfig;
+    const model =
+      options?.modelName || rawConfig.defaultModel || getDefaultModel();
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.genAI.models.generateContent({
+        model,
+        config: {
+          maxOutputTokens: s?.maxTokens ?? rawConfig.maxTokens,
+          temperature: s?.temperature ?? rawConfig.temperature,
+          topP: s?.topP,
+          topK: s?.topK,
+          stopSequences: s?.stopSequences,
+        },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      }),
+    );
+
+    const candidate = response.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text ?? '';
+    const finishReason = candidate?.finishReason ?? FinishReason.STOP;
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason: finishReason === FinishReason.STOP ? 'stop' : 'length',
+          usage: response.usageMetadata
+            ? {
+                promptTokens: response.usageMetadata.promptTokenCount ?? 0,
+                completionTokens:
+                  response.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: response.usageMetadata.totalTokenCount ?? 0,
+              }
+            : undefined,
+          model,
+        },
+      },
+    };
   }
 
   /**

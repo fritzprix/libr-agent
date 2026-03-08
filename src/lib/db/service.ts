@@ -163,7 +163,7 @@ export const dbUtils = {
 
   // --- Messages ---
   getAllMessages: async (): Promise<Message[]> => {
-    console.warn(
+    logger.warn(
       'getAllMessages (global) called but not supported by backend properly. Returning empty list.',
     );
     return [];
@@ -224,7 +224,7 @@ export const dbUtils = {
   clearAllMessages: async (): Promise<void> => {
     // Global clear not supported easily without listing everything.
     // Warn.
-    console.warn('clearAllMessages not fully supported, doing nothing.');
+    logger.warn('clearAllMessages not fully supported, doing nothing.');
   },
   bulkUpsertMessages: async (messages: Message[]): Promise<void> => {
     await messagesBackend.upsertMessages(messages);

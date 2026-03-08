@@ -2,18 +2,84 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
+  TextBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent } from '@/lib/mcp';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import { convertMCPToolToAnthropic } from './tool-converters';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+
+/**
+ * Marker injected by TimeLocationContextProvider (priority 1000, always last).
+ * Everything before this marker is stable and safe to cache.
+ */
+const VOLATILE_CONTEXT_MARKER = '# Current Context Information';
+
+/**
+ * Splits a system prompt into stable (cacheable) and volatile blocks for
+ * Anthropic prompt caching. The stable prefix receives `cache_control:
+ * { type: 'ephemeral' }` so Anthropic caches it across requests.
+ *
+ * Structure of the assembled system prompt:
+ *  [stable]  agent identity + workspace instructions + session name
+ *            + semi-stable service contexts (bootstrap, skills, mcp_manager)
+ *  [volatile] TimeLocation block (# Current Context Information)
+ *             + planning / browser service contexts (change per request)
+ *
+ * If no volatile marker is found the entire prompt is treated as stable.
+ */
+function buildSystemBlocks(
+  systemPrompt: string | undefined,
+): TextBlockParam[] | undefined {
+  if (!systemPrompt) return undefined;
+
+  const idx = systemPrompt.indexOf(VOLATILE_CONTEXT_MARKER);
+
+  if (idx < 0) {
+    // No volatile section — cache the whole prompt
+    return [
+      {
+        type: 'text',
+        text: systemPrompt,
+        cache_control: { type: 'ephemeral' },
+      },
+    ];
+  }
+
+  if (idx === 0) {
+    // Entire prompt starts with volatile content — return a single uncached block
+    return [{ type: 'text', text: systemPrompt }];
+  }
+
+  const stablePrefix = systemPrompt.slice(0, idx).trimEnd();
+  const volatileSuffix = systemPrompt.slice(idx);
+
+  return [
+    {
+      type: 'text',
+      text: stablePrefix,
+      cache_control: { type: 'ephemeral' }, // Anthropic caches up to this breakpoint
+    },
+    {
+      type: 'text',
+      text: volatileSuffix,
+      // No cache_control — volatile content, changes up to once per hour
+    },
+  ];
+}
 
 /**
  * Extended usage interface for Anthropic's response that includes prompt caching fields.
@@ -73,6 +139,13 @@ export class AnthropicService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Anthropic;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
+    return mcpTools.map(convertMCPToolToAnthropic);
   }
 
   /**
@@ -250,12 +323,14 @@ export class AnthropicService extends BaseAIService {
         }
       }
 
+      const systemBlocks = buildSystemBlocks(options.systemPrompt);
+
       const stream = this.anthropic.messages.stream(
         {
           model: model,
           max_tokens: config.maxTokens!,
           messages: anthropicMessages,
-          system: options.systemPrompt,
+          ...(systemBlocks && { system: systemBlocks }),
           ...(extendedThinking && { extended_thinking: extendedThinking }),
           tools: tools as AnthropicTool[],
           ...(options.forceToolUse &&
@@ -820,6 +895,60 @@ export class AnthropicService extends BaseAIService {
       logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
       return null;
     }
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Anthropic API.
+   * Used by the base-class `compact()` for context summarisation.
+   * @param prompt The user prompt to send.
+   * @param options Optional model name, sampling parameters, and service config.
+   * @returns A resolved `SamplingResponse` with the generated text.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const config = this.mergeConfig(options);
+    const model =
+      options?.modelName || config.defaultModel || this.getDefaultModel();
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.anthropic.messages.create({
+        model,
+        max_tokens: s?.maxTokens ?? config.maxTokens ?? 4096,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        top_k: s?.topK,
+        stop_sequences: s?.stopSequences,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    );
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    const text = textBlock?.type === 'text' ? textBlock.text : '';
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason: response.stop_reason === 'end_turn' ? 'stop' : 'length',
+          usage: {
+            promptTokens: response.usage.input_tokens,
+            completionTokens: response.usage.output_tokens,
+            totalTokens:
+              response.usage.input_tokens + response.usage.output_tokens,
+          },
+          model: response.model,
+        },
+      },
+    };
   }
 
   /**

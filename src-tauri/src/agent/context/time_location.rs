@@ -50,14 +50,8 @@ impl TimeLocationContextProvider {
 
         let current_date = format!("{}, {} {}, {}", weekday, month, now.day(), now.year());
 
-        // Format time with timezone
-        let current_time = format!(
-            "{:02}:{:02}:{:02} {}",
-            now.hour(),
-            now.minute(),
-            now.second(),
-            now.offset()
-        );
+        // Format time with timezone (hour granularity - avoids cache invalidation on every minute/second)
+        let current_time = format!("{:02}:00 {}", now.hour(), now.offset());
 
         // Get timezone name
         let timezone = format!("{}", now.offset());
@@ -83,7 +77,7 @@ impl ContextProvider for TimeLocationContextProvider {
     }
 
     fn priority(&self) -> i32 {
-        5 // High priority - critical context information
+        1000 // Low priority - volatile content placed last to maximize stable prefix for prompt caching
     }
 
     async fn get_context(&self, _assistant_id: Option<&str>) -> Result<String, String> {
@@ -123,7 +117,7 @@ mod tests {
         let provider = TimeLocationContextProvider::new();
 
         assert_eq!(provider.provider_id(), "time_location");
-        assert_eq!(provider.priority(), 5);
+        assert_eq!(provider.priority(), 1000);
         assert!(provider.is_enabled().await);
 
         let context = provider.get_context(None).await;

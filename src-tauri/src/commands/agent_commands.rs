@@ -1,7 +1,6 @@
 use crate::agent::AgentSessionManager;
 use crate::mcp::types::ServiceContext;
-use crate::repositories::SessionMetadata;
-use crate::repositories::SessionRepository;
+use crate::repositories::{CompactContextRecord, SessionMetadata, SessionRepository};
 use crate::state::get_session_repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -472,6 +471,31 @@ pub async fn agent_factory_reset(
     Ok(AgentResponse {
         success: true,
         message: "Factory reset completed successfully".to_string(),
+        data: None,
+    })
+}
+
+/// Get compacted context for a session
+#[command]
+pub async fn agent_get_compact_context(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<Option<CompactContextRecord>, String> {
+    manager.get_compact_context(&session_id).await
+}
+
+/// Save compacted context for a session
+#[command]
+pub async fn agent_save_compact_context(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    record: CompactContextRecord,
+) -> Result<AgentResponse, String> {
+    manager.save_compact_context(&session_id, record).await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compact context saved for session: {}", session_id),
         data: None,
     })
 }

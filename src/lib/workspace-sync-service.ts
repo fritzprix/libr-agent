@@ -7,6 +7,7 @@ import { settingsService } from '@/lib/services/settings-service';
  * generating a safe workspace path, and invoking the Rust backend to write the file.
  *
  * @param file The `File` object to synchronize.
+ * @param sessionId The optional session ID to specify which session's workspace to sync to.
  * @returns A promise that resolves to the relative path of the file in the workspace.
  * @throws An error if the file size exceeds the limit or if the backend operation fails.
  */

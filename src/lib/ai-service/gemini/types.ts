@@ -14,6 +14,7 @@ export interface GeminiServiceConfig {
   systemInstruction?: Array<{ text: string }>;
   maxOutputTokens?: number;
   temperature?: number;
+  cachedContent?: string;
   functionCallingConfig?: { mode: 'auto' | 'any' | 'none' };
   thinkingConfig?: {
     thinkingBudget?: number; // -1 (dynamic) | 0 (disabled) | positive number (token count)

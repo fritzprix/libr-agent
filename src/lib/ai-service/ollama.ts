@@ -4,10 +4,11 @@ import type {
   ListResponse,
   ModelResponse,
   Message as OllamaMessage,
+  Tool,
 } from 'ollama';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { ModelInfo } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
@@ -96,6 +97,13 @@ export class OllamaService extends BaseAIService {
   }
 
   /**
+   * @inheritdoc
+   */
+  convertTools(mcpTools: MCPTool[]): Tool[] {
+    return convertMCPToolsToOllamaTools(mcpTools, coreLogger);
+  }
+
+  /**
    * Cancels any ongoing streams by calling the Ollama client's abort method.
    * This will abort all running requests on the client instance.
    */
@@ -167,7 +175,10 @@ export class OllamaService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config } = this.prepareStreamChat(messages, options);
+    const { config, tools: ollamaTools } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     logger.info('🔵 Ollama doStreamChat called', {
       inputMessageCount: messages.length,
@@ -182,16 +193,12 @@ export class OllamaService extends BaseAIService {
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
-      const ollamaTools = convertMCPToolsToOllamaTools(
-        options.availableTools,
-        coreLogger,
-      );
 
       logger.info('📨 Converted messages for Ollama', {
         originalCount: messages.length,
         convertedCount: ollamaMessages.length,
         model,
-        toolCount: ollamaTools.length,
+        toolCount: (ollamaTools ?? []).length,
         messageRoles: ollamaMessages.map((m) => m.role).join(','),
       });
 
@@ -227,7 +234,7 @@ export class OllamaService extends BaseAIService {
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
         ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
-        tools: ollamaTools,
+        tools: ollamaTools as Tool[] | undefined,
         keep_alive: '5m',
         options: {
           temperature: config.temperature || 0.7,
@@ -385,6 +392,57 @@ export class OllamaService extends BaseAIService {
    */
   protected convertSingleMessage(message: Message): unknown {
     return this.convertMessage(message);
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Ollama API.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const config = this.mergeConfig(options);
+    const model = options?.modelName || config.defaultModel || '';
+    const s = options?.samplingOptions;
+
+    const response = await this.ollamaClient.chat({
+      model,
+      stream: false,
+      messages: [{ role: 'user', content: prompt }],
+      options: {
+        num_predict: s?.maxTokens ?? config.maxTokens,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        stop: s?.stopSequences,
+      },
+    });
+
+    const text = response.message.content;
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason: response.done ? 'stop' : 'length',
+          usage:
+            response.eval_count !== undefined &&
+            response.prompt_eval_count !== undefined
+              ? {
+                  promptTokens: response.prompt_eval_count,
+                  completionTokens: response.eval_count,
+                  totalTokens: response.prompt_eval_count + response.eval_count,
+                }
+              : undefined,
+          model: response.model,
+        },
+      },
+    };
   }
 
   /**

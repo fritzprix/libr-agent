@@ -25,15 +25,14 @@ export function usePlaybookSearch(
 ): PlaybookWithId[] {
   const [playbooks, setPlaybooks] = useState<PlaybookWithId[]>([]);
 
-  // Reset when agentId changes or dropdown closes.
   useEffect(() => {
-    if (query === null) {
+    if (!agentId || query === null) {
+      // If we are closed or missing agentId, we don't need to retain playbooks state,
+      // but dynamically returning [] at the end handles the rendering.
+      // We also clear it here so it doesn't flash old data on the next open.
       setPlaybooks([]);
+      return;
     }
-  }, [agentId, query]);
-
-  useEffect(() => {
-    if (!agentId || query === null) return;
 
     listPlaybooks({ agentId })
       .then((all) => {
@@ -48,6 +47,9 @@ export function usePlaybookSearch(
         setPlaybooks([]);
       });
   }, [agentId, query]);
+
+  // Dynamically return empty if query is null, avoiding any stale renders.
+  if (query === null) return [];
 
   return playbooks;
 }

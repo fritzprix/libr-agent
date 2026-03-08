@@ -1,7 +1,8 @@
+import { safeInvoke } from '@/lib/backend/core';
 import { useEffect, useState, useRef } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
 import {
@@ -46,7 +47,7 @@ function GeneralTabComponent({
       if (!skillsDirectory) {
         try {
           // If no directory is set, try to get the default one
-          const defaultDir = await invoke<string>(
+          const defaultDir = await safeInvoke<string>(
             'get_default_skills_directory',
           );
           onSkillsDirectoryChange(defaultDir);
@@ -67,9 +68,12 @@ function GeneralTabComponent({
 
       setVerificationStatus('loading');
       try {
-        const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
-          directory: dirToVerify,
-        });
+        const result = await safeInvoke<SkillMetadata[]>(
+          'scan_skills_directory',
+          {
+            directory: dirToVerify,
+          },
+        );
         setSkills(result);
         setVerificationStatus('success');
       } catch (error) {
@@ -117,7 +121,7 @@ function GeneralTabComponent({
     setIsOpeningDir(true);
     logger.info(`Attempting to open directory: ${skillsDirectory}`);
     try {
-      await invoke<void>('open_skills_directory_in_explorer', {
+      await safeInvoke<void>('open_skills_directory_in_explorer', {
         directory: skillsDirectory,
       });
       logger.info(`Successfully requested open_skills_directory_in_explorer`);

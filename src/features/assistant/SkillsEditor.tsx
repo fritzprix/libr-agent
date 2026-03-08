@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getLogger } from '@/lib/logger';
 import { useDnDContext } from '@/context/DnDContext';
 import {
   getAggregatedSkills,
@@ -33,6 +34,8 @@ import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
 import { SkillMetadata } from '@/types/skills';
 
+const logger = getLogger('SkillsEditor');
+
 export default function SkillsEditor() {
   const { t } = useTranslation('common');
   const { draft, update } = useEditor<Assistant>();
@@ -54,7 +57,7 @@ export default function SkillsEditor() {
       const result = await getAggregatedSkills(draft.id);
       setSkills(result);
     } catch (error) {
-      console.error('Failed to fetch skills:', error);
+      logger.error('Failed to fetch skills:', error);
       toast.error(t('skills.fetchFailed'));
     } finally {
       setIsLoading(false);
@@ -90,7 +93,7 @@ export default function SkillsEditor() {
             toast.success(t('skills.importSuccess'), { id: toastId });
             fetchSkills();
           } catch (error) {
-            console.error('Failed to import skills:', error);
+            logger.error('Failed to import skills:', error);
             toast.error(`${t('skills.importFailed')}: ${error}`, {
               id: toastId,
             });
@@ -113,7 +116,7 @@ export default function SkillsEditor() {
       toast.success(t('skills.overrideSuccess'));
       await fetchSkills();
     } catch (error) {
-      console.error('Failed to override skill:', error);
+      logger.error('Failed to override skill:', error);
       toast.error(t('skills.overrideFailed'));
     } finally {
       setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
@@ -128,7 +131,7 @@ export default function SkillsEditor() {
       toast.success(t('skills.revertSuccess'));
       await fetchSkills();
     } catch (error) {
-      console.error('Failed to revert skill:', error);
+      logger.error('Failed to revert skill:', error);
       toast.error(t('skills.revertFailed'));
     } finally {
       setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
@@ -167,7 +170,7 @@ export default function SkillsEditor() {
       fetchSkills();
       setShowResetDialog(false);
     } catch (error) {
-      console.error('Failed to reset skills:', error);
+      logger.error('Failed to reset skills:', error);
       toast.error(t('skills.resetFailed'));
     } finally {
       setIsResetting(false);

@@ -1,4 +1,4 @@
-import { safeInvoke as invoke } from '@/lib/backend/core';
+import { safeInvoke } from '@/lib/backend/core';
 import type { AgentResponse } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
@@ -13,7 +13,7 @@ export async function handleLLMResponse(
   sessionId: string,
   assistantMessage: RustMessage,
 ): Promise<void> {
-  await invoke<AgentResponse>('agent_handle_llm_response', {
+  await safeInvoke<AgentResponse>('agent_handle_llm_response', {
     sessionId,
     assistantMessage,
   });
@@ -71,7 +71,7 @@ export async function handleUserToolCall(
 export async function getAgentAvailableTools(
   sessionId: string,
 ): Promise<MCPTool[]> {
-  return invoke<MCPTool[]>('agent_get_available_tools', { sessionId });
+  return safeInvoke<MCPTool[]>('agent_get_available_tools', { sessionId });
 }
 
 /**
@@ -88,7 +88,7 @@ export async function agentCallBuiltinTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<MCPResult<T>> {
-  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
+  return safeInvoke<MCPResult<T>>('agent_call_builtin_tool', {
     sessionId,
     toolName,
     args,

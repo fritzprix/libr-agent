@@ -1,6 +1,7 @@
+import { safeInvoke } from '@/lib/backend/core';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { AgentResponse } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
@@ -265,7 +266,7 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await invoke<AgentResponse>('agent_handle_llm_response', {
+            await safeInvoke<AgentResponse>('agent_handle_llm_response', {
               sessionId,
               assistantMessage: messageForRust,
             });
@@ -289,7 +290,7 @@ export function useLLMListener({
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust
-            await invoke<AgentResponse>('agent_handle_llm_error', {
+            await safeInvoke<AgentResponse>('agent_handle_llm_error', {
               sessionId,
               error: error instanceof Error ? error.message : String(error),
             });

@@ -52,6 +52,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
 
   // Use ref to always access latest settings in event listeners
   const settingsRef = useRef(settings);
+  const prevStrategyRef = useRef(settings.contextStrategy);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
@@ -102,14 +103,36 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   }, []);
 
   // Use extracted hooks
-  const { executeCompletionRequest, cancelCompletionRequest } = useLLMExecution(
-    {
-      settingsRef,
-      streamingMessages,
-      setStreamingMessages,
-      updateSessionStatus,
-    },
-  );
+  const {
+    executeCompletionRequest,
+    cancelCompletionRequest,
+    isCompacting,
+    isAwaitingCompact,
+    getContextUsage,
+    getCompactedRange,
+    clearSessionState,
+    clearAllCompactState,
+  } = useLLMExecution({
+    settingsRef,
+    streamingMessages,
+    setStreamingMessages,
+    updateSessionStatus,
+  });
+
+  // When the context strategy changes, purge all in-memory compact state so
+  // stale caches, pending resolvers, and UI badges don't leak across modes.
+  useEffect(() => {
+    const prev = prevStrategyRef.current;
+    const next = settings.contextStrategy;
+    if (prev !== next) {
+      prevStrategyRef.current = next;
+      clearAllCompactState();
+      logger.info('Context strategy changed — compact state cleared', {
+        from: prev,
+        to: next,
+      });
+    }
+  }, [settings.contextStrategy, clearAllCompactState]);
 
   useLLMListener({
     settingsRef,
@@ -123,6 +146,12 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     clearStreamingMessage,
     executeCompletionRequest,
     cancelCompletionRequest,
+    isCompacting,
+    isAwaitingCompact,
+    getContextUsage,
+    getCompactedRange,
+    clearSessionState,
+    clearAllCompactState,
   };
 
   return (

@@ -43,10 +43,23 @@ impl ReferenceResolver for SkillReferenceResolver {
             ));
         }
 
-        let content = skill_service::get_skill_content(skill.path).await.ok()?;
+        let content = skill_service::get_skill_content(skill.path.clone())
+            .await
+            .ok()?;
+        let base_dir = path.parent().unwrap_or(&path);
+
+        // Pre-inject content with explicit Base Directory metadata.
+        // This gives the AI immediate access to instructions while clarifying the
+        // absolute path context for any relative resources or templates mentioned in the skill.
         Some(format!(
-            "# Follow Instruction `{}`\n\n```markdown\n{}\n```",
+            "# Follow Instruction `{}`\n\
+            **Base Directory for this skill is**: `{}`\n\n\
+            --- Content Start ---\n\n\
+            {}\n\n\
+            --- Content End ---\n\n\
+            **Note**: All relative paths mentioned in the instructions above must be interpreted relative to the **Base Directory** provided.",
             path.display(),
+            base_dir.display(),
             content
         ))
     }

@@ -8,10 +8,10 @@ use crate::agent::session_bus::SessionBus;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
-    SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
-    SqlitePlaybookRepository, SqliteScheduledTaskRepository, SqliteSessionRepository,
-    SqliteSettingsRepository,
+    SqliteAssistantRepository, SqliteCompactContextRepository, SqliteContentStoreRepository,
+    SqliteKnowledgeRepository, SqliteMCPServerRepository, SqliteMessageRepository,
+    SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
+    SqliteSessionRepository, SqliteSettingsRepository,
 };
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -58,6 +58,9 @@ static PLANNING_REPOSITORY: OnceLock<SqlitePlanningRepository> = OnceLock::new()
 
 /// A global, thread-safe, once-initialized scheduled task repository.
 static SCHEDULED_TASK_REPOSITORY: OnceLock<SqliteScheduledTaskRepository> = OnceLock::new();
+
+/// A global, thread-safe, once-initialized compact context repository.
+static COMPACT_CONTEXT_REPOSITORY: OnceLock<SqliteCompactContextRepository> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized Tauri AppHandle for event emission.
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -358,6 +361,20 @@ pub fn set_scheduled_task_repository(repo: SqliteScheduledTaskRepository) {
 pub fn get_scheduled_task_repository() -> &'static SqliteScheduledTaskRepository {
     SCHEDULED_TASK_REPOSITORY.get().expect(
         "Scheduled task repository not initialized. Call set_scheduled_task_repository() first.",
+    )
+}
+
+/// Sets the global compact context repository instance.
+pub fn set_compact_context_repository(repo: SqliteCompactContextRepository) {
+    COMPACT_CONTEXT_REPOSITORY
+        .set(repo)
+        .expect("Compact context repository already initialized");
+}
+
+/// Gets a reference to the global compact context repository.
+pub fn get_compact_context_repository() -> &'static SqliteCompactContextRepository {
+    COMPACT_CONTEXT_REPOSITORY.get().expect(
+        "Compact context repository not initialized. Call set_compact_context_repository() first.",
     )
 }
 

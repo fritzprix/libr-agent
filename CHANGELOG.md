@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.31] - 2026-03-08
+
+### 🚀 Features
+
+- **YOLO Mode Inheritance**: Subagents spawned via `spawnAgent` now automatically inherit the parent's YOLO mode state, ensuring autonomous operation is consistent across the entire agent hierarchy.
+- **Compact Context as Default**: The default context management strategy is now "compact" (48K token window), enabling longer conversations out of the box without manual configuration.
+- **editFile Enhancements**: Renamed `replaceLines` to `editFile` with explicit action types (`REPLACE`, `INSERT_AFTER`, `DELETE`) and line 0 insertion support for prepending content; `endHash` staleness validation on both range boundaries is now enforced.
+- **sampleText() for All Providers**: All 8 LLM provider services now implement `sampleText()`, enabling uniform provider capability checks across the platform.
+- **Message Context Management**: Improved context handling for Gemini and Anthropic services, with smarter caching strategies for long conversations.
+- **Typed IPC Invocations**: All Tauri command invocations are now fully typed end-to-end, eliminating runtime type surprises.
+- **MCP Tool Quality**: Improved agent-facing guidance, aligned tool statuses, and removed ambiguous parameters from `spawnAgent` schema (system-level params `maxDepth`/`maxFanout` removed, ownership model enforced).
+
+### 🐛 Fixes
+
+- **Message Cache Off-by-One**: Fixed `get_page(page=0)` in message cache loading — now correctly uses `page=1` per the 1-based repository contract, preventing the first message from being silently skipped.
+- **Assistant Tool Cleanup**: Removed `deleteAssistant` and `offset` parameter from agent-facing tools; removed duplicate tool registration in `mcp_manager`.
+- **Shell Isolation**: Improved Unix shell isolation to use `C.UTF-8` locale and preserve proxy environment variables correctly.
+- **Error Handling**: Enhanced error messages and structured error handling across Planning, Browser, Workspace, and Knowledge MCP components.
+
+### 🔧 Internal
+
+- **Integration Tests**: Moved `#[cfg(test)]` unit tests from lib source files to `src-tauri/tests/` (integration tests) so they actually run in CI (`cargo test --tests`); added `compact_context_repository` and `persistent_shell` integration test coverage.
+- **i18n Test Stability**: Test suite i18n init is now synchronous (`initImmediate: false`), eliminating flaky `NO_I18NEXT_INSTANCE` warnings.
+- **Accessibility**: Added keyboard focus and ARIA attributes to `ToolCallGroup` toggle; localized sidebar "Session" prefix and Scheduled Tasks strings.
+- **Frontend Code Quality**: Fixed inline `import()` types in interfaces (replaced with proper top-level imports) and migrated remaining `console.*` calls to the centralized logger.
+- **Persistent Shell Refactor**: Reorganized persistent shell module into sub-modules with improved visibility, documentation, and test extraction.
+
 ## [0.5.30] - 2026-03-06
 
 ### 🚀 Features

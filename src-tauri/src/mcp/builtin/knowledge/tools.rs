@@ -32,6 +32,14 @@ pub fn save_knowledge_tool() -> MCPTool {
                         Some("Optional tags for categorization"),
                     ),
                 ),
+                (
+                    "scope".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Scope of knowledge: 'global' (shared) or 'assistant' (private to this assistant). Defaults to 'global'."),
+                    ),
+                ),
             ],
             vec!["title".to_string(), "content".to_string()],
             None,
@@ -48,10 +56,20 @@ pub fn read_knowledge_tool() -> MCPTool {
         title: Some("Read Knowledge".to_string()),
         description: "Read a specific knowledge entry by ID".to_string(),
         input_schema: object_prop(
-            vec![(
-                "id".to_string(),
-                integer_prop(None, None, Some("ID of the knowledge entry to read")),
-            )],
+            vec![
+                (
+                    "id".to_string(),
+                    integer_prop(None, None, Some("ID of the knowledge entry to read")),
+                ),
+                (
+                    "scope".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
+                    ),
+                ),
+            ],
             vec!["id".to_string()],
             None,
         ),
@@ -67,10 +85,20 @@ pub fn delete_knowledge_tool() -> MCPTool {
         title: Some("Delete Knowledge".to_string()),
         description: "Delete a specific knowledge entry by ID".to_string(),
         input_schema: object_prop(
-            vec![(
-                "id".to_string(),
-                integer_prop(None, None, Some("ID of the knowledge entry to delete")),
-            )],
+            vec![
+                (
+                    "id".to_string(),
+                    integer_prop(None, None, Some("ID of the knowledge entry to delete")),
+                ),
+                (
+                    "scope".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Scope of knowledge: 'global' or 'assistant'. Defaults to 'global'."),
+                    ),
+                ),
+            ],
             vec!["id".to_string()],
             None,
         ),
@@ -109,6 +137,14 @@ pub fn search_knowledge_tool() -> MCPTool {
                         Some("Maximum number of results"),
                     ),
                 ),
+                (
+                    "scope".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to search everything."),
+                    ),
+                ),
             ],
             vec![],
             None,
@@ -138,6 +174,14 @@ pub fn list_knowledge_tool() -> MCPTool {
                 (
                     "offset".to_string(),
                     integer_prop_with_default(Some(0), None, 0, Some("Offset for pagination")),
+                ),
+                (
+                    "scope".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Scope of knowledge: 'global', 'assistant', or 'both'. Defaults to 'both' to list everything."),
+                    ),
                 ),
             ],
             vec![],

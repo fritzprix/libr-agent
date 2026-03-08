@@ -1,3 +1,4 @@
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -104,10 +105,19 @@ impl BuiltinMCPServer for AssistantServer {
             "getAssistant" => queries::get_assistant(db, args).await,
             "searchAssistant" => queries::search_assistant(db, args).await,
             _ => Err(format!(
-                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, deleteAssistant, listAssistants, getAssistant, searchAssistant",
+                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, listAssistants, getAssistant",
                 tool_name
             )),
         }
+        .or_else(|e| {
+            if e.contains("cancelled") || e.contains("interrupted") {
+                return Err(e);
+            }
+            Ok(
+                guided_error(ErrorCategory::InternalError, e, ToolGroup::Assistant)
+                    .to_mcp_result(),
+            )
+        })
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {

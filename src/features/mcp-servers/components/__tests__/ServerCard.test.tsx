@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// Mock ServerToolsModal to avoid invoke() calls in tests
+// Mock ServerToolsModal to avoid safeInvoke() calls in tests
 vi.mock('../ServerToolsModal', () => ({
   ServerToolsModal: ({
     isOpen,

@@ -1,4 +1,5 @@
 import { AIServiceProvider, AIServiceError } from './types';
+import { MCPTool } from '@/lib/mcp';
 import { Message } from '@/models/chat';
 import { BaseAIService } from './base-service';
 
@@ -20,6 +21,18 @@ export class EmptyAIService extends BaseAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.Empty;
+  }
+
+  /**
+   * @inheritdoc
+   * @throws {AIServiceError} Always throws as tool conversion is not supported.
+   */
+  convertTools(mcpTools: MCPTool[]): never[] {
+    void mcpTools;
+    throw new AIServiceError(
+      'Tool conversion not supported for Empty AIServiceProvider',
+      AIServiceProvider.Empty,
+    );
   }
 
   /**

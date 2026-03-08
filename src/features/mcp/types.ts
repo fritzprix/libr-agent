@@ -1,3 +1,6 @@
+import type { MCPTool, MCPResponse } from '@/lib/mcp';
+import type { ToolCall } from '../../models/chat';
+
 /**
  * Metadata describing a built-in service.
  */
@@ -29,10 +32,8 @@ export interface BuiltInService<T = unknown> {
   metadata: ServiceMetadata;
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
-  listTools: () => import('@/lib/mcp').MCPTool[]; // Lazy import to avoid cycle if needed, or import at top
-  executeTool: (
-    toolCall: import('../../models/chat').ToolCall,
-  ) => Promise<import('@/lib/mcp').MCPResponse<unknown>>;
+  listTools: () => MCPTool[];
+  executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   getServiceContext: (
     options?: ServiceContextOptions,
   ) => Promise<ServiceContext<T>>;

@@ -44,12 +44,9 @@ pub fn register_server_tool() -> MCPTool {
     MCPTool {
         name: "registerServer".to_string(),
         title: Some("Register Server".to_string()),
-        description: "Register a new MCP server configuration.
-
-For NPM: Use 'npx', args: ['-y', '<pkg>']
-For Python: Use 'uvx' or 'python -m'
-
-Registration automatically verifies the connection and caches available tools. Returns the generated Server ID needed for assigning the server to an assistant."
+        description: "Register a new MCP server configuration. \
+For NPM packages use 'npx' with args ['-y', '<pkg>']; for Python use 'uvx'. \
+Returns the server ID needed to assign this server to an assistant."
         .to_string(),
         input_schema: object_prop(
             vec![

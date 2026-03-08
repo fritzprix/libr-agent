@@ -15,6 +15,7 @@ import {
   AdvancedSettings,
   DisplaySettings,
   SystemSettings,
+  ContextStrategy,
   DEFAULT_SETTING,
 } from '@/lib/services/settings-service';
 
@@ -27,6 +28,7 @@ export type {
   AdvancedSettings,
   DisplaySettings,
   SystemSettings,
+  ContextStrategy,
 };
 export { DEFAULT_SETTING };
 

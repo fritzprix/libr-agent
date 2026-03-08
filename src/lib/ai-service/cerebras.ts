@@ -1,10 +1,11 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
+import type { ChatCompletion as CerebrasCompletion } from '@cerebras/cerebras_cloud_sdk/resources/chat/completions';
 import { getLogger } from '../logger';
 import { Message, ToolCall } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolsToCerebrasTools } from './tool-converters';
+import { convertMCPToolToCerebras } from './tool-converters';
 
 const logger = getLogger('CerebrasService');
 
@@ -74,6 +75,15 @@ export class CerebrasService extends BaseAIService {
   }
 
   /**
+   * @inheritdoc
+   */
+  convertTools(
+    mcpTools: MCPTool[],
+  ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
+    return mcpTools.map(convertMCPToolToCerebras);
+  }
+
+  /**
    * Initiates a streaming chat session with the Cerebras API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat, including model name, system prompt, and tools.
@@ -83,14 +93,13 @@ export class CerebrasService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config } = this.prepareStreamChat(messages, options);
+    const { config, tools } = this.prepareStreamChat(messages, options);
 
     try {
       const cerebrasMessages = this.convertToCerebrasMessages(
         messages,
         options.systemPrompt,
       );
-      const tools = this.prepareTools(options.availableTools);
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
 
       const stream = await this.withRetry(
@@ -104,7 +113,9 @@ export class CerebrasService extends BaseAIService {
               messages: cerebrasMessages,
               model,
               stream: true,
-              tools,
+              tools: tools as
+                | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[]
+                | undefined,
               tool_choice: tools ? 'auto' : undefined,
             },
             { signal: this.getAbortSignal() },
@@ -211,27 +222,6 @@ export class CerebrasService extends BaseAIService {
       'choices' in chunk &&
       Array.isArray(chunk.choices)
     );
-  }
-
-  /**
-   * Converts an array of `MCPTool` objects to the format required by the Cerebras API.
-   * @param availableTools The array of `MCPTool` objects.
-   * @returns An array of Cerebras-compatible tool objects, or undefined if no tools are provided.
-   * @private
-   */
-  private prepareTools(
-    availableTools?: MCPTool[],
-  ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] | undefined {
-    if (!availableTools?.length) {
-      return undefined;
-    }
-
-    try {
-      return convertMCPToolsToCerebrasTools(availableTools);
-    } catch (error: unknown) {
-      logger.error('Failed to convert tools', { error });
-      return undefined;
-    }
   }
 
   /**
@@ -413,6 +403,65 @@ export class CerebrasService extends BaseAIService {
    */
   protected convertSingleMessage(message: Message): unknown {
     return this.convertMessage(message);
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Cerebras API.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    if (!this.cerebras) {
+      throw new Error('CerebrasService has been disposed');
+    }
+    const config = this.mergeConfig(options);
+    const model = options?.modelName || config.defaultModel || '';
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.cerebras!.chat.completions.create({
+        model,
+        stream: false,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: s?.maxTokens ?? config.maxTokens,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        presence_penalty: s?.presencePenalty,
+        frequency_penalty: s?.frequencyPenalty,
+        stop: s?.stopSequences,
+      }),
+    );
+
+    // The Cerebras SDK's ChatCompletion union includes streaming chunks; narrow to the response type
+    const completionResponse =
+      response as CerebrasCompletion.ChatCompletionResponse;
+    const choice = completionResponse.choices[0];
+    const text = choice.message.content ?? '';
+    const usage = completionResponse.usage;
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
+          usage: usage
+            ? {
+                promptTokens: usage.prompt_tokens ?? 0,
+                completionTokens: usage.completion_tokens ?? 0,
+                totalTokens: usage.total_tokens ?? 0,
+              }
+            : undefined,
+          model: completionResponse.model,
+        },
+      },
+    };
   }
 
   /**

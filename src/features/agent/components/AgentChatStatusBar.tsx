@@ -12,9 +12,11 @@ import {
   Wrench,
   AlertTriangle,
   Zap,
+  DatabaseZap,
 } from 'lucide-react';
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
+import { useLLMService } from '@/context/LLMServiceContext';
 import { useMemo, useState } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -33,6 +35,12 @@ export function AgentChatStatusBar() {
   const { session, yoloModeEnabled, toggleYoloMode } = useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
+  const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
+  // Use only contextWindow from the map; totalTokens comes from displayMetrics
+  // (API-reported, same source as the badge) to guarantee they always match.
+  const usageInfo = session?.id ? getContextUsage(session.id) : undefined;
+  const contextWindow = usageInfo?.contextWindow;
+  const modelMaxContext = usageInfo?.modelMaxContext;
   const [showToolsModal, setShowToolsModal] = useState(false);
 
   // ✅ Fetch real-time token metrics
@@ -58,6 +66,19 @@ export function AgentChatStatusBar() {
 
   const displayMetrics = metrics || lastMetrics;
 
+  // Derive gauge data from the same source as the badge (API-reported promptTokens),
+  // so gauge numerator === badge prompt token count by definition.
+  // Only show the gauge once we have a real prompt token count (> 0).
+  // During the TTFT phase promptTokens is 0 (the TTFT chunk carries only
+  // details), so we suppress the gauge to avoid a brief 0% flash.
+  const contextUsage =
+    displayMetrics && contextWindow && displayMetrics.promptTokens > 0
+      ? {
+          totalTokens: displayMetrics.promptTokens,
+          contextWindow,
+          modelMaxContext,
+        }
+      : undefined;
   // ✅ Single Source of Truth: Fetch filtered tools from Rust backend
   const {
     availableTools,
@@ -135,6 +156,30 @@ export function AgentChatStatusBar() {
         text: t('agent.statusBar.statusError', { error: error || llmError }),
         className: 'bg-destructive/10 border-destructive/20 text-destructive',
         showRetry: true,
+        showResume: false,
+      };
+    }
+
+    // Compact-specific states take priority over generic 'busy'
+    if (session?.id && isAwaitingCompact(session.id)) {
+      return {
+        icon: <Loader2 className="w-4 h-4 animate-spin" />,
+        text: t('agent.statusBar.statusAwaitingCompact'),
+        className:
+          'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400',
+        showRetry: false,
+        showResume: false,
+      };
+    }
+
+    if (session?.id && isCompacting(session.id)) {
+      return {
+        icon: (
+          <DatabaseZap className="w-4 h-4 animate-pulse text-muted-foreground" />
+        ),
+        text: t('agent.statusBar.statusCompacting'),
+        className: 'bg-secondary/50 border-border text-muted-foreground',
+        showRetry: false,
         showResume: false,
       };
     }
@@ -256,19 +301,20 @@ export function AgentChatStatusBar() {
                       'You are a helpful assistant.',
                   };
 
-                  // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
-                  const { safeInvoke: invoke } = await import(
-                    '@/lib/backend/core'
-                  );
+                  // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)
+                  const { safeInvoke } = await import('@/lib/backend/core');
 
-                  await invoke<AgentResponse>('agent_update_session_config', {
-                    request: {
-                      sessionId: session.id,
-                      model,
-                      provider,
-                      agentConfig: updatedConfig,
+                  await safeInvoke<AgentResponse>(
+                    'agent_update_session_config',
+                    {
+                      request: {
+                        sessionId: session.id,
+                        model,
+                        provider,
+                        agentConfig: updatedConfig,
+                      },
                     },
-                  });
+                  );
                 } catch (e) {
                   logger.error('Failed to update session config', e);
                 }
@@ -308,7 +354,10 @@ export function AgentChatStatusBar() {
           {/* Token Metrics Badge - Show if metrics exist */}
           {displayMetrics && (
             <div className="hidden md:block">
-              <TokenMetricsBadge usage={displayMetrics} />
+              <TokenMetricsBadge
+                usage={displayMetrics}
+                contextUsage={contextUsage}
+              />
             </div>
           )}
 
