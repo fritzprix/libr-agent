@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { calculateCompactThreshold, calculateEffectiveContextLimit } from '../compact-utils';
+import {
+  calculateCompactThreshold,
+  calculateEffectiveContextLimit,
+  stripCompactSummaryPrefix,
+} from '../compact-utils';
 import type { ModelInfo } from '../llm-config-manager';
 
 describe('compact-utils', () => {
@@ -69,6 +73,25 @@ describe('compact-utils', () => {
     it('returns 90% of the effective limit', () => {
       expect(calculateCompactThreshold(10000)).toBe(9000);
       expect(calculateCompactThreshold(32768)).toBe(29491); // Math.floor(32768 * 0.9)
+    });
+  });
+
+  describe('stripCompactSummaryPrefix', () => {
+    it('strips compact-summary prefix and returns fromId', () => {
+      expect(stripCompactSummaryPrefix('compact-summary-msg_001~msg_050')).toBe('msg_001');
+    });
+
+    it('handles IDs with no tilde (no toId component)', () => {
+      expect(stripCompactSummaryPrefix('compact-summary-msg_001')).toBe('msg_001');
+    });
+
+    it('returns plain IDs unchanged', () => {
+      expect(stripCompactSummaryPrefix('msg_001')).toBe('msg_001');
+      expect(stripCompactSummaryPrefix('abc-123')).toBe('abc-123');
+    });
+
+    it('handles empty string', () => {
+      expect(stripCompactSummaryPrefix('')).toBe('');
     });
   });
 });

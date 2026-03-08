@@ -583,8 +583,9 @@ export abstract class BaseAIService implements IAIService {
       config?: AIServiceConfig;
     },
   ): Promise<SamplingResponse> {
-    void prompt;
-    void options;
+    // Deliberately unused — subclasses override this method.
+    // The parameters exist only to satisfy the IAIService interface contract.
+    void [prompt, options];
     throw new AIServiceError(
       'sampleText not implemented for this service',
       this.getProvider(),
@@ -625,8 +626,8 @@ export abstract class BaseAIService implements IAIService {
           // Omit thinking from summarisation — it's ephemeral reasoning, not facts.
         }
       }
-    } else if (msg.content) {
-      parts.push(String(msg.content));
+    } else if (typeof msg.content === 'string' && msg.content) {
+      parts.push(msg.content);
     }
 
     // OpenAI-style tool_calls stored outside content

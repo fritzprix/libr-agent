@@ -69,3 +69,20 @@ export function findCompactionSplitIndex<T extends HasId>(
 
   return splitIdx;
 }
+
+/**
+ * Strips the `compact-summary-{fromId}~{toId}` prefix from a synthetic
+ * summary message ID, returning the original base message ID.
+ *
+ * This is needed in two places:
+ *  1. `buildCandidateStack` — when rendering the display ID for a new summary
+ *  2. The async compaction IIFE — when computing `fromId` for the new cache entry
+ *
+ * @example
+ * stripCompactSummaryPrefix('compact-summary-msg_001~msg_050') // → 'msg_001'
+ * stripCompactSummaryPrefix('msg_001')                         // → 'msg_001'
+ */
+export function stripCompactSummaryPrefix(id: string): string {
+  if (!id.startsWith('compact-summary-')) return id;
+  return id.replace('compact-summary-', '').split('~')[0];
+}

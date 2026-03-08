@@ -24,6 +24,7 @@ import {
   calculateCompactThreshold,
   calculateEffectiveContextLimit,
   findCompactionSplitIndex,
+  stripCompactSummaryPrefix,
 } from '@/lib/compact-utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type {
@@ -252,9 +253,7 @@ export function useLLMExecution({
               const remainingMessages = msgs.slice(toIdIndex + 1);
 
               // Clean ID: Extract real starting ID if previous summary exists
-              const displayFromId = cached.fromId.startsWith('compact-summary-')
-                ? cached.fromId.replace('compact-summary-', '').split('~')[0]
-                : cached.fromId;
+              const displayFromId = stripCompactSummaryPrefix(cached.fromId);
 
               const summaryMessage: Message = {
                 id: `compact-summary-${displayFromId}~${cached.toId}`,
@@ -424,9 +423,7 @@ export function useLLMExecution({
 
                   // Use stable IDs; strip compact-summary- prefix to avoid nesting.
                   const firstMsg = oldMessages[0];
-                  const fromId = firstMsg.id.startsWith('compact-summary-')
-                    ? firstMsg.id.replace('compact-summary-', '').split('~')[0]
-                    : firstMsg.id;
+                  const fromId = stripCompactSummaryPrefix(firstMsg.id);
                   const toId = oldMessages[oldMessages.length - 1].id;
 
                   compactCacheRef.current.set(sessionId, {
