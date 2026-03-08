@@ -438,7 +438,9 @@ async fn list_internal(
                 },
             );
 
-            Ok(hint.to_mcp_result_with_data(Some(json!({ "items": items, "page_count": items.len() }))))
+            Ok(hint.to_mcp_result_with_data(Some(
+                json!({ "items": items, "page_count": items.len() }),
+            )))
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,

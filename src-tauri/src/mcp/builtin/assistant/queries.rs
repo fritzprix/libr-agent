@@ -392,7 +392,7 @@ pub async fn get_assistant(
                 report,
                 vec![
                     "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
-                    "Use builtin_assistant__deleteAssistant to remove this assistant".to_string(),
+                    "Use builtin_assistant__listAssistants to verify other assistants".to_string(),
                 ],
             );
 
