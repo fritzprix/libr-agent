@@ -132,10 +132,6 @@ pub fn list_assistants_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "offset".to_string(),
-                    integer_prop_with_default(None, None, 0, Some("Items to skip")),
-                ),
-                (
                     "search".to_string(),
                     string_prop(None, None, Some("Filter by name or content")),
                 ),
