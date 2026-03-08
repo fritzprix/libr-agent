@@ -59,3 +59,4 @@
 **Extracted:** ~50
 **Languages updated:** [EN, KO]
 **Notes:** Localized `ScheduledTasksPage`, `ScheduledTaskModal`, `MentionTextarea`, and `ScheduleBuilder`. Created `scheduledTasks` namespace in `common.json` handling page structure, modal forms, and complex chron descriptions with standard pluralization.
+## 2024-05-24 - [SessionFilesPopover] **Extracted:** 1 **Languages updated:** EN, KO

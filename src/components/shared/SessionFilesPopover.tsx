@@ -189,7 +189,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
                         {file.workspacePath && (
                           <span className="text-success flex items-center gap-1">
                             <FolderOpen className="w-3 h-3" />
-                            Workspace
+                            {t('sessionFiles.workspaceValue', 'Workspace')}
                           </span>
                         )}
                       </div>

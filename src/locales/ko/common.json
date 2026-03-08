@@ -94,7 +94,8 @@
     "size": "크기:",
     "created": "생성:",
     "workspace": "워크스페이스:",
-    "sessionId": "Session ID:"
+    "sessionId": "Session ID:",
+    "workspaceValue": "워크스페이스"
   },
   "fileAttachment": {
     "attachFiles": "파일 첨부",

@@ -94,7 +94,8 @@
     "size": "Size:",
     "created": "Created:",
     "workspace": "Workspace:",
-    "sessionId": "Session ID:"
+    "sessionId": "Session ID:",
+    "workspaceValue": "Workspace"
   },
   "fileAttachment": {
     "attachFiles": "Attach files",
