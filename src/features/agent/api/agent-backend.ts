@@ -1,4 +1,5 @@
-import { safeInvoke as invoke } from '@/lib/backend/core';
+import { safeInvoke } from '@/lib/backend/core';
+
 import type { AddContentMetadata } from '@/models/content-store';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 
@@ -11,7 +12,7 @@ export async function agentCallBuiltinTool<T = unknown>(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<MCPResult<T>> {
-  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
+  return safeInvoke<MCPResult<T>>('agent_call_builtin_tool', {
     sessionId,
     toolName,
     args,
