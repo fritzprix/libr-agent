@@ -40,7 +40,11 @@ import {
   enforceRuntimeBuiltinAliases,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
-import { workspaceWriteFile, getWorkspaceDir } from '@/lib/backend/workspace';
+import {
+  workspaceWriteFile,
+  getWorkspaceDir,
+  checkDroppedPathType,
+} from '@/lib/backend';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import type { AttachmentReference } from '@/models/chat';
@@ -129,6 +133,9 @@ function DraftChatInner() {
 
   // Pre-session file attachments (written to workspace before session creation)
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
+    null,
+  );
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
@@ -188,6 +195,15 @@ function DraftChatInner() {
           const files: File[] = [];
           for (const filePath of paths) {
             try {
+              // Check if path is a directory
+              const pathType = await checkDroppedPathType(filePath);
+
+              if (pathType === 'directory') {
+                setWorkspaceOverride(filePath);
+                continue;
+              }
+
+              // It's a file, read it
               const fileData = await rustBackend.readDroppedFile(filePath);
               const filename =
                 filePath.split('/').pop() ??
@@ -200,8 +216,13 @@ function DraftChatInner() {
                 }),
               );
             } catch (err) {
-              logger.error('Failed to read dropped file', { filePath, err });
-              toast.error(`Failed to read: ${filePath.split(/[\\/]/).pop()}`);
+              logger.error('Failed to process dropped path', {
+                filePath,
+                err,
+              });
+              toast.error(
+                `Failed to process: ${filePath.split(/[\\/]/).pop()}`,
+              );
             }
           }
           addFiles(files);
@@ -463,6 +484,7 @@ function DraftChatInner() {
               'openai',
             agentConfig,
             isEphemeral: false,
+            workspacePath: workspaceOverride || undefined,
           },
         });
 
@@ -472,7 +494,7 @@ function DraftChatInner() {
           if (workspaceDirCache === null) {
             workspaceDirCache = await getWorkspaceDir(newSessionId);
           }
-          return workspaceDirCache;
+          return workspaceDirCache!;
         };
 
         for (let i = 0; i < pendingFiles.length; i++) {
@@ -766,6 +788,31 @@ function DraftChatInner() {
 
       {/* Simplified Input Area */}
       <div className="p-4 border-t">
+        {/* Workspace override indicator */}
+        {workspaceOverride && (
+          <div className="flex flex-wrap gap-1.5 px-1 pb-2">
+            <div className="flex items-center gap-1.5 text-xs bg-primary/10 text-primary rounded-md px-2.5 py-1.5 border border-primary/20 shadow-sm animate-in fade-in slide-in-from-bottom-1">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <div className="flex flex-col">
+                <span className="font-bold leading-none mb-0.5">
+                  Workspace Override
+                </span>
+                <span className="opacity-80 truncate max-w-[300px]">
+                  {workspaceOverride}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkspaceOverride(null)}
+                className="shrink-0 hover:bg-primary/20 rounded-full p-0.5 ml-1 transition-colors"
+                aria-label="Remove workspace override"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Pending file chips */}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-1 pb-2">

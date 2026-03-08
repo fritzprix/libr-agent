@@ -31,6 +31,7 @@ export {
   getWorkspaceOverride,
   setWorkspaceOverride,
   cancelWorkspaceOverride,
+  getWorkspaceDir,
 } from './workspace';
 
 // MCP server management
@@ -61,6 +62,7 @@ export {
 
 // File operations
 export {
+  checkDroppedPathType,
   readDroppedFile,
   registerDroppedFiles,
   writeFile,

@@ -44,7 +44,8 @@ use commands::browser_commands::*;
 use commands::content_store_commands::delete_content_store;
 use commands::download_commands::{download_workspace_file, export_and_download_zip};
 use commands::file_commands::{
-    read_dropped_file, register_dropped_files, workspace_write_file, write_file,
+    check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
+    write_file,
 };
 use commands::log_commands::{
     backup_current_log, clear_current_log, list_log_files, log_batch, log_debug,
@@ -175,6 +176,7 @@ pub fn run() {
                 log_error_from_frontend,
                 log_batch,
                 register_dropped_files,
+                check_dropped_path_type,
                 read_dropped_file,
                 write_file,
                 workspace_write_file,

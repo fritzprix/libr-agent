@@ -30,7 +30,12 @@ impl DroppedFileService {
         let mut normalized_paths = Vec::new();
         for path_str in paths {
             let path = Path::new(&path_str);
-            if !path.exists() || !path.is_file() {
+            if !path.exists() {
+                continue;
+            }
+
+            // Allow both files and directories
+            if !path.is_file() && !path.is_dir() {
                 continue;
             }
 
@@ -72,6 +77,54 @@ impl DroppedFileService {
         }
 
         Ok(())
+    }
+
+    /// Checks if a dropped path is a file or a directory and consumes it from the allowlist.
+    pub async fn check_dropped_path_type(&self, file_path: String) -> Result<String, String> {
+        let path = Path::new(&file_path);
+
+        if !path.exists() {
+            return Err(format!("Path does not exist: {file_path}"));
+        }
+
+        if self.has_hidden_or_relative_component(path) {
+            return Err("Access denied: Hidden files and directories are not allowed".to_string());
+        }
+
+        // Symlink check
+        let symlink_metadata = std::fs::symlink_metadata(path)
+            .map_err(|e| format!("Failed to inspect file metadata: {e}"))?;
+        if symlink_metadata.file_type().is_symlink() {
+            return Err("Access denied: Symbolic links are not allowed".to_string());
+        }
+
+        // Resolve and check allowlist
+        let resolved_path = std::fs::canonicalize(path)
+            .map_err(|e| format!("Failed to resolve dropped file path: {e}"))?;
+
+        if self.has_hidden_component(&resolved_path) {
+            return Err("Access denied: Hidden files and directories are not allowed".to_string());
+        }
+
+        let resolved_path_str = resolved_path.to_string_lossy().to_string();
+        {
+            let mut guard = self
+                .allowlist
+                .lock()
+                .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
+
+            if !guard.remove(&resolved_path_str) {
+                return Err(
+                    "Access denied: Path was not provided by an OS file-drop event".to_string(),
+                );
+            }
+        }
+
+        if resolved_path.is_dir() {
+            Ok("directory".to_string())
+        } else {
+            Ok("file".to_string())
+        }
     }
 
     /// Reads a file that was dropped onto the application window.
