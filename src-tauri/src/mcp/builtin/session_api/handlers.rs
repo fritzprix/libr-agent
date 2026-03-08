@@ -135,13 +135,8 @@ pub async fn handle_tool_call(
                 body["name"] = Value::String(name.to_string());
             }
 
-            if let Some(workspace) = args.get("workspace") {
-                if let Some(mode) = workspace.get("mode").and_then(|v| v.as_str()) {
-                    body["workspaceMode"] = Value::String(mode.to_string());
-                }
-                if let Some(copy_files) = workspace.get("copyFiles") {
-                    body["workspaceCopyFiles"] = copy_files.clone();
-                }
+            if let Some(path) = args.get("workspacePath").and_then(|v| v.as_str()) {
+                body["workspacePath"] = Value::String(path.to_string());
             }
 
             let await_completion = args

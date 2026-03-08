@@ -235,112 +235,34 @@ pub async fn create_session(
     agent_config.max_depth = lineage_meta.max_depth;
     agent_config.max_fanout = lineage_meta.max_fanout;
 
-    // Resolve workspace: handle 'share' mode (inherit parent workspace) and
-    // 'private' mode with optional file copy from parent.
-    let workspace_mode = body.workspace_mode.as_deref().unwrap_or("private");
-    match workspace_mode {
-        "share" => {
-            // Inherit parent workspace path as an override for the child.
-            let parent_id = body.parent_session_id.as_deref().unwrap_or_default();
-            if parent_id.is_empty() {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&ErrorResponse {
-                        error: "workspace.mode='share' requires a parent session".to_string(),
-                    }),
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
-            if let Ok(session_manager) = crate::session::get_session_manager() {
-                let parent_workspace = session_manager.get_session_workspace_dir_by_id(parent_id);
-                if let Err(e) = session_manager
-                    .register_session_override(&session_id, parent_workspace)
-                    .await
-                {
-                    log::warn!("Failed to register shared workspace override: {}", e);
-                }
-            }
+    // Register override if path provided
+    if let Some(path_str) = body.workspace_path {
+        let path = std::path::PathBuf::from(&path_str);
+        if !path.is_absolute() {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: "Workspace path must be absolute".to_string(),
+                }),
+                StatusCode::BAD_REQUEST,
+            ));
         }
-        _ => {
-            // "private" (default): child gets its own isolated workspace.
-            // If copyFiles is provided, copy specified files from the parent workspace.
-            if let Some(copy_files) = body.workspace_copy_files.as_ref() {
-                if !copy_files.is_empty() {
-                    if let Some(parent_id) = body.parent_session_id.as_deref() {
-                        if let Ok(session_manager) = crate::session::get_session_manager() {
-                            let parent_workspace =
-                                session_manager.get_session_workspace_dir_by_id(parent_id);
-                            let child_workspace =
-                                session_manager.get_session_workspace_dir_by_id(&session_id);
-                            if let Err(e) = tokio::fs::create_dir_all(&child_workspace).await {
-                                log::warn!("Failed to create child workspace dir: {}", e);
-                            } else {
-                                for rel_path in copy_files {
-                                    // Reject paths that escape the workspace.
-                                    let src = parent_workspace.join(rel_path);
-                                    let canonical_parent =
-                                        parent_workspace.canonicalize().unwrap_or_else(|_| parent_workspace.clone());
-                                    if let Ok(canonical_src) = src.canonicalize() {
-                                        if !canonical_src.starts_with(&canonical_parent) {
-                                            log::warn!(
-                                                "Skipping path traversal attempt in copyFiles: {}",
-                                                rel_path
-                                            );
-                                            continue;
-                                        }
-                                    } else if !src.starts_with(&parent_workspace) {
-                                        log::warn!(
-                                            "Skipping unsafe copyFiles path: {}",
-                                            rel_path
-                                        );
-                                        continue;
-                                    }
-                                    let dst = child_workspace.join(rel_path);
-                                    if let Some(dst_parent) = dst.parent() {
-                                        let _ = tokio::fs::create_dir_all(dst_parent).await;
-                                    }
-                                    if let Err(e) = tokio::fs::copy(&src, &dst).await {
-                                        log::warn!(
-                                            "Failed to copy '{}' to child workspace: {}",
-                                            rel_path,
-                                            e
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // Legacy raw path override (kept for backward compatibility).
-            if let Some(path_str) = body.workspace_path {
-                let path = std::path::PathBuf::from(&path_str);
-                if !path.is_absolute() {
-                    return Ok(warp::reply::with_status(
-                        warp::reply::json(&ErrorResponse {
-                            error: "Workspace path must be absolute".to_string(),
-                        }),
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-                if is_restricted_system_path(&path) {
-                    return Ok(warp::reply::with_status(
-                        warp::reply::json(&ErrorResponse {
-                            error: format!(
-                                "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
-                                path_str
-                            ),
-                        }),
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-                if let Ok(session_manager) = crate::session::get_session_manager() {
-                    if let Err(e) = session_manager
-                        .register_session_override(&session_id, path)
-                        .await
-                    {
-                        log::warn!("Failed to register workspace override: {}", e);
-                    }
-                }
+        if is_restricted_system_path(&path) {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&ErrorResponse {
+                    error: format!(
+                        "Workspace path '{}' is a restricted system directory and cannot be used as an agent workspace",
+                        path_str
+                    ),
+                }),
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+        if let Ok(session_manager) = crate::session::get_session_manager() {
+            if let Err(e) = session_manager
+                .register_session_override(&session_id, path)
+                .await
+            {
+                log::warn!("Failed to register workspace override: {}", e);
             }
         }
     }

@@ -73,9 +73,7 @@ async fn test_env_leakage_in_linux_high_isolation() {
         .unwrap_or(false);
 
     if !userns_available {
-        eprintln!(
-            "Skipping test_env_leakage_in_linux_high_isolation: user namespaces not available"
-        );
+        eprintln!("Skipping test_env_leakage_in_linux_high_isolation: user namespaces not available");
         return;
     }
 
