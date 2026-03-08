@@ -6,23 +6,14 @@ pub fn create_assistant_tool() -> MCPTool {
     MCPTool {
         name: "createAssistant".to_string(),
         title: Some("Create Assistant".to_string()),
-        description: "Create a new global assistant configuration.
-
-⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
-1. ALWAYS call listAssistants FIRST to check for duplicates
-2. Verify 'name' is unique
-3. Then call this tool to create
-
-❌ NEVER create without checking for duplicates first
-
-🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
-session). You can freely create and configure OTHER assistants, including
-setting their 'allowedBuiltInServiceAliases'.".to_string(),
+        description: "Create a new global assistant configuration. \
+Cannot modify your own running assistant. \
+For mcpServerIds, use UUID IDs (from listMcpServers), NOT server names.".to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "name".to_string(),
-                    string_prop_required("Assistant name (Must be unique)"),
+                    string_prop_required("Unique assistant name"),
                 ),
                 (
                     "description".to_string(),
@@ -36,14 +27,14 @@ setting their 'allowedBuiltInServiceAliases'.".to_string(),
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of allowed built-in service aliases (e.g., 'workspace', 'browser', 'planning').\nControls which built-in tools this assistant can access."),
+                        Some("Built-in service aliases this assistant can access (e.g. 'workspace', 'browser', 'planning')"),
                     ),
                 ),
                 (
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("List of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n1. Call builtin_mcp_manager__listMcpServers FIRST\n2. Extract ID field (UUID format like 'cm3x...') from response\n3. NEVER use server name - it will fail validation\n4. Empty array = no external MCP servers\n\nExample valid ID: \"cm3xkn2w00000ld...\"\nExample INVALID: \"filesystem\" (this is a name, not ID)"),
+                        Some("External MCP server UUIDs to enable. Call listMcpServers first to get IDs."),
                     ),
                 ),
             ],
@@ -60,21 +51,13 @@ pub fn update_assistant_tool() -> MCPTool {
     MCPTool {
         name: "updateAssistant".to_string(),
         title: Some("Update Assistant".to_string()),
-        description: "Update an existing assistant configuration.
-
-⚠️ CRITICAL WORKFLOW:
-1. Call getAssistant(id) FIRST to get current config
-2. Extract exact 'id' from response
-3. Include ONLY fields you want to change
-
-🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
-session). You can freely update ANY OTHER assistant, including setting its
-'allowedBuiltInServiceAliases'.".to_string(),
+        description: "Update an existing assistant configuration (partial update — omit fields to leave unchanged). \
+Cannot modify your own running assistant.".to_string(),
         input_schema: object_prop(
             vec![
                 (
                     "id".to_string(),
-                    string_prop_required("⚠️ Exact Assistant ID from getAssistant response"),
+                    string_prop_required("Assistant ID from listAssistants/getAssistant"),
                 ),
                 (
                     "name".to_string(),
@@ -92,14 +75,14 @@ session). You can freely update ANY OTHER assistant, including setting its
                     "allowedBuiltInServiceAliases".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update the list of allowed built-in service aliases.\nControls which built-in tools this assistant can access."),
+                        Some("Replaces the full list of allowed built-in service aliases"),
                     ),
                 ),
                 (
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("Update list of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n• Call builtin_mcp_manager__listMcpServers first\n• Extract ID field (UUID format) from response\n• NEVER use server name - validation will fail"),
+                        Some("Replaces the full list of enabled MCP server UUIDs"),
                     ),
                 ),
             ],
@@ -116,17 +99,11 @@ pub fn delete_assistant_tool() -> MCPTool {
     MCPTool {
         name: "deleteAssistant".to_string(),
         title: Some("Delete Assistant".to_string()),
-        description: "Delete an assistant configuration.
-
-⚠️ WARNING: This action is permanent.
-✅ ALWAYS verify the ID with getAssistant before deleting"
-            .to_string(),
+        description: "Permanently delete an assistant configuration.".to_string(),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),
-                string_prop_required(
-                    "⚠️ Exact Assistant ID from listAssistants/getAssistant response",
-                ),
+                string_prop_required("Assistant ID from listAssistants/getAssistant"),
             )],
             vec!["id".to_string()],
             None,
@@ -141,10 +118,7 @@ pub fn list_assistants_tool() -> MCPTool {
     MCPTool {
         name: "listAssistants".to_string(),
         title: Some("List Assistants".to_string()),
-        description: "List available assistants with pagination.
-
-Returns 'id', 'name', and 'config' for each assistant.
-Use 'limit' and 'offset' to navigate through results."
+        description: "List available assistants. Use 'search' to filter by name or content."
             .to_string(),
         input_schema: object_prop(
             vec![
@@ -163,7 +137,7 @@ Use 'limit' and 'offset' to navigate through results."
                 ),
                 (
                     "search".to_string(),
-                    string_prop(None, None, Some("Search term for filtering")),
+                    string_prop(None, None, Some("Filter by name or content")),
                 ),
             ],
             vec![],
@@ -179,14 +153,11 @@ pub fn get_assistant_tool() -> MCPTool {
     MCPTool {
         name: "getAssistant".to_string(),
         title: Some("Get Assistant".to_string()),
-        description: "Get full details of a specific assistant.
-
-✅ Use this to retrieve the current configuration before updating."
-            .to_string(),
+        description: "Get full configuration of a specific assistant.".to_string(),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),
-                string_prop_required("⚠️ Exact Assistant ID from listAssistants response"),
+                string_prop_required("Assistant ID from listAssistants"),
             )],
             vec!["id".to_string()],
             None,
@@ -196,7 +167,7 @@ pub fn get_assistant_tool() -> MCPTool {
     }
 }
 
-/// Search assistants by name or configuration content
+/// Search assistants by name or configuration content (internal — use listAssistants with search param instead)
 pub fn search_assistant_tool() -> MCPTool {
     MCPTool {
         name: "searchAssistant".to_string(),
@@ -224,11 +195,10 @@ pub fn search_assistant_tool() -> MCPTool {
 /// Returns all assistant tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
+        list_assistants_tool(),
+        get_assistant_tool(),
         create_assistant_tool(),
         update_assistant_tool(),
         delete_assistant_tool(),
-        list_assistants_tool(),
-        get_assistant_tool(),
-        search_assistant_tool(),
     ]
 }
