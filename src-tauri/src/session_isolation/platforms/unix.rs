@@ -32,7 +32,19 @@ pub async fn create_basic_isolated_command(
     // Note: HOME is deliberately excluded here as it's overridden below for isolation
     // DISPLAY and XAUTHORITY are intentionally excluded to prevent GUI/X11 access
     // from within the isolated shell (screen capture, input injection, etc.)
-    let preserved_vars = ["PATH", "TERM", "USER", "LOGNAME", "SHELL"];
+    let preserved_vars = [
+        "PATH",
+        "TERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    ];
 
     for key in &preserved_vars {
         if let Ok(val) = std::env::var(key) {
@@ -60,8 +72,8 @@ pub async fn create_basic_isolated_command(
     cmd.env("PWD", &config.workspace_path);
     cmd.env("TMPDIR", config.workspace_path.join("tmp"));
     // Force English output for consistent AI reasoning
-    cmd.env("LC_ALL", "en_US.UTF-8");
-    cmd.env("LANG", "en_US.UTF-8");
+    cmd.env("LC_ALL", "C.UTF-8");
+    cmd.env("LANG", "C.UTF-8");
 
     // Add user-specified environment variables (applies to all platforms)
     for (key, value) in &config.env_vars {

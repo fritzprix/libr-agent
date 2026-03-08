@@ -2,7 +2,7 @@ import Groq from 'groq-sdk';
 import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool } from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
@@ -104,17 +104,14 @@ export class GroqService extends BaseAIService {
           break;
         }
 
-        // Inject TTFT metric on first chunk
+        // Inject TTFT metric on first chunk.
+        // Only yield details here — yielding zero token counts would briefly reset the
+        // gauge to 0% before the real usage chunk arrives at the end of the stream.
         if (!firstChunkReceived) {
           const ttft = performance.now() - startTime;
           firstChunkReceived = true;
           yield JSON.stringify({
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              details: { timeToFirstToken: ttft },
-            },
+            usage: { details: { timeToFirstToken: ttft } },
           });
         }
 
@@ -257,6 +254,58 @@ export class GroqService extends BaseAIService {
       };
     }
     return null;
+  }
+
+  /**
+   * Performs a non-streaming text generation request using the Groq API.
+   */
+  async sampleText(
+    prompt: string,
+    options?: {
+      modelName?: string;
+      samplingOptions?: SamplingOptions;
+      config?: AIServiceConfig;
+    },
+  ): Promise<SamplingResponse> {
+    const config = this.mergeConfig(options);
+    const model = options?.modelName || config.defaultModel || '';
+    const s = options?.samplingOptions;
+
+    const response = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model,
+        stream: false,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: s?.maxTokens ?? config.maxTokens,
+        temperature: s?.temperature ?? config.temperature,
+        top_p: s?.topP,
+        presence_penalty: s?.presencePenalty,
+        frequency_penalty: s?.frequencyPenalty,
+        stop: s?.stopSequences,
+      }),
+    );
+
+    const choice = response.choices[0];
+    const text = choice.message.content ?? '';
+
+    return {
+      jsonrpc: '2.0',
+      id: null,
+      result: {
+        content: [{ type: 'text', text }],
+        sampling: {
+          finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
+          usage: response.usage
+            ? {
+                promptTokens: response.usage.prompt_tokens,
+                completionTokens: response.usage.completion_tokens,
+                totalTokens: response.usage.total_tokens,
+              }
+            : undefined,
+          model: response.model,
+        },
+      },
+    };
   }
 
   /**

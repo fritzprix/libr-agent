@@ -1,3 +1,4 @@
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
@@ -108,6 +109,15 @@ impl BuiltinMCPServer for AssistantServer {
                 tool_name
             )),
         }
+        .or_else(|e| {
+            if e.contains("cancelled") || e.contains("interrupted") {
+                return Err(e);
+            }
+            Ok(
+                guided_error(ErrorCategory::InternalError, e, ToolGroup::Assistant)
+                    .to_mcp_result(),
+            )
+        })
     }
 
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {

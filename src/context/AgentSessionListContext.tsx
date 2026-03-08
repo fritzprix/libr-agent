@@ -16,6 +16,7 @@ import { getAssistant } from '@/lib/backend/assistants';
 import { Assistant } from '@/models/chat';
 import { useSettings } from '@/context/SettingsContext';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
+import { useLLMService } from '@/context/LLMServiceContext';
 import type {
   AgentSessionMetadata,
   CreateAgentSessionRequest,
@@ -83,6 +84,7 @@ export function AgentSessionListProvider({
   const {
     value: { advanced },
   } = useSettings();
+  const { clearSessionState } = useLLMService();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
 
@@ -307,66 +309,81 @@ export function AgentSessionListProvider({
   /**
    * Delete an agent session (cascade: removes all descendants too)
    */
-  const deleteSession = useCallback(async (sessionId: string) => {
-    logger.info('Deleting agent session', { sessionId });
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      logger.info('Deleting agent session', { sessionId });
 
-    try {
-      await invoke<AgentResponse>('agent_delete_session', { sessionId });
+      try {
+        await invoke<AgentResponse>('agent_delete_session', { sessionId });
 
-      // Remove the session and ALL its descendants from the UI
-      setSessions((prev) => {
-        // Collect all descendant IDs via BFS
-        const toRemove = new Set<string>([sessionId]);
-        let frontier = [sessionId];
-        while (frontier.length > 0) {
-          const next: string[] = [];
-          for (const s of prev) {
-            if (
-              s.parentSessionId !== undefined &&
-              frontier.includes(s.parentSessionId)
-            ) {
-              toRemove.add(s.id);
-              next.push(s.id);
+        // Remove the session and ALL its descendants from the UI
+        // Compute the set of IDs to remove outside the state updater (pure function)
+        // so that side-effects (clearSessionState) are not run inside the updater
+        // and are not double-invoked by React StrictMode.
+        let idsToRemove: Set<string> = new Set([sessionId]);
+        setSessions((prev) => {
+          // Collect all descendant IDs via BFS
+          const toRemove = new Set<string>([sessionId]);
+          let frontier = [sessionId];
+          while (frontier.length > 0) {
+            const next: string[] = [];
+            for (const s of prev) {
+              if (
+                s.parentSessionId !== undefined &&
+                frontier.includes(s.parentSessionId)
+              ) {
+                toRemove.add(s.id);
+                next.push(s.id);
+              }
             }
+            frontier = next;
           }
-          frontier = next;
-        }
-        return prev.filter((s) => !toRemove.has(s.id));
-      });
+          idsToRemove = toRemove;
+          return prev.filter((s) => !toRemove.has(s.id));
+        });
+        // Clean up LLM state outside the updater to avoid double-invocation in StrictMode
+        idsToRemove.forEach((id) => clearSessionState(id));
 
-      logger.info('Session deleted successfully', { sessionId });
-    } catch (err) {
-      logger.error('Failed to delete session', err);
-      throw err;
-    }
-  }, []);
+        logger.info('Session deleted successfully', { sessionId });
+      } catch (err) {
+        logger.error('Failed to delete session', err);
+        throw err;
+      }
+    },
+    [clearSessionState],
+  );
 
   /**
    * Delete only this session, orphaning direct children as top-level sessions
    */
-  const deleteSessionOnly = useCallback(async (sessionId: string) => {
-    logger.info('Deleting session only (orphaning children)', { sessionId });
+  const deleteSessionOnly = useCallback(
+    async (sessionId: string) => {
+      logger.info('Deleting session only (orphaning children)', { sessionId });
 
-    try {
-      await invoke<AgentResponse>('agent_delete_session_only', { sessionId });
+      try {
+        await invoke<AgentResponse>('agent_delete_session_only', { sessionId });
 
-      // Remove the session; update direct children to have no parent
-      setSessions((prev) =>
-        prev
-          .filter((s) => s.id !== sessionId)
-          .map((s) =>
-            s.parentSessionId === sessionId
-              ? { ...s, parentSessionId: undefined }
-              : s,
-          ),
-      );
+        clearSessionState(sessionId);
 
-      logger.info('Session deleted (children orphaned)', { sessionId });
-    } catch (err) {
-      logger.error('Failed to delete session only', err);
-      throw err;
-    }
-  }, []);
+        // Remove the session; update direct children to have no parent
+        setSessions((prev) =>
+          prev
+            .filter((s) => s.id !== sessionId)
+            .map((s) =>
+              s.parentSessionId === sessionId
+                ? { ...s, parentSessionId: undefined }
+                : s,
+            ),
+        );
+
+        logger.info('Session deleted (children orphaned)', { sessionId });
+      } catch (err) {
+        logger.error('Failed to delete session only', err);
+        throw err;
+      }
+    },
+    [clearSessionState],
+  );
 
   /**
    * Toggle the bookmark flag on a session (optimistic update)

@@ -71,6 +71,7 @@ export interface Settings {
   fallbackModel?: ModelChoice;
   contextStrategy: ContextStrategy;
   windowSize: number;
+  maxInputContext: number;
   uiLanguage: string;
   toolCallGroupVisibleCount: number;
   agentHubUrl?: string;
@@ -96,6 +97,7 @@ export const DEFAULT_SETTING: Settings = {
   fallbackModel: undefined,
   contextStrategy: 'window',
   windowSize: 20,
+  maxInputContext: 32768,
   uiLanguage: 'en',
   toolCallGroupVisibleCount: 4,
   agentHubUrl: '',

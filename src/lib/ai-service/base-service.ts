@@ -4,6 +4,7 @@ import {
   MCPContent,
   SamplingOptions,
   SamplingResponse,
+  SamplingResult,
 } from '@/lib/mcp';
 import {
   AIServiceConfig,
@@ -522,14 +523,11 @@ export abstract class BaseAIService implements IAIService {
         const ttft = performance.now() - startTime;
         firstChunkReceived = true;
 
-        // Yield TTFT metric as the first chunk
+        // Yield TTFT metric as the first chunk.
+        // Only yield details — yielding zero token counts would briefly reset the
+        // gauge to 0% before the real usage chunk arrives at the end of the stream.
         yield JSON.stringify({
-          usage: {
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
-            details: { timeToFirstToken: ttft },
-          },
+          usage: { details: { timeToFirstToken: ttft } },
         });
 
         this.logger.debug('TTFT measured', {
@@ -585,8 +583,9 @@ export abstract class BaseAIService implements IAIService {
       config?: AIServiceConfig;
     },
   ): Promise<SamplingResponse> {
-    void prompt;
-    void options;
+    // Deliberately unused — subclasses override this method.
+    // The parameters exist only to satisfy the IAIService interface contract.
+    void [prompt, options];
     throw new AIServiceError(
       'sampleText not implemented for this service',
       this.getProvider(),
@@ -608,6 +607,121 @@ export abstract class BaseAIService implements IAIService {
    * @abstract
    */
   abstract convertTools(mcpTools: MCPTool[]): unknown[];
+
+  /**
+   * Extracts a plain-text representation of a message's content, including
+   * tool call names/arguments and thinking content that `processMessageContent`
+   * would otherwise skip.
+   */
+  private extractMessageText(msg: Message): string {
+    const parts: string[] = [];
+
+    if (Array.isArray(msg.content)) {
+      for (const c of msg.content) {
+        if (c.type === 'text') {
+          parts.push(c.text);
+        } else if (c.type === 'tool_call') {
+          parts.push(`[tool: ${c.name}(${c.arguments})]`);
+        } else if (c.type === 'thinking') {
+          // Omit thinking from summarisation — it's ephemeral reasoning, not facts.
+        }
+      }
+    } else if (typeof msg.content === 'string' && msg.content) {
+      parts.push(msg.content);
+    }
+
+    // OpenAI-style tool_calls stored outside content
+    if (msg.tool_calls?.length) {
+      for (const tc of msg.tool_calls) {
+        parts.push(`[tool: ${tc.function.name}(${tc.function.arguments})]`);
+      }
+    }
+
+    return parts.join('\n').trim();
+  }
+
+  /**
+   * Builds a plain-text summarisation prompt from a slice of conversation messages.
+   * Used by the default {@link compact} implementation.
+   *
+   * If the first message is a prior compact summary (id starts with
+   * `compact-summary-`), it is rendered as a `[PREVIOUS SUMMARY]` block rather
+   * than a regular user turn so the model treats it as accumulated context, not
+   * new user input.
+   *
+   * @param messages The messages to include in the summary prompt.
+   * @returns A string prompt asking the model to summarise the conversation.
+   * @private
+   */
+  private buildCompactPrompt(messages: Message[]): string {
+    const lines: string[] = [
+      'Summarise the following conversation history concisely, preserving key decisions, context, tool results, and any information needed to continue the conversation.\n',
+    ];
+
+    // If the first message is a prior compact summary, render it as a distinct
+    // "previous context" block so the model absorbs it correctly.
+    let startIndex = 0;
+    const firstMsg = messages[0];
+    if (firstMsg?.id.startsWith('compact-summary-')) {
+      const prevSummaryText = this.extractMessageText(firstMsg);
+      lines.push('[PREVIOUS SUMMARY]');
+      lines.push(prevSummaryText);
+      lines.push('[END PREVIOUS SUMMARY]\n');
+      startIndex = 1;
+    }
+
+    lines.push('--- CONVERSATION HISTORY ---\n');
+
+    for (let i = startIndex; i < messages.length; i++) {
+      const msg = messages[i];
+      const text = this.extractMessageText(msg);
+
+      if (msg.role === 'user') {
+        lines.push(`User: ${text}`);
+      } else if (msg.role === 'assistant') {
+        lines.push(`Assistant: ${text}`);
+      } else if (msg.role === 'tool') {
+        lines.push(`Tool result: ${text}`);
+      }
+    }
+
+    lines.push(
+      '\n--- END CONVERSATION HISTORY ---\n\nProvide a concise summary:',
+    );
+    return lines.join('\n');
+  }
+
+  /**
+   * Compresses a slice of conversation messages into a single summary by
+   * calling {@link sampleText} with a summarisation prompt. Providers may
+   * override this for cost or caching optimisations.
+   * @param messages The messages to compress.
+   * @param options Optional model name and service configuration overrides.
+   * @returns A promise that resolves to the summary text.
+   */
+  async compact(
+    messages: Message[],
+    options?: {
+      modelName?: string;
+      config?: AIServiceConfig;
+    },
+  ): Promise<string> {
+    const prompt = this.buildCompactPrompt(messages);
+    const response = await this.sampleText(prompt, {
+      modelName: options?.modelName,
+      config: options?.config,
+    });
+
+    const samplingResult = response.result as SamplingResult | undefined;
+    const textBlock = samplingResult?.content?.find((c) => c.type === 'text');
+    if (!textBlock || !('text' in textBlock)) {
+      throw new AIServiceError(
+        'compact() received an empty response from sampleText',
+        this.getProvider(),
+      );
+    }
+    return (textBlock as { text: string }).text;
+  }
 
   /**
    * Cleans up any resources used by the service instance.

@@ -141,7 +141,16 @@ pub async fn delete_knowledge(
     };
 
     let repo = crate::get_knowledge_repository();
-    let result = repo.delete_knowledge(id, assistant_id).await;
+
+    // Try provided assistant_id first
+    let mut result = repo.delete_knowledge(id, assistant_id).await;
+
+    // If not found and assistant_id isn't "global", try "global"
+    if let Err(crate::repositories::DbError::NotFound(_)) = result {
+        if assistant_id != "global" {
+            result = repo.delete_knowledge(id, "global").await;
+        }
+    }
 
     match result {
         Ok(_) => {

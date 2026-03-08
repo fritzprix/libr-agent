@@ -8,6 +8,7 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 use super::BuiltinMCPServer;
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::{MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::services::SecureFileManager;
@@ -653,6 +654,12 @@ impl BuiltinMCPServer for WorkspaceServer {
 
             _ => Err(format!("Tool '{tool_name}' not found")),
         }
+        .or_else(|e| {
+            if e.contains("cancelled") || e.contains("interrupted") {
+                return Err(e);
+            }
+            Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Workspace).to_mcp_result())
+        })
     }
 }
 

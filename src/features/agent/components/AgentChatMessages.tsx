@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
+import { useLLMService } from '@/context/LLMServiceContext';
 import { useAgentResourceAttachment } from '@/features/agent/hooks/useAgentResourceAttachment';
 import { useChatScroll } from '@/features/agent/hooks/useChatScroll';
 import { useFileRefetcher } from '@/features/agent/hooks/useFileRefetcher';
@@ -8,6 +9,7 @@ import { useMessageGrouping } from '@/hooks/useMessageGrouping';
 import { AgentMessageBubble } from './AgentMessageBubble';
 import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
+import { CompactEventDivider } from './shared/CompactEventDivider';
 import { Bot } from 'lucide-react';
 import type { Message } from '@/models/chat';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
@@ -23,6 +25,12 @@ export function AgentChatMessages() {
   } = useAgentChat();
   const { session, pendingApprovals, respondToToolApproval } =
     useAgentSession();
+  const { getCompactedRange } = useLLMService();
+
+  // Compact range for divider rendering (null if no compaction has occurred)
+  const compactedRange = session?.id
+    ? getCompactedRange(session.id)
+    : undefined;
   const { refetchSessionFiles } = useAgentResourceAttachment();
 
   // Use custom hooks for side effects
@@ -133,13 +141,19 @@ export function AgentChatMessages() {
             return null;
           }
 
+          const isCompactBoundary = compactedRange?.toId === msg.id;
+
           return (
-            <AgentMessageBubble
-              key={msg.id}
-              message={msg}
-              assistantName={assistantName}
-              isPending={pendingMessageIds.has(msg.id)}
-            />
+            <React.Fragment key={msg.id}>
+              <AgentMessageBubble
+                message={msg}
+                assistantName={assistantName}
+                isPending={pendingMessageIds.has(msg.id)}
+              />
+              {isCompactBoundary && (
+                <CompactEventDivider key={`compact-divider-${msg.id}`} />
+              )}
+            </React.Fragment>
           );
         })}
 

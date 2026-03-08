@@ -85,7 +85,15 @@ export class RustSettingsService implements ISettingsService {
             | ModelChoice
             | null
             | undefined) ?? DEFAULT_SETTING.fallbackModel,
+        contextStrategy: getTypedValue(
+          'contextStrategy',
+          DEFAULT_SETTING.contextStrategy,
+        ),
         windowSize: getTypedValue('windowSize', DEFAULT_SETTING.windowSize),
+        maxInputContext: getTypedValue(
+          'maxInputContext',
+          DEFAULT_SETTING.maxInputContext,
+        ),
         uiLanguage: getTypedValue('uiLanguage', DEFAULT_SETTING.uiLanguage),
         toolCallGroupVisibleCount: getTypedValue(
           'toolCallGroupVisibleCount',
@@ -135,8 +143,16 @@ export class RustSettingsService implements ISettingsService {
         changes['fallbackModel'] = settings.fallbackModel ?? null;
       }
 
+      if (settings.contextStrategy != null) {
+        changes['contextStrategy'] = settings.contextStrategy;
+      }
+
       if (settings.windowSize != null) {
         changes['windowSize'] = settings.windowSize;
+      }
+
+      if (settings.maxInputContext != null) {
+        changes['maxInputContext'] = settings.maxInputContext;
       }
 
       if (settings.uiLanguage != null) {

@@ -62,6 +62,13 @@ vi.mock('@/context/SettingsContext', () => ({
     }),
 }));
 
+vi.mock('../LLMServiceContext', () => ({
+    useLLMService: () => ({
+        clearSessionState: vi.fn(),
+        clearAllCompactState: vi.fn(),
+    }),
+}));
+
 function TestWrapper({ children }: { children: React.ReactNode }) {
     return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
 }

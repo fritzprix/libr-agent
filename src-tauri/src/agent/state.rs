@@ -1,6 +1,6 @@
 use crate::agent::context::registry::ContextRegistry;
 use crate::models::chat::Message;
-use crate::repositories::SessionMetadata;
+use crate::repositories::{CompactContextRecord, SessionMetadata};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -123,6 +123,9 @@ pub struct AgentSession {
 
     /// Context registry for read-only information providers
     pub context_registry: Arc<ContextRegistry>,
+
+    /// Compact context for the session (SP17)
+    pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
 }
 
 #[cfg(test)]

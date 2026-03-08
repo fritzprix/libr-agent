@@ -3,11 +3,57 @@ import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap } from 'lucide-react';
 
+interface ContextUsage {
+  totalTokens: number;
+  contextWindow: number;
+  modelMaxContext?: number;
+}
+
 interface TokenMetricsBadgeProps {
   usage: TokenUsage;
   showSpeed?: boolean;
   className?: string;
   compact?: boolean;
+  /** When provided, renders a context-window usage gauge below the metrics. */
+  contextUsage?: ContextUsage;
+}
+
+function ContextGauge({
+  totalTokens,
+  contextWindow,
+  modelMaxContext,
+}: ContextUsage) {
+  const pct = Math.min(totalTokens / contextWindow, 1);
+  const pctDisplay = (pct * 100).toFixed(0);
+
+  let barColor: string;
+  if (pct >= 0.9) {
+    // 90% matches the compaction trigger
+    barColor = 'bg-destructive';
+  } else if (pct >= 0.8) {
+    barColor = 'bg-warning';
+  } else {
+    barColor = 'bg-success';
+  }
+
+  const tooltipTitle =
+    modelMaxContext && modelMaxContext !== contextWindow
+      ? `Context: ${totalTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (Effective Limit)\nModel Max: ${modelMaxContext.toLocaleString()} tokens`
+      : `Context: ${totalTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${pctDisplay}%)`;
+
+  return (
+    <div className="flex items-center gap-1.5 mt-0.5" title={tooltipTitle}>
+      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+          style={{ width: `${pct * 100}%` }}
+        />
+      </div>
+      <span className="text-[10px] text-muted-foreground tabular-nums">
+        {pctDisplay}%
+      </span>
+    </div>
+  );
 }
 
 export function TokenMetricsBadge({
@@ -15,6 +61,7 @@ export function TokenMetricsBadge({
   showSpeed: showSpeedProp,
   className = '',
   compact: compactProp,
+  contextUsage,
 }: TokenMetricsBadgeProps) {
   // Get display preferences from settings
   const { value: settings } = useSettings();
@@ -60,70 +107,76 @@ export function TokenMetricsBadge({
 
   return (
     <div
-      className={`flex items-center gap-2 text-xs font-mono tabular-nums ${className}`}
+      className={`flex flex-col text-xs font-mono tabular-nums ${className}`}
       data-testid="metrics-badge"
     >
-      {/* Input Tokens */}
       <div className="flex items-center gap-2">
-        <span
-          className="flex items-center gap-0.5 text-primary"
-          title={
-            (usage.details?.cacheReadInputTokens
-              ? `Prompt Tokens (Read from Cache: ${usage.details.cacheReadInputTokens.toLocaleString()}, Created: ${usage.details.cacheCreationInputTokens?.toLocaleString() || 0})`
-              : 'Prompt Tokens') + prefillInfo
-          }
-        >
-          <ArrowUp size={10} className="stroke-[3]" />
-          {usage.promptTokens.toLocaleString()}
-        </span>
-        {/* Cache Hit Indicator */}
-        {usage.details?.cacheReadInputTokens ? (
+        {/* Input Tokens */}
+        <div className="flex items-center gap-2">
           <span
-            className="flex items-center gap-0.5 text-xs text-primary/70"
-            title="Cached Input Tokens"
+            className="flex items-center gap-0.5 text-primary"
+            title={
+              (usage.details?.cacheReadInputTokens
+                ? `Prompt Tokens (Read from Cache: ${usage.details.cacheReadInputTokens.toLocaleString()}, Created: ${usage.details.cacheCreationInputTokens?.toLocaleString() || 0})`
+                : 'Prompt Tokens') + prefillInfo
+            }
           >
-            <Zap size={10} className="fill-current" />
-            {(
-              (usage.details.cacheReadInputTokens / usage.promptTokens) *
-              100
-            ).toFixed(0)}
-            %
+            <ArrowUp size={10} className="stroke-[3]" />
+            {(usage.promptTokens ?? 0).toLocaleString()}
           </span>
-        ) : null}
+          {/* Cache Hit Indicator */}
+          {usage.details?.cacheReadInputTokens ? (
+            <span
+              className="flex items-center gap-0.5 text-xs text-primary/70"
+              title="Cached Input Tokens"
+            >
+              <Zap size={10} className="fill-current" />
+              {(
+                (usage.details.cacheReadInputTokens /
+                  (usage.promptTokens || 1)) *
+                100
+              ).toFixed(0)}
+              %
+            </span>
+          ) : null}
+        </div>
+
+        {/* Output Tokens */}
+        <span
+          className="flex items-center gap-0.5 text-success"
+          title="Completion Tokens"
+        >
+          <ArrowDown size={10} className="stroke-[3]" />
+          {(usage.completionTokens ?? 0).toLocaleString()}
+        </span>
+
+        {/* Speed (if available) - Hide on compact unless specifically requested */}
+        {showSpeed && tpsFormatted && (
+          <>
+            <span className="text-muted-foreground mx-0.5">•</span>
+            <span
+              className="flex items-center gap-0.5 text-warning"
+              title="Tokens per second"
+            >
+              <Zap size={10} className="stroke-[3]" />
+              {tpsFormatted}{' '}
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                t/s
+              </span>
+            </span>
+          </>
+        )}
+
+        {/* Load Duration (Ollama only, for debug) - Optional, maybe hide in production UI */}
+        {!compact && usage.details?.loadDuration && (
+          <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-xs ml-1">
+            (Load: {(usage.details.loadDuration / 1000).toFixed(1)}s)
+          </span>
+        )}
       </div>
 
-      {/* Output Tokens */}
-      <span
-        className="flex items-center gap-0.5 text-success"
-        title="Completion Tokens"
-      >
-        <ArrowDown size={10} className="stroke-[3]" />
-        {usage.completionTokens.toLocaleString()}
-      </span>
-
-      {/* Speed (if available) - Hide on compact unless specifically requested */}
-      {showSpeed && tpsFormatted && (
-        <>
-          <span className="text-muted-foreground mx-0.5">•</span>
-          <span
-            className="flex items-center gap-0.5 text-warning"
-            title="Tokens per second"
-          >
-            <Zap size={10} className="stroke-[3]" />
-            {tpsFormatted}{' '}
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              t/s
-            </span>
-          </span>
-        </>
-      )}
-
-      {/* Load Duration (Ollama only, for debug) - Optional, maybe hide in production UI */}
-      {!compact && usage.details?.loadDuration && (
-        <span className="hidden lg:flex items-center gap-0.5 text-muted-foreground text-xs ml-1">
-          (Load: {(usage.details.loadDuration / 1000).toFixed(1)}s)
-        </span>
-      )}
+      {/* Context window usage gauge — only shown when contextUsage is provided */}
+      {contextUsage && <ContextGauge {...contextUsage} />}
     </div>
   );
 }

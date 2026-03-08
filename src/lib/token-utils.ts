@@ -61,19 +61,46 @@ export function estimateTextTokens(text: string): number {
  */
 export function estimateTokensBPE(message: Message): number {
   try {
-    let contentText = '';
+    const parts: string[] = [];
+
     if (Array.isArray(message.content)) {
-      contentText = message.content
-        .map((c) => {
-          if (c.type === 'text') return c.text;
-          // For resources, we might want to count the text content if available
-          if (c.type === 'resource') return c.resource.text || '';
-          return '';
-        })
-        .join('');
+      for (const c of message.content) {
+        if (c.type === 'text') {
+          parts.push(c.text);
+        } else if (c.type === 'resource') {
+          parts.push(c.resource.text || '');
+        } else if (c.type === 'tool_call') {
+          // Tool call content: name + JSON arguments can be large
+          parts.push(c.name);
+          parts.push(c.arguments);
+        } else if (c.type === 'thinking') {
+          // Reasoning/thinking content
+          parts.push(c.thinking);
+        }
+        // image/audio/video: binary content — token count is unpredictable, skip
+      }
     }
 
-    const text = `${message.role}: ${contentText}`;
+    // OpenAI-style tool_calls stored in the top-level field (not in content)
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      for (const tc of message.tool_calls) {
+        parts.push(tc.function.name);
+        parts.push(tc.function.arguments);
+      }
+    }
+
+    // Anthropic-style tool_use stored in the top-level field
+    if (message.tool_use) {
+      parts.push(message.tool_use.name);
+      parts.push(JSON.stringify(message.tool_use.input));
+    }
+
+    // Top-level thinking field (some providers populate this directly on Message)
+    if (message.thinking) {
+      parts.push(message.thinking);
+    }
+
+    const text = `${message.role}: ${parts.join(' ')}`;
     return estimateTextTokens(text);
   } catch (error) {
     // Fallback: Conservative estimate for message overhead + content length
@@ -86,12 +113,99 @@ export function estimateTokensBPE(message: Message): number {
       contentLength = message.content.reduce((sum, c) => {
         if (c.type === 'text') return sum + c.text.length;
         if (c.type === 'resource') return sum + (c.resource.text?.length || 0);
+        if (c.type === 'tool_call')
+          return sum + c.name.length + c.arguments.length;
+        if (c.type === 'thinking') return sum + c.thinking.length;
         return sum;
       }, 0);
+    }
+    if (message.tool_calls) {
+      contentLength += message.tool_calls.reduce(
+        (sum, tc) =>
+          sum + tc.function.name.length + tc.function.arguments.length,
+        0,
+      );
+    }
+    if (message.tool_use) {
+      contentLength +=
+        message.tool_use.name.length +
+        JSON.stringify(message.tool_use.input).length;
     }
     // Account for role prefix and formatting: ~10 chars + content
     return Math.ceil((10 + contentLength) / 4);
   }
+}
+
+/**
+ * Calculates a grounded token estimate by finding the last assistant message with
+ * valid API-reported usage (ground truth) and only applying BPE estimation to the
+ * new messages appended after it.
+ *
+ * If a summary message (compact strategy) is detected *after* the last known
+ * grounded message, or if no grounded message is found, it falls back to full BPE estimation.
+ */
+export function calculateGroundedTotalTokens(
+  messages: Message[],
+  systemPromptTokens: number,
+  toolsTokens: number,
+): number {
+  let groundedIndex = -1;
+  let baseTokens = 0;
+
+  // Search backwards for the most recent message with valid API usage
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    // Only assistant messages typically have usage stats
+    if (msg.role === 'assistant' && msg.usage && msg.usage.totalTokens > 0) {
+      groundedIndex = i;
+      // For the grounded base, we use the actual reported totalTokens.
+      // Note: This API-reported totalTokens already *includes* the system prompt
+      // and tool definitions that were sent in that request.
+      baseTokens = msg.usage.totalTokens;
+      break;
+    }
+  }
+
+  if (groundedIndex >= 0) {
+    // Check if there is a summary message AFTER the grounded point.
+    // If so, the historical context has drastically changed, and the old
+    // totalTokens count is invalid. We must do a full re-estimation.
+    const hasSummaryAfterGrounded = messages
+      .slice(groundedIndex + 1)
+      .some((m) => m.id.startsWith('compact-summary-'));
+
+    if (!hasSummaryAfterGrounded) {
+      // Calculate BPE for only the *new* messages added after the grounded point
+      let incrementalTokens = 0;
+      for (let i = groundedIndex + 1; i < messages.length; i++) {
+        incrementalTokens += estimateTokensBPE(messages[i]);
+      }
+
+      logger.debug('Using grounded token estimation', {
+        baseTokens,
+        incrementalTokens,
+        final: baseTokens + incrementalTokens,
+      });
+
+      return baseTokens + incrementalTokens;
+    }
+  }
+
+  // Fallback: Full BPE estimation (e.g., first turn, or after compaction)
+  const messageTokens = messages.reduce(
+    (sum, m) => sum + estimateTokensBPE(m),
+    0,
+  );
+  const fullEstimate = messageTokens + systemPromptTokens + toolsTokens;
+
+  logger.debug('Using full BPE token estimation', {
+    messageTokens,
+    systemPromptTokens,
+    toolsTokens,
+    final: fullEstimate,
+  });
+
+  return fullEstimate;
 }
 
 /**
@@ -304,7 +418,29 @@ export function selectMessagesWithinContext(
     });
   }
 
-  const reservedTokens = systemPromptTokens + toolsTokens + pinnedMessageTokens;
+  // Non-message overhead: system prompt + tools are fixed costs that cannot be
+  // reduced by message selection. If they alone exceed the budget, no amount of
+  // message trimming can prevent an overflow — bail out early with only the
+  // most-recent message so the LLM always has at least one turn to respond to.
+  const nonMessageReserved = systemPromptTokens + toolsTokens;
+  if (nonMessageReserved >= baseTokenLimit) {
+    logger.warn(
+      '⚠️ System prompt + tools tokens exhaust the entire context window. ' +
+        'Returning only the most-recent message.',
+      {
+        nonMessageReserved,
+        baseTokenLimit,
+        systemPromptTokens,
+        toolsTokens,
+      },
+    );
+    const mostRecent = batchedMessages[batchedMessages.length - 1];
+    return mostRecent ? [mostRecent] : [];
+  }
+
+  const reservedTokens = nonMessageReserved + pinnedMessageTokens;
+  // Keep a minimum 1024-token budget for message selection so we always attempt
+  // to include the most-recent messages even when the pinned message is large.
   const tokenLimit = Math.max(1024, baseTokenLimit - reservedTokens);
 
   logger.info('📊 Starting message selection', {
