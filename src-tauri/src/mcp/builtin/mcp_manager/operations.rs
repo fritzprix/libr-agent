@@ -43,7 +43,7 @@ async fn save_server_config(config: &MCPServerConfig) -> Result<String, String> 
                 .map_err(|e| format!("Failed to create MCP server config: {}", e))?
                 .id
         }
-        Err(e) => return Err(format!("DB query error: {}", e)),
+        Err(e) => return Err(format!("DB query error while saving server config: {}", e)),
     };
 
     // Update the cached tools immediately since we just verified it

@@ -84,7 +84,10 @@ impl BuiltinMCPServer for SessionApiServer {
                     | ExternalMcpErrorCategory::Internal => ErrorCategory::InternalError,
                 };
 
-                Ok(guided_error(category, e, ToolGroup::Swarm).to_mcp_result())
+                Ok(
+                    guided_error(category, format!("[{}] {}", tool_name, e), ToolGroup::Swarm)
+                        .to_mcp_result(),
+                )
             })
     }
 

@@ -181,13 +181,26 @@ pub fn categorize_session_api_error(err: &str) -> (ExternalMcpErrorCategory, Vec
                     "This may indicate a bug — please report it".to_string(),
                 ],
             ),
-            404 => (
-                ExternalMcpErrorCategory::NotFound,
-                vec![
-                    "Verify the session ID is correct using getAgentStatus".to_string(),
-                    "The session may have been terminated — use getChildAgents to list active sessions".to_string(),
-                ],
-            ),
+            404 => {
+                if err.contains("Assistant") {
+                    (
+                        ExternalMcpErrorCategory::NotFound,
+                        vec![
+                            "Use listAssistants to see available assistant configurations".to_string(),
+                            "Verify the assistantId matches one of the existing assistants".to_string(),
+                            "Check for typos in the assistantId parameter".to_string(),
+                        ],
+                    )
+                } else {
+                    (
+                        ExternalMcpErrorCategory::NotFound,
+                        vec![
+                            "Verify the session ID is correct using getAgentStatus".to_string(),
+                            "The session may have been terminated — use getChildAgents to list active sessions".to_string(),
+                        ],
+                    )
+                }
+            }
             408 | 504 => (
                 ExternalMcpErrorCategory::Timeout,
                 vec![

@@ -716,19 +716,26 @@ export function useLLMExecution({
             const incomingUsage = chunk.usage as TokenUsage;
             if (finalUsage) {
               finalUsage = {
+                // Use ?? to correctly handle 0 values; fall back to prior value if incoming is undefined
                 promptTokens:
-                  incomingUsage.promptTokens || finalUsage.promptTokens,
+                  incomingUsage.promptTokens ?? finalUsage.promptTokens,
                 completionTokens:
-                  incomingUsage.completionTokens || finalUsage.completionTokens,
+                  incomingUsage.completionTokens ?? finalUsage.completionTokens,
                 totalTokens:
-                  incomingUsage.totalTokens || finalUsage.totalTokens,
+                  incomingUsage.totalTokens ?? finalUsage.totalTokens,
                 details: {
                   ...finalUsage.details,
                   ...incomingUsage.details,
                 },
               };
             } else {
-              finalUsage = incomingUsage;
+              // Normalise the first usage chunk — ensure required numeric fields are always numbers
+              finalUsage = {
+                promptTokens: incomingUsage.promptTokens ?? 0,
+                completionTokens: incomingUsage.completionTokens ?? 0,
+                totalTokens: incomingUsage.totalTokens ?? 0,
+                details: incomingUsage.details,
+              };
             }
           }
 

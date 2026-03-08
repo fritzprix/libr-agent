@@ -122,7 +122,7 @@ export function TokenMetricsBadge({
             }
           >
             <ArrowUp size={10} className="stroke-[3]" />
-            {usage.promptTokens.toLocaleString()}
+            {(usage.promptTokens ?? 0).toLocaleString()}
           </span>
           {/* Cache Hit Indicator */}
           {usage.details?.cacheReadInputTokens ? (
@@ -132,7 +132,8 @@ export function TokenMetricsBadge({
             >
               <Zap size={10} className="fill-current" />
               {(
-                (usage.details.cacheReadInputTokens / usage.promptTokens) *
+                (usage.details.cacheReadInputTokens /
+                  (usage.promptTokens || 1)) *
                 100
               ).toFixed(0)}
               %
@@ -146,7 +147,7 @@ export function TokenMetricsBadge({
           title="Completion Tokens"
         >
           <ArrowDown size={10} className="stroke-[3]" />
-          {usage.completionTokens.toLocaleString()}
+          {(usage.completionTokens ?? 0).toLocaleString()}
         </span>
 
         {/* Speed (if available) - Hide on compact unless specifically requested */}
