@@ -34,9 +34,8 @@ impl PersistentShellManager {
         }
     }
 
-    /// Returns the number of shells currently managed (for testing)
-    #[cfg(test)]
-    pub(crate) async fn shell_count(&self) -> usize {
+    /// Returns the number of shells currently managed.
+    pub async fn shell_count(&self) -> usize {
         self.shells.lock().await.len()
     }
 

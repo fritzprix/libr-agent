@@ -13,6 +13,7 @@ struct LineEdit {
     end_line: usize,   // 1-based, inclusive.
     new_value: String,
     start_hash: Option<String>,
+    end_hash: Option<String>,
     action: EditAction,
 }
 
@@ -273,11 +274,17 @@ impl WorkspaceServer {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
+            let end_hash = edit_obj
+                .get("endHash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
             edits.push(LineEdit {
                 start_line,
                 end_line,
                 new_value,
                 start_hash,
+                end_hash,
                 action,
             });
         }
@@ -369,6 +376,25 @@ impl WorkspaceServer {
                             ToolGroup::Workspace,
                         )
                         .to_mcp_result());
+                    }
+                }
+
+                // Validate endHash when a range edit spans multiple lines
+                if edit.end_line > edit.start_line {
+                    if let Some(ref expected) = edit.end_hash {
+                        let actual = orig_lines[edit.end_line - 1];
+                        let actual_hash = compute_line_hash(actual);
+                        if actual_hash != *expected {
+                            return Ok(guided_error(
+                                ErrorCategory::InvalidInput,
+                                format!(
+                                    "STALE HASH on end line {} (current: {})",
+                                    edit.end_line, actual_hash
+                                ),
+                                ToolGroup::Workspace,
+                            )
+                            .to_mcp_result());
+                        }
                     }
                 }
             }
@@ -488,6 +514,7 @@ mod tests {
             end_line: line,
             new_value: val.to_string(),
             start_hash: None,
+            end_hash: None,
             action,
         }
     }

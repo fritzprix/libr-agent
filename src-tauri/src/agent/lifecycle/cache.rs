@@ -14,9 +14,10 @@ pub async fn init_session_with_messages(
 ) -> Result<(), String> {
     let message_repo = crate::state::get_message_repository();
 
-    // Load last N messages from DB (one-time operation)
+    // Load last N messages from DB (one-time operation).
+    // get_page is 1-based: page=1 maps to offset=0 (first page).
     let page = message_repo
-        .get_page(session_id, 0, MAX_CACHED_MESSAGES as u64)
+        .get_page(session_id, 1, MAX_CACHED_MESSAGES as u64)
         .await
         .map_err(|e| format!("Failed to load messages for session {}: {}", session_id, e))?;
 

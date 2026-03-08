@@ -6,7 +6,9 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import enCommon from '@/locales/en/common.json';
 
-// Initialize dummy i18next instance to silence NO_I18NEXT_INSTANCE warnings
+// Initialize dummy i18next instance to silence NO_I18NEXT_INSTANCE warnings.
+// initImmediate: false makes init synchronous so translations are ready before
+// any test code runs, preventing flaky NO_I18NEXT_INSTANCE warnings.
 i18n.use(initReactI18next).init({
   lng: 'en',
   fallbackLng: 'en',
@@ -15,6 +17,7 @@ i18n.use(initReactI18next).init({
   resources: { en: { common: enCommon } },
   interpolation: { escapeValue: false }, // not needed for React as it escapes by default
   react: { useSuspense: false },
+  initImmediate: false,
 });
 
 // Mock Tauri APIs for testing environment

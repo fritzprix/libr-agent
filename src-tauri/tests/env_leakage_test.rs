@@ -60,15 +60,20 @@ async fn test_env_leakage_in_linux_high_isolation() {
         IsolatedProcessConfig, IsolationConfig, IsolationLevel, ResourceLimits,
     };
 
-    // Skip if unshare is not available in this environment
-    let unshare_available = std::process::Command::new("unshare")
-        .arg("--version")
+    // Skip if unprivileged user namespaces are not usable in this environment.
+    // Use the exact flags that create_high_isolated_command probes with, so we
+    // skip on any container/CI environment where unshare exists but user/mount
+    // namespaces are restricted (the production code falls back silently in that
+    // case, which would make this test pass vacuously).
+    let userns_available = tokio::process::Command::new("unshare")
+        .args(["--user", "--pid", "--mount", "--fork", "--", "true"])
         .output()
+        .await
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    if !unshare_available {
-        eprintln!("Skipping test_env_leakage_in_linux_high_isolation: unshare not available");
+    if !userns_available {
+        eprintln!("Skipping test_env_leakage_in_linux_high_isolation: user namespaces not available");
         return;
     }
 
