@@ -143,7 +143,7 @@ export class RustSettingsService implements ISettingsService {
         changes['fallbackModel'] = settings.fallbackModel ?? null;
       }
 
-      if (settings.contextStrategy) {
+      if (settings.contextStrategy != null) {
         changes['contextStrategy'] = settings.contextStrategy;
       }
 

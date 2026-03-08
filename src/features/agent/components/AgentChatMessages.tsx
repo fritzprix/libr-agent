@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSession } from '@/context/AgentSessionContext';
 import { useLLMService } from '@/context/LLMServiceContext';
@@ -144,9 +144,8 @@ export function AgentChatMessages() {
           const isCompactBoundary = compactedRange?.toId === msg.id;
 
           return (
-            <>
+            <React.Fragment key={msg.id}>
               <AgentMessageBubble
-                key={msg.id}
                 message={msg}
                 assistantName={assistantName}
                 isPending={pendingMessageIds.has(msg.id)}
@@ -154,7 +153,7 @@ export function AgentChatMessages() {
               {isCompactBoundary && (
                 <CompactEventDivider key={`compact-divider-${msg.id}`} />
               )}
-            </>
+            </React.Fragment>
           );
         })}
 

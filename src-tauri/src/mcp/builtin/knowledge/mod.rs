@@ -176,11 +176,8 @@ impl BuiltinMCPServer for KnowledgeServer {
             }
             "searchKnowledge" => {
                 if scope == "both" || scope == "default" {
-                    // If searching both, we first search global then assistant
-                    // This is a bit complex for a single tool call, so for now we'll 
-                    // just search both in the repository if we update the repo, 
-                    // or call it twice.
-                    // Actually, let's just search global for now or update queries::search_knowledge to handle both.
+                    // When searching with scope "both" or "default", perform a combined search
+                    // across global and assistant-specific knowledge using the current assistant ID.
                     queries::search_knowledge_both(self, args, &self.assistant_id).await
                 } else {
                     queries::search_knowledge(self, args, &target_assistant_id).await

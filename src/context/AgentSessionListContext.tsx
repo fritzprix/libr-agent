@@ -317,6 +317,10 @@ export function AgentSessionListProvider({
         await invoke<AgentResponse>('agent_delete_session', { sessionId });
 
         // Remove the session and ALL its descendants from the UI
+        // Compute the set of IDs to remove outside the state updater (pure function)
+        // so that side-effects (clearSessionState) are not run inside the updater
+        // and are not double-invoked by React StrictMode.
+        let idsToRemove: Set<string> = new Set([sessionId]);
         setSessions((prev) => {
           // Collect all descendant IDs via BFS
           const toRemove = new Set<string>([sessionId]);
@@ -334,10 +338,11 @@ export function AgentSessionListProvider({
             }
             frontier = next;
           }
-          // Clean up LLM state for every removed session
-          toRemove.forEach((id) => clearSessionState(id));
+          idsToRemove = toRemove;
           return prev.filter((s) => !toRemove.has(s.id));
         });
+        // Clean up LLM state outside the updater to avoid double-invocation in StrictMode
+        idsToRemove.forEach((id) => clearSessionState(id));
 
         logger.info('Session deleted successfully', { sessionId });
       } catch (err) {

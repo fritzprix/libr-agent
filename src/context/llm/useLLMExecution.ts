@@ -71,6 +71,9 @@ export function useLLMExecution({
   const compactResolversRef = useRef<
     Map<string, ((success: boolean) => void)[]>
   >(new Map());
+  // Guard flag: set to true on unmount so background compaction IIFEs avoid
+  // calling state setters on the unmounted component.
+  const unmountedRef = useRef(false);
 
   const [compactingSet, setCompactingSet] = useState<Set<string>>(new Set());
   const [awaitingSet, setAwaitingSet] = useState<Set<string>>(new Set());
@@ -87,7 +90,10 @@ export function useLLMExecution({
 
   // Clean up on unmount
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
+      unmountedRef.current = true;
+
       abortControllersRef.current.forEach((controller) => controller.abort());
       abortControllersRef.current.clear();
 
@@ -98,6 +104,14 @@ export function useLLMExecution({
 
       activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
+
+      // Resolve all pending compaction waiters with `false` so they don't
+      // block indefinitely after unmount, then clear both refs.
+      compactResolversRef.current.forEach((resolvers) =>
+        resolvers.forEach((r) => r(false)),
+      );
+      compactResolversRef.current.clear();
+      compactCacheRef.current.clear();
     };
   }, []);
 
@@ -113,7 +127,7 @@ export function useLLMExecution({
       maxTokens?: number,
       availableTools?: MCPTool[],
     ): Promise<Message> => {
-      logger.info('�� Executing completion request', {
+      logger.info('🚀 Executing completion request', {
         sessionId,
         messageCount: messages.length,
         provider,
@@ -410,6 +424,17 @@ export function useLLMExecution({
               compactResolversRef.current.set(sessionId, []);
               setCompactingSet((prev) => new Set([...prev, sessionId]));
 
+              // Create a dedicated service instance for compaction so it is NOT
+              // tracked in activeServicesRef and cannot be disposed by a subsequent
+              // request for the same session while compaction is still in-flight.
+              const compactionService = AIServiceFactory.getService(
+                provider as AIServiceProvider,
+                apiKey ?? '',
+                settingsRef.current.serviceConfigs?.[
+                  provider as AIServiceProvider
+                ] || {},
+              );
+
               (async () => {
                 let compactionSucceeded = false;
                 try {
@@ -417,9 +442,12 @@ export function useLLMExecution({
                     sessionId,
                     oldCount: oldMessages.length,
                   });
-                  const summary = await service.compact(oldMessages, {
+                  const summary = await compactionService.compact(oldMessages, {
                     modelName: model,
                   });
+
+                  // Abort post-compaction state updates if the component unmounted.
+                  if (unmountedRef.current) return;
 
                   // Use stable IDs; strip compact-summary- prefix to avoid nesting.
                   const firstMsg = oldMessages[0];
@@ -440,6 +468,8 @@ export function useLLMExecution({
                     createdAt: Date.now(),
                   });
 
+                  if (unmountedRef.current) return;
+
                   setCompactedRangeMap((prev) => {
                     const next = new Map(prev);
                     next.set(sessionId, { fromId, toId });
@@ -457,15 +487,18 @@ export function useLLMExecution({
                     error: err,
                   });
                 } finally {
-                  const resolvers =
-                    compactResolversRef.current.get(sessionId) ?? [];
-                  resolvers.forEach((r) => r(compactionSucceeded));
-                  compactResolversRef.current.delete(sessionId);
-                  setCompactingSet((prev) => {
-                    const next = new Set(prev);
-                    next.delete(sessionId);
-                    return next;
-                  });
+                  compactionService.dispose();
+                  if (!unmountedRef.current) {
+                    const resolvers =
+                      compactResolversRef.current.get(sessionId) ?? [];
+                    resolvers.forEach((r) => r(compactionSucceeded));
+                    compactResolversRef.current.delete(sessionId);
+                    setCompactingSet((prev) => {
+                      const next = new Set(prev);
+                      next.delete(sessionId);
+                      return next;
+                    });
+                  }
                 }
               })();
             }

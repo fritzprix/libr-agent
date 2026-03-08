@@ -13,7 +13,7 @@ export function calculateEffectiveContextLimit(
   }
 
   const effectiveLimit =
-    maxInputContext && maxInputContext < safeInputLimit
+    maxInputContext != null && maxInputContext > 0 && maxInputContext < safeInputLimit
       ? maxInputContext
       : safeInputLimit;
 
@@ -51,19 +51,21 @@ export function findCompactionSplitIndex<T extends HasId>(
 
   let currentSum = 0;
   let splitIdx = 0;
+  let splitFound = false;
 
   for (let i = messages.length - 1; i >= 0; i--) {
     currentSum += estimateTokens(messages[i]);
     if (currentSum >= keepThreshold) {
       splitIdx = i;
+      splitFound = true;
       break;
     }
   }
 
-  // Fallback: If we didn't hit the keepThreshold but we have a lot of messages,
-  // force a split at the halfway point.
+  // Fallback: If no split point was found within the keep budget, force a
+  // half-split when the list is large enough.
   // Using >= 10 ensures splitIdx is at least 5.
-  if (splitIdx === 0 && messages.length >= 10) {
+  if (!splitFound && messages.length >= 10) {
     splitIdx = Math.floor(messages.length / 2);
   }
 
