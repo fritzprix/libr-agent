@@ -18,7 +18,7 @@ use crate::session_isolation::types::ShellType;
 #[derive(Debug)]
 pub struct PersistentShellManager {
     /// session_id -> PersistentShell mapping
-    pub(crate) shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
+    shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
 
     /// Maximum shells per session (resource limit)
     #[allow(dead_code)]
@@ -32,6 +32,12 @@ impl PersistentShellManager {
             shells: Arc::new(Mutex::new(HashMap::new())),
             max_shells_per_session: 3,
         }
+    }
+
+    /// Returns the number of shells currently managed (for testing)
+    #[cfg(test)]
+    pub(crate) async fn shell_count(&self) -> usize {
+        self.shells.lock().await.len()
     }
 
     /// Get or create persistent shell for session

@@ -1,2 +1,2 @@
-pub mod session_tests;
-pub mod manager_tests;
+mod manager_tests;
+mod session_tests;

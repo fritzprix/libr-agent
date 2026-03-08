@@ -33,9 +33,7 @@ export interface BuiltInService<T = unknown> {
   loadService?: () => Promise<void>;
   unloadService?: () => Promise<void>;
   listTools: () => MCPTool[];
-  executeTool: (
-    toolCall: ToolCall,
-  ) => Promise<MCPResponse<unknown>>;
+  executeTool: (toolCall: ToolCall) => Promise<MCPResponse<unknown>>;
   getServiceContext: (
     options?: ServiceContextOptions,
   ) => Promise<ServiceContext<T>>;

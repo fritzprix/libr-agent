@@ -23,8 +23,9 @@ async function main() {
               {
                 // Gemini context caching requires at least 32K tokens.
                 // This payload (~150K chars ≈ 37K tokens) satisfies that minimum.
-                text: 'LibrAgent is a next-generation desktop AI agent platform combining Tauri with React. '
-                  .repeat(1800),
+                text: 'LibrAgent is a next-generation desktop AI agent platform combining Tauri with React. '.repeat(
+                  1800,
+                ),
               },
             ],
           },

@@ -50,7 +50,10 @@ function ChatInterfaceTabComponent({
         <div
           className="grid grid-cols-2 gap-3 max-w-lg"
           role="radiogroup"
-          aria-label={t('settings.contextStrategy', 'Context Management Strategy')}
+          aria-label={t(
+            'settings.contextStrategy',
+            'Context Management Strategy',
+          )}
         >
           {(['window', 'compact'] as ContextStrategy[]).map((strategy) => {
             const isSelected = localContextStrategy === strategy;

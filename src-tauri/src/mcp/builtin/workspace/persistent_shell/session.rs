@@ -569,4 +569,3 @@ impl std::fmt::Debug for PersistentShell {
             .finish_non_exhaustive()
     }
 }
-
