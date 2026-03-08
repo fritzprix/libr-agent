@@ -383,22 +383,17 @@ impl WorkspaceServer {
         };
 
         let file_manager = self.get_file_manager(session_id.clone());
-        if let Err(e) = file_manager
-            .write_file_string(path_str, &new_content)
-            .await
-        {
-            return Ok(
-                guided_error(
-                    ErrorCategory::OperationFailed,
-                    e.to_string(),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Check file permissions".to_string(),
-                    "Ensure sufficient disk space".to_string(),
-                ])
-                .to_mcp_result(),
-            );
+        if let Err(e) = file_manager.write_file_string(path_str, &new_content).await {
+            return Ok(guided_error(
+                ErrorCategory::OperationFailed,
+                e.to_string(),
+                ToolGroup::Workspace,
+            )
+            .guidance(vec![
+                "Check file permissions".to_string(),
+                "Ensure sufficient disk space".to_string(),
+            ])
+            .to_mcp_result());
         }
 
         self.invalidate_context_cache().await;

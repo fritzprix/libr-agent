@@ -420,8 +420,7 @@ export class CerebrasService extends BaseAIService {
       throw new Error('CerebrasService has been disposed');
     }
     const config = this.mergeConfig(options);
-    const model =
-      options?.modelName || config.defaultModel || '';
+    const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
     const response = await this.withRetry(() =>
@@ -439,7 +438,8 @@ export class CerebrasService extends BaseAIService {
     );
 
     // The Cerebras SDK's ChatCompletion union includes streaming chunks; narrow to the response type
-    const completionResponse = response as CerebrasCompletion.ChatCompletionResponse;
+    const completionResponse =
+      response as CerebrasCompletion.ChatCompletionResponse;
     const choice = completionResponse.choices[0];
     const text = choice.message.content ?? '';
     const usage = completionResponse.usage;

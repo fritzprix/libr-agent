@@ -2,7 +2,7 @@ use crate::agent::context::registry::ContextRegistry;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
-use crate::repositories::{SessionMetadata, SessionStatus};
+use crate::repositories::{CompactContextRepository, SessionMetadata, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -53,6 +53,23 @@ pub async fn resume_session(
         session_id
     );
 
+    // Load compact context if exists (SP17)
+    let compact_context_record = {
+        let repo = crate::state::get_compact_context_repository();
+        repo.get_by_session_id(session_id)
+            .await
+            .map_err(|e| format!("Failed to get compact context: {}", e))?
+    };
+
+    if let Some(record) = &compact_context_record {
+        log::info!(
+            "Loaded compact context for resumed session: {} (range: {} to {})",
+            session_id,
+            record.from_id,
+            record.to_id
+        );
+    }
+
     // Add to active sessions with cancellation token and empty cache
     let mut active = active_sessions.write().await;
     if let Some(existing_session) = active.get_mut(session_id) {
@@ -61,6 +78,11 @@ pub async fn resume_session(
             session_id
         );
         existing_session.metadata = session.clone();
+        // Update compact context if it was loaded
+        if let Some(record) = compact_context_record {
+            let mut compact = existing_session.compact_context.write().await;
+            *compact = Some(record);
+        }
         // Transient states (pending_execution, messages, cancellation_token, etc.) are preserved
     } else {
         log::info!(
@@ -85,6 +107,7 @@ pub async fn resume_session(
                 )),
                 pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
+                compact_context: Arc::new(RwLock::new(compact_context_record)),
             },
         );
     }

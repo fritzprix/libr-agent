@@ -6,7 +6,12 @@ import {
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
@@ -933,8 +938,7 @@ export class AnthropicService extends BaseAIService {
       result: {
         content: [{ type: 'text', text }],
         sampling: {
-          finishReason:
-            response.stop_reason === 'end_turn' ? 'stop' : 'length',
+          finishReason: response.stop_reason === 'end_turn' ? 'stop' : 'length',
           usage: {
             promptTokens: response.usage.input_tokens,
             completionTokens: response.usage.output_tokens,

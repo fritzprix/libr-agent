@@ -3,8 +3,10 @@ use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
-use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
-use crate::repositories::{SessionMetadata, SessionRepository};
+use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::{
+    CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
+};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -682,12 +684,49 @@ impl AgentSessionManager {
             );
             Ok(())
         } else {
-            // Session not active in memory - no cache to update (this is OK)
-            log::debug!(
-                "Session {} not active, skipping in-memory cache update for message deletion",
-                session_id
-            );
             Ok(())
         }
+    }
+
+    /// Get compacted context for a session (SP17)
+    pub async fn get_compact_context(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<CompactContextRecord>, String> {
+        let active = self.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let compact = session.compact_context.read().await;
+            if compact.is_some() {
+                return Ok((*compact).clone());
+            }
+        }
+
+        // If not in active cache OR cache is None, check DB directly as safety measure
+        let repo = crate::state::get_compact_context_repository();
+        repo.get_by_session_id(session_id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Save compacted context for a session (SP17)
+    pub async fn save_compact_context(
+        &self,
+        session_id: &str,
+        record: CompactContextRecord,
+    ) -> Result<(), String> {
+        // 1. Update in-memory if active
+        {
+            let active = self.active_sessions.read().await;
+            if let Some(session) = active.get(session_id) {
+                let mut compact = session.compact_context.write().await;
+                *compact = Some(record.clone());
+            }
+        }
+
+        // 2. Persist to DB
+        let repo = crate::state::get_compact_context_repository();
+        repo.upsert(&record).await.map_err(|e| e.to_string())?;
+
+        Ok(())
     }
 }

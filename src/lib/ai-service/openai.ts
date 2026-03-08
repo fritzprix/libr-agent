@@ -2,7 +2,12 @@ import OpenAI from 'openai';
 import { ChatCompletionTool as OpenAIChatCompletionTool } from 'openai/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager, ModelInfo } from '../llm-config-manager';
@@ -242,17 +247,14 @@ export class OpenAIService extends BaseAIService {
           break;
         }
 
-        // Measure TTFT on first chunk (OpenAI doesn't provide native prefill timing)
+        // Measure TTFT on first chunk (OpenAI doesn't provide native prefill timing).
+        // Only yield details here — yielding zero token counts would briefly reset the
+        // gauge to 0% before the real usage chunk arrives at the end of the stream.
         if (!firstChunkReceived) {
           const ttft = performance.now() - startTime;
           firstChunkReceived = true;
           yield JSON.stringify({
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              details: { timeToFirstToken: ttft },
-            },
+            usage: { details: { timeToFirstToken: ttft } },
           });
         }
 
@@ -468,9 +470,7 @@ export class OpenAIService extends BaseAIService {
    * Fallback to static config models
    * @private
    */
-  private fallbackToStaticModels(): Promise<
-    ModelInfo[]
-  > {
+  private fallbackToStaticModels(): Promise<ModelInfo[]> {
     const logger = getLogger('OpenAIService.fallbackToStaticModels');
     logger.info('Using static config models');
     return super.listModels();
@@ -489,8 +489,7 @@ export class OpenAIService extends BaseAIService {
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
-    const model =
-      options?.modelName || config.defaultModel || '';
+    const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
     const response = await this.withRetry(() =>
@@ -516,8 +515,7 @@ export class OpenAIService extends BaseAIService {
       result: {
         content: [{ type: 'text', text }],
         sampling: {
-          finishReason:
-            choice.finish_reason === 'stop' ? 'stop' : 'length',
+          finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
           usage: response.usage
             ? {
                 promptTokens: response.usage.prompt_tokens,

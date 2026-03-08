@@ -406,8 +406,7 @@ export class OllamaService extends BaseAIService {
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
-    const model =
-      options?.modelName || config.defaultModel || '';
+    const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
     const response = await this.ollamaClient.chat({
@@ -437,8 +436,7 @@ export class OllamaService extends BaseAIService {
               ? {
                   promptTokens: response.prompt_eval_count,
                   completionTokens: response.eval_count,
-                  totalTokens:
-                    response.prompt_eval_count + response.eval_count,
+                  totalTokens: response.prompt_eval_count + response.eval_count,
                 }
               : undefined,
           model: response.model,

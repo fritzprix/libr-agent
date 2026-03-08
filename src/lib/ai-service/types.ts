@@ -193,6 +193,23 @@ export interface IAIService {
   cancel(): void;
 
   /**
+   * Compresses a slice of conversation messages into a single summary string
+   * by calling `sampleText()` internally. The default implementation in
+   * `BaseAIService` builds a plain-text summarisation prompt; individual
+   * providers may override for cost or caching optimisations.
+   * @param messages The messages to compress.
+   * @param options Optional model name and service configuration overrides.
+   * @returns A promise that resolves to the summary text.
+   */
+  compact(
+    messages: Message[],
+    options?: {
+      modelName?: string;
+      config?: AIServiceConfig;
+    },
+  ): Promise<string>;
+
+  /**
    * Cleans up any resources used by the service instance.
    */
   dispose(): void;

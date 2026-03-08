@@ -84,44 +84,46 @@ impl BuiltinMCPServer for KnowledgeServer {
     async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
         // Query knowledge count with error handling using repository
         let repo = crate::get_knowledge_repository();
-        let count: u64 = repo
-            .count_knowledge(&self.assistant_id)
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!(
-                    "Failed to query knowledge count for assistant '{}': {}",
-                    self.assistant_id,
-                    e
-                );
-                0
-            });
+        let assistant_count: u64 = repo.count_knowledge(&self.assistant_id).await.unwrap_or(0);
+        let global_count: u64 = repo.count_knowledge("global").await.unwrap_or(0);
 
         // Build context prompt
         let mut parts = vec!["## Knowledge Base".to_string()];
+        parts.push("This assistant has access to a persistent knowledge base. Knowledge can be stored in two scopes:".to_string());
+        parts.push(
+            "- **global**: Shared across all assistants and sessions. (Default for saving)"
+                .to_string(),
+        );
+        parts.push(
+            format!(
+                "- **assistant**: Private to this specific assistant ({}).",
+                self.assistant_id
+            )
+            .to_string(),
+        );
 
-        if count == 0 {
+        if assistant_count == 0 && global_count == 0 {
             parts.push("\n**No knowledge entries yet.**".to_string());
             parts.push(
-                "*Use saveKnowledge to store important information for future reference.*"
-                    .to_string(),
-            );
-            parts.push(
-                "*Tip: Save key facts, decisions, or context that might be useful later.*"
-                    .to_string(),
+                "*Use saveKnowledge to store important information for future reference (defaults to global scope).*".to_string(),
             );
         } else {
-            let entry_label = if count == 1 { "entry" } else { "entries" };
             parts.push(format!(
-                "\n**{} knowledge {} available**",
-                count, entry_label
+                "\n**Available knowledge: {} global, {} assistant-specific entries.**",
+                global_count, assistant_count
             ));
+            parts.push(
+                "Use searchKnowledge or listKnowledge to explore available information."
+                    .to_string(),
+            );
         }
 
         ServiceContext {
             context_prompt: parts.join("\n"),
             structured_state: Some(json!({
                 "assistant_id": self.assistant_id,
-                "knowledge_count": count
+                "assistant_knowledge_count": assistant_count,
+                "global_knowledge_count": global_count
             })),
         }
     }
@@ -130,15 +132,37 @@ impl BuiltinMCPServer for KnowledgeServer {
         &self,
         tool_name: &str,
         args: Value,
-        _assistant_id: Option<String>,
+        _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         log::debug!(
-            "Knowledge server tool called: {} for assistant: {}",
+            "Knowledge server tool called: {} for session: {}",
             tool_name,
-            _assistant_id.as_deref().unwrap_or(&self.assistant_id)
+            _session_id.as_deref().unwrap_or("none")
         );
 
-        let target_assistant_id = _assistant_id.unwrap_or_else(|| self.assistant_id.clone());
+        // Determine target ID based on scope parameter
+        let scope = args
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .unwrap_or("default");
+
+        // For search/list, "default" means "both"
+        // For save/read/delete, "default" means "global" (to fulfill sharing requirement)
+        let target_assistant_id = match scope {
+            "global" => "global".to_string(),
+            "assistant" => self.assistant_id.clone(),
+            _ => {
+                if tool_name == "saveKnowledge"
+                    || tool_name == "readKnowledge"
+                    || tool_name == "deleteKnowledge"
+                {
+                    "global".to_string()
+                } else {
+                    // For search/list, we'll handle "both" logic inside match
+                    "global".to_string()
+                }
+            }
+        };
 
         match tool_name {
             "saveKnowledge" => {
@@ -151,10 +175,23 @@ impl BuiltinMCPServer for KnowledgeServer {
                 operations::delete_knowledge(self, args, &target_assistant_id).await
             }
             "searchKnowledge" => {
-                queries::search_knowledge(self, args, &target_assistant_id).await
+                if scope == "both" || scope == "default" {
+                    // If searching both, we first search global then assistant
+                    // This is a bit complex for a single tool call, so for now we'll 
+                    // just search both in the repository if we update the repo, 
+                    // or call it twice.
+                    // Actually, let's just search global for now or update queries::search_knowledge to handle both.
+                    queries::search_knowledge_both(self, args, &self.assistant_id).await
+                } else {
+                    queries::search_knowledge(self, args, &target_assistant_id).await
+                }
             }
             "listKnowledge" => {
-                queries::list_knowledge(self, args, &target_assistant_id).await
+                if scope == "both" || scope == "default" {
+                    queries::list_knowledge_both(self, args, &self.assistant_id).await
+                } else {
+                    queries::list_knowledge(self, args, &target_assistant_id).await
+                }
             }
             _ => Err(format!(
                 "Unknown tool: {}. Available tools: saveKnowledge, readKnowledge, deleteKnowledge, searchKnowledge, listKnowledge",

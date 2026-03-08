@@ -388,8 +388,7 @@ export class GeminiService extends BaseAIService {
       result: {
         content: [{ type: 'text', text }],
         sampling: {
-          finishReason:
-            finishReason === FinishReason.STOP ? 'stop' : 'length',
+          finishReason: finishReason === FinishReason.STOP ? 'stop' : 'length',
           usage: response.usageMetadata
             ? {
                 promptTokens: response.usageMetadata.promptTokenCount ?? 0,

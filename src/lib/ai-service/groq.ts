@@ -104,17 +104,14 @@ export class GroqService extends BaseAIService {
           break;
         }
 
-        // Inject TTFT metric on first chunk
+        // Inject TTFT metric on first chunk.
+        // Only yield details here — yielding zero token counts would briefly reset the
+        // gauge to 0% before the real usage chunk arrives at the end of the stream.
         if (!firstChunkReceived) {
           const ttft = performance.now() - startTime;
           firstChunkReceived = true;
           yield JSON.stringify({
-            usage: {
-              promptTokens: 0,
-              completionTokens: 0,
-              totalTokens: 0,
-              details: { timeToFirstToken: ttft },
-            },
+            usage: { details: { timeToFirstToken: ttft } },
           });
         }
 
@@ -271,8 +268,7 @@ export class GroqService extends BaseAIService {
     },
   ): Promise<SamplingResponse> {
     const config = this.mergeConfig(options);
-    const model =
-      options?.modelName || config.defaultModel || '';
+    const model = options?.modelName || config.defaultModel || '';
     const s = options?.samplingOptions;
 
     const response = await this.withRetry(() =>
@@ -298,8 +294,7 @@ export class GroqService extends BaseAIService {
       result: {
         content: [{ type: 'text', text }],
         sampling: {
-          finishReason:
-            choice.finish_reason === 'stop' ? 'stop' : 'length',
+          finishReason: choice.finish_reason === 'stop' ? 'stop' : 'length',
           usage: response.usage
             ? {
                 promptTokens: response.usage.prompt_tokens,

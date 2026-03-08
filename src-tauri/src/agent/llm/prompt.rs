@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Filenames checked (in order) for workspace-level agent instructions.
-/// All found files are injected; order preserved.
+/// Only the FIRST file found with content is injected.
 const WORKSPACE_INSTRUCTION_FILES: &[&str] = &[
     "agents.md",
     "AGENTS.md",
@@ -31,6 +31,7 @@ async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, Str
             let trimmed = content.trim().to_string();
             if !trimmed.is_empty() {
                 results.push((filename.to_string(), trimmed));
+                break; // Stop after finding the first valid file
             }
         }
     }

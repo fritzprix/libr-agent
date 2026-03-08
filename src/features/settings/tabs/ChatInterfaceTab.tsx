@@ -5,16 +5,18 @@ import {
   DisplaySettings,
   ContextStrategy,
 } from '@/context/SettingsContext';
-import { Input } from '@/components/ui';
+import { Input, Slider } from '@/components/ui';
 
 interface ChatInterfaceTabProps {
   localContextStrategy: ContextStrategy;
   localWindowSize: number;
+  localMaxInputContext: number;
   localToolCallGroupVisibleCount: number;
   localAdvancedSettings: AdvancedSettings;
   localDisplay: DisplaySettings;
   onContextStrategyChange: (strategy: ContextStrategy) => void;
   onWindowSizeChange: (size: number) => void;
+  onMaxInputContextChange: (size: number) => void;
   onToolCallGroupVisibleCountChange: (count: number) => void;
   onAdvancedSettingsChange: (
     key: keyof AdvancedSettings,
@@ -29,11 +31,13 @@ interface ChatInterfaceTabProps {
 function ChatInterfaceTabComponent({
   localContextStrategy,
   localWindowSize,
+  localMaxInputContext,
   localToolCallGroupVisibleCount,
   localAdvancedSettings,
   localDisplay,
   onContextStrategyChange,
   onWindowSizeChange,
+  onMaxInputContextChange,
   onToolCallGroupVisibleCountChange,
   onAdvancedSettingsChange,
   onDisplaySettingsChange,
@@ -50,7 +54,10 @@ function ChatInterfaceTabComponent({
         <div
           className="grid grid-cols-2 gap-3 max-w-lg"
           role="radiogroup"
-          aria-label={t('settings.contextStrategy', 'Context Management Strategy')}
+          aria-label={t(
+            'settings.contextStrategy',
+            'Context Management Strategy',
+          )}
         >
           {(['window', 'compact'] as ContextStrategy[]).map((strategy) => {
             const isSelected = localContextStrategy === strategy;
@@ -91,31 +98,53 @@ function ChatInterfaceTabComponent({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="min-w-0">
-          <label className="block text-muted-foreground mb-2 font-medium">
-            {t('settings.messageWindowSize', 'Message Window Size')}
-          </label>
-          <Input
-            type="number"
-            placeholder="e.g., 50"
-            value={localWindowSize}
-            onChange={(e) =>
-              onWindowSizeChange(parseInt(e.target.value, 10) || 0)
-            }
-            className="bg-background border text-foreground w-full max-w-xs"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            {localContextStrategy === 'compact'
-              ? t(
-                  'settings.messageWindowSizeRecentDescription',
-                  'Number of recent messages to keep after a compact summary',
-                )
-              : t(
-                  'settings.messageWindowSizeDescription',
-                  'Number of messages to keep in conversation history',
-                )}
-          </p>
-        </div>
+        {localContextStrategy === 'window' ? (
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-2 font-medium">
+              {t('settings.messageWindowSize', 'Message Window Size')}
+            </label>
+            <Input
+              type="number"
+              placeholder="e.g., 50"
+              value={localWindowSize}
+              onChange={(e) =>
+                onWindowSizeChange(parseInt(e.target.value, 10) || 0)
+              }
+              className="bg-background border text-foreground w-full max-w-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {t(
+                'settings.messageWindowSizeDescription',
+                'Number of messages to keep in conversation history',
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="min-w-0">
+            <label className="block text-muted-foreground mb-4 font-medium">
+              {t('settings.maxInputContext', 'Max Input Context')}
+            </label>
+            <div className="flex items-center gap-4 max-w-xs">
+              <Slider
+                min={8192}
+                max={262144}
+                step={8192}
+                value={[localMaxInputContext]}
+                onValueChange={([val]) => onMaxInputContextChange(val)}
+                className="flex-1"
+              />
+              <span className="text-sm font-mono text-primary min-w-[3.5rem] text-right">
+                {Math.round(localMaxInputContext / 1024)}K
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              {t(
+                'settings.maxInputContextDescription',
+                'Maximum token count before summarizing old turns. Higher values keep more detail but increase cost.',
+              )}
+            </p>
+          </div>
+        )}
 
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
@@ -339,6 +368,7 @@ export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
   return (
     prev.localContextStrategy === next.localContextStrategy &&
     prev.localWindowSize === next.localWindowSize &&
+    prev.localMaxInputContext === next.localMaxInputContext &&
     prev.localToolCallGroupVisibleCount ===
       next.localToolCallGroupVisibleCount &&
     prev.localAdvancedSettings.diffContextLines ===
@@ -352,6 +382,7 @@ export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
     prev.localDisplay.toolDetailLevel === next.localDisplay.toolDetailLevel &&
     prev.onWindowSizeChange === next.onWindowSizeChange &&
     prev.onContextStrategyChange === next.onContextStrategyChange &&
+    prev.onMaxInputContextChange === next.onMaxInputContextChange &&
     prev.onToolCallGroupVisibleCountChange ===
       next.onToolCallGroupVisibleCountChange &&
     prev.onAdvancedSettingsChange === next.onAdvancedSettingsChange &&

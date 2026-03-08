@@ -79,4 +79,35 @@ export interface LLMServiceContextValue {
    * Cancel an ongoing completion request for a session
    */
   cancelCompletionRequest: (sessionId: string) => void;
+
+  /**
+   * Release all in-memory compaction state for a deleted session.
+   * Call this whenever a session is permanently removed.
+   */
+  clearSessionState: (sessionId: string) => void;
+
+  /**
+   * Release in-memory compaction state for ALL sessions.
+   * Call this when the global context strategy changes (e.g. compact → window)
+   * so that stale caches, resolvers, and UI state do not leak across modes.
+   */
+  clearAllCompactState: () => void;
+
+  /** Returns true if the session is actively running async compaction */
+  isCompacting: (sessionId: string) => boolean;
+
+  /** Returns true if the session is blocked waiting for compaction to finish */
+  isAwaitingCompact: (sessionId: string) => boolean;
+
+  /** Current context window usage for the session (compact strategy only) */
+  getContextUsage: (
+    sessionId: string,
+  ) =>
+    | { totalTokens: number; contextWindow: number; modelMaxContext?: number }
+    | undefined;
+
+  /** Compacted message range for the session, used to render a chat divider */
+  getCompactedRange: (
+    sessionId: string,
+  ) => { fromId: string; toId: string } | undefined;
 }

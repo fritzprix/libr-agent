@@ -316,10 +316,9 @@ impl ErrorGuidance {
 
             // Swarm tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Swarm) => vec![
-                "Verify the agent ID is correct using getChildAgents".to_string(),
-                "The session may have been terminated — use getChildAgents to list active sessions"
-                    .to_string(),
-                "Use spawnAgent to create a new agent if needed".to_string(),
+                "Verify the ID (agent ID or assistant ID) is correct".to_string(),
+                "Use listAssistants to find available assistant configurations".to_string(),
+                "Use getChildAgents to list active sub-agents or sessions".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Swarm) => vec![
                 "Check all required parameters are provided and correctly typed".to_string(),
@@ -540,6 +539,13 @@ impl SuccessHint {
             ("selectPlaybook", ToolGroup::Playbook) => {
                 vec!["Review workflow steps and begin execution".to_string()]
             }
+
+            // Swarm tools
+            ("spawnAgent", ToolGroup::Swarm) => vec![
+                "Use awaitAgent with the session ID to wait for completion".to_string(),
+                "Use getChildAgents to see all active sub-agents".to_string(),
+                "Use listMessages to see progress if not awaiting".to_string(),
+            ],
 
             // Bootstrap tools
             ("detectPlatform", ToolGroup::Bootstrap) => {

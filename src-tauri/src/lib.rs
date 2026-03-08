@@ -29,10 +29,11 @@ use commands::agent_commands::{
     agent_call_builtin_tool, agent_cancel_workflow, agent_clear_all_sessions, agent_create_session,
     agent_create_session_with_initial_message, agent_delete_session, agent_delete_session_only,
     agent_factory_reset, agent_get_all_sessions, agent_get_available_tools,
-    agent_get_service_contexts, agent_get_session, agent_get_tools, agent_handle_llm_error,
-    agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_inject_messages, agent_pause_workflow, agent_respond_tool_approval, agent_resume_session,
-    agent_resume_workflow, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
+    agent_get_compact_context, agent_get_service_contexts, agent_get_session, agent_get_tools,
+    agent_handle_llm_error, agent_handle_llm_response, agent_handle_tool_result,
+    agent_init_session_with_messages, agent_inject_messages, agent_pause_workflow,
+    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow,
+    agent_save_compact_context, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
     agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
@@ -91,10 +92,11 @@ use commands::workspace_commands::{
 
 // Re-export state management functions
 pub use state::{
-    get_assistant_repository, get_content_store_repository, get_database_connection,
-    get_knowledge_repository, get_mcp_server_repository, get_mcp_service_proxy_manager,
-    get_message_repository, get_playbook_repository, get_session_repository, get_sqlite_db_url,
-    set_assistant_repository, set_content_store_repository, set_database_connection,
+    get_assistant_repository, get_compact_context_repository, get_content_store_repository,
+    get_database_connection, get_knowledge_repository, get_mcp_server_repository,
+    get_mcp_service_proxy_manager, get_message_repository, get_playbook_repository,
+    get_session_repository, get_sqlite_db_url, set_assistant_repository,
+    set_compact_context_repository, set_content_store_repository, set_database_connection,
     set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
     set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
 };
@@ -233,6 +235,8 @@ pub fn run() {
                 agent_toggle_session_bookmark,
                 agent_set_yolo_mode,
                 agent_respond_tool_approval,
+                agent_get_compact_context,
+                agent_save_compact_context,
                 // CRUD Commands
                 create_assistant,
                 update_assistant,
