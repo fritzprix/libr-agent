@@ -543,7 +543,14 @@ pub async fn handle_tool_call(
             Ok(success_result(final_text, data))
         }
         "getChildAgents" => {
-            let parent_session_id = read_required_string(&args, "parentSessionId")?;
+            let raw_parent_id = read_required_string(&args, "parentSessionId")?;
+            let parent_session_id = resolve_parent_session_id(
+                Some(&raw_parent_id),
+                caller_session_id.as_deref(),
+            )?
+            .ok_or_else(|| {
+                "Cannot resolve parent session ID: provide an explicit ID or pass \"current\" from within a session".to_string()
+            })?;
 
             let data = call_json(
                 Method::GET,
