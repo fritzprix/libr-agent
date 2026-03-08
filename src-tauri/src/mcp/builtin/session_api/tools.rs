@@ -76,34 +76,14 @@ pub fn create_child_session_tool() -> MCPTool {
                 ),
                 (
                     "awaitCompletion".to_string(),
-                    boolean_prop(Some("If true (default), block until the child session reaches a terminal state and return its final result. Set false to return immediately and poll with awaitAgent.")),
+                    boolean_prop(Some("If true (default), block until the child finishes and return its final result. Set false to spawn and return immediately — then use awaitAgent(sessionId) to collect results.")),
                 ),
                 (
                     "timeoutSeconds".to_string(),
                     integer_prop(
                         Some(1),
                         None,
-                        Some("Maximum seconds to wait when awaitCompletion=true. Default: 180"),
-                    ),
-                ),
-                (
-                    "includeLastAssistantMessage".to_string(),
-                    boolean_prop(Some("When awaitCompletion=true, include last assistant message text in the result. Default: true")),
-                ),
-                (
-                    "resultMessageLimit".to_string(),
-                    integer_prop(
-                        Some(1),
-                        Some(200),
-                        Some("Max number of messages to return when awaitCompletion=true. Default: 20"),
-                    ),
-                ),
-                (
-                    "assistantMessageMaxChars".to_string(),
-                    integer_prop(
-                        Some(1),
-                        Some(200000),
-                        Some("Truncate returned assistant message text to this length. Omit for full text."),
+                        Some("Max seconds to wait when awaitCompletion=true. Default: 180"),
                     ),
                 ),
             ],
