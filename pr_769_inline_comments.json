@@ -1,0 +1,692 @@
+[
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788601",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788601,
+    "node_id": "PRRC_kwDOPMLlHs6s9ce5",
+    "diff_hunk": "@@ -1,7 +1,8 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/features/settings/tabs/GeneralTab.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to avoid style drift and formatter churn.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:27Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788601",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788601"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788601"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788601/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788616",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788616,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfI",
+    "diff_hunk": "@@ -1,6 +1,7 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/context/llm/useLLMListener.ts",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:27Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788616",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788616"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788616"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788616/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788631",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788631,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfX",
+    "diff_hunk": "@@ -1,3 +1,4 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/context/SkillsContext.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:27Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788631",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788631"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788631"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788631/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788638",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788638,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfe",
+    "diff_hunk": "@@ -1,3 +1,4 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/context/AgentSessionListContext.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:28Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788638",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788638"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788638"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788638/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788643",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788643,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfj",
+    "diff_hunk": "@@ -302,11 +302,11 @@ export function AgentChatStatusBar() {\n                   };\n \n                   // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)",
+    "path": "src/features/agent/components/AgentChatStatusBar.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "The comment still refers to importing `invoke`, but the code now dynamically imports `safeInvoke`. Please update the comment to match the current behavior to avoid confusion.\n```suggestion\n                  // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)\n```",
+    "created_at": "2026-03-08T12:49:28Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788643",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788643"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788643"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788643/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 304,
+    "original_line": 304,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 3,
+    "position": 3,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788647",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788647,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfn",
+    "diff_hunk": "@@ -76,3 +76,9 @@\n **Action:**\n \n - **Type Sync:** Applied strict generic return types (`safeInvoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, `SettingDto`, `SettingDto[]`, and `<void>`).",
+    "path": ".jules/hermes.md",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "There’s no blank line between the end of the 2026-03-06 entry and the next section header. Please add a blank line so the journal entries follow the same spacing as the rest of this file.\n```suggestion\n- **Type Sync:** Applied strict generic return types (`safeInvoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, `SettingDto`, `SettingDto[]`, and `<void>`).\n```",
+    "created_at": "2026-03-08T12:49:28Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788647",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788647"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788647"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788647/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 78,
+    "original_line": 78,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 3,
+    "position": 3,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788651",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788651,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfr",
+    "diff_hunk": "@@ -1,4 +1,5 @@\n-import { safeInvoke as invoke } from '@/lib/backend/core';\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/features/agent/api/agent-backend.ts",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:29Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788651",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788651"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788651"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788651/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 2,
+    "position": 2,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788654",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788654,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfu",
+    "diff_hunk": "@@ -1,7 +1,8 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/features/agent/AgentDraftChatView.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:29Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788654",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788654"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788654"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788654/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788656",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788656,
+    "node_id": "PRRC_kwDOPMLlHs6s9cfw",
+    "diff_hunk": "@@ -1,3 +1,4 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/context/AgentSessionContext.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:29Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788656",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788656"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788656"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788656/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788663",
+    "pull_request_review_id": 3911414166,
+    "id": 2901788663,
+    "node_id": "PRRC_kwDOPMLlHs6s9cf3",
+    "diff_hunk": "@@ -1,3 +1,4 @@\n+import { safeInvoke } from \"@/lib/backend/core\";",
+    "path": "src/context/AgentChatContext.tsx",
+    "commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "original_commit_id": "2c1e3695355c6e0d86d60be4c1737497e3547444",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "This new import uses double quotes, but the repo’s Prettier config enforces single quotes (singleQuote: true). Please switch to single quotes to keep formatting consistent.\n```suggestion\nimport { safeInvoke } from '@/lib/backend/core';\n```",
+    "created_at": "2026-03-08T12:49:29Z",
+    "updated_at": "2026-03-08T12:49:30Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788663",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788663"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/769#discussion_r2901788663"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/769"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2901788663/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 1,
+    "original_line": 1,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 1,
+    "position": 1,
+    "subject_type": "line"
+  }
+]

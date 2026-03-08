@@ -301,19 +301,20 @@ export function AgentChatStatusBar() {
                       'You are a helpful assistant.',
                   };
 
-                  // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
-                  const { safeInvoke } = await import(
-                    '@/lib/backend/core'
-                  );
+                  // Dynamically import safeInvoke to avoid circular dependencies if any (though it ultimately wraps Tauri invoke)
+                  const { safeInvoke } = await import('@/lib/backend/core');
 
-                  await safeInvoke<AgentResponse>('agent_update_session_config', {
-                    request: {
-                      sessionId: session.id,
-                      model,
-                      provider,
-                      agentConfig: updatedConfig,
+                  await safeInvoke<AgentResponse>(
+                    'agent_update_session_config',
+                    {
+                      request: {
+                        sessionId: session.id,
+                        model,
+                        provider,
+                        agentConfig: updatedConfig,
+                      },
                     },
-                  });
+                  );
                 } catch (e) {
                   logger.error('Failed to update session config', e);
                 }

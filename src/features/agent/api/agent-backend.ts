@@ -1,4 +1,4 @@
-import { safeInvoke } from "@/lib/backend/core";
+import { safeInvoke } from '@/lib/backend/core';
 
 import type { AddContentMetadata } from '@/models/content-store';
 import type { MCPResult } from '@/lib/mcp/protocol/response';

@@ -13,7 +13,9 @@ export function calculateEffectiveContextLimit(
   }
 
   const effectiveLimit =
-    maxInputContext != null && maxInputContext > 0 && maxInputContext < safeInputLimit
+    maxInputContext != null &&
+    maxInputContext > 0 &&
+    maxInputContext < safeInputLimit
       ? maxInputContext
       : safeInputLimit;
 

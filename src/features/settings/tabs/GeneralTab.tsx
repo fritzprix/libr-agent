@@ -1,4 +1,4 @@
-import { safeInvoke } from "@/lib/backend/core";
+import { safeInvoke } from '@/lib/backend/core';
 import { useEffect, useState, useRef } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -68,9 +68,12 @@ function GeneralTabComponent({
 
       setVerificationStatus('loading');
       try {
-        const result = await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
-          directory: dirToVerify,
-        });
+        const result = await safeInvoke<SkillMetadata[]>(
+          'scan_skills_directory',
+          {
+            directory: dirToVerify,
+          },
+        );
         setSkills(result);
         setVerificationStatus('success');
       } catch (error) {

@@ -1,4 +1,4 @@
-import { safeInvoke } from "@/lib/backend/core";
+import { safeInvoke } from '@/lib/backend/core';
 import React, {
   createContext,
   useContext,
@@ -49,9 +49,12 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
 
     try {
       logger.info('Scanning skills directory:', path);
-      const result = await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
-        directory: path,
-      });
+      const result = await safeInvoke<SkillMetadata[]>(
+        'scan_skills_directory',
+        {
+          directory: path,
+        },
+      );
       logger.info('Discovered skills:', {
         count: result.length,
         skills: result,

@@ -1,4 +1,4 @@
-import { safeInvoke } from "@/lib/backend/core";
+import { safeInvoke } from '@/lib/backend/core';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';

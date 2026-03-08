@@ -1,0 +1,500 @@
+diff --git a/.jules/hermes.md b/.jules/hermes.md
+index 84bf9169..a836bc25 100644
+--- a/.jules/hermes.md
++++ b/.jules/hermes.md
+@@ -76,3 +76,9 @@
+ **Action:**
+ 
+ - **Type Sync:** Applied strict generic return types (`safeInvoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, `SettingDto`, `SettingDto[]`, and `<void>`).
++## 2026-03-07 - Remaining Untyped Tauri commands II
++
++**Problem:** Missed replacing raw `invoke` with `safeInvoke` for several files while adding type safety to generic calls.
++**Action:**
++
++- **Type Sync:** Replaced `invoke` from `@tauri-apps/api/core` with typed `safeInvoke` in context files (AgentChatContext, AgentSessionContext, AgentSessionListContext, SkillsContext), features (AgentDraftChatView, agent-backend, AgentChatStatusBar, GeneralTab), and hooks (useLLMListener).
+diff --git a/src/context/AgentChatContext.tsx b/src/context/AgentChatContext.tsx
+index acd0c52e..48911b55 100644
+--- a/src/context/AgentChatContext.tsx
++++ b/src/context/AgentChatContext.tsx
+@@ -1,3 +1,4 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import React, {
+   createContext,
+   useCallback,
+@@ -6,7 +7,7 @@ import React, {
+   useMemo,
+   useState,
+ } from 'react';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { useDebounce } from 'react-use';
+ import {
+   useAgentSessionState,
+@@ -169,7 +170,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
+           message: messageForRust,
+         };
+ 
+-        await invoke<AgentResponse>('agent_send_message', { request });
++        await safeInvoke<AgentResponse>('agent_send_message', { request });
+ 
+         addMessage(message);
+       } catch (err) {
+@@ -188,7 +189,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
+     if (!sessionId) return;
+ 
+     try {
+-      const contexts = await invoke<Record<string, ServiceContext>>(
++      const contexts = await safeInvoke<Record<string, ServiceContext>>(
+         'agent_get_service_contexts',
+         { sessionId },
+       );
+@@ -356,7 +357,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
+             triggerWorkflow: false, // Backend will include in next automatic LLM call
+           };
+ 
+-          await invoke<AgentResponse>('agent_inject_messages', { request });
++          await safeInvoke<AgentResponse>('agent_inject_messages', { request });
+ 
+           // Keep in pending queue for UI display purposes
+           // Will be removed when backend processes and emits MessageAdded event
+@@ -437,7 +438,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
+           triggerWorkflow,
+         };
+ 
+-        await invoke<AgentResponse>('agent_inject_messages', { request });
++        await safeInvoke<AgentResponse>('agent_inject_messages', { request });
+         // Events will update the UI
+       } catch (err) {
+         logger.error('Failed to inject messages', err);
+@@ -467,7 +468,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
+ 
+     // 3. Inform Rust backend to cancel the workflow loop
+     try {
+-      await invoke<AgentResponse>('agent_cancel_workflow', {
++      await safeInvoke<AgentResponse>('agent_cancel_workflow', {
+         sessionId: session.id,
+       });
+       // Status update will come via event
+diff --git a/src/context/AgentSessionContext.tsx b/src/context/AgentSessionContext.tsx
+index 72505ec4..19c3ffd0 100644
+--- a/src/context/AgentSessionContext.tsx
++++ b/src/context/AgentSessionContext.tsx
+@@ -1,3 +1,4 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import React, {
+   createContext,
+   useCallback,
+@@ -7,7 +8,7 @@ import React, {
+   useRef,
+   useState,
+ } from 'react';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { listen } from '@tauri-apps/api/event';
+ import { getLogger } from '../lib/logger';
+ import type { Message, RustMessage } from '@/models/chat';
+@@ -187,7 +188,7 @@ export function AgentSessionProvider({
+   const loadMessages = useCallback(async (sid: string) => {
+     try {
+       // Load first page (large size to get all for now)
+-      const page = await invoke<Page<RustMessage>>('messages_get_page', {
++      const page = await safeInvoke<Page<RustMessage>>('messages_get_page', {
+         sessionId: sid,
+         page: 1,
+         pageSize: 1000,
+@@ -369,7 +370,7 @@ export function AgentSessionProvider({
+                 // We use setTimeout to allow the UI to render the thinking bubble state first
+                 // and to avoid immediate state thrashing
+                 setTimeout(() => {
+-                  invoke<AgentResponse>('agent_resume_workflow', {
++                  safeInvoke<AgentResponse>('agent_resume_workflow', {
+                     sessionId,
+                   }).catch((err) => {
+                     logger.error(
+@@ -402,7 +403,7 @@ export function AgentSessionProvider({
+                 );
+ 
+                 // Auto-approve the tool call
+-                invoke<AgentResponse>('agent_respond_tool_approval', {
++                safeInvoke<AgentResponse>('agent_respond_tool_approval', {
+                   sessionId,
+                   toolCallId: payload.toolCallId,
+                   approved: true,
+@@ -453,7 +454,7 @@ export function AgentSessionProvider({
+         });
+ 
+         // 1. Get session metadata
+-        const response = await invoke<AgentSessionMetadata | null>(
++        const response = await safeInvoke<AgentSessionMetadata | null>(
+           'agent_get_session',
+           {
+             sessionId,
+@@ -494,12 +495,12 @@ export function AgentSessionProvider({
+         setYoloModeEnabled(sessionData.yoloMode);
+         // 2. Resume session in Rust backend (ensure active in memory)
+         // This triggers proxy creation which emits InitializationStep events
+-        await invoke<AgentSessionMetadata>('agent_resume_session', {
++        await safeInvoke<AgentSessionMetadata>('agent_resume_session', {
+           sessionId,
+         });
+ 
+         // 3. Initialize session cache with messages in Rust
+-        await invoke<AgentResponse>('agent_init_session_with_messages', {
++        await safeInvoke<AgentResponse>('agent_init_session_with_messages', {
+           sessionId,
+         });
+ 
+@@ -583,7 +584,7 @@ export function AgentSessionProvider({
+           message: rustMessage,
+         };
+ 
+-        await invoke<AgentResponse>('agent_send_message', { request });
++        await safeInvoke<AgentResponse>('agent_send_message', { request });
+       } catch (err) {
+         logger.error('Failed to send message', err);
+         throw err;
+@@ -599,7 +600,7 @@ export function AgentSessionProvider({
+     if (!session) return;
+ 
+     try {
+-      await invoke<AgentResponse>('agent_terminate_workflow', {
++      await safeInvoke<AgentResponse>('agent_terminate_workflow', {
+         sessionId: session.id,
+       });
+     } catch (err) {
+@@ -614,7 +615,7 @@ export function AgentSessionProvider({
+     if (!session) return;
+ 
+     try {
+-      await invoke<AgentResponse>('agent_resume_workflow', {
++      await safeInvoke<AgentResponse>('agent_resume_workflow', {
+         sessionId: session.id,
+       });
+       // Status update will come via event
+@@ -628,7 +629,7 @@ export function AgentSessionProvider({
+     async (toolCallId: string, approved: boolean) => {
+       if (!session) return;
+       try {
+-        await invoke<AgentResponse>('agent_respond_tool_approval', {
++        await safeInvoke<AgentResponse>('agent_respond_tool_approval', {
+           sessionId: session.id,
+           toolCallId,
+           approved,
+@@ -649,7 +650,7 @@ export function AgentSessionProvider({
+   const toggleYoloMode = useCallback(async () => {
+     const newVal = !yoloModeEnabled;
+     try {
+-      await invoke<void>('agent_set_yolo_mode', {
++      await safeInvoke<void>('agent_set_yolo_mode', {
+         sessionId,
+         enabled: newVal,
+       });
+@@ -663,7 +664,7 @@ export function AgentSessionProvider({
+           count: pendingApprovals.length,
+         });
+         pendingApprovals.forEach((p) => {
+-          invoke<AgentResponse>('agent_respond_tool_approval', {
++          safeInvoke<AgentResponse>('agent_respond_tool_approval', {
+             sessionId,
+             toolCallId: p.toolCallId,
+             approved: true,
+diff --git a/src/context/AgentSessionListContext.tsx b/src/context/AgentSessionListContext.tsx
+index 5823c2d6..02cf4f36 100644
+--- a/src/context/AgentSessionListContext.tsx
++++ b/src/context/AgentSessionListContext.tsx
+@@ -1,3 +1,4 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import React, {
+   createContext,
+   useCallback,
+@@ -6,7 +7,7 @@ import React, {
+   useMemo,
+   useState,
+ } from 'react';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { listen } from '@tauri-apps/api/event';
+ import { getLogger } from '../lib/logger';
+ import { useModelOptions } from './ModelProvider';
+@@ -97,7 +98,7 @@ export function AgentSessionListProvider({
+ 
+     try {
+       // Call Rust backend to get all sessions
+-      const response = await invoke<AgentSessionMetadata[]>(
++      const response = await safeInvoke<AgentSessionMetadata[]>(
+         'agent_get_all_sessions',
+       );
+ 
+@@ -255,7 +256,7 @@ export function AgentSessionListProvider({
+         };
+ 
+         // Call Rust backend to create session
+-        const response = await invoke<AgentSessionMetadata>(
++        const response = await safeInvoke<AgentSessionMetadata>(
+           'agent_create_session',
+           { request },
+         );
+@@ -314,7 +315,7 @@ export function AgentSessionListProvider({
+       logger.info('Deleting agent session', { sessionId });
+ 
+       try {
+-        await invoke<AgentResponse>('agent_delete_session', { sessionId });
++        await safeInvoke<AgentResponse>('agent_delete_session', { sessionId });
+ 
+         // Remove the session and ALL its descendants from the UI
+         // Compute the set of IDs to remove outside the state updater (pure function)
+@@ -361,7 +362,7 @@ export function AgentSessionListProvider({
+       logger.info('Deleting session only (orphaning children)', { sessionId });
+ 
+       try {
+-        await invoke<AgentResponse>('agent_delete_session_only', { sessionId });
++        await safeInvoke<AgentResponse>('agent_delete_session_only', { sessionId });
+ 
+         clearSessionState(sessionId);
+ 
+@@ -402,7 +403,7 @@ export function AgentSessionListProvider({
+       );
+ 
+       try {
+-        await invoke<void>('agent_toggle_session_bookmark', {
++        await safeInvoke<void>('agent_toggle_session_bookmark', {
+           sessionId,
+           bookmarked: newValue,
+         });
+diff --git a/src/context/SkillsContext.tsx b/src/context/SkillsContext.tsx
+index 3685f2b6..fc854cf0 100644
+--- a/src/context/SkillsContext.tsx
++++ b/src/context/SkillsContext.tsx
+@@ -1,3 +1,4 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import React, {
+   createContext,
+   useContext,
+@@ -7,7 +8,7 @@ import React, {
+ } from 'react';
+ import { getLogger } from '@/lib/logger';
+ import { useSettings } from '@/hooks/use-settings';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { SkillMetadata } from '@/types/skills';
+ 
+ const logger = getLogger('SkillsContext');
+@@ -36,7 +37,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
+     // If no path is configured, use the default [AppData]/skills via Tauri command
+     if (!path) {
+       try {
+-        path = await invoke<string>('get_default_skills_directory');
++        path = await safeInvoke<string>('get_default_skills_directory');
+       } catch (e) {
+         const errMsg = e instanceof Error ? e.message : String(e);
+         logger.error('Failed to get default skills directory', e);
+@@ -48,7 +49,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
+ 
+     try {
+       logger.info('Scanning skills directory:', path);
+-      const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
++      const result = await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
+         directory: path,
+       });
+       logger.info('Discovered skills:', {
+diff --git a/src/context/llm/useLLMListener.ts b/src/context/llm/useLLMListener.ts
+index c99d7fe8..b1c6890e 100644
+--- a/src/context/llm/useLLMListener.ts
++++ b/src/context/llm/useLLMListener.ts
+@@ -1,6 +1,7 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import { useEffect, useRef } from 'react';
+ import { listen } from '@tauri-apps/api/event';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { messageToRustMessage, type Message } from '@/models/chat';
+ import type { AgentResponse } from '@/models/agent-ipc';
+ import type { MCPTool } from '@/lib/mcp';
+@@ -265,7 +266,7 @@ export function useLLMListener({
+               fullMessage: messageForRust,
+             });
+ 
+-            await invoke<AgentResponse>('agent_handle_llm_response', {
++            await safeInvoke<AgentResponse>('agent_handle_llm_response', {
+               sessionId,
+               assistantMessage: messageForRust,
+             });
+@@ -289,7 +290,7 @@ export function useLLMListener({
+             logger.error('Failed to execute LLM completion', error);
+ 
+             // Report error to Rust
+-            await invoke<AgentResponse>('agent_handle_llm_error', {
++            await safeInvoke<AgentResponse>('agent_handle_llm_error', {
+               sessionId,
+               error: error instanceof Error ? error.message : String(error),
+             });
+diff --git a/src/features/agent/AgentDraftChatView.tsx b/src/features/agent/AgentDraftChatView.tsx
+index 89283f03..d1626622 100644
+--- a/src/features/agent/AgentDraftChatView.tsx
++++ b/src/features/agent/AgentDraftChatView.tsx
+@@ -1,7 +1,8 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import { useState, useCallback, useEffect, useRef } from 'react';
+ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+ import { createId } from '@paralleldrive/cuid2';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { listen } from '@tauri-apps/api/event';
+ import { getLogger } from '@/lib/logger';
+ import { toast } from 'sonner';
+@@ -236,10 +237,10 @@ function DraftChatInner() {
+     const loadMetadata = async () => {
+       try {
+         const [services, servers] = await Promise.all([
+-          invoke<BuiltinServerInfo[]>(
++          safeInvoke<BuiltinServerInfo[]>(
+             'list_available_builtin_server_definitions',
+           ),
+-          invoke<MCPServerDto[]>('list_mcp_server_configs'),
++          safeInvoke<MCPServerDto[]>('list_mcp_server_configs'),
+         ]);
+         setBuiltinServices(services);
+         setMcpServers(servers);
+@@ -260,7 +261,7 @@ function DraftChatInner() {
+       }
+ 
+       try {
+-        const rawData = await invoke<AssistantDto | null>('get_assistant', {
++        const rawData = await safeInvoke<AssistantDto | null>('get_assistant', {
+           id: assistantId,
+         });
+ 
+@@ -451,7 +452,7 @@ function DraftChatInner() {
+         if (!toastId) toastId = toast.loading('Creating session...');
+ 
+         // Step 1: Create session — this initializes MCPServiceProxy + Content Store
+-        await invoke<AgentSessionMetadata>('agent_create_session', {
++        await safeInvoke<AgentSessionMetadata>('agent_create_session', {
+           request: {
+             sessionId: newSessionId,
+             name: shortName,
+@@ -557,7 +558,7 @@ function DraftChatInner() {
+           ...rustMessage,
+           ...(attachments.length > 0 ? { attachments } : {}),
+         };
+-        await invoke<AgentResponse>('agent_send_message', {
++        await safeInvoke<AgentResponse>('agent_send_message', {
+           request: {
+             sessionId: newSessionId,
+             message: finalRustMessage,
+diff --git a/src/features/agent/api/agent-backend.ts b/src/features/agent/api/agent-backend.ts
+index f9d6dfad..574093ea 100644
+--- a/src/features/agent/api/agent-backend.ts
++++ b/src/features/agent/api/agent-backend.ts
+@@ -1,4 +1,5 @@
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++import { safeInvoke } from "@/lib/backend/core";
++
+ import type { AddContentMetadata } from '@/models/content-store';
+ import type { MCPResult } from '@/lib/mcp/protocol/response';
+ 
+@@ -11,7 +12,7 @@ export async function agentCallBuiltinTool<T = unknown>(
+   toolName: string,
+   args: Record<string, unknown>,
+ ): Promise<MCPResult<T>> {
+-  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
++  return safeInvoke<MCPResult<T>>('agent_call_builtin_tool', {
+     sessionId,
+     toolName,
+     args,
+diff --git a/src/features/agent/components/AgentChatStatusBar.tsx b/src/features/agent/components/AgentChatStatusBar.tsx
+index 20a30ee1..da687789 100644
+--- a/src/features/agent/components/AgentChatStatusBar.tsx
++++ b/src/features/agent/components/AgentChatStatusBar.tsx
+@@ -302,11 +302,11 @@ export function AgentChatStatusBar() {
+                   };
+ 
+                   // Dynamically import invoke to avoid circular dependencies if any (though invoke is from tauri-apps)
+-                  const { safeInvoke: invoke } = await import(
++                  const { safeInvoke } = await import(
+                     '@/lib/backend/core'
+                   );
+ 
+-                  await invoke<AgentResponse>('agent_update_session_config', {
++                  await safeInvoke<AgentResponse>('agent_update_session_config', {
+                     request: {
+                       sessionId: session.id,
+                       model,
+diff --git a/src/features/settings/tabs/GeneralTab.tsx b/src/features/settings/tabs/GeneralTab.tsx
+index ea7515c8..ffb843df 100644
+--- a/src/features/settings/tabs/GeneralTab.tsx
++++ b/src/features/settings/tabs/GeneralTab.tsx
+@@ -1,7 +1,8 @@
++import { safeInvoke } from "@/lib/backend/core";
+ import { useEffect, useState, useRef } from 'react';
+ import React from 'react';
+ import { useTranslation } from 'react-i18next';
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++
+ import { open as openDialog } from '@tauri-apps/plugin-dialog';
+ import { Button, Input } from '@/components/ui';
+ import {
+@@ -46,7 +47,7 @@ function GeneralTabComponent({
+       if (!skillsDirectory) {
+         try {
+           // If no directory is set, try to get the default one
+-          const defaultDir = await invoke<string>(
++          const defaultDir = await safeInvoke<string>(
+             'get_default_skills_directory',
+           );
+           onSkillsDirectoryChange(defaultDir);
+@@ -67,7 +68,7 @@ function GeneralTabComponent({
+ 
+       setVerificationStatus('loading');
+       try {
+-        const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
++        const result = await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
+           directory: dirToVerify,
+         });
+         setSkills(result);
+@@ -117,7 +118,7 @@ function GeneralTabComponent({
+     setIsOpeningDir(true);
+     logger.info(`Attempting to open directory: ${skillsDirectory}`);
+     try {
+-      await invoke<void>('open_skills_directory_in_explorer', {
++      await safeInvoke<void>('open_skills_directory_in_explorer', {
+         directory: skillsDirectory,
+       });
+       logger.info(`Successfully requested open_skills_directory_in_explorer`);
+diff --git a/src/lib/backend/agent-commands.ts b/src/lib/backend/agent-commands.ts
+index c2ffda1f..ee21c231 100644
+--- a/src/lib/backend/agent-commands.ts
++++ b/src/lib/backend/agent-commands.ts
+@@ -1,4 +1,4 @@
+-import { safeInvoke as invoke } from '@/lib/backend/core';
++import { safeInvoke } from '@/lib/backend/core';
+ import type { AgentResponse } from '../../models/agent-ipc';
+ import type { RustMessage } from '../../models/chat';
+ import type { MCPResult } from '../mcp/protocol/response';
+@@ -13,7 +13,7 @@ export async function handleLLMResponse(
+   sessionId: string,
+   assistantMessage: RustMessage,
+ ): Promise<void> {
+-  await invoke<AgentResponse>('agent_handle_llm_response', {
++  await safeInvoke<AgentResponse>('agent_handle_llm_response', {
+     sessionId,
+     assistantMessage,
+   });
+@@ -71,7 +71,7 @@ export async function handleUserToolCall(
+ export async function getAgentAvailableTools(
+   sessionId: string,
+ ): Promise<MCPTool[]> {
+-  return invoke<MCPTool[]>('agent_get_available_tools', { sessionId });
++  return safeInvoke<MCPTool[]>('agent_get_available_tools', { sessionId });
+ }
+ 
+ /**
+@@ -88,7 +88,7 @@ export async function agentCallBuiltinTool<T = unknown>(
+   toolName: string,
+   args: Record<string, unknown>,
+ ): Promise<MCPResult<T>> {
+-  return invoke<MCPResult<T>>('agent_call_builtin_tool', {
++  return safeInvoke<MCPResult<T>>('agent_call_builtin_tool', {
+     sessionId,
+     toolName,
+     args,

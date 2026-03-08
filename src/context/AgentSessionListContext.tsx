@@ -1,4 +1,4 @@
-import { safeInvoke } from "@/lib/backend/core";
+import { safeInvoke } from '@/lib/backend/core';
 import React, {
   createContext,
   useCallback,
@@ -362,7 +362,9 @@ export function AgentSessionListProvider({
       logger.info('Deleting session only (orphaning children)', { sessionId });
 
       try {
-        await safeInvoke<AgentResponse>('agent_delete_session_only', { sessionId });
+        await safeInvoke<AgentResponse>('agent_delete_session_only', {
+          sessionId,
+        });
 
         clearSessionState(sessionId);
 

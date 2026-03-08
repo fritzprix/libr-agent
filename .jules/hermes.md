@@ -76,6 +76,7 @@
 **Action:**
 
 - **Type Sync:** Applied strict generic return types (`safeInvoke<Type>`) across the remaining files in the codebase. Reused existing strong interfaces (`AgentResponse`, `AgentSessionMetadata`, `SettingDto`, `SettingDto[]`, and `<void>`).
+
 ## 2026-03-07 - Remaining Untyped Tauri commands II
 
 **Problem:** Missed replacing raw `invoke` with `safeInvoke` for several files while adding type safety to generic calls.
