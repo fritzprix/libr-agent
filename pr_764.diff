@@ -1,0 +1,69 @@
+diff --git a/.jules/scribe.md b/.jules/scribe.md
+index a7edbe28..5658b562 100644
+--- a/.jules/scribe.md
++++ b/.jules/scribe.md
+@@ -173,3 +173,7 @@
+ 
+ **Drift:** Missing param `sessionId` in JSDoc for `workspaceWriteFile`.
+ **Reality:** Added documentation for `sessionId`.
++## 2024-05-24 - src-tauri/src/mcp/builtin/workspace/utils.rs **Drift:** Code example was ignored and unverified. **Reality:** Example compiles correctly when tested with cargo test --doc.
++## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/creation.rs **Drift:** Code example was ignored without explanation. **Reality:** Example is ignored because it requires valid, initialized DB connection and session manager, which is now documented.
++## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/management.rs **Drift:** Code example was ignored without explanation and had syntactical error. **Reality:** Example is ignored because it requires initialized connections; also fixed `json!` macro to `serde_json::json!`.
++## 2024-05-24 - src-tauri/src/repositories/in_memory_session_repository.rs **Drift:** Code example was ignored and import was incorrect. **Reality:** Fixed import statement to accurately reflect the correct module path `in_memory_session_repository` so the example can be successfully verified.
+diff --git a/src-tauri/src/mcp/builtin/workspace/utils.rs b/src-tauri/src/mcp/builtin/workspace/utils.rs
+index dd0c1342..4ed1c5b1 100644
+--- a/src-tauri/src/mcp/builtin/workspace/utils.rs
++++ b/src-tauri/src/mcp/builtin/workspace/utils.rs
+@@ -70,7 +70,7 @@ pub fn validate_timeout(timeout: Option<u64>) -> u64 {
+ /// to prevent revealing sensitive implementation details like stdin-based password transmission.
+ ///
+ /// # Examples
+-/// ```ignore
++/// ```rust
+ /// use tauri_mcp_agent_lib::mcp::builtin::workspace::utils::sanitize_command_for_logging;
+ ///
+ /// let cmd = "sudo -S apt install vim";
+diff --git a/src-tauri/src/mcp/service_proxy_manager/creation.rs b/src-tauri/src/mcp/service_proxy_manager/creation.rs
+index c0d2aef2..6cfe9de0 100644
+--- a/src-tauri/src/mcp/service_proxy_manager/creation.rs
++++ b/src-tauri/src/mcp/service_proxy_manager/creation.rs
+@@ -82,6 +82,7 @@ impl MCPServiceProxyManager {
+     ///
+     /// # Example
+     /// ```rust,ignore
++    /// // Example needs DatabaseConnection and SessionManager initialized, so we use ignore
+     /// let proxy = manager.create_proxy(
+     ///     "session-123".to_string(),
+     ///     vec!["knowledge".to_string(), "planning".to_string()],
+diff --git a/src-tauri/src/mcp/service_proxy_manager/management.rs b/src-tauri/src/mcp/service_proxy_manager/management.rs
+index 585388fb..1774fb8e 100644
+--- a/src-tauri/src/mcp/service_proxy_manager/management.rs
++++ b/src-tauri/src/mcp/service_proxy_manager/management.rs
+@@ -120,10 +120,11 @@ impl MCPServiceProxyManager {
+     ///
+     /// # Example
+     /// ```rust,ignore
++    /// // Example needs DatabaseConnection and SessionManager initialized, so we use ignore
+     /// let result = manager.call_tool(
+     ///     "session-123",
+     ///     "attachments__addContent",
+-    ///     json!({"title": "My Note", "content": "Content"})
++    ///     serde_json::json!({"title": "My Note", "content": "Content"})
+     /// ).await?;
+     /// ```
+     pub async fn call_tool(
+diff --git a/src-tauri/src/repositories/in_memory_session_repository.rs b/src-tauri/src/repositories/in_memory_session_repository.rs
+index 448a9fd2..0f5d6c3e 100644
+--- a/src-tauri/src/repositories/in_memory_session_repository.rs
++++ b/src-tauri/src/repositories/in_memory_session_repository.rs
+@@ -29,8 +29,8 @@ impl InMemorySessionRepository {
+     /// Create a new in-memory session repository
+     ///
+     /// # Example
+-    /// ```ignore
+-    /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;
++    /// ```rust
++    /// use tauri_mcp_agent_lib::repositories::in_memory_session_repository::InMemorySessionRepository;
+     /// let repo = InMemorySessionRepository::new();
+     /// ```
+     pub fn new() -> Self {

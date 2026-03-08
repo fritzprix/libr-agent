@@ -30,7 +30,7 @@ impl InMemorySessionRepository {
     ///
     /// # Example
     /// ```rust
-    /// use tauri_mcp_agent_lib::repositories::in_memory_session_repository::InMemorySessionRepository;
+    /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;
     /// let repo = InMemorySessionRepository::new();
     /// ```
     pub fn new() -> Self {

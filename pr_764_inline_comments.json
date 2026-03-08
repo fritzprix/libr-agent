@@ -1,0 +1,140 @@
+[
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841687",
+    "pull_request_review_id": 3908897358,
+    "id": 2899841687,
+    "node_id": "PRRC_kwDOPMLlHs6s2BKX",
+    "diff_hunk": "@@ -29,8 +29,8 @@ impl InMemorySessionRepository {\n     /// Create a new in-memory session repository\n     ///\n     /// # Example\n-    /// ```ignore\n-    /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;\n+    /// ```rust\n+    /// use tauri_mcp_agent_lib::repositories::in_memory_session_repository::InMemorySessionRepository;",
+    "path": "src-tauri/src/repositories/in_memory_session_repository.rs",
+    "commit_id": "09d508545eb5468e3b7688f0b51e0049bc115ae1",
+    "original_commit_id": "09d508545eb5468e3b7688f0b51e0049bc115ae1",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "The doctest imports `InMemorySessionRepository` via the internal module path. Since `repositories/mod.rs` explicitly re-exports `InMemorySessionRepository` for easier/stable imports, this example should use `tauri_mcp_agent_lib::repositories::InMemorySessionRepository` to avoid tying public docs to the module layout (and to match the intended public API).\n```suggestion\n    /// use tauri_mcp_agent_lib::repositories::InMemorySessionRepository;\n```",
+    "created_at": "2026-03-07T14:47:36Z",
+    "updated_at": "2026-03-07T14:47:36Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/764#discussion_r2899841687",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/764",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841687"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/764#discussion_r2899841687"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/764"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841687/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": null,
+    "original_start_line": null,
+    "start_side": null,
+    "line": 33,
+    "original_line": 33,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 7,
+    "position": 7,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841693",
+    "pull_request_review_id": 3908897358,
+    "id": 2899841693,
+    "node_id": "PRRC_kwDOPMLlHs6s2BKd",
+    "diff_hunk": "@@ -173,3 +173,7 @@\n \n **Drift:** Missing param `sessionId` in JSDoc for `workspaceWriteFile`.\n **Reality:** Added documentation for `sessionId`.\n+## 2024-05-24 - src-tauri/src/mcp/builtin/workspace/utils.rs **Drift:** Code example was ignored and unverified. **Reality:** Example compiles correctly when tested with cargo test --doc.\n+## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/creation.rs **Drift:** Code example was ignored without explanation. **Reality:** Example is ignored because it requires valid, initialized DB connection and session manager, which is now documented.\n+## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/management.rs **Drift:** Code example was ignored without explanation and had syntactical error. **Reality:** Example is ignored because it requires initialized connections; also fixed `json!` macro to `serde_json::json!`.\n+## 2024-05-24 - src-tauri/src/repositories/in_memory_session_repository.rs **Drift:** Code example was ignored and import was incorrect. **Reality:** Fixed import statement to accurately reflect the correct module path `in_memory_session_repository` so the example can be successfully verified.",
+    "path": ".jules/scribe.md",
+    "commit_id": "09d508545eb5468e3b7688f0b51e0049bc115ae1",
+    "original_commit_id": "09d508545eb5468e3b7688f0b51e0049bc115ae1",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "These new scribe entries don’t follow the established `.jules/scribe.md` format used elsewhere in this file (header line `## DATE - file` followed by a blank line, then separate `**Drift:**` and `**Reality:**` paragraphs). Please reformat each of these entries to match the surrounding conventions and add blank lines between entries for readability and consistency.\n```suggestion\n\n## 2024-05-24 - src-tauri/src/mcp/builtin/workspace/utils.rs\n\n**Drift:** Code example was ignored and unverified.\n**Reality:** Example compiles correctly when tested with `cargo test --doc`.\n\n## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/creation.rs\n\n**Drift:** Code example was ignored without explanation.\n**Reality:** Example is ignored because it requires valid, initialized DB connection and session manager, which is now documented.\n\n## 2024-05-24 - src-tauri/src/mcp/service_proxy_manager/management.rs\n\n**Drift:** Code example was ignored without explanation and had syntactical error.\n**Reality:** Example is ignored because it requires initialized connections; also fixed `json!` macro to `serde_json::json!`.\n\n## 2024-05-24 - src-tauri/src/repositories/in_memory_session_repository.rs\n\n**Drift:** Code example was ignored and import was incorrect.\n**Reality:** Fixed import statement to accurately reflect the correct module path `in_memory_session_repository` so the example can be successfully verified.\n```",
+    "created_at": "2026-03-07T14:47:36Z",
+    "updated_at": "2026-03-07T14:47:36Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/764#discussion_r2899841693",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/764",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841693"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/764#discussion_r2899841693"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/764"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2899841693/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 176,
+    "original_start_line": 176,
+    "start_side": "RIGHT",
+    "line": 179,
+    "original_line": 179,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 7,
+    "position": 7,
+    "subject_type": "line"
+  }
+]

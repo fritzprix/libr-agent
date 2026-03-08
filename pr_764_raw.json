@@ -1,0 +1,53 @@
+{
+  "comments": [
+    {
+      "id": "IC_kwDOPMLlHs7vaQrM",
+      "author": { "login": "google-labs-jules" },
+      "authorAssociation": "CONTRIBUTOR",
+      "body": "👋 Jules, reporting for duty! I'm here to lend a hand with this pull request.\n\nWhen you start a review, I'll add a 👀 emoji to each comment to let you know I've read it. I'll focus on feedback directed at me and will do my best to stay out of conversations between you and other bots or reviewers to keep the noise down.\n\nI'll push a commit with your requested changes shortly after. Please note there might be a delay between these steps, but rest assured I'm on the job!\n\nFor more direct control, you can switch me to **Reactive Mode**. When this mode is on, I will only act on comments where you specifically mention me with `@jules`. You can find this option in the **Pull Request** section of your [global Jules UI settings](https://jules.google.com/settings). You can always switch back!\n\nNew to Jules? Learn more at [jules.google/docs](https://jules.google/docs).\n\n---\n*_For security, I will only act on instructions from the user who triggered this task._*",
+      "createdAt": "2026-03-07T14:45:01Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/fritzprix/libr-agent/pull/764#issuecomment-4016638668",
+      "viewerDidAuthor": false
+    }
+  ],
+  "files": [
+    { "path": ".jules/scribe.md", "additions": 4, "deletions": 0 },
+    {
+      "path": "src-tauri/src/mcp/builtin/workspace/utils.rs",
+      "additions": 1,
+      "deletions": 1
+    },
+    {
+      "path": "src-tauri/src/mcp/service_proxy_manager/creation.rs",
+      "additions": 1,
+      "deletions": 0
+    },
+    {
+      "path": "src-tauri/src/mcp/service_proxy_manager/management.rs",
+      "additions": 2,
+      "deletions": 1
+    },
+    {
+      "path": "src-tauri/src/repositories/in_memory_session_repository.rs",
+      "additions": 2,
+      "deletions": 2
+    }
+  ],
+  "reviews": [
+    {
+      "id": "PRR_kwDOPMLlHs7o_QpO",
+      "author": { "login": "copilot-pull-request-reviewer" },
+      "authorAssociation": "CONTRIBUTOR",
+      "body": "## Pull request overview\n\nUpdates Rust doc-test examples and the Scribe log to ensure documentation snippets either compile/run correctly under `cargo test --doc` or are explicitly ignored with clear rationale.\n\n**Changes:**\n- Switched several Rust doc blocks from `ignore` to `rust` and corrected example imports/macros.\n- Added explanatory comments for examples that remain `rust,ignore` due to requiring initialized runtime dependencies (DB/session manager).\n- Logged the doc-test drift/reality updates in `.jules/scribe.md`.\n\n### Reviewed changes\n\nCopilot reviewed 5 out of 5 changed files in this pull request and generated 2 comments.\n\n<details>\n<summary>Show a summary per file</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| src-tauri/src/repositories/in_memory_session_repository.rs | Adjusts doctest code block labeling and import path for `InMemorySessionRepository`. |\r\n| src-tauri/src/mcp/service_proxy_manager/management.rs | Documents why the example remains ignored; fixes `json!` usage in the snippet. |\r\n| src-tauri/src/mcp/service_proxy_manager/creation.rs | Documents why the example remains ignored due to required initialization. |\r\n| src-tauri/src/mcp/builtin/workspace/utils.rs | Enables the `sanitize_command_for_logging` example as a compiled/runnable doctest. |\r\n| .jules/scribe.md | Adds new drift/reality entries describing the documentation fixes. |\n</details>\n\n\n\n\n",
+      "submittedAt": "2026-03-07T14:47:36Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": { "oid": "09d508545eb5468e3b7688f0b51e0049bc115ae1" }
+    }
+  ]
+}
