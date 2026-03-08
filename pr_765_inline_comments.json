@@ -1,0 +1,209 @@
+[
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764490",
+    "pull_request_review_id": 3910040858,
+    "id": 2900764490,
+    "node_id": "PRRC_kwDOPMLlHs6s5idK",
+    "diff_hunk": "@@ -6,6 +6,25 @@ use log::{error, info};\n pub struct SessionCleanupService;\n \n impl SessionCleanupService {\n+    /// Fully removes a session, including its auxiliary resources and workspace.\n+    pub async fn remove_session_complete(session_id: &str) -> Result<(), String> {\n+        let message_repo = crate::state::get_message_repository();\n+\n+        Self::cleanup_auxiliary_resources(session_id, message_repo)\n+            .await\n+            .map_err(|e| format!(\"Failed to cleanup auxiliary resources: {e}\"))?;",
+    "path": "src-tauri/src/services/session_cleanup_service.rs",
+    "commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "original_commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "`remove_session_complete` is documented as \"Fully removes\" auxiliary resources, but it delegates to `cleanup_auxiliary_resources`, which is explicitly best-effort (it logs and always returns `Ok(())` even when index/DB deletion fails). As written, the `map_err(\"Failed to cleanup...\")` branch is effectively unreachable and the method may still report success while leaving auxiliary resources behind. Consider either (a) updating the docstring + removing the `map_err` to reflect best-effort cleanup, or (b) changing `cleanup_auxiliary_resources` to propagate failures if you want this to be a hard guarantee.\n```suggestion\n    /// Attempts to fully remove a session, performing best-effort cleanup of auxiliary\n    /// resources before removing its workspace. Auxiliary cleanup failures are logged\n    /// and do not prevent the session workspace from being removed.\n    pub async fn remove_session_complete(session_id: &str) -> Result<(), String> {\n        let message_repo = crate::state::get_message_repository();\n\n        // Best-effort cleanup: log inside `cleanup_auxiliary_resources` and continue\n        let _ = Self::cleanup_auxiliary_resources(session_id, message_repo).await;\n```",
+    "created_at": "2026-03-07T23:02:38Z",
+    "updated_at": "2026-03-07T23:02:39Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764490",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764490"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764490"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764490/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 9,
+    "original_start_line": 9,
+    "start_side": "RIGHT",
+    "line": 15,
+    "original_line": 15,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 10,
+    "position": 10,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764495",
+    "pull_request_review_id": 3910040858,
+    "id": 2900764495,
+    "node_id": "PRRC_kwDOPMLlHs6s5idP",
+    "diff_hunk": "@@ -67,3 +67,13 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *\n ## 2025-03-01 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling in AgentSessionManager] **Resolution:** [Extracted Domain Logic into SessionCleanupService]\n \n ## 2025-03-05 - [Architecture] **Anti-Pattern:** Fat Command Handlers / Framework Coupling **Resolution:** Extracted Domain and DB logic into dedicated `AssistantService`, `McpServerService`, `PlaybookService`, and `ScheduledTaskService`, leaving Tauri commands as thin framework boundaries.\n+\n+## 2025-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction\n+- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.\n+- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.\n+- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.\n+\n+## 2025-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation",
+    "path": ".jules/nexus.md",
+    "commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "original_commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "The new Nexus entry date looks off relative to the PR timeline (this PR is in March 2026, but the entry is dated 2025-03-08). If this is meant to record this change, update the header date accordingly. Also, this entry is missing the blank line after the `## ...` header that the rest of the file uses.\n```suggestion\n## 2026-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction\n\n- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.\n- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.\n- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.\n\n## 2026-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation\n```",
+    "created_at": "2026-03-07T23:02:38Z",
+    "updated_at": "2026-03-07T23:02:39Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764495",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764495"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764495"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764495/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 71,
+    "original_start_line": 71,
+    "start_side": "RIGHT",
+    "line": 76,
+    "original_line": 76,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 10,
+    "position": 10,
+    "subject_type": "line"
+  },
+  {
+    "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764500",
+    "pull_request_review_id": 3910040858,
+    "id": 2900764500,
+    "node_id": "PRRC_kwDOPMLlHs6s5idU",
+    "diff_hunk": "@@ -67,3 +67,13 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *\n ## 2025-03-01 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling in AgentSessionManager] **Resolution:** [Extracted Domain Logic into SessionCleanupService]\n \n ## 2025-03-05 - [Architecture] **Anti-Pattern:** Fat Command Handlers / Framework Coupling **Resolution:** Extracted Domain and DB logic into dedicated `AssistantService`, `McpServerService`, `PlaybookService`, and `ScheduledTaskService`, leaving Tauri commands as thin framework boundaries.\n+\n+## 2025-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction\n+- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.\n+- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.\n+- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.\n+\n+## 2025-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation",
+    "path": ".jules/nexus.md",
+    "commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "original_commit_id": "03529afa6e605eadc75073eb28a7d3a42750105e",
+    "user": {
+      "login": "Copilot",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/Copilot",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/Copilot/followers",
+      "following_url": "https://api.github.com/users/Copilot/following{/other_user}",
+      "gists_url": "https://api.github.com/users/Copilot/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/Copilot/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/Copilot/subscriptions",
+      "organizations_url": "https://api.github.com/users/Copilot/orgs",
+      "repos_url": "https://api.github.com/users/Copilot/repos",
+      "events_url": "https://api.github.com/users/Copilot/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/Copilot/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "Same as the previous entry: this header is dated 2025-03-08 even though the surrounding log includes 2026 entries for recent work, and there’s no blank line between the header and the bullet list. Please adjust the date and add the blank line to match the file’s established format.\n```suggestion\n## 2026-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction\n\n- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.\n- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.\n- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.\n\n## 2026-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation\n```",
+    "created_at": "2026-03-07T23:02:39Z",
+    "updated_at": "2026-03-07T23:02:39Z",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764500",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765",
+    "_links": {
+      "self": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764500"
+      },
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/765#discussion_r2900764500"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/765"
+      }
+    },
+    "reactions": {
+      "url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/comments/2900764500/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "start_line": 71,
+    "original_start_line": 71,
+    "start_side": "RIGHT",
+    "line": 76,
+    "original_line": 76,
+    "side": "RIGHT",
+    "author_association": "CONTRIBUTOR",
+    "original_position": 10,
+    "position": 10,
+    "subject_type": "line"
+  }
+]

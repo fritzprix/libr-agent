@@ -172,7 +172,7 @@ When selecting "compaction target messages" to send to the compact LLM:
 - Assistant messages with `tool_calls` and their tool results **must be compacted as a single unit** (splitting mid-chain causes Anthropic/Gemini API errors).
 - Turns with a `thinkingSignature` must be handled atomically.
 
-**Recommendation:** Always align compact boundaries to complete turn units (user → assistant → [tool → tool_result]*).
+**Recommendation:** Always align compact boundaries to complete turn units (user → assistant → [tool → tool_result]\*).
 
 #### 5. Model to use for compact
 
@@ -253,17 +253,17 @@ The proposed 8K → 256K fallback slider is reasonable, with two additions:
 
 ### Volatility Map
 
-| Section                                                  | Position   | Change frequency              | Cache perspective  |
-| -------------------------------------------------------- | ---------- | ----------------------------- | ------------------ |
-| [1] Agent Identity                                       | front      | on agent edit                 | ✅ Stable          |
-| [2] Workspace Instructions                               | front      | on file change                | ✅ Stable          |
-| [3] Session Context (name)                               | front      | once per session              | ✅ Stable          |
-| [4] **TimeLocation** (priority 1000, **last**)           | **middle** | **every second** (HH:MM:SS)   | 🔴 **Kills cache** |
-| [5] planning                                             | back       | every tool call               | 🔴 Volatile        |
-| [5] browser                                              | back       | every navigation              | 🔴 Volatile        |
-| [5] bootstrap                                            | back       | once per session              | ✅ Stable          |
-| [5] mcp_manager                                          | back       | on MCP connection change      | 🟡 Semi-stable     |
-| [5] skills                                               | back       | on skills directory change    | 🟡 Semi-stable     |
+| Section                                        | Position   | Change frequency            | Cache perspective  |
+| ---------------------------------------------- | ---------- | --------------------------- | ------------------ |
+| [1] Agent Identity                             | front      | on agent edit               | ✅ Stable          |
+| [2] Workspace Instructions                     | front      | on file change              | ✅ Stable          |
+| [3] Session Context (name)                     | front      | once per session            | ✅ Stable          |
+| [4] **TimeLocation** (priority 1000, **last**) | **middle** | **every second** (HH:MM:SS) | 🔴 **Kills cache** |
+| [5] planning                                   | back       | every tool call             | 🔴 Volatile        |
+| [5] browser                                    | back       | every navigation            | 🔴 Volatile        |
+| [5] bootstrap                                  | back       | once per session            | ✅ Stable          |
+| [5] mcp_manager                                | back       | on MCP connection change    | 🟡 Semi-stable     |
+| [5] skills                                     | back       | on skills directory change  | 🟡 Semi-stable     |
 
 ### Core Problem
 
@@ -349,15 +349,15 @@ Anthropic can accept the system prompt as an `array of TextBlockParam` instead o
 
 ### Implementation Priority
 
-| Priority | Item                                                                                               | Rationale                                              |
-| -------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| P0       | Change `TimeLocationContextProvider` priority to 1000 → move to end of prompt                     | The root cause **completely invalidating** the cache   |
-| P0       | Remove seconds from `TimeLocation` time format                                                     | Complements P0 above; effective standalone too         |
-| P0       | `Message.compacted` flag + prevent re-compact                                                      | Prevents compact loop degradation                      |
-| P0       | compact boundary turn-alignment (tool chain integrity)                                             | Prevents Anthropic/Gemini API 400 errors               |
-| P1       | Add stable/volatile split + `cache_control` breakpoint to `AnthropicService`                      | Required for actual cache hits to occur                |
-| P1       | Lower compact trigger to 75–80%                                                                    | Prevents 100% hard blocking                            |
-| P1       | Use sliding window as 100% fallback (non-blocking)                                                 | Protects UX                                            |
-| P2       | Classify semi-stable service contexts (bootstrap, mcp_manager) into the stable group              | Maximises cacheable range                              |
-| P2       | Separate compact model configuration                                                               | Cost/latency optimisation                              |
-| P3       | Context length settings UI (auto-detect from model + slider override)                             | User control                                           |
+| Priority | Item                                                                                 | Rationale                                            |
+| -------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| P0       | Change `TimeLocationContextProvider` priority to 1000 → move to end of prompt        | The root cause **completely invalidating** the cache |
+| P0       | Remove seconds from `TimeLocation` time format                                       | Complements P0 above; effective standalone too       |
+| P0       | `Message.compacted` flag + prevent re-compact                                        | Prevents compact loop degradation                    |
+| P0       | compact boundary turn-alignment (tool chain integrity)                               | Prevents Anthropic/Gemini API 400 errors             |
+| P1       | Add stable/volatile split + `cache_control` breakpoint to `AnthropicService`         | Required for actual cache hits to occur              |
+| P1       | Lower compact trigger to 75–80%                                                      | Prevents 100% hard blocking                          |
+| P1       | Use sliding window as 100% fallback (non-blocking)                                   | Protects UX                                          |
+| P2       | Classify semi-stable service contexts (bootstrap, mcp_manager) into the stable group | Maximises cacheable range                            |
+| P2       | Separate compact model configuration                                                 | Cost/latency optimisation                            |
+| P3       | Context length settings UI (auto-detect from model + slider override)                | User control                                         |

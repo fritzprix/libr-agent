@@ -1,0 +1,100 @@
+diff --git a/.jules/nexus.md b/.jules/nexus.md
+index 0b02cb6a..067f4d78 100644
+--- a/.jules/nexus.md
++++ b/.jules/nexus.md
+@@ -67,3 +67,13 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
+ ## 2025-03-01 - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling in AgentSessionManager] **Resolution:** [Extracted Domain Logic into SessionCleanupService]
+ 
+ ## 2025-03-05 - [Architecture] **Anti-Pattern:** Fat Command Handlers / Framework Coupling **Resolution:** Extracted Domain and DB logic into dedicated `AssistantService`, `McpServerService`, `PlaybookService`, and `ScheduledTaskService`, leaving Tauri commands as thin framework boundaries.
++
++## 2025-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
++- **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.
++- **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.
++- **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.
++
++## 2025-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation
++- **Context:** `browser_commands.rs` duplicated URL validation checks (`url.trim().is_empty()`) before passing it down to `InteractiveBrowserServer`.
++- **Action:** Removed the redundant URL validation from the command layer.
++- **Result:** `InteractiveBrowserServer` handles its own parameter validation natively, allowing `browser_commands.rs` to remain a pure framework entry point.
+diff --git a/src-tauri/src/commands/browser_commands.rs b/src-tauri/src/commands/browser_commands.rs
+index 7ba8a0ce..4b2953de 100644
+--- a/src-tauri/src/commands/browser_commands.rs
++++ b/src-tauri/src/commands/browser_commands.rs
+@@ -28,12 +28,6 @@ pub async fn create_browser_session(
+ ) -> Result<CreateSessionResponse, String> {
+     info!("Command: create_browser_session called with URL: {url}");
+ 
+-    // Validate required parameter
+-    if url.trim().is_empty() {
+-        error!("create_browser_session called with empty URL");
+-        return Err("The 'url' parameter is required".to_string());
+-    }
+-
+     match server
+         .create_browser_session(&url, title.as_deref(), true)
+         .await
+diff --git a/src-tauri/src/commands/session_commands.rs b/src-tauri/src/commands/session_commands.rs
+index c63358ea..7c36196e 100644
+--- a/src-tauri/src/commands/session_commands.rs
++++ b/src-tauri/src/commands/session_commands.rs
+@@ -1,5 +1,4 @@
+ use crate::services::SessionCleanupService;
+-use crate::session::get_session_manager;
+ use log::info;
+ use serde::{Deserialize, Serialize};
+ use tauri::command;
+@@ -24,23 +23,7 @@ pub struct SessionResponse {
+ pub async fn remove_session(session_id: String) -> Result<SessionResponse, String> {
+     info!("🗑️  Removing session via services: {session_id}");
+ 
+-    // 1. Clean up auxiliary resources (Index, DB) via SessionCleanupService
+-    // This handles the "side effects" and external data.
+-    let message_repo = crate::state::get_message_repository();
+-
+-    // Pass the message repository reference directly, trusting it implements MessageRepository trait
+-    SessionCleanupService::cleanup_auxiliary_resources(&session_id, message_repo)
+-        .await
+-        .map_err(|e| format!("Failed to cleanup auxiliary resources: {e}"))?;
+-
+-    // 2. Remove workspace directory and update internal session pool via SessionManager
+-    // This handles the core "session existence" and filesystem.
+-    let session_manager =
+-        get_session_manager().map_err(|e| format!("Failed to get session manager: {e}"))?;
+-    session_manager
+-        .remove_session(&session_id)
+-        .await
+-        .map_err(|e| format!("Failed to remove session workspace: {e}"))?;
++    SessionCleanupService::remove_session_complete(&session_id).await?;
+ 
+     info!("✅ Fully removed session: {session_id}");
+ 
+diff --git a/src-tauri/src/services/session_cleanup_service.rs b/src-tauri/src/services/session_cleanup_service.rs
+index f23af40d..17833afc 100644
+--- a/src-tauri/src/services/session_cleanup_service.rs
++++ b/src-tauri/src/services/session_cleanup_service.rs
+@@ -6,6 +6,25 @@ use log::{error, info};
+ pub struct SessionCleanupService;
+ 
+ impl SessionCleanupService {
++    /// Fully removes a session, including its auxiliary resources and workspace.
++    pub async fn remove_session_complete(session_id: &str) -> Result<(), String> {
++        let message_repo = crate::state::get_message_repository();
++
++        Self::cleanup_auxiliary_resources(session_id, message_repo)
++            .await
++            .map_err(|e| format!("Failed to cleanup auxiliary resources: {e}"))?;
++
++        let session_manager = crate::session::get_session_manager()
++            .map_err(|e| format!("Failed to get session manager: {e}"))?;
++
++        session_manager
++            .remove_session(session_id)
++            .await
++            .map_err(|e| format!("Failed to remove session workspace: {e}"))?;
++
++        Ok(())
++    }
++
+     /// Remove auxiliary resources for a session:
+     /// 1. Search Index (Filesystem)
+     /// 2. Database Metadata (SQL)

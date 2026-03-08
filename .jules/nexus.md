@@ -68,12 +68,14 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 
 ## 2025-03-05 - [Architecture] **Anti-Pattern:** Fat Command Handlers / Framework Coupling **Resolution:** Extracted Domain and DB logic into dedicated `AssistantService`, `McpServerService`, `PlaybookService`, and `ScheduledTaskService`, leaving Tauri commands as thin framework boundaries.
 
-## 2025-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+## 2026-03-08 - [Architecture] **Anti-Pattern:** Fat Handler **Resolution:** Service Extraction
+
 - **Context:** The `session_commands.rs` module contained orchestration logic for tearing down auxiliary resources (search index, database metadata) alongside Tauri framework code.
 - **Action:** Extracted the orchestration logic into `SessionCleanupService::remove_session_complete`.
 - **Result:** `session_commands.rs` acts as a thin wrapper delegating to the domain service layer.
 
-## 2025-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation
+## 2026-03-08 - [Architecture] **Anti-Pattern:** Leaking Domain Logic **Resolution:** Encapsulation
+
 - **Context:** `browser_commands.rs` duplicated URL validation checks (`url.trim().is_empty()`) before passing it down to `InteractiveBrowserServer`.
 - **Action:** Removed the redundant URL validation from the command layer.
 - **Result:** `InteractiveBrowserServer` handles its own parameter validation natively, allowing `browser_commands.rs` to remain a pure framework entry point.
