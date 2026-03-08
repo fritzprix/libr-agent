@@ -79,8 +79,8 @@ describe('backend/utils', () => {
     it('should get service context via get_service_context with options', async () => {
       const mockContext = { id: 'test' };
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockContext);
-      const res = await getServiceContext('server-123', { timeout: 1000 });
-      expect(safeInvoke).toHaveBeenCalledWith('get_service_context', { serverId: 'server-123', options: { timeout: 1000 } });
+      const res = await getServiceContext('server-123', { sessionId: 'session-456' });
+      expect(safeInvoke).toHaveBeenCalledWith('get_service_context', { serverId: 'server-123', options: { sessionId: 'session-456' } });
       expect(res).toEqual(mockContext);
     });
 

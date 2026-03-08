@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   handleLLMResponse,
   handleUserToolCall,
@@ -6,6 +6,7 @@ import {
   agentCallBuiltinTool,
 } from './agent-commands';
 import { safeInvoke } from './core';
+import type { RustMessage } from '../../models/chat';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -20,8 +21,19 @@ describe('backend/agent-commands', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('should handleLLMResponse', async () => {
-    const mockMessage = { id: 'msg-1', role: 'assistant', content: [] } as any;
+    const mockMessage = {
+      id: 'msg-1',
+      sessionId: 'session-1',
+      role: 'assistant',
+      content: [],
+      createdAt: 0,
+      updatedAt: 0,
+    } satisfies RustMessage;
     await handleLLMResponse('session-1', mockMessage);
     expect(safeInvoke).toHaveBeenCalledWith('agent_handle_llm_response', {
       sessionId: 'session-1',
@@ -57,8 +69,6 @@ describe('backend/agent-commands', () => {
         updatedAt: mockNow,
       },
     });
-
-    vi.restoreAllMocks();
   });
 
   it('should getAgentAvailableTools', async () => {

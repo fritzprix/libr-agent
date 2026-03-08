@@ -468,9 +468,7 @@ export class OpenAIService extends BaseAIService {
    * Fallback to static config models
    * @private
    */
-  private fallbackToStaticModels(): Promise<
-    ModelInfo[]
-  > {
+  private fallbackToStaticModels(): Promise<ModelInfo[]> {
     const logger = getLogger('OpenAIService.fallbackToStaticModels');
     logger.info('Using static config models');
     return super.listModels();
