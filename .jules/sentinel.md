@@ -33,3 +33,9 @@
 **Vulnerability:** In `PersistentShell::new` (`src-tauri/src/mcp/builtin/workspace/persistent_shell.rs`), `tokio::process::Command` inherited the parent environment by default, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted code executed within the persistent shell session.
 **Learning:** `env_clear()` must be used universally for all shells and external processes spawned that might execute untrusted code or commands. Process spawning in the workspace module is just as critical as MCP server spawn points.
 **Prevention:** Always use `cmd.env_clear()` before spawning any shell process or isolated process. Afterwards, securely re-apply only the whitelisted essential system variables using `crate::mcp::utils::env::get_isolated_env()`.
+
+## 2026-03-04 - Environment Variable Leakage in Workspace External Processes
+
+**Vulnerability:** In `src-tauri/src/mcp/builtin/workspace/code_execution/process.rs`, when the MCP workspace tools spawned generic external processes via `spawn_and_stream_to_files` and `spawn_and_stream_hybrid`, they did not clear the host environment variables (`cmd.env_clear()`). This allowed child processes executing untrusted shell code to inherit sensitive system/application environment variables (e.g., `OPENAI_API_KEY`).
+**Learning:** `env_clear()` must be used universally for all shells and external processes spawned that might execute untrusted code or commands. Process spawning via workspace handlers is just as critical as MCP server spawn points.
+**Prevention:** Always use `cmd.env_clear()` before spawning any shell process or isolated process. Afterwards, securely re-apply only the whitelisted essential system variables using `crate::mcp::utils::env::get_isolated_env()`.

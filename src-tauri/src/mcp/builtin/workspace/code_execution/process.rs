@@ -164,6 +164,13 @@ pub async fn spawn_and_stream_to_files(
     cmd.stderr(Stdio::piped());
     cmd.stdin(Stdio::null()); // Explicitly close stdin to prevent blocking
 
+    // SECURITY: Clear environment variables to prevent leaking sensitive
+    // host secrets (like API keys) to untrusted code executing in the process.
+    cmd.env_clear();
+    for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        cmd.env(k, v);
+    }
+
     // Windows-specific: Ensure handle inheritance is enabled for stdio pipes
     #[cfg(target_os = "windows")]
     {
@@ -437,6 +444,13 @@ pub async fn spawn_and_stream_hybrid(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.stdin(Stdio::null());
+
+    // SECURITY: Clear environment variables to prevent leaking sensitive
+    // host secrets (like API keys) to untrusted code executing in the process.
+    cmd.env_clear();
+    for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        cmd.env(k, v);
+    }
 
     #[cfg(target_os = "windows")]
     {
