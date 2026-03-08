@@ -130,12 +130,8 @@ async fn test_input_injection_safety() -> Result<()> {
     std::fs::create_dir_all(&temp_dir)?;
 
     #[cfg(unix)]
-    let mut shell = PersistentShell::new(
-        "test-safety".to_string(),
-        temp_dir.clone(),
-        ShellType::Bash,
-    )
-    .await?;
+    let mut shell =
+        PersistentShell::new("test-safety".to_string(), temp_dir.clone(), ShellType::Bash).await?;
     #[cfg(windows)]
     let mut shell = PersistentShell::new(
         "test-safety".to_string(),
