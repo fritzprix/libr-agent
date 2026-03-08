@@ -136,7 +136,8 @@
     "seeAllSessions": "See all sessions →",
     "settings": "Settings",
     "history": "History",
-    "scheduledTasks": "Scheduled Tasks"
+    "scheduledTasks": "Scheduled Tasks",
+    "session": "Session"
   },
   "sessionHistory": {
     "heading": "Session History",

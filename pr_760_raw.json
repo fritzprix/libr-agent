@@ -1,0 +1,41 @@
+{
+  "comments": [
+    {
+      "id": "IC_kwDOPMLlHs7vZPn6",
+      "author": { "login": "google-labs-jules" },
+      "authorAssociation": "CONTRIBUTOR",
+      "body": "👋 Jules, reporting for duty! I'm here to lend a hand with this pull request.\n\nWhen you start a review, I'll add a 👀 emoji to each comment to let you know I've read it. I'll focus on feedback directed at me and will do my best to stay out of conversations between you and other bots or reviewers to keep the noise down.\n\nI'll push a commit with your requested changes shortly after. Please note there might be a delay between these steps, but rest assured I'm on the job!\n\nFor more direct control, you can switch me to **Reactive Mode**. When this mode is on, I will only act on comments where you specifically mention me with `@jules`. You can find this option in the **Pull Request** section of your [global Jules UI settings](https://jules.google.com/settings). You can always switch back!\n\nNew to Jules? Learn more at [jules.google/docs](https://jules.google/docs).\n\n---\n*_For security, I will only act on instructions from the user who triggered this task._*",
+      "createdAt": "2026-03-07T12:29:21Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/fritzprix/libr-agent/pull/760#issuecomment-4016372218",
+      "viewerDidAuthor": false
+    }
+  ],
+  "files": [
+    { "path": ".jules/rosetta.md", "additions": 6, "deletions": 0 },
+    {
+      "path": "src/components/layout/AppSidebar.tsx",
+      "additions": 2,
+      "deletions": 2
+    },
+    { "path": "src/components/ui/sidebar.tsx", "additions": 3, "deletions": 2 },
+    { "path": "src/locales/en/common.json", "additions": 2, "deletions": 0 },
+    { "path": "src/locales/ko/common.json", "additions": 2, "deletions": 0 }
+  ],
+  "reviews": [
+    {
+      "id": "PRR_kwDOPMLlHs7o-cl9",
+      "author": { "login": "copilot-pull-request-reviewer" },
+      "authorAssociation": "CONTRIBUTOR",
+      "body": "## Pull request overview\n\nLocalizes sidebar navigation strings and mobile sidebar screen-reader-only labels by moving hardcoded UI text into the i18n `common` namespace, keeping EN/KO translations in sync.\n\n**Changes:**\n- Localized the “Scheduled Tasks” tooltip/label in `AppSidebar.tsx` using existing `sidebar.scheduledTasks`.\n- Localized mobile sidebar `SheetTitle`/`SheetDescription` SR-only text in `ui/sidebar.tsx` via new `sidebar.mobileTitle` and `sidebar.mobileDescription` keys.\n- Updated `en/common.json` and `ko/common.json` with the new sidebar keys and logged the extraction in `.jules/rosetta.md`.\n\n### Reviewed changes\n\nCopilot reviewed 5 out of 5 changed files in this pull request and generated no comments.\n\n<details>\n<summary>Show a summary per file</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| src/components/layout/AppSidebar.tsx | Replaces hardcoded “Scheduled Tasks” strings with `t('sidebar.scheduledTasks')` for label + tooltip. |\r\n| src/components/ui/sidebar.tsx | Uses `useTranslation('common')` to localize SR-only mobile sidebar title/description. |\r\n| src/locales/en/common.json | Adds `sidebar.mobileTitle` and `sidebar.mobileDescription` translations (EN). |\r\n| src/locales/ko/common.json | Adds `sidebar.mobileTitle` and `sidebar.mobileDescription` translations (KO). |\r\n| .jules/rosetta.md | Records the localization extraction entry for the sidebar updates. |\n</details>\n\n\n\n\n",
+      "submittedAt": "2026-03-07T12:30:54Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": { "oid": "ca35c9afe79fe7ee1e705f357ec22e1208f99c00" }
+    }
+  ]
+}

@@ -136,7 +136,8 @@
     "seeAllSessions": "모든 세션 보기 →",
     "settings": "설정",
     "history": "기록",
-    "scheduledTasks": "예약된 작업"
+    "scheduledTasks": "예약된 작업",
+    "session": "세션"
   },
   "sessionHistory": {
     "heading": "세션 기록",

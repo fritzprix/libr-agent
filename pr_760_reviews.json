@@ -1,0 +1,42 @@
+[
+  {
+    "id": 3908684157,
+    "node_id": "PRR_kwDOPMLlHs7o-cl9",
+    "user": {
+      "login": "copilot-pull-request-reviewer[bot]",
+      "id": 175728472,
+      "node_id": "BOT_kgDOCnlnWA",
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "followers_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/copilot-pull-request-reviewer%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "body": "## Pull request overview\n\nLocalizes sidebar navigation strings and mobile sidebar screen-reader-only labels by moving hardcoded UI text into the i18n `common` namespace, keeping EN/KO translations in sync.\n\n**Changes:**\n- Localized the “Scheduled Tasks” tooltip/label in `AppSidebar.tsx` using existing `sidebar.scheduledTasks`.\n- Localized mobile sidebar `SheetTitle`/`SheetDescription` SR-only text in `ui/sidebar.tsx` via new `sidebar.mobileTitle` and `sidebar.mobileDescription` keys.\n- Updated `en/common.json` and `ko/common.json` with the new sidebar keys and logged the extraction in `.jules/rosetta.md`.\n\n### Reviewed changes\n\nCopilot reviewed 5 out of 5 changed files in this pull request and generated no comments.\n\n<details>\n<summary>Show a summary per file</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| src/components/layout/AppSidebar.tsx | Replaces hardcoded “Scheduled Tasks” strings with `t('sidebar.scheduledTasks')` for label + tooltip. |\r\n| src/components/ui/sidebar.tsx | Uses `useTranslation('common')` to localize SR-only mobile sidebar title/description. |\r\n| src/locales/en/common.json | Adds `sidebar.mobileTitle` and `sidebar.mobileDescription` translations (EN). |\r\n| src/locales/ko/common.json | Adds `sidebar.mobileTitle` and `sidebar.mobileDescription` translations (KO). |\r\n| .jules/rosetta.md | Records the localization extraction entry for the sidebar updates. |\n</details>\n\n\n\n\n",
+    "state": "COMMENTED",
+    "html_url": "https://github.com/fritzprix/libr-agent/pull/760#pullrequestreview-3908684157",
+    "pull_request_url": "https://api.github.com/repos/fritzprix/libr-agent/pulls/760",
+    "author_association": "CONTRIBUTOR",
+    "_links": {
+      "html": {
+        "href": "https://github.com/fritzprix/libr-agent/pull/760#pullrequestreview-3908684157"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/fritzprix/libr-agent/pulls/760"
+      }
+    },
+    "submitted_at": "2026-03-07T12:30:54Z",
+    "commit_id": "ca35c9afe79fe7ee1e705f357ec22e1208f99c00"
+  }
+]

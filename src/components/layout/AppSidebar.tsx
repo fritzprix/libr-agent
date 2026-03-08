@@ -205,12 +205,16 @@ export default function AppSidebar() {
                     <SidebarMenuButton
                       asChild
                       isActive={location.pathname === `/agent/${session.id}`}
-                      tooltip={session.name || session.id.slice(0, 8)}
+                      tooltip={
+                        session.name ||
+                        `${t('sidebar.session')} ${session.id.slice(0, 8)}`
+                      }
                     >
                       <Link to={`/agent/${session.id}`} className="gap-2">
                         <StatusDot status={session.status} />
                         <span className="truncate text-xs">
-                          {session.name || `Session ${session.id.slice(0, 8)}`}
+                          {session.name ||
+                            `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
                         </span>
                       </Link>
                     </SidebarMenuButton>
