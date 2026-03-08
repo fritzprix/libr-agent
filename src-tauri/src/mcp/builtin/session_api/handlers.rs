@@ -139,14 +139,6 @@ pub async fn handle_tool_call(
                 body["workspacePath"] = Value::String(path.to_string());
             }
 
-            if let Some(max_depth) = args.get("maxDepth").and_then(|v| v.as_u64()) {
-                body["maxDepth"] = Value::Number(max_depth.into());
-            }
-
-            if let Some(max_fanout) = args.get("maxFanout").and_then(|v| v.as_u64()) {
-                body["maxFanout"] = Value::Number(max_fanout.into());
-            }
-
             let await_completion = args
                 .get("awaitCompletion")
                 .and_then(|v| v.as_bool())

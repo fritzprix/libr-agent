@@ -55,22 +55,6 @@ pub fn create_child_session_tool() -> MCPTool {
                     ),
                 ),
                 (
-                    "maxDepth".to_string(),
-                    integer_prop(
-                        Some(0),
-                        None,
-                        Some("Recursion depth limit. Omit for no limit."),
-                    ),
-                ),
-                (
-                    "maxFanout".to_string(),
-                    integer_prop(
-                        Some(1),
-                        None,
-                        Some("Max direct children per parent session. Omit for no limit."),
-                    ),
-                ),
-                (
                     "awaitCompletion".to_string(),
                     boolean_prop(Some("If true (default), block until the child finishes and return its final result. Set false to spawn and return immediately — then use awaitAgent(sessionId) to collect results.")),
                 ),
