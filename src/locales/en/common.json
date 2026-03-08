@@ -124,6 +124,8 @@
     "toggle": "Toggle theme"
   },
   "sidebar": {
+    "mobileTitle": "Sidebar",
+    "mobileDescription": "Displays the mobile sidebar.",
     "toggle": "Toggle Sidebar",
     "library": "Library",
     "chat": "Chat",
@@ -134,7 +136,8 @@
     "seeAllSessions": "See all sessions →",
     "settings": "Settings",
     "history": "History",
-    "scheduledTasks": "Scheduled Tasks"
+    "scheduledTasks": "Scheduled Tasks",
+    "session": "Session"
   },
   "sessionHistory": {
     "heading": "Session History",

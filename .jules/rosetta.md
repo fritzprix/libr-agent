@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-03-04 - [Sidebar Navigation]
+
+**Extracted:** 3
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AppSidebar` and `ui/sidebar`. Extracted "Scheduled Tasks" and hidden SR-only attributes like `SheetTitle` and `SheetDescription` for the mobile sidebar.
+
 ## 2024-05-22 - [MCP Server Management]
 
 **Extracted:** ~50

@@ -124,6 +124,8 @@
     "toggle": "테마 전환"
   },
   "sidebar": {
+    "mobileTitle": "사이드바",
+    "mobileDescription": "모바일 사이드바를 표시합니다.",
     "toggle": "사이드바 전환",
     "library": "라이브러리",
     "chat": "채팅",
@@ -134,7 +136,8 @@
     "seeAllSessions": "모든 세션 보기 →",
     "settings": "설정",
     "history": "기록",
-    "scheduledTasks": "예약된 작업"
+    "scheduledTasks": "예약된 작업",
+    "session": "세션"
   },
   "sessionHistory": {
     "heading": "세션 기록",
