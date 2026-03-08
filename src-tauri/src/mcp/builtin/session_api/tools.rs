@@ -35,10 +35,6 @@ pub fn create_child_session_tool() -> MCPTool {
         input_schema: object_prop(
             vec![
                 (
-                    "parentSessionId".to_string(),
-                    string_prop(None, None, Some("Parent session ID. Omit to automatically use the calling session as parent. Pass \"current\" to explicitly self-reference. Supply an explicit session ID to attach to a different parent.")),
-                ),
-                (
                     "assistantId".to_string(),
                     string_prop_required("Assistant ID to bind to child session"),
                 ),
@@ -217,15 +213,8 @@ pub fn get_child_sessions_tool() -> MCPTool {
     MCPTool {
         name: "getChildAgents".to_string(),
         title: Some("Get Child Agents".to_string()),
-        description: "List all agents directly spawned by a parent agent. Pass \"current\" as parentSessionId to list children of the calling session.".to_string(),
-        input_schema: object_prop(
-            vec![(
-                "parentSessionId".to_string(),
-                string_prop_required("Parent session ID. Pass \"current\" to list children of the calling session."),
-            )],
-            vec!["parentSessionId".to_string()],
-            None,
-        ),
+        description: "List all agents directly spawned by the calling session.".to_string(),
+        input_schema: object_prop(vec![], vec![], None),
         output_schema: None,
         annotations: None,
     }

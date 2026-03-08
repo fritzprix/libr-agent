@@ -121,14 +121,9 @@ pub async fn handle_tool_call(
             let assistant_id = read_required_string(&args, "assistantId")?;
             let request = read_required_string(&args, "request")?;
 
-            let parent_session_id = resolve_parent_session_id(
-                args.get("parentSessionId").and_then(|v| v.as_str()),
-                caller_session_id.as_deref(),
-            )?
-            .ok_or_else(|| {
-                "Missing parent session context: provide explicit parentSessionId or call from within a parent session"
-                    .to_string()
-            })?;
+            let parent_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "spawnAgent requires a caller session context".to_string())?;
 
             let mut body = json!({
                 "parentSessionId": parent_session_id,
@@ -510,14 +505,9 @@ pub async fn handle_tool_call(
             Ok(success_result(final_text, data))
         }
         "getChildAgents" => {
-            let raw_parent_id = read_required_string(&args, "parentSessionId")?;
-            let parent_session_id = resolve_parent_session_id(
-                Some(&raw_parent_id),
-                caller_session_id.as_deref(),
-            )?
-            .ok_or_else(|| {
-                "Cannot resolve parent session ID: provide an explicit ID or pass \"current\" from within a session".to_string()
-            })?;
+            let parent_session_id = caller_session_id
+                .clone()
+                .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
 
             let data = call_json(
                 Method::GET,
