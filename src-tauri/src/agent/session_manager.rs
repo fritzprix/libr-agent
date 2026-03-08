@@ -499,6 +499,15 @@ impl AgentSessionManager {
         Ok(())
     }
 
+    /// Returns the current yolo_mode for a session (false if session not found).
+    pub async fn get_yolo_mode(&self, session_id: &str) -> bool {
+        let active = self.active_sessions.read().await;
+        active
+            .get(session_id)
+            .map(|s| s.yolo_mode.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false)
+    }
+
     /// Handle LLM error from frontend
     pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(
