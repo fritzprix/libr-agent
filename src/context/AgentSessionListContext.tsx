@@ -1,3 +1,4 @@
+import { safeInvoke } from "@/lib/backend/core";
 import React, {
   createContext,
   useCallback,
@@ -6,7 +7,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
@@ -97,7 +98,7 @@ export function AgentSessionListProvider({
 
     try {
       // Call Rust backend to get all sessions
-      const response = await invoke<AgentSessionMetadata[]>(
+      const response = await safeInvoke<AgentSessionMetadata[]>(
         'agent_get_all_sessions',
       );
 
@@ -255,7 +256,7 @@ export function AgentSessionListProvider({
         };
 
         // Call Rust backend to create session
-        const response = await invoke<AgentSessionMetadata>(
+        const response = await safeInvoke<AgentSessionMetadata>(
           'agent_create_session',
           { request },
         );
@@ -314,7 +315,7 @@ export function AgentSessionListProvider({
       logger.info('Deleting agent session', { sessionId });
 
       try {
-        await invoke<AgentResponse>('agent_delete_session', { sessionId });
+        await safeInvoke<AgentResponse>('agent_delete_session', { sessionId });
 
         // Remove the session and ALL its descendants from the UI
         // Compute the set of IDs to remove outside the state updater (pure function)
@@ -361,7 +362,7 @@ export function AgentSessionListProvider({
       logger.info('Deleting session only (orphaning children)', { sessionId });
 
       try {
-        await invoke<AgentResponse>('agent_delete_session_only', { sessionId });
+        await safeInvoke<AgentResponse>('agent_delete_session_only', { sessionId });
 
         clearSessionState(sessionId);
 
@@ -402,7 +403,7 @@ export function AgentSessionListProvider({
       );
 
       try {
-        await invoke<void>('agent_toggle_session_bookmark', {
+        await safeInvoke<void>('agent_toggle_session_bookmark', {
           sessionId,
           bookmarked: newValue,
         });

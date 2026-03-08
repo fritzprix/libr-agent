@@ -1,3 +1,4 @@
+import { safeInvoke } from "@/lib/backend/core";
 import React, {
   createContext,
   useCallback,
@@ -6,7 +7,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { useDebounce } from 'react-use';
 import {
   useAgentSessionState,
@@ -169,7 +170,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
           message: messageForRust,
         };
 
-        await invoke<AgentResponse>('agent_send_message', { request });
+        await safeInvoke<AgentResponse>('agent_send_message', { request });
 
         addMessage(message);
       } catch (err) {
@@ -188,7 +189,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     if (!sessionId) return;
 
     try {
-      const contexts = await invoke<Record<string, ServiceContext>>(
+      const contexts = await safeInvoke<Record<string, ServiceContext>>(
         'agent_get_service_contexts',
         { sessionId },
       );
@@ -356,7 +357,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
             triggerWorkflow: false, // Backend will include in next automatic LLM call
           };
 
-          await invoke<AgentResponse>('agent_inject_messages', { request });
+          await safeInvoke<AgentResponse>('agent_inject_messages', { request });
 
           // Keep in pending queue for UI display purposes
           // Will be removed when backend processes and emits MessageAdded event
@@ -437,7 +438,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
           triggerWorkflow,
         };
 
-        await invoke<AgentResponse>('agent_inject_messages', { request });
+        await safeInvoke<AgentResponse>('agent_inject_messages', { request });
         // Events will update the UI
       } catch (err) {
         logger.error('Failed to inject messages', err);
@@ -467,7 +468,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // 3. Inform Rust backend to cancel the workflow loop
     try {
-      await invoke<AgentResponse>('agent_cancel_workflow', {
+      await safeInvoke<AgentResponse>('agent_cancel_workflow', {
         sessionId: session.id,
       });
       // Status update will come via event

@@ -1,3 +1,4 @@
+import { safeInvoke } from "@/lib/backend/core";
 import React, {
   createContext,
   useContext,
@@ -7,7 +8,7 @@ import React, {
 } from 'react';
 import { getLogger } from '@/lib/logger';
 import { useSettings } from '@/hooks/use-settings';
-import { safeInvoke as invoke } from '@/lib/backend/core';
+
 import { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('SkillsContext');
@@ -36,7 +37,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
     // If no path is configured, use the default [AppData]/skills via Tauri command
     if (!path) {
       try {
-        path = await invoke<string>('get_default_skills_directory');
+        path = await safeInvoke<string>('get_default_skills_directory');
       } catch (e) {
         const errMsg = e instanceof Error ? e.message : String(e);
         logger.error('Failed to get default skills directory', e);
@@ -48,7 +49,7 @@ export function SkillsProvider({ children }: { children: React.ReactNode }) {
 
     try {
       logger.info('Scanning skills directory:', path);
-      const result = await invoke<SkillMetadata[]>('scan_skills_directory', {
+      const result = await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
         directory: path,
       });
       logger.info('Discovered skills:', {
