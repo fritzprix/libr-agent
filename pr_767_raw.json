@@ -1,0 +1,49 @@
+{
+  "comments": [],
+  "files": [
+    {
+      "path": "src-tauri/src/mcp/builtin/assistant/tools.rs",
+      "additions": 20,
+      "deletions": 55
+    },
+    {
+      "path": "src-tauri/src/mcp/builtin/knowledge/queries.rs",
+      "additions": 3,
+      "deletions": 1
+    },
+    {
+      "path": "src-tauri/src/mcp/builtin/mcp_manager/tools.rs",
+      "additions": 3,
+      "deletions": 6
+    },
+    {
+      "path": "src-tauri/src/mcp/builtin/session_api/handlers.rs",
+      "additions": 10,
+      "deletions": 54
+    },
+    {
+      "path": "src-tauri/src/mcp/builtin/session_api/tools.rs",
+      "additions": 9,
+      "deletions": 89
+    },
+    {
+      "path": "src-tauri/src/mcp/builtin/session_api/utils.rs",
+      "additions": 0,
+      "deletions": 23
+    },
+    { "path": "src/lib/compact-utils.ts", "additions": 3, "deletions": 1 }
+  ],
+  "reviews": [
+    {
+      "id": "PRR_kwDOPMLlHs7pIm8S",
+      "author": { "login": "copilot-pull-request-reviewer" },
+      "authorAssociation": "CONTRIBUTOR",
+      "body": "## Pull request overview\n\nThis PR trims built-in MCP tool schemas (and corresponding handlers) to remove non-agent-facing parameters, aiming to reduce agent cognitive load and avoid exposing infrastructure concerns in tool APIs.\n\n**Changes:**\n- Simplified Swarm/session_api tools (e.g., `spawnAgent`, `awaitAgent`, `getChildAgents`) by removing infra/output-shaping params; updated handlers accordingly.\n- Reduced exported assistant tools to avoid duplication and removed agent access to destructive operations.\n- Minor description/formatting cleanups across MCP manager + knowledge + compact utils.\n\n### Reviewed changes\n\nCopilot reviewed 7 out of 7 changed files in this pull request and generated 5 comments.\n\n<details>\n<summary>Show a summary per file</summary>\n\n| File | Description |\r\n| ---- | ----------- |\r\n| src/lib/compact-utils.ts | Formatting-only change (multiline condition). |\r\n| src-tauri/src/mcp/builtin/session_api/utils.rs | Removed now-dead `resolve_parent_session_id()` helper. |\r\n| src-tauri/src/mcp/builtin/session_api/tools.rs | Updated Swarm tool schemas/descriptions; removed `healthCheck` export; removed several params. |\r\n| src-tauri/src/mcp/builtin/session_api/handlers.rs | Updated tool handlers to rely on `caller_session_id` and dropped removed params. |\r\n| src-tauri/src/mcp/builtin/mcp_manager/tools.rs | Shortened `registerServer` description text. |\r\n| src-tauri/src/mcp/builtin/knowledge/queries.rs | Formatting-only change (wrapped JSON call). |\r\n| src-tauri/src/mcp/builtin/assistant/tools.rs | Reduced exported assistant tools and adjusted schemas/descriptions. |\n</details>\n\n\n\n<details>\n<summary>Comments suppressed due to low confidence (2)</summary>\n\n**src-tauri/src/mcp/builtin/assistant/tools.rs:126**\n* `listAssistants` advertises a `search` parameter here, and the PR description relies on it as a replacement for `searchAssistant`, but the backend implementation (`assistant/queries.rs:list_assistants`) does not read `search` at all. Either implement filtering when `search` is present, or keep/export `searchAssistant`; otherwise agents will pass `search` and get unfiltered results.\n```\n        description: \"List available assistants. Use 'search' to filter by name or content.\"\n            .to_string(),\n        input_schema: object_prop(\n            vec![\n                (\n                    \"limit\".to_string(),\n```\n**src-tauri/src/mcp/builtin/assistant/tools.rs:141**\n* `listAssistants` no longer exposes `offset`, but the backend supports offset-based pagination and even returns guidance like “Use limit=… offset=…” (`assistant/queries.rs:186-190`). If tool-call arguments are validated against schema, that guidance becomes impossible to follow; even without validation it’s confusing. Consider re-adding `offset` (or switching the backend to cursor-based pagination and updating the hints).\n```\n        input_schema: object_prop(\n            vec![\n                (\n                    \"limit\".to_string(),\n                    integer_prop_with_default(\n                        None,\n                        Some(100),\n                        20,\n                        Some(\"Items to return (max 100)\"),\n                    ),\n                ),\n                (\n                    \"search\".to_string(),\n                    string_prop(None, None, Some(\"Filter by name or content\")),\n                ),\n            ],\n            vec![],\n            None,\n        ),\n```\n</details>\n\n",
+      "submittedAt": "2026-03-08T11:38:50Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": { "oid": "2f8eeb00f3ac6f17d0d0c63b45153763396112be" }
+    }
+  ]
+}

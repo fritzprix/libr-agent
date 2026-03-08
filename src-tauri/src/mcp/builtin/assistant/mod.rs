@@ -105,7 +105,7 @@ impl BuiltinMCPServer for AssistantServer {
             "getAssistant" => queries::get_assistant(db, args).await,
             "searchAssistant" => queries::search_assistant(db, args).await,
             _ => Err(format!(
-                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, deleteAssistant, listAssistants, getAssistant, searchAssistant",
+                "Unknown tool: {}. Available tools: createAssistant, updateAssistant, listAssistants, getAssistant",
                 tool_name
             )),
         }

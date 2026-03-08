@@ -234,7 +234,7 @@ impl ErrorGuidance {
             (ErrorCategory::ResourceNotFound, ToolGroup::Assistant) => vec![
                 "Use listAssistants to see available assistants".to_string(),
                 "Verify the assistant ID is correct".to_string(),
-                "Use searchAssistant to find assistants by name".to_string(),
+                "Use listAssistants with 'search' parameter to find assistants by name".to_string(),
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Assistant) => vec![
                 "Use a different name for the new assistant".to_string(),
@@ -323,13 +323,13 @@ impl ErrorGuidance {
             (ErrorCategory::InvalidInput, ToolGroup::Swarm) => vec![
                 "Check all required parameters are provided and correctly typed".to_string(),
                 "Review the tool schema for required fields and formats".to_string(),
-                "Use healthCheck to verify the swarm system is available".to_string(),
+                "Check agent status with getAgentStatus if the session already exists".to_string(),
             ],
             (ErrorCategory::NetworkError, ToolGroup::Swarm) => vec![
                 "The internal swarm service may not be running — check the application state"
                     .to_string(),
                 "Restart the application if this error persists".to_string(),
-                "Use healthCheck to verify the swarm system is available".to_string(),
+                "Verify session connectivity with getAgentStatus".to_string(),
             ],
             (ErrorCategory::Timeout, ToolGroup::Swarm) => vec![
                 "Increase the timeoutSeconds parameter for slow tasks".to_string(),
@@ -343,7 +343,7 @@ impl ErrorGuidance {
             (ErrorCategory::OperationFailed, ToolGroup::Swarm) => vec![
                 "Retry the operation".to_string(),
                 "Use getChildAgents to see current agent state".to_string(),
-                "Use healthCheck to verify the swarm system is available".to_string(),
+                "Check agent status with getAgentStatus".to_string(),
             ],
             (ErrorCategory::InternalError, ToolGroup::Swarm) => vec![
                 "Retry the operation — this is likely a transient error".to_string(),

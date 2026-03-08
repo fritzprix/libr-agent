@@ -1,0 +1,564 @@
+diff --git a/src-tauri/src/mcp/builtin/assistant/tools.rs b/src-tauri/src/mcp/builtin/assistant/tools.rs
+index 4e35a855..8377a7d1 100644
+--- a/src-tauri/src/mcp/builtin/assistant/tools.rs
++++ b/src-tauri/src/mcp/builtin/assistant/tools.rs
+@@ -6,23 +6,14 @@ pub fn create_assistant_tool() -> MCPTool {
+     MCPTool {
+         name: "createAssistant".to_string(),
+         title: Some("Create Assistant".to_string()),
+-        description: "Create a new global assistant configuration.
+-
+-⚠️ CRITICAL WORKFLOW (MUST FOLLOW):
+-1. ALWAYS call listAssistants FIRST to check for duplicates
+-2. Verify 'name' is unique
+-3. Then call this tool to create
+-
+-❌ NEVER create without checking for duplicates first
+-
+-🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
+-session). You can freely create and configure OTHER assistants, including
+-setting their 'allowedBuiltInServiceAliases'.".to_string(),
++        description: "Create a new global assistant configuration. \
++Cannot modify your own running assistant. \
++For mcpServerIds, use UUID IDs (from listMcpServers), NOT server names.".to_string(),
+         input_schema: object_prop(
+             vec![
+                 (
+                     "name".to_string(),
+-                    string_prop_required("Assistant name (Must be unique)"),
++                    string_prop_required("Unique assistant name"),
+                 ),
+                 (
+                     "description".to_string(),
+@@ -36,14 +27,14 @@ setting their 'allowedBuiltInServiceAliases'.".to_string(),
+                     "allowedBuiltInServiceAliases".to_string(),
+                     array_schema(
+                         string_prop(None, None, None),
+-                        Some("List of allowed built-in service aliases (e.g., 'workspace', 'browser', 'planning').\nControls which built-in tools this assistant can access."),
++                        Some("Built-in service aliases this assistant can access (e.g. 'workspace', 'browser', 'planning')"),
+                     ),
+                 ),
+                 (
+                     "mcpServerIds".to_string(),
+                     array_schema(
+                         string_prop(None, None, None),
+-                        Some("List of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n1. Call builtin_mcp_manager__listMcpServers FIRST\n2. Extract ID field (UUID format like 'cm3x...') from response\n3. NEVER use server name - it will fail validation\n4. Empty array = no external MCP servers\n\nExample valid ID: \"cm3xkn2w00000ld...\"\nExample INVALID: \"filesystem\" (this is a name, not ID)"),
++                        Some("External MCP server UUIDs to enable. Call listMcpServers first to get IDs."),
+                     ),
+                 ),
+             ],
+@@ -60,21 +51,13 @@ pub fn update_assistant_tool() -> MCPTool {
+     MCPTool {
+         name: "updateAssistant".to_string(),
+         title: Some("Update Assistant".to_string()),
+-        description: "Update an existing assistant configuration.
+-
+-⚠️ CRITICAL WORKFLOW:
+-1. Call getAssistant(id) FIRST to get current config
+-2. Extract exact 'id' from response
+-3. Include ONLY fields you want to change
+-
+-🔒 RESTRICTION: You cannot modify your OWN assistant (the one running this
+-session). You can freely update ANY OTHER assistant, including setting its
+-'allowedBuiltInServiceAliases'.".to_string(),
++        description: "Update an existing assistant configuration (partial update — omit fields to leave unchanged). \
++Cannot modify your own running assistant.".to_string(),
+         input_schema: object_prop(
+             vec![
+                 (
+                     "id".to_string(),
+-                    string_prop_required("⚠️ Exact Assistant ID from getAssistant response"),
++                    string_prop_required("Assistant ID from listAssistants/getAssistant"),
+                 ),
+                 (
+                     "name".to_string(),
+@@ -92,14 +75,14 @@ session). You can freely update ANY OTHER assistant, including setting its
+                     "allowedBuiltInServiceAliases".to_string(),
+                     array_schema(
+                         string_prop(None, None, None),
+-                        Some("Update the list of allowed built-in service aliases.\nControls which built-in tools this assistant can access."),
++                        Some("Replaces the full list of allowed built-in service aliases"),
+                     ),
+                 ),
+                 (
+                     "mcpServerIds".to_string(),
+                     array_schema(
+                         string_prop(None, None, None),
+-                        Some("Update list of enabled MCP server IDs (UUIDs, NOT names).\n\n⚠️ CRITICAL: Use IDs, NOT server names!\n• Call builtin_mcp_manager__listMcpServers first\n• Extract ID field (UUID format) from response\n• NEVER use server name - validation will fail"),
++                        Some("Replaces the full list of enabled MCP server UUIDs"),
+                     ),
+                 ),
+             ],
+@@ -116,17 +99,11 @@ pub fn delete_assistant_tool() -> MCPTool {
+     MCPTool {
+         name: "deleteAssistant".to_string(),
+         title: Some("Delete Assistant".to_string()),
+-        description: "Delete an assistant configuration.
+-
+-⚠️ WARNING: This action is permanent.
+-✅ ALWAYS verify the ID with getAssistant before deleting"
+-            .to_string(),
++        description: "Permanently delete an assistant configuration.".to_string(),
+         input_schema: object_prop(
+             vec![(
+                 "id".to_string(),
+-                string_prop_required(
+-                    "⚠️ Exact Assistant ID from listAssistants/getAssistant response",
+-                ),
++                string_prop_required("Assistant ID from listAssistants/getAssistant"),
+             )],
+             vec!["id".to_string()],
+             None,
+@@ -141,10 +118,7 @@ pub fn list_assistants_tool() -> MCPTool {
+     MCPTool {
+         name: "listAssistants".to_string(),
+         title: Some("List Assistants".to_string()),
+-        description: "List available assistants with pagination.
+-
+-Returns 'id', 'name', and 'config' for each assistant.
+-Use 'limit' and 'offset' to navigate through results."
++        description: "List available assistants. Use 'search' to filter by name or content."
+             .to_string(),
+         input_schema: object_prop(
+             vec![
+@@ -157,13 +131,9 @@ Use 'limit' and 'offset' to navigate through results."
+                         Some("Items to return (max 100)"),
+                     ),
+                 ),
+-                (
+-                    "offset".to_string(),
+-                    integer_prop_with_default(None, None, 0, Some("Items to skip")),
+-                ),
+                 (
+                     "search".to_string(),
+-                    string_prop(None, None, Some("Search term for filtering")),
++                    string_prop(None, None, Some("Filter by name or content")),
+                 ),
+             ],
+             vec![],
+@@ -179,14 +149,11 @@ pub fn get_assistant_tool() -> MCPTool {
+     MCPTool {
+         name: "getAssistant".to_string(),
+         title: Some("Get Assistant".to_string()),
+-        description: "Get full details of a specific assistant.
+-
+-✅ Use this to retrieve the current configuration before updating."
+-            .to_string(),
++        description: "Get full configuration of a specific assistant.".to_string(),
+         input_schema: object_prop(
+             vec![(
+                 "id".to_string(),
+-                string_prop_required("⚠️ Exact Assistant ID from listAssistants response"),
++                string_prop_required("Assistant ID from listAssistants"),
+             )],
+             vec!["id".to_string()],
+             None,
+@@ -196,7 +163,7 @@ pub fn get_assistant_tool() -> MCPTool {
+     }
+ }
+ 
+-/// Search assistants by name or configuration content
++/// Search assistants by name or configuration content (internal — use listAssistants with search param instead)
+ pub fn search_assistant_tool() -> MCPTool {
+     MCPTool {
+         name: "searchAssistant".to_string(),
+@@ -224,11 +191,9 @@ pub fn search_assistant_tool() -> MCPTool {
+ /// Returns all assistant tools
+ pub fn all_tools() -> Vec<MCPTool> {
+     vec![
+-        create_assistant_tool(),
+-        update_assistant_tool(),
+-        delete_assistant_tool(),
+         list_assistants_tool(),
+         get_assistant_tool(),
+-        search_assistant_tool(),
++        create_assistant_tool(),
++        update_assistant_tool(),
+     ]
+ }
+diff --git a/src-tauri/src/mcp/builtin/knowledge/queries.rs b/src-tauri/src/mcp/builtin/knowledge/queries.rs
+index e4f03026..b95ff032 100644
+--- a/src-tauri/src/mcp/builtin/knowledge/queries.rs
++++ b/src-tauri/src/mcp/builtin/knowledge/queries.rs
+@@ -438,7 +438,9 @@ async fn list_internal(
+                 },
+             );
+ 
+-            Ok(hint.to_mcp_result_with_data(Some(json!({ "items": items, "page_count": items.len() }))))
++            Ok(hint.to_mcp_result_with_data(Some(
++                json!({ "items": items, "page_count": items.len() }),
++            )))
+         }
+         Err(e) => Ok(guided_error(
+             ErrorCategory::DatabaseError,
+diff --git a/src-tauri/src/mcp/builtin/mcp_manager/tools.rs b/src-tauri/src/mcp/builtin/mcp_manager/tools.rs
+index 0331f658..cc388abb 100644
+--- a/src-tauri/src/mcp/builtin/mcp_manager/tools.rs
++++ b/src-tauri/src/mcp/builtin/mcp_manager/tools.rs
+@@ -44,12 +44,9 @@ pub fn register_server_tool() -> MCPTool {
+     MCPTool {
+         name: "registerServer".to_string(),
+         title: Some("Register Server".to_string()),
+-        description: "Register a new MCP server configuration.
+-
+-For NPM: Use 'npx', args: ['-y', '<pkg>']
+-For Python: Use 'uvx' or 'python -m'
+-
+-Registration automatically verifies the connection and caches available tools. Returns the generated Server ID needed for assigning the server to an assistant."
++        description: "Register a new MCP server configuration. \
++For NPM packages use 'npx' with args ['-y', '<pkg>']; for Python use 'uvx'. \
++Returns the server ID needed to assign this server to an assistant."
+         .to_string(),
+         input_schema: object_prop(
+             vec![
+diff --git a/src-tauri/src/mcp/builtin/session_api/handlers.rs b/src-tauri/src/mcp/builtin/session_api/handlers.rs
+index 4767efb0..688430ea 100644
+--- a/src-tauri/src/mcp/builtin/session_api/handlers.rs
++++ b/src-tauri/src/mcp/builtin/session_api/handlers.rs
+@@ -121,14 +121,9 @@ pub async fn handle_tool_call(
+             let assistant_id = read_required_string(&args, "assistantId")?;
+             let request = read_required_string(&args, "request")?;
+ 
+-            let parent_session_id = resolve_parent_session_id(
+-                args.get("parentSessionId").and_then(|v| v.as_str()),
+-                caller_session_id.as_deref(),
+-            )?
+-            .ok_or_else(|| {
+-                "Missing parent session context: provide explicit parentSessionId or call from within a parent session"
+-                    .to_string()
+-            })?;
++            let parent_session_id = caller_session_id
++                .clone()
++                .ok_or_else(|| "spawnAgent requires a caller session context".to_string())?;
+ 
+             let mut body = json!({
+                 "parentSessionId": parent_session_id,
+@@ -144,14 +139,6 @@ pub async fn handle_tool_call(
+                 body["workspacePath"] = Value::String(path.to_string());
+             }
+ 
+-            if let Some(max_depth) = args.get("maxDepth").and_then(|v| v.as_u64()) {
+-                body["maxDepth"] = Value::Number(max_depth.into());
+-            }
+-
+-            if let Some(max_fanout) = args.get("maxFanout").and_then(|v| v.as_u64()) {
+-                body["maxFanout"] = Value::Number(max_fanout.into());
+-            }
+-
+             let await_completion = args
+                 .get("awaitCompletion")
+                 .and_then(|v| v.as_bool())
+@@ -160,20 +147,6 @@ pub async fn handle_tool_call(
+                 .get("timeoutSeconds")
+                 .and_then(|v| v.as_u64())
+                 .unwrap_or(180);
+-            let include_last_assistant_message = args
+-                .get("includeLastAssistantMessage")
+-                .and_then(|v| v.as_bool())
+-                .unwrap_or(true);
+-            let result_message_limit = args
+-                .get("resultMessageLimit")
+-                .and_then(|v| v.as_u64())
+-                .map(|v| v.clamp(1, 200))
+-                .unwrap_or(20);
+-            let assistant_message_max_chars = args
+-                .get("assistantMessageMaxChars")
+-                .and_then(|v| v.as_u64())
+-                .map(|v| v.min(200000) as usize)
+-                .filter(|v| *v > 0);
+ 
+             let data = call_json(Method::POST, "/api/sessions", Some(body), None).await?;
+ 
+@@ -212,30 +185,11 @@ pub async fn handle_tool_call(
+             let final_status = extract_session_status(&session_data);
+             let turn_count = count_session_turns(&child_id_owned).await;
+ 
+-            if !include_last_assistant_message {
+-                return Ok(success_result(
+-                    format!(
+-                        "Child session {} (depth: {}, lineage: {}) reached terminal status '{}' after {} polls ({} turns).",
+-                        child_id_owned, depth, lineage, final_status, poll_count, turn_count
+-                    ),
+-                    json!({
+-                        "session": session_data,
+-                        "status": final_status,
+-                        "pollCount": poll_count,
+-                        "turnCount": turn_count,
+-                        "messages": Value::Null
+-                    }),
+-                ));
+-            }
+-
+             let messages_data = call_json(
+                 Method::GET,
+                 &format!("/api/sessions/{}/messages", child_id_owned),
+                 None,
+-                Some(vec![(
+-                    "limit".to_string(),
+-                    result_message_limit.to_string(),
+-                )]),
++                Some(vec![("limit".to_string(), "20".to_string())]),
+             )
+             .await?;
+ 
+@@ -246,7 +200,7 @@ pub async fn handle_tool_call(
+                 .unwrap_or_default();
+ 
+             let text = if let Some((message_id, assistant_text)) =
+-                latest_assistant_message_text(&messages, assistant_message_max_chars)
++                latest_assistant_message_text(&messages, None)
+             {
+                 format!(
+                     "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nLatest assistant result [{}]:\n{}",
+@@ -254,8 +208,8 @@ pub async fn handle_tool_call(
+                 )
+             } else {
+                 format!(
+-                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nNo assistant text message found in the latest {} messages.",
+-                    child_id_owned, depth, lineage, final_status, poll_count, turn_count, result_message_limit
++                    "Child session {} (depth: {}, lineage: {}) completed with status '{}' after {} polls ({} turns).\n\nNo assistant text message found.",
++                    child_id_owned, depth, lineage, final_status, poll_count, turn_count
+                 )
+             };
+ 
+@@ -543,7 +497,9 @@ pub async fn handle_tool_call(
+             Ok(success_result(final_text, data))
+         }
+         "getChildAgents" => {
+-            let parent_session_id = read_required_string(&args, "parentSessionId")?;
++            let parent_session_id = caller_session_id
++                .clone()
++                .ok_or_else(|| "getChildAgents requires a caller session context".to_string())?;
+ 
+             let data = call_json(
+                 Method::GET,
+diff --git a/src-tauri/src/mcp/builtin/session_api/tools.rs b/src-tauri/src/mcp/builtin/session_api/tools.rs
+index 88a0c9f3..14810cb3 100644
+--- a/src-tauri/src/mcp/builtin/session_api/tools.rs
++++ b/src-tauri/src/mcp/builtin/session_api/tools.rs
+@@ -3,7 +3,6 @@ use crate::mcp::utils::schema_builder::*;
+ 
+ pub fn all_tools() -> Vec<MCPTool> {
+     vec![
+-        health_check_tool(),
+         create_child_session_tool(),
+         get_session_tool(),
+         wait_for_session_idle_tool(),
+@@ -35,10 +34,6 @@ pub fn create_child_session_tool() -> MCPTool {
+             .to_string(),
+         input_schema: object_prop(
+             vec![
+-                (
+-                    "parentSessionId".to_string(),
+-                    string_prop(None, None, Some("Optional parent session ID. Ignored in caller context; required only when no caller context exists")),
+-                ),
+                 (
+                     "assistantId".to_string(),
+                     string_prop_required("Assistant ID to bind to child session"),
+@@ -59,52 +54,16 @@ pub fn create_child_session_tool() -> MCPTool {
+                         Some("Optional absolute workspace override path"),
+                     ),
+                 ),
+-                (
+-                    "maxDepth".to_string(),
+-                    integer_prop(
+-                        Some(0),
+-                        None,
+-                        Some("Optional recursion depth limit (None = unlimited)"),
+-                    ),
+-                ),
+-                (
+-                    "maxFanout".to_string(),
+-                    integer_prop(
+-                        Some(1),
+-                        None,
+-                        Some("Optional max direct children per parent session (None = unlimited)"),
+-                    ),
+-                ),
+                 (
+                     "awaitCompletion".to_string(),
+-                    boolean_prop(Some("If true (default), block until the child session reaches a terminal state and return its final result. Set false to return immediately and poll with awaitAgent.")),
++                    boolean_prop(Some("If true (default), block until the child finishes and return its final result. Set false to spawn and return immediately — then use awaitAgent(sessionId) to collect results.")),
+                 ),
+                 (
+                     "timeoutSeconds".to_string(),
+                     integer_prop(
+                         Some(1),
+                         None,
+-                        Some("Maximum seconds to wait when awaitCompletion=true. Default: 180"),
+-                    ),
+-                ),
+-                (
+-                    "includeLastAssistantMessage".to_string(),
+-                    boolean_prop(Some("When awaitCompletion=true, include last assistant message text in the result. Default: true")),
+-                ),
+-                (
+-                    "resultMessageLimit".to_string(),
+-                    integer_prop(
+-                        Some(1),
+-                        Some(200),
+-                        Some("Max number of messages to return when awaitCompletion=true. Default: 20"),
+-                    ),
+-                ),
+-                (
+-                    "assistantMessageMaxChars".to_string(),
+-                    integer_prop(
+-                        Some(1),
+-                        Some(200000),
+-                        Some("Truncate returned assistant message text to this length. Default: no limit"),
++                        Some("Max seconds to wait when awaitCompletion=true. Default: 180"),
+                     ),
+                 ),
+             ],
+@@ -123,7 +82,7 @@ pub fn get_session_tool() -> MCPTool {
+     MCPTool {
+         name: "getAgentStatus".to_string(),
+         title: Some("Get Agent Status".to_string()),
+-        description: "Get current status and metadata of an agent session.".to_string(),
++        description: "Get current status and metadata of an agent session. Possible statuses: busy (working), idle (completed successfully), paused (waiting for resume), terminated (manually stopped), failed, error. Use awaitAgent instead if you want to block until completion.".to_string(),
+         input_schema: object_prop(
+             vec![(
+                 "sessionId".to_string(),
+@@ -141,7 +100,7 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
+     MCPTool {
+         name: "awaitAgent".to_string(),
+         title: Some("Await Agent".to_string()),
+-        description: "Wait until an agent finishes its task, then return its final result. Prefer this over polling getAgentLog repeatedly."
++        description: "Wait until an agent finishes its task, then return its final result. Uses push notifications — no polling delay. Terminal states: idle (success), terminated (manual stop), failed, error. Prefer this over polling getAgentLog repeatedly."
+             .to_string(),
+         input_schema: object_prop(
+             vec![
+@@ -157,14 +116,6 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
+                         Some("Max time to wait before timeout (default: 180)"),
+                     ),
+                 ),
+-                (
+-                    "pollIntervalSeconds".to_string(),
+-                    integer_prop(
+-                        Some(1),
+-                        Some(30),
+-                        Some("Polling interval while waiting (default: 3)"),
+-                    ),
+-                ),
+                 (
+                     "includeLastAssistantMessage".to_string(),
+                     boolean_prop(Some("If true (default), include latest assistant text result after session becomes idle")),
+@@ -180,9 +131,9 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
+                 (
+                     "assistantMessageMaxChars".to_string(),
+                     integer_prop(
+-                        Some(0),
++                        Some(1),
+                         Some(200000),
+-                        Some("Optional max chars for returned assistant text (default: 0 = full text)"),
++                        Some("Max chars for returned assistant text. Omit for full text."),
+                     ),
+                 ),
+             ],
+@@ -233,30 +184,6 @@ pub fn get_messages_tool() -> MCPTool {
+                     "skipIfUnchanged".to_string(),
+                     boolean_prop(Some("If true (default), return a short notice when fetched message digest is unchanged since last fetch")),
+                 ),
+-                (
+-                    "minIntervalSeconds".to_string(),
+-                    integer_prop(
+-                        Some(0),
+-                        Some(120),
+-                        Some("Minimum seconds between repeated polls for the same caller/session/limit key (default: 5; set 0 to disable)"),
+-                    ),
+-                ),
+-                (
+-                    "forcedRestSeconds".to_string(),
+-                    integer_prop(
+-                        Some(0),
+-                        Some(300),
+-                        Some("Hard cooldown seconds applied after too many rapid polls (default: 20; set 0 to disable)"),
+-                    ),
+-                ),
+-                (
+-                    "rapidCallThreshold".to_string(),
+-                    integer_prop(
+-                        Some(2),
+-                        Some(10),
+-                        Some("Rapid poll count threshold that triggers forced cooldown (default: 3)"),
+-                    ),
+-                ),
+             ],
+             vec!["sessionId".to_string()],
+             None,
+@@ -270,15 +197,8 @@ pub fn get_child_sessions_tool() -> MCPTool {
+     MCPTool {
+         name: "getChildAgents".to_string(),
+         title: Some("Get Child Agents".to_string()),
+-        description: "List all agents directly spawned by a parent agent.".to_string(),
+-        input_schema: object_prop(
+-            vec![(
+-                "parentSessionId".to_string(),
+-                string_prop_required("Parent session ID"),
+-            )],
+-            vec!["parentSessionId".to_string()],
+-            None,
+-        ),
++        description: "List all agents directly spawned by the calling session.".to_string(),
++        input_schema: object_prop(vec![], vec![], None),
+         output_schema: None,
+         annotations: None,
+     }
+@@ -289,7 +209,7 @@ pub fn send_message_tool() -> MCPTool {
+         name: "messageAgent".to_string(),
+         title: Some("Message Agent".to_string()),
+         description:
+-            "Send a user message to a running agent. If the agent is busy, the message will be queued."
++            "Send a user message to a running agent. If the agent is busy, the message will be queued. After sending, use awaitAgent(sessionId) to wait for the response."
+                 .to_string(),
+         input_schema: object_prop(
+             vec![
+diff --git a/src-tauri/src/mcp/builtin/session_api/utils.rs b/src-tauri/src/mcp/builtin/session_api/utils.rs
+index 355b4c11..301e7d98 100644
+--- a/src-tauri/src/mcp/builtin/session_api/utils.rs
++++ b/src-tauri/src/mcp/builtin/session_api/utils.rs
+@@ -27,29 +27,6 @@ pub fn read_required_string(args: &Value, key: &str) -> Result<String, String> {
+         .ok_or_else(|| format!("Missing required parameter: {key}"))
+ }
+ 
+-pub fn resolve_parent_session_id(
+-    provided_parent: Option<&str>,
+-    caller_session_id: Option<&str>,
+-) -> Result<Option<String>, String> {
+-    let normalized = provided_parent
+-        .map(str::trim)
+-        .filter(|value| !value.is_empty());
+-
+-    match normalized {
+-        // "current" is a magic keyword meaning "use my own session as parent"
+-        Some(value) if value.eq_ignore_ascii_case("current") => match caller_session_id {
+-            Some(caller_id) => Ok(Some(caller_id.to_string())),
+-            None => Err(
+-                "parentSessionId='current' requires caller session context. Provide an explicit parentSessionId or call from within a session.".to_string(),
+-            ),
+-        },
+-        // Explicit ID provided → use it directly (existence validated by the HTTP endpoint)
+-        Some(value) => Ok(Some(value.to_string())),
+-        // Not provided → fall back to caller session
+-        None => Ok(caller_session_id.map(str::to_string)),
+-    }
+-}
+-
+ pub fn read_message_summary_options(args: &Value) -> MessageSummaryOptions {
+     let summary_only = args
+         .get("summaryOnly")
+diff --git a/src/lib/compact-utils.ts b/src/lib/compact-utils.ts
+index cdb24b19..6063be94 100644
+--- a/src/lib/compact-utils.ts
++++ b/src/lib/compact-utils.ts
+@@ -13,7 +13,9 @@ export function calculateEffectiveContextLimit(
+   }
+ 
+   const effectiveLimit =
+-    maxInputContext != null && maxInputContext > 0 && maxInputContext < safeInputLimit
++    maxInputContext != null &&
++    maxInputContext > 0 &&
++    maxInputContext < safeInputLimit
+       ? maxInputContext
+       : safeInputLimit;
+ 

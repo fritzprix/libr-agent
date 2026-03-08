@@ -82,7 +82,7 @@ pub fn get_session_tool() -> MCPTool {
     MCPTool {
         name: "getAgentStatus".to_string(),
         title: Some("Get Agent Status".to_string()),
-        description: "Get current status and metadata of an agent session. Possible statuses: busy (working), idle (completed successfully), paused (waiting for resume), terminated (manually stopped), failed, error. Use awaitAgent instead if you want to block until completion.".to_string(),
+        description: "Get current status and metadata of an agent session. Possible statuses: busy (actively working), idle (not currently running a task; may have completed successfully), paused (waiting for explicit resume), error (encountered a problem). Use awaitAgent instead if you want to block until completion.".to_string(),
         input_schema: object_prop(
             vec![(
                 "sessionId".to_string(),
@@ -100,7 +100,7 @@ pub fn wait_for_session_idle_tool() -> MCPTool {
     MCPTool {
         name: "awaitAgent".to_string(),
         title: Some("Await Agent".to_string()),
-        description: "Wait until an agent finishes its task, then return its final result. Uses push notifications — no polling delay. Terminal states: idle (success), terminated (manual stop), failed, error. Prefer this over polling getAgentLog repeatedly."
+        description: "Wait until an agent finishes its task, then return its final result. Uses push notifications — no polling delay. Terminal states: idle (success), error (encountered a problem). Prefer this over polling getAgentLog repeatedly."
             .to_string(),
         input_schema: object_prop(
             vec![
