@@ -87,3 +87,4 @@
 
 **Split:** `session_tests.rs`, `manager_tests.rs`
 **Improvement:** Extracted large test suites to their own files, reducing file size and clutter in `session.rs` and `manager.rs`.
+## 2025-03-08 - [src-tauri/src/agent/workflow] **Split:** [cancellation.rs, helpers.rs, start.rs, state_control.rs, tool_continuation.rs] **Improvement:** [Broke down massive 700-line monolithic workflow file into clean submodules grouped by functionality: startup, status transitions, cancellation/termination, and tool continuations.]
