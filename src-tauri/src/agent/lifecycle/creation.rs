@@ -86,6 +86,11 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         }
     };
 
+    // Resolve workspace override if set
+    let workspace_override = crate::services::WorkspaceService::get_override(&session_id)
+        .await
+        .unwrap_or(None);
+
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
@@ -102,6 +107,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         created_at: now,
         updated_at: now,
         yolo_mode: false,
+        workspace_override,
     };
 
     // Persist to database using injected repository

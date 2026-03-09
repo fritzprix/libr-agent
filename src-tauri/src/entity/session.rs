@@ -19,6 +19,7 @@ pub struct Model {
     pub updated_at: i64,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
+    pub workspace_override: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

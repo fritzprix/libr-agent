@@ -316,11 +316,10 @@ impl SessionManager {
         // a non-Send RwLockWriteGuard (pool).
         let directory_service = self.directory_service.clone();
         let sid = session_id.to_string();
-        let default_path = tokio::task::spawn_blocking(move || {
-            directory_service.get_workspace_dir(&sid)
-        })
-        .await
-        .map_err(|e| format!("Failed to compute workspace path: {e}"))?;
+        let default_path =
+            tokio::task::spawn_blocking(move || directory_service.get_workspace_dir(&sid))
+                .await
+                .map_err(|e| format!("Failed to compute workspace path: {e}"))?;
 
         let mut pool = self
             .workspace_pool
