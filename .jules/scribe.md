@@ -196,7 +196,7 @@
 
 ## 2026-03-08 - src/hooks/useDebounce.ts
 
-**Drift:** JSDoc `@param callback` and `@param delay` did not accurately reflect the TypeScript generic generic signature `T` and missing parameter types in comments.
+**Drift:** JSDoc `@param callback` and `@param delay` did not accurately reflect the TypeScript generic signature `T` and missing parameter types in comments.
 **Reality:** Updated `@param` to include `{T}` and `{number}` and documented `@template T`.
 
 ## 2026-03-08 - src/hooks/useThrottle.ts
