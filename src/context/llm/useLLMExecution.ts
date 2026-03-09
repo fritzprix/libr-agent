@@ -258,30 +258,19 @@ export function useLLMExecution({
           }
 
           // Helper to build candidate stack from current cache
-          const buildCandidateStack = (msgs: Message[]): Message[] => {
+          const buildCandidateStack = (
+            msgs: Message[],
+          ): { messages: Message[]; summary?: string } => {
             const cached = compactCacheRef.current.get(sessionId);
-            if (!cached) return msgs;
+            if (!cached) return { messages: msgs };
 
             const toIdIndex = msgs.findIndex((m) => m.id === cached.toId);
             if (toIdIndex >= 0) {
               const remainingMessages = msgs.slice(toIdIndex + 1);
-
-              // Clean ID: Extract real starting ID if previous summary exists
-              const displayFromId = stripCompactSummaryPrefix(cached.fromId);
-
-              const summaryMessage: Message = {
-                id: `compact-summary-${displayFromId}~${cached.toId}`,
-                sessionId,
-                threadId: msgs[0]?.threadId ?? sessionId,
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `[Summary of previous conversation (from message ${displayFromId} to ${cached.toId})]\n${cached.summary}`,
-                  },
-                ],
+              return {
+                messages: remainingMessages,
+                summary: `### Previous Conversation Summary\n${cached.summary}`,
               };
-              return [summaryMessage, ...remainingMessages];
             } else {
               logger.warn(
                 'Stale compact cache: toId not found. Invalidating.',
@@ -291,13 +280,19 @@ export function useLLMExecution({
                 },
               );
               compactCacheRef.current.delete(sessionId);
-              return msgs;
+              return { messages: msgs };
             }
           };
 
-          let candidateMessages = buildCandidateStack(messages);
+          let { messages: candidateMessages, summary: conversationSummary } =
+            buildCandidateStack(messages);
 
           // 2. Token threshold check
+          const baseSystemPrompt = systemPrompt || '';
+          let finalSystemPrompt = conversationSummary
+            ? `${baseSystemPrompt}\n\n${conversationSummary}`.trim()
+            : baseSystemPrompt;
+
           const systemPromptTokens = finalSystemPrompt
             ? estimateTextTokens(finalSystemPrompt)
             : 0;
@@ -364,10 +359,26 @@ export function useLLMExecution({
               );
               if (compactionSucceeded) {
                 // Compaction wrote a new summary — rebuild the stack from fresh cache.
-                candidateMessages = buildCandidateStack(messages);
+                const { messages: newMessages, summary: newSummary } =
+                  buildCandidateStack(messages);
+                candidateMessages = newMessages;
+
+                const currentBaseSystemPrompt = systemPrompt || '';
+                const updatedSystemPrompt = newSummary
+                  ? `${currentBaseSystemPrompt}\n\n${newSummary}`.trim()
+                  : currentBaseSystemPrompt;
+
+                // Update finalSystemPrompt so selectMessagesWithinContext
+                // uses the correct token budget after compaction.
+                finalSystemPrompt = updatedSystemPrompt;
+
+                const updatedSystemPromptTokens = updatedSystemPrompt
+                  ? estimateTextTokens(updatedSystemPrompt)
+                  : 0;
+
                 totalTokens = calculateGroundedTotalTokens(
                   candidateMessages,
-                  systemPromptTokens,
+                  updatedSystemPromptTokens,
                   toolsTokens,
                 );
                 overflow = totalTokens >= safeInputTokenLimit;

@@ -3,6 +3,7 @@ use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
+use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -46,9 +47,8 @@ pub async fn request_llm_completion(
         }
     }
 
-    // Emit MessageAdded events for any pending user messages before LLM request
-    // This makes them visible in the frontend (removed from pendingMessages queue)
-    // Optimization: Collect all data first, then release locks before I/O
+    // 2. Drain and integrate pending user messages BEFORE preparing the message stack
+    // This ensures they are appended AFTER the last assistant/tool response
     let pending_messages: Vec<Message> = {
         let sessions = active_sessions.read().await;
         if let Some(session) = sessions.get(&session_id) {
@@ -58,37 +58,47 @@ pub async fn request_llm_completion(
             if pending_ids.is_empty() {
                 Vec::new()
             } else {
-                let messages = session.messages.read().await;
+                // Fetch from DB since they are not in session.messages yet
+                let repo = crate::state::get_message_repository();
+                match repo.get_by_ids(pending_ids.clone()).await {
+                    Ok(msgs) => {
+                        log::info!(
+                            "Drained {} pending messages from queue for session {}",
+                            msgs.len(),
+                            session_id
+                        );
 
-                // Build HashMap for O(1) lookup instead of O(n) iter().find()
-                let msg_map: std::collections::HashMap<&str, &Message> =
-                    messages.iter().map(|m| (m.id.as_str(), m)).collect();
-
-                // Collect messages matching pending IDs
-                pending_ids
-                    .iter()
-                    .filter_map(|id| msg_map.get(id.as_str()).map(|&m| m.clone()))
-                    .collect()
+                        // Push to session cache so they are included in the 'messages' read below
+                        let mut messages_lock = session.messages.write().await;
+                        for msg in &msgs {
+                            messages_lock.push(msg.clone());
+                            if messages_lock.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                                messages_lock.remove(0);
+                            }
+                        }
+                        msgs
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch pending messages from DB: {}", e);
+                        Vec::new()
+                    }
+                }
             }
         } else {
             Vec::new()
         }
     }; // All locks released here
 
-    // Now emit events without holding any locks
+    // Emit MessageAdded events for the now-integrated messages
     for msg in pending_messages {
         let event = crate::agent::events::AgentEvent::MessageAdded {
             session_id: session_id.clone(),
             message: Box::new(msg.clone()),
         };
         let _ = crate::agent::events::emit_agent_event(app_handle, event);
-        log::info!(
-            "Emitted MessageAdded for previously pending message: {}",
-            msg.id
-        );
     }
 
-    // Read messages from in-memory cache, excluding recovery tombstones (source="recovery")
+    // 3. Read messages from in-memory cache (now includes the drained pending messages)
     let messages = {
         let sessions = active_sessions.read().await;
         let session = sessions
@@ -127,7 +137,7 @@ pub async fn request_llm_completion(
     let model = session.metadata.model.clone();
     let provider = session.metadata.provider.clone();
 
-    let temperature = Some(agent_config.temperature);
+    let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
 
     drop(active);
@@ -146,6 +156,12 @@ pub async fn request_llm_completion(
     // The stored messages are NOT modified — only the CompletionRequest payload is enriched.
     let messages =
         resolve_message_references(messages, &session_id, agent_config.id.as_deref()).await;
+
+    // Merge any consecutive user messages that may result from crash recovery
+    // (unanswered user turn followed by a new user message). This is the only
+    // place where consecutive user roles are legitimate; merging here keeps the
+    // Gemini mapper simple and mapper-agnostic.
+    let messages = merge_consecutive_user_messages(messages);
 
     let request = CompletionRequest {
         session_id: session_id.clone(),
@@ -201,5 +217,41 @@ async fn resolve_message_references(
         }
         result.push(msg);
     }
+    result
+}
+
+/// Merge consecutive `user` role messages into a single message.
+///
+/// This is only expected after a crash-recovery scenario where an unanswered
+/// user message sits at the tail of history and the user sends another message
+/// before the agent can respond. The content of subsequent user messages is
+/// appended to the first with a separator. IDs and metadata from the first
+/// message are preserved. This operates on the CompletionRequest payload only —
+/// stored messages are never mutated.
+fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
+    let mut result: Vec<Message> = Vec::with_capacity(messages.len());
+
+    for msg in messages {
+        if msg.role == "user" {
+            if let Some(last) = result.last_mut() {
+                if last.role == "user" {
+                    // Append a separator followed by the new content
+                    last.content.push(MCPContent::Text {
+                        text: "\n\n---\n\n".to_string(),
+                        is_error: None,
+                    });
+                    last.content.extend(msg.content);
+                    log::info!(
+                        "Merged consecutive user messages: base={}, appended={}",
+                        last.id,
+                        msg.id
+                    );
+                    continue;
+                }
+            }
+        }
+        result.push(msg);
+    }
+
     result
 }

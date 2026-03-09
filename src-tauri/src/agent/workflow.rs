@@ -72,21 +72,12 @@ pub async fn start_workflow(
             // Check Status
             if session.metadata.status == SessionStatus::Busy {
                 log::info!(
-                    "Session {} is busy. Queueing message: {} for next cycle.",
+                    "Session {} is busy. Queueing message: {} in pending_events only.",
                     session_id,
                     user_message.id
                 );
 
-                // 1. Add to in-memory cache (while holding session lock)
-                {
-                    let mut messages = session.messages.write().await;
-                    messages.push(user_message.clone());
-                    if messages.len() > MAX_CACHED_MESSAGES {
-                        messages.remove(0);
-                    }
-                }
-
-                // 2. Add to Pending Events (while holding session lock)
+                // 1. Add to Pending Events ONLY (do NOT touch session.messages yet)
                 {
                     let mut pending = session.pending_events.write().await;
                     pending.add(crate::agent::state::PendingEvent::Message(

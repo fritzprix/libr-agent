@@ -31,8 +31,7 @@ export abstract class BaseAIService implements IAIService {
     timeout: 30000,
     maxRetries: 3,
     retryDelay: 1000,
-    maxTokens: 4096,
-    temperature: 0.7,
+    maxTokens: 8192,
   };
 
   /**

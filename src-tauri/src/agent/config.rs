@@ -37,9 +37,8 @@ pub struct AgentConfig {
     // NOTE: Model and Provider have been moved to the session level or global settings.
     // Assistants focus on identity (system prompt) and capabilities (MCP servers).
     // The actual LLM configuration follows global settings or session overrides.
-    /// Temperature for LLM (0.0-2.0, default 1.0)
-    #[serde(default = "default_temperature")]
-    pub temperature: f32,
+    /// Temperature for LLM (0.0-2.0, None = provider default)
+    pub temperature: Option<f32>,
 
     /// Maximum tokens to generate
     pub max_tokens: Option<u32>,
@@ -60,10 +59,6 @@ pub struct AgentConfig {
     pub depth: Option<u32>,
 }
 
-fn default_temperature() -> f32 {
-    1.0
-}
-
 fn default_name() -> String {
     "Unknown Assistant".to_string()
 }
@@ -78,7 +73,7 @@ impl Default for AgentConfig {
             mcp_server_ids: Vec::new(),
             local_services: Vec::new(),
             allowed_built_in_service_aliases: None, // Allow all by default
-            temperature: 1.0,
+            temperature: None,
             max_tokens: None,
             max_depth: None,
             max_fanout: None,
@@ -111,8 +106,10 @@ impl AgentConfig {
             return Err("System prompt cannot be empty".to_string());
         }
 
-        if self.temperature < 0.0 || self.temperature > 2.0 {
-            return Err("Temperature must be between 0.0 and 2.0".to_string());
+        if let Some(t) = self.temperature {
+            if !(0.0..=2.0).contains(&t) {
+                return Err("Temperature must be between 0.0 and 2.0".to_string());
+            }
         }
 
         Ok(())
@@ -126,7 +123,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AgentConfig::default();
-        assert_eq!(config.temperature, 1.0);
+        assert_eq!(config.temperature, None);
         assert!(config.validate().is_ok());
     }
 
@@ -140,8 +137,8 @@ mod tests {
             mcp_server_ids: vec!["server1".to_string()],
             local_services: vec![],
             allowed_built_in_service_aliases: Some(vec![BuiltinServiceId::Browser]),
-            temperature: 0.7,
-            max_tokens: Some(4096),
+            temperature: None,
+            max_tokens: Some(8192),
             max_depth: Some(8),
             max_fanout: Some(4),
             parent_session_id: Some("session-parent".to_string()),
@@ -165,14 +162,14 @@ mod tests {
         assert!(config.validate().is_ok());
 
         // Invalid temperature
-        config.temperature = 3.0;
+        config.temperature = Some(3.0);
         assert!(config.validate().is_err());
 
-        config.temperature = -0.5;
+        config.temperature = Some(-0.5);
         assert!(config.validate().is_err());
 
         // Invalid name
-        config.temperature = 1.0;
+        config.temperature = None;
         config.name = String::new();
         assert!(config.validate().is_err());
     }

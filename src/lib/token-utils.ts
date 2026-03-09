@@ -559,10 +559,9 @@ function prependPinnedMessage(
 
   const firstSelected = selectedMsgs[0];
 
-  // Check for User -> User adjacency
+  // Check for User -> User adjacency only
+  // We keep tool/assistant boundaries separate.
   if (pinnedMsg.role === 'user' && firstSelected.role === 'user') {
-    // Merge them to avoid "User must be followed by Model" error
-    // Explicitly cast to MCPTextContent to avoid type errors with Union types
     const separator: MCPTextContent = {
       type: 'text',
       text: '\n\n---\n\n(Merging context...)\n\n',
