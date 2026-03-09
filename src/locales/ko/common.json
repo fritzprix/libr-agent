@@ -241,7 +241,9 @@
       "aiModels": "AI & 모델",
       "chatInterface": "채팅 인터페이스",
       "mcpServers": "MCP 서버",
-      "advanced": "고급"
+      "advanced": "고급",
+      "extensions": "확장 기능",
+      "dev": "개발자"
     },
     "llmPreference": "기본 LLM",
     "messageWindowSize": "메시지 윈도우 크기",
@@ -264,9 +266,23 @@
     "aiModels": {
       "apiKeys": "공급자 API 키",
       "preferences": "모델 설정",
+      "fallbackModel": "대체 모델 (SP4 복구)",
+      "fallbackModelDescription": "모든 재시도 후 기본 모델이 잘못된 형식이나 빈 응답을 반환할 때 마지막 수단으로 사용됩니다.",
       "agentHub": "에이전트 허브",
       "agentHubUrlLabel": "에이전트 허브 URL",
       "agentHubUrlDescription": "원격 에이전트 허브 서버의 URL입니다. 설정하면 어시스턴트가 이 서버와 동기화됩니다."
+    },
+    "provider": {
+      "apiKey": "API 키",
+      "apiKeyPlaceholder": "{{name}} API 키를 입력하세요",
+      "showApiKey": "API 키 표시",
+      "hideApiKey": "API 키 숨기기",
+      "baseUrl": "기본 URL",
+      "baseUrlPlaceholder": "http://localhost:11434",
+      "use3rdParty": "타사 OpenAI 호환 API 사용",
+      "customModelId": "사용자 지정 모델 ID",
+      "customModelIdPlaceholder": "예: llama-3.1-70b, mistral-large",
+      "customModelIdDescription": "타사 API에서 지원하는 모델 ID를 입력하세요 (예: LM Studio, LocalAI)"
     },
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",
