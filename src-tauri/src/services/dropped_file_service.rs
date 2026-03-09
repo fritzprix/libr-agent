@@ -107,20 +107,32 @@ impl DroppedFileService {
         }
 
         let resolved_path_str = resolved_path.to_string_lossy().to_string();
+        let is_dir = resolved_path.is_dir();
+
         {
             let mut guard = self
                 .allowlist
                 .lock()
                 .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
 
-            if !guard.remove(&resolved_path_str) {
-                return Err(
-                    "Access denied: Path was not provided by an OS file-drop event".to_string(),
-                );
+            if is_dir {
+                // Consume directory immediately as it won't be read later
+                if !guard.remove(&resolved_path_str) {
+                    return Err(
+                        "Access denied: Path was not provided by an OS file-drop event".to_string(),
+                    );
+                }
+            } else {
+                // Just check if it exists for files, do not consume yet
+                if !guard.contains(&resolved_path_str) {
+                    return Err(
+                        "Access denied: Path was not provided by an OS file-drop event".to_string(),
+                    );
+                }
             }
         }
 
-        if resolved_path.is_dir() {
+        if is_dir {
             Ok("directory".to_string())
         } else {
             Ok("file".to_string())

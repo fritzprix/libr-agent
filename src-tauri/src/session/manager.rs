@@ -323,7 +323,9 @@ impl SessionManager {
             session_info.last_accessed = Instant::now();
         } else {
             // Register new override for future session
-            let default_path = self.directory_service.get_workspace_dir(session_id);
+            let default_path = self
+                .directory_service
+                .get_workspace_dir_unverified(session_id);
             let workspace_info = SessionWorkspaceInfo {
                 session_id: session_id.to_string(),
                 workspace_path: default_path,

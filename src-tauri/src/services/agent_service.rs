@@ -16,14 +16,14 @@ impl AgentService {
 
         // Handle workspace override if path is provided
         if let Some(path_str) = &request.workspace_path {
-            if let Ok(session_manager) = crate::session::get_session_manager() {
+            if let Ok(session_manager) = get_session_manager() {
                 let path = std::path::PathBuf::from(path_str);
                 // Ensure path is absolute, exists, is a directory, and is accessible
                 if !path.is_absolute() {
                     return Err("Workspace path must be absolute".to_string());
                 }
 
-                match fs::metadata(&path) {
+                match tokio::fs::metadata(&path).await {
                     Ok(metadata) => {
                         if !metadata.is_dir() {
                             return Err("Workspace path must be a directory".to_string());
@@ -77,14 +77,14 @@ impl AgentService {
     ) -> Result<crate::commands::agent_commands::AgentResponse, String> {
         // Handle workspace override if path is provided
         if let Some(path_str) = &request.workspace_path {
-            if let Ok(session_manager) = crate::session::get_session_manager() {
+            if let Ok(session_manager) = get_session_manager() {
                 let path = std::path::PathBuf::from(path_str);
                 // Ensure path is absolute, exists, is a directory, and is accessible
                 if !path.is_absolute() {
                     return Err("Workspace path must be absolute".to_string());
                 }
 
-                match fs::metadata(&path) {
+                match tokio::fs::metadata(&path).await {
                     Ok(metadata) => {
                         if !metadata.is_dir() {
                             return Err("Workspace path must be a directory".to_string());
