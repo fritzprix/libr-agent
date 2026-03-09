@@ -7,7 +7,7 @@ export interface RustSearchResult {
   messageId: string;
   sessionId: string;
   score: number;
-  snippet?: string;
+  snippet: string | null;
   createdAt: number;
 }
 
@@ -66,15 +66,12 @@ export async function getMessagesPageForSession(
     throw new Error('sessionId and threadId are required');
   }
 
-  const result = await safeInvoke<Page<RustMessage>>(
-    'messages_get_page',
-    {
-      sessionId,
-      threadId,
-      page,
-      pageSize,
-    },
-  );
+  const result = await safeInvoke<Page<RustMessage>>('messages_get_page', {
+    sessionId,
+    threadId,
+    page,
+    pageSize,
+  });
 
   // Deserialize messages from Rust format
   return {
@@ -213,15 +210,12 @@ export async function searchMessages(
   page = 1,
   pageSize = 25,
 ): Promise<Page<MessageSearchResult>> {
-  const result = await safeInvoke<Page<RustSearchResult>>(
-    'messages_search',
-    {
-      query,
-      sessionId: sessionId || null,
-      page,
-      pageSize,
-    },
-  );
+  const result = await safeInvoke<Page<RustSearchResult>>('messages_search', {
+    query,
+    sessionId: sessionId || null,
+    page,
+    pageSize,
+  });
 
   // Deserialize search results from Rust format (serde rename_all = "camelCase")
   return {
@@ -240,7 +234,7 @@ export async function searchMessages(
         messageId: r.messageId,
         sessionId: r.sessionId,
         score: r.score,
-        snippet: r.snippet,
+        snippet: r.snippet ?? undefined,
         createdAt: date,
       };
     }),

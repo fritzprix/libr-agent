@@ -172,6 +172,11 @@ export interface ToolCall {
 export interface RustMessage {
   id: string;
   sessionId: string;
+  /**
+   * Optional thread ID from backend.
+   * If missing, sessionId should be used as the top-level thread ID.
+   */
+  threadId?: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: MCPContent[];
 
