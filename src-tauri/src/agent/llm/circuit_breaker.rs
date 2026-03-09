@@ -236,7 +236,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call(
+        let current_batch = [test_tool_call(
             "tc-3",
             "planning__clearScratchpad",
             r#"{"id":193}"#,
@@ -295,7 +295,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call(
+        let current_batch = [test_tool_call(
             "tc-3",
             "planning__clearScratchpad",
             repeated_args,
@@ -342,7 +342,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call("tc-3", "planning__checkTodo", repeated_args)];
+        let current_batch = [test_tool_call("tc-3", "planning__checkTodo", repeated_args)];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
@@ -421,7 +421,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call("tc-6", "planning__checkTodo", repeated_args)];
+        let current_batch = [test_tool_call("tc-6", "planning__checkTodo", repeated_args)];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
@@ -437,7 +437,7 @@ mod tests {
     /// - Tool A (healthCheck) called 3x with SUCCESS earlier in session
     /// - Tool B (readFile) called 2x with FAILURE → circuit break → resume
     /// - Tool A (healthCheck) called 3x with SUCCESS again
-    /// → 4th healthCheck attempt must NOT trigger the circuit breaker.
+    ///   → 4th healthCheck attempt must NOT trigger the circuit breaker.
     ///
     /// The old code counted all repetitions regardless of success/failure,
     /// falsely triggering here. The new code breaks on the first non-error
@@ -531,7 +531,7 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = vec![test_tool_call("tc-c4", health_check, empty_args)];
+        let current_batch = [test_tool_call("tc-c4", health_check, empty_args)];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,

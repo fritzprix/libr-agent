@@ -54,8 +54,7 @@ pub async fn init_session_with_messages(
         let has_incomplete_turn = page
             .items
             .iter()
-            .filter(|m| m.source.as_deref() != Some("recovery"))
-            .next_back()
+            .rfind(|m| m.source.as_deref() != Some("recovery"))
             .map(|m| m.role == "user")
             .unwrap_or(false);
 

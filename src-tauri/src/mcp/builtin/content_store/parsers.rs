@@ -536,7 +536,7 @@ mod tests {
         fs::write(&file_path, "test").await.unwrap();
 
         // Should pass validation for 1MB limit
-        assert!(DocumentParser::validate_file(&file_path, 1 * 1024 * 1024)
+        assert!(DocumentParser::validate_file(&file_path, 1024 * 1024)
             .await
             .is_ok());
     }

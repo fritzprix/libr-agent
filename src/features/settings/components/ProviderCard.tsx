@@ -95,7 +95,11 @@ function ProviderCardBase({
               size="icon"
               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
               onClick={() => setShowApiKey((v) => !v)}
-              aria-label={showApiKey ? t('settings.provider.hideApiKey', 'Hide API key') : t('settings.provider.showApiKey', 'Show API key')}
+              aria-label={
+                showApiKey
+                  ? t('settings.provider.hideApiKey', 'Hide API key')
+                  : t('settings.provider.showApiKey', 'Show API key')
+              }
               aria-pressed={showApiKey}
             >
               {showApiKey ? (
@@ -115,7 +119,10 @@ function ProviderCardBase({
             </label>
             <Input
               type="url"
-              placeholder={t('settings.provider.baseUrlPlaceholder', 'http://localhost:11434')}
+              placeholder={t(
+                'settings.provider.baseUrlPlaceholder',
+                'http://localhost:11434',
+              )}
               value={localBaseUrl}
               onChange={(e) => {
                 const v = e.target.value;
@@ -146,7 +153,10 @@ function ProviderCardBase({
                 htmlFor={`use3rdParty-${provider}`}
                 className="text-sm font-medium text-muted-foreground cursor-pointer"
               >
-                {t('settings.provider.use3rdParty', 'Use 3rd party OpenAI-compatible API')}
+                {t(
+                  'settings.provider.use3rdParty',
+                  'Use 3rd party OpenAI-compatible API',
+                )}
               </label>
             </div>
 
@@ -157,7 +167,10 @@ function ProviderCardBase({
                 </label>
                 <Input
                   type="text"
-                  placeholder={t('settings.provider.customModelIdPlaceholder', 'e.g., llama-3.1-70b, mistral-large')}
+                  placeholder={t(
+                    'settings.provider.customModelIdPlaceholder',
+                    'e.g., llama-3.1-70b, mistral-large',
+                  )}
                   value={localCustomModelId}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -172,7 +185,10 @@ function ProviderCardBase({
                   className="bg-background border text-foreground w-full"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t('settings.provider.customModelIdDescription', 'Enter the model ID supported by your 3rd party API (e.g., LM Studio, LocalAI)')}
+                  {t(
+                    'settings.provider.customModelIdDescription',
+                    'Enter the model ID supported by your 3rd party API (e.g., LM Studio, LocalAI)',
+                  )}
                 </p>
               </div>
             )}
