@@ -606,6 +606,8 @@
     "disabled": "비활성화됨",
     "nextRun": "다음 실행: {{time}}",
     "nextRunNone": "—",
+    "editTask": "작업 편집",
+    "deleteTask": "작업 삭제",
     "editTaskAria": "작업 편집: {{name}}",
     "deleteTaskAria": "작업 삭제: {{name}}",
     "modal": {

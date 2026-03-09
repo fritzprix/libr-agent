@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Plus, Pencil, Trash2, Clock } from 'lucide-react';
@@ -185,55 +184,45 @@ export function ScheduledTasksPage() {
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEdit(task)}
-                        aria-label={t('scheduledTasks.editTaskAria', {
-                          name: task.name,
-                        })}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('scheduledTasks.editTaskAria', {
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => openEdit(task)}
+                      aria-label={t('scheduledTasks.editTaskAria', {
                         name: task.name,
                       })}
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => void handleDelete(task.id)}
-                        aria-label={t('scheduledTasks.deleteTaskAria', {
-                          name: task.name,
-                        })}
-                        disabled={
-                          deletingIds.has(task.id) || togglingIds.has(task.id)
-                        }
-                      >
-                        {deletingIds.has(task.id) ? (
-                          <Clock className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('scheduledTasks.deleteTaskAria', {
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('scheduledTasks.editTask')}</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => void handleDelete(task.id)}
+                      aria-label={t('scheduledTasks.deleteTaskAria', {
                         name: task.name,
                       })}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                      disabled={
+                        deletingIds.has(task.id) || togglingIds.has(task.id)
+                      }
+                    >
+                      {deletingIds.has(task.id) ? (
+                        <Clock className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('scheduledTasks.deleteTask')}</TooltipContent>
+                </Tooltip>
               </div>
             </li>
           ))}

@@ -706,6 +706,8 @@
     "disabled": "disabled",
     "nextRun": "Next run: {{time}}",
     "nextRunNone": "—",
+    "editTask": "Edit Task",
+    "deleteTask": "Delete Task",
     "editTaskAria": "Edit task: {{name}}",
     "deleteTaskAria": "Delete task: {{name}}",
     "modal": {

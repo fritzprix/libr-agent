@@ -79,7 +79,11 @@ test('ScheduledTasksPage renders tooltips for edit and delete buttons', async ()
   expect(editButton).toBeInTheDocument();
   expect(deleteButton).toBeInTheDocument();
 
-  // Verify TooltipProvider and Tooltips exist
+  // Verify Tooltips exist
   const tooltips = screen.getAllByTestId('tooltip');
   expect(tooltips.length).toBeGreaterThanOrEqual(2);
+
+  // Verify Tooltip content matches short labels
+  expect(screen.getByText('scheduledTasks.editTask')).toBeInTheDocument();
+  expect(screen.getByText('scheduledTasks.deleteTask')).toBeInTheDocument();
 });
