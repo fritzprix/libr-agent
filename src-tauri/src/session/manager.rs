@@ -311,6 +311,17 @@ impl SessionManager {
         session_id: &str,
         override_path: PathBuf,
     ) -> Result<(), String> {
+        // Prepare default path and ensure it exists BEFORE taking the write lock.
+        // This is necessary because spawn_blocking().await cannot be called while holding
+        // a non-Send RwLockWriteGuard (pool).
+        let directory_service = self.directory_service.clone();
+        let sid = session_id.to_string();
+        let default_path = tokio::task::spawn_blocking(move || {
+            directory_service.get_workspace_dir(&sid)
+        })
+        .await
+        .map_err(|e| format!("Failed to compute workspace path: {e}"))?;
+
         let mut pool = self
             .workspace_pool
             .write()
@@ -323,9 +334,6 @@ impl SessionManager {
             session_info.last_accessed = Instant::now();
         } else {
             // Register new override for future session
-            let default_path = self
-                .directory_service
-                .get_workspace_dir_unverified(session_id);
             let workspace_info = SessionWorkspaceInfo {
                 session_id: session_id.to_string(),
                 workspace_path: default_path,

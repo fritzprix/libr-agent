@@ -668,10 +668,48 @@ function DraftChatInner() {
               </p>
             )}
           </div>
-        </div>
+          </div>
 
-        {/* Capabilities Grid */}
-        <TooltipProvider>
+          {/* Workspace Override - Prominent Indicator */}
+          {workspaceOverride && (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-start gap-4 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceOverride(null)}
+                  className="bg-background/80 hover:bg-background rounded-full p-1 shadow-sm border"
+                  title="Remove workspace override"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
+                <FolderOpen className="w-6 h-6 text-primary" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-bold text-primary uppercase tracking-tight">
+                    Workspace Override Active
+                  </span>
+                  <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                    SP20
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded">
+                  {workspaceOverride}
+                </p>
+                <p className="text-[10px] text-muted-foreground/70 mt-2 leading-tight">
+                  The agent will use this directory as its primary workspace for
+                  this session.
+                </p>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Capabilities Grid */}
+          <TooltipProvider>
           <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
             {/* Built-in Tools */}
             <Tooltip delayDuration={300}>
@@ -788,31 +826,6 @@ function DraftChatInner() {
 
       {/* Simplified Input Area */}
       <div className="p-4 border-t">
-        {/* Workspace override indicator */}
-        {workspaceOverride && (
-          <div className="flex flex-wrap gap-1.5 px-1 pb-2">
-            <div className="flex items-center gap-1.5 text-xs bg-primary/10 text-primary rounded-md px-2.5 py-1.5 border border-primary/20 shadow-sm animate-in fade-in slide-in-from-bottom-1">
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-              <div className="flex flex-col">
-                <span className="font-bold leading-none mb-0.5">
-                  Workspace Override
-                </span>
-                <span className="opacity-80 truncate max-w-[300px]">
-                  {workspaceOverride}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWorkspaceOverride(null)}
-                className="shrink-0 hover:bg-primary/20 rounded-full p-0.5 ml-1 transition-colors"
-                aria-label="Remove workspace override"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Pending file chips */}
         {pendingFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-1 pb-2">
