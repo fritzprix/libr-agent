@@ -3,7 +3,6 @@ use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
-use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
 };
@@ -327,66 +326,15 @@ impl AgentSessionManager {
         messages: Vec<Message>,
         trigger_workflow: bool,
     ) -> Result<(), String> {
-        // 1. Ensure cache is initialized
-        crate::agent::lifecycle::ensure_cache_initialized(&self.active_sessions, &session_id)
-            .await?;
-
-        // 2. Get session reference (single lock acquisition)
-        let sessions = self.active_sessions.read().await;
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        // 3. Add messages to in-memory cache
-        {
-            let mut session_messages = session.messages.write().await;
-            for msg in &messages {
-                session_messages.push(msg.clone());
-                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    session_messages.remove(0);
-                }
-            }
-        }
-
-        // 4. Emit MessageAdded events ONLY when triggering workflow
-        // When triggerWorkflow=false, messages stay in backend cache without UI update
-        // Frontend will add to pendingMessages queue and display with pending state
-        if trigger_workflow {
-            // Drop session lock before I/O operations
-            drop(sessions);
-
-            for msg in &messages {
-                let event = crate::agent::events::AgentEvent::MessageAdded {
-                    session_id: session_id.clone(),
-                    message: Box::new(msg.clone()),
-                };
-                crate::agent::events::emit_agent_event(&self.app_handle, event)
-                    .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
-            }
-        } else {
-            // Track these message IDs as pending (will emit when workflow picks them up)
-            let mut pending_events = session.pending_events.write().await;
-            for msg in &messages {
-                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
-            }
-            log::info!(
-                "Marked {} messages as pending for session: {} (IDs: {:?})",
-                messages.len(),
-                session_id,
-                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
-            );
-        }
-
-        // 5. Persist to DB asynchronously
-        let msgs_for_db = messages.clone();
-        tokio::spawn(async move {
-            let repo = crate::state::get_message_repository();
-            for msg in msgs_for_db {
-                if let Err(e) = repo.insert(&msg).await {
-                    log::error!("Failed to inject message to DB: {}", e);
-                }
-            }
-        });
+        // Delegate message persistence, caching, and event emission to MessageService
+        crate::services::MessageService::inject_messages_to_session(
+            &self.active_sessions,
+            &self.app_handle,
+            &session_id,
+            messages,
+            trigger_workflow,
+        )
+        .await?;
 
         // 5. Trigger workflow if requested
         if trigger_workflow {
@@ -402,8 +350,7 @@ impl AgentSessionManager {
                 }
             }
 
-            // [Fix Option 1] Inline status update to ensure UI reflects 'Busy' state
-            // 1. Update status to Busy
+            // Update status to Busy
             crate::agent::lifecycle::update_session_status(
                 &self.session_repo,
                 &self.active_sessions,
@@ -413,7 +360,7 @@ impl AgentSessionManager {
             )
             .await?;
 
-            // 2. Emit workflow started event
+            // Emit workflow started event
             let event = crate::agent::events::AgentEvent::WorkflowStarted {
                 session_id: session_id.clone(),
             };
@@ -424,9 +371,7 @@ impl AgentSessionManager {
                 );
             }
 
-            // Wait for proxy to be ready before invoking LLM (mirrors start_workflow behaviour).
-            // This is essential for freshly-created sessions (e.g. scheduled tasks) where the
-            // MCPServiceProxy is still spawning external MCP servers asynchronously.
+            // Wait for proxy to be ready before invoking LLM
             if let Err(e) = self
                 .proxy_manager
                 .wait_until_proxy_ready(&session_id, 60)
@@ -439,8 +384,6 @@ impl AgentSessionManager {
                 );
             }
 
-            // We use request_llm_completion directly here as we don't need the full start_workflow logic
-            // (which assumes a User message as input)
             crate::agent::llm::request_llm_completion(
                 &self.session_repo,
                 &self.active_sessions,
