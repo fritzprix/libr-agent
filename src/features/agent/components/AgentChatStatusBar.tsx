@@ -59,12 +59,28 @@ export function AgentChatStatusBar() {
     setLastMetrics(null);
   }
 
-  // Update last metrics when active metrics are available
+  // Update last metrics only when we have meaningful new data
   if (metrics && metrics !== lastMetrics) {
-    setLastMetrics(metrics);
+    const hasData =
+      metrics.promptTokens > 0 ||
+      metrics.completionTokens > 0 ||
+      (metrics.cachedPromptTokens ?? 0) > 0;
+
+    // Preserve evaluation details (like evalDuration for TPS) in lastMetrics
+    if (hasData) {
+      setLastMetrics(metrics);
+    }
   }
 
-  const displayMetrics = metrics || lastMetrics;
+  // Prefer current metrics only if they have actual token counts (indicating data from the current request has arrived)
+  // Otherwise, stick with lastMetrics to maintain UI continuity ("이전 값을 그냥 놔두기")
+  const displayMetrics =
+    metrics &&
+    (metrics.promptTokens > 0 ||
+      metrics.completionTokens > 0 ||
+      (metrics.cachedPromptTokens ?? 0) > 0)
+      ? metrics
+      : lastMetrics;
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.

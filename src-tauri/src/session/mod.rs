@@ -130,6 +130,9 @@ mod tests {
         let path_after = session_manager.get_session_workspace_dir_by_id(session_id);
         assert_ne!(path_after, override_dir);
         assert!(path_after.ends_with(Path::new("workspaces").join(session_id)));
-        assert!(path_after.exists(), "Default workspace should exist after fallback");
+        assert!(
+            path_after.exists(),
+            "Default workspace should exist after fallback"
+        );
     }
 }

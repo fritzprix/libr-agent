@@ -628,6 +628,17 @@ export function useLLMExecution({
         // ── Execute Stream ───────────────────────────────────────────────────
         updateSessionStatus(sessionId, 'streaming');
 
+        setStreamingMessages((prev) => {
+          const next = new Map(prev);
+          next.set(sessionId, {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: [],
+            isStreaming: true,
+          });
+          return next;
+        });
+
         const content: MCPContent[] = [];
         const activeToolCallIndices = new Map<number, number>();
 
@@ -760,13 +771,16 @@ export function useLLMExecution({
             const incomingUsage = chunk.usage as TokenUsage;
             if (finalUsage) {
               finalUsage = {
-                // Use ?? to correctly handle 0 values; fall back to prior value if incoming is undefined
+                // Use || to prevent 0 values in delta chunks from overwriting cumulative totals
                 promptTokens:
-                  incomingUsage.promptTokens ?? finalUsage.promptTokens,
+                  incomingUsage.promptTokens || finalUsage.promptTokens,
                 completionTokens:
-                  incomingUsage.completionTokens ?? finalUsage.completionTokens,
+                  incomingUsage.completionTokens || finalUsage.completionTokens,
                 totalTokens:
-                  incomingUsage.totalTokens ?? finalUsage.totalTokens,
+                  incomingUsage.totalTokens || finalUsage.totalTokens,
+                cachedPromptTokens:
+                  incomingUsage.cachedPromptTokens ||
+                  finalUsage.cachedPromptTokens,
                 details: {
                   ...finalUsage.details,
                   ...incomingUsage.details,
@@ -778,9 +792,20 @@ export function useLLMExecution({
                 promptTokens: incomingUsage.promptTokens ?? 0,
                 completionTokens: incomingUsage.completionTokens ?? 0,
                 totalTokens: incomingUsage.totalTokens ?? 0,
+                cachedPromptTokens: incomingUsage.cachedPromptTokens,
                 details: incomingUsage.details,
               };
             }
+          }
+
+          // Update real-time duration for TPS calculation
+          if (finalUsage) {
+            if (!finalUsage.details) finalUsage.details = {};
+            const currentTime = performance.now();
+            // If we have the first chunk time, use it to measure actual generation duration
+            // otherwise measure from the start of the call
+            finalUsage.details.evalDuration =
+              currentTime - (firstChunkTime || startTime);
           }
 
           // Throttle React state updates to ~20fps (50ms) to avoid WebView GPU overload

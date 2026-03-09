@@ -37,6 +37,8 @@
 
 **Learning:** When adding items to a dynamic list (like environment variables), default focus behavior leaves the user stranded on the "Add" button, requiring multiple tab presses to reach the new input.
 **Action:** Implement `useEffect` to track list length changes and automatically focus the first input of the newly added item using stable IDs or refs.
+
 ## 2025-02-17 - Tooltips on Action Buttons
+
 **Learning:** Icon-only action buttons (like Edit/Delete) often lack immediate context for keyboard and mouse users, making destructive or important actions ambiguous.
 **Action:** Always wrap icon-only buttons in `Tooltip` components using the standard Shadcn/Radix implementation, ensuring both visual feedback on hover and ARIA support.

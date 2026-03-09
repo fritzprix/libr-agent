@@ -373,6 +373,7 @@ export class AnthropicService extends BaseAIService {
               u.cache_creation_input_tokens !== undefined ||
               u.cache_read_input_tokens !== undefined
             ) {
+              currentUsage.cachedPromptTokens = u.cache_read_input_tokens;
               currentUsage.details = {
                 ...currentUsage.details,
                 cacheCreationInputTokens: u.cache_creation_input_tokens,

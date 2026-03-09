@@ -259,13 +259,24 @@ export class OpenAIService extends BaseAIService {
         }
 
         if (chunk.usage) {
+          const u = chunk.usage as unknown as {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+            prompt_cache_hit_tokens?: number;
+            completion_tokens_details?: { reasoning_tokens?: number };
+          };
+          const cachedPromptTokens =
+            u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens;
+
           const usage: TokenUsage = {
-            promptTokens: chunk.usage.prompt_tokens || 0,
-            completionTokens: chunk.usage.completion_tokens || 0,
-            totalTokens: chunk.usage.total_tokens || 0,
+            promptTokens: u.prompt_tokens || 0,
+            completionTokens: u.completion_tokens || 0,
+            totalTokens: u.total_tokens || 0,
+            cachedPromptTokens,
             details: {
-              reasoningTokens:
-                chunk.usage.completion_tokens_details?.reasoning_tokens,
+              reasoningTokens: u.completion_tokens_details?.reasoning_tokens,
             },
           };
           yield JSON.stringify({ usage });
@@ -521,6 +532,17 @@ export class OpenAIService extends BaseAIService {
                 promptTokens: response.usage.prompt_tokens,
                 completionTokens: response.usage.completion_tokens,
                 totalTokens: response.usage.total_tokens,
+                cachedPromptTokens:
+                  (
+                    response.usage as unknown as {
+                      prompt_tokens_details?: { cached_tokens?: number };
+                    }
+                  ).prompt_tokens_details?.cached_tokens ??
+                  (
+                    response.usage as unknown as {
+                      prompt_cache_hit_tokens?: number;
+                    }
+                  ).prompt_cache_hit_tokens,
               }
             : undefined,
           model: response.model,

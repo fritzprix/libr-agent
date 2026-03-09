@@ -33,6 +33,8 @@ pub struct Message {
     pub attachments: Option<serde_json::Value>,
     /// Tool use as structured value
     pub tool_use: Option<serde_json::Value>,
+    /// Token usage metrics
+    pub usage: Option<serde_json::Value>,
     #[serde(default = "default_timestamp")]
     pub created_at: i64, // Unix timestamp in milliseconds
     #[serde(default = "default_timestamp")]

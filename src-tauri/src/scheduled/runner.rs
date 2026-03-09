@@ -139,6 +139,7 @@ async fn execute_task(
         thinking: None,
         thinking_signature: None,
         assistant_id: Some(task.assistant_id.clone()),
+        usage: None,
         attachments: None,
         tool_use: None,
         created_at: now_ts,

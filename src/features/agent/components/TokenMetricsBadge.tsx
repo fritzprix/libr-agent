@@ -1,7 +1,7 @@
 import type { TokenUsage } from '@/lib/ai-service/types';
 import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
-import { ArrowDown, ArrowUp, Zap } from 'lucide-react';
+import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 
 interface ContextUsage {
   totalTokens: number;
@@ -84,6 +84,27 @@ export function TokenMetricsBadge({
 
   const tpsFormatted = tokensPerSec ? tokensPerSec.toFixed(1) : null;
 
+  const cachedTokens =
+    usage.cachedPromptTokens ??
+    usage.details?.cacheReadInputTokens ??
+    usage.details?.cachedContentTokenCount ??
+    usage.details?.prompt_cache_hit_tokens ??
+    0;
+
+  // Show indicator if we have explicit cache metadata (even if 0 during pre-calculation)
+  // or if cached tokens are > 0
+  const isCacheActive =
+    usage.cachedPromptTokens !== undefined ||
+    usage.details?.cacheReadInputTokens !== undefined ||
+    usage.details?.cachedContentTokenCount !== undefined ||
+    usage.details?.prompt_cache_hit_tokens !== undefined;
+
+  const hasCacheHit = cachedTokens > 0 || isCacheActive;
+  const cacheHitPercent =
+    hasCacheHit && usage.promptTokens > 0
+      ? Math.round((cachedTokens / usage.promptTokens) * 100)
+      : 0;
+
   // Calculate prefill tokens per second if both TTFT and prompt tokens are available
   const prefillTPS =
     usage.details?.timeToFirstToken && usage.promptTokens > 0
@@ -112,34 +133,17 @@ export function TokenMetricsBadge({
     >
       <div className="flex items-center gap-2">
         {/* Input Tokens */}
-        <div className="flex items-center gap-2">
-          <span
-            className="flex items-center gap-0.5 text-primary"
-            title={
-              (usage.details?.cacheReadInputTokens
-                ? `Prompt Tokens (Read from Cache: ${usage.details.cacheReadInputTokens.toLocaleString()}, Created: ${usage.details.cacheCreationInputTokens?.toLocaleString() || 0})`
-                : 'Prompt Tokens') + prefillInfo
-            }
-          >
-            <ArrowUp size={10} className="stroke-[3]" />
-            {(usage.promptTokens ?? 0).toLocaleString()}
-          </span>
-          {/* Cache Hit Indicator */}
-          {usage.details?.cacheReadInputTokens ? (
-            <span
-              className="flex items-center gap-0.5 text-xs text-primary/70"
-              title="Cached Input Tokens"
-            >
-              <Zap size={10} className="fill-current" />
-              {(
-                (usage.details.cacheReadInputTokens /
-                  (usage.promptTokens || 1)) *
-                100
-              ).toFixed(0)}
-              %
-            </span>
-          ) : null}
-        </div>
+        <span
+          className="flex items-center gap-0.5 text-primary"
+          title={
+            (hasCacheHit
+              ? `Prompt Tokens (Read from Cache: ${cachedTokens.toLocaleString()}, Created: ${usage.details?.cacheCreationInputTokens?.toLocaleString() || 0})`
+              : 'Prompt Tokens') + prefillInfo
+          }
+        >
+          <ArrowUp size={10} className="stroke-[3]" />
+          {(usage.promptTokens ?? 0).toLocaleString()}
+        </span>
 
         {/* Output Tokens */}
         <span
@@ -150,6 +154,17 @@ export function TokenMetricsBadge({
           {(usage.completionTokens ?? 0).toLocaleString()}
         </span>
 
+        {/* ✅ Cache Hit Indicator (Independent Placement) */}
+        {hasCacheHit && cacheHitPercent > 0 && (
+          <span
+            className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
+            title={`Cache Hit: ${cachedTokens.toLocaleString()} tokens (${cacheHitPercent}%)`}
+          >
+            <Zap size={10} className="fill-current" />
+            {cacheHitPercent}%
+          </span>
+        )}
+
         {/* Speed (if available) - Hide on compact unless specifically requested */}
         {showSpeed && tpsFormatted && (
           <>
@@ -158,7 +173,7 @@ export function TokenMetricsBadge({
               className="flex items-center gap-0.5 text-warning"
               title="Tokens per second"
             >
-              <Zap size={10} className="stroke-[3]" />
+              <Gauge size={10} className="stroke-[3]" />
               {tpsFormatted}{' '}
               <span className="text-xs text-muted-foreground hidden sm:inline">
                 t/s

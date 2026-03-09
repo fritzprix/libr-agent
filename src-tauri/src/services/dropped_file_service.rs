@@ -480,7 +480,7 @@ mod tests {
             .await;
         assert!(type_result.is_ok());
         assert_eq!(type_result.unwrap(), "directory");
-        
+
         // Second time should fail because it was consumed
         let second_type_result = service
             .check_dropped_path_type(normal_dir.to_string_lossy().to_string())

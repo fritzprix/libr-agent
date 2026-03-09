@@ -68,6 +68,7 @@ async fn close_orphaned_tool_calls(session_id: &str) -> Result<(), String> {
                 thinking: None,
                 thinking_signature: None,
                 assistant_id: None,
+                usage: None,
                 attachments: None,
                 tool_use: None,
                 created_at: now,

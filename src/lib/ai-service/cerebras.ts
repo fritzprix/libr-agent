@@ -152,6 +152,25 @@ export class CerebrasService extends BaseAIService {
           });
         }
 
+        // Handle usage metrics usually found in the final chunk
+        const chunkObj = chunk as unknown as Record<string, unknown>;
+        if (chunkObj?.usage) {
+          const u = chunkObj.usage as unknown as {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+          };
+          yield JSON.stringify({
+            usage: {
+              promptTokens: u.prompt_tokens || 0,
+              completionTokens: u.completion_tokens || 0,
+              totalTokens: u.total_tokens || 0,
+              cachedPromptTokens: u.prompt_tokens_details?.cached_tokens,
+            },
+          });
+        }
+
         const processedChunk = this.processChunk(chunk);
         if (processedChunk) {
           yield processedChunk;
