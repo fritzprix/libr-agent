@@ -10,11 +10,7 @@ impl MigrationTrait for Migration {
             .alter_table(
                 Table::alter()
                     .table(Sessions::Table)
-                    .add_column(
-                        ColumnDef::new(Sessions::WorkspaceOverride)
-                            .string()
-                            .null(),
-                    )
+                    .add_column(ColumnDef::new(Sessions::WorkspaceOverride).string().null())
                     .to_owned(),
             )
             .await

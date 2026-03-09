@@ -139,9 +139,9 @@ function DraftChatInner() {
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
-  const [profileDragState, setProfileDragState] = useState<'none' | 'valid' | 'invalid'>(
-    'none',
-  );
+  const [profileDragState, setProfileDragState] = useState<
+    'none' | 'valid' | 'invalid'
+  >('none');
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -183,7 +183,10 @@ function DraftChatInner() {
 
   // Drag-and-drop: read dropped paths via Rust backend, build File objects
   useEffect(() => {
-    const processDroppedPaths = (paths: string[], target: 'profile' | 'form') => {
+    const processDroppedPaths = (
+      paths: string[],
+      target: 'profile' | 'form',
+    ) => {
       // Fire-and-forget: errors handled internally
       const run = async () => {
         setIsAttachmentLoading(true);
@@ -213,7 +216,9 @@ function DraftChatInner() {
 
               if (target === 'form') {
                 if (pathType === 'directory') {
-                  toast.error('Drop directories in the central area to set workspace override.');
+                  toast.error(
+                    'Drop directories in the central area to set workspace override.',
+                  );
                   continue;
                 }
 
@@ -250,7 +255,10 @@ function DraftChatInner() {
       void run();
     };
 
-    const formHandler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+    const formHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
       if (event === 'drag-over') {
         setDragState(
           payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
@@ -265,7 +273,10 @@ function DraftChatInner() {
       }
     };
 
-    const profileHandler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+    const profileHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
       if (event === 'drag-over') {
         setProfileDragState(
           payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
@@ -280,13 +291,21 @@ function DraftChatInner() {
       }
     };
 
-    const unsubForm = subscribe(formRef as React.RefObject<HTMLElement>, formHandler, {
-      priority: 5,
-    });
-    const unsubProfile = subscribe(profileAreaRef as React.RefObject<HTMLElement>, profileHandler, {
-      priority: 5,
-    });
-    
+    const unsubForm = subscribe(
+      formRef as React.RefObject<HTMLElement>,
+      formHandler,
+      {
+        priority: 5,
+      },
+    );
+    const unsubProfile = subscribe(
+      profileAreaRef as React.RefObject<HTMLElement>,
+      profileHandler,
+      {
+        priority: 5,
+      },
+    );
+
     return () => {
       unsubForm();
       unsubProfile();
@@ -691,12 +710,14 @@ function DraftChatInner() {
       </div>
 
       {/* Assistant Profile Card */}
-      <div 
+      <div
         ref={profileAreaRef}
         className={cn(
-          "flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar transition-all",
-          profileDragState === 'valid' && 'bg-primary/5 ring-2 ring-primary/30 ring-inset',
-          profileDragState === 'invalid' && 'bg-destructive/10 ring-2 ring-destructive/30 ring-inset'
+          'flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar transition-all',
+          profileDragState === 'valid' &&
+            'bg-primary/5 ring-2 ring-primary/30 ring-inset',
+          profileDragState === 'invalid' &&
+            'bg-destructive/10 ring-2 ring-destructive/30 ring-inset',
         )}
       >
         {/* Identity Section */}
@@ -714,10 +735,9 @@ function DraftChatInner() {
               </p>
             )}
           </div>
-          </div>
-
-          {/* Workspace Override - Prominent Indicator */}
-          {workspaceOverride ? (
+        </div>
+        {/* Workspace Override - Prominent Indicator */}
+        {workspaceOverride ? (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-start gap-4 shadow-sm relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -749,16 +769,20 @@ function DraftChatInner() {
               </div>
             </div>
           </div>
-          ) : (
-            <div className={cn(
-              "text-xs text-muted-foreground transition-opacity duration-300",
-              profileDragState === 'valid' ? 'opacity-100 font-medium' : 'opacity-0 h-0 overflow-hidden'
-            )}>
-              Drop a folder here to set as workspace
-            </div>
-          )}
-
-          {/* Capabilities Grid */}        <TooltipProvider>
+        ) : (
+          <div
+            className={cn(
+              'text-xs text-muted-foreground transition-opacity duration-300',
+              profileDragState === 'valid'
+                ? 'opacity-100 font-medium'
+                : 'opacity-0 h-0 overflow-hidden',
+            )}
+          >
+            Drop a folder here to set as workspace
+          </div>
+        )}
+        {/* Capabilities Grid */}{' '}
+        <TooltipProvider>
           <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
             {/* Built-in Tools */}
             <Tooltip delayDuration={300}>
@@ -844,7 +868,6 @@ function DraftChatInner() {
             </Link>
           </div>
         </TooltipProvider>
-
         {/* Configuration Footer */}
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}
