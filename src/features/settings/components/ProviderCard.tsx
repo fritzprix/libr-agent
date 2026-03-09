@@ -76,7 +76,10 @@ function ProviderCardBase({
           <div className="relative">
             <Input
               type={showApiKey ? 'text' : 'password'}
-              placeholder={t('settings.provider.apiKeyPlaceholder', 'Enter your {{name}} API key', { name: providerName })}
+              placeholder={t('settings.provider.apiKeyPlaceholder', {
+                name: providerName,
+                defaultValue: 'Enter your {{name}} API key',
+              })}
               value={localApiKey}
               onChange={(e) => {
                 const v = e.target.value;
