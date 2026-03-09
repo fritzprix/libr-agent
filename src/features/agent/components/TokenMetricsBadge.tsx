@@ -155,7 +155,7 @@ export function TokenMetricsBadge({
         </span>
 
         {/* ✅ Cache Hit Indicator (Independent Placement) */}
-        {hasCacheHit && cacheHitPercent > 0 && (
+        {isCacheActive && (
           <span
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
             title={`Cache Hit: ${cachedTokens.toLocaleString()} tokens (${cacheHitPercent}%)`}

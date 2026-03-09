@@ -1,3 +1,4 @@
+import type { TokenUsage } from '@/lib/ai-service/types';
 import {
   MCPTool,
   MCPContent,
@@ -124,7 +125,7 @@ export interface Message {
   attachments?: AttachmentReference[]; // Changed to MCP-based file attachment reference
   tool_use?: { id: string; name: string; input: Record<string, unknown> };
   /** Token usage metrics for this message */
-  usage?: import('../lib/ai-service/types').TokenUsage;
+  usage?: TokenUsage;
   createdAt?: Date; // Added
   updatedAt?: Date; // Added
   /** Source of the message - 'assistant' for AI-generated, 'ui' for user interface interactions */
@@ -190,7 +191,7 @@ export interface RustMessage {
   assistantId?: string;
   attachments?: AttachmentReference[];
   toolUse?: { id: string; name: string; input: Record<string, unknown> };
-  usage?: import('../lib/ai-service/types').TokenUsage;
+  usage?: TokenUsage;
 
   // Timestamps come as Unix milliseconds (i64)
   createdAt: number;
