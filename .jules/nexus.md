@@ -79,3 +79,9 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `browser_commands.rs` duplicated URL validation checks (`url.trim().is_empty()`) before passing it down to `InteractiveBrowserServer`.
 - **Action:** Removed the redundant URL validation from the command layer.
 - **Result:** `InteractiveBrowserServer` handles its own parameter validation natively, allowing `browser_commands.rs` to remain a pure framework entry point.
+
+## 2026-03-09 - [Architecture] **Anti-Pattern:** Fat Handler & Orchestrator **Resolution:** Service Extraction
+
+- **Context:** `session_manager.rs` contained orchestration logic for cascading deletion of descendant workspaces and DB records rather than just delegating to a lifecycle module.
+- **Action:** Extracted `delete_session` and `delete_session_only` functions to a new `src-tauri/src/agent/lifecycle/deletion.rs` module.
+- **Result:** `AgentSessionManager` remains a thin facade over lifecycle management, properly delegating domain actions.

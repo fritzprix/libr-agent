@@ -344,40 +344,46 @@ pub async fn terminate_session(
 ) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
 
-    // Trigger cancellation token to abort running loops
-    {
+    // 1. Trigger cancellation token if the session is active in memory
+    let session_active = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             session.cancel_pending.store(true, Ordering::SeqCst);
             session.cancellation_token.cancel();
+            true
         } else {
-            return Err(format!("Session not found: {}", session_id));
+            false
         }
-    }
+    };
 
-    // Update status to idle (workflow stopped)
-    crate::agent::lifecycle::update_session_status(
+    // 2. Destroy proxy for this session - ALWAYS do this!
+    // This prevents resource leaks (MCP processes) even if the session wasn't active
+    // (e.g. failed resume or already closed in memory but proxy still exists).
+    proxy_manager.destroy_proxy(&session_id).await;
+    log::info!("Destroyed MCP proxy for session: {}", session_id);
+
+    // 3. Update status to idle in DB (and memory if active)
+    // We ignore error here for inactive sessions to ensure best-effort cleanup
+    let _ = crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
         app_handle,
         &session_id,
         SessionStatus::Idle,
     )
-    .await?;
+    .await;
 
-    // Destroy proxy for this session
-    proxy_manager.destroy_proxy(&session_id).await;
-    log::info!("Destroyed MCP proxy for session: {}", session_id);
-
-    // Remove from active sessions and create a new cancellation token for future use
-    let mut active = active_sessions.write().await;
-    if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = false;
-        // Reset cancellation token for potential future workflows
-        session.cancellation_token = CancellationToken::new();
+    // 4. Cleanup memory state if active
+    if session_active {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
+            session.is_running = false;
+            // Reset cancellation token for potential future workflows
+            session.cancellation_token = CancellationToken::new();
+        }
     }
 
-    // Emit workflow stopped event
+    // 5. Emit workflow stopped event
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
     };
@@ -385,6 +391,13 @@ pub async fn terminate_session(
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Terminated workflow for session: {}", session_id);
+
+    if !session_active {
+        // Return error for non-active sessions to maintain backward compatibility with callers
+        // that expect to know if the session was not in memory, but AFTER cleanup.
+        return Err(format!("Session not found: {}", session_id));
+    }
+
     Ok(())
 }
 

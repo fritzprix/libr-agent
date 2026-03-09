@@ -543,50 +543,14 @@ impl AgentSessionManager {
     /// - DB-level CASCADE automatically deletes child session records
     /// - We must manually delete workspace directories for all descendants before DB deletion
     pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
-        // 0. Collect all descendant IDs BEFORE cascade delete (so we can clean their workspaces)
-        log::debug!(
-            "Collecting descendants for cascade workspace cleanup: {}",
-            session_id
-        );
-        let descendant_ids =
-            crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await?;
-
-        if !descendant_ids.is_empty() {
-            log::info!(
-                "🌲 Cascade delete: {} will remove {} descendant session(s)",
-                session_id,
-                descendant_ids.len()
-            );
-        }
-
-        // 1. Terminate workflow if running (for this session and all descendants)
-        let _ = self.terminate_session(session_id.clone()).await;
-        for descendant_id in &descendant_ids {
-            let _ = self.terminate_session(descendant_id.clone()).await;
-        }
-
-        // 2. Remove from active sessions (parent + any loaded descendants)
-        {
-            let mut sessions = self.active_sessions.write().await;
-            sessions.remove(&session_id);
-            for descendant_id in &descendant_ids {
-                sessions.remove(descendant_id);
-            }
-        }
-
-        // 3. Delete workspaces and DB cascade
-        crate::services::SessionCleanupService::delete_session_data_cascade(
-            &session_id,
-            &descendant_ids,
-        )
-        .await?;
-
-        log::info!(
-            "✅ Deleted agent session: {} (cascade removed {} descendants)",
+        crate::agent::lifecycle::delete_session(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
             session_id,
-            descendant_ids.len()
-        );
-        Ok(())
+        )
+        .await
     }
 
     /// Delete only this session, leaving children as orphaned top-level sessions.
@@ -595,20 +559,14 @@ impl AgentSessionManager {
     /// - Only this session's workspace and search index are removed
     /// - No cascade to descendants
     pub async fn delete_session_only(&self, session_id: String) -> Result<(), String> {
-        // 1. Terminate workflow if running (this session only)
-        let _ = self.terminate_session(session_id.clone()).await;
-
-        // 2. Remove from active sessions map
-        self.active_sessions.write().await.remove(&session_id);
-
-        // 3. Delete workspace and db
-        crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
-
-        log::info!(
-            "✅ Deleted session only (children orphaned): {}",
-            session_id
-        );
-        Ok(())
+        crate::agent::lifecycle::delete_session_only(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
     }
 
     /// Get available tools for a session based on agent configuration
