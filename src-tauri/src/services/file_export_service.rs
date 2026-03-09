@@ -132,10 +132,8 @@ impl FileExportService {
                 };
 
                 let archive_path = rel_path
-                    .components()
-                    .map(|comp| comp.as_os_str().to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join("/");
+                    .to_string_lossy()
+                    .replace(std::path::is_separator, "/");
                 if !added_archive_paths.insert(archive_path.clone()) {
                     continue;
                 }

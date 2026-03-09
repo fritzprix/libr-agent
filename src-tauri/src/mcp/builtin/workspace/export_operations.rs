@@ -220,10 +220,7 @@ impl WorkspaceServer {
                         Err(_) => continue,
                     };
                     let archive_path = rel_path
-                        .components()
-                        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                        .collect::<Vec<String>>()
-                        .join("/");
+                        .to_string_lossy().replace(std::path::is_separator, "/");
 
                     if !added_archive_paths.insert(archive_path.clone()) {
                         continue;
