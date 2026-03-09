@@ -193,3 +193,13 @@
 
 **Drift:** Code example was ignored and import was incorrect.
 **Reality:** Fixed import statement to accurately reflect the correct module path `in_memory_session_repository` so the example can be successfully verified.
+
+## 2026-03-08 - src/hooks/useDebounce.ts
+
+**Drift:** JSDoc `@param callback` and `@param delay` did not accurately reflect the TypeScript generic signature `T` and missing parameter types in comments.
+**Reality:** Updated `@param` to include `{T}` and `{number}` and documented `@template T`.
+
+## 2026-03-08 - src/hooks/useThrottle.ts
+
+**Drift:** JSDoc `@param callback` and `@param delay` did not accurately reflect the TypeScript generic signature `T` and missing parameter types in comments.
+**Reality:** Updated `@param` to include `{T}` and `{number}` and documented `@template T`.

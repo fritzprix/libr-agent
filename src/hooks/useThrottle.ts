@@ -6,9 +6,10 @@ import { useCallback, useEffect, useRef } from 'react';
  * Ensures the callback is called at most once per delay period.
  * Useful for high-frequency events like scroll, resize, or mousemove.
  *
- * @param callback Function to throttle
- * @param delay Minimum delay in milliseconds between calls
- * @returns Throttled callback function
+ * @template T - The type of the callback function
+ * @param {T} callback Function to throttle
+ * @param {number} delay Minimum delay in milliseconds between calls
+ * @returns {T} Throttled callback function
  *
  * @example
  * ```tsx
