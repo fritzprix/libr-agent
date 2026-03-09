@@ -109,12 +109,21 @@ export function formatUsageMetrics(usage: TokenUsage): {
   input: string;
   output: string;
   total: string;
+  cacheHit?: string;
   speed?: string;
 } {
+  const cached =
+    usage.cachedPromptTokens ?? usage.details?.cacheReadInputTokens;
+  const cacheHitPercent =
+    cached !== undefined && usage.promptTokens > 0
+      ? ((cached / usage.promptTokens) * 100).toFixed(0)
+      : undefined;
+
   return {
     input: usage.promptTokens.toLocaleString(),
     output: usage.completionTokens.toLocaleString(),
     total: usage.totalTokens.toLocaleString(),
+    cacheHit: cacheHitPercent ? `${cacheHitPercent}%` : undefined,
     speed: usage.details?.evalDuration
       ? `${((usage.completionTokens / usage.details.evalDuration) * 1000).toFixed(1)} t/s`
       : undefined,

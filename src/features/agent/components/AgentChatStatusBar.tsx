@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -48,23 +48,37 @@ export function AgentChatStatusBar() {
 
   // Persist last metrics to show after streaming ends
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
-    session?.id,
-  );
 
-  // Eradicated Syncing State: Adjusting State During Render Pattern
-  // Reset last metrics when session changes without using useEffect
-  if (session?.id !== prevSessionId) {
-    setPrevSessionId(session?.id);
+  // Sync state with effects to avoid "Adjusting state during render" anti-pattern
+  useEffect(() => {
+    // Reset metrics when session changes
     setLastMetrics(null);
-  }
+  }, [session?.id]);
 
-  // Update last metrics when active metrics are available
-  if (metrics && metrics !== lastMetrics) {
-    setLastMetrics(metrics);
-  }
+  useEffect(() => {
+    // Update last metrics only when we have meaningful new data
+    if (metrics) {
+      const hasData =
+        metrics.promptTokens > 0 ||
+        metrics.completionTokens > 0 ||
+        (metrics.cachedPromptTokens ?? 0) > 0;
 
-  const displayMetrics = metrics || lastMetrics;
+      // Preserve evaluation details (like evalDuration for TPS) in lastMetrics
+      if (hasData) {
+        setLastMetrics(metrics);
+      }
+    }
+  }, [metrics]);
+
+  // Prefer current metrics only if they have actual token counts (indicating data from the current request has arrived)
+  // Otherwise, stick with lastMetrics to maintain UI continuity ("maintain previous values")
+  const displayMetrics =
+    metrics &&
+    (metrics.promptTokens > 0 ||
+      metrics.completionTokens > 0 ||
+      (metrics.cachedPromptTokens ?? 0) > 0)
+      ? metrics
+      : lastMetrics;
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.

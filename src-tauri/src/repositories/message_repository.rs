@@ -107,6 +107,8 @@ impl SqliteMessageRepository {
 
         let error: Option<serde_json::Value> = from_json_option(&model.error);
 
+        let usage: Option<serde_json::Value> = from_json_option(&model.usage);
+
         Message {
             id: model.id,
             session_id: model.session_id,
@@ -124,6 +126,7 @@ impl SqliteMessageRepository {
             updated_at: model.updated_at,
             source: model.source,
             error,
+            usage,
             metadata: None,
         }
     }
@@ -151,6 +154,10 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize error: {}", e))
         })?;
 
+        let usage_json = to_json_option(&message.usage).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize usage: {}", e))
+        })?;
+
         Ok(message::ActiveModel {
             id: Set(message.id.clone()),
             session_id: Set(message.session_id.clone()),
@@ -168,6 +175,7 @@ impl SqliteMessageRepository {
             updated_at: Set(message.updated_at),
             source: Set(message.source.clone()),
             error: Set(error_json),
+            usage: Set(usage_json),
         })
     }
 
@@ -190,6 +198,7 @@ impl SqliteMessageRepository {
                 message::Column::UpdatedAt,
                 message::Column::Source,
                 message::Column::Error,
+                message::Column::Usage,
             ])
             .to_owned()
     }

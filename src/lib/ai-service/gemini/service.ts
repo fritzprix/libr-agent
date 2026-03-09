@@ -395,6 +395,8 @@ export class GeminiService extends BaseAIService {
                 completionTokens:
                   response.usageMetadata.candidatesTokenCount ?? 0,
                 totalTokens: response.usageMetadata.totalTokenCount ?? 0,
+                cachedPromptTokens:
+                  response.usageMetadata.cachedContentTokenCount,
               }
             : undefined,
           model,

@@ -18,6 +18,7 @@ mod m20260303_000013_add_cached_tools_to_mcp_servers;
 mod m20260306_000014_add_yolo_mode_to_sessions;
 mod m20260307_000015_add_compact_context;
 mod m20260309_000016_add_workspace_override_to_sessions;
+mod m20260309_000017_add_usage_to_messages;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260306_000014_add_yolo_mode_to_sessions::Migration),
             Box::new(m20260307_000015_add_compact_context::Migration),
             Box::new(m20260309_000016_add_workspace_override_to_sessions::Migration),
+            Box::new(m20260309_000017_add_usage_to_messages::Migration),
         ]
     }
 }

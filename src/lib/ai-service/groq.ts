@@ -4,7 +4,7 @@ import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
-import { AIServiceProvider, AIServiceConfig } from './types';
+import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolToGroq } from './tool-converters';
 const logger = getLogger('GroqService');
@@ -113,6 +113,25 @@ export class GroqService extends BaseAIService {
           yield JSON.stringify({
             usage: { details: { timeToFirstToken: ttft } },
           });
+        }
+
+        // Extract usage from the last chunk if available
+        const chunkObj = chunk as unknown as Record<string, unknown>;
+        const xGroq = chunkObj?.x_groq as Record<string, unknown> | undefined;
+        if (xGroq?.usage) {
+          const u = xGroq.usage as unknown as {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            prompt_cache_hit_tokens?: number;
+          };
+          const usage: TokenUsage = {
+            promptTokens: u.prompt_tokens || 0,
+            completionTokens: u.completion_tokens || 0,
+            totalTokens: u.total_tokens || 0,
+            cachedPromptTokens: u.prompt_cache_hit_tokens,
+          };
+          yield JSON.stringify({ usage });
         }
 
         if (chunk.choices[0]?.delta?.reasoning) {
