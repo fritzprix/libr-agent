@@ -461,4 +461,44 @@ mod tests {
             "symlink registration must not add canonical target to allowlist"
         );
     }
+
+    #[tokio::test]
+    async fn test_check_dropped_path_type_behavior() {
+        let service = DroppedFileService::new();
+        let (_dir, test_root) = setup_test_dir();
+
+        let normal_file = test_root.join("normal_test.txt");
+        std::fs::write(&normal_file, "ok").unwrap();
+
+        let normal_dir = test_root.join("normal_dir");
+        std::fs::create_dir(&normal_dir).unwrap();
+
+        // 1. Test directory drop (should be consumed)
+        register_for_test(&service, &normal_dir).await;
+        let type_result = service
+            .check_dropped_path_type(normal_dir.to_string_lossy().to_string())
+            .await;
+        assert!(type_result.is_ok());
+        assert_eq!(type_result.unwrap(), "directory");
+        
+        // Second time should fail because it was consumed
+        let second_type_result = service
+            .check_dropped_path_type(normal_dir.to_string_lossy().to_string())
+            .await;
+        assert!(second_type_result.is_err());
+
+        // 2. Test file drop (should NOT be consumed)
+        register_for_test(&service, &normal_file).await;
+        let file_type_result = service
+            .check_dropped_path_type(normal_file.to_string_lossy().to_string())
+            .await;
+        assert!(file_type_result.is_ok());
+        assert_eq!(file_type_result.unwrap(), "file");
+
+        // The file should still be available to be read (this consumes it)
+        let read_result = service
+            .read_dropped_file(normal_file.to_string_lossy().to_string())
+            .await;
+        assert!(read_result.is_ok());
+    }
 }
