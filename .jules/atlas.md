@@ -32,8 +32,10 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 
 ## 2026-03-01 - [src-tauri/src/session/manager.rs] **Platform Bug:** Hardcoded path separators in macOS log directory path. **Resolved:** Replaced `Library/Logs/...` string with chained `.join()` calls for robust path construction.
 
-## 2025-02-28 - [Server Handlers] **Platform Bug:** [Using hardcoded `/` and string concatenation for restricted path checks] **Resolved:** [Replaced with OS-conditional logic and `PathBuf::starts_with` for exact and case-insensitive component matching on Windows/Unix]
+## 2026-02-28 - [Server Handlers] **Platform Bug:** [Using hardcoded `/` and string concatenation for restricted path checks] **Resolved:** [Replaced with OS-conditional logic and `PathBuf::starts_with` for exact and case-insensitive component matching on Windows/Unix]
 
-## 2025-02-28 - [Session Directory] **Platform Bug:** [Hardcoded Unix-only `welcome.sh` bash script created on all platforms] **Resolved:** [Added `#[cfg(target_os = "windows")]` logic to create an equivalent `welcome.ps1` PowerShell script instead]
+## 2026-02-28 - [Session Directory] **Platform Bug:** [Hardcoded Unix-only `welcome.sh` bash script created on all platforms] **Resolved:** [Added `#[cfg(target_os = "windows")]` logic to create an equivalent `welcome.ps1` PowerShell script instead]
 
-## 2025-03-01 - [src/features/agent/components/AgentWorkspacePanel.tsx] **Platform Bug:** Hardcoded forward slashes and regex replacement for path construction in React frontend. **Resolved:** Replaced with Tauri's `@tauri-apps/api/path` `join` function for cross-platform correctness.
+## 2026-03-01 - [src/features/agent/components/AgentWorkspacePanel.tsx] **Platform Bug:** Hardcoded forward slashes and regex replacement for path construction in React frontend. **Resolved:** Replaced with Tauri's `@tauri-apps/api/path` `join` function for cross-platform correctness.
+
+## 2026-03-03 - [Export Operations & File Export Service] **Simplification:** [Code cleanup for ZIP archive path construction] **Resolved:** [Replaced multi-step component decomposition with `to_string_lossy().replace('\\', "/")` for standard path normalization while strictly enforcing ZIP specification separators across all OSes]
