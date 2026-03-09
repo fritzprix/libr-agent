@@ -33,7 +33,7 @@ export const MarkdownText = memo(
         {/* Copy button for individual text */}
         <button
           onClick={handleCopy}
-          className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 z-10"
+          className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none z-10"
           aria-label="Copy text content"
         >
           {copied ? <Check size={12} /> : <Copy size={12} />}
