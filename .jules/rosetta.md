@@ -71,4 +71,3 @@
 **Extracted:** 10
 **Languages updated:** [EN, KO]
 **Notes:** Localized `SettingsPage` provider card labels, descriptions, and actions, and synced EN/KO entries in `common.json`.
-
