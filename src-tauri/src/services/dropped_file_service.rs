@@ -30,7 +30,12 @@ impl DroppedFileService {
         let mut normalized_paths = Vec::new();
         for path_str in paths {
             let path = Path::new(&path_str);
-            if !path.exists() || !path.is_file() {
+            if !path.exists() {
+                continue;
+            }
+
+            // Allow both files and directories
+            if !path.is_file() && !path.is_dir() {
                 continue;
             }
 
@@ -72,6 +77,66 @@ impl DroppedFileService {
         }
 
         Ok(())
+    }
+
+    /// Checks if a dropped path is a file or a directory and consumes it from the allowlist.
+    pub async fn check_dropped_path_type(&self, file_path: String) -> Result<String, String> {
+        let path = Path::new(&file_path);
+
+        if !path.exists() {
+            return Err(format!("Path does not exist: {file_path}"));
+        }
+
+        if self.has_hidden_or_relative_component(path) {
+            return Err("Access denied: Hidden files and directories are not allowed".to_string());
+        }
+
+        // Symlink check
+        let symlink_metadata = std::fs::symlink_metadata(path)
+            .map_err(|e| format!("Failed to inspect file metadata: {e}"))?;
+        if symlink_metadata.file_type().is_symlink() {
+            return Err("Access denied: Symbolic links are not allowed".to_string());
+        }
+
+        // Resolve and check allowlist
+        let resolved_path = std::fs::canonicalize(path)
+            .map_err(|e| format!("Failed to resolve dropped file path: {e}"))?;
+
+        if self.has_hidden_component(&resolved_path) {
+            return Err("Access denied: Hidden files and directories are not allowed".to_string());
+        }
+
+        let resolved_path_str = resolved_path.to_string_lossy().to_string();
+        let is_dir = resolved_path.is_dir();
+
+        {
+            let mut guard = self
+                .allowlist
+                .lock()
+                .map_err(|_| "Dropped file allowlist lock poisoned".to_string())?;
+
+            if is_dir {
+                // Consume directory immediately as it won't be read later
+                if !guard.remove(&resolved_path_str) {
+                    return Err(
+                        "Access denied: Path was not provided by an OS file-drop event".to_string(),
+                    );
+                }
+            } else {
+                // Just check if it exists for files, do not consume yet
+                if !guard.contains(&resolved_path_str) {
+                    return Err(
+                        "Access denied: Path was not provided by an OS file-drop event".to_string(),
+                    );
+                }
+            }
+        }
+
+        if is_dir {
+            Ok("directory".to_string())
+        } else {
+            Ok("file".to_string())
+        }
     }
 
     /// Reads a file that was dropped onto the application window.
@@ -395,5 +460,45 @@ mod tests {
             !guard.contains(&resolved_target),
             "symlink registration must not add canonical target to allowlist"
         );
+    }
+
+    #[tokio::test]
+    async fn test_check_dropped_path_type_behavior() {
+        let service = DroppedFileService::new();
+        let (_dir, test_root) = setup_test_dir();
+
+        let normal_file = test_root.join("normal_test.txt");
+        std::fs::write(&normal_file, "ok").unwrap();
+
+        let normal_dir = test_root.join("normal_dir");
+        std::fs::create_dir(&normal_dir).unwrap();
+
+        // 1. Test directory drop (should be consumed)
+        register_for_test(&service, &normal_dir).await;
+        let type_result = service
+            .check_dropped_path_type(normal_dir.to_string_lossy().to_string())
+            .await;
+        assert!(type_result.is_ok());
+        assert_eq!(type_result.unwrap(), "directory");
+        
+        // Second time should fail because it was consumed
+        let second_type_result = service
+            .check_dropped_path_type(normal_dir.to_string_lossy().to_string())
+            .await;
+        assert!(second_type_result.is_err());
+
+        // 2. Test file drop (should NOT be consumed)
+        register_for_test(&service, &normal_file).await;
+        let file_type_result = service
+            .check_dropped_path_type(normal_file.to_string_lossy().to_string())
+            .await;
+        assert!(file_type_result.is_ok());
+        assert_eq!(file_type_result.unwrap(), "file");
+
+        // The file should still be available to be read (this consumes it)
+        let read_result = service
+            .read_dropped_file(normal_file.to_string_lossy().to_string())
+            .await;
+        assert!(read_result.is_ok());
     }
 }

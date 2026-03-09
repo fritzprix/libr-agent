@@ -64,6 +64,7 @@ pub struct SessionMetadata {
     pub updated_at: i64,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
+    pub workspace_override: Option<String>,
 }
 
 impl TryFrom<session::Model> for SessionMetadata {
@@ -86,6 +87,7 @@ impl TryFrom<session::Model> for SessionMetadata {
             updated_at: model.updated_at,
             is_bookmarked: model.is_bookmarked,
             yolo_mode: model.yolo_mode,
+            workspace_override: model.workspace_override,
         })
     }
 }
@@ -164,6 +166,7 @@ impl SessionRepository for SqliteSessionRepository {
             updated_at: Set(session.updated_at),
             is_bookmarked: Set(session.is_bookmarked),
             yolo_mode: Set(session.yolo_mode),
+            workspace_override: Set(session.workspace_override.clone()),
         };
 
         Session::insert(model)
@@ -182,6 +185,7 @@ impl SessionRepository for SqliteSessionRepository {
                         session::Column::MaxFanout,
                         session::Column::UpdatedAt,
                         session::Column::YoloMode,
+                        session::Column::WorkspaceOverride,
                     ])
                     .to_owned(),
             )

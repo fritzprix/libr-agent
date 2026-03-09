@@ -40,7 +40,11 @@ import {
   enforceRuntimeBuiltinAliases,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
-import { workspaceWriteFile, getWorkspaceDir } from '@/lib/backend/workspace';
+import {
+  workspaceWriteFile,
+  getWorkspaceDir,
+  checkDroppedPathType,
+} from '@/lib/backend';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 import type { AttachmentReference } from '@/models/chat';
@@ -129,12 +133,19 @@ function DraftChatInner() {
 
   // Pre-session file attachments (written to workspace before session creation)
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
+    null,
+  );
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
   );
+  const [profileDragState, setProfileDragState] = useState<
+    'none' | 'valid' | 'invalid'
+  >('none');
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const profileAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const rustBackend = useRustBackend();
   const { subscribe } = useDnDContext();
@@ -172,7 +183,10 @@ function DraftChatInner() {
 
   // Drag-and-drop: read dropped paths via Rust backend, build File objects
   useEffect(() => {
-    const processDroppedPaths = (paths: string[]) => {
+    const processDroppedPaths = (
+      paths: string[],
+      target: 'profile' | 'form',
+    ) => {
       // Fire-and-forget: errors handled internally
       const run = async () => {
         setIsAttachmentLoading(true);
@@ -188,23 +202,52 @@ function DraftChatInner() {
           const files: File[] = [];
           for (const filePath of paths) {
             try {
-              const fileData = await rustBackend.readDroppedFile(filePath);
-              const filename =
-                filePath.split('/').pop() ??
-                filePath.split('\\').pop() ??
-                'unknown';
-              const mimeType = getMimeType(filename);
-              files.push(
-                new File([new Uint8Array(fileData)], filename, {
-                  type: mimeType,
-                }),
-              );
+              // Check if path is a directory
+              const pathType = await checkDroppedPathType(filePath);
+
+              if (target === 'profile') {
+                if (pathType === 'directory') {
+                  setWorkspaceOverride(filePath);
+                } else {
+                  toast.error('Drop files in the chat input to attach them.');
+                }
+                continue;
+              }
+
+              if (target === 'form') {
+                if (pathType === 'directory') {
+                  toast.error(
+                    'Drop directories in the central area to set workspace override.',
+                  );
+                  continue;
+                }
+
+                // It's a file, read it
+                const fileData = await rustBackend.readDroppedFile(filePath);
+                const filename =
+                  filePath.split('/').pop() ??
+                  filePath.split('\\').pop() ??
+                  'unknown';
+                const mimeType = getMimeType(filename);
+                files.push(
+                  new File([new Uint8Array(fileData)], filename, {
+                    type: mimeType,
+                  }),
+                );
+              }
             } catch (err) {
-              logger.error('Failed to read dropped file', { filePath, err });
-              toast.error(`Failed to read: ${filePath.split(/[\\/]/).pop()}`);
+              logger.error('Failed to process dropped path', {
+                filePath,
+                err,
+              });
+              toast.error(
+                `Failed to process: ${filePath.split(/[\\/]/).pop()}`,
+              );
             }
           }
-          addFiles(files);
+          if (files.length > 0) {
+            addFiles(files);
+          }
         } finally {
           setIsAttachmentLoading(false);
         }
@@ -212,7 +255,10 @@ function DraftChatInner() {
       void run();
     };
 
-    const handler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+    const formHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
       if (event === 'drag-over') {
         setDragState(
           payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
@@ -222,15 +268,48 @@ function DraftChatInner() {
       } else if (event === 'drop') {
         setDragState('none');
         if (payload.paths && payload.paths.length > 0) {
-          processDroppedPaths(payload.paths);
+          processDroppedPaths(payload.paths, 'form');
         }
       }
     };
 
-    const unsub = subscribe(formRef as React.RefObject<HTMLElement>, handler, {
-      priority: 5,
-    });
-    return () => unsub();
+    const profileHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
+      if (event === 'drag-over') {
+        setProfileDragState(
+          payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
+        );
+      } else if (event === 'leave') {
+        setProfileDragState('none');
+      } else if (event === 'drop') {
+        setProfileDragState('none');
+        if (payload.paths && payload.paths.length > 0) {
+          processDroppedPaths(payload.paths, 'profile');
+        }
+      }
+    };
+
+    const unsubForm = subscribe(
+      formRef as React.RefObject<HTMLElement>,
+      formHandler,
+      {
+        priority: 5,
+      },
+    );
+    const unsubProfile = subscribe(
+      profileAreaRef as React.RefObject<HTMLElement>,
+      profileHandler,
+      {
+        priority: 5,
+      },
+    );
+
+    return () => {
+      unsubForm();
+      unsubProfile();
+    };
   }, [subscribe, rustBackend, getMimeType, addFiles]);
 
   useEffect(() => {
@@ -463,6 +542,7 @@ function DraftChatInner() {
               'openai',
             agentConfig,
             isEphemeral: false,
+            workspacePath: workspaceOverride || undefined,
           },
         });
 
@@ -472,7 +552,7 @@ function DraftChatInner() {
           if (workspaceDirCache === null) {
             workspaceDirCache = await getWorkspaceDir(newSessionId);
           }
-          return workspaceDirCache;
+          return workspaceDirCache!;
         };
 
         for (let i = 0; i < pendingFiles.length; i++) {
@@ -630,7 +710,16 @@ function DraftChatInner() {
       </div>
 
       {/* Assistant Profile Card */}
-      <div className="flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar">
+      <div
+        ref={profileAreaRef}
+        className={cn(
+          'flex-1 p-8 flex flex-col items-center justify-center text-center gap-6 overflow-y-auto no-scrollbar transition-all',
+          profileDragState === 'valid' &&
+            'bg-primary/5 ring-2 ring-primary/30 ring-inset',
+          profileDragState === 'invalid' &&
+            'bg-destructive/10 ring-2 ring-destructive/30 ring-inset',
+        )}
+      >
         {/* Identity Section */}
         <div className="flex flex-col items-center space-y-4">
           <div className="w-20 h-20 bg-primary/10 rounded-xl flex items-center justify-center shadow-sm">
@@ -647,8 +736,52 @@ function DraftChatInner() {
             )}
           </div>
         </div>
-
-        {/* Capabilities Grid */}
+        {/* Workspace Override - Prominent Indicator */}
+        {workspaceOverride ? (
+          <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-start gap-4 shadow-sm relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceOverride(null)}
+                  className="bg-background/80 hover:bg-background rounded-full p-1 shadow-sm border"
+                  title="Remove workspace override"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center shrink-0">
+                <FolderOpen className="w-6 h-6 text-primary" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-bold text-primary uppercase tracking-tight">
+                    Workspace Override Active
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded">
+                  {workspaceOverride}
+                </p>
+                <p className="text-[10px] text-muted-foreground/70 mt-2 leading-tight">
+                  The agent will use this directory as its primary workspace for
+                  this session.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'text-xs text-muted-foreground transition-opacity duration-300',
+              profileDragState === 'valid'
+                ? 'opacity-100 font-medium'
+                : 'opacity-0 h-0 overflow-hidden',
+            )}
+          >
+            Drop a folder here to set as workspace
+          </div>
+        )}
+        {/* Capabilities Grid */}{' '}
         <TooltipProvider>
           <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
             {/* Built-in Tools */}
@@ -735,7 +868,6 @@ function DraftChatInner() {
             </Link>
           </div>
         </TooltipProvider>
-
         {/* Configuration Footer */}
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}

@@ -164,7 +164,7 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
     /// It must only be called from synchronous contexts. If called from async code,
     /// wrap the call in `tokio::task::spawn_blocking` to avoid blocking the executor.
     pub fn get_workspace_dir(&self, session_id: &str) -> PathBuf {
-        let workspace_dir = self.base_data_dir.join("workspaces").join(session_id);
+        let workspace_dir = self.get_workspace_dir_unverified(session_id);
 
         // Ensure directory exists if we are calculating it
         if !workspace_dir.exists() {
@@ -172,6 +172,11 @@ Write-Host "Available tools: python3, typescript/deno, shell commands"
         }
 
         workspace_dir
+    }
+
+    /// Get session workspace directory path without ensuring it exists or performing any I/O.
+    pub fn get_workspace_dir_unverified(&self, session_id: &str) -> PathBuf {
+        self.base_data_dir.join("workspaces").join(session_id)
     }
 
     /// Remove workspace directory
