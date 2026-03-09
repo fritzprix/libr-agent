@@ -242,7 +242,8 @@
       "chatInterface": "Chat Interface",
       "mcpServers": "MCP Servers",
       "advanced": "Advanced",
-      "extensions": "Extensions"
+      "extensions": "Extensions",
+      "dev": "Dev"
     },
     "llmPreference": "Default LLM",
     "messageWindowSize": "Message Window Size",
@@ -282,6 +283,7 @@
       "showApiKey": "Show API key",
       "hideApiKey": "Hide API key",
       "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "http://localhost:11434",
       "use3rdParty": "Use 3rd party OpenAI-compatible API",
       "customModelId": "Custom Model ID",
       "customModelIdPlaceholder": "e.g., llama-3.1-70b, mistral-large",

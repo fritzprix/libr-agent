@@ -12,6 +12,7 @@ import {
 } from '@/components/ui';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export interface ProviderCardProps {
   provider: AIServiceProvider;
@@ -47,6 +48,7 @@ function ProviderCardBase({
     customModelId || '',
   );
   const [showApiKey, setShowApiKey] = useState(false);
+  const { t } = useTranslation('common');
 
   // Use debounce hook for pending changes
   const { debounced: schedulePending } = useDebounce(
@@ -69,12 +71,12 @@ function ProviderCardBase({
       <CardContent className="space-y-3 min-w-0">
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 text-sm font-medium">
-            API Key
+            {t('settings.provider.apiKey', 'API Key')}
           </label>
           <div className="relative">
             <Input
               type={showApiKey ? 'text' : 'password'}
-              placeholder={`Enter your ${providerName} API key`}
+              placeholder={t('settings.provider.apiKeyPlaceholder', 'Enter your {{name}} API key', { name: providerName })}
               value={localApiKey}
               onChange={(e) => {
                 const v = e.target.value;
@@ -90,7 +92,7 @@ function ProviderCardBase({
               size="icon"
               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
               onClick={() => setShowApiKey((v) => !v)}
-              aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+              aria-label={showApiKey ? t('settings.provider.hideApiKey', 'Hide API key') : t('settings.provider.showApiKey', 'Show API key')}
               aria-pressed={showApiKey}
             >
               {showApiKey ? (
@@ -106,11 +108,11 @@ function ProviderCardBase({
           provider === AIServiceProvider.OpenAI) && (
           <div className="min-w-0">
             <label className="block text-muted-foreground mb-2 text-sm font-medium">
-              Base URL
+              {t('settings.provider.baseUrl', 'Base URL')}
             </label>
             <Input
               type="url"
-              placeholder="http://localhost:11434"
+              placeholder={t('settings.provider.baseUrlPlaceholder', 'http://localhost:11434')}
               value={localBaseUrl}
               onChange={(e) => {
                 const v = e.target.value;
@@ -141,18 +143,18 @@ function ProviderCardBase({
                 htmlFor={`use3rdParty-${provider}`}
                 className="text-sm font-medium text-muted-foreground cursor-pointer"
               >
-                Use 3rd party OpenAI-compatible API
+                {t('settings.provider.use3rdParty', 'Use 3rd party OpenAI-compatible API')}
               </label>
             </div>
 
             {localUse3rdParty && (
               <div className="min-w-0">
                 <label className="block text-muted-foreground mb-2 text-sm font-medium">
-                  Custom Model ID
+                  {t('settings.provider.customModelId', 'Custom Model ID')}
                 </label>
                 <Input
                   type="text"
-                  placeholder="e.g., llama-3.1-70b, mistral-large"
+                  placeholder={t('settings.provider.customModelIdPlaceholder', 'e.g., llama-3.1-70b, mistral-large')}
                   value={localCustomModelId}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -167,8 +169,7 @@ function ProviderCardBase({
                   className="bg-background border text-foreground w-full"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Enter the model ID supported by your 3rd party API (e.g., LM
-                  Studio, LocalAI)
+                  {t('settings.provider.customModelIdDescription', 'Enter the model ID supported by your 3rd party API (e.g., LM Studio, LocalAI)')}
                 </p>
               </div>
             )}

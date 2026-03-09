@@ -65,3 +65,4 @@
 **Extracted:** 1
 **Languages updated:** [EN, KO]
 **Notes:** Localized `SessionFilesPopover` strings for file listing, counts, and actions, using English as placeholders for Korean where needed.
+## 2025-02-17 - [SettingsPage/ProviderCard] **Extracted:** [10 Strings] **Languages updated:** [EN, KO]
