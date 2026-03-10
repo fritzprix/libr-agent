@@ -6,12 +6,13 @@ use std::path::Path;
 /// in database drivers like sqlx/SeaORM.
 pub fn format_sqlite_url(path_str: &str) -> String {
     let path = Path::new(path_str);
-    let mut path_lossy = path.to_string_lossy().to_string();
+    let path_lossy = path.to_string_lossy().to_string();
 
-    // Convert backslashes to forward slashes for cross-platform SQLite URL consistency
-    if cfg!(target_os = "windows") || path_lossy.contains('\\') {
-        path_lossy = path_lossy.replace('\\', "/");
-    }
+    // On Windows, convert backslashes to forward slashes for SQLite URL compatibility.
+    // We only do this on Windows to avoid corrupting valid Unix paths that legitimately
+    // contain backslash characters.
+    #[cfg(target_os = "windows")]
+    let path_lossy = path_lossy.replace('\\', "/");
 
     format!("sqlite://{}", path_lossy)
 }
