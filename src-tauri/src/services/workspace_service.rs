@@ -213,7 +213,9 @@ impl WorkspaceService {
         let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
 
         // Remove from in-memory pool
-        session_manager.remove_workspace_override(session_id).await?;
+        session_manager
+            .remove_workspace_override(session_id)
+            .await?;
 
         // Clear from DB
         let session_repo = crate::state::get_session_repository();

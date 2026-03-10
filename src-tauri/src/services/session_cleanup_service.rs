@@ -88,9 +88,7 @@ impl SessionCleanupService {
                 if let Ok(Some(session)) = session_repo.get_session(session_id).await {
                     if let Some(override_path) = session.workspace_override {
                         let path = std::path::PathBuf::from(override_path);
-                        if let Err(e) =
-                            manager.register_session_override(session_id, path).await
-                        {
+                        if let Err(e) = manager.register_session_override(session_id, path).await {
                             log::warn!(
                                 "Failed to pre-register workspace override for session {} before cleanup: {}",
                                 session_id,

@@ -401,11 +401,10 @@ impl SessionManager {
 
         if let Some(info) = workspace_info {
             // Safety: Never delete workspace overrides (user-provided custom directories)
-            if info.workspace_override.is_some() {
+            if let Some(workspace_override) = &info.workspace_override {
                 info!(
                     "Session '{}' has a workspace override. Preserving custom directory: {:?}",
-                    session_id,
-                    info.workspace_override.as_ref().unwrap()
+                    session_id, workspace_override
                 );
             }
 
