@@ -63,22 +63,37 @@ export function AgentChatStatusBar() {
         metrics.completionTokens > 0 ||
         (metrics.cachedPromptTokens ?? 0) > 0;
 
-      // Preserve evaluation details (like evalDuration for TPS) in lastMetrics
       if (hasData) {
-        setLastMetrics(metrics);
+        setLastMetrics((prev) => {
+          if (!prev) return metrics;
+          // Smart merge: update counts but preserve metadata if new chunk lacks it
+          return {
+            ...prev,
+            ...metrics,
+            details: {
+              ...prev.details,
+              ...metrics.details,
+              // Only overwrite metadata if new value is present and non-zero
+              evalDuration:
+                metrics.details?.evalDuration || prev.details?.evalDuration,
+              timeToFirstToken:
+                metrics.details?.timeToFirstToken ||
+                prev.details?.timeToFirstToken,
+              promptEvalDuration:
+                metrics.details?.promptEvalDuration ||
+                prev.details?.promptEvalDuration,
+              loadDuration:
+                metrics.details?.loadDuration || prev.details?.loadDuration,
+            },
+          };
+        });
       }
     }
   }, [metrics]);
 
-  // Prefer current metrics only if they have actual token counts (indicating data from the current request has arrived)
-  // Otherwise, stick with lastMetrics to maintain UI continuity ("maintain previous values")
-  const displayMetrics =
-    metrics &&
-    (metrics.promptTokens > 0 ||
-      metrics.completionTokens > 0 ||
-      (metrics.cachedPromptTokens ?? 0) > 0)
-      ? metrics
-      : lastMetrics;
+  // Use lastMetrics (which is now our "best known" merged state) as primary display source
+  // This ensures that even if metrics is null or a "bad" chunk, we keep the last valid UI state.
+  const displayMetrics = lastMetrics;
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.
