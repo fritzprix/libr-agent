@@ -91,3 +91,7 @@
 **Action:**
 
 - **Type Sync:** Replaced `Record<string, unknown>` with strictly typed `RustMessage` and `RustSearchResult` in `src/lib/backend/messages.ts`, ensuring compile-time safety and 1:1 Rust-TS synchronization for message pagination and search.
+
+## 2026-03-09 - MCP Tool Call & Sampling Commands
+**IPC Fix:** Untyped/Missing Endpoints (`call_mcp_tool`, `sample_from_mcp_server`)
+**Optimized:** Dead code removal in frontend to keep synced with backend state

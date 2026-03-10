@@ -1,38 +1,9 @@
 import { safeInvoke } from './core';
-import type {
-  MCPTool,
-  MCPResponse,
-  SamplingOptions,
-  SamplingResponse,
-} from '@/lib/mcp';
-import { createId } from '@paralleldrive/cuid2';
+import type { MCPTool } from '@/lib/mcp';
 
 // ========================================
 // MCP Server Management
 // ========================================
-
-/**
- * Calls a tool on a specified MCP server.
- * @param serverName The name of the server.
- * @param toolName The name of the tool to call.
- * @param args The arguments to pass to the tool.
- * @param requestId Optional request ID for tracking. If not provided, a new ID is generated.
- * @returns A promise that resolves to an `MCPResponse`.
- */
-export async function callTool(
-  serverName: string,
-  toolName: string,
-  args: Record<string, unknown>,
-  requestId?: string,
-): Promise<MCPResponse<unknown>> {
-  const id = requestId ?? createId();
-  return safeInvoke<MCPResponse<unknown>>('call_mcp_tool', {
-    serverName,
-    toolName,
-    arguments: args,
-    requestId: id,
-  });
-}
 
 // ============================================================================
 // OAuth 2.1 Authentication Functions
@@ -66,25 +37,6 @@ export async function getOAuthToken(serverId: string): Promise<string | null> {
  */
 export async function revokeOAuthToken(serverId: string): Promise<string> {
   return safeInvoke<string>('revoke_oauth_token', { serverId });
-}
-
-/**
- * Performs text generation (sampling) using a model on a specified MCP server.
- * @param serverName The name of the server.
- * @param prompt The prompt to send to the model.
- * @param options Optional sampling parameters.
- * @returns A promise that resolves to a `SamplingResponse`.
- */
-export async function sampleFromModel(
-  serverName: string,
-  prompt: string,
-  options?: SamplingOptions,
-): Promise<SamplingResponse> {
-  return safeInvoke<SamplingResponse>('sample_from_mcp_server', {
-    serverName,
-    prompt,
-    options,
-  });
 }
 
 // ========================================
