@@ -266,7 +266,11 @@ export function HttpForm({
                         <div className="flex-1">
                           <Input
                             ref={(el) => {
-                              if (index === arr.length - 1 && isAddingRef.current && el) {
+                              if (
+                                index === arr.length - 1 &&
+                                isAddingRef.current &&
+                                el
+                              ) {
                                 el.focus();
                                 isAddingRef.current = false;
                               }
