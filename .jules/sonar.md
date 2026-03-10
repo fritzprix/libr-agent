@@ -40,3 +40,7 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 
 ## 2026-03-07 - src/lib/backend/utils.ts, src/lib/backend/agent-commands.ts, src/lib/backend/builtin-tools.ts, src/lib/backend/browser.ts, src/lib/backend/file-operations.ts **Coverage Expanded:** Tauri command wrappers **Assertions:** Verified safeInvoke parameters and return values.
 ## 2026-03-08 - src/models/validation.ts **Coverage Expanded:** isValidMessage, parseAssistant **Assertions:** Verified boundary checks for Message hydration and validation (id, sessionId, threadId, role presence/type validation, content array verification). Fixed missing coverage branch where `isValidMessage` handles nullish checks correctly, and `parseAssistant` handles invalid JSON stringified config or null config gracefully.
+## 2026-03-09 - src/lib/backend/skills.ts **Coverage Expanded:** Backend Skills Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/scheduled-tasks.ts **Coverage Expanded:** Backend Scheduled Tasks Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/workspace.ts **Coverage Expanded:** Backend Workspace Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/playbooks.ts **Coverage Expanded:** Backend Playbooks Wrapper **Assertions:** Verified safeInvoke args, correct payload forwarding, JSON deserialization robustness, and pagination logic

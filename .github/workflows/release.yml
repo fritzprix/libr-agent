@@ -81,6 +81,28 @@ jobs:
           echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Validate signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "❌ TAURI_SIGNING_PRIVATE_KEY secret is not set."
+            echo ""
+            echo "Without this key, tauri-action will skip uploading latest.json, and"
+            echo "the in-app updater will fail with a non-200 response from the endpoint."
+            echo ""
+            echo "To fix:"
+            echo "  1. Generate the key: pnpm tauri signer generate -w ~/.tauri/libragent.key"
+            echo "  2. Go to: GitHub repo → Settings → Environments → copilot → Secrets"
+            echo "  3. Add TAURI_SIGNING_PRIVATE_KEY (contents of ~/.tauri/libragent.key)"
+            echo "  4. Optionally add TAURI_SIGNING_PRIVATE_KEY_PASSWORD if you set one"
+            echo ""
+            echo "The matching public key must also be set in src-tauri/tauri.conf.json → plugins.updater.pubkey"
+            exit 1
+          fi
+          echo "✅ Signing key is configured."
+
       - name: Build the app
         uses: tauri-apps/tauri-action@v0
         env:

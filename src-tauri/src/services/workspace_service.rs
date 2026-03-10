@@ -1,3 +1,4 @@
+use crate::repositories::session_repository::SessionRepository;
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
@@ -188,9 +189,26 @@ impl WorkspaceService {
         // Ensure session workspace exists in pool (triggers lazy loading)
         let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
 
+        // Reject non-UTF-8 paths: they cannot be round-tripped through the DB correctly
+        let override_str = override_path
+            .to_str()
+            .ok_or_else(|| "Invalid path encoding: path contains non-UTF-8 characters".to_string())?
+            .to_string();
+
+        // Persist to DB first — if this fails, the in-memory state is left unchanged,
+        // so runtime and persisted state stay consistent.
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .update_workspace_override(session_id, Some(override_str))
+            .await
+            .map_err(|e| format!("Failed to persist workspace override: {}", e))?;
+
+        // Only update in-memory pool after DB write succeeds
         session_manager
             .set_workspace_override(session_id, override_path)
-            .await
+            .await?;
+
+        Ok(())
     }
 
     /// Cancels the workspace override for a session.
@@ -200,7 +218,20 @@ impl WorkspaceService {
         // Ensure session workspace exists in pool (triggers lazy loading)
         let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
 
-        session_manager.remove_workspace_override(session_id).await
+        // Clear from DB first — if this fails we return early before touching in-memory state,
+        // keeping both sources of truth consistent.
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .update_workspace_override(session_id, None)
+            .await
+            .map_err(|e| format!("Failed to clear workspace override: {}", e))?;
+
+        // Only remove from in-memory pool after DB write succeeds
+        session_manager
+            .remove_workspace_override(session_id)
+            .await?;
+
+        Ok(())
     }
 
     /// Checks if a directory is accessible.
