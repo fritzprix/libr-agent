@@ -32,7 +32,8 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
-  const { session, yoloModeEnabled, toggleYoloMode } = useAgentSession();
+  const { session, yoloModeEnabled, toggleYoloMode, updateSessionConfig } =
+    useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
@@ -350,6 +351,9 @@ export function AgentChatStatusBar() {
                       },
                     },
                   );
+
+                  // Update local session state
+                  updateSessionConfig(model, provider);
                 } catch (e) {
                   logger.error('Failed to update session config', e);
                 }
