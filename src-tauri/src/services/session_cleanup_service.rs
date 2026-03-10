@@ -82,8 +82,27 @@ impl SessionCleanupService {
     pub async fn delete_session_workspace(session_id: &str) -> Result<(), String> {
         match crate::session::get_session_manager() {
             Ok(manager) => {
-                // Ensure workspace is loaded into pool before attempting removal
+                // Ensure workspace override is registered from DB if it exists,
+                // so SessionManager::remove_session knows to preserve it.
+                let session_repo = crate::state::get_session_repository();
+                if let Ok(Some(session)) = session_repo.get_session(session_id).await {
+                    if let Some(override_path) = session.workspace_override {
+                        let path = std::path::PathBuf::from(override_path);
+                        if let Err(e) =
+                            manager.register_session_override(session_id, path).await
+                        {
+                            log::warn!(
+                                "Failed to pre-register workspace override for session {} before cleanup: {}",
+                                session_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // Ensure workspace is loaded into pool if not already
                 let _ = manager.get_session_workspace_dir_by_id(session_id);
+
                 if let Err(e) = manager.remove_session(session_id).await {
                     log::warn!(
                         "Failed to remove workspace for session {}: {}",

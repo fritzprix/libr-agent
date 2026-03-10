@@ -1,3 +1,4 @@
+use crate::repositories::session_repository::SessionRepository;
 use crate::session::get_session_manager;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
@@ -188,9 +189,20 @@ impl WorkspaceService {
         // Ensure session workspace exists in pool (triggers lazy loading)
         let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
 
+        // Update in-memory pool
         session_manager
-            .set_workspace_override(session_id, override_path)
+            .set_workspace_override(session_id, override_path.clone())
+            .await?;
+
+        // Persist to DB so the override survives app restarts
+        let session_repo = crate::state::get_session_repository();
+        let override_str = override_path.to_string_lossy().to_string();
+        session_repo
+            .update_workspace_override(session_id, Some(override_str))
             .await
+            .map_err(|e| format!("Failed to persist workspace override: {}", e))?;
+
+        Ok(())
     }
 
     /// Cancels the workspace override for a session.
@@ -200,7 +212,17 @@ impl WorkspaceService {
         // Ensure session workspace exists in pool (triggers lazy loading)
         let _workspace_path = session_manager.get_session_workspace_dir_by_id(session_id);
 
-        session_manager.remove_workspace_override(session_id).await
+        // Remove from in-memory pool
+        session_manager.remove_workspace_override(session_id).await?;
+
+        // Clear from DB
+        let session_repo = crate::state::get_session_repository();
+        session_repo
+            .update_workspace_override(session_id, None)
+            .await
+            .map_err(|e| format!("Failed to clear workspace override: {}", e))?;
+
+        Ok(())
     }
 
     /// Checks if a directory is accessible.
