@@ -13,22 +13,28 @@ export function useServerTools(serverId: string, isOpen: boolean) {
   useEffect(() => {
     if (!isOpen) return;
 
+    let isMounted = true;
+
     setIsLoading(true);
     setError(null);
     setTools([]);
 
     safeInvoke<MCPTool[]>('probe_mcp_server', { serverId })
       .then((result) => {
-        setTools(result);
+        if (isMounted) setTools(result);
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error('Failed to probe server tools', { serverId, err });
-        setError(msg);
+        if (isMounted) setError(msg);
       })
       .finally(() => {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, serverId]);
 
   return { tools, isLoading, error };
