@@ -85,3 +85,9 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `session_manager.rs` contained orchestration logic for cascading deletion of descendant workspaces and DB records rather than just delegating to a lifecycle module.
 - **Action:** Extracted `delete_session` and `delete_session_only` functions to a new `src-tauri/src/agent/lifecycle/deletion.rs` module.
 - **Result:** `AgentSessionManager` remains a thin facade over lifecycle management, properly delegating domain actions.
+
+## 2026-03-09 - [Architecture] **Anti-Pattern:** Fat Handler & Mixed Domains **Resolution:** Service Extraction
+
+- **Context:** The `workflow::start_workflow` and `AgentSessionManager::inject_messages` functions were orchestrating too many cross-cutting concerns (message caching, database persistence, and UI event emission) alongside their primary agent execution logic, violating Separation of Concerns.
+- **Action:** Extracted message persistence, caching, queueing, and UI event emission into a dedicated `MessageService`. Extracted proxy creation into a focused `ensure_proxy_exists` helper.
+- **Result:** `workflow.rs` and `session_manager.rs` now properly delegate to domain services, keeping the agent execution logic clean and decoupled from data storage concerns.
