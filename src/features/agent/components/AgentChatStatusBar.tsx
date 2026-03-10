@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -32,7 +32,8 @@ const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
-  const { session, yoloModeEnabled, toggleYoloMode } = useAgentSession();
+  const { session, yoloModeEnabled, toggleYoloMode, updateSessionConfig } =
+    useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
@@ -48,23 +49,77 @@ export function AgentChatStatusBar() {
 
   // Persist last metrics to show after streaming ends
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
-    session?.id,
-  );
 
-  // Eradicated Syncing State: Adjusting State During Render Pattern
-  // Reset last metrics when session changes without using useEffect
-  if (session?.id !== prevSessionId) {
-    setPrevSessionId(session?.id);
+  // Sync state with effects to avoid "Adjusting state during render" anti-pattern
+  useEffect(() => {
+    // Reset metrics when session changes
     setLastMetrics(null);
-  }
+  }, [session?.id]);
 
-  // Update last metrics when active metrics are available
-  if (metrics && metrics !== lastMetrics) {
-    setLastMetrics(metrics);
-  }
+  useEffect(() => {
+    // Update last metrics only when we have meaningful new data
+    if (metrics) {
+      const hasData =
+        metrics.promptTokens > 0 ||
+        metrics.completionTokens > 0 ||
+        (metrics.cachedPromptTokens ?? 0) > 0;
 
-  const displayMetrics = metrics || lastMetrics;
+      if (hasData) {
+        setLastMetrics((prev) => {
+          if (!prev) return metrics;
+          // Smart merge: update counts but preserve metadata if new chunk lacks it
+          return {
+            ...prev,
+            ...metrics,
+            details: {
+              ...prev.details,
+              ...metrics.details,
+              // Only overwrite metadata if new value is present and non-zero
+              evalDuration:
+                metrics.details?.evalDuration || prev.details?.evalDuration,
+              timeToFirstToken:
+                metrics.details?.timeToFirstToken ||
+                prev.details?.timeToFirstToken,
+              promptEvalDuration:
+                metrics.details?.promptEvalDuration ||
+                prev.details?.promptEvalDuration,
+              loadDuration:
+                metrics.details?.loadDuration || prev.details?.loadDuration,
+            },
+          };
+        });
+      }
+    }
+  }, [metrics]);
+
+  // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
+  // without waiting for the next paint cycle (Effect-less derivation)
+  const displayMetrics = useMemo(() => {
+    if (!metrics) return lastMetrics;
+    if (!lastMetrics) return metrics;
+
+    // Smart merge: update counts but preserve metadata if new chunk lacks it
+    // (Same logic as useEffect but applied immediately during render)
+    return {
+      ...lastMetrics,
+      ...metrics,
+      details: {
+        ...lastMetrics.details,
+        ...metrics.details,
+        // Only overwrite metadata if new value is present and non-zero
+        evalDuration:
+          metrics.details?.evalDuration || lastMetrics.details?.evalDuration,
+        timeToFirstToken:
+          metrics.details?.timeToFirstToken ||
+          lastMetrics.details?.timeToFirstToken,
+        promptEvalDuration:
+          metrics.details?.promptEvalDuration ||
+          lastMetrics.details?.promptEvalDuration,
+        loadDuration:
+          metrics.details?.loadDuration || lastMetrics.details?.loadDuration,
+      },
+    };
+  }, [metrics, lastMetrics]);
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.
@@ -285,10 +340,16 @@ export function AgentChatStatusBar() {
             <AgentModelPicker
               currentModel={session.model}
               currentProvider={session.provider}
+              disabled={workflowStatus !== 'idle'}
               onConfigUpdate={async (model, provider) => {
-                if (!session.id || !session.assistant) return;
+                if (
+                  !session.id ||
+                  !session.assistant ||
+                  workflowStatus !== 'idle'
+                )
+                  return;
 
-                // Optimistic update logging
+                // Session config update logging
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {
@@ -315,6 +376,9 @@ export function AgentChatStatusBar() {
                       },
                     },
                   );
+
+                  // Update local session state
+                  updateSessionConfig(model, provider);
                 } catch (e) {
                   logger.error('Failed to update session config', e);
                 }

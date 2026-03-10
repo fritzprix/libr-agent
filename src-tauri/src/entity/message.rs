@@ -21,6 +21,7 @@ pub struct Model {
     pub updated_at: i64,
     pub source: Option<String>,
     pub error: Option<String>,
+    pub usage: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

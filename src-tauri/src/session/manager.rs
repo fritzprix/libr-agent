@@ -311,6 +311,16 @@ impl SessionManager {
         session_id: &str,
         override_path: PathBuf,
     ) -> Result<(), String> {
+        // Prepare default path and ensure it exists BEFORE taking the write lock.
+        // This is necessary because spawn_blocking().await cannot be called while holding
+        // a non-Send RwLockWriteGuard (pool).
+        let directory_service = self.directory_service.clone();
+        let sid = session_id.to_string();
+        let default_path =
+            tokio::task::spawn_blocking(move || directory_service.get_workspace_dir(&sid))
+                .await
+                .map_err(|e| format!("Failed to compute workspace path: {e}"))?;
+
         let mut pool = self
             .workspace_pool
             .write()
@@ -325,8 +335,7 @@ impl SessionManager {
             // Register new override for future session
             let workspace_info = SessionWorkspaceInfo {
                 session_id: session_id.to_string(),
-                // Use override path as base path too, though get_session_workspace_dir_by_id checks override first
-                workspace_path: override_path.clone(),
+                workspace_path: default_path,
                 workspace_override: Some(override_path),
                 created_at: Instant::now(),
                 last_accessed: Instant::now(),
@@ -381,22 +390,36 @@ impl SessionManager {
     /// Remove a specific session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
         // Remove session from pool, returning error if not found
-        {
+        let workspace_info = {
             let mut pool = self
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if pool.remove(session_id).is_none() {
-                return Err(format!("Session '{session_id}' not found in pool"));
+            pool.remove(session_id)
+        };
+
+        if let Some(info) = workspace_info {
+            // Safety: Never delete workspace overrides (user-provided custom directories)
+            if let Some(workspace_override) = &info.workspace_override {
+                info!(
+                    "Session '{}' has a workspace override. Preserving custom directory: {:?}",
+                    session_id, workspace_override
+                );
             }
+
+            // Always remove the default isolated workspace directory
+            // (it's safe to call even if the directory was never created)
+            self.directory_service.remove_workspace(session_id).await?;
+
+            info!(
+                "Removed session '{}' (internal workspace cleaned)",
+                session_id
+            );
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found in pool"))
         }
-
-        // Remove the workspace directory via directory service
-        self.directory_service.remove_workspace(session_id).await?;
-
-        info!("Removed session '{session_id}' and its workspace");
-        Ok(())
     }
 
     /// Get session statistics

@@ -311,6 +311,7 @@ pub async fn create_session(
                 thinking: None,
                 thinking_signature: None,
                 assistant_id,
+                usage: None,
                 attachments: None,
                 tool_use: None,
                 created_at: now,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input, Label } from '@/components/ui';
 import { Plus, Trash2 } from 'lucide-react';
@@ -33,19 +33,7 @@ export function EnvVarsForm({
   handleUpdateEnvVar,
 }: EnvVarsFormProps) {
   const { t } = useTranslation('common');
-  const prevLengthRef = useRef(envVars.length);
-  const envVarsRef = useRef(envVars);
-  envVarsRef.current = envVars;
-  const lastNewInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Auto-focus the key input of a newly added environment variable.
-  // Depends only on length so edits to existing items don't trigger this.
-  useEffect(() => {
-    if (envVarsRef.current.length > prevLengthRef.current) {
-      lastNewInputRef.current?.focus();
-    }
-    prevLengthRef.current = envVarsRef.current.length;
-  }, [envVars.length]);
+  const isAddingRef = useRef(false);
 
   return (
     <div className="space-y-4">
@@ -57,7 +45,10 @@ export function EnvVarsForm({
           type="button"
           variant="outline"
           size="sm"
-          onClick={handleAddEnvVar}
+          onClick={() => {
+            isAddingRef.current = true;
+            handleAddEnvVar();
+          }}
           className="h-7 text-xs"
         >
           <Plus className="w-3 h-3 mr-1" />{' '}
@@ -159,9 +150,16 @@ export function EnvVarsForm({
                 <div key={item.id} className="flex gap-2 items-start">
                   <div className="flex-1">
                     <Input
-                      ref={
-                        index === arr.length - 1 ? lastNewInputRef : undefined
-                      }
+                      ref={(el) => {
+                        if (
+                          index === arr.length - 1 &&
+                          isAddingRef.current &&
+                          el
+                        ) {
+                          el.focus();
+                          isAddingRef.current = false;
+                        }
+                      }}
                       id={`env-var-key-${item.id}`}
                       placeholder={t(
                         'mcpServer.dialog.envVarKeyPlaceholder',

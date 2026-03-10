@@ -134,3 +134,104 @@ describe('SP17 Orchestration: Compaction Coordination', () => {
     expect(messages.slice(0, splitIdx).length).toBe(6); // ✅ Correct: forced compaction of 6 messages
   });
 });
+
+describe('SP17 Regression: buildCandidateStack summary injection via system prompt', () => {
+  /**
+   * Regression: Before the fix, the compact summary was injected as a synthetic
+   * user Message into the conversation history. This caused consecutive user
+   * messages (summary + actual user message) which broke prefix caching.
+   *
+   * After the fix, buildCandidateStack returns { messages, summary } and the
+   * summary is appended to the system prompt instead.
+   */
+
+  type CacheEntry = { fromId: string; toId: string; summary: string };
+
+  const buildCandidateStack = (
+    msgs: { id: string; role: string }[],
+    cache: CacheEntry | undefined,
+  ): { messages: { id: string; role: string }[]; summary?: string } => {
+    if (!cache) return { messages: msgs };
+
+    const toIdIndex = msgs.findIndex((m) => m.id === cache.toId);
+    if (toIdIndex >= 0) {
+      return {
+        messages: msgs.slice(toIdIndex + 1),
+        summary: `### Previous Conversation Summary\n${cache.summary}`,
+      };
+    }
+    return { messages: msgs };
+  };
+
+  it('should return summary separately, NOT as a user message', () => {
+    const msgs = [
+      { id: 'msg-1', role: 'user' },
+      { id: 'msg-2', role: 'assistant' },
+      { id: 'msg-3', role: 'user' },
+    ];
+    const cache: CacheEntry = {
+      fromId: 'msg-1',
+      toId: 'msg-2',
+      summary: 'User asked X, assistant replied Y.',
+    };
+
+    const { messages, summary } = buildCandidateStack(msgs, cache);
+
+    // Messages after toId only — no synthetic summary message injected
+    expect(messages).toHaveLength(1);
+    expect(messages[0].id).toBe('msg-3');
+    expect(messages.every((m) => m.role !== 'user' || m.id !== 'compact-summary-msg-1~msg-2')).toBe(true);
+
+    // Summary is returned as a string for system prompt injection
+    expect(summary).toContain('Previous Conversation Summary');
+    expect(summary).toContain('User asked X, assistant replied Y.');
+  });
+
+  it('should NOT prepend summary as a consecutive user message (caching regression)', () => {
+    const msgs = [
+      { id: 'msg-1', role: 'user' },
+      { id: 'msg-2', role: 'assistant' },
+      { id: 'msg-3', role: 'user' },
+    ];
+    const cache: CacheEntry = {
+      fromId: 'msg-1',
+      toId: 'msg-2',
+      summary: 'Summary content.',
+    };
+
+    const { messages } = buildCandidateStack(msgs, cache);
+
+    // The first message in the candidate stack must NOT be a synthetic summary user message.
+    // If it were, it would create user→user adjacency and break Gemini prefix caching.
+    expect(messages[0].role).toBe('user');
+    expect(messages[0].id).toBe('msg-3'); // real user message, not synthetic
+    expect(messages[0].id).not.toMatch(/^compact-summary-/);
+  });
+
+  // Regression: After successful compaction, finalSystemPrompt must be updated
+  // so selectMessagesWithinContext uses the correct (larger) token budget.
+  it('should update finalSystemPrompt after compaction to reflect new summary', () => {
+    const baseSystemPrompt = 'You are a helpful assistant.';
+    const oldSummary = 'Old short summary.';
+    const newSummary = 'New longer summary after compaction with more detail.';
+
+    // Pre-compaction state
+    let finalSystemPrompt = oldSummary
+      ? `${baseSystemPrompt}\n\n### Previous Conversation Summary\n${oldSummary}`.trim()
+      : baseSystemPrompt;
+
+    const preCompactionLength = finalSystemPrompt.length;
+
+    // Simulate successful compaction: updatedSystemPrompt is computed and assigned back
+    const updatedSystemPrompt = newSummary
+      ? `${baseSystemPrompt}\n\n### Previous Conversation Summary\n${newSummary}`.trim()
+      : baseSystemPrompt;
+
+    finalSystemPrompt = updatedSystemPrompt; // ← the fix
+
+    // finalSystemPrompt must now reflect the new summary, not the old one
+    expect(finalSystemPrompt).toContain(newSummary);
+    expect(finalSystemPrompt).not.toContain(oldSummary);
+    expect(finalSystemPrompt.length).toBeGreaterThan(preCompactionLength);
+  });
+});

@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.32] - 2026-03-10
+
+### 🚀 Features
+
+- **Prompt Cache & TPS Metrics**: Implemented real-time tracking for prompt cache hit rates and generation speed (TPS). The UI now displays a "Zap" icon for cache hits and a "Gauge" for speed, providing deeper insight into LLM performance.
+- **Model Picker Safety**: The model and provider selection controls are now automatically disabled when a session is not idle (busy/thinking), preventing invalid configuration changes during active workflows.
+
+### 🐛 Fixes
+
+- **Session Config Sync**: Fixed a UI synchronization issue where manual model switches wouldn't reflect correctly in the session state until a refresh; local state now stays in sync immediately after backend updates.
+
+### 🔧 Internal
+
+- **Smart Metrics Merging**: Re-engineered the metrics update pipeline to use "smart merging" and render-time derivation. This preserves previously known metadata (like TTFT and durations) even if new streaming chunks are incomplete, ensuring a flicker-free UI.
+- **Code Quality & PR Feedback**: Addressed review comments for PR #794 and #796, including replacing inline imports with top-level types, migrating state updates to `useEffect` to avoid render anti-patterns, and improving logging accuracy.
+
 ## [0.5.31] - 2026-03-08
 
 ### 🚀 Features

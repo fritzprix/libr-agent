@@ -17,6 +17,8 @@ export interface TokenUsage {
   completionTokens: number;
   /** Total tokens */
   totalTokens: number;
+  /** Cached input tokens (prompt caching) */
+  cachedPromptTokens?: number;
   /** Provider-specific timing details */
   details?: {
     /** Reasoning tokens (o1/o3 models) */
@@ -33,6 +35,10 @@ export interface TokenUsage {
     cacheCreationInputTokens?: number;
     /** Cache read input tokens (Anthropic) */
     cacheReadInputTokens?: number;
+    /** Cached content token count (Gemini) */
+    cachedContentTokenCount?: number;
+    /** Prompt cache hit tokens (Groq/DeepSeek) */
+    prompt_cache_hit_tokens?: number;
     /** Time to first token (ms) - Client-side measurement for providers without native metrics */
     timeToFirstToken?: number;
   };

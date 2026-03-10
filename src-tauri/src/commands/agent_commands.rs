@@ -33,6 +33,7 @@ pub struct CreateAgentSessionWithMessageRequest {
     pub provider: Option<String>,
     pub agent_config: crate::agent::AgentConfig,
     pub message: Message,
+    pub workspace_path: Option<String>,
 }
 
 /// Request to send a user message to trigger workflow

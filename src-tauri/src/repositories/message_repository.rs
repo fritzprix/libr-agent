@@ -31,6 +31,9 @@ pub trait MessageRepository: Send + Sync {
     /// Retrieve a single message by its ID
     async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError>;
 
+    /// Retrieve multiple messages by their IDs
+    async fn get_by_ids(&self, message_ids: Vec<String>) -> Result<Vec<Message>, DbError>;
+
     /// Delete a single message by its ID
     async fn delete_by_id(&self, message_id: &str) -> Result<(), DbError>;
 
@@ -104,6 +107,8 @@ impl SqliteMessageRepository {
 
         let error: Option<serde_json::Value> = from_json_option(&model.error);
 
+        let usage: Option<serde_json::Value> = from_json_option(&model.usage);
+
         Message {
             id: model.id,
             session_id: model.session_id,
@@ -121,6 +126,7 @@ impl SqliteMessageRepository {
             updated_at: model.updated_at,
             source: model.source,
             error,
+            usage,
             metadata: None,
         }
     }
@@ -148,6 +154,10 @@ impl SqliteMessageRepository {
             DbError::SerializationError(format!("Failed to serialize error: {}", e))
         })?;
 
+        let usage_json = to_json_option(&message.usage).map_err(|e| {
+            DbError::SerializationError(format!("Failed to serialize usage: {}", e))
+        })?;
+
         Ok(message::ActiveModel {
             id: Set(message.id.clone()),
             session_id: Set(message.session_id.clone()),
@@ -165,6 +175,7 @@ impl SqliteMessageRepository {
             updated_at: Set(message.updated_at),
             source: Set(message.source.clone()),
             error: Set(error_json),
+            usage: Set(usage_json),
         })
     }
 
@@ -187,6 +198,7 @@ impl SqliteMessageRepository {
                 message::Column::UpdatedAt,
                 message::Column::Source,
                 message::Column::Error,
+                message::Column::Usage,
             ])
             .to_owned()
     }
@@ -261,6 +273,31 @@ impl MessageRepository for SqliteMessageRepository {
     async fn get_by_id(&self, message_id: &str) -> Result<Option<Message>, DbError> {
         let model = MessageEntity::find_by_id(message_id).one(&self.db).await?;
         Ok(model.map(Self::model_to_message))
+    }
+
+    async fn get_by_ids(&self, message_ids: Vec<String>) -> Result<Vec<Message>, DbError> {
+        if message_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let models = MessageEntity::find()
+            .filter(message::Column::Id.is_in(message_ids.clone()))
+            .all(&self.db)
+            .await?;
+
+        // Map results for efficient lookup
+        let mut msg_map: std::collections::HashMap<String, Message> = models
+            .into_iter()
+            .map(|m| (m.id.clone(), Self::model_to_message(m)))
+            .collect();
+
+        // Sort to match requested order
+        let result = message_ids
+            .into_iter()
+            .filter_map(|id| msg_map.remove(&id))
+            .collect();
+
+        Ok(result)
     }
 
     async fn delete_by_id(&self, message_id: &str) -> Result<(), DbError> {

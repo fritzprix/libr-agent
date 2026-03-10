@@ -3,6 +3,7 @@ pub mod json;
 pub mod pagination;
 pub mod platform;
 pub mod security;
+pub mod sqlite;
 pub mod terminal;
 
 /// Safely truncates a string to a maximum number of characters.

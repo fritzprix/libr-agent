@@ -321,7 +321,7 @@ export default function SettingsPage() {
               </TabsTrigger>
               {import.meta.env.DEV && (
                 <TabsTrigger value="dev" className="text-yellow-500">
-                  Dev
+                  {t('settings.tabs.dev', 'Dev')}
                 </TabsTrigger>
               )}
             </TabsList>

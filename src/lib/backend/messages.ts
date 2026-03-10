@@ -1,7 +1,15 @@
 import { safeInvoke } from './core';
-import type { Message } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import type { MessageSearchResult } from './types';
+
+export interface RustSearchResult {
+  messageId: string;
+  sessionId: string;
+  score: number;
+  snippet: string | null;
+  createdAt: number;
+}
 
 // ========================================
 // Message Management
@@ -11,32 +19,32 @@ import type { MessageSearchResult } from './types';
  * Deserialize a message from the Rust backend format to frontend format.
  * Parses JSON fields and converts timestamps to Date objects.
  */
-function deserializeMessage(rustMsg: Record<string, unknown>): Message {
+function deserializeMessage(rustMsg: RustMessage): Message {
   return {
-    id: rustMsg.id as string,
-    sessionId: rustMsg.sessionId as string,
-    threadId: (rustMsg.threadId as string) || (rustMsg.sessionId as string), // Fallback to sessionId for backward compatibility
+    id: rustMsg.id,
+    sessionId: rustMsg.sessionId,
+    threadId: rustMsg.threadId || rustMsg.sessionId, // Fallback to sessionId for backward compatibility
     role: rustMsg.role as 'user' | 'assistant' | 'system' | 'tool',
     content: rustMsg.content as Message['content'], // Typed correctly in Message interface
     // Deserialize tool calls and ensure they have the type field
-    tool_calls: (rustMsg.toolCalls as Message['tool_calls'])
-      ? (rustMsg.toolCalls as Message['tool_calls'])?.map((tc) => ({
+    tool_calls: rustMsg.toolCalls
+      ? rustMsg.toolCalls.map((tc) => ({
           id: tc.id,
           type: tc.type || 'function',
           function: tc.function,
         }))
       : undefined,
-    tool_call_id: rustMsg.toolCallId as string | undefined,
-    isStreaming: rustMsg.isStreaming as boolean | undefined,
-    thinking: rustMsg.thinking as string | undefined,
-    thinkingSignature: rustMsg.thinkingSignature as string | undefined,
-    assistantId: rustMsg.assistantId as string | undefined,
-    attachments: (rustMsg.attachments as Message['attachments']) || undefined,
-    tool_use: (rustMsg.toolUse as Message['tool_use']) || undefined,
-    createdAt: new Date(rustMsg.createdAt as number),
-    updatedAt: new Date(rustMsg.updatedAt as number),
+    tool_call_id: rustMsg.toolCallId ?? undefined,
+    isStreaming: rustMsg.isStreaming ?? undefined,
+    thinking: rustMsg.thinking ?? undefined,
+    thinkingSignature: rustMsg.thinkingSignature ?? undefined,
+    assistantId: rustMsg.assistantId ?? undefined,
+    attachments: (rustMsg.attachments as Message['attachments']) ?? undefined,
+    tool_use: (rustMsg.toolUse as Message['tool_use']) ?? undefined,
+    createdAt: new Date(rustMsg.createdAt),
+    updatedAt: new Date(rustMsg.updatedAt),
     source: rustMsg.source as 'assistant' | 'ui' | undefined,
-    error: (rustMsg.error as Message['error']) || undefined,
+    error: (rustMsg.error as Message['error']) ?? undefined,
   };
 }
 
@@ -58,15 +66,12 @@ export async function getMessagesPageForSession(
     throw new Error('sessionId and threadId are required');
   }
 
-  const result = await safeInvoke<Page<Record<string, unknown>>>(
-    'messages_get_page',
-    {
-      sessionId,
-      threadId,
-      page,
-      pageSize,
-    },
-  );
+  const result = await safeInvoke<Page<RustMessage>>('messages_get_page', {
+    sessionId,
+    threadId,
+    page,
+    pageSize,
+  });
 
   // Deserialize messages from Rust format
   return {
@@ -205,21 +210,18 @@ export async function searchMessages(
   page = 1,
   pageSize = 25,
 ): Promise<Page<MessageSearchResult>> {
-  const result = await safeInvoke<Page<Record<string, unknown>>>(
-    'messages_search',
-    {
-      query,
-      sessionId: sessionId || null,
-      page,
-      pageSize,
-    },
-  );
+  const result = await safeInvoke<Page<RustSearchResult>>('messages_search', {
+    query,
+    sessionId: sessionId || null,
+    page,
+    pageSize,
+  });
 
   // Deserialize search results from Rust format (serde rename_all = "camelCase")
   return {
     ...result,
     items: result.items.map((r) => {
-      const timestamp = r.createdAt as number | undefined;
+      const timestamp = r.createdAt;
       // Validate timestamp before creating Date object
       const date =
         typeof timestamp === 'number' &&
@@ -229,10 +231,10 @@ export async function searchMessages(
           : new Date(0);
 
       return {
-        messageId: r.messageId as string,
-        sessionId: r.sessionId as string,
-        score: r.score as number,
-        snippet: r.snippet as string | undefined,
+        messageId: r.messageId,
+        sessionId: r.sessionId,
+        score: r.score,
+        snippet: r.snippet ?? undefined,
         createdAt: date,
       };
     }),

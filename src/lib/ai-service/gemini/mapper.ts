@@ -179,31 +179,14 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
 
       // Push the consolidated user message with all response parts
       if (responseParts.length > 0) {
-        // Check if we can merge into previous user message (e.g. text + tool results)
-        // But usually tool executions are distinct turns.
-        // For safety, we keep it as a distinct message unless the last message was also User.
-        const lastMsg = geminiMessages[geminiMessages.length - 1];
-        // Determine if we should merge: only if last message was USER role.
-        // If last message was MODEL (calls), this must be a NEW USER message.
-        if (lastMsg && lastMsg.role === 'user') {
-          if (!lastMsg.parts) lastMsg.parts = [];
-          lastMsg.parts.push(...responseParts);
-          logger.info(
-            '➕ Merged tool response batch into previous user message',
-            {
-              batchSize: responseParts.length,
-              totalParts: lastMsg.parts.length,
-            },
-          );
-        } else {
-          geminiMessages.push({
-            role: 'user',
-            parts: responseParts,
-          });
-          logger.info('📦 Created new user message for tool response batch', {
-            batchSize: responseParts.length,
-          });
-        }
+        // SP21: Disabled merging to keep user messages separate for better caching
+        geminiMessages.push({
+          role: 'user',
+          parts: responseParts,
+        });
+        logger.info('📦 Created new user message for tool response batch', {
+          batchSize: responseParts.length,
+        });
       } else {
         logger.error(
           '❌ Tool response batch resulted in NO parts! This WILL cause turn order errors.',
@@ -223,19 +206,12 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
 
     if (m.role === 'user') {
       // Standard user message (already handled tool responses above)
-      // Merge with previous user message if possible to reduce turns
-      const lastMsg = geminiMessages[geminiMessages.length - 1];
+      // SP21: Disabled merging to keep user messages separate for better caching
       const parts = formatGeminiContent(m.content as MCPContent[]);
-
-      if (lastMsg && lastMsg.role === 'user') {
-        if (!lastMsg.parts) lastMsg.parts = [];
-        lastMsg.parts.push(...parts);
-      } else {
-        geminiMessages.push({
-          role: 'user',
-          parts,
-        });
-      }
+      geminiMessages.push({
+        role: 'user',
+        parts,
+      });
     }
     if (m.role === 'assistant') {
       if (m.tool_calls && m.tool_calls.length > 0) {

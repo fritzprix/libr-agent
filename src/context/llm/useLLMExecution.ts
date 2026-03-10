@@ -258,30 +258,19 @@ export function useLLMExecution({
           }
 
           // Helper to build candidate stack from current cache
-          const buildCandidateStack = (msgs: Message[]): Message[] => {
+          const buildCandidateStack = (
+            msgs: Message[],
+          ): { messages: Message[]; summary?: string } => {
             const cached = compactCacheRef.current.get(sessionId);
-            if (!cached) return msgs;
+            if (!cached) return { messages: msgs };
 
             const toIdIndex = msgs.findIndex((m) => m.id === cached.toId);
             if (toIdIndex >= 0) {
               const remainingMessages = msgs.slice(toIdIndex + 1);
-
-              // Clean ID: Extract real starting ID if previous summary exists
-              const displayFromId = stripCompactSummaryPrefix(cached.fromId);
-
-              const summaryMessage: Message = {
-                id: `compact-summary-${displayFromId}~${cached.toId}`,
-                sessionId,
-                threadId: msgs[0]?.threadId ?? sessionId,
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `[Summary of previous conversation (from message ${displayFromId} to ${cached.toId})]\n${cached.summary}`,
-                  },
-                ],
+              return {
+                messages: remainingMessages,
+                summary: `### Previous Conversation Summary\n${cached.summary}`,
               };
-              return [summaryMessage, ...remainingMessages];
             } else {
               logger.warn(
                 'Stale compact cache: toId not found. Invalidating.',
@@ -291,13 +280,19 @@ export function useLLMExecution({
                 },
               );
               compactCacheRef.current.delete(sessionId);
-              return msgs;
+              return { messages: msgs };
             }
           };
 
-          let candidateMessages = buildCandidateStack(messages);
+          let { messages: candidateMessages, summary: conversationSummary } =
+            buildCandidateStack(messages);
 
           // 2. Token threshold check
+          const baseSystemPrompt = systemPrompt || '';
+          let finalSystemPrompt = conversationSummary
+            ? `${baseSystemPrompt}\n\n${conversationSummary}`.trim()
+            : baseSystemPrompt;
+
           const systemPromptTokens = finalSystemPrompt
             ? estimateTextTokens(finalSystemPrompt)
             : 0;
@@ -364,10 +359,26 @@ export function useLLMExecution({
               );
               if (compactionSucceeded) {
                 // Compaction wrote a new summary — rebuild the stack from fresh cache.
-                candidateMessages = buildCandidateStack(messages);
+                const { messages: newMessages, summary: newSummary } =
+                  buildCandidateStack(messages);
+                candidateMessages = newMessages;
+
+                const currentBaseSystemPrompt = systemPrompt || '';
+                const updatedSystemPrompt = newSummary
+                  ? `${currentBaseSystemPrompt}\n\n${newSummary}`.trim()
+                  : currentBaseSystemPrompt;
+
+                // Update finalSystemPrompt so selectMessagesWithinContext
+                // uses the correct token budget after compaction.
+                finalSystemPrompt = updatedSystemPrompt;
+
+                const updatedSystemPromptTokens = updatedSystemPrompt
+                  ? estimateTextTokens(updatedSystemPrompt)
+                  : 0;
+
                 totalTokens = calculateGroundedTotalTokens(
                   candidateMessages,
-                  systemPromptTokens,
+                  updatedSystemPromptTokens,
                   toolsTokens,
                 );
                 overflow = totalTokens >= safeInputTokenLimit;
@@ -617,6 +628,17 @@ export function useLLMExecution({
         // ── Execute Stream ───────────────────────────────────────────────────
         updateSessionStatus(sessionId, 'streaming');
 
+        setStreamingMessages((prev) => {
+          const next = new Map(prev);
+          next.set(sessionId, {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: [],
+            isStreaming: true,
+          });
+          return next;
+        });
+
         const content: MCPContent[] = [];
         const activeToolCallIndices = new Map<number, number>();
 
@@ -749,13 +771,16 @@ export function useLLMExecution({
             const incomingUsage = chunk.usage as TokenUsage;
             if (finalUsage) {
               finalUsage = {
-                // Use ?? to correctly handle 0 values; fall back to prior value if incoming is undefined
+                // Use || to prevent 0 values in delta chunks from overwriting cumulative totals
                 promptTokens:
-                  incomingUsage.promptTokens ?? finalUsage.promptTokens,
+                  incomingUsage.promptTokens || finalUsage.promptTokens,
                 completionTokens:
-                  incomingUsage.completionTokens ?? finalUsage.completionTokens,
+                  incomingUsage.completionTokens || finalUsage.completionTokens,
                 totalTokens:
-                  incomingUsage.totalTokens ?? finalUsage.totalTokens,
+                  incomingUsage.totalTokens || finalUsage.totalTokens,
+                cachedPromptTokens:
+                  incomingUsage.cachedPromptTokens ||
+                  finalUsage.cachedPromptTokens,
                 details: {
                   ...finalUsage.details,
                   ...incomingUsage.details,
@@ -767,9 +792,20 @@ export function useLLMExecution({
                 promptTokens: incomingUsage.promptTokens ?? 0,
                 completionTokens: incomingUsage.completionTokens ?? 0,
                 totalTokens: incomingUsage.totalTokens ?? 0,
+                cachedPromptTokens: incomingUsage.cachedPromptTokens,
                 details: incomingUsage.details,
               };
             }
+          }
+
+          // Update real-time duration for TPS calculation
+          if (finalUsage) {
+            if (!finalUsage.details) finalUsage.details = {};
+            const currentTime = performance.now();
+            // If we have the first chunk time, use it to measure actual generation duration
+            // otherwise measure from the start of the call
+            finalUsage.details.evalDuration =
+              currentTime - (firstChunkTime || startTime);
           }
 
           // Throttle React state updates to ~20fps (50ms) to avoid WebView GPU overload

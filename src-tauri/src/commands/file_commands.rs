@@ -17,6 +17,14 @@ pub async fn register_dropped_files(
     service.register_dropped_files(paths).await
 }
 
+#[tauri::command]
+pub async fn check_dropped_path_type(
+    service: State<'_, DroppedFileService>,
+    path: String,
+) -> Result<String, String> {
+    service.check_dropped_path_type(path).await
+}
+
 /// Reads a file that was dropped onto the application window.
 ///
 /// This function delegates to `DroppedFileService` which performs security checks:

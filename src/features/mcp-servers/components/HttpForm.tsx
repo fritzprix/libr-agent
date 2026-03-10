@@ -1,4 +1,4 @@
-import React, { useId, useEffect, useRef } from 'react';
+import React, { useId, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
@@ -56,19 +56,7 @@ export function HttpForm({
 }: HttpFormProps) {
   const { t } = useTranslation('common');
   const advancedPanelId = useId();
-  const prevLengthRef = useRef(customHeaders.length);
-  const customHeadersRef = useRef(customHeaders);
-  customHeadersRef.current = customHeaders;
-  const lastNewInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Auto-focus the key input of a newly added custom header.
-  // Depends only on length so edits to existing items don't trigger this.
-  useEffect(() => {
-    if (customHeadersRef.current.length > prevLengthRef.current) {
-      lastNewInputRef.current?.focus();
-    }
-    prevLengthRef.current = customHeadersRef.current.length;
-  }, [customHeaders.length]);
+  const isAddingRef = useRef(false);
 
   return (
     <div className="space-y-4">
@@ -243,7 +231,10 @@ export function HttpForm({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={handleAddHeader}
+                  onClick={() => {
+                    isAddingRef.current = true;
+                    handleAddHeader();
+                  }}
                   className="h-7 text-xs"
                 >
                   <Plus className="w-3 h-3 mr-1" />{' '}
@@ -274,11 +265,16 @@ export function HttpForm({
                       <div key={header.id} className="flex gap-2 items-start">
                         <div className="flex-1">
                           <Input
-                            ref={
-                              index === arr.length - 1
-                                ? lastNewInputRef
-                                : undefined
-                            }
+                            ref={(el) => {
+                              if (
+                                index === arr.length - 1 &&
+                                isAddingRef.current &&
+                                el
+                              ) {
+                                el.focus();
+                                isAddingRef.current = false;
+                              }
+                            }}
                             id={`header-key-${header.id}`}
                             placeholder={t(
                               'mcpServer.dialog.headerKeyPlaceholder',

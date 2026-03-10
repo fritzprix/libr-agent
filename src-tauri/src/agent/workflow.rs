@@ -1,4 +1,4 @@
-use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
+use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::session_repository::SessionRepository;
@@ -48,15 +48,21 @@ pub async fn start_workflow(
         );
     }
 
+    // Ensure the message cache is populated from DB before the dedup check.
+    // Without this, an uninitialized (empty) cache would silently pass the duplicate
+    // check, and the session would get stuck in Busy state when the second dedup
+    // in append_user_message_to_session correctly rejects the duplicate after init.
+    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
+
+    // Note: we intentionally do NOT check is_cancelled() here.
+    // cancel_workflow (soft cancel) leaves the token in a cancelled state to block
+    // stale LLM responses, but start_workflow resets it unconditionally below.
+    // Failing here would prevent users from sending new messages after a cancel.
+
     // Check status, deduplicate, and queue if busy (Atomic Check-and-Act)
     let should_queue = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
-            // Note: we intentionally do NOT check is_cancelled() here.
-            // cancel_workflow (soft cancel) leaves the token in a cancelled state to block
-            // stale LLM responses, but start_workflow resets it unconditionally below.
-            // Failing here would prevent users from sending new messages after a cancel.
-
             // Deduplicate: Check if message ID already exists
             {
                 let messages = session.messages.read().await;
@@ -72,28 +78,10 @@ pub async fn start_workflow(
             // Check Status
             if session.metadata.status == SessionStatus::Busy {
                 log::info!(
-                    "Session {} is busy. Queueing message: {} for next cycle.",
+                    "Session {} is busy. Queueing message: {} in pending_events only.",
                     session_id,
                     user_message.id
                 );
-
-                // 1. Add to in-memory cache (while holding session lock)
-                {
-                    let mut messages = session.messages.write().await;
-                    messages.push(user_message.clone());
-                    if messages.len() > MAX_CACHED_MESSAGES {
-                        messages.remove(0);
-                    }
-                }
-
-                // 2. Add to Pending Events (while holding session lock)
-                {
-                    let mut pending = session.pending_events.write().await;
-                    pending.add(crate::agent::state::PendingEvent::Message(
-                        user_message.id.clone(),
-                    ));
-                }
-
                 true // Signal that we queued it
             } else {
                 false // Not busy, proceed to start workflow
@@ -104,11 +92,14 @@ pub async fn start_workflow(
     }; // Lock released here
 
     if should_queue {
-        // 3. Persist to DB (Async I/O outside lock)
-        let repo = crate::state::get_message_repository();
-        if let Err(e) = repo.insert(&user_message).await {
-            log::error!("Failed to save queued user message to DB: {}", e);
-        }
+        // Add to Pending Events and Persist to DB without touching session.messages
+        // This prevents polluting the active context window mid-tool-execution
+        crate::services::MessageService::queue_user_message(
+            active_sessions,
+            &session_id,
+            &user_message,
+        )
+        .await?;
 
         // Do NOT call request_llm_completion. The existing busy workflow will pick it up.
         // Do NOT emit MessageAdded (it will be emitted when drained).
@@ -144,60 +135,22 @@ pub async fn start_workflow(
     };
     log::info!("Emitting WorkflowStarted event for session: {}", session_id);
     match crate::agent::events::emit_agent_event(app_handle, event) {
-        Ok(()) => log::info!("??WorkflowStarted event emitted successfully"),
+        Ok(()) => log::info!("✅ WorkflowStarted event emitted successfully"),
         Err(e) => {
-            log::error!("??Failed to emit WorkflowStarted event: {}", e);
+            log::error!("❌ Failed to emit WorkflowStarted event: {}", e);
             return Err(format!("Failed to emit event: {}", e));
         }
     }
 
-    // Ensure cache is initialized before workflow
-    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
-
-    // 1. Add user message to in-memory cache FIRST (immediate, non-blocking)
-    {
-        let sessions = active_sessions.read().await;
-        // Logic duplicated for Idle path but that's fine for clarity vs refactoring whole function
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        let mut messages = session.messages.write().await;
-        messages.push(user_message.clone());
-
-        // Apply sliding window policy
-        if messages.len() > MAX_CACHED_MESSAGES {
-            let removed = messages.remove(0);
-            log::debug!("Sliding window evicted: {}", removed.id);
-        }
-
-        log::info!(
-            "?뱷 Message stack after user message: session={}, count={}, latest_message={}",
-            session_id,
-            messages.len(),
-            user_message.id
-        );
-    } // Lock released
-
-    // 2. Emit UI event (immediate)
-    let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
-        session_id: session_id.clone(),
-        message: Box::new(user_message.clone()),
-    };
-    crate::agent::events::emit_agent_event(app_handle, message_added_event)
-        .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
-
-    // 3. Persist to DB synchronously to ensure data integrity
-    let repo = crate::state::get_message_repository();
-    if let Err(e) = repo.insert(&user_message).await {
-        log::error!(
-            "Failed to save user message to DB: session={}, msg_id={}, error={}",
-            session_id,
-            user_message.id,
-            e
-        );
-        return Err(format!("Failed to persist message: {}", e));
-    }
+    // Delegate message deduplication, cache update, DB insertion, and UI event emission
+    // to the MessageService to maintain clean architectural boundaries.
+    crate::services::MessageService::append_user_message_to_session(
+        active_sessions,
+        app_handle,
+        &session_id,
+        &user_message,
+    )
+    .await?;
 
     log::info!(
         "Started workflow for session: {} with message: {}",
@@ -205,58 +158,10 @@ pub async fn start_workflow(
         user_message.id
     );
 
-    // 4. Ensure Proxy Exists (Critical for System Prompt)
-    if proxy_manager.get_proxy(&session_id).await.is_none() {
-        log::warn!(
-            "MCP proxy missing for session {} during workflow start. Recreating...",
-            session_id
-        );
+    // Ensure Proxy Exists (Critical for System Prompt)
+    ensure_proxy_exists(proxy_manager, app_handle, &session_id).await?;
 
-        // 4.1 Get session metadata to retrieve config
-        let session_repo = crate::state::get_session_repository();
-        if let Some(session) = session_repo
-            .get_session(&session_id)
-            .await
-            .map_err(|e| format!("Failed to get session for proxy recreation: {}", e))?
-        {
-            // 4.2 Parse agent config
-            if let Some(config_json) = session.agent_config {
-                let agent_config = crate::agent::AgentConfig::from_json(&config_json)
-                    .map_err(|e| format!("Failed to parse agent config: {}", e))?;
-
-                // 4.3 Extract tool IDs
-                let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
-                let mcp_server_ids = agent_config.mcp_server_ids.clone();
-
-                // 4.4 Recreate proxy
-                proxy_manager
-                    .create_proxy(
-                        session_id.clone(),
-                        tool_ids,
-                        mcp_server_ids,
-                        Some(app_handle.clone()),
-                    )
-                    .await?;
-
-                log::info!(
-                    "??Successfully recreated MCP proxy for session: {}",
-                    session_id
-                );
-            } else {
-                log::error!(
-                    "Cannot recreate proxy: Session {} has no agent config",
-                    session_id
-                );
-            }
-        } else {
-            log::error!(
-                "Cannot recreate proxy: Session {} not found in DB",
-                session_id
-            );
-        }
-    }
-
-    // 5. Request LLM completion with cached messages (no DB query)
+    // Request LLM completion with cached messages (no DB query)
     crate::agent::llm::request_llm_completion(
         session_repo,
         active_sessions,
@@ -265,6 +170,63 @@ pub async fn start_workflow(
         session_id,
     )
     .await?;
+
+    Ok(())
+}
+
+/// Helper to ensure a proxy exists for the session before invoking LLM
+async fn ensure_proxy_exists(
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<(), String> {
+    if proxy_manager.get_proxy(session_id).await.is_some() {
+        return Ok(());
+    }
+
+    log::warn!(
+        "MCP proxy missing for session {} during workflow start. Recreating...",
+        session_id
+    );
+
+    let session_repo = crate::state::get_session_repository();
+    if let Some(session) = session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to get session for proxy recreation: {}", e))?
+    {
+        if let Some(config_json) = session.agent_config {
+            let agent_config = crate::agent::AgentConfig::from_json(&config_json)
+                .map_err(|e| format!("Failed to parse agent config: {}", e))?;
+
+            let tool_ids = crate::agent::tools::extract_builtin_tool_ids(&agent_config);
+            let mcp_server_ids = agent_config.mcp_server_ids.clone();
+
+            proxy_manager
+                .create_proxy(
+                    session_id.to_string(),
+                    tool_ids,
+                    mcp_server_ids,
+                    Some(app_handle.clone()),
+                )
+                .await?;
+
+            log::info!(
+                "✅ Successfully recreated MCP proxy for session: {}",
+                session_id
+            );
+        } else {
+            log::error!(
+                "Cannot recreate proxy: Session {} has no agent config",
+                session_id
+            );
+        }
+    } else {
+        log::error!(
+            "Cannot recreate proxy: Session {} not found in DB",
+            session_id
+        );
+    }
 
     Ok(())
 }
@@ -353,40 +315,46 @@ pub async fn terminate_session(
 ) -> Result<(), String> {
     log::info!("Terminating workflow for session: {}", session_id);
 
-    // Trigger cancellation token to abort running loops
-    {
+    // 1. Trigger cancellation token if the session is active in memory
+    let session_active = {
         let active = active_sessions.read().await;
         if let Some(session) = active.get(&session_id) {
             session.cancel_pending.store(true, Ordering::SeqCst);
             session.cancellation_token.cancel();
+            true
         } else {
-            return Err(format!("Session not found: {}", session_id));
+            false
         }
-    }
+    };
 
-    // Update status to idle (workflow stopped)
-    crate::agent::lifecycle::update_session_status(
+    // 2. Destroy proxy for this session - ALWAYS do this!
+    // This prevents resource leaks (MCP processes) even if the session wasn't active
+    // (e.g. failed resume or already closed in memory but proxy still exists).
+    proxy_manager.destroy_proxy(&session_id).await;
+    log::info!("Destroyed MCP proxy for session: {}", session_id);
+
+    // 3. Update status to idle in DB (and memory if active)
+    // We ignore error here for inactive sessions to ensure best-effort cleanup
+    let _ = crate::agent::lifecycle::update_session_status(
         session_repo,
         active_sessions,
         app_handle,
         &session_id,
         SessionStatus::Idle,
     )
-    .await?;
+    .await;
 
-    // Destroy proxy for this session
-    proxy_manager.destroy_proxy(&session_id).await;
-    log::info!("Destroyed MCP proxy for session: {}", session_id);
-
-    // Remove from active sessions and create a new cancellation token for future use
-    let mut active = active_sessions.write().await;
-    if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = false;
-        // Reset cancellation token for potential future workflows
-        session.cancellation_token = CancellationToken::new();
+    // 4. Cleanup memory state if active
+    if session_active {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
+            session.is_running = false;
+            // Reset cancellation token for potential future workflows
+            session.cancellation_token = CancellationToken::new();
+        }
     }
 
-    // Emit workflow stopped event
+    // 5. Emit workflow stopped event
     let event = crate::agent::events::AgentEvent::WorkflowCompleted {
         session_id: session_id.clone(),
     };
@@ -394,6 +362,13 @@ pub async fn terminate_session(
         .map_err(|e| format!("Failed to emit event: {}", e))?;
 
     log::info!("Terminated workflow for session: {}", session_id);
+
+    if !session_active {
+        // Return error for non-active sessions to maintain backward compatibility with callers
+        // that expect to know if the session was not in memory, but AFTER cleanup.
+        return Err(format!("Session not found: {}", session_id));
+    }
+
     Ok(())
 }
 
@@ -499,40 +474,24 @@ pub async fn continue_workflow_after_tool(
                 session_id
             );
 
-            // Add to cache
-            {
-                let sessions = active_sessions.read().await;
-                if let Some(session) = sessions.get(&session_id) {
-                    let mut messages = session.messages.write().await;
-                    for msg in &accumulated_messages {
-                        messages.push(msg.clone());
-                        if messages.len() > MAX_CACHED_MESSAGES {
-                            messages.remove(0);
-                        }
-                    }
-                }
-            }
-
-            // Emit MessageAdded for each
-            for msg in &accumulated_messages {
-                let event = crate::agent::events::AgentEvent::MessageAdded {
-                    session_id: session_id.clone(),
-                    message: Box::new(msg.clone()),
-                };
-                let _ = crate::agent::events::emit_agent_event(app_handle, event);
-            }
-
-            // Persist to DB
-            let msgs_for_db = accumulated_messages.clone();
-
-            tokio::spawn(async move {
-                let repo = crate::state::get_message_repository();
-                for msg in msgs_for_db {
-                    if let Err(e) = repo.insert(&msg).await {
-                        log::error!("Failed to persist tool result message: {}", e);
-                    }
-                }
-            });
+            // Use MessageService to handle message caching, event emission, and DB persistence.
+            // Propagate errors so the LLM loop does not continue with a stale context window
+            // if injection fails (e.g. due to a DB initialization error).
+            crate::services::MessageService::inject_messages_to_session(
+                active_sessions,
+                app_handle,
+                &session_id,
+                accumulated_messages.clone(),
+                true,
+            )
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "Failed to inject tool result messages into session cache: {}",
+                    e
+                );
+                e
+            })?;
 
             // Message-boundary cancel handling:
             // If cancel was requested while tools were running, consume it now

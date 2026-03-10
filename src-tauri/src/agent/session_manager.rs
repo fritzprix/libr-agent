@@ -3,7 +3,6 @@ use crate::agent::context::time_location::TimeLocationContextProvider;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
-use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{
     CompactContextRecord, CompactContextRepository, SessionMetadata, SessionRepository,
 };
@@ -167,6 +166,23 @@ impl AgentSessionManager {
         )
         .await?;
 
+        // Re-register workspace override if present in metadata
+        if let Some(ref override_path) = result.workspace_override {
+            if let Ok(workspace_manager) = crate::session::get_session_manager() {
+                let path = std::path::PathBuf::from(override_path);
+                if let Err(e) = workspace_manager
+                    .register_session_override(session_id, path)
+                    .await
+                {
+                    log::warn!(
+                        "Failed to re-register workspace override for session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
+            }
+        }
+
         let pending_events = {
             let mut evs = Vec::new();
             let active = self.active_sessions.read().await;
@@ -308,71 +324,20 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         messages: Vec<Message>,
-        trigger_workflow: bool,
+        emit_events_immediately: bool,
     ) -> Result<(), String> {
-        // 1. Ensure cache is initialized
-        crate::agent::lifecycle::ensure_cache_initialized(&self.active_sessions, &session_id)
-            .await?;
+        // Delegate message persistence, caching, and event emission to MessageService
+        crate::services::MessageService::inject_messages_to_session(
+            &self.active_sessions,
+            &self.app_handle,
+            &session_id,
+            messages,
+            emit_events_immediately,
+        )
+        .await?;
 
-        // 2. Get session reference (single lock acquisition)
-        let sessions = self.active_sessions.read().await;
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
-
-        // 3. Add messages to in-memory cache
-        {
-            let mut session_messages = session.messages.write().await;
-            for msg in &messages {
-                session_messages.push(msg.clone());
-                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
-                    session_messages.remove(0);
-                }
-            }
-        }
-
-        // 4. Emit MessageAdded events ONLY when triggering workflow
-        // When triggerWorkflow=false, messages stay in backend cache without UI update
-        // Frontend will add to pendingMessages queue and display with pending state
-        if trigger_workflow {
-            // Drop session lock before I/O operations
-            drop(sessions);
-
-            for msg in &messages {
-                let event = crate::agent::events::AgentEvent::MessageAdded {
-                    session_id: session_id.clone(),
-                    message: Box::new(msg.clone()),
-                };
-                crate::agent::events::emit_agent_event(&self.app_handle, event)
-                    .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
-            }
-        } else {
-            // Track these message IDs as pending (will emit when workflow picks them up)
-            let mut pending_events = session.pending_events.write().await;
-            for msg in &messages {
-                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
-            }
-            log::info!(
-                "Marked {} messages as pending for session: {} (IDs: {:?})",
-                messages.len(),
-                session_id,
-                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
-            );
-        }
-
-        // 5. Persist to DB asynchronously
-        let msgs_for_db = messages.clone();
-        tokio::spawn(async move {
-            let repo = crate::state::get_message_repository();
-            for msg in msgs_for_db {
-                if let Err(e) = repo.insert(&msg).await {
-                    log::error!("Failed to inject message to DB: {}", e);
-                }
-            }
-        });
-
-        // 5. Trigger workflow if requested
-        if trigger_workflow {
+        // Trigger workflow if requested
+        if emit_events_immediately {
             log::info!(
                 "Triggering workflow after message injection for session: {}",
                 session_id
@@ -385,8 +350,7 @@ impl AgentSessionManager {
                 }
             }
 
-            // [Fix Option 1] Inline status update to ensure UI reflects 'Busy' state
-            // 1. Update status to Busy
+            // Update status to Busy
             crate::agent::lifecycle::update_session_status(
                 &self.session_repo,
                 &self.active_sessions,
@@ -396,7 +360,7 @@ impl AgentSessionManager {
             )
             .await?;
 
-            // 2. Emit workflow started event
+            // Emit workflow started event
             let event = crate::agent::events::AgentEvent::WorkflowStarted {
                 session_id: session_id.clone(),
             };
@@ -407,9 +371,7 @@ impl AgentSessionManager {
                 );
             }
 
-            // Wait for proxy to be ready before invoking LLM (mirrors start_workflow behaviour).
-            // This is essential for freshly-created sessions (e.g. scheduled tasks) where the
-            // MCPServiceProxy is still spawning external MCP servers asynchronously.
+            // Wait for proxy to be ready before invoking LLM
             if let Err(e) = self
                 .proxy_manager
                 .wait_until_proxy_ready(&session_id, 60)
@@ -422,8 +384,6 @@ impl AgentSessionManager {
                 );
             }
 
-            // We use request_llm_completion directly here as we don't need the full start_workflow logic
-            // (which assumes a User message as input)
             crate::agent::llm::request_llm_completion(
                 &self.session_repo,
                 &self.active_sessions,
@@ -526,50 +486,14 @@ impl AgentSessionManager {
     /// - DB-level CASCADE automatically deletes child session records
     /// - We must manually delete workspace directories for all descendants before DB deletion
     pub async fn delete_session(&self, session_id: String) -> Result<(), String> {
-        // 0. Collect all descendant IDs BEFORE cascade delete (so we can clean their workspaces)
-        log::debug!(
-            "Collecting descendants for cascade workspace cleanup: {}",
-            session_id
-        );
-        let descendant_ids =
-            crate::services::SessionCleanupService::collect_descendant_ids(&session_id).await?;
-
-        if !descendant_ids.is_empty() {
-            log::info!(
-                "🌲 Cascade delete: {} will remove {} descendant session(s)",
-                session_id,
-                descendant_ids.len()
-            );
-        }
-
-        // 1. Terminate workflow if running (for this session and all descendants)
-        let _ = self.terminate_session(session_id.clone()).await;
-        for descendant_id in &descendant_ids {
-            let _ = self.terminate_session(descendant_id.clone()).await;
-        }
-
-        // 2. Remove from active sessions (parent + any loaded descendants)
-        {
-            let mut sessions = self.active_sessions.write().await;
-            sessions.remove(&session_id);
-            for descendant_id in &descendant_ids {
-                sessions.remove(descendant_id);
-            }
-        }
-
-        // 3. Delete workspaces and DB cascade
-        crate::services::SessionCleanupService::delete_session_data_cascade(
-            &session_id,
-            &descendant_ids,
-        )
-        .await?;
-
-        log::info!(
-            "✅ Deleted agent session: {} (cascade removed {} descendants)",
+        crate::agent::lifecycle::delete_session(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
             session_id,
-            descendant_ids.len()
-        );
-        Ok(())
+        )
+        .await
     }
 
     /// Delete only this session, leaving children as orphaned top-level sessions.
@@ -578,20 +502,14 @@ impl AgentSessionManager {
     /// - Only this session's workspace and search index are removed
     /// - No cascade to descendants
     pub async fn delete_session_only(&self, session_id: String) -> Result<(), String> {
-        // 1. Terminate workflow if running (this session only)
-        let _ = self.terminate_session(session_id.clone()).await;
-
-        // 2. Remove from active sessions map
-        self.active_sessions.write().await.remove(&session_id);
-
-        // 3. Delete workspace and db
-        crate::services::SessionCleanupService::delete_session_data_only(&session_id).await?;
-
-        log::info!(
-            "✅ Deleted session only (children orphaned): {}",
-            session_id
-        );
-        Ok(())
+        crate::agent::lifecycle::delete_session_only(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
     }
 
     /// Get available tools for a session based on agent configuration

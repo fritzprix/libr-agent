@@ -98,4 +98,41 @@ mod tests {
             .contains("workspaces/default"));
         assert!(path_default.exists());
     }
+
+    #[tokio::test]
+    async fn test_session_workspace_override() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let base_path = temp_dir.path().to_path_buf();
+        let session_manager =
+            SessionManager::new_with_base_dir(base_path.clone()).expect("Failed to init");
+
+        let session_id = "override_test_session";
+        let override_dir = temp_dir.path().join("my_custom_workspace");
+        fs::create_dir(&override_dir).unwrap();
+
+        // Register override
+        session_manager
+            .register_session_override(session_id, override_dir.clone())
+            .await
+            .expect("Failed to register override");
+
+        // Get path, should be the override
+        let path = session_manager.get_session_workspace_dir_by_id(session_id);
+        assert_eq!(path, override_dir);
+
+        // Remove override
+        session_manager
+            .remove_workspace_override(session_id)
+            .await
+            .expect("Failed to remove override");
+
+        // Get path again, should fallback to default (which should have been created during register)
+        let path_after = session_manager.get_session_workspace_dir_by_id(session_id);
+        assert_ne!(path_after, override_dir);
+        assert!(path_after.ends_with(Path::new("workspaces").join(session_id)));
+        assert!(
+            path_after.exists(),
+            "Default workspace should exist after fallback"
+        );
+    }
 }

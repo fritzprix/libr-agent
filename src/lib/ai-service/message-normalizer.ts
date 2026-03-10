@@ -1,6 +1,7 @@
 import type { Message } from '@/models/chat';
 import { AIServiceProvider } from './types';
 import { getLogger } from '../logger';
+import type { MCPContent } from '@/lib/mcp';
 
 const logger = getLogger('MessageNormalizer');
 
@@ -40,9 +41,51 @@ export class MessageNormalizer {
     const processedMessages = this.validateToolCallPairing(validMessages);
 
     // Second pass: sanitize individual messages
-    return processedMessages
+    const sanitized = processedMessages
       .map((msg) => this.sanitizeSingleMessage(msg, targetProvider))
       .filter((msg) => msg !== null) as Message[];
+
+    // Third pass: Merge consecutive 'user' messages only.
+    // This handles multiple user inputs (e.g. pending messages) in a common layer.
+    // We EXCLUDE 'tool' and 'assistant' from this auto-merging to preserve
+    // logical boundaries and maximize prefix caching for providers like Gemini.
+    const merged: Message[] = [];
+
+    for (const msg of sanitized) {
+      const last = merged[merged.length - 1];
+
+      // CRITICAL: Only merge if role is 'user'.
+      // Do NOT merge 'tool' or 'assistant' here.
+      if (last && last.role === 'user' && msg.role === 'user') {
+        const lastContent = Array.isArray(last.content)
+          ? (last.content as MCPContent[])
+          : ([{ type: 'text', text: String(last.content) }] as MCPContent[]);
+        const nextContent = Array.isArray(msg.content)
+          ? (msg.content as MCPContent[])
+          : ([{ type: 'text', text: String(msg.content) }] as MCPContent[]);
+
+        // Combine into single message with double newline separator
+        last.content = [
+          ...lastContent,
+          { type: 'text', text: '\n\n' } as MCPContent,
+          ...nextContent,
+        ];
+
+        // Preserve attachments from both messages
+        if (msg.attachments?.length) {
+          last.attachments = [...(last.attachments ?? []), ...msg.attachments];
+        }
+
+        logger.debug('Merged consecutive user messages in generic layer', {
+          id1: last.id,
+          id2: msg.id,
+        });
+      } else {
+        merged.push({ ...msg });
+      }
+    }
+
+    return merged;
   }
 
   /**

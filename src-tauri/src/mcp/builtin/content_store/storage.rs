@@ -134,8 +134,10 @@ impl ContentStoreStorage {
                 .map_err(|e| format!("Failed to create database file: {e}"))?;
         }
 
+        let db_url_formatted = crate::utils::sqlite::format_sqlite_url(&db_path);
+
         // Connect using SeaORM Database
-        let db = Database::connect(&format!("sqlite://{}", db_path))
+        let db = Database::connect(&db_url_formatted)
             .await
             .map_err(|e| format!("Failed to connect to database: {e}"))?;
 

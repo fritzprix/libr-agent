@@ -1,10 +1,15 @@
 use crate::agent::session_manager::AgentSessionManager;
+use crate::agent::state::AgentSession;
+use crate::models::chat::Message;
 use crate::repositories::MessageRepository;
 use crate::search::message_index::{MessageSearchEngine, SearchResult};
 use crate::state::get_message_repository;
 use crate::utils::pagination::{paginate_in_memory, Page};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::Mutex;
+use tauri::AppHandle;
+use tokio::sync::RwLock;
 
 /// Global cache for loaded search indices (session_id -> MessageSearchEngine)
 static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
@@ -137,5 +142,181 @@ impl MessageService {
 
         // Use shared in-memory pagination logic
         Ok(paginate_in_memory(all_results, page, page_size))
+    }
+
+    /// Queues a user message for a busy session.
+    /// It adds the message to `pending_events` and persists it to the database,
+    /// but explicitly does NOT touch `session.messages` to preserve the active LLM context window.
+    pub async fn queue_user_message(
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        session_id: &str,
+        user_message: &Message,
+    ) -> Result<(), String> {
+        // 1. Add to pending events only
+        {
+            let sessions = active_sessions.read().await;
+            if let Some(session) = sessions.get(session_id) {
+                let mut pending = session.pending_events.write().await;
+                pending.add(crate::agent::state::PendingEvent::Message(
+                    user_message.id.clone(),
+                ));
+            } else {
+                return Err(format!("Session not found: {}", session_id));
+            }
+        }
+
+        // 2. Persist to DB synchronously
+        let repo = get_message_repository();
+        if let Err(e) = repo.insert(user_message).await {
+            log::error!(
+                "Failed to save queued user message to DB: session={}, msg_id={}, error={}",
+                session_id,
+                user_message.id,
+                e
+            );
+            return Err(format!("Failed to persist queued message: {}", e));
+        }
+
+        Ok(())
+    }
+
+    /// Appends a user message to the session cache and persists it to the database.
+    /// This handles deduplication, caching, UI event emission, and DB persistence
+    /// explicitly for the `start_workflow` execution path.
+    /// Callers must ensure `ensure_cache_initialized` has been called before invoking this.
+    pub async fn append_user_message_to_session(
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        app_handle: &AppHandle,
+        session_id: &str,
+        user_message: &Message,
+    ) -> Result<(), String> {
+        // 1. Add user message to in-memory cache FIRST (immediate, non-blocking)
+        {
+            let sessions = active_sessions.read().await;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+            let mut messages = session.messages.write().await;
+
+            // Deduplicate: Check if message ID already exists
+            if messages.iter().any(|m| m.id == user_message.id) {
+                log::warn!(
+                    "Ignoring duplicate user message in session cache: {}",
+                    user_message.id
+                );
+                return Ok(());
+            }
+
+            messages.push(user_message.clone());
+
+            // Apply sliding window policy
+            if messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                let removed = messages.remove(0);
+                log::debug!("Sliding window evicted: {}", removed.id);
+            }
+
+            log::info!(
+                "📥 Message stack after user message: session={}, count={}, latest_message={}",
+                session_id,
+                messages.len(),
+                user_message.id
+            );
+        } // Lock released
+
+        // 2. Emit UI event (immediate)
+        let message_added_event = crate::agent::events::AgentEvent::MessageAdded {
+            session_id: session_id.to_string(),
+            message: Box::new(user_message.clone()),
+        };
+        crate::agent::events::emit_agent_event(app_handle, message_added_event)
+            .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+
+        // 3. Persist to DB synchronously to ensure data integrity
+        let repo = get_message_repository();
+        if let Err(e) = repo.insert(user_message).await {
+            log::error!(
+                "Failed to save user message to DB: session={}, msg_id={}, error={}",
+                session_id,
+                user_message.id,
+                e
+            );
+            return Err(format!("Failed to persist message: {}", e));
+        }
+
+        Ok(())
+    }
+
+    /// Injects messages into a session cache, optionally triggering events immediately
+    /// or queueing them for a running workflow.
+    pub async fn inject_messages_to_session(
+        active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+        app_handle: &AppHandle,
+        session_id: &str,
+        messages: Vec<Message>,
+        emit_events_immediately: bool,
+    ) -> Result<(), String> {
+        // 1. Ensure cache is initialized
+        crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
+
+        // 2. Get session reference — note: multiple nested locks are acquired below
+        // (sessions read-guard, then session.messages write-guard and/or session.pending_events write-guard)
+        let sessions = active_sessions.read().await;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        // 3. Add messages to in-memory cache
+        {
+            let mut session_messages = session.messages.write().await;
+            for msg in &messages {
+                session_messages.push(msg.clone());
+                if session_messages.len() > crate::agent::state::MAX_CACHED_MESSAGES {
+                    session_messages.remove(0);
+                }
+            }
+        }
+
+        // 4. Emit MessageAdded events immediately, or queue as pending for the running workflow
+        if emit_events_immediately {
+            // Drop session lock before I/O operations
+            drop(sessions);
+
+            for msg in &messages {
+                let event = crate::agent::events::AgentEvent::MessageAdded {
+                    session_id: session_id.to_string(),
+                    message: Box::new(msg.clone()),
+                };
+                crate::agent::events::emit_agent_event(app_handle, event)
+                    .map_err(|e| format!("Failed to emit MessageAdded event: {}", e))?;
+            }
+        } else {
+            // Track these message IDs as pending (will emit when workflow picks them up)
+            let mut pending_events = session.pending_events.write().await;
+            for msg in &messages {
+                pending_events.add(crate::agent::state::PendingEvent::Message(msg.id.clone()));
+            }
+            log::info!(
+                "Marked {} messages as pending for session: {} (IDs: {:?})",
+                messages.len(),
+                session_id,
+                messages.iter().map(|m| &m.id).collect::<Vec<_>>()
+            );
+            drop(pending_events);
+            drop(sessions);
+        }
+
+        // 5. Persist to DB asynchronously
+        let msgs_for_db = messages.clone();
+        tokio::spawn(async move {
+            let repo = get_message_repository();
+            for msg in msgs_for_db {
+                if let Err(e) = repo.insert(&msg).await {
+                    log::error!("Failed to inject message to DB: {}", e);
+                }
+            }
+        });
+
+        Ok(())
     }
 }

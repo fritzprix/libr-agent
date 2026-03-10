@@ -83,3 +83,11 @@
 **Action:**
 
 - **Type Sync:** Replaced `invoke` from `@tauri-apps/api/core` with typed `safeInvoke` in context files (AgentChatContext, AgentSessionContext, AgentSessionListContext, SkillsContext), features (AgentDraftChatView, agent-backend, AgentChatStatusBar, GeneralTab), and hooks (useLLMListener).
+
+## 2026-03-09 - Messages IPC Type Boundary
+
+**Problem:** Untyped `safeInvoke` calls for message retrieval and search (`messages_get_page`, `messages_search`) using `Record<string, unknown>`, risking runtime errors and payload mismatches.
+
+**Action:**
+
+- **Type Sync:** Replaced `Record<string, unknown>` with strictly typed `RustMessage` and `RustSearchResult` in `src/lib/backend/messages.ts`, ensuring compile-time safety and 1:1 Rust-TS synchronization for message pagination and search.

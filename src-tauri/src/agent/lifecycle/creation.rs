@@ -86,6 +86,56 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         }
     };
 
+    // Resolve workspace override: check DB first so the pool is correct before any lazy loading.
+    // For existing sessions, the override may already be in the DB (set via set_override which
+    // now persists to DB). For new sessions, DB returns None and WorkspaceService returns None.
+    let workspace_override = if let Ok(Some(existing_session)) =
+        session_repo.get_session(&session_id).await
+    {
+        if let Some(db_override) = existing_session.workspace_override {
+            let path = std::path::PathBuf::from(&db_override);
+            // Validate that the persisted path still exists and is accessible.
+            // If the user has since deleted or moved the directory, fall back to the
+            // default workspace and clear the stale override from the DB.
+            if path.is_dir() {
+                // Pre-register in pool so WorkspaceService and tools see the correct directory
+                if let Ok(session_manager) = crate::session::get_session_manager() {
+                    if let Err(e) = session_manager
+                        .register_session_override(&session_id, path)
+                        .await
+                    {
+                        log::warn!(
+                            "Failed to pre-register workspace override for session {}: {}",
+                            session_id,
+                            e
+                        );
+                    }
+                }
+                Some(db_override)
+            } else {
+                log::warn!(
+                        "Persisted workspace override '{}' for session {} no longer exists or is not a directory; \
+                         clearing it and falling back to default workspace.",
+                        db_override,
+                        session_id
+                    );
+                // Best-effort clear — ignore errors since the session is still usable
+                let _ = session_repo
+                    .update_workspace_override(&session_id, None)
+                    .await;
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        // No existing DB record — resolve from pool (handles the case where override was
+        // registered before the session was first persisted)
+        crate::services::WorkspaceService::get_override(&session_id)
+            .await
+            .unwrap_or(None)
+    };
+
     let session = SessionMetadata {
         id: session_id.clone(),
         name,
@@ -102,6 +152,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         created_at: now,
         updated_at: now,
         yolo_mode: false,
+        workspace_override,
     };
 
     // Persist to database using injected repository

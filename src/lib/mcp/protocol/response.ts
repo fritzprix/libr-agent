@@ -27,6 +27,7 @@ export interface SamplingResult extends MCPResult {
       promptTokens: number;
       completionTokens: number;
       totalTokens: number;
+      cachedPromptTokens?: number;
     };
     model?: string;
   };

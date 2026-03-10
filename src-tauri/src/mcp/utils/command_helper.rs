@@ -150,7 +150,7 @@ mod tests {
     #[cfg(not(windows))]
     fn test_prepare_command_unix() {
         // On Unix, commands pass through unchanged
-        let (cmd, args) = prepare_command("npx", &vec!["-y".to_string(), "package".to_string()]);
+        let (cmd, args) = prepare_command("npx", &["-y".to_string(), "package".to_string()]);
         assert_eq!(cmd, "npx");
         assert_eq!(args, vec!["-y", "package"]);
     }

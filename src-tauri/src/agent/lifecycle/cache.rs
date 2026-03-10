@@ -39,7 +39,7 @@ pub async fn init_session_with_messages(
     let sessions = active_sessions.read().await;
     if let Some(session) = sessions.get(session_id) {
         let mut messages = session.messages.write().await;
-        *messages = page.items; // Replace with DB data
+        *messages = page.items.clone(); // Clone so we can use page.items later
 
         let mut synced_at = session.last_synced_at.write().await;
         *synced_at = Some(SystemTime::now());
@@ -49,10 +49,20 @@ pub async fn init_session_with_messages(
 
         session.cache_initialized.store(true, Ordering::Release);
 
+        // Detect incomplete user turn: last non-recovery message is `user` with no assistant response.
+        // This happens after a crash.
+        let has_incomplete_turn = page
+            .items
+            .iter()
+            .rfind(|m| m.source.as_deref() != Some("recovery"))
+            .map(|m| m.role == "user")
+            .unwrap_or(false);
+
         log::info!(
-            "Initialized session cache: session={}, messages_loaded={}",
+            "Initialized session cache: session={}, messages_loaded={}, incomplete_turn={}",
             session_id,
-            loaded_count
+            loaded_count,
+            has_incomplete_turn
         );
     } else {
         return Err(format!("Session not found: {}", session_id));

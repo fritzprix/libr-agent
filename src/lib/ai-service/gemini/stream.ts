@@ -86,7 +86,9 @@ export async function* processGeminiStream(
   let firstChunkReceived = false;
 
   // Track cumulative usage metadata across chunks
-  const currentUsage = {
+  const currentUsage: import('../types').TokenUsage & {
+    details: Record<string, unknown>;
+  } = {
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
@@ -123,6 +125,8 @@ export async function* processGeminiStream(
 
       // Add cached content tokens if present
       if (chunk.usageMetadata.cachedContentTokenCount !== undefined) {
+        currentUsage.cachedPromptTokens =
+          chunk.usageMetadata.cachedContentTokenCount;
         currentUsage.details.cachedContentTokenCount =
           chunk.usageMetadata.cachedContentTokenCount;
         usageUpdated = true;

@@ -63,6 +63,7 @@ export interface CreateAgentSessionWithMessageRequest {
   provider?: string;
   agentConfig: AgentConfig;
   message: RustMessage;
+  workspacePath?: string;
 }
 
 /**
