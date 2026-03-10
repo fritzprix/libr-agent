@@ -143,9 +143,21 @@ export class AnthropicService extends BaseAIService {
 
   /**
    * @inheritdoc
+   *
+   * Marks the last tool with `cache_control: { type: 'ephemeral' }` so that
+   * Anthropic caches the entire tool list as a second cache breakpoint. The
+   * tool list is stable within a session (tools don't change between turns),
+   * so this can save significant input tokens on every request after the first.
    */
   convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
-    return mcpTools.map(convertMCPToolToAnthropic);
+    const tools = mcpTools.map(convertMCPToolToAnthropic);
+    if (tools.length > 0) {
+      tools[tools.length - 1] = {
+        ...tools[tools.length - 1],
+        cache_control: { type: 'ephemeral' },
+      };
+    }
+    return tools;
   }
 
   /**

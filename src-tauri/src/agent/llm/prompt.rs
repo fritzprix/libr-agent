@@ -142,7 +142,15 @@ pub async fn build_system_prompt(
         if !contexts.is_empty() {
             parts.push("\n\n## Available Tools & Current State\n".to_string());
 
-            for (_tool_id, service_context) in contexts {
+            // Sort by tool_id for deterministic ordering so the system prompt
+            // byte sequence is stable across calls. This maximises prefix-cache
+            // hit rates on providers that perform automatic prompt caching
+            // (e.g. OpenAI, Groq) where any change — including a reordering —
+            // invalidates the cached prefix.
+            let mut sorted_contexts: Vec<(String, _)> = contexts.into_iter().collect();
+            sorted_contexts.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+            for (_tool_id, service_context) in sorted_contexts {
                 if !service_context.context_prompt.trim().is_empty() {
                     parts.push(service_context.context_prompt);
                 }
