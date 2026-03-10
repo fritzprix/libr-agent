@@ -10,7 +10,7 @@ import {
   getPlaybooksPage,
 } from './playbooks';
 import { safeInvoke } from './core';
-import type { Playbook } from '@/types/playbook';
+import type { Playbook, PlaybookStep } from '@/types/playbook';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -25,15 +25,24 @@ vi.mock('@/lib/logger', () => ({
   })),
 }));
 
-// Mock the schemas
+// Mock the schemas — mirrors real behavior: returns undefined (not null) on failure
+// and only accepts strings (matching the real function signature).
 vi.mock('@/lib/schemas/playbook', () => ({
-  safeParsePlaybookWorkflow: vi.fn((input) => {
-    if (input === 'invalid') return null;
-    return { steps: typeof input === 'string' ? JSON.parse(input) : input };
+  safeParsePlaybookWorkflow: vi.fn((input: string) => {
+    if (input === 'invalid') return undefined;
+    try {
+      return JSON.parse(input) as { steps: PlaybookStep[] };
+    } catch {
+      return undefined;
+    }
   }),
-  safeParseSuccessCriteria: vi.fn((input) => {
-    if (input === 'invalid') return null;
-    return typeof input === 'string' ? JSON.parse(input) : input;
+  safeParseSuccessCriteria: vi.fn((input: string) => {
+    if (input === 'invalid') return undefined;
+    try {
+      return JSON.parse(input) as { description: string };
+    } catch {
+      return undefined;
+    }
   }),
 }));
 
@@ -42,14 +51,26 @@ describe('playbooks backend wrapper', () => {
     vi.clearAllMocks();
   });
 
-  const mockDate = new Date().getTime();
+  // Fixed timestamp — avoids time-dependent test data that would make failures
+  // non-reproducible across runs.
+  const mockDate = 1700000000000;
+
+  const mockStep: PlaybookStep = {
+    stepId: 'step-1',
+    description: 'Test step',
+    action: { toolName: 'testTool', purpose: 'Verify test action' },
+    requiredData: [],
+    outputVariable: 'testOutput',
+  };
+
+  const mockWorkflow = { steps: [mockStep] };
 
   const mockDto = {
     id: 'playbook-1',
     assistantId: 'agent-1',
     goal: 'Test Goal',
     initialCommand: 'Start',
-    workflow: JSON.stringify([{ action: 'test' }]),
+    workflow: JSON.stringify(mockWorkflow),
     successCriteria: JSON.stringify({ description: 'Done' }),
     createdAt: mockDate,
     updatedAt: mockDate,
@@ -61,8 +82,8 @@ describe('playbooks backend wrapper', () => {
     agentId: 'agent-1',
     goal: 'Test Goal',
     initialCommand: 'Start',
-    workflow: [{ action: 'test' }] as any,
-    successCriteria: { description: 'Done' } as any,
+    workflow: [mockStep],
+    successCriteria: { description: 'Done' },
   };
 
   describe('createPlaybook', () => {
@@ -83,7 +104,7 @@ describe('playbooks backend wrapper', () => {
       expect(result.id).toBe('playbook-1');
       expect(result.agentId).toBe('agent-1');
       expect(result.goal).toBe('Test Goal');
-      expect(result.workflow).toEqual([{ action: 'test' }]);
+      expect(result.workflow).toEqual([mockStep]);
     });
 
     it('handles invalid JSON strings during deserialization safely', async () => {
@@ -103,14 +124,14 @@ describe('playbooks backend wrapper', () => {
     it('handles object (non-string) JSON during deserialization safely', async () => {
       const objectDto = {
         ...mockDto,
-        workflow: [{ action: 'test' }],
+        workflow: mockWorkflow,
         successCriteria: { description: 'Done' },
       };
       vi.mocked(safeInvoke).mockResolvedValueOnce(objectDto);
 
       const result = await createPlaybook(mockPlaybook);
 
-      expect(result.workflow).toEqual([{ action: 'test' }]);
+      expect(result.workflow).toEqual([mockStep]);
       expect(result.successCriteria).toEqual({ description: 'Done' });
     });
   });

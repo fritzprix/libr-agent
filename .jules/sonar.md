@@ -39,7 +39,7 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-03-03 - src/test/setup.ts **Coverage Expanded:** Global Test Architecture **Assertions:** Initialized a dummy `i18next` instance in global setup to eradicate `NO_I18NEXT_INSTANCE` console warning spew during unit tests. Preserves `useTranslation` hook signature while eliminating React warnings. Tests correctly fallback to English JSON keys.
 
 ## 2026-03-07 - src/lib/backend/utils.ts, src/lib/backend/agent-commands.ts, src/lib/backend/builtin-tools.ts, src/lib/backend/browser.ts, src/lib/backend/file-operations.ts **Coverage Expanded:** Tauri command wrappers **Assertions:** Verified safeInvoke parameters and return values.
-## 2024-03-09 - [src/lib/backend/skills.ts] **Coverage Expanded:** [Backend Skills Wrapper] **Assertions:** [Verified safeInvoke args and correct payload forwarding]
-## 2024-03-09 - [src/lib/backend/scheduled-tasks.ts] **Coverage Expanded:** [Backend Scheduled Tasks Wrapper] **Assertions:** [Verified safeInvoke args and correct payload forwarding]
-## 2024-03-09 - [src/lib/backend/workspace.ts] **Coverage Expanded:** [Backend Workspace Wrapper] **Assertions:** [Verified safeInvoke args and correct payload forwarding]
-## 2024-03-09 - [src/lib/backend/playbooks.ts] **Coverage Expanded:** [Backend Playbooks Wrapper] **Assertions:** [Verified safeInvoke args, correct payload forwarding, JSON deserialization robustness, and pagination logic]
+## 2026-03-09 - src/lib/backend/skills.ts **Coverage Expanded:** Backend Skills Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/scheduled-tasks.ts **Coverage Expanded:** Backend Scheduled Tasks Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/workspace.ts **Coverage Expanded:** Backend Workspace Wrapper **Assertions:** Verified safeInvoke args and correct payload forwarding
+## 2026-03-09 - src/lib/backend/playbooks.ts **Coverage Expanded:** Backend Playbooks Wrapper **Assertions:** Verified safeInvoke args, correct payload forwarding, JSON deserialization robustness, and pagination logic
