@@ -314,8 +314,14 @@ export function AgentChatStatusBar() {
             <AgentModelPicker
               currentModel={session.model}
               currentProvider={session.provider}
+              disabled={workflowStatus !== 'idle'}
               onConfigUpdate={async (model, provider) => {
-                if (!session.id || !session.assistant) return;
+                if (
+                  !session.id ||
+                  !session.assistant ||
+                  workflowStatus !== 'idle'
+                )
+                  return;
 
                 // Optimistic update logging
                 logger.info(`Updating session config to ${provider}/${model}`);
