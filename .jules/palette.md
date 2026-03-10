@@ -42,3 +42,7 @@
 
 **Learning:** Icon-only action buttons (like Edit/Delete) often lack immediate context for keyboard and mouse users, making destructive or important actions ambiguous.
 **Action:** Always wrap icon-only buttons in `Tooltip` components using the standard Shadcn/Radix implementation, ensuring both visual feedback on hover and ARIA support.
+
+## 2025-02-17 - Missing Focus Indicators on Native Buttons
+**Learning:** Even when custom UI components (like the custom `Button` variant) automatically handle accessibility focus styling, plain native `<button>` elements throughout the app often lack them, impacting keyboard accessibility. Some buttons are completely invisible until hovered without proper `focus-visible` styling (like in `MarkdownText.tsx`).
+**Action:** When adding or reviewing plain `<button>` components outside of the main design system button component, always ensure that `focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none` (along with `rounded` where applicable) is applied to maintain consistent keyboard navigation feedback.
