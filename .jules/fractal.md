@@ -87,3 +87,8 @@
 
 **Split:** `session_tests.rs`, `manager_tests.rs`
 **Improvement:** Extracted large test suites to their own files, reducing file size and clutter in `session.rs` and `manager.rs`.
+
+## 2026-03-08 - src-tauri/src/mcp/builtin/workspace/code_execution/interactive/handlers.rs
+
+**Split:** `interactive_shell.rs`, `execute_pending.rs`, `cancel_pending.rs`
+**Improvement:** Decoupled `handle_interactive_shell`, `handle_execute_pending_shell`, and `handle_cancel_pending_execution` into distinct modules based on functionality. Reduced the monolithic file size of ~769 lines into manageable components, significantly improving readability and maintainability.
