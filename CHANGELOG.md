@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.33] - 2026-03-10
+
+### 🚀 Features
+
+- **Workspace Override Persistence**: Agent sessions now remember their custom workspace path across restarts. The override is persisted to the database and automatically restored when a session resumes.
+
+### 🐛 Fixes
+
+- **Windows SQLite Paths**: Fixed hardcoded `sqlite://` URL bindings that silently failed on Windows due to backslash path separators. A dedicated `format_sqlite_url()` helper now handles cross-platform path formatting correctly.
+- **Message Token History**: Fixed `deserializeMessage` silently dropping historical token usage data — usage information is now correctly preserved when loading past messages.
+- **Type Safety (OpenAI/Gemini)**: Replaced an unsafe double-cast on `chunk.usage` in the OpenAI streaming path with a proper runtime type guard; added the missing `thoughtsTokenCount` field to `TokenUsage.details` to eliminate cast workarounds in the Gemini path.
+- **i18n Agent Drop Hints**: Workspace drag-and-drop hint text and toast error messages in the Agent Draft view are now fully localized (Korean + English).
+- **Message Role Cast**: Role values with unexpected raw types are now safely cast to `Message['role']` instead of being widened to `string`.
+- **Release Script Safety**: The release script now aborts immediately when `TAURI_SIGNING_PRIVATE_KEY` is not set, preventing silent signing failures during production builds.
+
+### 🔧 Internal
+
+- **Code Quality (PR #797)**: Applied all reviewer feedback — removed redundant `<TooltipProvider>` wrapper (already internal to `Tooltip`), fixed inline `import()` type annotations, updated docstrings for allowlist behavior accuracy, and ensured `deserializeMessage` maps all fields.
+- **Message / Workflow Decoupling**: Extracted message queuing, DB persistence, and event emission out of the workflow orchestration loop into a dedicated `MessageService`.
+- **UI Hook Refactoring**: Refactored `ServerToolsModal`, `EnvVarsForm`, and `HttpForm` to use custom hooks and a callback-ref pattern, reducing component complexity.
+- **Interactive Handler Sub-modules**: Reorganized interactive code-execution handlers into focused sub-modules with cleaner visibility boundaries.
+- **Test Coverage**: Added unit tests for backend wrappers, `parseAssistant`, `isValidMessage`, `useBuiltinTools`, and `useServerTools` hooks; Rust `format_sqlite_url` covered by integration tests.
+
 ## [0.5.32] - 2026-03-10
 
 ### 🚀 Features
