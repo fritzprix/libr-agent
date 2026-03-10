@@ -390,22 +390,36 @@ impl SessionManager {
     /// Remove a specific session
     pub async fn remove_session(&self, session_id: &str) -> Result<(), String> {
         // Remove session from pool, returning error if not found
-        {
+        let workspace_info = {
             let mut pool = self
                 .workspace_pool
                 .write()
                 .map_err(|e| format!("Failed to write workspace pool: {e}"))?;
 
-            if pool.remove(session_id).is_none() {
-                return Err(format!("Session '{session_id}' not found in pool"));
+            pool.remove(session_id)
+        };
+
+        if let Some(info) = workspace_info {
+            // Safety: Never delete workspace overrides (user-provided custom directories)
+            if let Some(workspace_override) = &info.workspace_override {
+                info!(
+                    "Session '{}' has a workspace override. Preserving custom directory: {:?}",
+                    session_id, workspace_override
+                );
             }
+
+            // Always remove the default isolated workspace directory
+            // (it's safe to call even if the directory was never created)
+            self.directory_service.remove_workspace(session_id).await?;
+
+            info!(
+                "Removed session '{}' (internal workspace cleaned)",
+                session_id
+            );
+            Ok(())
+        } else {
+            Err(format!("Session '{session_id}' not found in pool"))
         }
-
-        // Remove the workspace directory via directory service
-        self.directory_service.remove_workspace(session_id).await?;
-
-        info!("Removed session '{session_id}' and its workspace");
-        Ok(())
     }
 
     /// Get session statistics

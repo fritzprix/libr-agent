@@ -212,6 +212,18 @@ impl SessionRepository for InMemorySessionRepository {
         }
         Ok(())
     }
+
+    async fn update_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: Option<String>,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.workspace_override = override_path;
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {

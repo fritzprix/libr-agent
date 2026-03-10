@@ -130,6 +130,13 @@ pub trait SessionRepository: Send + Sync {
 
     /// Update the YOLO mode flag for a session
     async fn update_yolo_mode(&self, session_id: &str, enabled: bool) -> Result<(), DbError>;
+
+    /// Persist the workspace override path for a session (None clears it)
+    async fn update_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: Option<String>,
+    ) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -312,6 +319,22 @@ impl SessionRepository for SqliteSessionRepository {
         session::ActiveModel {
             id: Set(session_id.to_string()),
             yolo_mode: Set(enabled),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_workspace_override(
+        &self,
+        session_id: &str,
+        override_path: Option<String>,
+    ) -> Result<(), DbError> {
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            workspace_override: Set(override_path),
             ..Default::default()
         }
         .update(&self.db)
