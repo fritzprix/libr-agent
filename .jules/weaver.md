@@ -55,3 +55,15 @@
 - **usePlaybookSearch:** Eradicated the anti-pattern of copying props to state and using an effect to clear the `playbooks` array on `query === null`. Refactored to compute directly by returning an empty array dynamically during the render cycle if `query` is null, preventing flashes of stale data.
 - **useWorkspaceFiles:** Aligned comments and inline documentation with the current behavior; no structural refactor was required for this hook.
 - **Renders Saved:** Eliminated the "State Duplicator" anti-pattern and the accompanying double-renders on prop changes, restoring declarative rendering integrity.
+
+## 2026-03-05 - [ServerToolsModal / BuiltInToolsEditor] **Eradicated:** [God Component / Logic in Render] **Woven:** [Custom Hook Pattern]
+
+- **ServerToolsModal:** Extracted the data fetching logic for server tools (`probe_mcp_server`) into a `useServerTools` hook. The modal component now strictly focuses on presentation and state consumption.
+- **BuiltInToolsEditor:** Extracted the fetching of builtin server definitions into a `useBuiltinTools` hook, eliminating the component's internal `useEffect` orchestration.
+- **Benefits:** Decoupled data fetching from UI presentation, significantly improving testability and adhering to the modernized Container/Presentational pattern.
+
+## 2026-03-05 - [HttpForm / EnvVarsForm] **Eradicated:** [Action-Effect Chains] **Woven:** [Callback Ref Pattern / Event-Driven State]
+
+- **HttpForm & EnvVarsForm:** Removed the `useEffect` block that monitored `.length` changes on `customHeaders` and `envVars` to imperatively focus the newly added input via a `prevLengthRef`.
+- **Woven:** Applied the React **Callback Ref** pattern conditionally governed by an `isAddingRef` flag set within the `onClick` handler. When a new input mounts after clicking "Add", its `ref` callback directly calls `.focus()`.
+- **Renders Saved:** Eliminated a redundant reactive cycle (the action-effect chain), bypassing the extra reconciliation required by `useEffect`-driven focus synchronization.

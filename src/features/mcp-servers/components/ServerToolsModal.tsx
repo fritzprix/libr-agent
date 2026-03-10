@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Wrench, ChevronDown } from 'lucide-react';
-import { safeInvoke } from '@/lib/backend/core';
 import {
   Dialog,
   DialogContent,
@@ -10,10 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { getLogger } from '@/lib/logger';
-import type { MCPTool } from '@/lib/mcp';
-
-const logger = getLogger('ServerToolsModal');
+import { useServerTools } from '../hooks/useServerTools';
 
 interface ServerToolsModalProps {
   serverId: string;
@@ -32,30 +28,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const [tools, setTools] = useState<MCPTool[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    setIsLoading(true);
-    setError(null);
-    setTools([]);
-
-    safeInvoke<MCPTool[]>('probe_mcp_server', { serverId })
-      .then((result) => {
-        setTools(result);
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error('Failed to probe server tools', { serverId, err });
-        setError(msg);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, [isOpen, serverId]);
+  const { tools, isLoading, error } = useServerTools(serverId, isOpen);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
