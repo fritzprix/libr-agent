@@ -92,9 +92,34 @@ export function AgentChatStatusBar() {
     }
   }, [metrics]);
 
-  // Use lastMetrics (which is now our "best known" merged state) as primary display source
-  // This ensures that even if metrics is null or a "bad" chunk, we keep the last valid UI state.
-  const displayMetrics = lastMetrics;
+  // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
+  // without waiting for the next paint cycle (Effect-less derivation)
+  const displayMetrics = useMemo(() => {
+    if (!metrics) return lastMetrics;
+    if (!lastMetrics) return metrics;
+
+    // Smart merge: update counts but preserve metadata if new chunk lacks it
+    // (Same logic as useEffect but applied immediately during render)
+    return {
+      ...lastMetrics,
+      ...metrics,
+      details: {
+        ...lastMetrics.details,
+        ...metrics.details,
+        // Only overwrite metadata if new value is present and non-zero
+        evalDuration:
+          metrics.details?.evalDuration || lastMetrics.details?.evalDuration,
+        timeToFirstToken:
+          metrics.details?.timeToFirstToken ||
+          lastMetrics.details?.timeToFirstToken,
+        promptEvalDuration:
+          metrics.details?.promptEvalDuration ||
+          lastMetrics.details?.promptEvalDuration,
+        loadDuration:
+          metrics.details?.loadDuration || lastMetrics.details?.loadDuration,
+      },
+    };
+  }, [metrics, lastMetrics]);
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.
@@ -324,7 +349,7 @@ export function AgentChatStatusBar() {
                 )
                   return;
 
-                // Optimistic update logging
+                // Session config update logging
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {

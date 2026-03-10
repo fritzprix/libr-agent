@@ -681,12 +681,9 @@ export function AgentSessionProvider({
     }
   }, [yoloModeEnabled, pendingApprovals, sessionId]);
 
-  const updateSessionConfig = useCallback(
-    (model: string, provider: string) => {
-      setSession((prev) => (prev ? { ...prev, model, provider } : null));
-    },
-    [],
-  );
+  const updateSessionConfig = useCallback((model: string, provider: string) => {
+    setSession((prev) => (prev ? { ...prev, model, provider } : null));
+  }, []);
 
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
