@@ -35,7 +35,6 @@ impl AgentService {
             .await
     }
 
-impl AgentService {
     /// Create a new agent session
     pub async fn create_session(
         manager: &AgentSessionManager,
