@@ -83,6 +83,30 @@ describe('parseAssistant', () => {
     const assistant = parseAssistant(dto);
     expect(assistant.description).toBe('Stored as string.');
   });
+
+  it('handles invalid stringified config', () => {
+    const dto = {
+      id: 'asst_str_invalid',
+      name: 'Invalid Stringified',
+      config: '{ invalid json }',
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const assistant = parseAssistant(dto);
+    expect(assistant.systemPrompt).toBe('You are a helpful assistant.');
+  });
+
+  it('handles missing config', () => {
+    const dto = {
+      id: 'asst_no_config',
+      name: 'No Config',
+      config: null,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    const assistant = parseAssistant(dto);
+    expect(assistant.systemPrompt).toBe('You are a helpful assistant.');
+  });
 });
 
 // ─── Round-trip: serialize → parse ───────────────────────────────────────────
