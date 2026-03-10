@@ -2,6 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useBuiltinTools } from '../useBuiltinTools';
 import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
+import type { BuiltinServerInfo } from '@/lib/backend/types';
 
 vi.mock('@/lib/backend/builtin-tools', () => ({
   listAvailableBuiltinServerDefinitions: vi.fn(),
@@ -16,18 +17,21 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-const mockDefs = [
+const mockDefs: BuiltinServerInfo[] = [
   {
-    alias: 'workspace',
+    name: 'workspace',
     metadata: { displayName: 'Workspace', description: '' },
+    toolCount: 3,
   },
   {
-    alias: 'browser',
+    name: 'browser',
     metadata: { displayName: 'Browser', description: '' },
+    toolCount: 2,
   },
   {
-    alias: 'knowledge',
+    name: 'knowledge',
     metadata: { displayName: 'Knowledge', description: '' },
+    toolCount: 1,
   },
 ];
 
@@ -72,9 +76,9 @@ describe('useBuiltinTools', () => {
   });
 
   it('does not update state after unmount (isMounted guard)', async () => {
-    let resolveDefs!: (defs: typeof mockDefs) => void;
+    let resolveDefs!: (defs: BuiltinServerInfo[]) => void;
     vi.mocked(listAvailableBuiltinServerDefinitions).mockReturnValueOnce(
-      new Promise((res) => {
+      new Promise<BuiltinServerInfo[]>((res) => {
         resolveDefs = res;
       }),
     );
