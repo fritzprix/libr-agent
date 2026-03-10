@@ -88,11 +88,7 @@ impl WorkspaceServer {
 
     /// Get platform-aware prompt configuration for user input
     /// Returns (prompt, input_type) tuple
-    pub(crate) fn get_prompt_config<'a>(
-        &self,
-        command: &str,
-        args: &'a Value,
-    ) -> (&'a str, &'a str) {
+    fn get_prompt_config<'a>(&self, command: &str, args: &'a Value) -> (&'a str, &'a str) {
         // Check if privilege escalation detected (Unix only)
         let is_privilege_cmd = validation::detect_privilege_escalation(command);
 
