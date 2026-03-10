@@ -324,7 +324,7 @@ impl AgentSessionManager {
         &self,
         session_id: String,
         messages: Vec<Message>,
-        trigger_workflow: bool,
+        emit_events_immediately: bool,
     ) -> Result<(), String> {
         // Delegate message persistence, caching, and event emission to MessageService
         crate::services::MessageService::inject_messages_to_session(
@@ -332,12 +332,12 @@ impl AgentSessionManager {
             &self.app_handle,
             &session_id,
             messages,
-            trigger_workflow,
+            emit_events_immediately,
         )
         .await?;
 
-        // 5. Trigger workflow if requested
-        if trigger_workflow {
+        // Trigger workflow if requested
+        if emit_events_immediately {
             log::info!(
                 "Triggering workflow after message injection for session: {}",
                 session_id

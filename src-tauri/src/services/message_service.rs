@@ -183,15 +183,13 @@ impl MessageService {
     /// Appends a user message to the session cache and persists it to the database.
     /// This handles deduplication, caching, UI event emission, and DB persistence
     /// explicitly for the `start_workflow` execution path.
+    /// Callers must ensure `ensure_cache_initialized` has been called before invoking this.
     pub async fn append_user_message_to_session(
         active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
         app_handle: &AppHandle,
         session_id: &str,
         user_message: &Message,
     ) -> Result<(), String> {
-        // Ensure cache is initialized before workflow
-        crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
-
         // 1. Add user message to in-memory cache FIRST (immediate, non-blocking)
         {
             let sessions = active_sessions.read().await;
@@ -204,7 +202,7 @@ impl MessageService {
             // Deduplicate: Check if message ID already exists
             if messages.iter().any(|m| m.id == user_message.id) {
                 log::warn!(
-                    "Ignoring duplicate message start_workflow: {}",
+                    "Ignoring duplicate user message in session cache: {}",
                     user_message.id
                 );
                 return Ok(());
@@ -256,12 +254,13 @@ impl MessageService {
         app_handle: &AppHandle,
         session_id: &str,
         messages: Vec<Message>,
-        trigger_workflow: bool,
+        emit_events_immediately: bool,
     ) -> Result<(), String> {
         // 1. Ensure cache is initialized
         crate::agent::lifecycle::ensure_cache_initialized(active_sessions, session_id).await?;
 
-        // 2. Get session reference (single lock acquisition)
+        // 2. Get session reference — note: multiple nested locks are acquired below
+        // (sessions read-guard, then session.messages write-guard and/or session.pending_events write-guard)
         let sessions = active_sessions.read().await;
         let session = sessions
             .get(session_id)
@@ -278,8 +277,8 @@ impl MessageService {
             }
         }
 
-        // 4. Handle events based on `trigger_workflow` flag
-        if trigger_workflow {
+        // 4. Emit MessageAdded events immediately, or queue as pending for the running workflow
+        if emit_events_immediately {
             // Drop session lock before I/O operations
             drop(sessions);
 

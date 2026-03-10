@@ -48,6 +48,17 @@ pub async fn start_workflow(
         );
     }
 
+    // Ensure the message cache is populated from DB before the dedup check.
+    // Without this, an uninitialized (empty) cache would silently pass the duplicate
+    // check, and the session would get stuck in Busy state when the second dedup
+    // in append_user_message_to_session correctly rejects the duplicate after init.
+    crate::agent::lifecycle::ensure_cache_initialized(active_sessions, &session_id).await?;
+
+    // Note: we intentionally do NOT check is_cancelled() here.
+    // cancel_workflow (soft cancel) leaves the token in a cancelled state to block
+    // stale LLM responses, but start_workflow resets it unconditionally below.
+    // Failing here would prevent users from sending new messages after a cancel.
+
     // Check status, deduplicate, and queue if busy (Atomic Check-and-Act)
     let should_queue = {
         let active = active_sessions.read().await;
@@ -87,7 +98,8 @@ pub async fn start_workflow(
             active_sessions,
             &session_id,
             &user_message,
-        ).await?;
+        )
+        .await?;
 
         // Do NOT call request_llm_completion. The existing busy workflow will pick it up.
         // Do NOT emit MessageAdded (it will be emitted when drained).
@@ -137,7 +149,8 @@ pub async fn start_workflow(
         app_handle,
         &session_id,
         &user_message,
-    ).await?;
+    )
+    .await?;
 
     log::info!(
         "Started workflow for session: {} with message: {}",
@@ -198,12 +211,21 @@ async fn ensure_proxy_exists(
                 )
                 .await?;
 
-            log::info!("✅ Successfully recreated MCP proxy for session: {}", session_id);
+            log::info!(
+                "✅ Successfully recreated MCP proxy for session: {}",
+                session_id
+            );
         } else {
-            log::error!("Cannot recreate proxy: Session {} has no agent config", session_id);
+            log::error!(
+                "Cannot recreate proxy: Session {} has no agent config",
+                session_id
+            );
         }
     } else {
-        log::error!("Cannot recreate proxy: Session {} not found in DB", session_id);
+        log::error!(
+            "Cannot recreate proxy: Session {} not found in DB",
+            session_id
+        );
     }
 
     Ok(())
@@ -452,16 +474,24 @@ pub async fn continue_workflow_after_tool(
                 session_id
             );
 
-            // Use MessageService to handle message caching, event emission, and DB persistence
-            if let Err(e) = crate::services::MessageService::inject_messages_to_session(
+            // Use MessageService to handle message caching, event emission, and DB persistence.
+            // Propagate errors so the LLM loop does not continue with a stale context window
+            // if injection fails (e.g. due to a DB initialization error).
+            crate::services::MessageService::inject_messages_to_session(
                 active_sessions,
                 app_handle,
                 &session_id,
                 accumulated_messages.clone(),
                 true,
-            ).await {
-                log::error!("Failed to inject tool result messages into session: {}", e);
-            }
+            )
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "Failed to inject tool result messages into session cache: {}",
+                    e
+                );
+                e
+            })?;
 
             // Message-boundary cancel handling:
             // If cancel was requested while tools were running, consume it now
