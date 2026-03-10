@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.34] - 2026-03-10
+
+### 🐛 Fixes
+
+- **Keyboard Focus on Copy Button**: The copy button in markdown message blocks was invisible to keyboard users due to `opacity-0` with no `focus-visible` override. Added `focus-visible:opacity-100` and standard focus ring styles so the button is visually apparent when tabbed to.
+
+### ⚡ Performance
+
+- **Anthropic Prompt Cache Hit Rate**: Service context sections are now appended to the system prompt in deterministic (sorted) order, eliminating cache misses caused by random HashMap iteration order across requests. The tools list is also now marked with Anthropic's `cache_control: {type: 'ephemeral'}` to activate the second cache breakpoint, reducing cost and latency for tool-heavy agents.
+
 ## [0.5.33] - 2026-03-10
 
 ### 🚀 Features
