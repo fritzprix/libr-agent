@@ -17,6 +17,7 @@ interface AgentModelPickerProps {
   currentModel?: string;
   currentProvider?: string;
   className?: string;
+  disabled?: boolean;
   onConfigUpdate?: (model: string, provider: string) => void;
 }
 
@@ -24,6 +25,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   currentModel = '',
   currentProvider = '',
   className,
+  disabled = false,
   onConfigUpdate,
 }) => {
   const { availableModels, isRefreshing, refreshModels } =
@@ -71,12 +73,18 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
 
   return (
     <div
-      className={`flex items-center space-x-2 bg-muted/50 border border-primary/20 rounded-lg px-2 py-1 font-mono text-xs ${className}`}
+      className={`flex items-center space-x-2 bg-muted/50 border border-primary/20 rounded-lg px-2 py-1 font-mono text-xs ${
+        disabled ? 'opacity-50 pointer-events-none' : ''
+      } ${className}`}
     >
       <div className="w-2 h-2 rounded-full bg-primary/40" />
 
       {/* Provider Selector */}
-      <Select value={currentProvider} onValueChange={handleProviderChange}>
+      <Select
+        value={currentProvider}
+        onValueChange={handleProviderChange}
+        disabled={disabled}
+      >
         <SelectTrigger className="w-24 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
           <SelectValue placeholder="Provider" />
         </SelectTrigger>
@@ -95,7 +103,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       <Select
         value={currentModel}
         onValueChange={handleModelChange}
-        disabled={isRefreshing || !currentProvider}
+        disabled={disabled || isRefreshing || !currentProvider}
       >
         <SelectTrigger className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
           <SelectValue placeholder={isRefreshing ? 'Loading...' : 'Model'} />
@@ -113,7 +121,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       {currentProvider && (
         <button
           onClick={() => refreshModels()}
-          disabled={isRefreshing}
+          disabled={disabled || isRefreshing}
           className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors"
           title="Refresh models"
         >
@@ -133,6 +141,7 @@ export const AgentModelPicker = React.memo(
       prev.currentModel === next.currentModel &&
       prev.currentProvider === next.currentProvider &&
       prev.className === next.className &&
+      prev.disabled === next.disabled &&
       prev.onConfigUpdate === next.onConfigUpdate
     );
   },

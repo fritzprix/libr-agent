@@ -138,6 +138,7 @@ interface AgentSessionActionsContextValue {
     approved: boolean,
   ) => Promise<void>;
   toggleYoloMode: () => void;
+  updateSessionConfig: (model: string, provider: string) => void;
 }
 
 const AgentSessionActionsContext = createContext<
@@ -680,6 +681,10 @@ export function AgentSessionProvider({
     }
   }, [yoloModeEnabled, pendingApprovals, sessionId]);
 
+  const updateSessionConfig = useCallback((model: string, provider: string) => {
+    setSession((prev) => (prev ? { ...prev, model, provider } : null));
+  }, []);
+
   const stateValue: AgentSessionStateContextValue = useMemo(
     () => ({
       session,
@@ -716,6 +721,7 @@ export function AgentSessionProvider({
       setError,
       respondToToolApproval,
       toggleYoloMode,
+      updateSessionConfig,
     }),
     [
       sendMessage,
@@ -725,6 +731,7 @@ export function AgentSessionProvider({
       setError,
       respondToToolApproval,
       toggleYoloMode,
+      updateSessionConfig,
     ],
   );
 
