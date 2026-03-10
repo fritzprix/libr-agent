@@ -79,7 +79,17 @@ impl DroppedFileService {
         Ok(())
     }
 
-    /// Checks if a dropped path is a file or a directory and consumes it from the allowlist.
+    /// Checks if a dropped path is a file or a directory.
+    ///
+    /// For **directories**: the path is consumed from the allowlist immediately, because
+    /// directories are never passed to `read_dropped_file`.
+    ///
+    /// For **files**: the path is only verified to be present in the allowlist; it is
+    /// intentionally NOT consumed here.  Consumption happens later in `read_dropped_file`,
+    /// which is the method that actually reads the file content.
+    ///
+    /// Security note: callers must not assume that a file path is "used up" after this
+    /// call — it remains in the allowlist until `read_dropped_file` consumes it.
     pub async fn check_dropped_path_type(&self, file_path: String) -> Result<String, String> {
         let path = Path::new(&file_path);
 

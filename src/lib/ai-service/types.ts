@@ -37,6 +37,8 @@ export interface TokenUsage {
     cacheReadInputTokens?: number;
     /** Cached content token count (Gemini) */
     cachedContentTokenCount?: number;
+    /** Thinking/reasoning token count (Gemini reasoning models) */
+    thoughtsTokenCount?: number;
     /** Prompt cache hit tokens (Groq/DeepSeek) */
     prompt_cache_hit_tokens?: number;
     /** Time to first token (ms) - Client-side measurement for providers without native metrics */

@@ -1,6 +1,7 @@
 import { formatToolCall } from '../utils';
 import { generateToolCallId } from './mapper';
 import { getLogger } from '../../logger';
+import type { TokenUsage } from '../types';
 
 // Type definition for Gemini Experimental Thoughts
 // See: https://github.com/google/generative-ai-js/issues/186
@@ -86,7 +87,7 @@ export async function* processGeminiStream(
   let firstChunkReceived = false;
 
   // Track cumulative usage metadata across chunks
-  const currentUsage: import('../types').TokenUsage & {
+  const currentUsage: TokenUsage & {
     details: Record<string, unknown>;
   } = {
     promptTokens: 0,

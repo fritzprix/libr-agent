@@ -2,6 +2,7 @@ import { safeInvoke } from '@/lib/backend/core';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { createId } from '@paralleldrive/cuid2';
+import { useTranslation } from 'react-i18next';
 
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '@/lib/logger';
@@ -11,7 +12,6 @@ import {
   Badge,
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
@@ -111,6 +111,7 @@ const getIconForService = (iconId?: string) => {
 
 function DraftChatInner() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const { value: settings } = useSettings();
   const [searchParams] = useSearchParams();
@@ -217,7 +218,7 @@ function DraftChatInner() {
               if (target === 'form') {
                 if (pathType === 'directory') {
                   toast.error(
-                    'Drop directories in the central area to set workspace override.',
+                    t('agent.workspace.dropDirToastError'),
                   );
                   continue;
                 }
@@ -778,12 +779,11 @@ function DraftChatInner() {
                 : 'opacity-0 h-0 overflow-hidden',
             )}
           >
-            Drop a folder here to set as workspace
+            {t('agent.workspace.dropFolderHint')}
           </div>
         )}
         {/* Capabilities Grid */}{' '}
-        <TooltipProvider>
-          <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
+        <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
             {/* Built-in Tools */}
             <Tooltip delayDuration={300}>
               <TooltipTrigger asChild>
@@ -867,7 +867,6 @@ function DraftChatInner() {
               </Tooltip>
             </Link>
           </div>
-        </TooltipProvider>
         {/* Configuration Footer */}
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}

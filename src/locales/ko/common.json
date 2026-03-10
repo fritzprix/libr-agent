@@ -568,7 +568,9 @@
       "noFilesFound": "파일이 없습니다",
       "uploadAria": "워크스페이스에 파일 업로드",
       "uploading": "업로드 중...",
-      "dropFiles": "여기에 파일을 놓거나 클릭하여 업로드하세요"
+      "dropFiles": "여기에 파일을 놓거나 클릭하여 업로드하세요",
+      "dropFolderHint": "폴더를 여기에 놓아 워크스페이스로 설정하세요",
+      "dropDirToastError": "워크스페이스 재정의를 설정하려면 중앙 영역에 디렉토리를 놓으세요."
     },
     "statusBar": {
       "retryError": "메시지 재시도에 실패했습니다",

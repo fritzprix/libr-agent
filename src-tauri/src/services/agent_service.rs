@@ -5,6 +5,37 @@ use std::fs;
 pub struct AgentService;
 
 impl AgentService {
+    /// Validates a workspace override path and registers it for the given session.
+    ///
+    /// The path must be absolute, must exist, and must be a directory.
+    async fn validate_and_register_workspace_override(
+        path_str: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let Ok(session_manager) = get_session_manager() else {
+            log::warn!("Failed to get session manager for workspace override");
+            return Ok(());
+        };
+        let path = std::path::PathBuf::from(path_str);
+        if !path.is_absolute() {
+            return Err("Workspace path must be absolute".to_string());
+        }
+        match tokio::fs::metadata(&path).await {
+            Ok(metadata) => {
+                if !metadata.is_dir() {
+                    return Err("Workspace path must be a directory".to_string());
+                }
+            }
+            Err(err) => {
+                return Err(format!("Workspace path is not accessible: {}", err));
+            }
+        }
+        session_manager
+            .register_session_override(session_id, path)
+            .await
+    }
+
+impl AgentService {
     /// Create a new agent session
     pub async fn create_session(
         manager: &AgentSessionManager,
@@ -16,33 +47,8 @@ impl AgentService {
 
         // Handle workspace override if path is provided
         if let Some(path_str) = &request.workspace_path {
-            if let Ok(session_manager) = get_session_manager() {
-                let path = std::path::PathBuf::from(path_str);
-                // Ensure path is absolute, exists, is a directory, and is accessible
-                if !path.is_absolute() {
-                    return Err("Workspace path must be absolute".to_string());
-                }
-
-                match tokio::fs::metadata(&path).await {
-                    Ok(metadata) => {
-                        if !metadata.is_dir() {
-                            return Err("Workspace path must be a directory".to_string());
-                        }
-                    }
-                    Err(err) => {
-                        return Err(format!("Workspace path is not accessible: {}", err));
-                    }
-                }
-
-                session_manager
-                    .register_session_override(&request.session_id, path)
-                    .await?;
-            } else {
-                log::warn!("Failed to get session manager for workspace override");
-            }
+            Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
         }
-
-        // Select repository based on is_ephemeral flag
         let session_repo: Arc<dyn SessionRepository> = if request.is_ephemeral {
             log::info!(
                 "Creating ephemeral session (in-memory only): {}",
@@ -77,30 +83,7 @@ impl AgentService {
     ) -> Result<crate::commands::agent_commands::AgentResponse, String> {
         // Handle workspace override if path is provided
         if let Some(path_str) = &request.workspace_path {
-            if let Ok(session_manager) = get_session_manager() {
-                let path = std::path::PathBuf::from(path_str);
-                // Ensure path is absolute, exists, is a directory, and is accessible
-                if !path.is_absolute() {
-                    return Err("Workspace path must be absolute".to_string());
-                }
-
-                match tokio::fs::metadata(&path).await {
-                    Ok(metadata) => {
-                        if !metadata.is_dir() {
-                            return Err("Workspace path must be a directory".to_string());
-                        }
-                    }
-                    Err(err) => {
-                        return Err(format!("Workspace path is not accessible: {}", err));
-                    }
-                }
-
-                session_manager
-                    .register_session_override(&request.session_id, path)
-                    .await?;
-            } else {
-                log::warn!("Failed to get session manager for workspace override");
-            }
+            Self::validate_and_register_workspace_override(path_str, &request.session_id).await?;
         }
 
         // 1. Create the session first (persistent by default)

@@ -15,6 +15,20 @@ import { supportsThinking, getContextWindow } from './model-capabilities';
 import { convertMCPToolToOpenAI } from './tool-converters';
 const logger = getLogger('OpenAIService');
 
+/** Shape of usage data returned by OpenAI/compatible streaming chunks. */
+interface OpenAIStreamUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  prompt_cache_hit_tokens?: number;
+  completion_tokens_details?: { reasoning_tokens?: number };
+}
+
+function isOpenAIStreamUsage(value: unknown): value is OpenAIStreamUsage {
+  return typeof value === 'object' && value !== null;
+}
+
 /**
  * An AI service implementation for OpenAI's language models.
  * This class also serves as a base for other OpenAI-compatible services like Fireworks.
@@ -258,15 +272,10 @@ export class OpenAIService extends BaseAIService {
           });
         }
 
-        if (chunk.usage) {
-          const u = chunk.usage as unknown as {
-            prompt_tokens?: number;
-            completion_tokens?: number;
-            total_tokens?: number;
-            prompt_tokens_details?: { cached_tokens?: number };
-            prompt_cache_hit_tokens?: number;
-            completion_tokens_details?: { reasoning_tokens?: number };
-          };
+        const rawUsage = chunk.usage;
+        if (rawUsage && isOpenAIStreamUsage(rawUsage)) {
+          // Type guard validates structure; single cast is safe here
+          const u = rawUsage as OpenAIStreamUsage;
           const cachedPromptTokens =
             u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens;
 

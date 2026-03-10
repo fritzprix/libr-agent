@@ -633,7 +633,9 @@
       "noFilesFound": "No files found",
       "uploadAria": "Upload files to workspace",
       "uploading": "Uploading...",
-      "dropFiles": "Drop files here or click to upload"
+      "dropFiles": "Drop files here or click to upload",
+      "dropFolderHint": "Drop a folder here to set as workspace",
+      "dropDirToastError": "Drop directories in the central area to set workspace override."
     },
     "statusBar": {
       "retryError": "Failed to retry message",

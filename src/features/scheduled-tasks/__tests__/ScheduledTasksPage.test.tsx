@@ -1,6 +1,7 @@
 
 import { expect, test, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
 // Mock translation
@@ -8,7 +9,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: { name?: string }) => opts?.name ? `${key} ${opts.name}` : key
   }),
-  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>
+  Trans: ({ children }: { children: ReactNode }) => <>{children}</>
 }));
 
 // Mock the backend
@@ -42,17 +43,17 @@ vi.mock('@/lib/logger', () => ({
 // Mock Tooltip components
 vi.mock('@/components/ui/tooltip', () => {
   return {
-    TooltipProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip-provider">{children}</div>,
-    Tooltip: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip">{children}</div>,
-    TooltipTrigger: ({ children }: { children: React.ReactNode, asChild?: boolean }) => <div data-testid="tooltip-trigger">{children}</div>,
-    TooltipContent: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip-content">{children}</div>
+    TooltipProvider: ({ children }: { children: ReactNode }) => <div data-testid="tooltip-provider">{children}</div>,
+    Tooltip: ({ children }: { children: ReactNode }) => <div data-testid="tooltip">{children}</div>,
+    TooltipTrigger: ({ children }: { children: ReactNode, asChild?: boolean }) => <div data-testid="tooltip-trigger">{children}</div>,
+    TooltipContent: ({ children }: { children: ReactNode }) => <div data-testid="tooltip-content">{children}</div>
   };
 });
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,
