@@ -1,51 +1,19 @@
 import { useEditor } from '@/context/EditorContext';
 import { Assistant } from '@/models/chat';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { getLogger } from '@/lib/logger';
 import { useTranslation } from 'react-i18next';
-import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
-import type { BuiltinServerInfo } from '@/lib/backend/types';
 import {
   CORE_BUILTIN_SERVICE_ALIASES,
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
-
-const logger = getLogger('BuiltIn');
+import { useBuiltinTools } from './useBuiltinTools';
 
 export default function BuiltInToolsEditor() {
   const { draft, update } = useEditor<Assistant>();
-  const [services, setServices] = useState<BuiltinServerInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { services, isLoading } = useBuiltinTools();
   const { t } = useTranslation('common');
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function fetchDefinitions() {
-      try {
-        const defs = await listAvailableBuiltinServerDefinitions();
-        if (isMounted) {
-          setServices(
-            defs.sort((a, b) =>
-              a.metadata.displayName.localeCompare(b.metadata.displayName),
-            ),
-          );
-          setIsLoading(false);
-        }
-      } catch (err) {
-        logger.error('Failed to fetch builtin server definitions', err);
-        if (isMounted) setIsLoading(false);
-      }
-    }
-
-    fetchDefinitions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   const allowedAliases = draft.allowedBuiltInServiceAliases;
 
