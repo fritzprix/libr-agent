@@ -42,3 +42,7 @@
 
 **Learning:** Icon-only action buttons (like Edit/Delete) often lack immediate context for keyboard and mouse users, making destructive or important actions ambiguous.
 **Action:** Always wrap icon-only buttons in `Tooltip` components using the standard Shadcn/Radix implementation, ensuring both visual feedback on hover and ARIA support.
+
+## 2026-03-09 - Missing Keyboard Focus on Markdown Text Copy Button
+**Learning:** Found that an absolute positioned button using `opacity-0 group-hover:opacity-100` for hover states becomes invisible to keyboard users when tabbing through the UI unless `focus-visible:opacity-100` and related focus-visible styles are explicitly added.
+**Action:** Always add `focus-visible:opacity-100` along with standard focus rings (`focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none`) whenever using `opacity-0` with group hover mechanics so the control becomes visually apparent on keyboard focus for keyboard-only and low-vision users, and pair this with clear ARIA labeling to support screen reader users.
