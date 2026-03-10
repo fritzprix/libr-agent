@@ -198,7 +198,9 @@ export function ScheduledTasksPage() {
                       <Pencil className="w-4 h-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{t('scheduledTasks.editTask')}</TooltipContent>
+                  <TooltipContent>
+                    {t('scheduledTasks.editTask')}
+                  </TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -221,7 +223,9 @@ export function ScheduledTasksPage() {
                       )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{t('scheduledTasks.deleteTask')}</TooltipContent>
+                  <TooltipContent>
+                    {t('scheduledTasks.deleteTask')}
+                  </TooltipContent>
                 </Tooltip>
               </div>
             </li>
