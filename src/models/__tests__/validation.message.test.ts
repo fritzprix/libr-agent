@@ -72,9 +72,9 @@ describe('isValidMessage', () => {
     } as Partial<Message>;
     expect(isValidMessage(msg)).toBe(false);
 
-    expect(isValidMessage({ ...msg, role: 99 as unknown as string })).toBe(
-      false,
-    );
+    expect(
+      isValidMessage({ ...msg, role: 99 as unknown as Message['role'] }),
+    ).toBe(false);
   });
 
   it('should return false if content is not an array', () => {
