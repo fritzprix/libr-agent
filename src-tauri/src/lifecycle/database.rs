@@ -35,7 +35,8 @@ pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {
     // Build SqliteConnectOptions with WAL mode and busy timeout.
     // SeaORM's SQLite driver does NOT support journal_mode/busy_timeout as URL
     // query parameters — they must be set via SqliteConnectOptions.
-    let sqlite_opts = SqliteConnectOptions::from_str(&format!("sqlite://{db_file_path}"))
+    let db_url_formatted = crate::utils::sqlite::format_sqlite_url(db_file_path);
+    let sqlite_opts = SqliteConnectOptions::from_str(&db_url_formatted)
         .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
         .journal_mode(SqliteJournalMode::Wal)
         .busy_timeout(Duration::from_secs(5))

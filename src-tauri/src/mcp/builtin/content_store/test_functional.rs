@@ -13,7 +13,7 @@ mod tests {
         }
         std::fs::File::create(&db_path).unwrap();
 
-        let url = format!("sqlite://{}", db_path.to_string_lossy());
+        let url = crate::utils::sqlite::format_sqlite_url(&db_path.to_string_lossy());
 
         // Connect to database and run migrations
         let db = sea_orm::Database::connect(&url)

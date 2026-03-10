@@ -6,7 +6,7 @@ mod tests {
 
     async fn setup_old_db(db_path: &str) -> DatabaseConnection {
         // Create DB file
-        let url = format!("sqlite://{}", db_path);
+        let url = crate::utils::sqlite::format_sqlite_url(db_path);
         let db = Database::connect(&url)
             .await
             .expect("Failed to connect to DB");
@@ -47,7 +47,7 @@ mod tests {
         db.close().await.expect("Failed to close DB");
 
         // 2. Initialize ContentStoreStorage (should trigger migration)
-        let url = format!("sqlite://{}", db_path);
+        let url = crate::utils::sqlite::format_sqlite_url(db_path);
         let storage_result = ContentStoreStorage::new_sqlite(url.clone()).await;
         assert!(
             storage_result.is_ok(),

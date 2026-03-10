@@ -110,7 +110,7 @@ fn main() {
         std::fs::create_dir_all(parent_dir).expect("Failed to create database directory");
     }
 
-    let db_url = format!("sqlite://{db_path}");
+    let db_url = tauri_mcp_agent_lib::utils::sqlite::format_sqlite_url(&db_path);
 
     println!("🚀 Starting LibrAgent with SQLite database: {db_url}");
 
