@@ -217,9 +217,7 @@ function DraftChatInner() {
 
               if (target === 'form') {
                 if (pathType === 'directory') {
-                  toast.error(
-                    t('agent.workspace.dropDirToastError'),
-                  );
+                  toast.error(t('agent.workspace.dropDirToastError'));
                   continue;
                 }
 
@@ -784,89 +782,89 @@ function DraftChatInner() {
         )}
         {/* Capabilities Grid */}{' '}
         <div className="flex flex-wrap gap-2 justify-center max-w-2xl mt-2">
-            {/* Built-in Tools */}
+          {/* Built-in Tools */}
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <div className="cursor-help">
+                <Badge
+                  variant="secondary"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+                >
+                  <Square size={12} className="opacity-70" />
+                  Basic Tools
+                </Badge>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
+              <p>
+                Includes core capabilities like reading files, managing tasks,
+                and executing code. Always available to help you!
+              </p>
+            </TooltipContent>
+          </Tooltip>
+
+          {enabledOptionalAliases.map((alias) => {
+            const info = builtinServices.find((s) => s.name === alias);
+            const label = info?.metadata.displayName || alias;
+            const Icon = getIconForService(info?.metadata.icon);
+
+            return (
+              <Tooltip key={alias} delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help">
+                    <Badge
+                      variant="secondary"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
+                    >
+                      <Icon size={12} className="opacity-70" />
+                      {label}
+                    </Badge>
+                  </div>
+                </TooltipTrigger>
+                {info?.metadata.description && (
+                  <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
+                    <p>{info.metadata.description}</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            );
+          })}
+
+          {/* External MCP Servers */}
+          {assistant.mcpServerIds?.map((serverId) => {
+            // Resolve display name from fetched MCP servers
+            const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
+            const label = serverConfig?.name || serverId;
+
+            return (
+              <Badge
+                key={serverId}
+                variant="outline"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
+              >
+                <Puzzle size={12} className="opacity-70" />
+                {label}
+              </Badge>
+            );
+          })}
+
+          {/* Add Tools Button - Always visible to encourage exploration */}
+          <Link to="/assistants">
             <Tooltip delayDuration={300}>
               <TooltipTrigger asChild>
-                <div className="cursor-help">
-                  <Badge
-                    variant="secondary"
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
-                  >
-                    <Square size={12} className="opacity-70" />
-                    Basic Tools
-                  </Badge>
-                </div>
+                <Badge
+                  variant="outline"
+                  className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
+                >
+                  + Add tools
+                </Badge>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
-                <p>
-                  Includes core capabilities like reading files, managing tasks,
-                  and executing code. Always available to help you!
-                </p>
+              <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
+                <p>Add more capabilities in the settings</p>
               </TooltipContent>
             </Tooltip>
-
-            {enabledOptionalAliases.map((alias) => {
-              const info = builtinServices.find((s) => s.name === alias);
-              const label = info?.metadata.displayName || alias;
-              const Icon = getIconForService(info?.metadata.icon);
-
-              return (
-                <Tooltip key={alias} delayDuration={300}>
-                  <TooltipTrigger asChild>
-                    <div className="cursor-help">
-                      <Badge
-                        variant="secondary"
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
-                      >
-                        <Icon size={12} className="opacity-70" />
-                        {label}
-                      </Badge>
-                    </div>
-                  </TooltipTrigger>
-                  {info?.metadata.description && (
-                    <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
-                      <p>{info.metadata.description}</p>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              );
-            })}
-
-            {/* External MCP Servers */}
-            {assistant.mcpServerIds?.map((serverId) => {
-              // Resolve display name from fetched MCP servers
-              const serverConfig = mcpServers.find((s) => s.id === serverId); // ID is Name in current schema
-              const label = serverConfig?.name || serverId;
-
-              return (
-                <Badge
-                  key={serverId}
-                  variant="outline"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal border-dashed"
-                >
-                  <Puzzle size={12} className="opacity-70" />
-                  {label}
-                </Badge>
-              );
-            })}
-
-            {/* Add Tools Button - Always visible to encourage exploration */}
-            <Link to="/assistants">
-              <Tooltip delayDuration={300}>
-                <TooltipTrigger asChild>
-                  <Badge
-                    variant="outline"
-                    className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
-                  >
-                    + Add tools
-                  </Badge>
-                </TooltipTrigger>
-                <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
-                  <p>Add more capabilities in the settings</p>
-                </TooltipContent>
-              </Tooltip>
-            </Link>
-          </div>
+          </Link>
+        </div>
         {/* Configuration Footer */}
         <div className="flex flex-col items-center gap-3 mt-4 pt-4 border-t border-border/40 w-full max-w-md">
           {/* Model Picker */}
