@@ -20,17 +20,17 @@ vi.mock('@/lib/logger', () => ({
 const mockDefs: BuiltinServerInfo[] = [
   {
     name: 'workspace',
-    metadata: { displayName: 'Workspace', description: '' },
+    metadata: { displayName: 'Workspace', description: '', category: 'system' as const },
     toolCount: 3,
   },
   {
     name: 'browser',
-    metadata: { displayName: 'Browser', description: '' },
+    metadata: { displayName: 'Browser', description: '', category: 'automation' as const },
     toolCount: 2,
   },
   {
     name: 'knowledge',
-    metadata: { displayName: 'Knowledge', description: '' },
+    metadata: { displayName: 'Knowledge', description: '', category: 'data' as const },
     toolCount: 1,
   },
 ];
@@ -51,16 +51,16 @@ describe('useBuiltinTools', () => {
 
   it('returns sorted services on success', async () => {
     vi.mocked(listAvailableBuiltinServerDefinitions).mockResolvedValueOnce(
-      mockDefs,
+      [...mockDefs],
     );
     const { result } = renderHook(() => useBuiltinTools());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.services).toEqual([
-      expect.objectContaining({ metadata: { displayName: 'Browser', description: '' } }),
-      expect.objectContaining({ metadata: { displayName: 'Knowledge', description: '' } }),
-      expect.objectContaining({ metadata: { displayName: 'Workspace', description: '' } }),
+      mockDefs[1], // Browser
+      mockDefs[2], // Knowledge
+      mockDefs[0], // Workspace
     ]);
   });
 
