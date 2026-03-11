@@ -182,7 +182,6 @@ impl BuiltinMCPServer for PlaybookServer {
             "createPlaybook" => operations::create_playbook(&self.assistant_id, args).await,
             "selectPlaybook" => operations::select_playbook(&self.assistant_id, args).await,
             "listPlaybooks" => operations::list_playbooks(&self.assistant_id, args, false).await,
-            "showPlaybooks" => operations::list_playbooks(&self.assistant_id, args, true).await,
             "getPlaybookPage" => operations::list_playbooks(&self.assistant_id, args, true).await,
             "deletePlaybook" => operations::delete_playbook(&self.assistant_id, args).await,
             "getPlaybook" => operations::get_playbook(&self.assistant_id, args).await,

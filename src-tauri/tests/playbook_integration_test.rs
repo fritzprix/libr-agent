@@ -139,7 +139,7 @@ async fn test_playbook_ui_rendering_integration() {
 
     // Test listPlaybooks with UI rendering
     let list_result = server
-        .call_tool("showPlaybooks", json!({}), None)
+        .call_tool("getPlaybookPage", json!({}), None)
         .await
         .expect("Failed to list playbooks");
 
@@ -240,7 +240,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 1: List empty playbooks (should show empty state)
     let empty_list = server
-        .call_tool("showPlaybooks", json!({}), None)
+        .call_tool("getPlaybookPage", json!({}), None)
         .await
         .expect("Failed to list empty playbooks");
 
@@ -291,7 +291,7 @@ async fn test_playbook_ui_interaction_flow() {
 
     // Step 3: List again (should show the playbook)
     let list_with_data = server
-        .call_tool("showPlaybooks", json!({}), None)
+        .call_tool("getPlaybookPage", json!({}), None)
         .await
         .expect("Failed to list playbooks");
 

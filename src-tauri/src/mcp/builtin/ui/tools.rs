@@ -103,6 +103,54 @@ pub fn wait_for_user_resume_tool() -> MCPTool {
     }
 }
 
+/// Render arbitrary content (HTML or Markdown) as a visual panel
+pub fn present_content_tool() -> MCPTool {
+    MCPTool {
+        name: "presentContent".to_string(),
+        title: Some("Present Content".to_string()),
+        description: "Render HTML or Markdown content as a visual panel in the chat.
+
+Use this to display:
+- Rich reports, summaries, or analysis results
+- Formatted Markdown output (headings, lists, code blocks, tables)
+- Custom HTML layouts
+
+Parameters:
+- `content`: The HTML or Markdown string to render (required)
+- `format`: 'html' | 'markdown' | 'auto' (default: 'auto' — detects format from content)
+- `title`: Optional title shown above the rendered content"
+            .to_string(),
+        input_schema: object_prop(
+            vec![
+                (
+                    "content".to_string(),
+                    string_prop_required("The content string to render (HTML or Markdown)"),
+                ),
+                (
+                    "format".to_string(),
+                    enum_prop(
+                        vec!["html", "markdown", "auto"],
+                        "auto",
+                        Some("Content format. 'auto' detects from content (default: 'auto')"),
+                    ),
+                ),
+                (
+                    "title".to_string(),
+                    string_prop(
+                        None,
+                        None,
+                        Some("Optional title displayed above the content"),
+                    ),
+                ),
+            ],
+            vec!["content".to_string()],
+            None,
+        ),
+        output_schema: None,
+        annotations: None,
+    }
+}
+
 /// Returns all UI tools intended for the AI agent
 /// Note: Internal callback tools (getUserAnswer, resumeFromWait, circuitBreak, resumeCircuitBreak)
 /// are NOT included here to prevent the AI from hallucinating calls to them.
@@ -111,5 +159,6 @@ pub fn all_tools() -> Vec<MCPTool> {
         prompt_user_tool(),
         visualize_data_tool(),
         wait_for_user_resume_tool(),
+        present_content_tool(),
     ]
 }
