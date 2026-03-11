@@ -78,6 +78,9 @@ pub async fn resume_session(
             session_id
         );
         existing_session.metadata = session.clone();
+        // Invalidate cached stable prompt — metadata (agent_config, name) may have
+        // changed between sessions, so it must be rebuilt on the next LLM call.
+        *existing_session.cached_stable_prompt.write().await = None;
         // Update compact context if it was loaded
         if let Some(record) = compact_context_record {
             let mut compact = existing_session.compact_context.write().await;
@@ -155,6 +158,9 @@ pub async fn update_session_config(
         }
         session.metadata.agent_config = Some(config_json);
         session.metadata.updated_at = chrono::Utc::now().timestamp_millis();
+        // Invalidate the stable prompt cache — the agent_config (system_prompt, etc.)
+        // has changed so it must be rebuilt on the next LLM call.
+        *session.cached_stable_prompt.write().await = None;
     }
 
     log::info!("Updated agent config for session: {}", session_id);
