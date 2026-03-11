@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   handleLLMResponse,
+  handleLLMError,
   handleUserToolCall,
   getAgentAvailableTools,
   agentCallBuiltinTool,
@@ -23,6 +24,14 @@ describe('backend/agent-commands', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('should handleLLMError', async () => {
+    await handleLLMError('session-1', 'test error');
+    expect(safeInvoke).toHaveBeenCalledWith('agent_handle_llm_error', {
+      sessionId: 'session-1',
+      error: 'test error',
+    });
   });
 
   it('should handleLLMResponse', async () => {

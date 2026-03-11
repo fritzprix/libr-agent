@@ -20,6 +20,19 @@ export async function handleLLMResponse(
 }
 
 /**
+ * Handle LLM error from frontend by sending it to Rust backend
+ */
+export async function handleLLMError(
+  sessionId: string,
+  error: string,
+): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_llm_error', {
+    sessionId,
+    error,
+  });
+}
+
+/**
  * Trigger a tool execution as if it was a User request (but with tool_calls)
  * This allows direct execution of tools from UI actions, recorded as User activity.
  *

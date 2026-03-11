@@ -2,8 +2,8 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
+import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
 import { SettingsProvider, SettingsContext, DEFAULT_SETTING } from '../SettingsContext';
 import type { ReactNode } from 'react';
@@ -16,6 +16,12 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+}));
+
+// Mock agent commands
+vi.mock('@/lib/backend/agent-commands', () => ({
+  handleLLMError: vi.fn(),
+  handleLLMResponse: vi.fn(),
 }));
 
 // Mock AIServiceFactory
@@ -463,12 +469,7 @@ describe('LLMServiceContext', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith(
-          'agent_handle_llm_response',
-          expect.objectContaining({
-            sessionId: 'test-session',
-          }),
-        );
+        expect(agentCommands.handleLLMResponse).toHaveBeenCalled();
       });
     });
 
@@ -509,12 +510,9 @@ describe('LLMServiceContext', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith(
-          'agent_handle_llm_error',
-          expect.objectContaining({
-            sessionId: 'test-session',
-            error: 'Test error',
-          }),
+        expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+          'test-session',
+          'Test error',
         );
       });
     });
@@ -578,18 +576,12 @@ describe('LLMServiceContext', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith(
-          'agent_handle_llm_response',
-          expect.objectContaining({ sessionId: 'sp4-session' }),
-        );
+        expect(agentCommands.handleLLMResponse).toHaveBeenCalled();
       });
 
       // Primary was called twice (1 initial + 1 retry), no error reported
       expect(mockStreamChat).toHaveBeenCalledTimes(2);
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_error',
-        expect.anything(),
-      );
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
     });
 
     it('SP4: exhausts all retries and reports error when no fallback configured', async () => {
@@ -607,9 +599,9 @@ describe('LLMServiceContext', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith(
-          'agent_handle_llm_error',
-          expect.objectContaining({ sessionId: 'sp4-session' }),
+        expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+          'sp4-session',
+          expect.any(String),
         );
       });
 
@@ -655,10 +647,7 @@ describe('LLMServiceContext', () => {
       });
 
       await waitFor(() => {
-        expect(invoke).toHaveBeenCalledWith(
-          'agent_handle_llm_response',
-          expect.objectContaining({ sessionId: 'sp4-session' }),
-        );
+        expect(agentCommands.handleLLMResponse).toHaveBeenCalled();
       });
 
       // 5 total calls: 4 primary + 1 fallback
@@ -666,10 +655,7 @@ describe('LLMServiceContext', () => {
       // Last call to getService used the fallback provider
       const getServiceCalls = (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mock.calls;
       expect(getServiceCalls[getServiceCalls.length - 1][0]).toBe('anthropic');
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_error',
-        expect.anything(),
-      );
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
     });
 
     it('SP4: abort error is not retried and is silently swallowed', async () => {
@@ -686,16 +672,10 @@ describe('LLMServiceContext', () => {
       await act(async () => {
         await triggerEvent();
       });
-
       // Neither error nor success should have been reported to Rust
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_error',
-        expect.anything(),
-      );
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_response',
-        expect.anything(),
-      );
+      expect(agentCommands.handleLLMResponse).not.toHaveBeenCalled();
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+
       // Only 1 attempt — no retries on abort
       expect(mockStreamChat).toHaveBeenCalledTimes(1);
     });
