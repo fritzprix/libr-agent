@@ -461,7 +461,7 @@ mod tests {
 
         // Test listPlaybooks with UI rendering
         let response = proxy_manager
-            .call_tool(&session_id, "playbook__showPlaybooks", json!({}))
+            .call_tool(&session_id, "playbook__getPlaybookPage", json!({}))
             .await
             .expect("Failed to list playbooks");
 
@@ -618,7 +618,7 @@ mod tests {
 
         // List from session 1
         let response1 = proxy_manager
-            .call_tool("session-ui-1", "playbook__showPlaybooks", json!({}))
+            .call_tool("session-ui-1", "playbook__getPlaybookPage", json!({}))
             .await
             .expect("Failed to list from session 1");
 
@@ -637,7 +637,7 @@ mod tests {
 
         // List from session 2
         let response2 = proxy_manager
-            .call_tool("session-ui-2", "playbook__showPlaybooks", json!({}))
+            .call_tool("session-ui-2", "playbook__getPlaybookPage", json!({}))
             .await
             .expect("Failed to list from session 2");
 

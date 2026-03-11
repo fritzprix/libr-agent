@@ -196,7 +196,7 @@ impl ErrorGuidance {
             // Planning tool errors
             (ErrorCategory::DuplicateResource, ToolGroup::Planning) => vec![
                 "Use a different title for the new item".to_string(),
-                "Use checkTodo to modify the existing item".to_string(),
+                "Use updateTodo(action='done') to modify the existing item".to_string(),
                 "Use getCurrentState to see all existing items".to_string(),
             ],
             (ErrorCategory::ResourceNotFound, ToolGroup::Planning) => vec![
@@ -299,7 +299,7 @@ impl ErrorGuidance {
             (ErrorCategory::ResourceNotFound, ToolGroup::Playbook) => vec![
                 "Use listPlaybooks to see available playbooks".to_string(),
                 "Verify the playbook ID is correct".to_string(),
-                "Use showPlaybooks for interactive selection".to_string(),
+                "Use getPlaybookPage for interactive selection".to_string(),
             ],
             (ErrorCategory::InvalidInput, ToolGroup::Playbook) => vec![
                 "Ensure goal and workflow are provided".to_string(),
@@ -456,20 +456,19 @@ impl SuccessHint {
             // Planning tools
             ("addTodo", ToolGroup::Planning) => vec![
                 "Use getCurrentState to see all todos".to_string(),
-                "Use checkTodo to modify details".to_string(),
-                "Use checkTodo to mark as done".to_string(),
+                "Use updateTodo(index=N, action='done') to mark as complete".to_string(),
             ],
             ("createGoal", ToolGroup::Planning) => vec![
                 "Use addTodo to create tasks for this goal".to_string(),
                 "Use getCurrentState to see the full planning state".to_string(),
             ],
-            ("checkTodo", ToolGroup::Planning) => vec![
+            ("updateTodo", ToolGroup::Planning) => vec![
                 "Use getCurrentState to see remaining tasks".to_string(),
                 "Use addTodo to create follow-up tasks".to_string(),
                 "When all todos are done, use reflect to review progress".to_string(),
             ],
             ("getCurrentState", ToolGroup::Planning) => vec![
-                "Use checkTodo to mark items as complete".to_string(),
+                "Use updateTodo(index=N, action='done') to mark items as complete".to_string(),
                 "Use addTodo to create new tasks".to_string(),
             ],
             ("reflect", ToolGroup::Planning) => vec![
@@ -534,7 +533,7 @@ impl SuccessHint {
             ],
             ("listPlaybooks", ToolGroup::Playbook) => vec![
                 "Use selectPlaybook with ID to execute".to_string(),
-                "Use showPlaybooks for interactive UI".to_string(),
+                "Use getPlaybookPage for interactive UI".to_string(),
             ],
             ("selectPlaybook", ToolGroup::Playbook) => {
                 vec!["Review workflow steps and begin execution".to_string()]
@@ -656,7 +655,7 @@ mod tests {
             "Todo created successfully",
             vec![
                 "Use getCurrentState to see all todos".to_string(),
-                "Use checkTodo to modify".to_string(),
+                "Use updateTodo(index=N, action='done') to mark as complete".to_string(),
             ],
         );
 

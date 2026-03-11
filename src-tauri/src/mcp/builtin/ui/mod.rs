@@ -15,6 +15,7 @@ pub mod tools;
 const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
 const LINE_CHART_TEMPLATE: &str = include_str!("templates/line-chart.hbs");
+const PRESENT_CONTENT_TEMPLATE: &str = include_str!("templates/present-content.hbs");
 const SELECT_PROMPT_TEMPLATE: &str = include_str!("templates/select-prompt.hbs");
 const TEXT_PROMPT_TEMPLATE: &str = include_str!("templates/text-prompt.hbs");
 const WAIT_TEMPLATE: &str = include_str!("templates/wait.hbs");
@@ -43,6 +44,9 @@ impl UiServer {
             .unwrap();
         handlebars
             .register_template_string("line-chart", LINE_CHART_TEMPLATE)
+            .unwrap();
+        handlebars
+            .register_template_string("present-content", PRESENT_CONTENT_TEMPLATE)
             .unwrap();
         handlebars
             .register_template_string("select-prompt", SELECT_PROMPT_TEMPLATE)
@@ -607,6 +611,86 @@ impl UiServer {
             is_error: Some(false),
         })
     }
+
+    fn present_content(&self, args: Value) -> Result<MCPResult, String> {
+        let content = match args.get("content").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("content", ToolGroup::UI)),
+        };
+
+        let format = args
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto");
+
+        let title = args.get("title").and_then(|v| v.as_str());
+
+        // Determine whether to treat as markdown or pass HTML directly.
+        // "auto" heuristic: content is HTML if it starts with '<' (ignoring whitespace).
+        let is_markdown = match format {
+            "markdown" => true,
+            "html" => false,
+            _ => !content.trim_start().starts_with('<'),
+        };
+
+        // Serialize content to a JSON string so it can be embedded safely in the template
+        // as a JavaScript string literal (handles quotes, backslashes, newlines).
+        let content_json = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".to_string());
+
+        let mut data = json!({
+            "isMarkdown": is_markdown,
+            "contentJson": content_json,
+        });
+
+        if !is_markdown {
+            // For HTML pass-through we inject the raw content directly via triple-brace.
+            data.as_object_mut()
+                .unwrap()
+                .insert("content".to_string(), json!(content));
+        }
+
+        if let Some(t) = title {
+            data.as_object_mut()
+                .unwrap()
+                .insert("title".to_string(), json!(t));
+        }
+
+        let handlebars = self.handlebars.lock().unwrap();
+        let html = match handlebars.render("present-content", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render content: {}", e),
+                    ToolGroup::UI,
+                )
+                .with_guidance(vec![
+                    "Verify the content string is valid HTML or Markdown".to_string(),
+                    "If using HTML, ensure it is well-formed".to_string(),
+                ])
+                .to_mcp_result());
+            }
+        };
+
+        let summary = if let Some(t) = title {
+            format!("Content rendered: {}", t)
+        } else {
+            format!(
+                "Content rendered ({}, {} chars)",
+                if is_markdown { "markdown" } else { "html" },
+                content.len()
+            )
+        };
+
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://content/{}", uuid::Uuid::new_v4()),
+            "text/html",
+            &html,
+            "ui",
+            "presentContent",
+            Some(&summary),
+        ))
+    }
 }
 
 pub const NAME: &str = "ui";
@@ -646,6 +730,7 @@ impl BuiltinMCPServer for UiServer {
             "resumeFromWait" => self.resume_from_wait(args),
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
+            "presentContent" => self.present_content(args),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

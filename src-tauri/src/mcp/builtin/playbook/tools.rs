@@ -151,28 +151,6 @@ pub fn list_playbooks_tool() -> MCPTool {
     )
 }
 
-/// Show playbooks (interactive UI)
-pub fn show_playbooks_tool() -> MCPTool {
-    create_tool_def(
-        "showPlaybooks",
-        "Show playbooks (interactive UI)",
-        object_prop(
-            vec![
-                (
-                    "page".to_string(),
-                    integer_prop(Some(1), None, Some("Page number")),
-                ),
-                (
-                    "pageSize".to_string(),
-                    integer_prop(Some(10), None, Some("Items per page")),
-                ),
-            ],
-            vec![],
-            None,
-        ),
-    )
-}
-
 /// Navigate playbook UI
 pub fn get_playbook_page_tool() -> MCPTool {
     create_tool_def(
@@ -264,7 +242,6 @@ pub fn all_tools() -> Vec<MCPTool> {
         create_playbook_tool(),
         select_playbook_tool(),
         list_playbooks_tool(),
-        show_playbooks_tool(),
         get_playbook_page_tool(),
         delete_playbook_tool(),
         get_playbook_tool(),

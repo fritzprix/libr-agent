@@ -320,7 +320,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -332,7 +332,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -342,7 +342,11 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = [test_tool_call("tc-3", "planning__checkTodo", repeated_args)];
+        let current_batch = [test_tool_call(
+            "tc-3",
+            "planning__updateTodo",
+            repeated_args,
+        )];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
@@ -355,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn circuit_breaker_does_not_trigger_after_five_successful_checktodo_calls() {
+    fn circuit_breaker_does_not_trigger_after_five_successful_updatetodo_calls() {
         let repeated_args = r#"{"index":3}"#;
         let messages = vec![
             test_message(
@@ -363,7 +367,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-1",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -375,7 +379,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-2",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -387,7 +391,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-3",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -399,7 +403,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-4",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -411,7 +415,7 @@ mod tests {
                 "assistant",
                 Some(vec![test_tool_call(
                     "tc-5",
-                    "planning__checkTodo",
+                    "planning__updateTodo",
                     repeated_args,
                 )]),
                 None,
@@ -421,7 +425,11 @@ mod tests {
         ];
 
         let (call_name_by_id, call_signature_by_id) = build_tool_call_indices(&messages);
-        let current_batch = [test_tool_call("tc-6", "planning__checkTodo", repeated_args)];
+        let current_batch = [test_tool_call(
+            "tc-6",
+            "planning__updateTodo",
+            repeated_args,
+        )];
 
         let trigger_count = evaluate_circuit_breaker_count(
             &messages,
