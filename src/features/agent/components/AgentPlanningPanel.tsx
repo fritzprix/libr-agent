@@ -69,7 +69,7 @@ export function AgentPlanningPanel() {
           <div className="max-h-48 overflow-y-auto space-y-2">
             {planningState?.todos && planningState.todos.length > 0 ? (
               planningState.todos.map((todo, index) => (
-                <div key={index} className="space-y-1">
+                <div key={todo.id} className="space-y-1">
                   <div className="flex items-start gap-2 text-sm">
                     <Badge
                       variant={todo.checked ? 'default' : 'secondary'}

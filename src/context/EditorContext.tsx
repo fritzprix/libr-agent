@@ -5,7 +5,6 @@ import React, {
   createContext,
   useContext,
   useRef,
-  useEffect,
 } from 'react';
 import { produce, Draft } from 'immer';
 import equal from 'fast-deep-equal';
@@ -59,13 +58,15 @@ export function EditorProvider<T extends object>({
   const [errors, setErrors] = useState<readonly string[]>([]);
 
   const originalValueRef = useRef<T>(initialValue);
+  const [prevInitialValue, setPrevInitialValue] = useState<T>(initialValue);
 
-  // Reset internal state entirely when initialValue changes externally.
-  useEffect(() => {
+  // Render-phase mutation to sync state from props safely without extra render cycle
+  if (!equal(initialValue, prevInitialValue)) {
+    setPrevInitialValue(initialValue);
     originalValueRef.current = initialValue;
     setDraft(initialValue);
     setErrors([]);
-  }, [initialValue]);
+  }
 
   // Use 'fast-deep-equal' to reliably detect actual content changes in objects/arrays.
   const isDirty = useMemo(

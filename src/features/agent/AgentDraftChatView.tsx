@@ -900,7 +900,7 @@ function DraftChatInner() {
           <div className="flex flex-wrap gap-1.5 px-1 pb-2">
             {pendingFiles.map((file, index) => (
               <div
-                key={index}
+                key={`${file.name}-${file.lastModified}-${file.size}`}
                 className="flex items-center gap-1 text-xs bg-muted rounded px-2 py-1 max-w-[200px]"
               >
                 <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />

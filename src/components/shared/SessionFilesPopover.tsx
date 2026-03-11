@@ -161,9 +161,14 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
-              {currentSessionFiles.map((file, index) => (
+              {currentSessionFiles.map((file) => (
                 <DropdownMenuItem
-                  key={index}
+                  key={
+                    file.contentId ??
+                    file.pendingId ??
+                    file.workspacePath ??
+                    `${file.filename}-${file.uploadedAt}`
+                  }
                   className="px-3 py-2 cursor-pointer border-b last:border-b-0 block"
                   onClick={() => handleFileClick(file)}
                 >
