@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,15 +77,19 @@ export function SessionHistoryPanel({
       'Start a conversation to create your first session',
     );
 
+  const deferredSessions = useDeferredValue(sessions);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isPending = searchQuery !== deferredSearchQuery;
+
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
-      return sessions;
+      return deferredSessions;
     }
 
-    return sessions.filter(
+    return deferredSessions.filter(
       (session) => session.lineageId === selectedLineageId,
     );
-  }, [sessions, selectedLineageId]);
+  }, [deferredSessions, selectedLineageId]);
 
   const filteredAndSortedSessions = useMemo(() => {
     let filtered = baseSessions;
@@ -98,7 +102,7 @@ export function SessionHistoryPanel({
       filtered = filtered.filter((session) => session.status === activeTab);
     }
 
-    filtered = filterSessions(filtered, searchQuery);
+    filtered = filterSessions(filtered, deferredSearchQuery);
 
     return [...filtered].sort((a, b) => {
       const statusDiff =
@@ -106,7 +110,7 @@ export function SessionHistoryPanel({
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [baseSessions, searchQuery, activeTab, showBookmarkedOnly]);
+  }, [baseSessions, deferredSearchQuery, activeTab, showBookmarkedOnly]);
 
   // Eradicating Action-Effect Chain / Derived State
   // Checking existence of selected lineage directly during render.
@@ -134,7 +138,7 @@ export function SessionHistoryPanel({
     const childrenMap = new Map<string, AgentSession[]>();
 
     // Build adjacency list - O(N)
-    for (const session of sessions) {
+    for (const session of deferredSessions) {
       if (session.parentSessionId) {
         const children = childrenMap.get(session.parentSessionId) || [];
         children.push(session);
@@ -154,9 +158,9 @@ export function SessionHistoryPanel({
       return total;
     };
 
-    sessions.forEach((s) => count(s.id));
+    deferredSessions.forEach((s) => count(s.id));
     return counts;
-  }, [sessions]);
+  }, [deferredSessions]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {
@@ -376,7 +380,12 @@ export function SessionHistoryPanel({
         )}
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6">
+        <div
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6 transition-opacity duration-200',
+            isPending ? 'opacity-50' : 'opacity-100',
+          )}
+        >
           {isLoading && sessions.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">

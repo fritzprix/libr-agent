@@ -19,3 +19,4 @@
 ## 2024-05-18 - [AgentWorkspacePanel/handleBrowseFolder] **Bottleneck:** [Missing loading state on directory browse native OS dialog causing double submits] **Flow Restored:** [Added isBrowsing state, disabled button, and spinner]
 
 ## 2024-05-24 - [ScheduledTasksPage] **Bottleneck:** Naked awaits on task toggle and delete operations caused missing feedback and possible double-clicks. **Flow Restored:** Added Set-based tracking states for toggling/deleting and attached `disabled` and visual spinners (`Clock className="animate-spin"`) to respective UI elements.
+## 2026-03-03 - [SessionHistoryPanel] **Bottleneck:** [Main-Thread Block: filtering large array of 10,000+ items directly inside the render cycle blocking typing] **Flow Restored:** [Applied `useDeferredValue` to search queries and session list to unblock text input and applied transparency during filtering transition]
