@@ -13,7 +13,7 @@ use tokio::sync::RwLock;
 /// # Features
 /// - Zero DB interaction (instant operations)
 /// - No race conditions (synchronous in-memory updates)
-/// - Thread-safe with Arc<RwLock>
+/// - Thread-safe with `Arc<RwLock>`
 /// - Idempotent operations (safe to call multiple times)
 ///
 /// # Use Cases
