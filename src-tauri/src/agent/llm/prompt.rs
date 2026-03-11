@@ -38,16 +38,21 @@ async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, Str
     results
 }
 
-/// Build complete system prompt for session (wrapper)
+/// Build the stable prefix and volatile sections separately for a session.
 ///
-/// The stable prefix (sections 1–3: agent identity, workspace instructions, session
-/// context) is computed once and cached in the session. Only the volatile sections
-/// (4: context providers, 5: service contexts) are rebuilt on every LLM call.
-pub async fn build_session_system_prompt(
+/// Returns `(stable_prompt, session_context)` where:
+/// - `stable_prompt` — sections 1–3 (identity, workspace instructions, session name).
+///   Computed once per session and cached; never changes mid-session.
+/// - `session_context` — sections 4–5 (context providers + service tool states).
+///   Rebuilt fresh on every LLM call. May be empty if no providers or services are active.
+///
+/// Callers decide how to combine the two parts. The frontend AI service layer uses
+/// `prepareContextInjection` to inject them via the channel best suited to each provider.
+pub(crate) async fn build_session_system_prompt_split(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     session_id: &str,
-) -> Result<String, String> {
+) -> Result<(String, Option<String>), String> {
     // --- Read session state under a short-lived read lock ---
     let (agent_config, session_name, context_registry, cached_stable_prompt_arc) = {
         let active = active_sessions.read().await;
@@ -96,10 +101,32 @@ pub async fn build_session_system_prompt(
         build_volatile_sections(Some(context_registry), proxy, agent_config.id.as_deref())
             .await;
 
-    if volatile.trim().is_empty() {
-        Ok(stable_prompt)
+    let session_context = if volatile.trim().is_empty() {
+        None
     } else {
+        Some(volatile)
+    };
+
+    Ok((stable_prompt, session_context))
+}
+
+/// Build complete system prompt for session (wrapper)
+///
+/// The stable prefix (sections 1–3: agent identity, workspace instructions, session
+/// context) is computed once and cached in the session. Only the volatile sections
+/// (4: context providers, 5: service contexts) are rebuilt on every LLM call.
+pub async fn build_session_system_prompt(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    session_id: &str,
+) -> Result<String, String> {
+    let (stable_prompt, session_context) =
+        build_session_system_prompt_split(active_sessions, proxy_manager, session_id).await?;
+
+    if let Some(volatile) = session_context {
         Ok(format!("{}\n{}", stable_prompt, volatile))
+    } else {
+        Ok(stable_prompt)
     }
 }
 

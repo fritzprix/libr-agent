@@ -218,6 +218,28 @@ export interface IAIService {
   ): Promise<string>;
 
   /**
+   * Merges the stable system prompt and volatile session context into the
+   * provider's preferred injection channel before each LLM request.
+   *
+   * The default implementation (in `BaseAIService`) concatenates both parts
+   * into a single system prompt string — safe for all providers. Individual
+   * providers may override to inject `sessionContext` as an ephemeral tail
+   * message instead, which keeps the system prompt fully static and maximises
+   * automatic prefix-cache hit rates.
+   *
+   * @param systemPrompt - Stable system prompt (sections 1–3). Cacheable.
+   * @param sessionContext - Volatile context (sections 4–5). Rebuilt per turn.
+   * @param messages - Current conversation message stack, after context trimming.
+   * @returns The effective system prompt and (possibly augmented) message list to
+   *          pass to `streamChat`.
+   */
+  prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): { systemPrompt: string | undefined; messages: Message[] };
+
+  /**
    * Cleans up any resources used by the service instance.
    */
   dispose(): void;

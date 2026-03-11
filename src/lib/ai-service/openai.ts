@@ -69,6 +69,50 @@ export class OpenAIService extends BaseAIService {
   }
 
   /**
+   * OpenAI-optimised context injection strategy.
+   *
+   * Keeps the stable system prompt untouched so OpenAI's automatic prefix
+   * caching can maximise cache hits across turns. The volatile `sessionContext`
+   * (planning state, memory, current time, etc.) is injected as an ephemeral
+   * user message appended at the tail of the conversation, framed so the model
+   * treats it as background context rather than a question to answer.
+   *
+   * If `sessionContext` is absent, falls back to the base (concat) behaviour.
+   */
+  override prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): { systemPrompt: string | undefined; messages: Message[] } {
+    if (!sessionContext) {
+      return { systemPrompt, messages };
+    }
+
+    // Inject as an ephemeral user message at the tail of the conversation.
+    // The bracketed header tells the model this is injected context, not user
+    // input; it responds to the preceding conversation, not this block.
+    const ephemeralMessage: Message = {
+      id: `ctx_${Date.now()}`,
+      sessionId: '',
+      threadId: '',
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `[Current session context — background reference only, do not respond to this block]\n\n${sessionContext}\n\n[End of session context]`,
+        },
+      ],
+      createdAt: new Date(),
+    };
+
+    logger.debug('Injecting session context as ephemeral tail message', {
+      sessionContextLength: sessionContext.length,
+    });
+
+    return { systemPrompt, messages: [...messages, ephemeralMessage] };
+  }
+
+  /**
    * Fetches the list of available models from the OpenAI service.
    * Maps provider-specific model metadata into the project's `ModelInfo` shape.
    * On error, returns an empty array and logs the failure.

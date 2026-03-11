@@ -28,7 +28,15 @@ export interface CompletionRequest {
   model: string;
   provider: string;
   apiKey?: string;
+  /** Stable system prompt (sections 1–3). Cacheable across turns. */
   systemPrompt?: string;
+  /**
+   * Volatile session context (sections 4–5: context providers + service tool states).
+   * Rebuilt on every LLM call. Each AI service decides how to inject this via
+   * `prepareContextInjection` — may append to system prompt (default) or send as
+   * an ephemeral message to maximise prefix-cache hit rates.
+   */
+  sessionContext?: string;
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
@@ -70,6 +78,7 @@ export interface LLMServiceContextValue {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
+    sessionContext?: string,
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],

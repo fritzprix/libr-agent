@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
-use super::prompt::build_session_system_prompt;
+use super::prompt::build_session_system_prompt_split;
 use super::types::CompletionRequest;
 
 /// Request LLM completion from frontend
@@ -142,9 +142,13 @@ pub async fn request_llm_completion(
 
     drop(active);
 
-    // Build system prompt
-    let system_prompt =
-        Some(build_session_system_prompt(active_sessions, proxy_manager, &session_id).await?);
+    // Build system prompt split: stable prefix (cacheable) + volatile session context (per-turn).
+    // The frontend AI service layer receives both parts and decides the injection strategy via
+    // `prepareContextInjection` — providers may concatenate (default) or inject context as an
+    // ephemeral message for better prefix-cache utilization (e.g. OpenAI).
+    let (stable_prompt, session_context) =
+        build_session_system_prompt_split(active_sessions, proxy_manager, &session_id).await?;
+    let system_prompt = Some(stable_prompt);
 
     // Collect available tools
     let available_tools =
@@ -169,6 +173,7 @@ pub async fn request_llm_completion(
         model,
         provider,
         system_prompt,
+        session_context,
         temperature,
         max_tokens,
         available_tools,
