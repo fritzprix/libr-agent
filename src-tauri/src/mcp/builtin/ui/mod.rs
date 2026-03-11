@@ -628,10 +628,7 @@ impl UiServer {
         // Determine whether to treat as markdown or pass HTML directly.
         // Default to markdown; HTML rendering requires an explicit format='html' opt-in
         // to prevent arbitrary script injection via auto-detected HTML content.
-        let is_markdown = match format {
-            "html" => false,
-            _ => true,
-        };
+        let is_markdown = !matches!(format, "html");
 
         // Serialize content to a JSON string for safe HTML embedding.
         // Escape '</' as '<\/' to prevent </script> sequences from breaking out of
