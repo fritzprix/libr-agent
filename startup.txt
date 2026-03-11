@@ -1,0 +1,34 @@
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::logger][INFO] 🔥 File logger initialized at: C:\Users\SKTelecom\AppData\Local\com.fritzprix.libragent\logs\libragent.log
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔥 Logger initialized - testing Rust log to file
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🚀 LibrAgent initializing...
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::mcp::builtin::utils][INFO] SecurityValidator created with custom base_dir = "C:\\Users\\SKTelecom\\AppData\\Roaming\\com.fritzprix.libragent\\global_shared"
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ SecureFileManager initialized
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ DroppedFileService initialized
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "context-survival"
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "docx"
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "mcp-builder"
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "pptx"
+[2026-03-10][19:17:36][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "problem-solving"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "skill-creator"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "soul-delegation"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "system-setup"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "team-protocols"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Force updating skill: "tool-mastery"
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ Bundled skills initialized
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::services::interactive_browser_server][INFO] Initializing Interactive Browser Server with timeout: 30s
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ Interactive Browser Server initialized with timeout: 30s
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::agent::session_manager][INFO] ✅ Context registry initialized with 1 providers
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ ConcurrencyGate initialized: active_agents=4 suspended_agents=8 active_processes=10 suspended_processes=20
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ Global AppHandle initialized for event emission
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ HTTP Server spawned on 127.0.0.1:3030
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::server][INFO] Starting HTTP server on 127.0.0.1:3030
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::agent::lifecycle::recovery][INFO] Starting session recovery process...
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] 🔄 Session recovery initiated in background
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ Builtin servers initialized with SessionManager support
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ Scheduled task worker started
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ OAuth deep link handler registered
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::scheduled::worker][INFO] ⏰ Scheduled task worker started (interval: 60s)
+[2026-03-10][19:17:37][warp::server][INFO] Server::run; addr=127.0.0.1:3030
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::lifecycle::app_setup][INFO] ✅ LibrAgent setup completed successfully
+[2026-03-10][19:17:37][warp::server][INFO] listening on http://127.0.0.1:3030
+[2026-03-10][19:17:37][tauri_mcp_agent_lib::agent::lifecycle::recovery][INFO] Session recovery complete: No sessions to recover

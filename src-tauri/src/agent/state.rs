@@ -126,6 +126,12 @@ pub struct AgentSession {
 
     /// Compact context for the session (SP17)
     pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
+
+    /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
+    /// instructions, session context). These sections are immutable within a session
+    /// so we build them once and reuse on every LLM call to avoid redundant JSON
+    /// parsing and filesystem I/O.
+    pub cached_stable_prompt: Arc<RwLock<Option<String>>>,
 }
 
 #[cfg(test)]
