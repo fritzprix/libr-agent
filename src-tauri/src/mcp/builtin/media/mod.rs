@@ -6,7 +6,7 @@ use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::sync::Arc;
 
 pub const NAME: &str = "media";
@@ -76,9 +76,7 @@ impl BuiltinMCPServer for MediaServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         let workspace_dir = match _session_id {
-            Some(ref sid) => self
-                .session_manager
-                .get_session_workspace_dir_by_id(sid),
+            Some(ref sid) => self.session_manager.get_session_workspace_dir_by_id(sid),
             None => self.workspace_dir(),
         };
 
@@ -99,7 +97,7 @@ impl BuiltinMCPServer for MediaServer {
         // Media server has no persistent state to expose in system prompt.
         ServiceContext {
             context_prompt: String::new(),
-            structured_state: Some(json!({})),
+            structured_state: None,
         }
     }
 }

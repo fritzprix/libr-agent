@@ -174,10 +174,11 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools: ollamaTools } = this.prepareStreamChat(
-      messages,
-      options,
-    );
+    const {
+      config,
+      tools: ollamaTools,
+      sanitizedMessages,
+    } = this.prepareStreamChat(messages, options);
 
     logger.info('🔵 Ollama doStreamChat called', {
       inputMessageCount: messages.length,
@@ -188,13 +189,13 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
 
     try {
       const ollamaMessages = this.convertMessages(
-        messages,
+        sanitizedMessages,
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
 
       logger.info('📨 Converted messages for Ollama', {
-        originalCount: messages.length,
+        originalCount: sanitizedMessages.length,
         convertedCount: ollamaMessages.length,
         model,
         toolCount: (ollamaTools ?? []).length,

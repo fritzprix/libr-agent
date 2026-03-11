@@ -22,6 +22,35 @@ import { convertMCPToolToAnthropic } from './tool-converters';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+type AnthropicImageMediaType =
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/gif'
+  | 'image/webp';
+
+function normalizeAnthropicImageMediaType(
+  rawMimeType: string | undefined,
+): AnthropicImageMediaType | null {
+  if (!rawMimeType) {
+    return null;
+  }
+
+  const mimeType = rawMimeType.toLowerCase();
+  if (mimeType === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  if (
+    mimeType === 'image/jpeg' ||
+    mimeType === 'image/png' ||
+    mimeType === 'image/gif' ||
+    mimeType === 'image/webp'
+  ) {
+    return mimeType;
+  }
+
+  return null;
+}
 
 /**
  * Marker injected by TimeLocationContextProvider (priority 1000, always last).
@@ -777,36 +806,69 @@ export class AnthropicService extends BaseAIService<
           source?: { data?: string; mimeType?: string };
         }>;
         if (images.length > 0) {
-          // Build text block + image blocks for tool_result content
-          const blocks: (TextBlockParam | ImageBlockParam)[] = [
-            { type: 'text', text: textContent },
-            ...images.map(
-              (img): ImageBlockParam => ({
+          const imageBlocks = images
+            .map((img): ImageBlockParam | null => {
+              const data = img.data ?? img.source?.data;
+              const mediaType = normalizeAnthropicImageMediaType(
+                img.mimeType ?? img.source?.mimeType,
+              );
+
+              if (!data || !mediaType) {
+                logger.warn(
+                  'Skipping Anthropic tool-result image with missing data or unsupported MIME type',
+                  {
+                    messageId: m.id,
+                    toolCallId: m.tool_call_id,
+                    hasData: Boolean(data),
+                    mimeType: img.mimeType ?? img.source?.mimeType,
+                  },
+                );
+                return null;
+              }
+
+              return {
                 type: 'image',
                 source: {
                   type: 'base64',
-                  media_type: (img.mimeType ||
-                    img.source?.mimeType ||
-                    'image/jpeg') as
-                    | 'image/jpeg'
-                    | 'image/png'
-                    | 'image/gif'
-                    | 'image/webp',
-                  data: img.data || img.source?.data || '',
+                  media_type: mediaType,
+                  data,
                 },
-              }),
-            ),
-          ];
-          anthropicMessages.push({
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result' as const,
-                tool_use_id: m.tool_call_id,
-                content: blocks,
-              },
-            ],
-          });
+              };
+            })
+            .filter((block): block is ImageBlockParam => block !== null);
+
+          if (imageBlocks.length > 0) {
+            const blocks: (TextBlockParam | ImageBlockParam)[] = [];
+            if (textContent) {
+              blocks.push({ type: 'text', text: textContent });
+            }
+            blocks.push(...imageBlocks);
+
+            anthropicMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result' as const,
+                  tool_use_id: m.tool_call_id,
+                  content: blocks,
+                },
+              ],
+            });
+          } else {
+            const placeholderText = textContent
+              ? `${textContent}\n\n[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]`
+              : '[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]';
+            anthropicMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result' as const,
+                  tool_use_id: m.tool_call_id,
+                  content: placeholderText,
+                },
+              ],
+            });
+          }
         } else {
           // Text-only fast path
           anthropicMessages.push({

@@ -1,8 +1,11 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde_json::Value;
 use std::path::Path;
+use url::Url;
 
-use crate::mcp::builtin::error_guidance::{guided_error, missing_param_error, ErrorCategory, ToolGroup};
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, ToolGroup,
+};
 use crate::mcp::types::{MCPContent, MCPResult};
 
 /// Maximum allowed download size (20 MB).
@@ -60,8 +63,7 @@ pub fn resolve_image_mime(url: &str, content_type_header: Option<&str>) -> Optio
         }
     }
     // Fall back to file extension.
-    ext_from_url_path(url)
-        .and_then(|ext| image_mime_from_ext(&ext).map(|s| s.to_string()))
+    ext_from_url_path(url).and_then(|ext| image_mime_from_ext(&ext).map(|s| s.to_string()))
 }
 
 /// Determine the MIME type for audio given a URL/path and an optional
@@ -73,8 +75,7 @@ pub fn resolve_audio_mime(url: &str, content_type_header: Option<&str>) -> Optio
             return Some(ct);
         }
     }
-    ext_from_url_path(url)
-        .and_then(|ext| audio_mime_from_ext(&ext).map(|s| s.to_string()))
+    ext_from_url_path(url).and_then(|ext| audio_mime_from_ext(&ext).map(|s| s.to_string()))
 }
 
 // ── Source resolution ─────────────────────────────────────────────────────────
@@ -93,19 +94,17 @@ pub enum ContentSource {
 /// - `https://…` / `http://…`  → `Http`
 /// - `file:///path`             → `LocalFile`
 /// - Any other string           → treated as a local path → `LocalFile`
-pub fn parse_source(url: &str) -> ContentSource {
+pub fn parse_source(url: &str) -> Result<ContentSource, String> {
     if url.starts_with("https://") || url.starts_with("http://") {
-        ContentSource::Http(url.to_string())
-    } else if let Some(stripped) = url.strip_prefix("file://") {
-        // Normalise `file:///absolute` → `/absolute`.
-        let path_str = if stripped.starts_with('/') {
-            stripped.to_string()
-        } else {
-            format!("/{stripped}")
-        };
-        ContentSource::LocalFile(std::path::PathBuf::from(path_str))
+        Ok(ContentSource::Http(url.to_string()))
+    } else if url.starts_with("file://") {
+        let parsed = Url::parse(url).map_err(|e| format!("Invalid file URL format: {e}"))?;
+        let path = parsed
+            .to_file_path()
+            .map_err(|_| "URL cannot be converted to a local file path".to_string())?;
+        Ok(ContentSource::LocalFile(path))
     } else {
-        ContentSource::LocalFile(std::path::PathBuf::from(url))
+        Ok(ContentSource::LocalFile(std::path::PathBuf::from(url)))
     }
 }
 
@@ -127,11 +126,7 @@ pub async fn fetch_http_bytes(url: &str) -> Result<(Vec<u8>, Option<String>), St
         .map_err(|e| format!("HTTP request failed: {e}"))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "HTTP {} for URL: {}",
-            response.status(),
-            url
-        ));
+        return Err(format!("HTTP {} for URL: {}", response.status(), url));
     }
 
     let content_type = response
@@ -227,7 +222,7 @@ pub async fn handle_see_content(
         None => return Ok(missing_param_error("url", ToolGroup::Workspace)),
     };
 
-    let (bytes, content_type_header) = match parse_source(&url_str) {
+    let (bytes, content_type_header) = match parse_source(&url_str)? {
         ContentSource::Http(url) => fetch_http_bytes(&url).await?,
         ContentSource::LocalFile(raw_path) => {
             let resolved = resolve_local_path(&raw_path, &workspace_dir);
@@ -268,15 +263,10 @@ pub async fn handle_see_content(
     Ok(MCPResult {
         content: Some(vec![
             MCPContent::Text {
-                text: format!(
-                    "Image loaded: {url_str}\nType: {mime_type} | Size: {size_kb} KB"
-                ),
+                text: format!("Image loaded: {url_str}\nType: {mime_type} | Size: {size_kb} KB"),
                 is_error: None,
             },
-            MCPContent::Image {
-                data,
-                mime_type,
-            },
+            MCPContent::Image { data, mime_type },
         ]),
         structured_content: None,
         is_error: Some(false),
@@ -296,7 +286,7 @@ pub async fn handle_listen_content(
         None => return Ok(missing_param_error("url", ToolGroup::Workspace)),
     };
 
-    let (bytes, content_type_header) = match parse_source(&url_str) {
+    let (bytes, content_type_header) = match parse_source(&url_str)? {
         ContentSource::Http(url) => fetch_http_bytes(&url).await?,
         ContentSource::LocalFile(raw_path) => {
             let resolved = resolve_local_path(&raw_path, &workspace_dir);

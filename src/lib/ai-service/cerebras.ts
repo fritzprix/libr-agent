@@ -96,11 +96,14 @@ export class CerebrasService extends BaseAIService<
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
       const cerebrasMessages = this.convertMessages(
-        messages,
+        sanitizedMessages,
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;

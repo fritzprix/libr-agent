@@ -371,15 +371,6 @@ export abstract class BaseAIService<
   }
 
   /**
-   * A template method for converting an array of `Message` objects into a format
-   * suitable for a specific provider's API. It handles the system prompt and
-   * iterates through messages, calling the abstract `convertSingleMessage` for each.
-   * @param messages The array of messages to convert.
-   * @param systemPrompt An optional system prompt to prepend.
-   * @returns An array of provider-specific message objects.
-   * @protected
-   */
-  /**
    * Extracts image and audio items from a MCPContent array.
    * Used by provider conversion loops to identify media that needs special handling
    * since tool result messages can only carry text in the standard API format.

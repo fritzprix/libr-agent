@@ -14,8 +14,8 @@ fn see_tool() -> MCPTool {
 
 **Supported sources:**
 - Web URLs: `https://example.com/photo.jpg`
-- Local files: `/absolute/path/to/image.png` or a path relative to the workspace
-- File URIs: `file:///path/to/image.png`
+- Local files inside the session workspace: `screenshots/image.png` or `/workspace/session/screenshots/image.png`
+- File URIs pointing inside the session workspace: `file:///workspace/session/screenshots/image.png`
 
 **Supported formats:** JPEG, PNG, GIF, WebP, BMP, SVG
 
@@ -28,7 +28,7 @@ fn see_tool() -> MCPTool {
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or file path of the image to fetch (e.g. https://example.com/img.png or /workspace/screenshot.png).",
+                    "URL or file path of the image to fetch (e.g. https://example.com/img.png or screenshots/image.png within the session workspace).",
                 ),
             )],
             vec!["url".to_string()],
@@ -47,8 +47,8 @@ fn listen_tool() -> MCPTool {
 
 **Supported sources:**
 - Web URLs: `https://example.com/audio.mp3`
-- Local files: `/absolute/path/to/audio.wav` or a path relative to the workspace
-- File URIs: `file:///path/to/audio.wav`
+- Local files inside the session workspace: `recordings/audio.wav` or `/workspace/session/recordings/audio.wav`
+- File URIs pointing inside the session workspace: `file:///workspace/session/recordings/audio.wav`
 
 **Supported formats:** MP3, WAV, OGG, AAC, FLAC, WEBM
 
@@ -61,7 +61,7 @@ fn listen_tool() -> MCPTool {
             vec![(
                 "url".to_string(),
                 string_prop_required(
-                    "URL or file path of the audio file to fetch (e.g. https://example.com/clip.mp3 or /workspace/recording.wav).",
+                    "URL or file path of the audio file to fetch (e.g. https://example.com/clip.mp3 or recordings/recording.wav within the session workspace).",
                 ),
             )],
             vec!["url".to_string()],
