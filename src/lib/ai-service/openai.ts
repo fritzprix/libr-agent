@@ -26,7 +26,67 @@ interface OpenAIStreamUsage {
 }
 
 function isOpenAIStreamUsage(value: unknown): value is OpenAIStreamUsage {
-  return typeof value === 'object' && value !== null;
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const obj = value as Record<string, unknown>;
+
+  if (
+    obj.prompt_tokens !== undefined &&
+    typeof obj.prompt_tokens !== 'number'
+  ) {
+    return false;
+  }
+  if (
+    obj.completion_tokens !== undefined &&
+    typeof obj.completion_tokens !== 'number'
+  ) {
+    return false;
+  }
+  if (obj.total_tokens !== undefined && typeof obj.total_tokens !== 'number') {
+    return false;
+  }
+  if (
+    obj.prompt_cache_hit_tokens !== undefined &&
+    typeof obj.prompt_cache_hit_tokens !== 'number'
+  ) {
+    return false;
+  }
+
+  if (obj.prompt_tokens_details !== undefined) {
+    if (
+      typeof obj.prompt_tokens_details !== 'object' ||
+      obj.prompt_tokens_details === null
+    ) {
+      return false;
+    }
+    const details = obj.prompt_tokens_details as Record<string, unknown>;
+    if (
+      details.cached_tokens !== undefined &&
+      typeof details.cached_tokens !== 'number'
+    ) {
+      return false;
+    }
+  }
+
+  if (obj.completion_tokens_details !== undefined) {
+    if (
+      typeof obj.completion_tokens_details !== 'object' ||
+      obj.completion_tokens_details === null
+    ) {
+      return false;
+    }
+    const details = obj.completion_tokens_details as Record<string, unknown>;
+    if (
+      details.reasoning_tokens !== undefined &&
+      typeof details.reasoning_tokens !== 'number'
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -412,9 +472,7 @@ export class OpenAIService extends BaseAIService {
             content: this.processMessageContent(m.content),
           });
           // Inject image/audio from tool result as a synthetic user message
-          const media = (m.content as MCPContent[]).filter(
-            (c) => c.type === 'image' || c.type === 'audio',
-          );
+          const media = this.extractMediaContent(m.content as MCPContent[]);
           if (media.length > 0) {
             openaiMessages.push({
               role: 'user',

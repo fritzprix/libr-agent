@@ -16,6 +16,7 @@ import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
 import { MessageNormalizer } from './message-normalizer';
 import { getLogger } from '../logger';
+import { extractMediaContent as extractMedia } from './utils';
 
 /**
  * An abstract base class that provides common functionality for all AI services.
@@ -375,17 +376,15 @@ export abstract class BaseAIService implements IAIService {
    * @protected
    */
   /**
-   * Hook called after a tool message is converted. Providers that support media
-   * in tool results override this to return provider-specific message objects
-   * (e.g. a synthetic user message with image_url parts for OpenAI).
-   * The default returns an empty array (no injection).
-   * @param _media MCPContent items of type 'image' or 'audio' from the tool result.
-   * @returns Zero or more provider-specific message objects to splice after the tool message.
+   * Extracts image and audio items from a MCPContent array.
+   * Used by provider conversion loops to identify media that needs special handling
+   * since tool result messages can only carry text in the standard API format.
+   * @param content The full content array from a tool result message.
+   * @returns Only the image and audio MCPContent items.
    * @protected
    */
-  protected injectMediaAfterToolResult(media: MCPContent[]): unknown[] {
-    void media;
-    return [];
+  protected extractMediaContent(content: MCPContent[]): MCPContent[] {
+    return extractMedia(content);
   }
 
   protected convertMessagesTemplate(
@@ -405,16 +404,6 @@ export abstract class BaseAIService implements IAIService {
       const converted = this.convertSingleMessage(message);
       if (converted) {
         result.push(converted);
-        // Inject any image/audio from tool results as follow-up messages
-        if (message.role === 'tool' && Array.isArray(message.content)) {
-          const media = (message.content as MCPContent[]).filter(
-            (c) => c.type === 'image' || c.type === 'audio',
-          );
-          if (media.length > 0) {
-            const injected = this.injectMediaAfterToolResult(media);
-            result.push(...injected);
-          }
-        }
       }
     }
 

@@ -761,23 +761,25 @@ export class AnthropicService extends BaseAIService {
         }
         // Anthropic tool_result.content supports image blocks natively.
         const textContent = this.processMessageContent(m.content);
-        const media = (m.content as MCPContent[]).filter(
-          (c) => c.type === 'image' || c.type === 'audio',
-        );
-        if (media.length > 0) {
-          // Build explicit text + image blocks for tool_result content
+        const images = (m.content as MCPContent[]).filter(
+          (c) => c.type === 'image',
+        ) as Array<{ type: 'image'; data?: string; mimeType?: string; source?: { data?: string; mimeType?: string } }>;
+        if (images.length > 0) {
+          // Build text block + image blocks for tool_result content
           const blocks: (TextBlockParam | ImageBlockParam)[] = [
             { type: 'text', text: textContent },
-            ...this.processMultiModalContent(media)
-              .filter((p) => p.type === 'image')
-              .map((p): ImageBlockParam => ({
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: (p.mimeType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                  data: p.image || '',
-                },
-              })),
+            ...images.map((img): ImageBlockParam => ({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: (img.mimeType || img.source?.mimeType || 'image/jpeg') as
+                  | 'image/jpeg'
+                  | 'image/png'
+                  | 'image/gif'
+                  | 'image/webp',
+                data: img.data || img.source?.data || '',
+              },
+            })),
           ];
           anthropicMessages.push({
             role: 'user',

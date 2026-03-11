@@ -2,7 +2,12 @@ import Groq from 'groq-sdk';
 import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, MCPContent, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
@@ -203,9 +208,7 @@ export class GroqService extends BaseAIService {
             content: this.processMessageContent(m.content),
           });
           // Inject image/audio from tool result as a synthetic user message
-          const media = (m.content as MCPContent[]).filter(
-            (c) => c.type === 'image' || c.type === 'audio',
-          );
+          const media = this.extractMediaContent(m.content as MCPContent[]);
           if (media.length > 0) {
             const parts = this.processMultiModalContent(media).map((part) => {
               if (part.type === 'image') {
@@ -215,7 +218,10 @@ export class GroqService extends BaseAIService {
                   image_url: { url: `data:${mimeType};base64,${part.image}` },
                 };
               }
-              return { type: 'text' as const, text: `[audio: ${part.mimeType}]` };
+              return {
+                type: 'text' as const,
+                text: `[audio: ${part.mimeType}]`,
+              };
             });
             groqMessages.push({ role: 'user', content: parts });
           }

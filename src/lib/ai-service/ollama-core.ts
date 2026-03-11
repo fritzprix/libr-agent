@@ -301,7 +301,9 @@ export function convertMessage(
       const images = multimodal
         .filter((p) => p.type === 'image')
         .map((p) => p.image)
-        .filter((img): img is string => typeof img === 'string' && img.length > 0);
+        .filter(
+          (img): img is string => typeof img === 'string' && img.length > 0,
+        );
       if (images.length > 0) {
         result.images = images;
       }

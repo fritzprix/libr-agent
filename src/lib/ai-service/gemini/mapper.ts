@@ -5,6 +5,7 @@ import { getLogger } from '../../logger';
 import {
   processMessageContent,
   processMultiModalContent,
+  extractMediaContent,
   tryParse,
   generateToolCallId as generateId,
 } from '../utils';
@@ -143,9 +144,7 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
               ),
             );
             // Append any image/audio from tool result as inlineData parts in the same batch
-            const media = (toolMsg.content as MCPContent[]).filter(
-              (c) => c.type === 'image' || c.type === 'audio',
-            );
+            const media = extractMediaContent(toolMsg.content as MCPContent[]);
             if (media.length > 0) {
               const mediaParts = formatGeminiContent(media);
               responseParts.push(...mediaParts);

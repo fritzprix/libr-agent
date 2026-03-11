@@ -2,7 +2,11 @@ import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import type { ChatCompletion as CerebrasCompletion } from '@cerebras/cerebras_cloud_sdk/resources/chat/completions';
 import { getLogger } from '../logger';
 import { Message, ToolCall } from '@/models/chat';
-import { MCPTool, MCPContent, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import {
+  MCPTool,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
 import { convertMCPToolToCerebras } from './tool-converters';
@@ -273,19 +277,6 @@ export class CerebrasService extends BaseAIService {
       const converted = this.convertMessage(message);
       if (converted) {
         cerebrasMessages.push(converted);
-        // Cerebras does not support vision; media from tool results is silently dropped.
-        // This explicit check keeps the pattern consistent with other providers and
-        // makes it trivial to enable when Cerebras adds vision support.
-        if (message.role === 'tool') {
-          const media = (message.content as MCPContent[]).filter(
-            (c) => c.type === 'image' || c.type === 'audio',
-          );
-          if (media.length > 0) {
-            logger.debug('Cerebras: dropping media from tool result (no vision support)', {
-              count: media.length,
-            });
-          }
-        }
       }
     }
 
