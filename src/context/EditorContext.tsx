@@ -5,7 +5,6 @@ import React, {
   createContext,
   useContext,
   useRef,
-  useEffect,
 } from 'react';
 import { produce, Draft } from 'immer';
 import equal from 'fast-deep-equal';
@@ -62,7 +61,7 @@ export function EditorProvider<T extends object>({
   const [prevInitialValue, setPrevInitialValue] = useState<T>(initialValue);
 
   // Render-phase mutation to sync state from props safely without extra render cycle
-  if (initialValue !== prevInitialValue) {
+  if (!equal(initialValue, prevInitialValue)) {
     setPrevInitialValue(initialValue);
     originalValueRef.current = initialValue;
     setDraft(initialValue);

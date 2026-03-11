@@ -141,7 +141,7 @@ export default function FileAttachment({
               });
               return (
                 <li
-                  key={`${file.name}-${index}`}
+                  key={file.name}
                   className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
                 >
                   <span className="text-xs text-success truncate flex-1">
