@@ -88,10 +88,15 @@
       {{/if}}
       {{#if isMarkdown}}
         <div class='md' id='md-root'></div>
+        <script id='md-data' type='application/json'>{{{contentJson}}}</script>
         <script>
           // Minimal inline markdown-to-HTML parser
           (function () {
-            var raw = {{{contentJson}}};
+            var raw = '';
+            try {
+              var dataEl = document.getElementById('md-data');
+              raw = dataEl ? JSON.parse(dataEl.textContent || '""') : '';
+            } catch (e) { raw = ''; }
 
             function escape(s) {
               return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -104,7 +109,11 @@
                 .replace(/__([^_]+)__/g, '<strong>$1</strong>')
                 .replace(/\*([^*]+)\*/g, '<em>$1</em>')
                 .replace(/_([^_]+)_/g, '<em>$1</em>')
-                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+                  // Allowlist safe URL schemes; rewrite anything else to '#'.
+                  var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
+                  return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
+                });
             }
 
             function parseMarkdown(md) {

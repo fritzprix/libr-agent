@@ -459,7 +459,7 @@ mod tests {
             .await
             .expect("Failed to save playbook 2");
 
-        // Test listPlaybooks with UI rendering
+        // Test playbook__getPlaybookPage (list playbooks with UI rendering)
         let response = proxy_manager
             .call_tool(&session_id, "playbook__getPlaybookPage", json!({}))
             .await

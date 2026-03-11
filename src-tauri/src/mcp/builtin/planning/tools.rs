@@ -141,7 +141,7 @@ Get positions from getCurrentState."#
                     ),
                 ),
             ],
-            vec!["index".to_string(), "action".to_string()],
+            vec!["index".to_string()],
             None,
         ),
         output_schema: None,

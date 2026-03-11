@@ -626,16 +626,19 @@ impl UiServer {
         let title = args.get("title").and_then(|v| v.as_str());
 
         // Determine whether to treat as markdown or pass HTML directly.
-        // "auto" heuristic: content is HTML if it starts with '<' (ignoring whitespace).
+        // Default to markdown; HTML rendering requires an explicit format='html' opt-in
+        // to prevent arbitrary script injection via auto-detected HTML content.
         let is_markdown = match format {
-            "markdown" => true,
             "html" => false,
-            _ => !content.trim_start().starts_with('<'),
+            _ => true,
         };
 
-        // Serialize content to a JSON string so it can be embedded safely in the template
-        // as a JavaScript string literal (handles quotes, backslashes, newlines).
-        let content_json = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".to_string());
+        // Serialize content to a JSON string for safe HTML embedding.
+        // Escape '</' as '<\/' to prevent </script> sequences from breaking out of
+        // the enclosing <script> block (serde_json does not escape these by default).
+        let content_json = serde_json::to_string(content)
+            .unwrap_or_else(|_| "\"\"".to_string())
+            .replace("</", "<\\/");
 
         let mut data = json!({
             "isMarkdown": is_markdown,
