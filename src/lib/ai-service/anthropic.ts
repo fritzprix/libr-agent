@@ -3,6 +3,7 @@ import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
   TextBlockParam,
+  ImageBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
@@ -758,16 +759,49 @@ export class AnthropicService extends BaseAIService {
           });
           continue;
         }
-        anthropicMessages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result' as const,
-              tool_use_id: m.tool_call_id,
-              content: this.processMessageContent(m.content),
-            },
-          ],
-        });
+        // Anthropic tool_result.content supports image blocks natively.
+        const textContent = this.processMessageContent(m.content);
+        const media = (m.content as MCPContent[]).filter(
+          (c) => c.type === 'image' || c.type === 'audio',
+        );
+        if (media.length > 0) {
+          // Build explicit text + image blocks for tool_result content
+          const blocks: (TextBlockParam | ImageBlockParam)[] = [
+            { type: 'text', text: textContent },
+            ...this.processMultiModalContent(media)
+              .filter((p) => p.type === 'image')
+              .map((p): ImageBlockParam => ({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: (p.mimeType || 'image/jpeg') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                  data: p.image || '',
+                },
+              })),
+          ];
+          anthropicMessages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result' as const,
+                tool_use_id: m.tool_call_id,
+                content: blocks,
+              },
+            ],
+          });
+        } else {
+          // Text-only fast path
+          anthropicMessages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result' as const,
+                tool_use_id: m.tool_call_id,
+                content: textContent,
+              },
+            ],
+          });
+        }
       } else {
         logger.warn(`Unsupported message role for Anthropic: ${m.role}`);
       }

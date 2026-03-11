@@ -411,6 +411,16 @@ export class OpenAIService extends BaseAIService {
             tool_call_id: m.tool_call_id,
             content: this.processMessageContent(m.content),
           });
+          // Inject image/audio from tool result as a synthetic user message
+          const media = (m.content as MCPContent[]).filter(
+            (c) => c.type === 'image' || c.type === 'audio',
+          );
+          if (media.length > 0) {
+            openaiMessages.push({
+              role: 'user',
+              content: this.formatOpenAIContent(media),
+            });
+          }
         } else {
           logger.warn(
             `Tool message missing tool_call_id: ${JSON.stringify(m)}`,

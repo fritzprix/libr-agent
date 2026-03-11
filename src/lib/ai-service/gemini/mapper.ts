@@ -142,6 +142,19 @@ export function convertToGeminiMessages(messages: Message[]): Content[] {
                 parsed,
               ),
             );
+            // Append any image/audio from tool result as inlineData parts in the same batch
+            const media = (toolMsg.content as MCPContent[]).filter(
+              (c) => c.type === 'image' || c.type === 'audio',
+            );
+            if (media.length > 0) {
+              const mediaParts = formatGeminiContent(media);
+              responseParts.push(...mediaParts);
+              logger.info('  - Added media parts to batch', {
+                index: j,
+                toolCallId: toolMsg.tool_call_id,
+                mediaCount: mediaParts.length,
+              });
+            }
             logger.info('  - Added component to batch', {
               index: j,
               toolCallId: toolMsg.tool_call_id,
