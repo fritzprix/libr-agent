@@ -84,22 +84,29 @@ pub(crate) async fn build_session_system_prompt_split(
             existing.clone()
         } else {
             drop(cached);
-            // Build sections 1–3 once and cache them for the session lifetime.
-            // These sections are immutable: agent identity, workspace instructions
-            // (loaded from disk), and the session name — none change mid-session.
-            let workspace_instructions = load_workspace_agent_instructions(session_id).await;
-            let stable =
-                build_stable_prefix(&agent_config, session_name, workspace_instructions);
-            *cached_stable_prompt_arc.write().await = Some(stable.clone());
-            stable
+            // Acquire write lock and re-check: a concurrent caller may have built
+            // and cached the stable prompt while we were waiting for the write lock.
+            let mut write_guard = cached_stable_prompt_arc.write().await;
+            if let Some(ref existing) = *write_guard {
+                existing.clone()
+            } else {
+                // Build sections 1–3 once and cache them for the session lifetime.
+                // These sections are immutable: agent identity, workspace instructions
+                // (loaded from disk), and the session name — none change mid-session.
+                let workspace_instructions =
+                    load_workspace_agent_instructions(session_id).await;
+                let stable =
+                    build_stable_prefix(&agent_config, session_name, workspace_instructions);
+                *write_guard = Some(stable.clone());
+                stable
+            }
         }
     };
 
     // --- Build volatile sections fresh each call ---
     let proxy = proxy_manager.get_proxy(session_id).await;
     let volatile =
-        build_volatile_sections(Some(context_registry), proxy, agent_config.id.as_deref())
-            .await;
+        build_volatile_sections(Some(context_registry), proxy, agent_config.id.as_deref()).await;
 
     let session_context = if volatile.trim().is_empty() {
         None
