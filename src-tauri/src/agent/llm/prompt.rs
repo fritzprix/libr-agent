@@ -38,41 +38,106 @@ async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, Str
     results
 }
 
+/// Build the stable prefix and volatile sections separately for a session.
+///
+/// Returns `(stable_prompt, session_context)` where:
+/// - `stable_prompt` — sections 1–3 (identity, workspace instructions, session name).
+///   Computed once per session and cached; never changes mid-session.
+/// - `session_context` — sections 4–5 (context providers + service tool states).
+///   Rebuilt fresh on every LLM call. May be empty if no providers or services are active.
+///
+/// Callers decide how to combine the two parts. The frontend AI service layer uses
+/// `prepareContextInjection` to inject them via the channel best suited to each provider.
+pub(crate) async fn build_session_system_prompt_split(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    proxy_manager: &Arc<MCPServiceProxyManager>,
+    session_id: &str,
+) -> Result<(String, Option<String>), String> {
+    // --- Read session state under a short-lived read lock ---
+    let (agent_config, session_name, context_registry, cached_stable_prompt_arc) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let agent_config = session
+            .metadata
+            .agent_config
+            .as_ref()
+            .ok_or_else(|| "Agent configuration is required but not found".to_string())
+            .and_then(|json| {
+                crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string())
+            })?;
+
+        (
+            agent_config,
+            session.metadata.name.clone(),
+            session.context_registry.clone(),
+            session.cached_stable_prompt.clone(),
+        )
+    };
+
+    // --- Build (or reuse) stable prefix ---
+    let stable_prompt = {
+        let cached = cached_stable_prompt_arc.read().await;
+        if let Some(ref existing) = *cached {
+            existing.clone()
+        } else {
+            drop(cached);
+            // Acquire write lock and re-check: a concurrent caller may have built
+            // and cached the stable prompt while we were waiting for the write lock.
+            let mut write_guard = cached_stable_prompt_arc.write().await;
+            if let Some(ref existing) = *write_guard {
+                existing.clone()
+            } else {
+                // Build sections 1–3 once and cache them for the session lifetime.
+                // These sections are immutable within a session: agent identity, the
+                // session name, and workspace instruction files (agents.md / CLAUDE.md).
+                // NOTE: edits to workspace instruction files mid-session are NOT reflected
+                // until the next config update or session resume, both of which clear this
+                // cache via AgentSession::invalidate_stable_prompt_cache(). This is an
+                // intentional tradeoff for prefix-cache efficiency.
+                let workspace_instructions = load_workspace_agent_instructions(session_id).await;
+                let stable =
+                    build_stable_prefix(&agent_config, session_name, workspace_instructions);
+                *write_guard = Some(stable.clone());
+                stable
+            }
+        }
+    };
+
+    // --- Build volatile sections fresh each call ---
+    let proxy = proxy_manager.get_proxy(session_id).await;
+    let volatile =
+        build_volatile_sections(Some(context_registry), proxy, agent_config.id.as_deref()).await;
+
+    let session_context = if volatile.trim().is_empty() {
+        None
+    } else {
+        Some(volatile)
+    };
+
+    Ok((stable_prompt, session_context))
+}
+
 /// Build complete system prompt for session (wrapper)
+///
+/// The stable prefix (sections 1–3: agent identity, workspace instructions, session
+/// context) is computed once and cached in the session. Only the volatile sections
+/// (4: context providers, 5: service contexts) are rebuilt on every LLM call.
 pub async fn build_session_system_prompt(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
     session_id: &str,
 ) -> Result<String, String> {
-    let active = active_sessions.read().await;
-    let session = active
-        .get(session_id)
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let (stable_prompt, session_context) =
+        build_session_system_prompt_split(active_sessions, proxy_manager, session_id).await?;
 
-    let agent_config = session
-        .metadata
-        .agent_config
-        .as_ref()
-        .ok_or_else(|| "Agent configuration is required but not found".to_string())
-        .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
-
-    let config_clone = agent_config.clone();
-    let session_name = session.metadata.name.clone(); // Clone name early
-    let context_registry = session.context_registry.clone(); // Clone registry
-    drop(active);
-
-    let proxy = proxy_manager.get_proxy(session_id).await;
-
-    // Pass session name and context registry to build_system_prompt
-    let workspace_instructions = load_workspace_agent_instructions(session_id).await;
-    build_system_prompt(
-        &config_clone,
-        session_name,
-        proxy,
-        Some(context_registry),
-        workspace_instructions,
-    )
-    .await
+    if let Some(volatile) = session_context {
+        Ok(format!("{}\n{}", stable_prompt, volatile))
+    } else {
+        Ok(stable_prompt)
+    }
 }
 
 /// Build complete system prompt (Pure logic)
@@ -90,7 +155,26 @@ pub async fn build_system_prompt(
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
     workspace_instructions: Vec<(String, String)>,
 ) -> Result<String, String> {
-    let mut parts = Vec::new();
+    let stable = build_stable_prefix(agent_config, session_name, workspace_instructions);
+    let volatile =
+        build_volatile_sections(context_registry, proxy, agent_config.id.as_deref()).await;
+
+    if volatile.trim().is_empty() {
+        Ok(stable)
+    } else {
+        Ok(format!("{}\n{}", stable, volatile))
+    }
+}
+
+/// Build the stable, session-immutable prefix (sections 1–3).
+///
+/// These sections never change within a session so callers may cache the result.
+fn build_stable_prefix(
+    agent_config: &crate::agent::AgentConfig,
+    session_name: Option<String>,
+    workspace_instructions: Vec<(String, String)>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
 
     // 1. Agent Identity & Strategy (first priority)
     if !agent_config.system_prompt.trim().is_empty() {
@@ -126,9 +210,19 @@ pub async fn build_system_prompt(
         }
     }
 
+    parts.join("\n")
+}
+
+/// Build the volatile sections (4–5) that must be refreshed on every LLM call.
+async fn build_volatile_sections(
+    context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
+    proxy: Option<Arc<MCPServiceProxy>>,
+    assistant_id: Option<&str>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+
     // 4. Read-only Context Providers (time, skills, documentation, etc.)
     if let Some(registry) = context_registry {
-        let assistant_id = agent_config.id.as_deref();
         let context = registry.build_context(assistant_id).await;
         if !context.trim().is_empty() {
             parts.push(context);
@@ -158,7 +252,7 @@ pub async fn build_system_prompt(
         }
     }
 
-    Ok(parts.join("\n"))
+    parts.join("\n")
 }
 
 #[cfg(test)]

@@ -33,46 +33,51 @@ impl ContextRegistry {
     }
 
     /// Build combined context from all enabled providers
-    /// Providers are sorted by priority (lower first)
+    /// Providers are sorted by priority (lower first) and queried in parallel.
     ///
     /// # Arguments
     /// * `assistant_id` - Optional assistant ID to pass to context providers
     pub async fn build_context(&self, assistant_id: Option<&str>) -> String {
-        let mut sections = Vec::new();
-
-        // Collect provider references with priorities
+        // Collect provider references with priorities and sort (lower = earlier)
         let mut providers_with_priority: Vec<(i32, &Box<dyn ContextProvider>)> =
             self.providers.iter().map(|p| (p.priority(), p)).collect();
-
-        // Sort by priority (lower = earlier)
         providers_with_priority.sort_by_key(|(priority, _)| *priority);
 
-        // Build context from enabled providers
-        for (_priority, provider) in providers_with_priority {
-            if provider.is_enabled().await {
+        // Fan-out: query all enabled providers in parallel
+        let futures: Vec<_> = providers_with_priority
+            .iter()
+            .map(|(_priority, provider)| async move {
+                if !provider.is_enabled().await {
+                    log::debug!("Context provider '{}' is disabled", provider.provider_id());
+                    return None;
+                }
                 match provider.get_context(assistant_id).await {
-                    Ok(context) => {
-                        if !context.is_empty() {
-                            log::debug!(
-                                "Context provider '{}' contributed {} characters",
-                                provider.provider_id(),
-                                context.len()
-                            );
-                            sections.push(context);
-                        }
+                    Ok(context) if !context.is_empty() => {
+                        log::debug!(
+                            "Context provider '{}' contributed {} characters",
+                            provider.provider_id(),
+                            context.len()
+                        );
+                        Some(context)
                     }
+                    Ok(_) => None,
                     Err(e) => {
                         log::warn!(
                             "Context provider '{}' failed: {}",
                             provider.provider_id(),
                             e
                         );
+                        None
                     }
                 }
-            } else {
-                log::debug!("Context provider '{}' is disabled", provider.provider_id());
-            }
-        }
+            })
+            .collect();
+
+        let sections: Vec<String> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         sections.join("\n\n")
     }

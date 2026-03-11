@@ -512,24 +512,36 @@ impl MCPServiceProxy {
 
     /// Collect service contexts from all builtin servers
     ///
-    /// Iterates through all registered builtin servers and collects their
-    /// current service context information. This is used to enrich the system
-    /// prompt with real-time session state information.
+    /// Queries all registered builtin servers in parallel. Servers that report
+    /// no active state via `has_active_state()` are skipped to avoid
+    /// unnecessary DB round-trips when context would be empty.
     ///
     /// # Returns
     /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
     pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
-        let mut contexts = HashMap::new();
+        let futures: Vec<_> = self
+            .builtin_servers
+            .iter()
+            .map(|(tool_id, server)| {
+                let tool_id = tool_id.clone();
+                async move {
+                    if !server.has_active_state().await {
+                        return None;
+                    }
+                    let context = server.get_service_context(None).await;
+                    Some((tool_id, context))
+                }
+            })
+            .collect();
 
-        for (tool_id, server) in &self.builtin_servers {
-            let context = server.get_service_context(None).await;
-
-            // Always include the context, even if empty, as structured state might be present
-            contexts.insert(tool_id.clone(), context);
-        }
+        let contexts: HashMap<String, ServiceContext> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         log::debug!(
-            "Collected {} service contexts for session '{}'",
+            "Collected {} service contexts for session '{}' (parallel)",
             contexts.len(),
             self.session_id
         );

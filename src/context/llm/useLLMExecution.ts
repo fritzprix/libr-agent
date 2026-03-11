@@ -123,6 +123,7 @@ export function useLLMExecution({
       provider: string,
       apiKey?: string,
       systemPrompt?: string,
+      sessionContext?: string,
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
@@ -217,6 +218,12 @@ export function useLLMExecution({
         const { windowSize, contextStrategy, toolCallGroupVisibleCount } =
           settingsRef.current;
         const finalSystemPrompt = systemPrompt;
+        // Tokens consumed by volatile session context (sections 4-5 from Rust).
+        // Counted separately from finalSystemPrompt so budget calculations are
+        // accurate regardless of which injection channel the provider uses.
+        const sessionContextTokens = sessionContext
+          ? estimateTextTokens(sessionContext)
+          : 0;
 
         logger.info('🎯 Applying context management strategy', {
           sessionId,
@@ -306,7 +313,8 @@ export function useLLMExecution({
           // too large for this model. Log a clear warning so the user / dev can
           // diagnose it and proceed (selectMessagesWithinContext will keep at
           // least the most-recent turn via its own safety floor).
-          const reservedTokens = systemPromptTokens + toolsTokens;
+          const reservedTokens =
+            systemPromptTokens + toolsTokens + sessionContextTokens;
           if (reservedTokens >= safeInputTokenLimit) {
             logger.warn(
               '⚠️ Reserved tokens (system prompt + tools) already exceed the context limit. ' +
@@ -334,7 +342,7 @@ export function useLLMExecution({
 
           let totalTokens = calculateGroundedTotalTokens(
             candidateMessages,
-            systemPromptTokens,
+            systemPromptTokens + sessionContextTokens,
             toolsTokens,
           );
           const threshold = calculateCompactThreshold(safeInputTokenLimit);
@@ -378,7 +386,7 @@ export function useLLMExecution({
 
                 totalTokens = calculateGroundedTotalTokens(
                   candidateMessages,
-                  updatedSystemPromptTokens,
+                  updatedSystemPromptTokens + sessionContextTokens,
                   toolsTokens,
                 );
                 overflow = totalTokens >= safeInputTokenLimit;
@@ -592,7 +600,7 @@ export function useLLMExecution({
           const toolsTokens = toolsJson ? estimateTextTokens(toolsJson) : 0;
           const totalEstimatedTokens = calculateGroundedTotalTokens(
             windowEnrichedMessages,
-            systemPromptTokens,
+            systemPromptTokens + sessionContextTokens,
             toolsTokens,
           );
 
@@ -650,9 +658,20 @@ export function useLLMExecution({
 
         const startTime = performance.now();
 
-        const streamGenerator = service.streamChat(enrichedMessages, {
+        // Let the provider choose how to deliver sessionContext (stable system
+        // prompt concat vs. ephemeral tail message injection for prefix caching).
+        const {
+          systemPrompt: effectiveSystemPrompt,
+          messages: effectiveMessages,
+        } = service.prepareContextInjection(
+          finalSystemPrompt,
+          sessionContext,
+          enrichedMessages,
+        );
+
+        const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
-          systemPrompt: finalSystemPrompt,
+          systemPrompt: effectiveSystemPrompt,
           availableTools: availableTools || [],
           config,
           forceToolUse: false,

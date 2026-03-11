@@ -723,6 +723,35 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
+   * Merges the stable system prompt and volatile session context into the
+   * provider's preferred injection channel.
+   *
+   * The default implementation concatenates both parts into the system prompt —
+   * safe for all providers and preserves existing behaviour. Providers that
+   * support automatic prefix caching (e.g. OpenAI) can override this to inject
+   * `sessionContext` as an ephemeral tail message instead, keeping the system
+   * prompt fully static and maximising cache hit rates.
+   *
+   * @param systemPrompt - Stable prompt (sections 1–3, cacheable).
+   * @param sessionContext - Volatile context (sections 4–5, rebuilt per turn).
+   * @param messages - Current conversation message stack.
+   * @returns Effective `systemPrompt` and `messages` to pass to `streamChat`.
+   */
+  prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): { systemPrompt: string | undefined; messages: Message[] } {
+    if (!sessionContext) {
+      return { systemPrompt, messages };
+    }
+    const combined = [systemPrompt, sessionContext]
+      .filter(Boolean)
+      .join('\n\n');
+    return { systemPrompt: combined, messages };
+  }
+
+  /**
    * Cleans up any resources used by the service instance.
    * @abstract
    */

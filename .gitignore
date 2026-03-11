@@ -34,6 +34,8 @@ error_*.txt
 .langgraph_api
 log.txt
 log_*.txt
+startup.txt
+lock_issues.txt
 .envfile
 target
 .mcp.json

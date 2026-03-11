@@ -100,6 +100,15 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
             structured_state: None,
         }
     }
+
+    /// Returns `true` when the server has meaningful state worth including in the
+    /// system prompt. Returning `false` causes `get_service_contexts()` to skip
+    /// this server entirely, avoiding unnecessary DB round-trips.
+    ///
+    /// Default: `true` (always included). Override in servers that can be empty.
+    async fn has_active_state(&self) -> bool {
+        true
+    }
 }
 
 /// A registry for all built-in MCP servers.
