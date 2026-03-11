@@ -84,6 +84,9 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Skills => Ok(Some(Box::new(
             crate::mcp::builtin::skills::SkillsServer::new(_session_id),
         ))),
+        BuiltinServiceId::Media => Ok(Some(Box::new(
+            crate::mcp::builtin::media::MediaServer::new(_session_id, _session_manager),
+        ))),
     }
 }
 

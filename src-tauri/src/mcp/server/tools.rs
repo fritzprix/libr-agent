@@ -481,6 +481,11 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             metadata: session_api::SessionApiServer::metadata_static(),
             tool_count: session_api::SessionApiServer::tools_static().len(),
         },
+        BuiltinServerInfo {
+            name: "media".to_string(),
+            metadata: media::MediaServer::metadata_static(),
+            tool_count: media::MediaServer::tools_static().len(),
+        },
     ]
 }
 
@@ -644,5 +649,6 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Swarm => crate::mcp::builtin::session_api::tools::all_tools(),
         // Skills tools are session-bound; no static definition available.
         BuiltinServiceId::Skills => Vec::new(),
+        BuiltinServiceId::Media => crate::mcp::builtin::media::MediaServer::tools_static(),
     }
 }
