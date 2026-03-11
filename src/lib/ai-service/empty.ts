@@ -7,7 +7,7 @@ import { BaseAIService } from './base-service';
  * A placeholder AI service that does nothing. It can be used for testing
  * or as a default when no other service is available.
  */
-export class EmptyAIService extends BaseAIService {
+export class EmptyAIService extends BaseAIService<unknown, never> {
   /**
    * Initializes a new instance of the `EmptyAIService`.
    */
@@ -58,24 +58,13 @@ export class EmptyAIService extends BaseAIService {
     // Yield nothing, this is an empty service
   }
 
-  /**
-   * @inheritdoc
-   * @description Returns null as there is no message conversion.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
+  protected convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): unknown[] {
+    void messages;
     void systemPrompt;
-    return null;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Returns null as there is no message conversion.
-   * @protected
-   */
-  protected convertSingleMessage(message: unknown): unknown {
-    void message;
-    return null;
+    return [];
   }
 
   /**

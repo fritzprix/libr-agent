@@ -17,7 +17,10 @@ const logger = getLogger('GroqService');
 /**
  * An AI service implementation for the Groq API, known for its high-speed inference.
  */
-export class GroqService extends BaseAIService {
+export class GroqService extends BaseAIService<
+  Groq.Chat.Completions.ChatCompletionMessageParam,
+  GroqChatCompletionTool
+> {
   private groq: Groq;
 
   /**
@@ -70,10 +73,7 @@ export class GroqService extends BaseAIService {
     const { config, tools } = this.prepareStreamChat(messages, options);
 
     try {
-      const groqMessages = this.convertToGroqMessages(
-        messages,
-        options.systemPrompt,
-      );
+      const groqMessages = this.convertMessages(messages, options.systemPrompt);
 
       const model = llmConfigManager.getModel(
         'groq',
@@ -89,7 +89,7 @@ export class GroqService extends BaseAIService {
           max_tokens: config.maxTokens,
           reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
           stream: true,
-          tools: tools as GroqChatCompletionTool[],
+          tools: tools,
           tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
@@ -163,7 +163,7 @@ export class GroqService extends BaseAIService {
    * @returns An array of `Groq.Chat.Completions.ChatCompletionMessageParam` objects.
    * @private
    */
-  private convertToGroqMessages(
+  protected convertMessages(
     messages: Message[],
     systemPrompt?: string,
   ): Groq.Chat.Completions.ChatCompletionMessageParam[] {
@@ -233,69 +233,6 @@ export class GroqService extends BaseAIService {
       }
     }
     return groqMessages;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Creates a Groq-compatible system message object.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    return { role: 'system', content: systemPrompt };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Groq API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    if (message.role === 'user') {
-      return {
-        role: 'user',
-        content: this.processMessageContent(message.content),
-      };
-    } else if (message.role === 'assistant') {
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content) || null,
-          tool_calls: message.tool_calls.map((tc) => ({
-            ...tc,
-            type: 'function',
-          })),
-        };
-      } else if (message.thinking) {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content),
-        };
-      } else {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content),
-        };
-      }
-    } else if (message.role === 'tool') {
-      if (message.tool_call_id) {
-        return {
-          role: 'tool',
-          tool_call_id: message.tool_call_id,
-          content: this.processMessageContent(message.content),
-        };
-      } else {
-        logger.warn(
-          `Tool message missing tool_call_id: ${JSON.stringify(message)}`,
-        );
-        return null;
-      }
-    } else if (message.role === 'system') {
-      return {
-        role: 'system',
-        content: this.processMessageContent(message.content),
-      };
-    }
-    return null;
   }
 
   /**

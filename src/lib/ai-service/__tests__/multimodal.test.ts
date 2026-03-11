@@ -13,8 +13,8 @@ class TestOpenAIService extends OpenAIService {
   constructor() {
     super('sk-1234567890abcdef1234567890abcdef', { provider: 'openai', modelId: 'gpt-4o' } as unknown as AIServiceConfig);
   }
-  public testConvertSingleMessage(m: Message) {
-    return this.convertSingleMessage(m);
+  public testConvertMessages(messages: Message[]) {
+    return this.convertMessages(messages);
   }
 }
 
@@ -22,8 +22,8 @@ class TestAnthropicService extends AnthropicService {
   constructor() {
     super('sk-ant-1234567890abcdef1234567890abcdef', { provider: 'anthropic', modelId: 'claude-3-5-sonnet-20241022' } as unknown as AIServiceConfig);
   }
-  public testConvertSingleMessage(m: Message) {
-    return this.convertSingleMessage(m);
+  public testConvertMessages(messages: Message[]) {
+    return this.convertMessages(messages);
   }
 }
 
@@ -42,7 +42,7 @@ describe('Multimodal Payload Construction', () => {
 
   it('formats content correctly for OpenAI', () => {
     const service = new TestOpenAIService();
-    const result = service.testConvertSingleMessage(multimodalMessage) as TestMessageResult;
+    const result = service.testConvertMessages([multimodalMessage])[0] as TestMessageResult;
     
     expect(result.role).toBe('user');
     expect(Array.isArray(result.content)).toBe(true);
@@ -55,7 +55,7 @@ describe('Multimodal Payload Construction', () => {
 
   it('formats content correctly for Anthropic', () => {
     const service = new TestAnthropicService();
-    const result = service.testConvertSingleMessage(multimodalMessage) as TestMessageResult;
+    const result = service.testConvertMessages([multimodalMessage])[0] as unknown as TestMessageResult;
     
     expect(result.role).toBe('user');
     expect(Array.isArray(result.content)).toBe(true);

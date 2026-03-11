@@ -113,7 +113,10 @@ interface ToolCallAccumulator {
  * It handles the specifics of the Anthropic API, including message formatting,
  * tool use, and streaming.
  */
-export class AnthropicService extends BaseAIService {
+export class AnthropicService extends BaseAIService<
+  AnthropicMessageParam,
+  AnthropicTool
+> {
   private anthropic: Anthropic;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -320,8 +323,10 @@ export class AnthropicService extends BaseAIService {
     );
 
     try {
-      const anthropicMessages =
-        this.convertToAnthropicMessages(sanitizedMessages);
+      const anthropicMessages = this.convertMessages(
+        sanitizedMessages,
+        options.systemPrompt,
+      );
 
       // Check if model supports extended thinking via dynamic capability detection
       const model = options.modelName || this.getDefaultModel();
@@ -345,7 +350,7 @@ export class AnthropicService extends BaseAIService {
           messages: anthropicMessages,
           ...(systemBlocks && { system: systemBlocks }),
           ...(extendedThinking && { extended_thinking: extendedThinking }),
-          tools: tools as AnthropicTool[],
+          tools: tools,
           ...(options.forceToolUse &&
             options.availableTools?.length && { tool_choice: { type: 'any' } }),
         },
@@ -629,11 +634,13 @@ export class AnthropicService extends BaseAIService {
    * @param messages The array of messages to convert.
    * @returns An array of `AnthropicMessageParam` objects.
    * @throws An error if an incomplete tool chain is detected.
-   * @private
    */
-  private convertToAnthropicMessages(
+  protected convertMessages(
     messages: Message[],
+    systemPrompt?: string,
   ): AnthropicMessageParam[] {
+    // Note: Anthropic system prompt is passed separately in doStreamChat
+    void systemPrompt;
     const anthropicMessages: AnthropicMessageParam[] = [];
     const toolUseIds = new Set<string>();
     const toolResultIds = new Set<string>();
@@ -763,23 +770,32 @@ export class AnthropicService extends BaseAIService {
         const textContent = this.processMessageContent(m.content);
         const images = (m.content as MCPContent[]).filter(
           (c) => c.type === 'image',
-        ) as Array<{ type: 'image'; data?: string; mimeType?: string; source?: { data?: string; mimeType?: string } }>;
+        ) as Array<{
+          type: 'image';
+          data?: string;
+          mimeType?: string;
+          source?: { data?: string; mimeType?: string };
+        }>;
         if (images.length > 0) {
           // Build text block + image blocks for tool_result content
           const blocks: (TextBlockParam | ImageBlockParam)[] = [
             { type: 'text', text: textContent },
-            ...images.map((img): ImageBlockParam => ({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: (img.mimeType || img.source?.mimeType || 'image/jpeg') as
-                  | 'image/jpeg'
-                  | 'image/png'
-                  | 'image/gif'
-                  | 'image/webp',
-                data: img.data || img.source?.data || '',
-              },
-            })),
+            ...images.map(
+              (img): ImageBlockParam => ({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: (img.mimeType ||
+                    img.source?.mimeType ||
+                    'image/jpeg') as
+                    | 'image/jpeg'
+                    | 'image/png'
+                    | 'image/gif'
+                    | 'image/webp',
+                  data: img.data || img.source?.data || '',
+                },
+              }),
+            ),
           ];
           anthropicMessages.push({
             role: 'user',
@@ -841,109 +857,6 @@ export class AnthropicService extends BaseAIService {
         text: `[Unsupported content format for Anthropic: ${part.type}]`,
       };
     }) as unknown as AnthropicMessageParam['content'];
-  }
-
-  /**
-   * @inheritdoc
-   * @description For Anthropic, system messages are handled as a separate parameter
-   * in the API call, so this method returns null.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    // Anthropic handles system messages separately as a parameter, not as a message
-    void systemPrompt;
-    return null;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Anthropic API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    if (message.role === 'system') {
-      // System messages are handled separately in the API call
-      return null;
-    }
-
-    if (message.role === 'user') {
-      return {
-        role: 'user',
-        content: this.formatAnthropicContent(message.content),
-      };
-    } else if (message.role === 'assistant') {
-      // Build content array with thinking block first if present
-      const content = [];
-
-      // Add thinking block as first element if exists
-      if (message.thinking) {
-        content.push({
-          type: 'thinking' as const,
-          thinking: message.thinking,
-          signature: message.thinkingSignature || '',
-        });
-      }
-
-      // Add tool_use content
-      if (message.tool_calls) {
-        content.push(
-          ...message.tool_calls.map((tc) => ({
-            type: 'tool_use' as const,
-            id: tc.id,
-            name: tc.function.name,
-            input: this.parseToolInput(tc.function.arguments, {
-              messageId: message.id,
-              toolId: tc.id,
-              toolName: tc.function.name,
-            }),
-          })),
-        );
-      } else if (message.tool_use) {
-        content.push({
-          type: 'tool_use' as const,
-          id: message.tool_use.id,
-          name: message.tool_use.name,
-          input: this.ensureObjectInput(message.tool_use.input, {
-            messageId: message.id,
-            toolId: message.tool_use.id,
-            toolName: message.tool_use.name,
-          }),
-        });
-      }
-
-      // Always add text content if it exists
-      if (message.content) {
-        const processedContent = this.processMessageContent(message.content);
-        if (processedContent && processedContent.length > 0) {
-          content.push({ type: 'text' as const, text: processedContent });
-        }
-      }
-
-      return {
-        role: 'assistant',
-        content,
-      };
-    } else if (message.role === 'tool') {
-      if (!message.tool_call_id) {
-        logger.warn('Tool message missing tool_call_id, skipping', {
-          messageId: message.id,
-        });
-        return null;
-      }
-      return {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result' as const,
-            tool_use_id: message.tool_call_id,
-            content: this.processMessageContent(message.content),
-          },
-        ],
-      };
-    } else {
-      logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
-      return null;
-    }
   }
 
   /**

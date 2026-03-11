@@ -1,4 +1,9 @@
-import { FunctionDeclaration, FinishReason, GoogleGenAI } from '@google/genai';
+import {
+  FunctionDeclaration,
+  FinishReason,
+  GoogleGenAI,
+  Content,
+} from '@google/genai';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
@@ -6,7 +11,7 @@ import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
-import { convertToGeminiMessages, convertSingleMessage } from './mapper';
+import { convertToGeminiMessages } from './mapper';
 import {
   mapReasoningEffortToBudget,
   checkThinkingSupport,
@@ -19,7 +24,7 @@ import { convertMCPToolToGemini } from '../tool-converters';
 /**
  * An AI service implementation for interacting with Google's Gemini models.
  */
-export class GeminiService extends BaseAIService {
+export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -127,10 +132,16 @@ export class GeminiService extends BaseAIService {
       forceToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const geminiMessages = convertToGeminiMessages(messages);
+      const geminiMessages = this.convertMessages(
+        sanitizedMessages,
+        options.systemPrompt,
+      );
       if (geminiMessages.length === 0) {
         throw new Error(
           'No valid messages to send to Gemini (must start with user/tool role)',
@@ -306,25 +317,13 @@ export class GeminiService extends BaseAIService {
     }
   }
 
-  /**
-   * @inheritdoc
-   * @description For Gemini, system instructions are handled as a separate parameter,
-   * so this method returns null.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    // Gemini handles system instructions separately, not as messages
+  protected convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): Content[] {
+    // Note: Gemini system prompt is handled via systemInstruction in config
     void systemPrompt;
-    return null;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Gemini API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    return convertSingleMessage(message);
+    return convertToGeminiMessages(messages);
   }
 
   /**
