@@ -67,3 +67,6 @@
 - **HttpForm & EnvVarsForm:** Removed the `useEffect` block that monitored `.length` changes on `customHeaders` and `envVars` to imperatively focus the newly added input via a `prevLengthRef`.
 - **Woven:** Applied the React **Callback Ref** pattern conditionally governed by an `isAddingRef` flag set within the `onClick` handler. When a new input mounts after clicking "Add", its `ref` callback directly calls `.focus()`.
 - **Renders Saved:** Eliminated a redundant reactive cycle (the action-effect chain), bypassing the extra reconciliation required by `useEffect`-driven focus synchronization.
+## 2025-02-17 - [EditorContext] **Eradicated:** [Effect State Sync (useEffect setting state based on props)] **Woven:** [Render-Phase Mutation Pattern]
+## 2025-02-17 - [FileAttachment] **Eradicated:** [Array index as key in dynamic lists] **Woven:** [Unique Composite Key Pattern]
+## 2025-02-17 - [AgentChatStatusBar] **Eradicated:** [Effect State Sync (useEffect resetting state on prop change)] **Woven:** [Render-Phase Mutation Pattern]

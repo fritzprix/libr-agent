@@ -163,7 +163,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             <div className="max-h-64 overflow-y-auto">
               {currentSessionFiles.map((file, index) => (
                 <DropdownMenuItem
-                  key={index}
+                  key={`${file.filename}-${file.contentId || index}`}
                   className="px-3 py-2 cursor-pointer border-b last:border-b-0 block"
                   onClick={() => handleFileClick(file)}
                 >
