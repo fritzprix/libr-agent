@@ -2,7 +2,6 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LLMServiceProvider, useLLMService } from '../LLMServiceContext';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
 import { AIServiceFactory } from '@/lib/ai-service/factory';
 import * as agentCommands from '@/lib/backend/agent-commands';
 import type { Message } from '@/models/chat';
@@ -673,16 +672,10 @@ describe('LLMServiceContext', () => {
       await act(async () => {
         await triggerEvent();
       });
-
       // Neither error nor success should have been reported to Rust
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_error',
-        expect.anything(),
-      );
-      expect(invoke).not.toHaveBeenCalledWith(
-        'agent_handle_llm_response',
-        expect.anything(),
-      );
+      expect(agentCommands.handleLLMResponse).not.toHaveBeenCalled();
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalled();
+
       // Only 1 attempt — no retries on abort
       expect(mockStreamChat).toHaveBeenCalledTimes(1);
     });

@@ -129,7 +129,7 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
   /**
    * Regression guard for the race condition:
    *   cancelCompletionRequest() → AbortError thrown
-   *   → useLLMListener catch → handleLLMError('agent_handle_llm_error')  ← BUG
+   *   → useLLMListener catch → handleLLMError(sessionId, String(error))  ← BUG
    *   → Rust: Idle (from cancel) then Error (stale abort) — wrong order
    *
    * The correct behaviour: if isAbortError, return early and never invoke Rust.
@@ -146,7 +146,7 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     sessionId: string,
   ) => {
     if (isAbortError(error)) {
-      return; // ← correct: do NOT call invoke
+      return; // ← correct: do NOT call handleLLMError / report to Rust
     }
     await mockHandleLLMError(sessionId, String(error));
   };
@@ -157,13 +157,14 @@ describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
     expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 
-  it('does NOT call handleLLMError for "Request aborted"', async () => {
+  it('does NOT call handleLLMError for "Request aborted" (regression)', async () => {
+    // Some fetch implementations throw a generic error with this message on abort
     const err = new Error('Request aborted');
-    await handleCatchInListener(err, 'session-1');
+    await handleCatchInListener(err, 'session-2');
     expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 
-  it('DOES call handleLLMError for real errors', async () => {
+  it('DOES call handleLLMError for other errors', async () => {
     const err = new Error('API quota exceeded');
     await handleCatchInListener(err, 'session-1');
     expect(mockHandleLLMError).toHaveBeenCalledWith('session-1', 'Error: API quota exceeded');

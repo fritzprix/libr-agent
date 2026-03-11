@@ -91,4 +91,12 @@
 **Action:**
 
 - **Type Sync:** Replaced `Record<string, unknown>` with strictly typed `RustMessage` and `RustSearchResult` in `src/lib/backend/messages.ts`, ensuring compile-time safety and 1:1 Rust-TS synchronization for message pagination and search.
-## 2025-03-02 - [agent_handle_llm_error] **IPC Fix:** [Direct unstructured safeInvoke in component] **Optimized:** [Extracted to strict type-safe handleLLMError wrapper in agent-commands.ts]
+
+## 2026-03-11 - Agent Error IPC Boundary
+
+**Problem:** Direct unstructured `safeInvoke` for `agent_handle_llm_error` in `useLLMListener.ts` led to scattered logic and lack of type safety.
+
+**Action:**
+
+- **IPC Fix:** Extracted raw IPC call to a strictly typed `handleLLMError` wrapper in `src/lib/backend/agent-commands.ts`.
+- **Refactor:** Updated `useLLMListener.ts` and associated tests to use the new type-safe boundary.

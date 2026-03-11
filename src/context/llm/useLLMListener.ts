@@ -1,10 +1,11 @@
-import { safeInvoke } from '@/lib/backend/core';
-import { handleLLMError, handleLLMResponse } from '@/lib/backend/agent-commands';
+import {
+  handleLLMError,
+  handleLLMResponse,
+} from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
 import { messageToRustMessage, type Message } from '@/models/chat';
-import type { AgentResponse } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceProvider } from '@/lib/ai-service/types';
@@ -271,10 +272,7 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await handleLLMResponse(
-              sessionId,
-              messageForRust,
-            );
+            await handleLLMResponse(sessionId, messageForRust);
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
