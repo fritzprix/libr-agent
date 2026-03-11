@@ -92,3 +92,8 @@
 
 **Split:** `interactive_shell.rs`, `execute_pending.rs`, `cancel_pending.rs`
 **Improvement:** Decoupled `handle_interactive_shell`, `handle_execute_pending_shell`, and `handle_cancel_pending_execution` into distinct modules based on functionality. Reduced the monolithic file size of ~769 lines into manageable components, significantly improving readability and maintainability.
+
+## 2026-03-11 - src-tauri/src/mcp/builtin/workspace/handlers/terminal.rs
+
+**Split:** `read_output.rs`, `list.rs`, `stop.rs`, `wait.rs`, `mod.rs`
+**Improvement:** Decoupled `WorkspaceServer` terminal process handler logic (read output, list processes, stop process, wait for process) into distinct modules. Reduced the 749 line `terminal.rs` monolith into manageable components, significantly improving readability and maintainability of the workspace tools.
