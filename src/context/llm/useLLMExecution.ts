@@ -313,7 +313,8 @@ export function useLLMExecution({
           // too large for this model. Log a clear warning so the user / dev can
           // diagnose it and proceed (selectMessagesWithinContext will keep at
           // least the most-recent turn via its own safety floor).
-          const reservedTokens = systemPromptTokens + toolsTokens + sessionContextTokens;
+          const reservedTokens =
+            systemPromptTokens + toolsTokens + sessionContextTokens;
           if (reservedTokens >= safeInputTokenLimit) {
             logger.warn(
               '⚠️ Reserved tokens (system prompt + tools) already exceed the context limit. ' +

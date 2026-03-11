@@ -93,8 +93,7 @@ pub(crate) async fn build_session_system_prompt_split(
                 // Build sections 1–3 once and cache them for the session lifetime.
                 // These sections are immutable: agent identity, workspace instructions
                 // (loaded from disk), and the session name — none change mid-session.
-                let workspace_instructions =
-                    load_workspace_agent_instructions(session_id).await;
+                let workspace_instructions = load_workspace_agent_instructions(session_id).await;
                 let stable =
                     build_stable_prefix(&agent_config, session_name, workspace_instructions);
                 *write_guard = Some(stable.clone());

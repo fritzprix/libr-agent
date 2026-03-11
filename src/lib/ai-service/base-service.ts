@@ -745,7 +745,9 @@ export abstract class BaseAIService implements IAIService {
     if (!sessionContext) {
       return { systemPrompt, messages };
     }
-    const combined = [systemPrompt, sessionContext].filter(Boolean).join('\n\n');
+    const combined = [systemPrompt, sessionContext]
+      .filter(Boolean)
+      .join('\n\n');
     return { systemPrompt: combined, messages };
   }
 
