@@ -91,8 +91,12 @@ pub(crate) async fn build_session_system_prompt_split(
                 existing.clone()
             } else {
                 // Build sections 1–3 once and cache them for the session lifetime.
-                // These sections are immutable: agent identity, workspace instructions
-                // (loaded from disk), and the session name — none change mid-session.
+                // These sections are immutable within a session: agent identity, the
+                // session name, and workspace instruction files (agents.md / CLAUDE.md).
+                // NOTE: edits to workspace instruction files mid-session are NOT reflected
+                // until the next config update or session resume, both of which clear this
+                // cache via AgentSession::invalidate_stable_prompt_cache(). This is an
+                // intentional tradeoff for prefix-cache efficiency.
                 let workspace_instructions = load_workspace_agent_instructions(session_id).await;
                 let stable =
                     build_stable_prefix(&agent_config, session_name, workspace_instructions);
