@@ -16,13 +16,18 @@ import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { withRetry, withTimeout } from '../retry-utils';
 import { MessageNormalizer } from './message-normalizer';
 import { getLogger } from '../logger';
+import { extractMediaContent as extractMedia } from './utils';
 
 /**
  * An abstract base class that provides common functionality for all AI services.
  * It implements the `IAIService` interface and handles API key validation,
  * message validation, retry logic, and configuration merging.
  */
-export abstract class BaseAIService implements IAIService {
+export abstract class BaseAIService<
+  TProviderMessage = unknown,
+  TProviderTool = unknown,
+> implements IAIService
+{
   /**
    * The default configuration for the service.
    * @protected
@@ -332,7 +337,7 @@ export abstract class BaseAIService implements IAIService {
     } = {},
   ): {
     config: AIServiceConfig;
-    tools?: unknown[];
+    tools?: TProviderTool[];
     sanitizedMessages: Message[];
   } {
     this.validateMessages(messages);
@@ -366,35 +371,15 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * A template method for converting an array of `Message` objects into a format
-   * suitable for a specific provider's API. It handles the system prompt and
-   * iterates through messages, calling the abstract `convertSingleMessage` for each.
-   * @param messages The array of messages to convert.
-   * @param systemPrompt An optional system prompt to prepend.
-   * @returns An array of provider-specific message objects.
+   * Extracts image and audio items from a MCPContent array.
+   * Used by provider conversion loops to identify media that needs special handling
+   * since tool result messages can only carry text in the standard API format.
+   * @param content The full content array from a tool result message.
+   * @returns Only the image and audio MCPContent items.
    * @protected
    */
-  protected convertMessagesTemplate(
-    messages: Message[],
-    systemPrompt?: string,
-  ): unknown[] {
-    const result: unknown[] = [];
-
-    if (systemPrompt) {
-      const systemMessage = this.createSystemMessage(systemPrompt);
-      if (systemMessage) {
-        result.push(systemMessage);
-      }
-    }
-
-    for (const message of messages) {
-      const converted = this.convertSingleMessage(message);
-      if (converted) {
-        result.push(converted);
-      }
-    }
-
-    return result;
+  protected extractMediaContent(content: MCPContent[]): MCPContent[] {
+    return extractMedia(content);
   }
 
   /**
@@ -418,22 +403,17 @@ export abstract class BaseAIService implements IAIService {
   // --- Abstract Methods for Subclasses ---
 
   /**
-   * Creates a provider-specific system message object.
-   * @param systemPrompt The text of the system prompt.
-   * @returns A provider-specific representation of a system message.
+   * Converts an array of `Message` objects into a format suitable for a specific provider's API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend or include.
+   * @returns An array of provider-specific message objects.
    * @protected
    * @abstract
    */
-  protected abstract createSystemMessage(systemPrompt: string): unknown;
-
-  /**
-   * Converts a single `Message` object into a provider-specific format.
-   * @param message The message to convert.
-   * @returns A provider-specific representation of the message.
-   * @protected
-   * @abstract
-   */
-  protected abstract convertSingleMessage(message: Message): unknown;
+  protected abstract convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): TProviderMessage[];
 
   /**
    * Initiates a streaming chat session with the AI service.
@@ -605,7 +585,7 @@ export abstract class BaseAIService implements IAIService {
    * @returns An array of tools in the provider-specific format.
    * @abstract
    */
-  abstract convertTools(mcpTools: MCPTool[]): unknown[];
+  abstract convertTools(mcpTools: MCPTool[]): TProviderTool[];
 
   /**
    * Extracts a plain-text representation of a message's content, including

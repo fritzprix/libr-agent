@@ -371,6 +371,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
+        builtin::media::NAME,
         builtin::mcp_manager::NAME,
     ];
 
@@ -401,6 +402,7 @@ fn builtin_server_names_are_unique() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
+        builtin::media::NAME,
         builtin::mcp_manager::NAME,
     ];
 
@@ -442,6 +444,7 @@ fn registry_and_server_list_are_in_sync() {
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
+        builtin::media::NAME,
         builtin::mcp_manager::NAME,
     ]
     .iter()

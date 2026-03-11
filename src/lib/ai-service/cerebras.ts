@@ -49,7 +49,10 @@ type CerebrasMessage =
 /**
  * An AI service implementation for interacting with Cerebras language models.
  */
-export class CerebrasService extends BaseAIService {
+export class CerebrasService extends BaseAIService<
+  CerebrasMessage,
+  Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
+> {
   private cerebras: Cerebras | null;
 
   /**
@@ -93,11 +96,14 @@ export class CerebrasService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const cerebrasMessages = this.convertToCerebrasMessages(
-        messages,
+      const cerebrasMessages = this.convertMessages(
+        sanitizedMessages,
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
@@ -113,9 +119,7 @@ export class CerebrasService extends BaseAIService {
               messages: cerebrasMessages,
               model,
               stream: true,
-              tools: tools as
-                | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[]
-                | undefined,
+              tools: tools,
               tool_choice: tools ? 'auto' : undefined,
             },
             { signal: this.getAbortSignal() },
@@ -250,7 +254,7 @@ export class CerebrasService extends BaseAIService {
    * @returns An array of `CerebrasMessage` objects.
    * @private
    */
-  private convertToCerebrasMessages(
+  protected convertMessages(
     messages: Message[],
     systemPrompt?: string,
   ): CerebrasMessage[] {
@@ -401,27 +405,6 @@ export class CerebrasService extends BaseAIService {
       tool_call_id: message.tool_call_id,
       content: this.processMessageContent(message.content) || '',
     };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Creates a Cerebras-compatible system message object.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    return {
-      role: 'system',
-      content: systemPrompt.trim(),
-    };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Cerebras API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    return this.convertMessage(message);
   }
 
   /**

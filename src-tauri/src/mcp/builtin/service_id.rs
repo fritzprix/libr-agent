@@ -62,6 +62,7 @@ pub enum BuiltinServiceId {
     Browser,
     Bootstrap,
     McpManager,
+    Media,
 }
 
 impl BuiltinServiceId {
@@ -92,6 +93,7 @@ impl BuiltinServiceId {
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
             "mcp_manager" => Some(Self::McpManager),
+            "media" => Some(Self::Media),
             _ => None,
         }
     }
@@ -118,6 +120,7 @@ impl BuiltinServiceId {
             Self::Browser => "browser",
             Self::Bootstrap => "bootstrap",
             Self::McpManager => "mcp_manager",
+            Self::Media => "media",
         }
     }
 }
@@ -151,6 +154,7 @@ mod tests {
             ("browser", BuiltinServiceId::Browser),
             ("bootstrap", BuiltinServiceId::Bootstrap),
             ("mcp_manager", BuiltinServiceId::McpManager),
+            ("media", BuiltinServiceId::Media),
         ];
         for (alias, expected) in &cases {
             assert_eq!(
@@ -238,6 +242,7 @@ mod tests {
             BuiltinServiceId::Browser,
             BuiltinServiceId::Bootstrap,
             BuiltinServiceId::McpManager,
+            BuiltinServiceId::Media,
         ];
         for variant in &variants {
             let json = serde_json::to_string(variant).unwrap();
@@ -265,6 +270,7 @@ mod tests {
             BuiltinServiceId::Browser,
             BuiltinServiceId::Bootstrap,
             BuiltinServiceId::McpManager,
+            BuiltinServiceId::Media,
         ];
         for variant in &variants {
             let name = variant.name();

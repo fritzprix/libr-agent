@@ -67,6 +67,10 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: true,
     },
     BuiltinServiceEntry {
+        canonical: "media",
+        optional: true,
+    },
+    BuiltinServiceEntry {
         canonical: "mcp_manager",
         optional: false,
     },

@@ -191,3 +191,14 @@ export function processMultiModalContent(content: MCPContent[]): Array<{
     }
   });
 }
+
+/**
+ * Extracts image and audio items from a MCPContent array.
+ * Used by provider conversion loops to identify media that requires special handling
+ * since tool result messages can only carry text in the standard API format.
+ * @param content The full content array from a tool result message.
+ * @returns Only the image and audio MCPContent items.
+ */
+export function extractMediaContent(content: MCPContent[]): MCPContent[] {
+  return content.filter((c) => c.type === 'image' || c.type === 'audio');
+}

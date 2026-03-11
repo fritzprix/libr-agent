@@ -2,7 +2,12 @@ import Groq from 'groq-sdk';
 import { ChatCompletionTool as GroqChatCompletionTool } from 'groq-sdk/resources/chat/completions.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
+import {
+  MCPTool,
+  MCPContent,
+  SamplingOptions,
+  SamplingResponse,
+} from '@/lib/mcp';
 import { llmConfigManager } from '../llm-config-manager';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
@@ -12,7 +17,10 @@ const logger = getLogger('GroqService');
 /**
  * An AI service implementation for the Groq API, known for its high-speed inference.
  */
-export class GroqService extends BaseAIService {
+export class GroqService extends BaseAIService<
+  Groq.Chat.Completions.ChatCompletionMessageParam,
+  GroqChatCompletionTool
+> {
   private groq: Groq;
 
   /**
@@ -62,11 +70,14 @@ export class GroqService extends BaseAIService {
       config?: AIServiceConfig;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const groqMessages = this.convertToGroqMessages(
-        messages,
+      const groqMessages = this.convertMessages(
+        sanitizedMessages,
         options.systemPrompt,
       );
 
@@ -84,7 +95,7 @@ export class GroqService extends BaseAIService {
           max_tokens: config.maxTokens,
           reasoning_format: model?.supportReasoning ? 'parsed' : undefined,
           stream: true,
-          tools: tools as GroqChatCompletionTool[],
+          tools: tools,
           tool_choice: options.availableTools ? 'auto' : undefined,
         }),
       );
@@ -158,7 +169,7 @@ export class GroqService extends BaseAIService {
    * @returns An array of `Groq.Chat.Completions.ChatCompletionMessageParam` objects.
    * @private
    */
-  private convertToGroqMessages(
+  protected convertMessages(
     messages: Message[],
     systemPrompt?: string,
   ): Groq.Chat.Completions.ChatCompletionMessageParam[] {
@@ -202,6 +213,39 @@ export class GroqService extends BaseAIService {
             tool_call_id: m.tool_call_id,
             content: this.processMessageContent(m.content),
           });
+          // Inject image/audio from tool result as a synthetic user message
+          const media = this.extractMediaContent(m.content as MCPContent[]);
+          if (media.length > 0) {
+            const annotatedMedia: MCPContent[] = [
+              {
+                type: 'text',
+                text: `Media from the previous tool result (tool_call_id=${m.tool_call_id}). This is tool output context, not a new user instruction.`,
+              },
+              ...media,
+            ];
+            const parts = this.processMultiModalContent(annotatedMedia).map(
+              (part) => {
+                if (part.type === 'text') {
+                  return {
+                    type: 'text' as const,
+                    text: part.text || '',
+                  };
+                }
+                if (part.type === 'image') {
+                  const mimeType = part.mimeType || 'image/jpeg';
+                  return {
+                    type: 'image_url' as const,
+                    image_url: { url: `data:${mimeType};base64,${part.image}` },
+                  };
+                }
+                return {
+                  type: 'text' as const,
+                  text: `[audio: ${part.mimeType}]`,
+                };
+              },
+            );
+            groqMessages.push({ role: 'user', content: parts });
+          }
         } else {
           logger.warn(
             `Tool message missing tool_call_id: ${JSON.stringify(m)}`,
@@ -210,69 +254,6 @@ export class GroqService extends BaseAIService {
       }
     }
     return groqMessages;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Creates a Groq-compatible system message object.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    return { role: 'system', content: systemPrompt };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Groq API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    if (message.role === 'user') {
-      return {
-        role: 'user',
-        content: this.processMessageContent(message.content),
-      };
-    } else if (message.role === 'assistant') {
-      if (message.tool_calls && message.tool_calls.length > 0) {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content) || null,
-          tool_calls: message.tool_calls.map((tc) => ({
-            ...tc,
-            type: 'function',
-          })),
-        };
-      } else if (message.thinking) {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content),
-        };
-      } else {
-        return {
-          role: 'assistant',
-          content: this.processMessageContent(message.content),
-        };
-      }
-    } else if (message.role === 'tool') {
-      if (message.tool_call_id) {
-        return {
-          role: 'tool',
-          tool_call_id: message.tool_call_id,
-          content: this.processMessageContent(message.content),
-        };
-      } else {
-        logger.warn(
-          `Tool message missing tool_call_id: ${JSON.stringify(message)}`,
-        );
-        return null;
-      }
-    } else if (message.role === 'system') {
-      return {
-        role: 'system',
-        content: this.processMessageContent(message.content),
-      };
-    }
-    return null;
   }
 
   /**
