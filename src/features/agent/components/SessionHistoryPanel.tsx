@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useDeferredValue } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,15 +77,20 @@ export function SessionHistoryPanel({
       'Start a conversation to create your first session',
     );
 
+  const deferredSessions = useDeferredValue(sessions);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const isPending =
+    searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
+
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
-      return sessions;
+      return deferredSessions;
     }
 
-    return sessions.filter(
+    return deferredSessions.filter(
       (session) => session.lineageId === selectedLineageId,
     );
-  }, [sessions, selectedLineageId]);
+  }, [deferredSessions, selectedLineageId]);
 
   const filteredAndSortedSessions = useMemo(() => {
     let filtered = baseSessions;
@@ -98,7 +103,7 @@ export function SessionHistoryPanel({
       filtered = filtered.filter((session) => session.status === activeTab);
     }
 
-    filtered = filterSessions(filtered, searchQuery);
+    filtered = filterSessions(filtered, deferredSearchQuery);
 
     return [...filtered].sort((a, b) => {
       const statusDiff =
@@ -106,7 +111,7 @@ export function SessionHistoryPanel({
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [baseSessions, searchQuery, activeTab, showBookmarkedOnly]);
+  }, [baseSessions, deferredSearchQuery, activeTab, showBookmarkedOnly]);
 
   // Eradicating Action-Effect Chain / Derived State
   // Checking existence of selected lineage directly during render.
@@ -129,6 +134,8 @@ export function SessionHistoryPanel({
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list
   //      so the count stays accurate even when a lineage filter is active.
   //      Optimized to O(N) using an adjacency map.
+  //      NOTE: We use the immediate 'sessions' prop instead of 'deferredSessions'
+  //      to ensure delete warnings are always based on the latest data.
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const childrenMap = new Map<string, AgentSession[]>();
@@ -376,7 +383,18 @@ export function SessionHistoryPanel({
         )}
 
         {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6">
+        <div
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6 transition-opacity duration-200',
+            isPending ? 'opacity-50' : 'opacity-100',
+          )}
+          aria-busy={isPending}
+        >
+          {isPending && (
+            <div className="sr-only" aria-live="polite">
+              {t('sessionHistory.filteringStatus', 'Filtering sessions...')}
+            </div>
+          )}
           {isLoading && sessions.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
