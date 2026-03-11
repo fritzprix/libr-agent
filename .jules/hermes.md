@@ -91,3 +91,4 @@
 **Action:**
 
 - **Type Sync:** Replaced `Record<string, unknown>` with strictly typed `RustMessage` and `RustSearchResult` in `src/lib/backend/messages.ts`, ensuring compile-time safety and 1:1 Rust-TS synchronization for message pagination and search.
+## 2025-03-02 - [agent_handle_llm_error] **IPC Fix:** [Direct unstructured safeInvoke in component] **Optimized:** [Extracted to strict type-safe handleLLMError wrapper in agent-commands.ts]

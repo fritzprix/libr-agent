@@ -1,4 +1,5 @@
 import { safeInvoke } from '@/lib/backend/core';
+import { handleLLMError, handleLLMResponse } from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
@@ -270,10 +271,10 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await safeInvoke<AgentResponse>('agent_handle_llm_response', {
+            await handleLLMResponse(
               sessionId,
-              assistantMessage: messageForRust,
-            });
+              messageForRust,
+            );
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
@@ -294,10 +295,10 @@ export function useLLMListener({
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust
-            await safeInvoke<AgentResponse>('agent_handle_llm_error', {
+            await handleLLMError(
               sessionId,
-              error: error instanceof Error ? error.message : String(error),
-            });
+              error instanceof Error ? error.message : String(error),
+            );
           }
         },
       );
