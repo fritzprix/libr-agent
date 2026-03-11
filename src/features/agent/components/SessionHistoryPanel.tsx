@@ -79,7 +79,8 @@ export function SessionHistoryPanel({
 
   const deferredSessions = useDeferredValue(sessions);
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const isPending = searchQuery !== deferredSearchQuery;
+  const isPending =
+    searchQuery !== deferredSearchQuery || sessions !== deferredSessions;
 
   const baseSessions = useMemo(() => {
     if (!selectedLineageId) {
@@ -133,12 +134,14 @@ export function SessionHistoryPanel({
   //      users about cascade deletes.  Uses the full (unfiltered) sessions list
   //      so the count stays accurate even when a lineage filter is active.
   //      Optimized to O(N) using an adjacency map.
+  //      NOTE: We use the immediate 'sessions' prop instead of 'deferredSessions'
+  //      to ensure delete warnings are always based on the latest data.
   const descendantCounts = useMemo(() => {
     const counts = new Map<string, number>();
     const childrenMap = new Map<string, AgentSession[]>();
 
     // Build adjacency list - O(N)
-    for (const session of deferredSessions) {
+    for (const session of sessions) {
       if (session.parentSessionId) {
         const children = childrenMap.get(session.parentSessionId) || [];
         children.push(session);
@@ -158,9 +161,9 @@ export function SessionHistoryPanel({
       return total;
     };
 
-    deferredSessions.forEach((s) => count(s.id));
+    sessions.forEach((s) => count(s.id));
     return counts;
-  }, [deferredSessions]);
+  }, [sessions]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {
@@ -385,7 +388,13 @@ export function SessionHistoryPanel({
             'flex-1 min-h-0 overflow-y-auto pr-2 pb-4 mt-6 transition-opacity duration-200',
             isPending ? 'opacity-50' : 'opacity-100',
           )}
+          aria-busy={isPending}
         >
+          {isPending && (
+            <div className="sr-only" aria-live="polite">
+              {t('sessionHistory.filteringStatus', 'Filtering sessions...')}
+            </div>
+          )}
           {isLoading && sessions.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-muted-foreground">
