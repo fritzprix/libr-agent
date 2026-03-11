@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { safeInvoke } from '../core';
+import { safeInvoke } from './core';
 import {
   callTool,
   hasOAuthToken,
@@ -7,12 +7,12 @@ import {
   revokeOAuthToken,
   sampleFromModel,
   validateToolSchema,
-} from '../mcp-server';
+} from './mcp-server';
 import type { MCPTool, SamplingOptions } from '@/lib/mcp';
 import * as cuid2 from '@paralleldrive/cuid2';
 
 // Mock the safeInvoke function
-vi.mock('../core', () => ({
+vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
 }));
 
