@@ -282,7 +282,18 @@ export function useLLMListener({
             const summary = await service.compact(messages, {
               modelName: model,
             });
-            await handleCompactionResponse(sessionId, requestId, summary);
+            try {
+              await handleCompactionResponse(sessionId, requestId, summary);
+            } catch (backendError) {
+              // Backend rejected the response (e.g. no pending compaction after cancel,
+              // or request-id mismatch). Treat as a no-op — the workflow has already
+              // moved on and there is nothing to complete.
+              logger.info('handleCompactionResponse rejected by backend (stale/cancelled); ignoring', {
+                sessionId,
+                requestId,
+                error: backendError instanceof Error ? backendError.message : String(backendError),
+              });
+            }
           } catch (error) {
             if (isAbortError(error)) {
               logger.info('Compaction request aborted by cancellation', {
@@ -293,11 +304,20 @@ export function useLLMListener({
             }
 
             logger.error('Failed to execute compaction request', error);
-            await handleCompactionError(
-              sessionId,
-              requestId,
-              error instanceof Error ? error.message : String(error),
-            );
+            try {
+              await handleCompactionError(
+                sessionId,
+                requestId,
+                error instanceof Error ? error.message : String(error),
+              );
+            } catch (backendError) {
+              // Backend rejected the error report (stale/cancelled). No-op.
+              logger.info('handleCompactionError rejected by backend (stale/cancelled); ignoring', {
+                sessionId,
+                requestId,
+                error: backendError instanceof Error ? backendError.message : String(backendError),
+              });
+            }
           } finally {
             service.dispose();
           }

@@ -263,20 +263,32 @@ impl AgentSessionManager {
 
         let pending = {
             let mut slot = pending_compaction_lock.write().await;
-            let current = slot.as_ref().ok_or_else(|| {
-                format!("No pending compaction request for session: {}", session_id)
-            })?;
 
+            // If there is no pending compaction, this is most likely a late
+            // response arriving after the workflow was cancelled; treat it
+            // as a no-op to keep the handler idempotent.
+            let Some(current) = slot.as_ref() else {
+                log::info!(
+                    "handle_compaction_response: no pending compaction for session {} (late response after cancel?); ignoring.",
+                    session_id
+                );
+                return Ok(());
+            };
+
+            // Similarly, if the request id does not match the one we are
+            // expecting, ignore the response instead of returning an error.
             if current.request.request_id != request_id {
-                return Err(format!(
-                    "Mismatched compaction request id for session {}: expected {}, got {}",
+                log::warn!(
+                    "handle_compaction_response: request id mismatch for session {} (expected {}, got {}); ignoring.",
                     session_id, current.request.request_id, request_id
-                ));
+                );
+                return Ok(());
             }
 
-            slot.take().ok_or_else(|| {
-                format!("No pending compaction request for session: {}", session_id)
-            })?
+            // At this point we know there was a matching pending compaction,
+            // so `take()` must succeed.
+            slot.take()
+                .expect("pending_compaction disappeared while locked")
         };
 
         let record = CompactContextRecord {
@@ -341,15 +353,23 @@ impl AgentSessionManager {
 
         let disposition = {
             let mut slot = pending_compaction_lock.write().await;
-            let pending = slot.as_ref().ok_or_else(|| {
-                format!("No pending compaction request for session: {}", session_id)
-            })?;
 
+            // Late error after cancel — treat as no-op.
+            let Some(pending) = slot.as_ref() else {
+                log::info!(
+                    "handle_compaction_error: no pending compaction for session {} (late error after cancel?); ignoring.",
+                    session_id
+                );
+                return Ok(());
+            };
+
+            // Request id mismatch — ignore rather than error.
             if pending.request.request_id != request_id {
-                return Err(format!(
-                    "Mismatched compaction error id for session {}: expected {}, got {}",
+                log::warn!(
+                    "handle_compaction_error: request id mismatch for session {} (expected {}, got {}); ignoring.",
                     session_id, pending.request.request_id, request_id
-                ));
+                );
+                return Ok(());
             }
 
             if let Some(retry_pending) = crate::agent::compact::build_compaction_retry(pending) {

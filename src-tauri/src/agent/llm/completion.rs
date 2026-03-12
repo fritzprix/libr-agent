@@ -216,12 +216,15 @@ pub async fn request_llm_completion(
             };
 
             let mut slot = pending_compaction_lock.write().await;
-            *slot = Some(pending.pending);
 
+            // Emit first; only persist pending state after both succeed so a
+            // failed emit doesn't leave a stale slot with nothing to resolve it.
             compact::emit_compaction_state(app_handle, &pending.state)?;
             app_handle
                 .emit("llm:compaction-request", pending.request)
                 .map_err(|e| format!("Failed to emit compaction request: {}", e))?;
+
+            *slot = Some(pending.pending);
 
             log::info!("Emitted LLM compaction request for session: {}", session_id);
         }

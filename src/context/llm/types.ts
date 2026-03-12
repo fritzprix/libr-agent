@@ -1,4 +1,4 @@
-import type { Message } from '@/models/chat';
+import type { Message, RustMessage } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 
 /**
@@ -24,7 +24,7 @@ export function isAbortError(error: unknown): boolean {
  */
 export interface CompletionRequest {
   sessionId: string;
-  messages: Message[];
+  messages: RustMessage[];
   model: string;
   provider: string;
   apiKey?: string;
@@ -46,7 +46,7 @@ export interface CompletionRequest {
 export interface CompactionRequest {
   requestId: string;
   sessionId: string;
-  messages: Message[];
+  messages: RustMessage[];
   model: string;
   provider: string;
 }
