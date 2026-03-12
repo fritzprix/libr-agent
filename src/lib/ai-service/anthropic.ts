@@ -662,6 +662,7 @@ export class AnthropicService extends BaseAIService<
    * if any inconsistencies are found.
    *
    * @param messages The array of messages to convert.
+   * @param systemPrompt The system prompt.
    * @returns An array of `AnthropicMessageParam` objects.
    * @throws An error if an incomplete tool chain is detected.
    */

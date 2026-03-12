@@ -305,7 +305,6 @@ export abstract class BaseAIService<
   /**
    * Merges the provided options with the default service configuration.
    * @param options The options to merge.
-   * @param options.config Optional configuration for the service.
    * @returns The merged `AIServiceConfig`.
    * @protected
    */
