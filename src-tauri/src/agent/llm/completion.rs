@@ -121,31 +121,27 @@ pub async fn request_llm_completion(
         messages.last().map(|m| m.id.as_str()).unwrap_or("none")
     );
 
-    // Get agent config and current compact state.
-    // Clone the compact_context Arc under the map lock, then drop the map guard
-    // before awaiting the inner read lock to avoid nested-lock contention.
-    let (agent_config, model, provider, temperature, max_tokens, compact_context_arc) = {
-        let active = active_sessions.read().await;
-        let session = active
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    // Get agent config and current compact state
+    let active = active_sessions.read().await;
+    let session = active
+        .get(&session_id)
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
 
-        let agent_config = session
-            .metadata
-            .agent_config
-            .as_ref()
-            .ok_or_else(|| "Agent configuration is required but not found".to_string())
-            .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
+    let agent_config = session
+        .metadata
+        .agent_config
+        .as_ref()
+        .ok_or_else(|| "Agent configuration is required but not found".to_string())
+        .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
 
-        let model = session.metadata.model.clone();
-        let provider = session.metadata.provider.clone();
-        let temperature = agent_config.temperature;
-        let max_tokens = agent_config.max_tokens;
-        let compact_context_arc = session.compact_context.clone();
-        (agent_config, model, provider, temperature, max_tokens, compact_context_arc)
-    };
+    let model = session.metadata.model.clone();
+    let provider = session.metadata.provider.clone();
+    let compact_record = session.compact_context.read().await.clone();
 
-    let compact_record = compact_context_arc.read().await.clone();
+    let temperature = agent_config.temperature;
+    let max_tokens = agent_config.max_tokens;
+
+    drop(active);
 
     // Build system prompt split: stable prefix (cacheable) + volatile session context (per-turn).
     // The frontend AI service layer receives both parts and decides the injection strategy via
@@ -207,17 +203,14 @@ pub async fn request_llm_completion(
                 invalidate_stale_compact_record(active_sessions, &session_id).await?;
             }
 
-            // Clone the pending_compaction Arc under the map lock, then drop the map
-            // guard before awaiting the inner write lock to avoid nested-lock contention.
-            let pending_compaction = {
+            {
                 let active = active_sessions.read().await;
-                active
+                let session = active
                     .get(&session_id)
-                    .ok_or_else(|| format!("Session not found: {}", session_id))?
-                    .pending_compaction
-                    .clone()
-            };
-            *pending_compaction.write().await = Some(pending.pending);
+                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
+                let mut slot = session.pending_compaction.write().await;
+                *slot = Some(pending.pending);
+            }
 
             compact::emit_compaction_state(app_handle, &pending.state)?;
             app_handle
@@ -235,17 +228,12 @@ async fn invalidate_stale_compact_record(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) -> Result<(), String> {
-    // Clone the compact_context Arc under the map lock, then drop the map guard
-    // before awaiting the inner write lock to avoid nested-lock contention.
-    let compact_context = {
+    {
         let active = active_sessions.read().await;
-        active
-            .get(session_id)
-            .map(|session| session.compact_context.clone())
-    };
-
-    if let Some(compact_context) = compact_context {
-        *compact_context.write().await = None;
+        if let Some(session) = active.get(session_id) {
+            let mut compact = session.compact_context.write().await;
+            *compact = None;
+        }
     }
 
     let repo = crate::state::get_compact_context_repository();

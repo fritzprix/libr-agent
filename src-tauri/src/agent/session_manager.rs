@@ -253,19 +253,12 @@ impl AgentSessionManager {
         request_id: String,
         summary: String,
     ) -> Result<(), String> {
-        // Clone the pending_compaction Arc while holding the map lock, then drop the
-        // map guard before awaiting the inner write lock to avoid nested-lock contention.
         let pending = {
-            let pending_compaction = {
-                let active = self.active_sessions.read().await;
-                active
-                    .get(&session_id)
-                    .ok_or_else(|| format!("Session not found: {}", session_id))?
-                    .pending_compaction
-                    .clone()
-            };
-
-            let mut slot = pending_compaction.write().await;
+            let active = self.active_sessions.read().await;
+            let session = active
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let mut slot = session.pending_compaction.write().await;
             let current = slot.as_ref().ok_or_else(|| {
                 format!("No pending compaction request for session: {}", session_id)
             })?;
@@ -335,18 +328,11 @@ impl AgentSessionManager {
         }
 
         let disposition = {
-            // Clone the pending_compaction Arc while holding the map lock, then drop the
-            // map guard before awaiting the inner write lock to avoid nested-lock contention.
-            let pending_compaction = {
-                let active = self.active_sessions.read().await;
-                active
-                    .get(&session_id)
-                    .ok_or_else(|| format!("Session not found: {}", session_id))?
-                    .pending_compaction
-                    .clone()
-            };
-
-            let mut slot = pending_compaction.write().await;
+            let active = self.active_sessions.read().await;
+            let session = active
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let mut slot = session.pending_compaction.write().await;
             let pending = slot.as_ref().ok_or_else(|| {
                 format!("No pending compaction request for session: {}", session_id)
             })?;

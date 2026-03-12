@@ -346,19 +346,12 @@ pub async fn terminate_session(
 
     // 4. Cleanup memory state if active
     if session_active {
-        // Extract pending_compaction Arc while holding the write lock, then drop the
-        // map guard before awaiting the inner write lock to avoid write-write deadlock.
-        let pending_compaction = {
-            let mut active = active_sessions.write().await;
-            active.get_mut(&session_id).map(|session| {
-                session.is_running = false;
-                // Reset cancellation token for potential future workflows
-                session.cancellation_token = CancellationToken::new();
-                session.pending_compaction.clone()
-            })
-        };
-        if let Some(pending_compaction) = pending_compaction {
-            *pending_compaction.write().await = None;
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
+            session.is_running = false;
+            *session.pending_compaction.write().await = None;
+            // Reset cancellation token for potential future workflows
+            session.cancellation_token = CancellationToken::new();
         }
     }
 
@@ -408,16 +401,11 @@ pub async fn cancel_workflow(
             "Cancel requested for session {} (deferred to message boundary)",
             session_id
         );
-        // Clone the pending_compaction Arc under the map read lock, then drop the
-        // map guard before awaiting the inner write lock to avoid nested-lock contention.
-        let pending_compaction = {
+        {
             let active = active_sessions.read().await;
-            active
-                .get(&session_id)
-                .map(|session| session.pending_compaction.clone())
-        };
-        if let Some(pending_compaction) = pending_compaction {
-            *pending_compaction.write().await = None;
+            if let Some(session) = active.get(&session_id) {
+                *session.pending_compaction.write().await = None;
+            }
         }
         // Discard any user messages that arrived while the agent was busy and
         // are waiting in the pending_events queue. They must not be processed
@@ -442,24 +430,18 @@ pub async fn cancel_workflow(
     )
     .await?;
 
-    // Extract pending_compaction Arc while holding the write lock, then drop the
-    // map guard before awaiting the inner write lock to avoid write-write deadlock.
-    let pending_compaction = {
-        let mut active = active_sessions.write().await;
-        active.get_mut(&session_id).map(|session| {
-            session.is_running = false;
-            session.cancel_pending.store(false, Ordering::SeqCst);
-            // Cancel the token (do NOT replace with a fresh one yet).
-            // The cancelled state persists until start_workflow explicitly resets it.
-            // This prevents stale in-flight LLM responses carrying tool_calls from
-            // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
-            session.cancellation_token.cancel();
-            session.pending_compaction.clone()
-        })
-    };
-    if let Some(pending_compaction) = pending_compaction {
-        *pending_compaction.write().await = None;
+    let mut active = active_sessions.write().await;
+    if let Some(session) = active.get_mut(&session_id) {
+        session.is_running = false;
+        session.cancel_pending.store(false, Ordering::SeqCst);
+        *session.pending_compaction.write().await = None;
+        // Cancel the token (do NOT replace with a fresh one yet).
+        // The cancelled state persists until start_workflow explicitly resets it.
+        // This prevents stale in-flight LLM responses carrying tool_calls from
+        // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
+        session.cancellation_token.cancel();
     }
+    drop(active);
 
     discard_pending_events(active_sessions, &session_id).await;
 

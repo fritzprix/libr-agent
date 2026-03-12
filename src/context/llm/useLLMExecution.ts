@@ -17,7 +17,7 @@ import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
 import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
-import type { SessionStatus, CompactionStateEvent } from './types';
+import type { SessionStatus } from './types';
 import { isAbortError } from './types';
 import { compactContextService } from '@/lib/compact-context-service';
 import {
@@ -1120,7 +1120,19 @@ export function useLLMExecution({
   }, []);
 
   const applyCompactionState = useCallback(
-    (event: CompactionStateEvent) => {
+    (event: {
+      sessionId: string;
+      status: 'idle' | 'awaiting' | 'compacting';
+      contextUsage?: {
+        totalTokens: number;
+        contextWindow: number;
+        modelMaxContext?: number;
+      };
+      compactedRange?: {
+        fromId: string;
+        toId: string;
+      };
+    }) => {
       setCompactingSet((prev) => {
         const next = new Set(prev);
         if (event.status === 'compacting') {
