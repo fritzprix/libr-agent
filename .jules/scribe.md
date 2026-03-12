@@ -205,5 +205,6 @@
 **Reality:** Updated `@param` to include `{T}` and `{number}` and documented `@template T`.
 
 ## 2026-03-08 - src-tauri/src/[mcp/builtin/utils.rs, mcp/service_proxy_manager/creation.rs, repositories/in_memory_session_repository.rs, utils/json.rs]
+
 **Drift:** Rust documentation generated warnings due to unresolved links (`[validate_path]`, `[call_tool]`) and unclosed HTML tags (`Arc<RwLock>`, `Option<String>`, `Option<T>`).
-**Reality:** Fixed the links to correctly resolve to their respective struct methods and wrapped the HTML-like types in code blocks (` ` ` `) to eliminate rustdoc warnings.
+**Reality:** Fixed the links to correctly resolve to their respective struct methods and wrapped the HTML-like types in backticks (e.g., `Arc<RwLock>`) to eliminate rustdoc warnings.
