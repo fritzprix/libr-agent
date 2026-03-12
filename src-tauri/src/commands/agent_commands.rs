@@ -213,6 +213,44 @@ pub async fn agent_handle_llm_response(
     })
 }
 
+/// Handle compacted summary response from frontend bridge
+#[command]
+pub async fn agent_handle_compaction_response(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    request_id: String,
+    summary: String,
+) -> Result<AgentResponse, String> {
+    manager
+        .handle_compaction_response(session_id.clone(), request_id, summary)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compaction response processed for session: {}", session_id),
+        data: None,
+    })
+}
+
+/// Handle compacted summary failure from frontend bridge
+#[command]
+pub async fn agent_handle_compaction_error(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    request_id: String,
+    error: String,
+) -> Result<AgentResponse, String> {
+    manager
+        .handle_compaction_error(session_id.clone(), request_id, error)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compaction error processed for session: {}", session_id),
+        data: None,
+    })
+}
+
 /// Get session metadata
 #[command]
 pub async fn agent_get_session(

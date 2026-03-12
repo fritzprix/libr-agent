@@ -1,8 +1,10 @@
 use crate::agent::references::build_default_registry;
 use crate::agent::state::AgentSession;
+use crate::agent::{compact, compact::CompletionPreparation};
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
+use crate::repositories::compact_context_repository::CompactContextRepository;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
@@ -12,8 +14,6 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use super::prompt::build_session_system_prompt_split;
-use super::types::CompletionRequest;
-
 /// Request LLM completion from frontend
 ///
 /// Note: session_repo is passed through to handle_llm_response which uses it for status updates
@@ -121,7 +121,7 @@ pub async fn request_llm_completion(
         messages.last().map(|m| m.id.as_str()).unwrap_or("none")
     );
 
-    // Get agent config
+    // Get agent config and current compact state
     let active = active_sessions.read().await;
     let session = active
         .get(&session_id)
@@ -136,6 +136,7 @@ pub async fn request_llm_completion(
 
     let model = session.metadata.model.clone();
     let provider = session.metadata.provider.clone();
+    let compact_record = session.compact_context.read().await.clone();
 
     let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
@@ -167,7 +168,7 @@ pub async fn request_llm_completion(
     // Gemini mapper simple and mapper-agnostic.
     let messages = merge_consecutive_user_messages(messages);
 
-    let request = CompletionRequest {
+    let preparation = compact::prepare_completion_request(compact::PrepareCompletionInput {
         session_id: session_id.clone(),
         messages,
         model,
@@ -177,15 +178,68 @@ pub async fn request_llm_completion(
         temperature,
         max_tokens,
         available_tools,
-    };
+        compact_record,
+    })
+    .await?;
 
-    app_handle
-        .emit("llm:completion-request", request)
-        .map_err(|e| format!("Failed to emit LLM completion request: {}", e))?;
+    match preparation {
+        CompletionPreparation::Ready(prepared) => {
+            if prepared.invalidate_compact_record {
+                invalidate_stale_compact_record(active_sessions, &session_id).await?;
+            }
 
-    log::info!("Emitted LLM completion request for session: {}", session_id);
+            if let Some(state) = &prepared.state {
+                compact::emit_compaction_state(app_handle, state)?;
+            }
+
+            app_handle
+                .emit("llm:completion-request", prepared.request)
+                .map_err(|e| format!("Failed to emit LLM completion request: {}", e))?;
+
+            log::info!("Emitted LLM completion request for session: {}", session_id);
+        }
+        CompletionPreparation::NeedsCompaction(pending) => {
+            if pending.invalidate_compact_record {
+                invalidate_stale_compact_record(active_sessions, &session_id).await?;
+            }
+
+            {
+                let active = active_sessions.read().await;
+                let session = active
+                    .get(&session_id)
+                    .ok_or_else(|| format!("Session not found: {}", session_id))?;
+                let mut slot = session.pending_compaction.write().await;
+                *slot = Some(pending.pending);
+            }
+
+            compact::emit_compaction_state(app_handle, &pending.state)?;
+            app_handle
+                .emit("llm:compaction-request", pending.request)
+                .map_err(|e| format!("Failed to emit compaction request: {}", e))?;
+
+            log::info!("Emitted LLM compaction request for session: {}", session_id);
+        }
+    }
 
     Ok(())
+}
+
+async fn invalidate_stale_compact_record(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    session_id: &str,
+) -> Result<(), String> {
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            let mut compact = session.compact_context.write().await;
+            *compact = None;
+        }
+    }
+
+    let repo = crate::state::get_compact_context_repository();
+    repo.delete_by_session_id(session_id)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Resolve `@type:arg` references in user messages.

@@ -53,6 +53,7 @@ export function useLLMExecution({
   setStreamingMessages,
   updateSessionStatus,
 }: UseLLMExecutionProps) {
+  const streamingMessagesRef = useRef(streamingMessages);
   // Track active service instances for cleanup
   const activeServicesRef = useRef<Map<string, IAIService>>(new Map());
   // Track abort controllers for cancellation
@@ -89,6 +90,10 @@ export function useLLMExecution({
   >(new Map());
 
   // Clean up on unmount
+  useEffect(() => {
+    streamingMessagesRef.current = streamingMessages;
+  }, [streamingMessages]);
+
   useEffect(() => {
     unmountedRef.current = false;
     return () => {
@@ -127,6 +132,7 @@ export function useLLMExecution({
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
+      backendOwnedCompaction?: boolean,
     ): Promise<Message> => {
       logger.info('🚀 Executing completion request', {
         sessionId,
@@ -166,15 +172,19 @@ export function useLLMExecution({
       activeServicesRef.current.set(sessionId, service);
 
       // Get existing streaming message (already set by event listener)
-      const existingStreamingMessage = streamingMessages.get(sessionId);
-      const streamingMessage: Partial<Message> = existingStreamingMessage || {
-        id: `msg_${Date.now()}`,
-        sessionId,
-        threadId: sessionId,
-        role: 'assistant',
-        content: [],
-        createdAt: new Date(),
-      };
+      const existingStreamingMessage =
+        streamingMessagesRef.current.get(sessionId);
+      const streamingMessage: Partial<Message> =
+        existingStreamingMessage?.isStreaming === true
+          ? existingStreamingMessage
+          : {
+              id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              sessionId,
+              threadId: sessionId,
+              role: 'assistant',
+              content: [],
+              createdAt: new Date(),
+            };
 
       try {
         // Build config
@@ -239,7 +249,10 @@ export function useLLMExecution({
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
-        if ((contextStrategy ?? 'window') === 'compact') {
+        if (
+          (contextStrategy ?? 'window') === 'compact' &&
+          !backendOwnedCompaction
+        ) {
           // ── Compact strategy (SP17) ─────────────────────────────────────────
 
           // 1. Initial Load from DB if not in cache (Session Resume)
@@ -559,7 +572,11 @@ export function useLLMExecution({
             {
               systemPrompt: finalSystemPrompt,
               toolsJson,
-              maxMessages: windowSize,
+              maxMessages:
+                (contextStrategy ?? 'window') === 'compact' &&
+                backendOwnedCompaction
+                  ? undefined
+                  : windowSize,
               maxToolCallsPerMessage:
                 provider === AIServiceProvider.Gemini
                   ? 100
@@ -1048,7 +1065,7 @@ export function useLLMExecution({
         throw error;
       }
     },
-    [updateSessionStatus, settingsRef, streamingMessages, setStreamingMessages],
+    [updateSessionStatus, settingsRef, setStreamingMessages],
   );
 
   const cancelCompletionRequest = useCallback((sessionId: string) => {
@@ -1102,8 +1119,66 @@ export function useLLMExecution({
     setCompactedRangeMap(new Map());
   }, []);
 
+  const applyCompactionState = useCallback(
+    (event: {
+      sessionId: string;
+      status: 'idle' | 'awaiting' | 'compacting';
+      contextUsage?: {
+        totalTokens: number;
+        contextWindow: number;
+        modelMaxContext?: number;
+      };
+      compactedRange?: {
+        fromId: string;
+        toId: string;
+      };
+    }) => {
+      setCompactingSet((prev) => {
+        const next = new Set(prev);
+        if (event.status === 'compacting') {
+          next.add(event.sessionId);
+        } else {
+          next.delete(event.sessionId);
+        }
+        return next;
+      });
+
+      setAwaitingSet((prev) => {
+        const next = new Set(prev);
+        if (event.status === 'awaiting') {
+          next.add(event.sessionId);
+        } else {
+          next.delete(event.sessionId);
+        }
+        return next;
+      });
+
+      setContextUsageMap((prev) => {
+        const next = new Map(prev);
+        if (event.contextUsage) {
+          next.set(event.sessionId, event.contextUsage);
+        } else {
+          next.delete(event.sessionId);
+        }
+        return next;
+      });
+
+      setCompactedRangeMap((prev) => {
+        const next = new Map(prev);
+        if (event.compactedRange) {
+          next.set(event.sessionId, event.compactedRange);
+        } else {
+          next.delete(event.sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   return {
     executeCompletionRequest,
+    applyCompactionState,
     cancelCompletionRequest,
     clearSessionState,
     clearAllCompactState,

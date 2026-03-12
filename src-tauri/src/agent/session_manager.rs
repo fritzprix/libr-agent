@@ -9,7 +9,7 @@ use crate::repositories::{
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 /// Manages agent sessions and their workflows
@@ -244,6 +244,181 @@ impl AgentSessionManager {
             assistant_message,
         )
         .await
+    }
+
+    /// Handle a backend-owned compaction response from the frontend LLM bridge.
+    pub async fn handle_compaction_response(
+        &self,
+        session_id: String,
+        request_id: String,
+        summary: String,
+    ) -> Result<(), String> {
+        let pending = {
+            let active = self.active_sessions.read().await;
+            let session = active
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let mut slot = session.pending_compaction.write().await;
+            let current = slot.as_ref().ok_or_else(|| {
+                format!("No pending compaction request for session: {}", session_id)
+            })?;
+
+            if current.request.request_id != request_id {
+                return Err(format!(
+                    "Mismatched compaction request id for session {}: expected {}, got {}",
+                    session_id, current.request.request_id, request_id
+                ));
+            }
+
+            slot.take().ok_or_else(|| {
+                format!("No pending compaction request for session: {}", session_id)
+            })?
+        };
+
+        let record = CompactContextRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.clone(),
+            from_id: pending.from_id.clone(),
+            to_id: pending.to_id.clone(),
+            summary,
+            created_at: chrono::Utc::now().timestamp_millis(),
+        };
+
+        self.save_compact_context(&session_id, record.clone())
+            .await?;
+
+        crate::agent::compact::emit_compaction_state(
+            &self.app_handle,
+            &crate::agent::compact::CompactionStateEvent {
+                session_id: session_id.clone(),
+                status: "idle".to_string(),
+                context_usage: None,
+                compacted_range: Some(crate::agent::compact::CompactedRange {
+                    from_id: record.from_id,
+                    to_id: record.to_id,
+                }),
+            },
+        )?;
+
+        crate::agent::llm::request_llm_completion(
+            &self.session_repo,
+            &self.active_sessions,
+            &self.proxy_manager,
+            &self.app_handle,
+            session_id,
+        )
+        .await
+    }
+
+    /// Handle a backend-owned compaction failure from the frontend LLM bridge.
+    pub async fn handle_compaction_error(
+        &self,
+        session_id: String,
+        request_id: String,
+        error: String,
+    ) -> Result<(), String> {
+        enum FailureDisposition {
+            Retry {
+                pending: Box<crate::agent::compact::PendingCompactionRequest>,
+            },
+            Exhausted {
+                compacted_range: Option<crate::agent::compact::CompactedRange>,
+                attempts: u8,
+            },
+        }
+
+        let disposition = {
+            let active = self.active_sessions.read().await;
+            let session = active
+                .get(&session_id)
+                .ok_or_else(|| format!("Session not found: {}", session_id))?;
+            let mut slot = session.pending_compaction.write().await;
+            let pending = slot.as_ref().ok_or_else(|| {
+                format!("No pending compaction request for session: {}", session_id)
+            })?;
+
+            if pending.request.request_id != request_id {
+                return Err(format!(
+                    "Mismatched compaction error id for session {}: expected {}, got {}",
+                    session_id, pending.request.request_id, request_id
+                ));
+            }
+
+            if let Some(retry_pending) = crate::agent::compact::build_compaction_retry(pending) {
+                *slot = Some(retry_pending.clone());
+                FailureDisposition::Retry {
+                    pending: Box::new(retry_pending),
+                }
+            } else {
+                let compacted_range = pending.compacted_range.clone();
+                let attempts = pending.retry_count + 1;
+                *slot = None;
+                FailureDisposition::Exhausted {
+                    compacted_range,
+                    attempts,
+                }
+            }
+        };
+
+        match disposition {
+            FailureDisposition::Retry { pending } => {
+                let retry_attempt = pending.retry_count;
+                let retry_request_id = pending.request.request_id.clone();
+                log::warn!(
+                    "Compaction failed for session {} (request {}, retry {}/{}): {}",
+                    session_id,
+                    request_id,
+                    retry_attempt,
+                    crate::agent::compact::MAX_COMPACTION_RETRIES,
+                    error
+                );
+
+                crate::agent::compact::emit_compaction_state(
+                    &self.app_handle,
+                    &crate::agent::compact::build_awaiting_compaction_state(&session_id, &pending),
+                )?;
+                self.app_handle
+                    .emit("llm:compaction-request", pending.request)
+                    .map_err(|emit_error| {
+                        format!(
+                            "Failed to emit compaction retry request {}: {}",
+                            retry_request_id, emit_error
+                        )
+                    })?;
+
+                Ok(())
+            }
+            FailureDisposition::Exhausted {
+                compacted_range,
+                attempts,
+            } => {
+                log::error!(
+                    "Compaction failed for session {} after {} attempt(s): {}",
+                    session_id,
+                    attempts,
+                    error
+                );
+
+                crate::agent::compact::emit_compaction_state(
+                    &self.app_handle,
+                    &crate::agent::compact::CompactionStateEvent {
+                        session_id: session_id.clone(),
+                        status: "idle".to_string(),
+                        context_usage: None,
+                        compacted_range,
+                    },
+                )?;
+
+                crate::agent::llm::handle_llm_error(
+                    &self.session_repo,
+                    &self.active_sessions,
+                    &self.app_handle,
+                    session_id,
+                    format!("Compaction failed after {} attempt(s): {}", attempts, error),
+                )
+                .await
+            }
+        }
     }
 
     /// Get session metadata

@@ -40,6 +40,29 @@ export interface CompletionRequest {
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
+  backendOwnedCompaction?: boolean;
+}
+
+export interface CompactionRequest {
+  requestId: string;
+  sessionId: string;
+  messages: Message[];
+  model: string;
+  provider: string;
+}
+
+export interface CompactionStateEvent {
+  sessionId: string;
+  status: 'idle' | 'awaiting' | 'compacting';
+  contextUsage?: {
+    totalTokens: number;
+    contextWindow: number;
+    modelMaxContext?: number;
+  };
+  compactedRange?: {
+    fromId: string;
+    toId: string;
+  };
 }
 
 /**

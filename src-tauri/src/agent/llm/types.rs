@@ -1,6 +1,6 @@
 use crate::models::chat::Message;
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionRequest {
     pub session_id: String,
@@ -18,4 +18,6 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
+    #[serde(default)]
+    pub backend_owned_compaction: bool,
 }

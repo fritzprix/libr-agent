@@ -22,6 +22,8 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@/lib/backend/agent-commands', () => ({
   handleLLMError: vi.fn(),
   handleLLMResponse: vi.fn(),
+  handleCompactionResponse: vi.fn(),
+  handleCompactionError: vi.fn(),
 }));
 
 // Mock AIServiceFactory
@@ -148,6 +150,46 @@ describe('LLMServiceContext', () => {
 
       await waitFor(() => {
         expect(mockUnlisten).toHaveBeenCalled();
+      });
+    });
+
+    it('should not re-register LLM listeners during streaming state updates', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(listen).toHaveBeenCalledTimes(3);
+      });
+
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ content: 'Hello' });
+        yield JSON.stringify({ content: ' world' });
+      });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      await act(async () => {
+        await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      await waitFor(() => {
+        expect(listen).toHaveBeenCalledTimes(3);
       });
     });
   });
@@ -350,6 +392,60 @@ describe('LLMServiceContext', () => {
       expect(resultMessage.content).toEqual([
         { type: 'thinking', thinking: 'Let me think...' },
         { type: 'text', text: 'Answer' },
+      ]);
+    });
+
+    it('should not reuse a completed assistant message id for the next request', async () => {
+      const { result } = renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      mockStreamChat
+        .mockImplementationOnce(async function* () {
+          yield JSON.stringify({ content: 'First answer' });
+        })
+        .mockImplementationOnce(async function* () {
+          yield JSON.stringify({ content: 'Second answer' });
+        });
+
+      const messages: Message[] = [
+        {
+          id: 'msg1',
+          sessionId: 'test-session',
+          threadId: 'test-session',
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello' }],
+          createdAt: new Date(),
+        },
+      ];
+
+      let firstMessage!: Message;
+      let secondMessage!: Message;
+
+      await act(async () => {
+        firstMessage = await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+
+        secondMessage = await result.current.executeCompletionRequest(
+          'test-session',
+          messages,
+          'gpt-4',
+          'openai',
+          'test-key',
+        );
+      });
+
+      expect(firstMessage.id).not.toBe(secondMessage.id);
+      expect(firstMessage.content).toEqual([
+        { type: 'text', text: 'First answer' },
+      ]);
+      expect(secondMessage.content).toEqual([
+        { type: 'text', text: 'Second answer' },
       ]);
     });
 
@@ -681,4 +777,3 @@ describe('LLMServiceContext', () => {
     });
   });
 });
-

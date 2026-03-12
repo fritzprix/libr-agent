@@ -32,6 +32,30 @@ export async function handleLLMError(
   });
 }
 
+export async function handleCompactionResponse(
+  sessionId: string,
+  requestId: string,
+  summary: string,
+): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_compaction_response', {
+    sessionId,
+    requestId,
+    summary,
+  });
+}
+
+export async function handleCompactionError(
+  sessionId: string,
+  requestId: string,
+  error: string,
+): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_compaction_error', {
+    sessionId,
+    requestId,
+    error,
+  });
+}
+
 /**
  * Trigger a tool execution as if it was a User request (but with tool_calls)
  * This allows direct execution of tools from UI actions, recorded as User activity.

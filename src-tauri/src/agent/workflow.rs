@@ -349,6 +349,7 @@ pub async fn terminate_session(
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
             session.is_running = false;
+            *session.pending_compaction.write().await = None;
             // Reset cancellation token for potential future workflows
             session.cancellation_token = CancellationToken::new();
         }
@@ -400,6 +401,12 @@ pub async fn cancel_workflow(
             "Cancel requested for session {} (deferred to message boundary)",
             session_id
         );
+        {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                *session.pending_compaction.write().await = None;
+            }
+        }
         // Discard any user messages that arrived while the agent was busy and
         // are waiting in the pending_events queue. They must not be processed
         // after the agent stops, regardless of when the active tool batch
@@ -427,6 +434,7 @@ pub async fn cancel_workflow(
     if let Some(session) = active.get_mut(&session_id) {
         session.is_running = false;
         session.cancel_pending.store(false, Ordering::SeqCst);
+        *session.pending_compaction.write().await = None;
         // Cancel the token (do NOT replace with a fresh one yet).
         // The cancelled state persists until start_workflow explicitly resets it.
         // This prevents stale in-flight LLM responses carrying tool_calls from

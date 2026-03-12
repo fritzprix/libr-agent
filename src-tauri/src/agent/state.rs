@@ -1,3 +1,4 @@
+use crate::agent::compact::PendingCompactionRequest;
 use crate::agent::context::registry::ContextRegistry;
 use crate::models::chat::Message;
 use crate::repositories::{CompactContextRecord, SessionMetadata};
@@ -126,6 +127,9 @@ pub struct AgentSession {
 
     /// Compact context for the session (SP17)
     pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
+
+    /// Pending backend-owned compaction request waiting for the frontend LLM bridge.
+    pub pending_compaction: Arc<RwLock<Option<PendingCompactionRequest>>>,
 
     /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
     /// instructions, session context). These sections are immutable within a session

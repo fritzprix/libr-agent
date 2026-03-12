@@ -1,10 +1,13 @@
 import {
+  handleCompactionError,
+  handleCompactionResponse,
   handleLLMError,
   handleLLMResponse,
 } from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
+import { AIServiceFactory } from '@/lib/ai-service';
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
@@ -12,7 +15,11 @@ import { AIServiceProvider } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
-import type { CompletionRequest } from './types';
+import type {
+  CompactionRequest,
+  CompactionStateEvent,
+  CompletionRequest,
+} from './types';
 import { isAbortError } from './types';
 
 const logger = getLogger('useLLMListener');
@@ -30,7 +37,9 @@ interface UseLLMListenerProps {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
+    backendOwnedCompaction?: boolean,
   ) => Promise<Message>;
+  applyCompactionState: (event: CompactionStateEvent) => void;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
@@ -39,30 +48,28 @@ interface UseLLMListenerProps {
 export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
+  applyCompactionState,
   setStreamingMessages,
 }: UseLLMListenerProps) {
-  // Track listener setup to prevent duplicate registration in React Strict Mode
-  const listenerSetupRef = useRef(false);
+  const executeCompletionRequestRef = useRef(executeCompletionRequest);
+  const applyCompactionStateRef = useRef(applyCompactionState);
 
   useEffect(() => {
-    // Prevent duplicate listener registration in React Strict Mode
-    if (listenerSetupRef.current) {
-      logger.info(
-        '⚠️ LLM listener already set up, skipping duplicate registration',
-      );
-      return;
-    }
+    executeCompletionRequestRef.current = executeCompletionRequest;
+  }, [executeCompletionRequest]);
 
-    listenerSetupRef.current = true;
-    logger.info('🎧 Initializing LLM completion request listener');
+  useEffect(() => {
+    applyCompactionStateRef.current = applyCompactionState;
+  }, [applyCompactionState]);
+
+  useEffect(() => {
+    logger.info('🎧 Initializing LLM bridge listeners');
 
     let isMounted = true;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
 
-    const setupListener = async () => {
-      logger.info('Setting up LLM completion request listener');
-
-      const unlistenFn = await listen<CompletionRequest>(
+    const setupListeners = async () => {
+      const unlistenCompletion = await listen<CompletionRequest>(
         'llm:completion-request',
         async (event) => {
           const {
@@ -75,12 +82,10 @@ export function useLLMListener({
             temperature,
             maxTokens,
             availableTools,
+            backendOwnedCompaction,
           } = event.payload;
 
-          // Normalize messages from Rust (camelCase -> snake_case)
           const messages = rawMessages.map(normalizeRustMessage);
-
-          // Always get API key from Settings, ignore any apiKey from Rust backend
           const finalApiKey =
             settingsRef.current.serviceConfigs?.[provider as AIServiceProvider]
               ?.apiKey || '';
@@ -94,23 +99,8 @@ export function useLLMListener({
             eventId: event.id,
             firstMessageId: messages[0]?.id ?? 'none',
             lastMessageId: messages[messages.length - 1]?.id ?? 'none',
-            messageRoles: messages.map((m) => m.role).join(','),
           });
 
-          logger.debug('📋 Full message list received from Rust', {
-            sessionId,
-            messages: messages.map((m, idx) => ({
-              index: idx,
-              id: m.id,
-              role: m.role,
-              hasContent: !!m.content && m.content.length > 0,
-              hasToolCalls: !!m.tool_calls,
-              toolCallId: m.tool_call_id,
-            })),
-          });
-
-          // ✅ Set streaming message IMMEDIATELY when request is received
-          // This provides instant visual feedback (~50-200ms earlier than setting it inside executeCompletionRequest)
           setStreamingMessages((prev) => {
             const next = new Map(prev);
             next.set(sessionId, {
@@ -126,9 +116,6 @@ export function useLLMListener({
           });
 
           try {
-            // SP4: Execute with retry (exponential backoff + jitter) and optional fallback model.
-            // Malformed/empty responses come as errors from executeCompletionRequest,
-            // despite the LLM API returning HTTP 200 — this recovers from those silently.
             const SP4_MAX_RETRIES = 3;
             const SP4_BASE_DELAY_MS = 500;
 
@@ -139,7 +126,6 @@ export function useLLMListener({
             ): Promise<Message> => {
               for (let attempt = 0; attempt <= SP4_MAX_RETRIES; attempt++) {
                 if (attempt > 0) {
-                  // Exponential backoff with ±50% jitter to spread retries
                   const rawDelay = Math.min(
                     SP4_BASE_DELAY_MS * Math.pow(2, attempt - 1),
                     30000,
@@ -151,7 +137,6 @@ export function useLLMListener({
                   );
                   await sleep(jitteredDelay);
 
-                  // Reset streaming indicator so UI shows a fresh spinner on retry
                   setStreamingMessages((prev) => {
                     const next = new Map(prev);
                     next.set(sessionId, {
@@ -168,7 +153,7 @@ export function useLLMListener({
                 }
 
                 try {
-                  return await executeCompletionRequest(
+                  return await executeCompletionRequestRef.current(
                     sessionId,
                     messages,
                     targetModel,
@@ -179,9 +164,9 @@ export function useLLMListener({
                     temperature,
                     maxTokens,
                     availableTools,
+                    backendOwnedCompaction,
                   );
                 } catch (attemptError) {
-                  // Abort errors must never be retried — propagate immediately
                   if (isAbortError(attemptError)) {
                     throw attemptError;
                   }
@@ -194,95 +179,66 @@ export function useLLMListener({
                   );
                 }
               }
-              // Unreachable, but satisfies TS
+
               throw new Error('SP4: retry loop exhausted');
             };
 
-            // First try primary model with retries
             let result: Message;
             try {
               result = await attemptCompletion(model, provider, finalApiKey);
             } catch (primaryError) {
               if (isAbortError(primaryError)) {
-                throw primaryError; // Let the outer catch handle abort
+                throw primaryError;
               }
 
-              // Primary model exhausted — try configured fallback model
               const fallbackModel = settingsRef.current.fallbackModel;
-              if (fallbackModel) {
-                const fallbackApiKey =
-                  settingsRef.current.serviceConfigs?.[
-                    fallbackModel.provider as AIServiceProvider
-                  ]?.apiKey ?? '';
-
-                logger.warn(
-                  `SP4: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,
-                  { sessionId },
-                );
-
-                // Reset streaming indicator for fallback attempt
-                setStreamingMessages((prev) => {
-                  const next = new Map(prev);
-                  next.set(sessionId, {
-                    id: `msg_${Date.now()}`,
-                    sessionId,
-                    threadId: sessionId,
-                    role: 'assistant',
-                    content: [],
-                    isStreaming: true,
-                    createdAt: new Date(),
-                  });
-                  return next;
-                });
-
-                // One shot with fallback — no further retries
-                result = await executeCompletionRequest(
-                  sessionId,
-                  messages,
-                  fallbackModel.model,
-                  fallbackModel.provider,
-                  fallbackApiKey,
-                  systemPrompt,
-                  sessionContext,
-                  temperature,
-                  maxTokens,
-                  availableTools,
-                );
-              } else {
-                throw primaryError; // No fallback, propagate to outer catch
+              if (!fallbackModel) {
+                throw primaryError;
               }
+
+              const fallbackApiKey =
+                settingsRef.current.serviceConfigs?.[
+                  fallbackModel.provider as AIServiceProvider
+                ]?.apiKey ?? '';
+
+              logger.warn(
+                `SP4: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,
+                { sessionId },
+              );
+
+              setStreamingMessages((prev) => {
+                const next = new Map(prev);
+                next.set(sessionId, {
+                  id: `msg_${Date.now()}`,
+                  sessionId,
+                  threadId: sessionId,
+                  role: 'assistant',
+                  content: [],
+                  isStreaming: true,
+                  createdAt: new Date(),
+                });
+                return next;
+              });
+
+              result = await executeCompletionRequestRef.current(
+                sessionId,
+                messages,
+                fallbackModel.model,
+                fallbackModel.provider,
+                fallbackApiKey,
+                systemPrompt,
+                sessionContext,
+                temperature,
+                maxTokens,
+                availableTools,
+                backendOwnedCompaction,
+              );
             }
 
-            // Send result back to Rust
-            logger.info('Sending LLM response to Rust', {
-              sessionId,
-              hasToolCalls: !!result.tool_calls,
-              toolCallCount: result.tool_calls?.length ?? 0,
-              toolCalls: result.tool_calls,
-            });
-
-            // Convert to Rust Message format with explicit field mapping
             const messageForRust = messageToRustMessage(result);
-
-            logger.info('Message prepared for Rust', {
-              sessionId,
-              hasToolCalls: !!messageForRust.toolCalls,
-              toolCallCount: messageForRust.toolCalls?.length ?? 0,
-              createdAtType: typeof messageForRust.createdAt,
-              fullMessage: messageForRust,
-            });
-
             await handleLLMResponse(sessionId, messageForRust);
-
-            logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
-            // If the request was intentionally aborted (user cancelled), do NOT report
-            // this as an error to Rust - the cancel_workflow command already handles
-            // state transition to Idle. Reporting it would cause a race where Rust
-            // transitions: Idle (cancel) → Error (stale abort) in wrong order.
-            const isAborted = isAbortError(error);
-
-            if (isAborted) {
+            if (isAbortError(error)) {
               logger.info(
                 'LLM request aborted due to cancellation, skipping error report to Rust',
                 { sessionId },
@@ -291,8 +247,6 @@ export function useLLMListener({
             }
 
             logger.error('Failed to execute LLM completion', error);
-
-            // Report error to Rust
             await handleLLMError(
               sessionId,
               error instanceof Error ? error.message : String(error),
@@ -301,27 +255,83 @@ export function useLLMListener({
         },
       );
 
+      const unlistenCompaction = await listen<CompactionRequest>(
+        'llm:compaction-request',
+        async (event) => {
+          const {
+            requestId,
+            sessionId,
+            messages: rawMessages,
+            model,
+            provider,
+          } = event.payload;
+          const messages = rawMessages.map(normalizeRustMessage);
+          const apiKey =
+            settingsRef.current.serviceConfigs?.[provider as AIServiceProvider]
+              ?.apiKey || '';
+
+          const service = AIServiceFactory.getService(
+            provider as AIServiceProvider,
+            apiKey,
+            settingsRef.current.serviceConfigs?.[
+              provider as AIServiceProvider
+            ] || {},
+          );
+
+          try {
+            const summary = await service.compact(messages, {
+              modelName: model,
+            });
+            await handleCompactionResponse(sessionId, requestId, summary);
+          } catch (error) {
+            if (isAbortError(error)) {
+              logger.info('Compaction request aborted by cancellation', {
+                sessionId,
+                requestId,
+              });
+              return;
+            }
+
+            logger.error('Failed to execute compaction request', error);
+            await handleCompactionError(
+              sessionId,
+              requestId,
+              error instanceof Error ? error.message : String(error),
+            );
+          } finally {
+            service.dispose();
+          }
+        },
+      );
+
+      const unlistenCompactionState = await listen<CompactionStateEvent>(
+        'llm:compaction-state',
+        (event) => {
+          applyCompactionStateRef.current(event.payload);
+        },
+      );
+
       if (!isMounted) {
-        logger.info(
-          'LLM listener setup completed after unmount, cleaning up immediately',
-        );
-        unlistenFn();
+        unlistenCompletion();
+        unlistenCompaction();
+        unlistenCompactionState();
       } else {
-        unlisten = unlistenFn;
-        logger.info('LLM completion request listener registered');
+        unlisteners.push(
+          unlistenCompletion,
+          unlistenCompaction,
+          unlistenCompactionState,
+        );
+        logger.info('LLM bridge listeners registered');
       }
     };
 
-    setupListener();
+    setupListeners();
 
     return () => {
       isMounted = false;
-      if (unlisten) {
+      for (const unlisten of unlisteners) {
         unlisten();
-        logger.info('LLM completion request listener cleaned up');
       }
-      // Reset listener setup ref on unmount
-      listenerSetupRef.current = false;
     };
-  }, []); // ⚠️ CRITICAL: Empty dependency array to prevent re-registering listener
+  }, [settingsRef, setStreamingMessages]);
 }

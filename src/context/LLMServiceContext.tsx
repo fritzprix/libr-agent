@@ -105,6 +105,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   // Use extracted hooks
   const {
     executeCompletionRequest,
+    applyCompactionState,
     cancelCompletionRequest,
     isCompacting,
     isAwaitingCompact,
@@ -137,6 +138,7 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
   useLLMListener({
     settingsRef,
     executeCompletionRequest,
+    applyCompactionState,
     setStreamingMessages,
   });
 

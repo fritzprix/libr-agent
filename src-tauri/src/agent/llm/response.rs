@@ -1,9 +1,11 @@
 use crate::agent::state::{AgentSession, MAX_CACHED_MESSAGES};
 use crate::agent::types::{ToolCall, ToolCallFunction};
+use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
 use crate::repositories::{SessionRepository, SessionStatus};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -13,6 +15,55 @@ use tokio::sync::RwLock;
 use super::circuit_breaker;
 use super::completion::request_llm_completion;
 use super::tool_execution;
+
+fn has_nonempty_content(content: &[MCPContent]) -> bool {
+    content.iter().any(|item| match item {
+        MCPContent::Text { text, .. } => !text.trim().is_empty(),
+        _ => true,
+    })
+}
+
+fn has_completion_usage(usage: Option<&Value>) -> bool {
+    fn parse_positive_number(value: &Value) -> Option<bool> {
+        match value {
+            Value::Number(number) => number
+                .as_u64()
+                .map(|count| count > 0)
+                .or_else(|| number.as_i64().map(|count| count > 0))
+                .or_else(|| number.as_f64().map(|count| count > 0.0)),
+            Value::String(text) => text.parse::<f64>().ok().map(|count| count > 0.0),
+            _ => None,
+        }
+    }
+
+    usage
+        .and_then(|value| value.as_object())
+        .and_then(|usage_map| {
+            usage_map
+                .get("completionTokens")
+                .or_else(|| usage_map.get("completion_tokens"))
+        })
+        .and_then(parse_positive_number)
+        .unwrap_or(false)
+}
+
+pub fn is_effectively_empty_llm_response(message: &Message) -> bool {
+    let has_tool_calls = message
+        .tool_calls
+        .as_ref()
+        .map(|calls| !calls.is_empty())
+        .unwrap_or(false);
+    let has_thinking = message
+        .thinking
+        .as_ref()
+        .map(|thinking| !thinking.is_empty())
+        .unwrap_or(false);
+
+    !has_tool_calls
+        && !has_nonempty_content(&message.content)
+        && !has_thinking
+        && !has_completion_usage(message.usage.as_ref())
+}
 
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
@@ -223,20 +274,17 @@ pub async fn handle_llm_response(
     let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
-        // Check if content is also empty (abnormal empty response)
-        // Note: A message with tool calls but no content is VALID and normal
-        let has_content = !assistant_message.content.is_empty();
-        // ✅ FIX: Also check thinking field to allow thinking-only messages (Spec requirement)
+        let has_content = has_nonempty_content(&assistant_message.content);
         let has_thinking = assistant_message
             .thinking
             .as_ref()
             .map(|t| !t.is_empty())
             .unwrap_or(false);
+        let has_completion_usage = has_completion_usage(assistant_message.usage.as_ref());
 
-        if !has_content && !has_thinking {
-            // content, tool_calls, AND thinking are all empty - this is an error
+        if !has_content && !has_thinking && !has_completion_usage {
             log::warn!(
-                "⚠️  Empty LLM response detected for session {}: no content, tool calls, or thinking. This may indicate a model inference issue.",
+                "⚠️  Empty LLM response detected for session {}: no content, tool calls, thinking, or completion usage. This may indicate a model inference issue.",
                 session_id
             );
             // Set status to error
@@ -251,7 +299,7 @@ pub async fn handle_llm_response(
             // Emit workflow error event with specific message
             let error_event = crate::agent::events::AgentEvent::WorkflowError {
                 session_id: session_id.clone(),
-                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
+                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content, tool calls, thinking, or completion usage. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
             };
             crate::agent::events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;

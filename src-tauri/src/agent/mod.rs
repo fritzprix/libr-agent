@@ -1,3 +1,4 @@
+pub mod compact;
 pub mod concurrency;
 pub mod config;
 pub mod context;

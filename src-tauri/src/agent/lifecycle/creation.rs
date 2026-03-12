@@ -225,6 +225,7 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
                 pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 context_registry,
                 compact_context: Arc::new(RwLock::new(compact_context_record)),
+                pending_compaction: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
         );
