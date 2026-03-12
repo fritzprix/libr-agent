@@ -346,12 +346,20 @@ pub async fn terminate_session(
 
     // 4. Cleanup memory state if active
     if session_active {
-        let mut active = active_sessions.write().await;
-        if let Some(session) = active.get_mut(&session_id) {
-            session.is_running = false;
-            *session.pending_compaction.write().await = None;
-            // Reset cancellation token for potential future workflows
-            session.cancellation_token = CancellationToken::new();
+        let pending_compaction_lock = {
+            let mut active = active_sessions.write().await;
+            if let Some(session) = active.get_mut(&session_id) {
+                session.is_running = false;
+                // Reset cancellation token for potential future workflows
+                session.cancellation_token = CancellationToken::new();
+                Some(Arc::clone(&session.pending_compaction))
+            } else {
+                None
+            }
+        };
+
+        if let Some(pending_compaction) = pending_compaction_lock {
+            *pending_compaction.write().await = None;
         }
     }
 
@@ -401,11 +409,14 @@ pub async fn cancel_workflow(
             "Cancel requested for session {} (deferred to message boundary)",
             session_id
         );
-        {
+        let pending_compaction_lock = {
             let active = active_sessions.read().await;
-            if let Some(session) = active.get(&session_id) {
-                *session.pending_compaction.write().await = None;
-            }
+            active
+                .get(&session_id)
+                .map(|session| Arc::clone(&session.pending_compaction))
+        };
+        if let Some(pending_compaction) = pending_compaction_lock {
+            *pending_compaction.write().await = None;
         }
         // Discard any user messages that arrived while the agent was busy and
         // are waiting in the pending_events queue. They must not be processed
@@ -430,18 +441,25 @@ pub async fn cancel_workflow(
     )
     .await?;
 
-    let mut active = active_sessions.write().await;
-    if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = false;
-        session.cancel_pending.store(false, Ordering::SeqCst);
-        *session.pending_compaction.write().await = None;
-        // Cancel the token (do NOT replace with a fresh one yet).
-        // The cancelled state persists until start_workflow explicitly resets it.
-        // This prevents stale in-flight LLM responses carrying tool_calls from
-        // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
-        session.cancellation_token.cancel();
+    let pending_compaction_lock = {
+        let mut active = active_sessions.write().await;
+        if let Some(session) = active.get_mut(&session_id) {
+            session.is_running = false;
+            session.cancel_pending.store(false, Ordering::SeqCst);
+            // Cancel the token (do NOT replace with a fresh one yet).
+            // The cancelled state persists until start_workflow explicitly resets it.
+            // This prevents stale in-flight LLM responses carrying tool_calls from
+            // re-entering the workflow via the Idle+allow_idle_tool_entry path after cancel.
+            session.cancellation_token.cancel();
+            Some(Arc::clone(&session.pending_compaction))
+        } else {
+            None
+        }
+    };
+
+    if let Some(pending_compaction) = pending_compaction_lock {
+        *pending_compaction.write().await = None;
     }
-    drop(active);
 
     discard_pending_events(active_sessions, &session_id).await;
 

@@ -121,27 +121,31 @@ pub async fn request_llm_completion(
         messages.last().map(|m| m.id.as_str()).unwrap_or("none")
     );
 
-    // Get agent config and current compact state
-    let active = active_sessions.read().await;
-    let session = active
-        .get(&session_id)
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    // Get agent config and current compact state without holding the session map lock
+    // across awaits on the per-session compact_context lock.
+    let (metadata, compact_context_lock) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        (
+            session.metadata.clone(),
+            Arc::clone(&session.compact_context),
+        )
+    };
 
-    let agent_config = session
-        .metadata
+    let agent_config = metadata
         .agent_config
         .as_ref()
         .ok_or_else(|| "Agent configuration is required but not found".to_string())
         .and_then(|json| crate::agent::AgentConfig::from_json(json).map_err(|e| e.to_string()))?;
 
-    let model = session.metadata.model.clone();
-    let provider = session.metadata.provider.clone();
-    let compact_record = session.compact_context.read().await.clone();
+    let model = metadata.model.clone();
+    let provider = metadata.provider.clone();
+    let compact_record = compact_context_lock.read().await.clone();
 
     let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
-
-    drop(active);
 
     // Build system prompt split: stable prefix (cacheable) + volatile session context (per-turn).
     // The frontend AI service layer receives both parts and decides the injection strategy via
@@ -203,14 +207,16 @@ pub async fn request_llm_completion(
                 invalidate_stale_compact_record(active_sessions, &session_id).await?;
             }
 
-            {
+            let pending_compaction_lock = {
                 let active = active_sessions.read().await;
                 let session = active
                     .get(&session_id)
                     .ok_or_else(|| format!("Session not found: {}", session_id))?;
-                let mut slot = session.pending_compaction.write().await;
-                *slot = Some(pending.pending);
-            }
+                Arc::clone(&session.pending_compaction)
+            };
+
+            let mut slot = pending_compaction_lock.write().await;
+            *slot = Some(pending.pending);
 
             compact::emit_compaction_state(app_handle, &pending.state)?;
             app_handle
@@ -228,12 +234,16 @@ async fn invalidate_stale_compact_record(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     session_id: &str,
 ) -> Result<(), String> {
-    {
+    let compact_context_lock = {
         let active = active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            let mut compact = session.compact_context.write().await;
-            *compact = None;
-        }
+        active
+            .get(session_id)
+            .map(|session| Arc::clone(&session.compact_context))
+    };
+
+    if let Some(compact_context) = compact_context_lock {
+        let mut compact = compact_context.write().await;
+        *compact = None;
     }
 
     let repo = crate::state::get_compact_context_repository();

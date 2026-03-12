@@ -253,12 +253,16 @@ impl AgentSessionManager {
         request_id: String,
         summary: String,
     ) -> Result<(), String> {
-        let pending = {
+        let pending_compaction_lock = {
             let active = self.active_sessions.read().await;
             let session = active
                 .get(&session_id)
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
-            let mut slot = session.pending_compaction.write().await;
+            Arc::clone(&session.pending_compaction)
+        };
+
+        let pending = {
+            let mut slot = pending_compaction_lock.write().await;
             let current = slot.as_ref().ok_or_else(|| {
                 format!("No pending compaction request for session: {}", session_id)
             })?;
@@ -327,12 +331,16 @@ impl AgentSessionManager {
             },
         }
 
-        let disposition = {
+        let pending_compaction_lock = {
             let active = self.active_sessions.read().await;
             let session = active
                 .get(&session_id)
                 .ok_or_else(|| format!("Session not found: {}", session_id))?;
-            let mut slot = session.pending_compaction.write().await;
+            Arc::clone(&session.pending_compaction)
+        };
+
+        let disposition = {
+            let mut slot = pending_compaction_lock.write().await;
             let pending = slot.as_ref().ok_or_else(|| {
                 format!("No pending compaction request for session: {}", session_id)
             })?;
@@ -795,9 +803,14 @@ impl AgentSessionManager {
         &self,
         session_id: &str,
     ) -> Result<Option<CompactContextRecord>, String> {
-        let active = self.active_sessions.read().await;
-        if let Some(session) = active.get(session_id) {
-            let compact = session.compact_context.read().await;
+        let compact_context_lock = {
+            let active = self.active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| Arc::clone(&session.compact_context))
+        };
+        if let Some(compact_context) = compact_context_lock {
+            let compact = compact_context.read().await;
             if compact.is_some() {
                 return Ok((*compact).clone());
             }
@@ -817,12 +830,15 @@ impl AgentSessionManager {
         record: CompactContextRecord,
     ) -> Result<(), String> {
         // 1. Update in-memory if active
-        {
+        let compact_context_lock = {
             let active = self.active_sessions.read().await;
-            if let Some(session) = active.get(session_id) {
-                let mut compact = session.compact_context.write().await;
-                *compact = Some(record.clone());
-            }
+            active
+                .get(session_id)
+                .map(|session| Arc::clone(&session.compact_context))
+        };
+        if let Some(compact_context) = compact_context_lock {
+            let mut compact = compact_context.write().await;
+            *compact = Some(record.clone());
         }
 
         // 2. Persist to DB
