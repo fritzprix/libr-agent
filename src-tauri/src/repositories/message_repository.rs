@@ -495,6 +495,7 @@ mod tests {
             source: None,
             error: None,
             metadata: None,
+            usage: None,
         }
     }
 

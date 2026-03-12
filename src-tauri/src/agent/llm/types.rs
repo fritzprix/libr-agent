@@ -18,4 +18,9 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
+    /// If Some, the frontend should trigger a background compaction summarizing these messages.
+    /// Used by the Compact context strategy when context limits are reached.
+    pub compact_request: Option<Vec<Message>>,
+    /// Token usage gauge telemetry to drive frontend UI (e.g. context window fill bar).
+    pub context_usage: Option<serde_json::Value>,
 }

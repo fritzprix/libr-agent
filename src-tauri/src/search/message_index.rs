@@ -341,6 +341,7 @@ mod tests {
             updated_at: 1000,
             source: None,
             error: None,
+            usage: None,
         };
 
         let doc = MessageDocument::from(model);

@@ -4,6 +4,7 @@ use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository;
+use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -165,11 +166,139 @@ pub async fn request_llm_completion(
     // (unanswered user turn followed by a new user message). This is the only
     // place where consecutive user roles are legitimate; merging here keeps the
     // Gemini mapper simple and mapper-agnostic.
+    // --- CONTEXT MANAGEMENT ---
     let messages = merge_consecutive_user_messages(messages);
+
+    let settings_repo = crate::state::get_settings_repository();
+    let settings_val = settings_repo.get("settings").await.unwrap_or(None);
+
+    let mut context_strategy = "compact".to_string();
+    let mut window_size = 20;
+    let mut max_input_context = 49152;
+    let mut tool_call_group_visible_count = 4;
+    let model_max_limit = 128_000; // Simplified default fallback
+
+    if let Some(model) = settings_val {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&model.value) {
+            if let Some(strategy) = json.get("contextStrategy").and_then(|v| v.as_str()) {
+                context_strategy = strategy.to_string();
+            }
+            if let Some(ws) = json.get("windowSize").and_then(|v| v.as_u64()) {
+                window_size = ws as usize;
+            }
+            if let Some(mic) = json.get("maxInputContext").and_then(|v| v.as_u64()) {
+                max_input_context = mic as usize;
+            }
+            if let Some(tcgvc) = json
+                .get("toolCallGroupVisibleCount")
+                .and_then(|v| v.as_u64())
+            {
+                tool_call_group_visible_count = tcgvc as usize;
+            }
+        }
+    }
+
+    let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
+
+    let tools_json = available_tools
+        .as_ref()
+        .map(|t| serde_json::to_string(t).unwrap_or_default());
+    let system_prompt_tokens = system_prompt
+        .as_ref()
+        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+        .unwrap_or(0);
+    let session_context_tokens = session_context
+        .as_ref()
+        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+        .unwrap_or(0);
+    let tools_tokens = tools_json
+        .as_ref()
+        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+        .unwrap_or(0);
+
+    let mut compact_request = None;
+    let mut final_messages = messages.clone();
+
+    if context_strategy == "compact" {
+        let threshold =
+            crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
+        let current_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+            &messages,
+            system_prompt_tokens + session_context_tokens,
+            tools_tokens,
+        );
+
+        if current_tokens > threshold {
+            let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(
+                &messages,
+                threshold,
+                system_prompt_tokens + session_context_tokens,
+                tools_tokens,
+            );
+            if split_idx > 0 && split_idx < messages.len() {
+                compact_request = Some(messages[..split_idx].to_vec());
+                final_messages = messages[split_idx..].to_vec();
+            }
+        }
+
+        let context_options = crate::agent::llm::context_selector::SelectionOptions {
+            system_prompt: system_prompt.clone(),
+            tools_json: tools_json.clone(),
+            max_messages: None,
+            max_tool_calls_per_message: Some(if provider == "gemini" {
+                100
+            } else {
+                tool_call_group_visible_count
+            }),
+        };
+
+        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
+            &final_messages,
+            &provider,
+            Some(safe_input_token_limit),
+            Some(&context_options),
+            Some(&crate::agent::llm::context_selector::ModelContextInfo {
+                context_window: model_max_limit,
+            }),
+        );
+    } else {
+        let context_options = crate::agent::llm::context_selector::SelectionOptions {
+            system_prompt: system_prompt.clone(),
+            tools_json: tools_json.clone(),
+            max_messages: Some(window_size),
+            max_tool_calls_per_message: Some(if provider == "gemini" {
+                100
+            } else {
+                tool_call_group_visible_count
+            }),
+        };
+
+        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
+            &messages,
+            &provider,
+            Some(safe_input_token_limit),
+            Some(&context_options),
+            Some(&crate::agent::llm::context_selector::ModelContextInfo {
+                context_window: model_max_limit,
+            }),
+        );
+    }
+
+    let total_estimated_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+        &final_messages,
+        system_prompt_tokens + session_context_tokens,
+        tools_tokens,
+    );
+
+    let context_usage = Some(serde_json::json!({
+        "totalTokens": total_estimated_tokens,
+        "contextWindow": safe_input_token_limit,
+        "modelMaxContext": model_max_limit,
+    }));
 
     let request = CompletionRequest {
         session_id: session_id.clone(),
-        messages,
+        messages: final_messages,
         model,
         provider,
         system_prompt,
@@ -177,6 +306,8 @@ pub async fn request_llm_completion(
         temperature,
         max_tokens,
         available_tools,
+        compact_request,
+        context_usage,
     };
 
     app_handle
