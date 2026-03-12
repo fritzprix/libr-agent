@@ -13,9 +13,11 @@ export const MarkdownText = memo(
   ({
     content,
     components,
+    hideCopyButton,
   }: {
     content: string;
     components: React.ComponentProps<typeof ReactMarkdown>['components'];
+    hideCopyButton?: boolean;
   }) => {
     const { copied, copyToClipboard } = useClipboard();
 
@@ -31,14 +33,16 @@ export const MarkdownText = memo(
     return (
       <div className="group relative text-sm leading-relaxed break-words">
         {/* Copy button for individual text */}
-        <button
-          onClick={handleCopy}
-          className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none z-10"
-          aria-label="Copy text content"
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
+        {!hideCopyButton && (
+          <button
+            onClick={handleCopy}
+            className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-secondary hover:bg-secondary/80 text-secondary-foreground text-xs rounded transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none z-10"
+            aria-label="Copy text content"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        )}
 
         <ReactMarkdown
           skipHtml={false}

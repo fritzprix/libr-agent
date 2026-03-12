@@ -20,12 +20,33 @@
         line-height: 1.6;
       }
       .content-wrapper {
+        position: relative;
         max-width: 720px;
         margin: 0 auto;
         background: white;
         border-radius: 8px;
         padding: 24px 28px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .copy-btn {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: #f3f4f6;
+        color: #4b5563;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+        z-index: 10;
+      }
+      .copy-btn:hover {
+        background: #e5e7eb;
+        color: #111827;
       }
       .content-title {
         font-size: 18px;
@@ -34,6 +55,7 @@
         margin: 0 0 16px 0;
         padding-bottom: 12px;
         border-bottom: 1px solid #e5e7eb;
+        padding-right: 60px; /* Leave space for copy button */
       }
       /* Markdown rendered styles */
       .md h1 { font-size: 1.6em; font-weight: 700; margin: 0 0 12px; color: #111827; }
@@ -83,18 +105,21 @@
   </head>
   <body>
     <div class='content-wrapper'>
+      <button type="button" id="copy-btn" class="copy-btn" aria-label="Copy content">Copy</button>
       {{#if title}}
         <div class='content-title'>{{title}}</div>
       {{/if}}
+      
+      <script id='raw-data' type='application/json'>{{{contentJson}}}</script>
+
       {{#if isMarkdown}}
         <div class='md' id='md-root'></div>
-        <script id='md-data' type='application/json'>{{{contentJson}}}</script>
         <script>
           // Minimal inline markdown-to-HTML parser
           (function () {
             var raw = '';
             try {
-              var dataEl = document.getElementById('md-data');
+              var dataEl = document.getElementById('raw-data');
               raw = dataEl ? JSON.parse(dataEl.textContent || '""') : '';
             } catch (e) { raw = ''; }
 
@@ -223,6 +248,84 @@
       {{else}}
         <div>{{{content}}}</div>
       {{/if}}
+      
+      <script>
+        document.getElementById('copy-btn').addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var btn = this;
+          try {
+            var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
+            
+            var fallbackCopy = function(text) {
+              var textArea = document.createElement("textarea");
+              textArea.value = text;
+              
+              // Avoid scrolling to bottom
+              textArea.style.top = "0";
+              textArea.style.left = "0";
+              textArea.style.position = "fixed";
+              // Prevent visibility
+              textArea.style.opacity = "0";
+              textArea.style.width = "1px";
+              textArea.style.height = "1px";
+              textArea.style.padding = "0";
+              textArea.style.border = "none";
+              textArea.style.outline = "none";
+              textArea.style.boxShadow = "none";
+              textArea.style.background = "transparent";
+              textArea.setAttribute('readonly', '');
+              
+              document.body.appendChild(textArea);
+              
+              // Prevent scroll jump on focus
+              try {
+                textArea.focus({ preventScroll: true });
+              } catch (err) {
+                // Fallback for older browsers
+                var x = window.scrollX, y = window.scrollY;
+                textArea.focus();
+                window.scrollTo(x, y);
+              }
+              
+              textArea.select();
+              
+              try {
+                document.execCommand('copy');
+                return Promise.resolve();
+              } catch (err) {
+                return Promise.reject(err);
+              } finally {
+                document.body.removeChild(textArea);
+              }
+            };
+
+            var copyPromise;
+            // Always try the modern API first
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              copyPromise = navigator.clipboard.writeText(raw).catch(function() {
+                // If it fails (e.g., inside an iframe without permissions), use fallback
+                return fallbackCopy(raw);
+              });
+            } else {
+              copyPromise = fallbackCopy(raw);
+            }
+
+            copyPromise.then(function() {
+              btn.textContent = 'Copied!';
+              setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+            }).catch(function(err) {
+              console.error('Failed to copy', err);
+              btn.textContent = 'Error';
+              setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+            });
+          } catch(e) {
+            console.error('Failed to parse raw data for copy', e);
+            btn.textContent = 'Error';
+            setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+          }
+        });
+      </script>
     </div>
   </body>
 </html>

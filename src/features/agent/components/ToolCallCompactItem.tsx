@@ -142,6 +142,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
               isLoading={false}
               showDetails={true}
               parsedArgs={parsedArgs}
+              hideParameters={true}
             />
           </div>
         )}

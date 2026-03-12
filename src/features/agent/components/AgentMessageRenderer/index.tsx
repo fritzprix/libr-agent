@@ -230,6 +230,7 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 key={itemKey}
                 content={textItem.text}
                 components={markdownComponents}
+                hideCopyButton={message?.role === 'tool'}
               />
             );
           }
