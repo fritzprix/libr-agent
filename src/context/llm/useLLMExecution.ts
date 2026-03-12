@@ -1119,50 +1119,47 @@ export function useLLMExecution({
     setCompactedRangeMap(new Map());
   }, []);
 
-  const applyCompactionState = useCallback(
-    (event: CompactionStateEvent) => {
-      setCompactingSet((prev) => {
-        const next = new Set(prev);
-        if (event.status === 'compacting') {
-          next.add(event.sessionId);
-        } else {
-          next.delete(event.sessionId);
-        }
-        return next;
-      });
+  const applyCompactionState = useCallback((event: CompactionStateEvent) => {
+    setCompactingSet((prev) => {
+      const next = new Set(prev);
+      if (event.status === 'compacting') {
+        next.add(event.sessionId);
+      } else {
+        next.delete(event.sessionId);
+      }
+      return next;
+    });
 
-      setAwaitingSet((prev) => {
-        const next = new Set(prev);
-        if (event.status === 'awaiting') {
-          next.add(event.sessionId);
-        } else {
-          next.delete(event.sessionId);
-        }
-        return next;
-      });
+    setAwaitingSet((prev) => {
+      const next = new Set(prev);
+      if (event.status === 'awaiting') {
+        next.add(event.sessionId);
+      } else {
+        next.delete(event.sessionId);
+      }
+      return next;
+    });
 
-      setContextUsageMap((prev) => {
-        const next = new Map(prev);
-        if (event.contextUsage) {
-          next.set(event.sessionId, event.contextUsage);
-        } else {
-          next.delete(event.sessionId);
-        }
-        return next;
-      });
+    setContextUsageMap((prev) => {
+      const next = new Map(prev);
+      if (event.contextUsage) {
+        next.set(event.sessionId, event.contextUsage);
+      } else {
+        next.delete(event.sessionId);
+      }
+      return next;
+    });
 
-      setCompactedRangeMap((prev) => {
-        const next = new Map(prev);
-        if (event.compactedRange) {
-          next.set(event.sessionId, event.compactedRange);
-        } else {
-          next.delete(event.sessionId);
-        }
-        return next;
-      });
-    },
-    [],
-  );
+    setCompactedRangeMap((prev) => {
+      const next = new Map(prev);
+      if (event.compactedRange) {
+        next.set(event.sessionId, event.compactedRange);
+      } else {
+        next.delete(event.sessionId);
+      }
+      return next;
+    });
+  }, []);
 
   return {
     executeCompletionRequest,

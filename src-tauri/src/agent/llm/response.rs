@@ -413,7 +413,77 @@ pub async fn handle_llm_response(
             .await;
         }
 
-        // No pending messages, finish workflow
+        // A text-only response without a UI Resource means the agent has not
+        // presented a result to the user yet. Recur to prompt it to do so.
+        let last_tool_has_ui_resource = {
+            let active = active_sessions.read().await;
+            if let Some(session) = active.get(&session_id) {
+                let messages = session.messages.read().await;
+                messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "tool")
+                    .map(|m| {
+                        m.content.iter().any(|c| matches!(c, MCPContent::Resource { .. }))
+                    })
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        };
+
+        if !last_tool_has_ui_resource {
+            // Circuit breaker: guard against infinite "please present" loops
+            let current_count = {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    *session.text_only_no_ui_count.read().await
+                } else {
+                    0
+                }
+            };
+
+            if current_count >= 3 {
+                log::warn!(
+                    "⚠️  Circuit breaker triggered for session {}: {} consecutive text-only responses without UI Resource. Forcing workflow completion.",
+                    session_id, current_count
+                );
+                let active = active_sessions.write().await;
+                if let Some(session) = active.get(&session_id) {
+                    *session.text_only_no_ui_count.write().await = 0;
+                }
+            } else {
+                {
+                    let active = active_sessions.write().await;
+                    if let Some(session) = active.get(&session_id) {
+                        let mut count = session.text_only_no_ui_count.write().await;
+                        *count += 1;
+                        log::info!(
+                            "🔄 Text-only response with no UI Resource for session {} (attempt {}/3). Recurring to prompt presentation.",
+                            session_id, *count
+                        );
+                    }
+                }
+                return request_llm_completion(
+                    session_repo,
+                    active_sessions,
+                    proxy_manager,
+                    app_handle,
+                    session_id,
+                )
+                .await;
+            }
+        }
+
+        // Reset text_only_no_ui_count: either UI Resource found or circuit breaker hit
+        {
+            let active = active_sessions.write().await;
+            if let Some(session) = active.get(&session_id) {
+                *session.text_only_no_ui_count.write().await = 0;
+            }
+        }
+
+        // Last tool result contains a UI Resource (or circuit breaker) — finish workflow.
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
@@ -443,6 +513,7 @@ pub async fn handle_llm_response(
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
                 *session.thinking_only_count.write().await = 0;
+                *session.text_only_no_ui_count.write().await = 0;
             }
         }
 

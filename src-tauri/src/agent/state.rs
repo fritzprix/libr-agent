@@ -115,6 +115,11 @@ pub struct AgentSession {
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
 
+    /// Circuit breaker: consecutive text-only responses without a UI Resource
+    /// Reset to 0 when tool_calls are generated or a UI Resource is present
+    /// Max allowed: 3 (prevents infinite "please present" loops)
+    pub text_only_no_ui_count: Arc<RwLock<u32>>,
+
     /// Pending events (messages, approvals, etc.) waiting for workflow processing
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 

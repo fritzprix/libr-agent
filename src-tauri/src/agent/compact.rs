@@ -543,4 +543,3 @@ fn estimate_grounded_total_tokens(
         }
     }
 }
-
