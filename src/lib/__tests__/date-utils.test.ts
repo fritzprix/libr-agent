@@ -119,5 +119,25 @@ describe('date-utils', () => {
       expect(result.relative).toBe('2 hours ago');
       expect(result.display).toContain('2 hours ago');
     });
+
+    it('should handle date without relative time', () => {
+      // Create a scenario where formatRelativeTime returns empty string.
+      // The relative value is a string or null, so we test the scenario where relative is falsely.
+
+      const dateStr = '2023-01-01T10:00:00Z';
+
+      // Temporarily mock the global Intl.RelativeTimeFormat to return empty string
+      const spy = vi.spyOn(Intl.RelativeTimeFormat.prototype, 'format').mockReturnValue('');
+
+      try {
+        const result = formatSessionTimestamp(dateStr);
+
+        expect(result.relative).toBe('');
+        // It should just return the absolute time, not the relative time
+        expect(result.display).not.toContain('·');
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });
