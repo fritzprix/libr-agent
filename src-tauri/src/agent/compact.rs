@@ -528,9 +528,11 @@ fn estimate_grounded_total_tokens(
 
     match grounded {
         Some((grounded_idx, prompt_tokens)) => {
-            // prompt_tokens already includes system prompt, tools, and all messages up to
-            // grounded_idx (as reported by the API). Add BPE estimates for newer messages only.
-            let incremental: usize = messages[grounded_idx + 1..]
+            // prompt_tokens covers system prompt, tools, and all messages[0..grounded_idx]
+            // as input to the call that produced the assistant message at grounded_idx.
+            // The assistant message itself is NOT included in prompt_tokens (it was the
+            // output of that call), so we must include it + all subsequent messages.
+            let incremental: usize = messages[grounded_idx..]
                 .iter()
                 .map(estimate_message_tokens)
                 .sum();
