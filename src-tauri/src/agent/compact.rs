@@ -173,14 +173,11 @@ pub async fn prepare_completion_request(
         settings.max_input_context,
     );
 
-    let total_tokens = candidate
-        .messages
-        .iter()
-        .map(estimate_message_tokens)
-        .sum::<usize>()
-        + system_prompt_tokens
-        + session_context_tokens
-        + tools_tokens;
+    let total_tokens = estimate_grounded_total_tokens(
+        &candidate.messages,
+        system_prompt_tokens + session_context_tokens,
+        tools_tokens,
+    );
 
     let usage = ContextUsageSummary {
         total_tokens,
@@ -190,13 +187,12 @@ pub async fn prepare_completion_request(
     let threshold = ((effective_limit as f64) * 0.9).floor() as usize;
 
     if total_tokens >= threshold {
-        let split_idx = find_compaction_split_index(
-            &candidate.messages,
-            threshold,
-            system_prompt_tokens + session_context_tokens,
-            tools_tokens,
-        );
-        let old_messages = candidate.messages[..split_idx].to_vec();
+        // Compact the entire candidate message stack — no arbitrary split.
+        // Using a split index risks cutting through an assistant+tool_result pair,
+        // producing orphaned tool messages that the normalizer drops every turn.
+        // Instead, to_id is always the last message at trigger time; the next turn
+        // will submit summary + messages_after_to_id with no orphans.
+        let old_messages = candidate.messages.clone();
 
         if !old_messages.is_empty()
             && (old_messages.len() >= 5 || (compact_record.is_some() && old_messages.len() > 1))
@@ -204,11 +200,11 @@ pub async fn prepare_completion_request(
             let from_id = old_messages
                 .first()
                 .map(|message| message.id.clone())
-                .ok_or_else(|| "Compaction split produced no messages".to_string())?;
+                .ok_or_else(|| "Compaction candidate is empty".to_string())?;
             let to_id = old_messages
                 .last()
                 .map(|message| message.id.clone())
-                .ok_or_else(|| "Compaction split produced no messages".to_string())?;
+                .ok_or_else(|| "Compaction candidate is empty".to_string())?;
             let request_id = uuid::Uuid::new_v4().to_string();
             let compacted_range = candidate
                 .compacted_range
@@ -507,31 +503,44 @@ fn estimate_message_tokens(message: &Message) -> usize {
     estimate_text_tokens(&parts.join(" "))
 }
 
-fn find_compaction_split_index(
+/// Estimates total input tokens using grounded counting:
+/// finds the most recent assistant message with actual API-reported promptTokens,
+/// then adds BPE estimates only for messages appended after that point.
+/// Falls back to full BPE estimation when no grounded usage is available.
+fn estimate_grounded_total_tokens(
     messages: &[Message],
-    threshold: usize,
-    system_prompt_tokens: usize,
+    system_and_context_tokens: usize,
     tools_tokens: usize,
 ) -> usize {
-    let message_budget = threshold.saturating_sub(system_prompt_tokens + tools_tokens);
-    let keep_threshold = std::cmp::max(1000, message_budget / 2);
+    // Search backwards for the most recent assistant message with valid promptTokens
+    let grounded = messages.iter().enumerate().rev().find_map(|(idx, m)| {
+        if m.role != "assistant" {
+            return None;
+        }
+        let prompt_tokens = m
+            .usage
+            .as_ref()
+            .and_then(|u| u.get("promptTokens"))
+            .and_then(|v| v.as_u64())
+            .filter(|&v| v > 0);
+        prompt_tokens.map(|pt| (idx, pt as usize))
+    });
 
-    let mut current_sum = 0usize;
-    let mut split_idx = 0usize;
-    let mut split_found = false;
-
-    for (index, message) in messages.iter().enumerate().rev() {
-        current_sum += estimate_message_tokens(message);
-        if current_sum >= keep_threshold {
-            split_idx = index;
-            split_found = true;
-            break;
+    match grounded {
+        Some((grounded_idx, prompt_tokens)) => {
+            // prompt_tokens already includes system prompt, tools, and all messages up to
+            // grounded_idx (as reported by the API). Add BPE estimates for newer messages only.
+            let incremental: usize = messages[grounded_idx + 1..]
+                .iter()
+                .map(estimate_message_tokens)
+                .sum();
+            prompt_tokens + incremental
+        }
+        None => {
+            // No grounded base available — full BPE estimation
+            let message_tokens: usize = messages.iter().map(estimate_message_tokens).sum();
+            message_tokens + system_and_context_tokens + tools_tokens
         }
     }
-
-    if !split_found && messages.len() >= 10 {
-        return messages.len() / 2;
-    }
-
-    split_idx
 }
+
