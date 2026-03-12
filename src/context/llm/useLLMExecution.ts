@@ -235,11 +235,14 @@ export function useLLMExecution({
           ? estimateTextTokens(sessionContext)
           : 0;
 
+        const isCompactMode =
+          (contextStrategy ?? 'window') === 'compact';
         logger.info('🎯 Applying context management strategy', {
           sessionId,
           inputMessageCount: messages.length,
           contextStrategy: contextStrategy ?? 'window',
-          windowSize,
+          // windowSize is irrelevant in compact mode (token-budget only)
+          ...(isCompactMode ? {} : { windowSize }),
           provider,
           model,
           safeInputTokenLimit,
@@ -249,10 +252,7 @@ export function useLLMExecution({
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
-        if (
-          (contextStrategy ?? 'window') === 'compact' &&
-          !backendOwnedCompaction
-        ) {
+        if (isCompactMode && !backendOwnedCompaction) {
           // ── Compact strategy (SP17) ─────────────────────────────────────────
 
           // 1. Initial Load from DB if not in cache (Session Resume)
@@ -573,8 +573,7 @@ export function useLLMExecution({
               systemPrompt: finalSystemPrompt,
               toolsJson,
               maxMessages:
-                (contextStrategy ?? 'window') === 'compact' &&
-                backendOwnedCompaction
+                isCompactMode && backendOwnedCompaction
                   ? undefined
                   : windowSize,
               maxToolCallsPerMessage:

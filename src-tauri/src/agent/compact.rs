@@ -92,6 +92,11 @@ struct CandidateStack {
     summary: Option<String>,
     compacted_range: Option<CompactedRange>,
     stale_record: bool,
+    /// True when messages were sliced from a compacted record — any
+    /// `promptTokens` on assistant messages in this slice were recorded before
+    /// compaction and no longer reflect the trimmed context.  Token estimation
+    /// must use BPE-only to avoid inflated (pre-compaction) values.
+    post_compact: bool,
 }
 
 pub struct PrepareCompletionInput {
@@ -173,11 +178,24 @@ pub async fn prepare_completion_request(
         settings.max_input_context,
     );
 
-    let total_tokens = estimate_grounded_total_tokens(
-        &candidate.messages,
-        system_prompt_tokens + session_context_tokens,
-        tools_tokens,
-    );
+    let total_tokens = if candidate.post_compact {
+        // The preserved slice was just produced by compaction.  Any assistant
+        // messages in it carry `promptTokens` from before compaction (stale),
+        // so the grounded search would return an inflated estimate.  Use
+        // BPE-only estimation instead.
+        let message_tokens: usize = candidate
+            .messages
+            .iter()
+            .map(estimate_message_tokens)
+            .sum();
+        message_tokens + system_prompt_tokens + session_context_tokens + tools_tokens
+    } else {
+        estimate_grounded_total_tokens(
+            &candidate.messages,
+            system_prompt_tokens + session_context_tokens,
+            tools_tokens,
+        )
+    };
 
     let usage = ContextUsageSummary {
         total_tokens,
@@ -396,6 +414,7 @@ fn build_candidate_stack(
             summary: None,
             compacted_range: None,
             stale_record: false,
+            post_compact: false,
         };
     };
 
@@ -411,6 +430,7 @@ fn build_candidate_stack(
             )),
             compacted_range: Some(compact_record_to_range(record)),
             stale_record: false,
+            post_compact: true,
         };
     }
 
@@ -419,6 +439,7 @@ fn build_candidate_stack(
         summary: None,
         compacted_range: None,
         stale_record: true,
+        post_compact: false,
     }
 }
 
