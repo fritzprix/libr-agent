@@ -413,81 +413,6 @@ pub async fn handle_llm_response(
             .await;
         }
 
-        // After tool execution, if the LLM responded with text only and the last
-        // tool result contains no UI Resource, the agent has not yet presented
-        // a result. Recur once to give it another chance to call a UI Resource tool.
-        // Condition: only when there ARE tool messages (not on a clean first turn),
-        // and only once (to avoid cascading text-only accumulation that confuses the LLM).
-        let should_recur_for_presentation = {
-            let active = active_sessions.read().await;
-            if let Some(session) = active.get(&session_id) {
-                let messages = session.messages.read().await;
-                let has_any_tool_message = messages.iter().any(|m| m.role == "tool");
-                if !has_any_tool_message {
-                    false
-                } else {
-                    let last_tool_has_ui_resource = messages
-                        .iter()
-                        .rev()
-                        .find(|m| m.role == "tool")
-                        .map(|m| {
-                            m.content.iter().any(|c| matches!(c, MCPContent::Resource { .. }))
-                        })
-                        .unwrap_or(false);
-                    !last_tool_has_ui_resource
-                }
-            } else {
-                false
-            }
-        };
-
-        if should_recur_for_presentation {
-            let already_retried = {
-                let active = active_sessions.read().await;
-                if let Some(session) = active.get(&session_id) {
-                    *session.text_only_no_ui_count.read().await >= 1
-                } else {
-                    false
-                }
-            };
-
-            if already_retried {
-                log::info!(
-                    "Text-only no-UI recurrence already attempted once for session {}. Completing workflow.",
-                    session_id
-                );
-                // Reset counter before completing
-                let active = active_sessions.write().await;
-                if let Some(session) = active.get(&session_id) {
-                    *session.text_only_no_ui_count.write().await = 0;
-                }
-            } else {
-                {
-                    let active = active_sessions.write().await;
-                    if let Some(session) = active.get(&session_id) {
-                        *session.text_only_no_ui_count.write().await = 1;
-                        log::info!(
-                            "🔄 Text-only response with no UI Resource for session {}. Recurring once to prompt presentation.",
-                            session_id
-                        );
-                    }
-                }
-                return request_llm_completion(
-                    session_repo,
-                    active_sessions,
-                    proxy_manager,
-                    app_handle,
-                    session_id,
-                )
-                .await;
-            }
-        } else {
-            // UI Resource found, or no tool messages — reset counter
-            let active = active_sessions.write().await;
-            if let Some(session) = active.get(&session_id) {
-                *session.text_only_no_ui_count.write().await = 0;
-            }
-        }
         crate::agent::lifecycle::update_session_status(
             session_repo,
             active_sessions,
@@ -517,7 +442,6 @@ pub async fn handle_llm_response(
             let active = active_sessions.write().await;
             if let Some(session) = active.get(&session_id) {
                 *session.thinking_only_count.write().await = 0;
-                *session.text_only_no_ui_count.write().await = 0;
             }
         }
 
