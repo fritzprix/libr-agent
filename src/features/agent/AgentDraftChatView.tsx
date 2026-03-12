@@ -703,7 +703,7 @@ function DraftChatInner() {
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
             <span className="font-semibold text-lg">{assistant.name}</span>
-            <span className="text-xs text-muted-foreground">New Session</span>
+            <span className="text-xs text-muted-foreground">{t('agent.draft.newSession')}</span>
           </div>
         </div>
       </div>
@@ -755,15 +755,14 @@ function DraftChatInner() {
               <div className="flex-1 text-left min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-bold text-primary uppercase tracking-tight">
-                    Workspace Override Active
+                    {t('agent.draft.workspaceOverrideActive')}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded">
                   {workspaceOverride}
                 </p>
                 <p className="text-[10px] text-muted-foreground/70 mt-2 leading-tight">
-                  The agent will use this directory as its primary workspace for
-                  this session.
+                  {t('agent.draft.workspaceOverrideDescription')}
                 </p>
               </div>
             </div>
@@ -791,14 +790,13 @@ function DraftChatInner() {
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
                 >
                   <Square size={12} className="opacity-70" />
-                  Basic Tools
+                  {t('agent.draft.basicTools')}
                 </Badge>
               </div>
             </TooltipTrigger>
             <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
               <p>
-                Includes core capabilities like reading files, managing tasks,
-                and executing code. Always available to help you!
+                {t('agent.draft.basicToolsDescription')}
               </p>
             </TooltipContent>
           </Tooltip>
@@ -856,11 +854,11 @@ function DraftChatInner() {
                   variant="outline"
                   className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
                 >
-                  + Add tools
+                  {t('agent.draft.addTools')}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
-                <p>Add more capabilities in the settings</p>
+                <p>{t('agent.draft.addMoreCapabilities')}</p>
               </TooltipContent>
             </Tooltip>
           </Link>
@@ -888,7 +886,7 @@ function DraftChatInner() {
             title="Local Context Injection Active"
           >
             <MapPin size={10} />
-            Local Context
+            {t('agent.draft.localContext')}
           </div>
         </div>
       </div>
