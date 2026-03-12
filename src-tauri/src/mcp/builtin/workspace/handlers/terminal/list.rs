@@ -1,11 +1,11 @@
-use crate::mcp::builtin::workspace::WorkspaceServer;
-use crate::mcp::builtin::workspace::terminal_manager;
-use crate::mcp::types::MCPResult;
 use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::workspace::terminal_manager;
+use crate::mcp::builtin::workspace::WorkspaceServer;
+use crate::mcp::types::MCPResult;
 use serde_json::Value;
 
 impl WorkspaceServer {
-pub async fn handle_list_processes(
+    pub async fn handle_list_processes(
         &self,
         args: Value,
         session_id: &str,
@@ -182,5 +182,4 @@ pub async fn handle_list_processes(
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }
-
 }

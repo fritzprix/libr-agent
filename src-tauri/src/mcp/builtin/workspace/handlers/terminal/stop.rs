@@ -1,11 +1,13 @@
-use crate::mcp::builtin::workspace::WorkspaceServer;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::workspace::terminal_manager;
+use crate::mcp::builtin::workspace::WorkspaceServer;
 use crate::mcp::types::MCPResult;
-use crate::mcp::builtin::error_guidance::{guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup};
 use serde_json::Value;
 
 impl WorkspaceServer {
-pub async fn handle_stop_process(
+    pub async fn handle_stop_process(
         &self,
         args: Value,
         session_id: &str,
@@ -155,5 +157,4 @@ pub async fn handle_stop_process(
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }
-
 }

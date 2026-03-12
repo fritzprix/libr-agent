@@ -1,11 +1,13 @@
-use crate::mcp::builtin::workspace::WorkspaceServer;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::workspace::terminal_manager;
+use crate::mcp::builtin::workspace::WorkspaceServer;
 use crate::mcp::types::MCPResult;
-use crate::mcp::builtin::error_guidance::{guided_error, missing_param_error, ErrorCategory, SuccessHint, ToolGroup};
 use serde_json::Value;
 
 impl WorkspaceServer {
-pub async fn handle_read_process_output(
+    pub async fn handle_read_process_output(
         &self,
         args: Value,
         session_id: &str,
@@ -217,5 +219,4 @@ pub async fn handle_read_process_output(
             }
         }
     }
-
 }
