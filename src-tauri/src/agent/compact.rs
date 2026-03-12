@@ -187,12 +187,70 @@ pub async fn prepare_completion_request(
     let threshold = ((effective_limit as f64) * 0.9).floor() as usize;
 
     if total_tokens >= threshold {
-        // Compact the entire candidate message stack — no arbitrary split.
-        // Using a split index risks cutting through an assistant+tool_result pair,
-        // producing orphaned tool messages that the normalizer drops every turn.
-        // Instead, to_id is always the last message at trigger time; the next turn
-        // will submit summary + messages_after_to_id with no orphans.
-        let old_messages = candidate.messages.clone();
+        // Compact messages up to (but NOT including) the current turn.
+        //
+        // The current turn is anchored by the last user message in the candidate
+        // stack. All messages before that user message get summarised; the user
+        // message (plus any tool-call/tool-result exchanges that follow it in the
+        // same turn) stay as live context for the post-compact LLM call.
+        //
+        // If we compacted right up to the very last message, `build_candidate_stack`
+        // would return an empty message list on the very next call, causing the LLM
+        // to receive only a system prompt with no conversational context — which
+        // reliably produces empty responses from Gemini.
+        let all_candidates = candidate.messages.clone();
+
+        // Find the index of the last user message.  Everything from that index
+        // onwards is "the current turn" and must be kept outside the compact range.
+        let last_user_idx = all_candidates
+            .iter()
+            .rposition(|m| m.role == "user");
+
+        // Messages to summarise: everything before the last user message.
+        // Messages to keep live: from the last user message to end.
+        let (messages_to_compact, _live) = match last_user_idx {
+            Some(idx) if idx > 0 => all_candidates.split_at(idx),
+            // If there is no user message, or it is the very first message, we
+            // cannot compact without leaving the LLM with nothing to reply to.
+            // Skip compaction this cycle.
+            _ => {
+                log::debug!(
+                    "Skipping compaction for session {}: no suitable anchor user message.",
+                    session_id
+                );
+                let compacted_range = candidate
+                    .compacted_range
+                    .clone()
+                    .or_else(|| compact_record.as_ref().map(compact_record_to_range));
+                return Ok(CompletionPreparation::Ready(PreparedCompletion {
+                    request: CompletionRequest {
+                        session_id: session_id.clone(),
+                        messages: candidate.messages,
+                        model,
+                        provider,
+                        system_prompt: if final_system_prompt.is_empty() {
+                            None
+                        } else {
+                            Some(final_system_prompt)
+                        },
+                        session_context,
+                        temperature,
+                        max_tokens,
+                        available_tools,
+                        backend_owned_compaction: true,
+                    },
+                    state: Some(CompactionStateEvent {
+                        session_id,
+                        status: "idle".to_string(),
+                        context_usage: Some(usage),
+                        compacted_range,
+                    }),
+                    invalidate_compact_record: candidate.stale_record,
+                }));
+            }
+        };
+
+        let old_messages = messages_to_compact.to_vec();
 
         if !old_messages.is_empty()
             && (old_messages.len() >= 5 || (compact_record.is_some() && old_messages.len() > 1))
