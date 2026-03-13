@@ -143,7 +143,7 @@ export default function SkillsEditor() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={fetchSkills}
+              onClick={() => fetchSkills()}
               disabled={isLoading}
             >
               <RefreshCw
