@@ -97,3 +97,8 @@
 
 **Split:** `read_output.rs`, `list.rs`, `stop.rs`, `wait.rs`, `mod.rs`
 **Improvement:** Decoupled `WorkspaceServer` terminal process handler logic (read output, list processes, stop process, wait for process) into distinct modules. Reduced the 749 line `terminal.rs` monolith into manageable components, significantly improving readability and maintainability of the workspace tools.
+
+## 2026-03-13 - src-tauri/src/agent/workflow.rs
+
+**Split:** `src-tauri/src/agent/workflow/` (`start.rs`, `pause_resume.rs`, `cancel_terminate.rs`, `continuation.rs`, `utils.rs`, `mod.rs`)
+**Improvement:** Decoupled monolithic workflow handling into focused modules (workflow lifecycle states, session cancellation logic, tool handling execution logic). Reduced `workflow.rs` from ~666 lines to smaller files, improving modularity and clarity.
