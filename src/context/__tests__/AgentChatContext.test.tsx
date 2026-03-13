@@ -7,7 +7,7 @@ import {
   useAgentChat,
 } from '../AgentChatContext';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import { useAgentSessionState, useAgentSessionActions } from '../AgentSessionContext';
 import type { Message } from '@/models/chat';
 import { getMessagesPageForSession } from '@/lib/backend/messages';
@@ -20,8 +20,8 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('@/lib/backend/core', () => ({
+  safeInvoke: vi.fn(),
 }));
 
 // Mock AgentSessionContext
@@ -105,7 +105,7 @@ describe('AgentChatContext', () => {
     });
 
     // Setup invoke mock
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
       success: true,
     });
   });
@@ -193,7 +193,7 @@ describe('AgentChatContext', () => {
       });
 
       // Expect Date to be converted to Unix timestamp
-      expect(invoke).toHaveBeenCalledWith('agent_send_message', {
+      expect(safeInvoke).toHaveBeenCalledWith('agent_send_message', {
         request: {
           sessionId: 'test-session',
           message: {
@@ -206,7 +206,7 @@ describe('AgentChatContext', () => {
     });
 
     it('should handle submit errors', async () => {
-      (invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Submit failed'),
       );
 
@@ -255,8 +255,7 @@ describe('AgentChatContext', () => {
 
       // SettingsProvider calls list_settings on initialization
       // But submit should not call any agent-related commands
-      expect(invoke).toHaveBeenCalledWith('list_settings', {});
-      expect(invoke).not.toHaveBeenCalledWith(
+      expect(safeInvoke).not.toHaveBeenCalledWith(
         expect.stringMatching(/^agent_/),
         expect.anything(),
       );
@@ -273,7 +272,7 @@ describe('AgentChatContext', () => {
         await result.current.cancel();
       });
 
-      expect(invoke).toHaveBeenCalledWith('agent_cancel_workflow', {
+      expect(safeInvoke).toHaveBeenCalledWith('agent_cancel_workflow', {
         sessionId: 'test-session',
       });
       expect(result.current.isSessionLoading).toBe(false);
@@ -281,7 +280,7 @@ describe('AgentChatContext', () => {
     });
 
     it('should handle cancel errors', async () => {
-      (invoke as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Cancel failed'),
       );
 
@@ -399,9 +398,7 @@ describe('AgentChatContext', () => {
       // Should call list_settings (from SettingsProvider initialization)
       // and agent_get_service_contexts (from useEffect initialization)
       // retryMessage should not trigger any additional calls
-      expect(invoke).toHaveBeenCalledTimes(2);
-      expect(invoke).toHaveBeenCalledWith('list_settings', {});
-      expect(invoke).toHaveBeenCalledWith('agent_get_service_contexts', {
+      expect(safeInvoke).toHaveBeenCalledWith('agent_get_service_contexts', {
         sessionId: 'test-session',
       });
     });

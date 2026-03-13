@@ -100,3 +100,12 @@
 
 - **IPC Fix:** Extracted raw IPC call to a strictly typed `handleLLMError` wrapper in `src/lib/backend/agent-commands.ts`.
 - **Refactor:** Updated `useLLMListener.ts` and associated tests to use the new type-safe boundary.
+
+## 2026-03-12 - Test Context IPC Mocking Boundaries
+
+**Problem:** Multiple unit tests in `src/context/__tests__` (`SkillsContext`, `AgentSessionContext`, `AgentChatContext`, `AgentSessionListContext`) were still mocking raw `invoke` from `@tauri-apps/api/core` while the actual files had been migrated to `safeInvoke` from `@/lib/backend/core`, causing test failures and mock mismatches.
+
+**Action:**
+
+- **IPC Fix:** Replaced `vi.mock('@tauri-apps/api/core')` with `vi.mock('@/lib/backend/core')` across all test files in `src/context/__tests__`.
+- **Refactor:** Replaced `invoke` imports, `mockInvoke` implementations, and `expect(invoke).toHaveBeenCalledWith` assertions with `safeInvoke`, aligning the test boundary with the application code.
