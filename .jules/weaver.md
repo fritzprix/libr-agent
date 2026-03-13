@@ -87,3 +87,8 @@
 - **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
 
 ## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]
+
+## 2026-03-20 - [useIsMobile hook] **Eradicated:** [Event-Driven State using useState & useEffect] **Woven:** [useSyncExternalStore Pattern]
+
+- Replaced `useState` and `useEffect` with `React.useSyncExternalStore` in the `useIsMobile` hook.
+- **Benefits:** Adheres to React 18+ conventions for subscribing to external stores/events natively, improving performance and reducing reliance on cascading effects for state management.
