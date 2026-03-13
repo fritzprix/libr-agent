@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { getLogger } from '@/lib/logger';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -23,51 +23,78 @@ export function useAssistantSkills() {
   const [isResetting, setIsResetting] = useState(false);
   const [loadingSkills, setLoadingSkills] = useState<Record<string, boolean>>({});
 
-  const fetchSkills = useCallback(async () => {
-    if (!draft?.id) return;
-    setIsLoading(true);
-    try {
-      const result = await getAggregatedSkills(draft.id);
-      setSkills(result);
-    } catch (error) {
-      logger.error('Failed to fetch skills:', error);
-      toast.error(t('skills.fetchFailed'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [draft?.id, t]);
+  const lastDraftIdRef = useRef<string | undefined>(draft?.id);
+
+  const fetchSkills = useCallback(
+    async (id: string) => {
+      if (lastDraftIdRef.current !== id) return;
+      setIsLoading(true);
+      try {
+        const result = await getAggregatedSkills(id);
+        if (lastDraftIdRef.current === id) {
+          setSkills(result);
+        }
+      } catch (error) {
+        logger.error('Failed to fetch skills:', error);
+        toast.error(t('skills.fetchFailed'));
+      } finally {
+        if (lastDraftIdRef.current === id) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [t]
+  );
 
   useEffect(() => {
-    fetchSkills();
-  }, [fetchSkills]);
+    lastDraftIdRef.current = draft?.id;
+    if (draft?.id) {
+      fetchSkills(draft.id);
+    } else {
+      setSkills([]);
+    }
+    return () => {
+      lastDraftIdRef.current = undefined;
+    };
+  }, [draft?.id, fetchSkills]);
 
   const handleOverride = async (skillName: string) => {
-    if (!draft?.id || loadingSkills[skillName]) return;
+    const id = draft?.id;
+    if (!id || loadingSkills[skillName]) return;
     setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
-      await copyGlobalToAssistant(draft.id, skillName);
+      await copyGlobalToAssistant(id, skillName);
       toast.success(t('skills.overrideSuccess'));
-      await fetchSkills();
+      if (lastDraftIdRef.current === id) {
+        await fetchSkills(id);
+      }
     } catch (error) {
       logger.error('Failed to override skill:', error);
       toast.error(t('skills.overrideFailed'));
     } finally {
-      setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
+      if (lastDraftIdRef.current === id) {
+        setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
+      }
     }
   };
 
   const handleRevert = async (skillName: string) => {
-    if (!draft?.id || loadingSkills[skillName]) return;
+    const id = draft?.id;
+    if (!id || loadingSkills[skillName]) return;
     setLoadingSkills((prev) => ({ ...prev, [skillName]: true }));
     try {
-      await deleteAssistantSkill(draft.id, skillName);
+      await deleteAssistantSkill(id, skillName);
       toast.success(t('skills.revertSuccess'));
-      await fetchSkills();
+      if (lastDraftIdRef.current === id) {
+        await fetchSkills(id);
+      }
     } catch (error) {
       logger.error('Failed to revert skill:', error);
       toast.error(t('skills.revertFailed'));
     } finally {
-      setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
+      if (lastDraftIdRef.current === id) {
+        setLoadingSkills((prev) => ({ ...prev, [skillName]: false }));
+      }
     }
   };
 
@@ -90,19 +117,24 @@ export function useAssistantSkills() {
   };
 
   const confirmReset = async (onSuccess?: () => void) => {
-    if (!draft?.id || isResetting) return;
+    const id = draft?.id;
+    if (!id || isResetting) return;
 
     setIsResetting(true);
     try {
-      await resetAssistantSkills(draft.id);
+      await resetAssistantSkills(id);
       toast.success(t('skills.resetSuccess'));
-      await fetchSkills();
-      onSuccess?.();
+      if (lastDraftIdRef.current === id) {
+        await fetchSkills(id);
+        onSuccess?.();
+      }
     } catch (error) {
       logger.error('Failed to reset skills:', error);
       toast.error(t('skills.resetFailed'));
     } finally {
-      setIsResetting(false);
+      if (lastDraftIdRef.current === id) {
+        setIsResetting(false);
+      }
     }
   };
 
