@@ -616,7 +616,10 @@ export abstract class BaseAIService<
     const compactMessages = [...messages];
 
     let instruction =
-      'Summarise the previous conversation history concisely, preserving key decisions, context, tool results, and any information needed to continue the conversation.\n\nIMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
+      'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
+      'Organize the summary into clear sections (e.g., "Key Decisions", "Context", "Tool Results", "Pending Actions") ' +
+      'to preserve all information needed to continue the conversation effectively.\n\n' +
+      'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
 
     // If the first message is a prior compact summary, give the model a hint string
     // at the very beginning of the instruction to contextualise the first message.
