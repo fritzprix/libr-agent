@@ -219,6 +219,13 @@ pub async fn request_llm_completion(
     let mut compact_request = None;
     let mut final_messages = messages.clone();
 
+    let combined_system_prompt = match (&system_prompt, &session_context) {
+        (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
+        (Some(sp), None) => Some(sp.clone()),
+        (None, Some(sc)) => Some(sc.clone()),
+        (None, None) => None,
+    };
+
     if context_strategy == "compact" {
         let threshold =
             crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
@@ -237,12 +244,11 @@ pub async fn request_llm_completion(
             );
             if split_idx > 0 && split_idx < messages.len() {
                 compact_request = Some(messages[..split_idx].to_vec());
-                final_messages = messages[split_idx..].to_vec();
             }
         }
 
         let context_options = crate::agent::llm::context_selector::SelectionOptions {
-            system_prompt: system_prompt.clone(),
+            system_prompt: combined_system_prompt.clone(),
             tools_json: tools_json.clone(),
             max_messages: None,
             max_tool_calls_per_message: Some(if provider == "gemini" {
@@ -263,7 +269,7 @@ pub async fn request_llm_completion(
         );
     } else {
         let context_options = crate::agent::llm::context_selector::SelectionOptions {
-            system_prompt: system_prompt.clone(),
+            system_prompt: combined_system_prompt.clone(),
             tools_json: tools_json.clone(),
             max_messages: Some(window_size),
             max_tool_calls_per_message: Some(if provider == "gemini" {
