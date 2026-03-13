@@ -13,9 +13,6 @@ importers:
       '@cerebras/cerebras_cloud_sdk':
         specifier: ^1.35.0
         version: 1.35.0
-      '@dqbd/tiktoken':
-        specifier: ^1.0.22
-        version: 1.0.22
       '@google/genai':
         specifier: ^1.10.0
         version: 1.10.0(@modelcontextprotocol/sdk@1.17.3)
@@ -524,12 +521,6 @@ packages:
         integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==,
       }
     engines: { node: '>=18' }
-
-  '@dqbd/tiktoken@1.0.22':
-    resolution:
-      {
-        integrity: sha512-RYhO8xeHkMNX5Ixqf4M1Ve3siCYJY/dI0yLnlX4M4oIEDOvjMIQ+E+3OUpAaZcWTaMtQJzGcDAghYfllpx3i/w==,
-      }
 
   '@esbuild/aix-ppc64@0.25.6':
     resolution:
@@ -8013,8 +8004,6 @@ snapshots:
       '@csstools/css-tokenizer': 3.0.4
 
   '@csstools/css-tokenizer@3.0.4': {}
-
-  '@dqbd/tiktoken@1.0.22': {}
 
   '@esbuild/aix-ppc64@0.25.6':
     optional: true

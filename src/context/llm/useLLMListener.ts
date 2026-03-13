@@ -30,6 +30,12 @@ interface UseLLMListenerProps {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
+    compactRequest?: Message[],
+    contextUsage?: {
+      totalTokens: number;
+      contextWindow: number;
+      modelMaxContext?: number;
+    },
   ) => Promise<Message>;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
@@ -75,6 +81,8 @@ export function useLLMListener({
             temperature,
             maxTokens,
             availableTools,
+            compactRequest,
+            contextUsage,
           } = event.payload;
 
           // Normalize messages from Rust (camelCase -> snake_case)
@@ -179,6 +187,8 @@ export function useLLMListener({
                     temperature,
                     maxTokens,
                     availableTools,
+                    compactRequest,
+                    contextUsage,
                   );
                 } catch (attemptError) {
                   // Abort errors must never be retried — propagate immediately
@@ -247,6 +257,8 @@ export function useLLMListener({
                   temperature,
                   maxTokens,
                   availableTools,
+                  compactRequest,
+                  contextUsage,
                 );
               } else {
                 throw primaryError; // No fallback, propagate to outer catch

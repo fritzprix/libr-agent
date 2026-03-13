@@ -337,23 +337,23 @@ mod tests {
 
         contexts.insert(
             "tool_c".to_string(),
-            crate::mcp::service_proxy::ServiceContext {
-                tool_name: "tool_c".to_string(),
+            crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool C.".to_string(),
+                structured_state: None,
             },
         );
         contexts.insert(
             "tool_a".to_string(),
-            crate::mcp::service_proxy::ServiceContext {
-                tool_name: "tool_a".to_string(),
+            crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool A.".to_string(),
+                structured_state: None,
             },
         );
         contexts.insert(
             "tool_b".to_string(),
-            crate::mcp::service_proxy::ServiceContext {
-                tool_name: "tool_b".to_string(),
+            crate::mcp::types::ServiceContext::<serde_json::Value> {
                 context_prompt: "Context for tool B.".to_string(),
+                structured_state: None,
             },
         );
 

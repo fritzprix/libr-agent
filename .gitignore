@@ -74,5 +74,6 @@ Thumbs.db
 *.pem
 *.p12
 *.key
-.trace.json
 a42/
+test_results.txt
+test_results_*.txt

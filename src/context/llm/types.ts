@@ -40,6 +40,17 @@ export interface CompletionRequest {
   temperature?: number;
   maxTokens?: number;
   availableTools?: MCPTool[];
+  /**
+   * If provided, instructs the frontend to trigger a background compaction
+   * summarizing these messages to free up context window limits.
+   */
+  compactRequest?: Message[];
+  /** Token usage gauge telemetry to drive frontend UI */
+  contextUsage?: {
+    totalTokens: number;
+    contextWindow: number;
+    modelMaxContext?: number;
+  };
 }
 
 /**
@@ -82,6 +93,12 @@ export interface LLMServiceContextValue {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
+    compactRequest?: Message[],
+    contextUsage?: {
+      totalTokens: number;
+      contextWindow: number;
+      modelMaxContext?: number;
+    },
   ) => Promise<Message>;
 
   /**

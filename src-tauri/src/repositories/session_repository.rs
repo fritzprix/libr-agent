@@ -383,6 +383,7 @@ mod tests {
             updated_at: now,
             is_bookmarked: false,
             yolo_mode: false,
+            workspace_override: None,
         };
 
         // Test upsert
@@ -423,6 +424,7 @@ mod tests {
             updated_at: now,
             is_bookmarked: false,
             yolo_mode: false,
+            workspace_override: None,
         };
 
         repo.upsert_session(&session)
@@ -470,6 +472,7 @@ mod tests {
                 updated_at: now + i,
                 is_bookmarked: false,
                 yolo_mode: false,
+                workspace_override: None,
             };
 
             repo.upsert_session(&session)
@@ -538,6 +541,7 @@ mod tests {
             updated_at: now,
             is_bookmarked: false,
             yolo_mode: false,
+            workspace_override: None,
         };
 
         repo.upsert_session(&session)
@@ -561,6 +565,7 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            workspace_override: None,
         };
 
         repo.upsert_session(&updated_session)
@@ -603,6 +608,7 @@ mod tests {
             depth: None,
             max_depth: None,
             max_fanout: None,
+            workspace_override: None,
         };
 
         repo.upsert_session(&session)
@@ -644,6 +650,7 @@ mod tests {
             updated_at: now,
             is_bookmarked: false,
             yolo_mode: false,
+            workspace_override: None,
         };
 
         repo.upsert_session(&session)
