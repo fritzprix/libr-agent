@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Helper to serialize optional JSON fields to Option<String>.
+/// Helper to serialize optional JSON fields to `Option<String>`.
 /// Returns None if the input is None.
 /// Returns Ok(Some(json_string)) if serialization succeeds.
 /// Returns Err if serialization fails.
@@ -10,7 +10,7 @@ pub fn to_json_option<T: Serialize>(
     value.as_ref().map(serde_json::to_string).transpose()
 }
 
-/// Helper to deserialize optional JSON string fields to Option<T>.
+/// Helper to deserialize optional JSON string fields to `Option<T>`.
 /// Returns None if the input is None or if deserialization fails (logs the error and returns None).
 /// Use this when you want to handle potential schema evolution gracefully without failing hard.
 pub fn from_json_option<T: for<'a> Deserialize<'a>>(value: &Option<String>) -> Option<T> {
