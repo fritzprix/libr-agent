@@ -42,12 +42,16 @@ interface UseLLMListenerProps {
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
+  resetContextUsageForSession: (sessionId: string) => void;
+  setCompactingFromEvent: (sessionId: string, value: boolean) => void;
 }
 
 export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
   setStreamingMessages,
+  resetContextUsageForSession,
+  setCompactingFromEvent,
 }: UseLLMListenerProps) {
   // Track listener setup to prevent duplicate registration in React Strict Mode
   const listenerSetupRef = useRef(false);
@@ -364,6 +368,7 @@ export function useLLMListener({
           const service = AIServiceFactory.getService(provider, apiKey);
           const summary = await service.compact(messages, { modelName: model });
           await handleCompactResponse(sessionId, fromId, toId, summary);
+          resetContextUsageForSession(sessionId);
           logger.info(`✅ Compact summary stored: session=${sessionId}`);
           toast.success(`Context compacted`, {
             id: toastId,
@@ -391,6 +396,28 @@ export function useLLMListener({
 
     setupCompactListener();
 
+    // --- Compact state listener (Rust-owned: compacting = true/false) ---
+    let unlistenCompactState: (() => void) | undefined;
+
+    const setupCompactStateListener = async () => {
+      const unlistenFn = await listen<{
+        sessionId: string;
+        compacting: boolean;
+      }>('llm:compact-state', (event) => {
+        const { sessionId, compacting } = event.payload;
+        setCompactingFromEvent(sessionId, compacting);
+      });
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCompactState = unlistenFn;
+        logger.info('LLM compact state listener registered');
+      }
+    };
+
+    setupCompactStateListener();
+
     return () => {
       isMounted = false;
       if (unlisten) {
@@ -400,6 +427,10 @@ export function useLLMListener({
       if (unlistenCompact) {
         unlistenCompact();
         logger.info('LLM compact request listener cleaned up');
+      }
+      if (unlistenCompactState) {
+        unlistenCompactState();
+        logger.info('LLM compact state listener cleaned up');
       }
       // Reset listener setup ref on unmount
       listenerSetupRef.current = false;

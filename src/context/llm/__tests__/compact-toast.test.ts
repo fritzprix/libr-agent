@@ -26,6 +26,7 @@ type ToastCall = {
   title: string;
   id: string;
   description: string;
+  duration: number;
 };
 
 interface MockToast {
@@ -85,8 +86,6 @@ async function handleCompactEvent(
     return;
   }
 
-  const provider = settings.preferredModel.provider;
-  const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
   const model = settings.preferredModel.model;
 
   const toastId = `compact-${sessionId}`;
@@ -104,7 +103,7 @@ async function handleCompactEvent(
       description: sessionName,
       duration: 3000,
     });
-  } catch (error) {
+  } catch {
     await handleCompactError(sessionId);
     toast.error(`Compaction failed`, {
       id: toastId,

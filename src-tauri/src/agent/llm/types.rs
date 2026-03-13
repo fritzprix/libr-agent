@@ -35,3 +35,12 @@ pub struct CompactRequest {
     pub from_id: String,
     pub to_id: String,
 }
+
+/// Event payload emitted as `llm:compact-state`.
+/// Frontend uses this to block user input while compaction is in-flight.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactStateEvent {
+    pub session_id: String,
+    pub compacting: bool,
+}

@@ -112,6 +112,7 @@ pub async fn resume_session(
                 context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
                 compact_context: Arc::new(RwLock::new(compact_context_record)),
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
+                last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
         );

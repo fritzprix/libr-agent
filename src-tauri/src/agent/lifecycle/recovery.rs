@@ -176,6 +176,7 @@ pub async fn recover_sessions(
                         context_registry: context_registry.clone(),
                         compact_context: Arc::new(RwLock::new(None)),
                         compact_in_flight: Arc::new(AtomicBool::new(false)),
+                        last_compacted_tail_id: Arc::new(RwLock::new(None)),
                         cached_stable_prompt: Arc::new(RwLock::new(None)),
                     },
                 );

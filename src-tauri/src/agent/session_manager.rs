@@ -666,6 +666,12 @@ impl AgentSessionManager {
         to_id: String,
         summary: String,
     ) -> Result<(), String> {
+        log::info!(
+            "✅ Compact response stored for session {}: summary_chars={}, summary_est_tokens=~{}",
+            session_id,
+            summary.len(),
+            summary.len() / 4
+        );
         let record = CompactContextRecord {
             id: uuid::Uuid::new_v4().to_string(),
             session_id: session_id.to_string(),
@@ -676,7 +682,6 @@ impl AgentSessionManager {
         };
         self.save_compact_context(session_id, record).await?;
         self.clear_compact_in_flight(session_id).await;
-        log::info!("✅ Compact response stored for session {}", session_id);
         Ok(())
     }
 

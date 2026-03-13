@@ -223,7 +223,7 @@ pub async fn request_llm_completion(
 
     // --- Step A: Inject compact summary (if a valid record is cached) ---
     // Clone Arc refs while holding the outer read lock, then release it immediately.
-    let (compact_context_arc, compact_in_flight_arc) = {
+    let (compact_context_arc, compact_in_flight_arc, last_compacted_tail_id_arc) = {
         let active = active_sessions.read().await;
         let session = active
             .get(&session_id)
@@ -231,6 +231,7 @@ pub async fn request_llm_completion(
         (
             session.compact_context.clone(),
             session.compact_in_flight.clone(),
+            session.last_compacted_tail_id.clone(),
         )
     };
 
@@ -262,12 +263,20 @@ pub async fn request_llm_completion(
                     error: None,
                     metadata: None,
                 };
+                let summary_tokens =
+                    crate::agent::llm::token_utils::estimate_tokens_bpe(&summary_msg);
                 let tail = messages[(to_idx + 1)..].to_vec();
+                let tail_tokens: usize = tail
+                    .iter()
+                    .map(crate::agent::llm::token_utils::estimate_tokens_bpe)
+                    .sum();
                 log::info!(
-                    "📦 Injected compact summary: session={}, toId={}, tail_count={}",
+                    "📦 Injected compact summary: session={}, toId={}, tail_count={}, summary_tokens={}, tail_tokens={}",
                     session_id,
                     record.to_id,
-                    tail.len()
+                    tail.len(),
+                    summary_tokens,
+                    tail_tokens
                 );
                 [vec![summary_msg], tail].concat()
             } else {
@@ -303,61 +312,88 @@ pub async fn request_llm_completion(
         );
 
         if current_tokens > threshold {
-            let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(
-                &messages,
-                threshold,
-                system_prompt_tokens + session_context_tokens,
-                tools_tokens,
-            );
-            if split_idx > 0 && split_idx < messages.len() {
+            let split_idx =
+                crate::agent::llm::context_selector::find_compaction_split_index(&messages);
+            if split_idx > 0 {
                 // --- Step B: Guards G1 + G2, then fire-and-forget compact trigger ---
-                let in_flight = compact_in_flight_arc.load(Ordering::SeqCst);
-                let cached_to_id = compact_context_arc
-                    .read()
-                    .await
-                    .as_ref()
-                    .map(|r| r.to_id.clone());
-                let pending_to_id = messages.get(split_idx - 1).map(|m| m.id.clone());
+                //
+                // G1: compare_exchange on compact_in_flight — atomically claims the
+                //     in-flight slot BEFORE any await point.  This is critical: a plain
+                //     load→(await)→store sequence has a yield window where a second
+                //     concurrent caller could read the old false value and also proceed.
+                //     compare_exchange(false→true) is inherently atomic in Tokio's
+                //     cooperative scheduler — no other task can execute between the CAS
+                //     and its return, so only one caller can ever win the slot.
+                //
+                // G2: last_compacted_tail_id — guards against re-triggering immediately
+                //     after a successful compact.  After Step A rebuilds messages as
+                //     [summary + tail], the tail's last ID is the same as it was when we
+                //     triggered the previous compact (no new messages yet).  We skip until
+                //     a new tool result or user message advances the tail.  On failure we
+                //     must release G1 (reset in_flight to false) so future turns can retry.
+                let claimed_in_flight = compact_in_flight_arc
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok();
 
-                if !in_flight && cached_to_id.as_deref() != pending_to_id.as_deref() {
-                    let compact_msgs = messages[..split_idx].to_vec();
-                    let from_id = compact_msgs
-                        .first()
-                        .map(|m| m.id.clone())
-                        .unwrap_or_default();
-                    let to_id = compact_msgs
-                        .last()
-                        .map(|m| m.id.clone())
-                        .unwrap_or_default();
+                if claimed_in_flight {
+                    // G1 acquired — now safe to await for G2 check.
+                    let current_tail_id = messages.last().map(|m| m.id.clone());
+                    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+                    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
 
-                    // Set flag synchronously before spawning to prevent TOCTOU.
-                    compact_in_flight_arc.store(true, Ordering::SeqCst);
+                    if same_tail {
+                        // G2 blocked — release G1 so future turns with new messages can fire.
+                        compact_in_flight_arc.store(false, Ordering::SeqCst);
+                        log::debug!(
+                            "⏭️ Compaction skipped (same tail): session={}, tail={}",
+                            session_id,
+                            current_tail_id.as_deref().unwrap_or("?")
+                        );
+                    } else {
+                        let compact_msgs = messages[..split_idx].to_vec();
+                        let from_id = compact_msgs
+                            .first()
+                            .map(|m| m.id.clone())
+                            .unwrap_or_default();
+                        let to_id = compact_msgs
+                            .last()
+                            .map(|m| m.id.clone())
+                            .unwrap_or_default();
 
-                    let compact_event = CompactRequest {
-                        session_id: session_id.clone(),
-                        session_name: session_name.clone(),
-                        messages: compact_msgs,
-                        from_id,
-                        to_id,
-                    };
-                    let app = app_handle.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = app.emit("llm:compact-request", compact_event) {
-                            log::error!("Failed to emit llm:compact-request: {}", e);
-                        }
-                    });
-                    log::info!(
-                        "🔧 Compaction triggered: session={}, split_idx={}",
-                        session_id,
-                        split_idx
-                    );
+                        // Record the tail ID before spawning so G2 is set atomically
+                        // with in_flight=true.
+                        *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+
+                        let compact_event = CompactRequest {
+                            session_id: session_id.clone(),
+                            session_name: session_name.clone(),
+                            messages: compact_msgs,
+                            from_id,
+                            to_id,
+                        };
+                        let app = app_handle.clone();
+                        let state_session_id = session_id.clone();
+                        tokio::spawn(async move {
+                            let state_event = crate::agent::llm::types::CompactStateEvent {
+                                session_id: state_session_id.clone(),
+                                compacting: true,
+                            };
+                            if let Err(e) = app.emit("llm:compact-state", state_event) {
+                                log::error!("Failed to emit llm:compact-state: {}", e);
+                            }
+                            if let Err(e) = app.emit("llm:compact-request", compact_event) {
+                                log::error!("Failed to emit llm:compact-request: {}", e);
+                            }
+                        });
+                        log::info!(
+                            "🔧 Compaction triggered: session={}, split_idx={}, tail={}",
+                            session_id,
+                            split_idx,
+                            current_tail_id.as_deref().unwrap_or("?")
+                        );
+                    }
                 } else {
-                    log::debug!(
-                        "⏭️ Compaction skipped: session={}, in_flight={}, same_range={}",
-                        session_id,
-                        in_flight,
-                        cached_to_id.as_deref() == pending_to_id.as_deref()
-                    );
+                    log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
                 }
             }
         }

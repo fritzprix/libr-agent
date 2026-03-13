@@ -22,58 +22,11 @@ pub struct SelectedContext {
 }
 
 /// Calculates the split index for compaction.
-/// Messages before this index will be compacted (summarized).
-/// Messages from this index onwards will be kept as "recent context".
-pub fn find_compaction_split_index(
-    messages: &[Message],
-    threshold: usize,
-    system_prompt_tokens: usize,
-    tools_tokens: usize,
-) -> usize {
-    // 1. Calculate local BPE sum for all messages
-    let total_local_msg_tokens: usize = messages.iter().map(token_utils::estimate_tokens_bpe).sum();
-    let total_local_bpe = total_local_msg_tokens + system_prompt_tokens + tools_tokens;
-
-    // 2. Fetch grounded token stats
-    let api_grounded_tokens =
-        token_utils::calculate_grounded_total_tokens(messages, system_prompt_tokens, tools_tokens);
-
-    // 3. Derive calibration ratio
-    let calibration_ratio = if total_local_bpe > 0 {
-        api_grounded_tokens as f64 / total_local_bpe as f64
-    } else {
-        1.0
-    };
-
-    // How much room is actually available for messages?
-    let message_budget = threshold.saturating_sub(system_prompt_tokens + tools_tokens);
-
-    // Keep the most recent messages up to 50% of the available budget, or at least 1000 tokens
-    let keep_threshold = std::cmp::max(1000, message_budget / 2);
-
-    let mut current_sum = 0;
-    let mut split_idx = 0;
-    let mut split_found = false;
-
-    for i in (0..messages.len()).rev() {
-        let base_tokens = token_utils::estimate_tokens_bpe(&messages[i]);
-        let calibrated_tokens = (base_tokens as f64 * calibration_ratio).ceil() as usize;
-
-        current_sum += calibrated_tokens;
-        if current_sum >= keep_threshold {
-            split_idx = i;
-            split_found = true;
-            break;
-        }
-    }
-
-    // Fallback: If no split point was found within the keep budget, force a
-    // half-split when the list is large enough.
-    if !split_found && messages.len() >= 10 {
-        split_idx = messages.len() / 2;
-    }
-
-    split_idx
+/// Returns `messages.len()` to compact ALL current messages. The natural "tail" is
+/// whatever arrives AFTER `to_id` while the async summarization is in-flight —
+/// tracked by `CompactRecord.to_id` in Step A of completion.rs.
+pub fn find_compaction_split_index(messages: &[Message]) -> usize {
+    messages.len()
 }
 
 /// Removes incomplete tool chains.

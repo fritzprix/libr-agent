@@ -621,12 +621,18 @@ export abstract class BaseAIService<
       'to preserve all information needed to continue the conversation effectively.\n\n' +
       'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
 
-    // If the first message is a prior compact summary, give the model a hint string
-    // at the very beginning of the instruction to contextualise the first message.
+    // Residual connection principle: when a prior compact-summary is present, the new
+    // summary MUST be informationally equivalent to (old_summary ⊕ new_messages).
+    // Every piece of information from the previous summary must carry forward unchanged —
+    // treat it as an immutable residual, not a target for further compression.
     const firstMsg = compactMessages[0];
     if (firstMsg?.id.startsWith('compact-summary-')) {
       instruction =
-        '(Note: The first message in the history is a previously accumulated compact summary block.)\n\n' +
+        'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
+        'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
+        'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
+        'Do NOT compress, omit, or paraphrase the prior summary — treat it as an immutable residual that carries forward in full. ' +
+        'Your new summary = (prior summary, preserved completely) + (new messages, summarised).\n\n' +
         instruction;
     }
 

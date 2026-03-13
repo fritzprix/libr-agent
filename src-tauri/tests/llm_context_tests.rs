@@ -41,8 +41,9 @@ fn test_find_compaction_split_index() {
     for i in 0..20 {
         msgs.push(make_message(&format!("msg{}", i), "user", "Short message"));
     }
-    let idx = find_compaction_split_index(&msgs, 10000, 0, 0);
-    assert_eq!(idx, 10);
+    // Function always returns messages.len() — compact everything
+    let idx = find_compaction_split_index(&msgs);
+    assert_eq!(idx, 20);
 }
 
 #[test]
@@ -51,19 +52,13 @@ fn test_find_compaction_split_index_with_calibration() {
     for i in 0..10 {
         let mut msg = make_message(&format!("msg{}", i), "assistant", "Test content");
         if i == 5 {
-            // Give it a massively inflated grounded usage to trigger calibration skew
             msg.usage = Some(json!({ "totalTokens": 20000 }));
         }
         msgs.push(msg);
     }
-    // With 20k grounded tokens but small local text, ratio is high (~300x).
-    // Each message gets multiplied. `keep_threshold` happens quickly within 2-3 iterations from end.
-    let idx = find_compaction_split_index(&msgs, 10000, 0, 0);
-    assert!(
-        idx > 5,
-        "Split idx should be near the end of the stack due to bloated calibrated tokens (idx={})",
-        idx
-    );
+    // Function always returns messages.len() — compact everything
+    let idx = find_compaction_split_index(&msgs);
+    assert_eq!(idx, 10);
 }
 
 #[test]
@@ -217,19 +212,24 @@ fn test_grounded_total_tokens_with_grounding() {
 
 #[test]
 fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
-    let msg1 = make_message_simple("user", "Hello");
-    let mut msg2 = make_message_simple("assistant", "Hi there");
-    msg2.usage = Some(json!({ "totalTokens": 100 }));
+    // After compaction, Step A rebuilds as [compact-summary, ...tail].
+    // compact-summary appears BEFORE the grounded assistant message,
+    // so calculate_grounded_total_tokens must fall back to full BPE.
+    let mut summary = make_message_simple("system", "Summary...");
+    summary.id = "compact-summary-123".to_string();
 
-    let mut msg3 = make_message_simple("system", "Summary...");
-    msg3.id = "compact-summary-123".to_string();
+    let mut grounded = make_message_simple("assistant", "Hi there");
+    grounded.usage = Some(json!({ "totalTokens": 100 }));
 
-    let messages = vec![msg1.clone(), msg2.clone(), msg3.clone()];
+    let tail = make_message_simple("user", "Hello");
+
+    // compact-summary (idx 0) is BEFORE grounded assistant (idx 1) → BPE fallback
+    let messages = vec![summary.clone(), grounded.clone(), tail.clone()];
 
     let tokens = calculate_grounded_total_tokens(&messages, 10, 5);
-    let expected = estimate_tokens_bpe(&msg1)
-        + estimate_tokens_bpe(&msg2)
-        + estimate_tokens_bpe(&msg3)
+    let expected = estimate_tokens_bpe(&summary)
+        + estimate_tokens_bpe(&grounded)
+        + estimate_tokens_bpe(&tail)
         + 10
         + 5;
 

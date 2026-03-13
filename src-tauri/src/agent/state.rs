@@ -131,6 +131,12 @@ pub struct AgentSession {
     /// Prevents double-triggering compaction within the same session.
     pub compact_in_flight: Arc<AtomicBool>,
 
+    /// The ID of the last message in the stack at the moment compaction was triggered.
+    /// On the next Step B evaluation, if messages.last().id still equals this value,
+    /// it means no new messages have been added since the last compaction — skip.
+    /// Replaced when a new compaction fires with a different tail.
+    pub last_compacted_tail_id: Arc<RwLock<Option<String>>>,
+
     /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
     /// instructions, session context). These sections are immutable within a session
     /// so we build them once and reuse on every LLM call to avoid redundant JSON

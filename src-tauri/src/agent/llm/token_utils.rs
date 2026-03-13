@@ -111,12 +111,18 @@ pub fn calculate_grounded_total_tokens(
     }
 
     if let Some(idx) = grounded_index {
-        // Check if there is a summary message AFTER the grounded point.
-        let has_summary_after_grounded = messages[idx + 1..]
+        // Check if a compact summary appears BEFORE the grounded assistant.
+        // After compaction, Step A rebuilds messages as [compact-summary, ...tail].
+        // The compact-summary is always at index 0, so it will be at a position
+        // before any assistant message — checking after the grounded point would
+        // never find it and would cause the stale pre-compact usage value to be
+        // used as the base, keeping the token estimate artificially high and
+        // triggering repeated compaction.
+        let has_summary_before_grounded = messages[..idx]
             .iter()
             .any(|m| m.id.starts_with("compact-summary-"));
 
-        if !has_summary_after_grounded {
+        if !has_summary_before_grounded {
             let mut incremental_tokens = 0;
             for msg in &messages[idx + 1..] {
                 incremental_tokens += estimate_tokens_bpe(msg);

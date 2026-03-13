@@ -1,7 +1,12 @@
 use serde_json::Value;
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::time::sleep;
 
-use super::formatting::truncate_text;
+use super::client::call_json;
+use super::formatting::{extract_session_status, is_terminal_status, truncate_text};
 use super::types::MessageSummaryOptions;
 use crate::mcp::types::{MCPContent, MCPResult};
 use crate::repositories::{MessageRepository, SessionRepository};
@@ -9,15 +14,43 @@ use crate::repositories::{MessageRepository, SessionRepository};
 pub const SWARM_CONTEXT_PREVIEW_LIMIT: usize = 20;
 pub const SWARM_MESSAGE_PREVIEW_MAX_CHARS: usize = 140;
 
-pub fn success_result(text: String, data: Value) -> MCPResult {
+pub fn success_result<T: serde::Serialize>(text: String, data: T) -> MCPResult {
     MCPResult {
         content: Some(vec![MCPContent::Text {
             text,
-            is_error: None,
+            is_error: Some(false),
         }]),
-        structured_content: Some(data),
+        structured_content: Some(serde_json::to_value(data).unwrap_or(Value::Null)),
         is_error: Some(false),
     }
+}
+
+pub fn swarm_error(
+    category: crate::mcp::builtin::error_guidance::ErrorCategory,
+    operation: &str,
+    cause: String,
+    hints: Vec<String>,
+) -> MCPResult {
+    crate::mcp::builtin::error_guidance::guided_error(
+        category,
+        format!("[{}] {}", operation, cause),
+        crate::mcp::builtin::error_guidance::ToolGroup::Swarm,
+    )
+    .guidance(hints)
+    .to_mcp_result()
+}
+
+pub fn session_not_found_error(operation: &str, session_id: &str) -> MCPResult {
+    swarm_error(
+        crate::mcp::builtin::error_guidance::ErrorCategory::ResourceNotFound,
+        operation,
+        format!("Agent session '{}' not found", session_id),
+        vec![
+            "Use getChildAgents() to list active sub-agents under your command".to_string(),
+            "Verify the session ID matches one of the IDs from your swarm board".to_string(),
+            "The session may have been terminated or expired".to_string(),
+        ],
+    )
 }
 
 pub fn read_required_string(args: &Value, key: &str) -> Result<String, String> {
@@ -160,4 +193,116 @@ pub async fn count_session_turns(session_id: &str) -> usize {
         .await
         .unwrap_or_default();
     messages.iter().filter(|m| m.role == "assistant").count()
+}
+
+/// Consolidates timeout handling for spawnAgent and awaitAgent.
+/// Converts Timeout errors into successful MCP results with guidance.
+pub fn handle_wait_timeout_result(
+    wait_result: Result<(Value, u64), String>,
+    session_id: &str,
+    timeout_seconds: u64,
+    is_spawn: bool,
+) -> Result<(Value, u64), Result<MCPResult, String>> {
+    match wait_result {
+        Ok(res) => Ok(res),
+        Err(e) => {
+            let (category, _) = crate::mcp::error_normalization::categorize_session_api_error(&e);
+            if matches!(
+                category,
+                crate::mcp::error_normalization::ExternalMcpErrorCategory::Timeout
+            ) {
+                let text = if is_spawn {
+                    format!(
+                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use awaitAgent(\"{}\") later to fetch the final result.",
+                        session_id, timeout_seconds, session_id
+                    )
+                } else {
+                    format!(
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call awaitAgent again to continue waiting, or use getAgentLog to check progress.",
+                        session_id, timeout_seconds
+                    )
+                };
+
+                let data = if is_spawn {
+                    serde_json::json!({ "id": session_id, "timeout": true, "error": e })
+                } else {
+                    serde_json::json!({ "sessionId": session_id, "timeout": true, "error": e })
+                };
+
+                return Err(Ok(success_result(text, data)));
+            }
+            Err(Err(e))
+        }
+    }
+}
+
+pub async fn wait_until_session_terminal(
+    session_id: &str,
+    timeout_seconds: u64,
+    caller_session_id: Option<&str>,
+) -> Result<(Value, u64), String> {
+    const HEARTBEAT: Duration = Duration::from_secs(30);
+
+    let bus = crate::state::get_session_bus();
+    let child_notifier = bus.get_or_create(session_id);
+    let caller_notifier = caller_session_id.map(|id| bus.get_or_create(id));
+    let caller_cancel_pending: Option<Arc<std::sync::atomic::AtomicBool>> = match caller_session_id
+    {
+        Some(id) => crate::state::get_session_cancel_pending(id).await,
+        None => None,
+    };
+
+    let started_at = Instant::now();
+    let mut wake_count: u64 = 0;
+
+    loop {
+        if let Some(ref flag) = caller_cancel_pending {
+            if flag.load(Ordering::Relaxed) {
+                return Err(format!(
+                    "awaitAgent interrupted: calling session was cancelled while waiting for '{}'",
+                    session_id
+                ));
+            }
+        }
+
+        let session = call_json(
+            reqwest::Method::GET,
+            &format!("/api/sessions/{}", session_id),
+            None,
+            None,
+        )
+        .await?;
+
+        wake_count = wake_count.saturating_add(1);
+        if is_terminal_status(&extract_session_status(&session)) {
+            return Ok((session, wake_count));
+        }
+
+        let remaining = if timeout_seconds == 0 {
+            None
+        } else {
+            let limit = Duration::from_secs(timeout_seconds.clamp(5, 86_400));
+            let elapsed = started_at.elapsed();
+            if elapsed >= limit {
+                return Err(format!(
+                    "awaitAgent timed out after {}s for session {}",
+                    timeout_seconds, session_id
+                ));
+            }
+            Some(limit - elapsed)
+        };
+
+        let sleep_cap = remaining.map(|r| r.min(HEARTBEAT)).unwrap_or(HEARTBEAT);
+
+        tokio::select! {
+            _ = child_notifier.notified() => {}
+            _ = async {
+                match &caller_notifier {
+                    Some(n) => n.notified().await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {}
+            _ = sleep(sleep_cap) => {}
+        }
+    }
 }
