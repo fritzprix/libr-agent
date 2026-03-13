@@ -41,7 +41,7 @@ describe('useAssistantsList', () => {
       assistants: mockAssistants,
       searchAssistants: mockSearchAssistants,
       setPaginationMode: mockSetPaginationMode,
-    } as any);
+    } as unknown as ReturnType<typeof useAssistantContext>);
     vi.mocked(listAvailableBuiltinServerDefinitions).mockResolvedValue([]);
     vi.mocked(dbUtils.getMCPServersByIds).mockResolvedValue([]);
   });
@@ -55,7 +55,7 @@ describe('useAssistantsList', () => {
 
   it('loads builtin tools map on mount', async () => {
     vi.mocked(listAvailableBuiltinServerDefinitions).mockResolvedValueOnce([
-      { name: 't1', metadata: { displayName: 'Tool 1' } } as any,
+      { name: 't1', metadata: { displayName: 'Tool 1' } } as unknown as import('@/lib/backend/types').BuiltinServerInfo,
     ]);
     const { result } = renderHook(() => useAssistantsList());
     await waitFor(() => {
@@ -65,7 +65,7 @@ describe('useAssistantsList', () => {
 
   it('loads MCP servers map when assistants change', async () => {
     vi.mocked(dbUtils.getMCPServersByIds).mockResolvedValueOnce([
-      { id: 'mcp-1', name: 'Server 1' } as any,
+      { id: 'mcp-1', name: 'Server 1' } as unknown as import('@/models/chat').MCPServer,
     ]);
     const { result } = renderHook(() => useAssistantsList());
     await waitFor(() => {
@@ -74,7 +74,7 @@ describe('useAssistantsList', () => {
   });
 
   it('handles search and prevents stale results', async () => {
-    let resolveFirstSearch!: (val: any) => void;
+    let resolveFirstSearch!: (val: Assistant[]) => void;
     mockSearchAssistants
       .mockReturnValueOnce(new Promise((res) => { resolveFirstSearch = res; }))
       .mockResolvedValueOnce([{ id: '2', name: 'Result 2' }]);
@@ -117,7 +117,7 @@ describe('useAssistantsList', () => {
   });
 
   it('prevents state updates after unmount for MCP servers', async () => {
-    let resolveMcp!: (val: any) => void;
+    let resolveMcp!: (val: import('@/models/chat').MCPServer[]) => void;
     vi.mocked(dbUtils.getMCPServersByIds).mockReturnValueOnce(
       new Promise((res) => { resolveMcp = res; })
     );

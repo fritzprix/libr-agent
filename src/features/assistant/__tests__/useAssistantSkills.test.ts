@@ -51,7 +51,7 @@ describe('useAssistantSkills', () => {
     vi.mocked(useEditor).mockReturnValue({
       draft: mockDraft,
       update: mockUpdate,
-    } as any);
+    } as unknown as ReturnType<typeof useEditor>);
     vi.mocked(getAggregatedSkills).mockResolvedValue([]);
   });
 
@@ -69,7 +69,7 @@ describe('useAssistantSkills', () => {
   });
 
   it('prevents stale updates when switching assistants', async () => {
-    let resolveFirst!: (val: any) => void;
+    let resolveFirst!: (val: SkillMetadata[]) => void;
     vi.mocked(getAggregatedSkills).mockReturnValueOnce(
       new Promise((res) => { resolveFirst = res; })
     );
@@ -83,7 +83,7 @@ describe('useAssistantSkills', () => {
     vi.mocked(useEditor).mockReturnValue({
       draft: { id: 'assistant-2' },
       update: mockUpdate,
-    } as any);
+    } as unknown as ReturnType<typeof useEditor>);
     
     rerender();
 
@@ -140,7 +140,7 @@ describe('useAssistantSkills', () => {
   });
 
   it('prevents state updates after unmount', async () => {
-    let resolveFetch!: (val: any) => void;
+    let resolveFetch!: (val: SkillMetadata[]) => void;
     vi.mocked(getAggregatedSkills).mockReturnValueOnce(
       new Promise((res) => { resolveFetch = res; })
     );
