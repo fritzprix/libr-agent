@@ -43,7 +43,7 @@ export function useAssistantsList() {
       });
       return map;
     },
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: false, keepPreviousData: true },
   );
 
   // Search results using SWR to prevent race conditions
@@ -52,7 +52,11 @@ export function useAssistantsList() {
     async ([, query]) => {
       return await searchAssistants(query as string);
     },
-    { revalidateOnFocus: false, shouldRetryOnError: false },
+    {
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+      keepPreviousData: true,
+    },
   );
 
   const handleToggleExpand = useCallback((id: string) => {
