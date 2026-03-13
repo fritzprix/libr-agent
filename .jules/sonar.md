@@ -51,3 +51,5 @@ Format: `## YYYY-MM-DD - [Module/File] **Coverage Expanded:** [Tested Target] **
 ## 2026-03-09 - src/lib/backend/playbooks.ts **Coverage Expanded:** Backend Playbooks Wrapper **Assertions:** Verified safeInvoke args, correct payload forwarding, JSON deserialization robustness, and pagination logic
 
 ## 2026-03-11 - src/lib/backend/mcp-server.ts **Coverage Expanded:** MCP Server Backend Interface API **Assertions:** Verified accurate routing and argument payloads for all backend commands (callTool, hasOAuthToken, getOAuthToken, revokeOAuthToken, sampleFromModel, validateToolSchema) with 100% statement and branch coverage.
+
+## 2026-03-12 - src/lib/date-utils.ts **Coverage Expanded:** formatSessionTimestamp relative fallback logic **Assertions:** Verified absolute fallback when relative format is empty
