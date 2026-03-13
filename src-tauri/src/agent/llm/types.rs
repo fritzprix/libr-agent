@@ -28,6 +28,8 @@ pub struct CompletionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct CompactRequest {
     pub session_id: String,
+    /// Human-readable session name for toast display. Falls back to a short session ID prefix.
+    pub session_name: String,
     /// Messages to summarize (fromId..=toId inclusive)
     pub messages: Vec<Message>,
     pub from_id: String,

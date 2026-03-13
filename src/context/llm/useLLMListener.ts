@@ -6,6 +6,7 @@ import {
 } from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
@@ -330,11 +331,13 @@ export function useLLMListener({
     const setupCompactListener = async () => {
       const unlistenFn = await listen<{
         sessionId: string;
+        sessionName: string;
         messages: Message[];
         fromId: string;
         toId: string;
       }>('llm:compact-request', async (event) => {
-        const { sessionId, messages, fromId, toId } = event.payload;
+        const { sessionId, sessionName, messages, fromId, toId } =
+          event.payload;
         logger.info(
           `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
         );
@@ -350,14 +353,31 @@ export function useLLMListener({
         const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
         const model = settings.preferredModel.model;
 
+        const toastId = `compact-${sessionId}`;
+        toast.loading(`Compacting context…`, {
+          id: toastId,
+          description: sessionName,
+          duration: Infinity,
+        });
+
         try {
           const service = AIServiceFactory.getService(provider, apiKey);
           const summary = await service.compact(messages, { modelName: model });
           await handleCompactResponse(sessionId, fromId, toId, summary);
           logger.info(`✅ Compact summary stored: session=${sessionId}`);
+          toast.success(`Context compacted`, {
+            id: toastId,
+            description: sessionName,
+            duration: 3000,
+          });
         } catch (error) {
           logger.error(`Compact LLM call failed: session=${sessionId}`, error);
           await handleCompactError(sessionId);
+          toast.error(`Compaction failed`, {
+            id: toastId,
+            description: sessionName,
+            duration: 4000,
+          });
         }
       });
 

@@ -137,6 +137,11 @@ pub async fn request_llm_completion(
 
     let model = session.metadata.model.clone();
     let provider = session.metadata.provider.clone();
+    let session_name = session
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
 
     let temperature = agent_config.temperature;
     let max_tokens = agent_config.max_tokens;
@@ -330,6 +335,7 @@ pub async fn request_llm_completion(
 
                     let compact_event = CompactRequest {
                         session_id: session_id.clone(),
+                        session_name: session_name.clone(),
                         messages: compact_msgs,
                         from_id,
                         to_id,
