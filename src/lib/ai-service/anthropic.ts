@@ -928,6 +928,9 @@ export class AnthropicService extends BaseAIService<
    * Used by the base-class `compact()` for context summarisation.
    * @param prompt The user prompt to send.
    * @param options Optional model name, sampling parameters, and service config.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
    * @returns A resolved `SamplingResponse` with the generated text.
    */
   async sampleText(

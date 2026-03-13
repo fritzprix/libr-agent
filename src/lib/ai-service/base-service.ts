@@ -1,232 +1,131 @@
-import { Message } from '@/models/chat';
-import {
-  MCPTool,
-  MCPContent,
-  SamplingOptions,
-  SamplingResponse,
-} from '@/lib/mcp';
-import {
+import { extractMedia } from '@/lib/ai-service/utils';
+import { AIServiceError } from '@/lib/error-contract';
+import { getLogger } from '@/lib/logger';
+import { llmConfigManager } from '@/lib/llm-config-manager';
+import type { MCPContent, MCPTool } from '@/lib/mcp';
+import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
+import type {
   AIServiceConfig,
   AIServiceProvider,
-  AIServiceError,
   IAIService,
+  ModelInfo,
+  SamplingOptions,
+  SamplingResponse,
 } from './types';
-import { ModelInfo, llmConfigManager } from '../llm-config-manager';
-import { withRetry, withTimeout } from '../retry-utils';
-import { MessageNormalizer } from './message-normalizer';
-import { getLogger } from '../logger';
-import { extractMediaContent as extractMedia } from './utils';
+import type { Message } from '@/models/chat';
 
 /**
- * An abstract base class that provides common functionality for all AI services.
- * It implements the `IAIService` interface and handles API key validation,
- * message validation, retry logic, and configuration merging.
+ * Base class for AI services. Provides common functionality for interacting with
+ * various AI providers.
+ * @template TProviderMessage The type of message objects used by the provider's API.
+ * @template TProviderTool The type of tool objects used by the provider's API.
  */
-export abstract class BaseAIService<
-  TProviderMessage = unknown,
-  TProviderTool = unknown,
-> implements IAIService
+export abstract class BaseAIService<TProviderMessage, TProviderTool>
+  implements IAIService
 {
-  /**
-   * The default configuration for the service.
-   * @protected
-   */
-  protected defaultConfig: AIServiceConfig = {
-    timeout: 30000,
-    maxRetries: 3,
-    retryDelay: 1000,
-    maxTokens: 8192,
-  };
+  protected defaultConfig: AIServiceConfig;
+  protected abortController: AbortController;
+  protected logger = getLogger(this.getProvider());
 
   /**
-   * A logger instance for the base service.
-   * @protected
-   */
-  protected logger = getLogger('BaseAIService');
-
-  // NEW: Instance-level AbortController for stream cancellation
-  protected abortController: AbortController = new AbortController();
-
-  /**
-   * Initializes a new instance of the `BaseAIService`.
-   * @param apiKey The API key for the service.
+   * Constructs a new `BaseAIService` instance.
    * @param config Optional configuration to override the defaults.
    */
-  constructor(
-    protected apiKey: string,
-    protected config?: AIServiceConfig,
-  ) {
-    this.validateApiKey(apiKey);
-    this.defaultConfig = { ...this.defaultConfig, ...config };
+  constructor(config?: AIServiceConfig) {
+    this.defaultConfig = config || llmConfigManager.getDefaultConfig();
+    this.abortController = new AbortController();
   }
 
-  // NEW: Get current abort signal
+  /**
+   * Sets the default configuration for the service.
+   * @param config The new default configuration.
+   */
+  setDefaultConfig(config: AIServiceConfig): void {
+    this.defaultConfig = config;
+  }
+
+  /**
+   * Cancels any ongoing streaming request.
+   */
+  cancel(): void {
+    this.abortController.abort();
+    // Re-create the AbortController for the next request
+    this.abortController = new AbortController();
+  }
+
+  /**
+   * Returns the `AbortSignal` for the current request.
+   * @returns The `AbortSignal`.
+   * @protected
+   */
   protected getAbortSignal(): AbortSignal {
     return this.abortController.signal;
   }
 
-  // NEW: Cancel current stream
-  public cancel(): void {
-    if (!this.abortController.signal.aborted) {
-      this.logger.info('Cancelling active stream');
-      this.abortController.abort();
-    } else {
-      this.logger.debug('cancel() called but no active stream');
-    }
-  }
-
   /**
-   * Validates the provided API key.
-   * @param apiKey The API key to validate.
-   * @throws `AIServiceError` if the API key is invalid.
+   * Executes a function with retry logic.
+   * @param fn The function to execute.
+   * @returns A promise that resolves to the result of the function.
    * @protected
    */
-  protected validateApiKey(apiKey: string): void {
-    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
-      throw new AIServiceError('Invalid API key provided', this.getProvider());
+  protected async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const maxRetries = this.defaultConfig.maxRetries ?? 3;
+    let lastError: any;
+
+    for (let i = 0; i <= maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+
+        // Don't retry on cancellation
+        if (this.abortController.signal.aborted) {
+          throw error;
+        }
+
+        // Only retry on certain errors (e.g., rate limits, network issues)
+        if (this.shouldRetry(error)) {
+          const delay = Math.pow(2, i) * 1000;
+          this.logger.warn(
+            `Retrying request (${i + 1}/${maxRetries}) after ${delay}ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          throw error;
+        }
+      }
     }
+
+    throw lastError;
   }
 
   /**
-   * Validates an array of messages to ensure they conform to the required structure.
-   * @param messages The array of messages to validate.
-   * @throws `AIServiceError` or `Error` if the messages are invalid.
+   * Determines whether an error should trigger a retry.
+   * @param error The error to check.
+   * @returns `true` if the request should be retried, `false` otherwise.
+   * @protected
+   */
+  protected shouldRetry(error: any): boolean {
+    // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
+    if (error.status === 429 || (error.status >= 500 && error.status <= 599)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Common validation logic for messages.
+   * @param messages The messages to validate.
+   * @throws `AIServiceError` if validation fails.
    * @protected
    */
   protected validateMessages(messages: Message[]): void {
-    if (!Array.isArray(messages) || messages.length === 0) {
+    if (!messages || messages.length === 0) {
       throw new AIServiceError(
-        'Messages array cannot be empty',
+        'Messages array is empty or undefined',
         this.getProvider(),
       );
     }
-    messages.forEach((message) => {
-      if (!message.id || typeof message.id !== 'string') {
-        throw new Error('Message must have a valid id');
-      }
-      if (
-        (!message.content &&
-          (message.role === 'user' || message.role === 'system')) ||
-        (typeof message.content !== 'string' && !Array.isArray(message.content))
-      ) {
-        throw new Error('Message must have valid content');
-      }
-      if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
-        throw new Error('Message must have a valid role');
-      }
-    });
-  }
-
-  /**
-   * A wrapper around the `withRetry` utility that automatically uses the service's
-   * default retry configuration and wraps errors in `AIServiceError`.
-   * @template T The type of the result of the operation.
-   * @param operation The asynchronous operation to execute.
-   * @param maxRetries The maximum number of retries, overriding the default.
-   * @returns A promise that resolves with the result of the successful operation.
-   * @protected
-   */
-  protected async withRetry<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = this.defaultConfig.maxRetries!,
-  ): Promise<T> {
-    try {
-      return await withRetry(operation, {
-        maxRetries,
-        baseDelay: this.defaultConfig.retryDelay!,
-        timeout: this.defaultConfig.timeout!,
-        exponentialBackoff: true,
-      });
-    } catch (error) {
-      throw new AIServiceError(
-        (error as Error).message,
-        this.getProvider(),
-        undefined,
-        error as Error,
-      );
-    }
-  }
-
-  /**
-   * A simple wrapper around the `withTimeout` utility.
-   * @template T The type of the result of the promise.
-   * @param promise The promise to execute with a timeout.
-   * @param timeoutMs The timeout in milliseconds.
-   * @returns A promise that resolves with the result or rejects on timeout.
-   * @protected
-   */
-  protected async withTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-  ): Promise<T> {
-    return withTimeout(promise, timeoutMs);
-  }
-
-  /**
-   * Processes an array of `MCPContent` parts into a single string,
-   * extracting only the text content.
-   * @param content The array of `MCPContent` to process.
-   * @returns A single string concatenating all text parts.
-   * @protected
-   */
-  protected processMessageContent(content: MCPContent[]): string {
-    // Extracts only the text from the MCPContent array
-    return content
-      .filter((item) => item.type === 'text')
-      .map((item) => (item as { text: string }).text)
-      .join('\n');
-  }
-
-  /**
-   * Processes an array of `MCPContent` parts for a multimodal LLM,
-   * handling both text and image content.
-   * @param content The array of `MCPContent` to process.
-   * @returns An array of objects suitable for a multimodal API,
-   *          containing either text or image data.
-   * @protected
-   */
-  protected processMultiModalContent(content: MCPContent[]): Array<{
-    type: string;
-    text?: string;
-    image?: string;
-    audio?: string;
-    mimeType?: string;
-  }> {
-    type MediaItem = {
-      data?: string;
-      mimeType?: string;
-      source?: { data?: string; uri?: string; mimeType?: string };
-    };
-    return content.map((item) => {
-      switch (item.type) {
-        case 'text':
-          return { type: 'text', text: (item as { text: string }).text };
-        case 'image':
-          return {
-            type: 'image',
-            image:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
-          };
-        case 'audio':
-          return {
-            type: 'audio',
-            audio:
-              (item as MediaItem).data ||
-              (item as MediaItem).source?.data ||
-              (item as MediaItem).source?.uri,
-            mimeType:
-              (item as MediaItem).mimeType ||
-              (item as MediaItem).source?.mimeType,
-          };
-        default:
-          return { type: 'text', text: `[${item.type}]` };
-      }
-    });
   }
 
   /**
@@ -600,7 +499,9 @@ export abstract class BaseAIService<
    * cutting costs.
    *
    * @param messages The messages to compress.
-   * @param options Optional model name, config, system prompt, context, and tools.
+   * @param options Optional model name and service configuration overrides.
+   * @param options.modelName The name of the model.
+   * @param options.config Optional configuration for the service.
    * @returns A promise that resolves to the summary text.
    */
   async compact(
