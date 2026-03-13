@@ -116,7 +116,7 @@ impl SessionMCPManager {
         cmd.env_clear();
 
         // 2. Re-apply whitelisted system variables
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
 

@@ -232,7 +232,7 @@ fn get_tool_version(tool: &str) -> Option<String> {
         cmd.arg("--version");
 
         cmd.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
 
@@ -244,7 +244,7 @@ fn get_tool_version(tool: &str) -> Option<String> {
         cmd.arg("--version");
 
         cmd.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
 
@@ -278,7 +278,7 @@ fn get_command_path(cmd: &str) -> Option<String> {
         command.arg(cmd);
 
         command.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             command.env(k, v);
         }
 
@@ -304,7 +304,7 @@ fn get_command_path(cmd: &str) -> Option<String> {
         command.arg(cmd);
 
         command.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             command.env(k, v);
         }
 

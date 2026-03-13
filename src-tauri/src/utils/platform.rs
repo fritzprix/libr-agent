@@ -25,9 +25,16 @@ pub fn command_exists(cmd: &str) -> bool {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        std::process::Command::new("where")
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg(cmd)
+        let mut command = std::process::Command::new("where");
+        command.creation_flags(CREATE_NO_WINDOW);
+        command.arg(cmd);
+
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
+
+        command
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)
@@ -35,11 +42,18 @@ pub fn command_exists(cmd: &str) -> bool {
 
     #[cfg(not(windows))]
     {
-        std::process::Command::new("sh")
-            .arg("-c")
-            .arg("command -v \"$1\"")
-            .arg("--")
-            .arg(cmd)
+        let mut command = std::process::Command::new("sh");
+        command.arg("-c");
+        command.arg("command -v \"$1\"");
+        command.arg("--");
+        command.arg(cmd);
+
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
+
+        command
             .output()
             .map(|output| output.status.success())
             .unwrap_or(false)

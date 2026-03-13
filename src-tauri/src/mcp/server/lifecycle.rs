@@ -84,7 +84,7 @@ async fn start_stdio_server(
         cmd.env_clear();
 
         // Re-apply whitelisted essential system variables
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
 

@@ -32,10 +32,10 @@
 
 **Vulnerability:** In `PersistentShell::new` (`src-tauri/src/mcp/builtin/workspace/persistent_shell.rs`), `tokio::process::Command` inherited the parent environment by default, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted code executed within the persistent shell session.
 **Learning:** `env_clear()` must be used universally for all shells and external processes spawned that might execute untrusted code or commands. Process spawning in the workspace module is just as critical as MCP server spawn points.
-**Prevention:** Always use `cmd.env_clear()` before spawning any shell process or isolated process. Afterwards, securely re-apply only the whitelisted essential system variables using `crate::mcp::utils::env::get_isolated_env()`.
+**Prevention:** Always use `cmd.env_clear()` before spawning any shell process or isolated process. Afterwards, securely re-apply only the whitelisted essential system variables using `crate::utils::env::get_isolated_env()`.
 
 ## 2026-03-04 - Environment Variable Leakage in Bootstrap Platform Detection
 
 **Vulnerability:** In `src-tauri/src/mcp/builtin/bootstrap/platform.rs`, `std::process::Command` inherited the parent environment by default when detecting tool versions and command paths, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted executables.
 **Learning:** Even during bootstrap phases and diagnostic checks, external processes spawned via `Command` must not inherit the parent's environment, as any executed tool (even seemingly safe ones like `node` or `python`) can run arbitrary code or scripts.
-**Prevention:** Always use `cmd.env_clear()` before spawning any diagnostic or bootstrap process, and re-apply an explicit whitelist of required system variables using `crate::mcp::utils::env::get_isolated_env()`.
+**Prevention:** Always use `cmd.env_clear()` before spawning any diagnostic or bootstrap process, and re-apply an explicit whitelist of required system variables using `crate::utils::env::get_isolated_env()`. This pattern has been extended to the shared `command_exists` utility to ensure all tool existence checks are isolated.

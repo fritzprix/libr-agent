@@ -48,7 +48,7 @@ pub async fn create_high_isolated_command(
 
     // Apply environment isolation
     cmd.env_clear();
-    for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+    for (k, v) in crate::utils::env::get_isolated_env() {
         cmd.env(k, v);
     }
 
