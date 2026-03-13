@@ -433,7 +433,7 @@ export function AgentChatStatusBar() {
             <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
             <button
               onClick={() => setShowToolsModal(true)}
-              className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors ${getToolsColor()}`}
+              className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${getToolsColor()}`}
               title={
                 toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')
               }

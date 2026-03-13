@@ -739,12 +739,13 @@ function DraftChatInner() {
         {workspaceOverride ? (
           <div className="w-full max-w-md animate-in fade-in zoom-in duration-300">
             <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex items-start gap-4 shadow-sm relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                 <button
                   type="button"
                   onClick={() => setWorkspaceOverride(null)}
-                  className="bg-background/80 hover:bg-background rounded-full p-1 shadow-sm border"
+                  className="bg-background/80 hover:bg-background rounded-full p-1 shadow-sm border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   title="Remove workspace override"
+                  aria-label="Remove workspace override"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -908,7 +909,7 @@ function DraftChatInner() {
                 <button
                   type="button"
                   onClick={() => handleFileRemove(index)}
-                  className="shrink-0 text-muted-foreground hover:text-foreground ml-0.5"
+                  className="shrink-0 text-muted-foreground hover:text-foreground ml-0.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   aria-label={`Remove ${file.name}`}
                 >
                   <X className="h-3 w-3" />
