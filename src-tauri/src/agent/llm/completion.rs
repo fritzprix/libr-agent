@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use super::prompt::build_session_system_prompt_split;
-use super::types::CompletionRequest;
+use super::types::{CompactRequest, CompletionRequest};
 
 /// Request LLM completion from frontend
 ///
@@ -216,7 +216,69 @@ pub async fn request_llm_completion(
         .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
         .unwrap_or(0);
 
-    let mut compact_request = None;
+    // --- Step A: Inject compact summary (if a valid record is cached) ---
+    // Clone Arc refs while holding the outer read lock, then release it immediately.
+    let (compact_context_arc, compact_in_flight_arc) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(&session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        (
+            session.compact_context.clone(),
+            session.compact_in_flight.clone(),
+        )
+    };
+
+    let messages = {
+        let compact_record = compact_context_arc.read().await.clone();
+        if let Some(record) = compact_record {
+            if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
+                let now_ms = chrono::Utc::now().timestamp_millis();
+                let summary_msg = Message {
+                    id: format!("compact-summary-{}", session_id),
+                    session_id: session_id.clone(),
+                    role: "user".to_string(),
+                    content: vec![MCPContent::Text {
+                        text: format!("### Previous Conversation Summary\n\n{}", record.summary),
+                        is_error: None,
+                    }],
+                    source: Some("compact-summary".to_string()),
+                    created_at: now_ms,
+                    updated_at: now_ms,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    is_streaming: None,
+                    thinking: None,
+                    thinking_signature: None,
+                    assistant_id: None,
+                    attachments: None,
+                    tool_use: None,
+                    usage: None,
+                    error: None,
+                    metadata: None,
+                };
+                let tail = messages[(to_idx + 1)..].to_vec();
+                log::info!(
+                    "📦 Injected compact summary: session={}, toId={}, tail_count={}",
+                    session_id,
+                    record.to_id,
+                    tail.len()
+                );
+                [vec![summary_msg], tail].concat()
+            } else {
+                // Stale: to_id not found in current message stack — invalidate in-memory cache.
+                *compact_context_arc.write().await = None;
+                log::warn!(
+                    "⚠️ Compact cache stale (toId not found), invalidated: session={}",
+                    session_id
+                );
+                messages
+            }
+        } else {
+            messages
+        }
+    };
+
     let mut final_messages = messages.clone();
 
     let combined_system_prompt = match (&system_prompt, &session_context) {
@@ -243,7 +305,54 @@ pub async fn request_llm_completion(
                 tools_tokens,
             );
             if split_idx > 0 && split_idx < messages.len() {
-                compact_request = Some(messages[..split_idx].to_vec());
+                // --- Step B: Guards G1 + G2, then fire-and-forget compact trigger ---
+                let in_flight = compact_in_flight_arc.load(Ordering::SeqCst);
+                let cached_to_id = compact_context_arc
+                    .read()
+                    .await
+                    .as_ref()
+                    .map(|r| r.to_id.clone());
+                let pending_to_id = messages.get(split_idx - 1).map(|m| m.id.clone());
+
+                if !in_flight && cached_to_id.as_deref() != pending_to_id.as_deref() {
+                    let compact_msgs = messages[..split_idx].to_vec();
+                    let from_id = compact_msgs
+                        .first()
+                        .map(|m| m.id.clone())
+                        .unwrap_or_default();
+                    let to_id = compact_msgs
+                        .last()
+                        .map(|m| m.id.clone())
+                        .unwrap_or_default();
+
+                    // Set flag synchronously before spawning to prevent TOCTOU.
+                    compact_in_flight_arc.store(true, Ordering::SeqCst);
+
+                    let compact_event = CompactRequest {
+                        session_id: session_id.clone(),
+                        messages: compact_msgs,
+                        from_id,
+                        to_id,
+                    };
+                    let app = app_handle.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = app.emit("llm:compact-request", compact_event) {
+                            log::error!("Failed to emit llm:compact-request: {}", e);
+                        }
+                    });
+                    log::info!(
+                        "🔧 Compaction triggered: session={}, split_idx={}",
+                        session_id,
+                        split_idx
+                    );
+                } else {
+                    log::debug!(
+                        "⏭️ Compaction skipped: session={}, in_flight={}, same_range={}",
+                        session_id,
+                        in_flight,
+                        cached_to_id.as_deref() == pending_to_id.as_deref()
+                    );
+                }
             }
         }
 
@@ -312,7 +421,6 @@ pub async fn request_llm_completion(
         temperature,
         max_tokens,
         available_tools,
-        compact_request,
         context_usage,
     };
 

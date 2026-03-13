@@ -114,6 +114,10 @@ pub async fn start_workflow(
         if let Some(session) = active.get_mut(&session_id) {
             session.cancel_pending.store(false, Ordering::SeqCst);
             session.cancellation_token = CancellationToken::new();
+            // Safety valve: clear any stale in-flight compaction flag.
+            // Guards against the case where the frontend crashed mid-compaction
+            // and never called agent_handle_compact_error to release the flag.
+            session.compact_in_flight.store(false, Ordering::SeqCst);
         }
     }
 

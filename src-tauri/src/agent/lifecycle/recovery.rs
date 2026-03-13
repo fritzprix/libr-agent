@@ -175,6 +175,7 @@ pub async fn recover_sessions(
                         pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                         context_registry: context_registry.clone(),
                         compact_context: Arc::new(RwLock::new(None)),
+                        compact_in_flight: Arc::new(AtomicBool::new(false)),
                         cached_stable_prompt: Arc::new(RwLock::new(None)),
                     },
                 );

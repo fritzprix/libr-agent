@@ -1,6 +1,8 @@
 import {
   handleLLMError,
   handleLLMResponse,
+  handleCompactResponse,
+  handleCompactError,
 } from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
@@ -8,7 +10,7 @@ import { listen } from '@tauri-apps/api/event';
 import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
-import { AIServiceProvider } from '@/lib/ai-service/types';
+import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
@@ -30,7 +32,6 @@ interface UseLLMListenerProps {
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
-    compactRequest?: Message[],
     contextUsage?: {
       totalTokens: number;
       contextWindow: number;
@@ -81,7 +82,6 @@ export function useLLMListener({
             temperature,
             maxTokens,
             availableTools,
-            compactRequest,
             contextUsage,
           } = event.payload;
 
@@ -187,7 +187,6 @@ export function useLLMListener({
                     temperature,
                     maxTokens,
                     availableTools,
-                    compactRequest,
                     contextUsage,
                   );
                 } catch (attemptError) {
@@ -257,7 +256,6 @@ export function useLLMListener({
                   temperature,
                   maxTokens,
                   availableTools,
-                  compactRequest,
                   contextUsage,
                 );
               } else {
@@ -326,11 +324,62 @@ export function useLLMListener({
 
     setupListener();
 
+    // --- Compact request listener ---
+    let unlistenCompact: (() => void) | undefined;
+
+    const setupCompactListener = async () => {
+      const unlistenFn = await listen<{
+        sessionId: string;
+        messages: Message[];
+        fromId: string;
+        toId: string;
+      }>('llm:compact-request', async (event) => {
+        const { sessionId, messages, fromId, toId } = event.payload;
+        logger.info(
+          `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
+        );
+
+        const settings = settingsRef.current;
+        if (!settings) {
+          logger.error('No settings available for compact request');
+          await handleCompactError(sessionId);
+          return;
+        }
+
+        const provider = settings.preferredModel.provider as AIServiceProvider;
+        const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
+        const model = settings.preferredModel.model;
+
+        try {
+          const service = AIServiceFactory.getService(provider, apiKey);
+          const summary = await service.compact(messages, { modelName: model });
+          await handleCompactResponse(sessionId, fromId, toId, summary);
+          logger.info(`✅ Compact summary stored: session=${sessionId}`);
+        } catch (error) {
+          logger.error(`Compact LLM call failed: session=${sessionId}`, error);
+          await handleCompactError(sessionId);
+        }
+      });
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCompact = unlistenFn;
+        logger.info('LLM compact request listener registered');
+      }
+    };
+
+    setupCompactListener();
+
     return () => {
       isMounted = false;
       if (unlisten) {
         unlisten();
         logger.info('LLM completion request listener cleaned up');
+      }
+      if (unlistenCompact) {
+        unlistenCompact();
+        logger.info('LLM compact request listener cleaned up');
       }
       // Reset listener setup ref on unmount
       listenerSetupRef.current = false;

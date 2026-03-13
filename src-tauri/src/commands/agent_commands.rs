@@ -500,3 +500,43 @@ pub async fn agent_save_compact_context(
         data: None,
     })
 }
+
+/// Handle a successful compact response from the frontend LLM call.
+/// Stores the summary in-memory + DB and clears the in-flight flag.
+#[command]
+pub async fn agent_handle_compact_response(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    from_id: String,
+    to_id: String,
+    summary: String,
+) -> Result<AgentResponse, String> {
+    manager
+        .handle_compact_response(&session_id, from_id, to_id, summary)
+        .await?;
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compact response handled for session: {}", session_id),
+        data: None,
+    })
+}
+
+/// Handle a failed compact LLM call — clears the in-flight flag so future turns can retry.
+#[command]
+pub async fn agent_handle_compact_error(
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.clear_compact_in_flight(&session_id).await;
+    log::warn!(
+        "⚠️ Compact error received for session {}, flag cleared",
+        session_id
+    );
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compact error cleared for session: {}", session_id),
+        data: None,
+    })
+}

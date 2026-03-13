@@ -127,6 +127,10 @@ pub struct AgentSession {
     /// Compact context for the session (SP17)
     pub compact_context: Arc<RwLock<Option<CompactContextRecord>>>,
 
+    /// Guard: true while a llm:compact-request is in-flight (frontend hasn't returned yet).
+    /// Prevents double-triggering compaction within the same session.
+    pub compact_in_flight: Arc<AtomicBool>,
+
     /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
     /// instructions, session context). These sections are immutable within a session
     /// so we build them once and reuse on every LLM call to avoid redundant JSON

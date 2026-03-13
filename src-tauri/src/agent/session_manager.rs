@@ -656,4 +656,37 @@ impl AgentSessionManager {
 
         Ok(())
     }
+
+    /// Handle a successful compact response from the frontend.
+    /// Stores the summary record in-memory + DB and clears the in-flight flag.
+    pub async fn handle_compact_response(
+        &self,
+        session_id: &str,
+        from_id: String,
+        to_id: String,
+        summary: String,
+    ) -> Result<(), String> {
+        let record = CompactContextRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.to_string(),
+            from_id,
+            to_id,
+            summary,
+            created_at: chrono::Utc::now().timestamp_millis(),
+        };
+        self.save_compact_context(session_id, record).await?;
+        self.clear_compact_in_flight(session_id).await;
+        log::info!("✅ Compact response stored for session {}", session_id);
+        Ok(())
+    }
+
+    /// Clear the compact in-flight flag for a session (called on success or error).
+    pub async fn clear_compact_in_flight(&self, session_id: &str) {
+        let active = self.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            session
+                .compact_in_flight
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
 }

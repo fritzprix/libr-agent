@@ -18,9 +18,18 @@ pub struct CompletionRequest {
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub available_tools: Option<Vec<crate::mcp::types::MCPTool>>,
-    /// If Some, the frontend should trigger a background compaction summarizing these messages.
-    /// Used by the Compact context strategy when context limits are reached.
-    pub compact_request: Option<Vec<Message>>,
     /// Token usage gauge telemetry to drive frontend UI (e.g. context window fill bar).
     pub context_usage: Option<serde_json::Value>,
+}
+
+/// Event payload emitted as `llm:compact-request`.
+/// The frontend listener calls the LLM for a summary and returns via `agent_handle_compact_response`.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactRequest {
+    pub session_id: String,
+    /// Messages to summarize (fromId..=toId inclusive)
+    pub messages: Vec<Message>,
+    pub from_id: String,
+    pub to_id: String,
 }

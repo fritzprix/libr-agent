@@ -13,8 +13,6 @@ import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
 import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
-import { compactContextService } from '@/lib/compact-context-service';
-import { stripCompactSummaryPrefix } from '@/lib/compact-utils';
 import type { Message, ToolCall } from '@/models/chat';
 import type {
   MCPTool,
@@ -51,24 +49,6 @@ export function useLLMExecution({
   // Track last streaming UI update time per session (throttle to ~20fps)
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
 
-  // SP17: Compact strategy state
-  const compactCacheRef = useRef<
-    Map<string, { fromId: string; toId: string; summary: string }>
-  >(new Map());
-  // Resolvers receive `true` on successful compaction, `false` on failure.
-  // Waiters use this to decide whether to rebuild the candidate stack.
-  const compactResolversRef = useRef<
-    Map<string, ((success: boolean) => void)[]>
-  >(new Map());
-  // Guard flag: set to true on unmount so background compaction IIFEs avoid
-  // calling state setters on the unmounted component.
-  const unmountedRef = useRef(false);
-
-  const [compactingSet, setCompactingSet] = useState<Set<string>>(new Set());
-  const [awaitingSet, setAwaitingSet] = useState<Set<string>>(new Set());
-  const [compactedRangeMap, setCompactedRangeMap] = useState<
-    ReadonlyMap<string, { fromId: string; toId: string }>
-  >(new Map());
   // Context window usage per session for gauge display
   const [contextUsageMap, setContextUsageMap] = useState<
     ReadonlyMap<
@@ -79,10 +59,7 @@ export function useLLMExecution({
 
   // Clean up on unmount
   useEffect(() => {
-    unmountedRef.current = false;
     return () => {
-      unmountedRef.current = true;
-
       abortControllersRef.current.forEach((controller) => controller.abort());
       abortControllersRef.current.clear();
 
@@ -93,14 +70,6 @@ export function useLLMExecution({
 
       activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
-
-      // Resolve all pending compaction waiters with `false` so they don't
-      // block indefinitely after unmount, then clear both refs.
-      compactResolversRef.current.forEach((resolvers) =>
-        resolvers.forEach((r) => r(false)),
-      );
-      compactResolversRef.current.clear();
-      compactCacheRef.current.clear();
     };
   }, []);
 
@@ -116,7 +85,6 @@ export function useLLMExecution({
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
-      compactRequest?: Message[],
       contextUsage?: {
         totalTokens: number;
         contextWindow: number;
@@ -206,97 +174,7 @@ export function useLLMExecution({
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
-        // ── Prepare context messages based on Rust backend slicing ──────────
-        // 1. If backend requested compaction, trigger it asynchronously
-        if (
-          compactRequest &&
-          compactRequest.length > 0 &&
-          !compactResolversRef.current.has(sessionId)
-        ) {
-          compactResolversRef.current.set(sessionId, []);
-          setCompactingSet((prev) => new Set([...prev, sessionId]));
-
-          const providerConfigForCompaction =
-            settingsRef.current.serviceConfigs?.[
-              provider as AIServiceProvider
-            ] || {};
-
-          const compactionService = AIServiceFactory.getService(
-            provider as AIServiceProvider,
-            apiKey ?? '',
-            { ...providerConfigForCompaction, timeout: 120000 },
-          );
-
-          (async () => {
-            let compactionSucceeded = false;
-            try {
-              logger.info('🚀 Triggering backend-instructed async compaction', {
-                sessionId,
-                oldCount: compactRequest.length,
-              });
-              const summary = await compactionService.compact(compactRequest, {
-                modelName: model,
-                systemPrompt,
-                sessionContext,
-                availableTools: availableTools || [],
-              });
-
-              if (unmountedRef.current) return;
-
-              const firstMsg = compactRequest[0];
-              const fromId = stripCompactSummaryPrefix(firstMsg.id);
-              const toId = compactRequest[compactRequest.length - 1].id;
-
-              compactCacheRef.current.set(sessionId, {
-                fromId,
-                toId,
-                summary,
-              });
-              await compactContextService.saveCompactContext(sessionId, {
-                id: `cc_${Date.now()}`,
-                sessionId,
-                fromId,
-                toId,
-                summary,
-                createdAt: Date.now(),
-              });
-
-              if (unmountedRef.current) return;
-
-              setCompactedRangeMap((prev) => {
-                const next = new Map(prev);
-                next.set(sessionId, { fromId, toId });
-                return next;
-              });
-              compactionSucceeded = true;
-              logger.info('✅ Async compaction completed', {
-                sessionId,
-                fromId,
-                toId,
-              });
-            } catch (err) {
-              logger.error('❌ Async compaction failed', {
-                sessionId,
-                error: err,
-              });
-            } finally {
-              compactionService.dispose();
-              if (!unmountedRef.current) {
-                const resolvers =
-                  compactResolversRef.current.get(sessionId) ?? [];
-                resolvers.forEach((r) => r(compactionSucceeded));
-                compactResolversRef.current.delete(sessionId);
-                setCompactingSet((prev) => {
-                  const next = new Set(prev);
-                  next.delete(sessionId);
-                  return next;
-                });
-              }
-            }
-          })();
-        }
-
-        // 2. Process the pre-sliced messages provided by Backend
+        // Process the pre-sliced messages provided by the Rust backend.
         const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
           messages.map(sanitizeMessage),
           provider as AIServiceProvider,
@@ -748,27 +626,7 @@ export function useLLMExecution({
   }, []);
 
   const clearSessionState = useCallback((sessionId: string) => {
-    compactCacheRef.current.delete(sessionId);
-    compactResolversRef.current.delete(sessionId);
-    setCompactingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
-    setAwaitingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
     setContextUsageMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Map(prev);
-      next.delete(sessionId);
-      return next;
-    });
-    setCompactedRangeMap((prev) => {
       if (!prev.has(sessionId)) return prev;
       const next = new Map(prev);
       next.delete(sessionId);
@@ -777,17 +635,11 @@ export function useLLMExecution({
   }, []);
 
   /**
-   * Clears in-memory compact state for ALL sessions.
-   * Called when the global context strategy changes so stale caches,
-   * pending resolvers, and UI state don't leak across modes.
+   * Clears in-memory context usage state for ALL sessions.
+   * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
-    compactCacheRef.current.clear();
-    compactResolversRef.current.clear();
-    setCompactingSet(new Set());
-    setAwaitingSet(new Set());
     setContextUsageMap(new Map());
-    setCompactedRangeMap(new Map());
   }, []);
 
   return {
@@ -795,16 +647,14 @@ export function useLLMExecution({
     cancelCompletionRequest,
     clearSessionState,
     clearAllCompactState,
-    isCompacting: (sessionId: string) => compactingSet.has(sessionId),
-    isAwaitingCompact: (sessionId: string) => awaitingSet.has(sessionId),
+    isCompacting: () => false,
+    isAwaitingCompact: () => false,
     getContextUsage: (
       sessionId: string,
     ):
       | { totalTokens: number; contextWindow: number; modelMaxContext?: number }
       | undefined => contextUsageMap.get(sessionId),
-    getCompactedRange: (
-      sessionId: string,
-    ): { fromId: string; toId: string } | undefined =>
-      compactedRangeMap.get(sessionId),
+    getCompactedRange: (): { fromId: string; toId: string } | undefined =>
+      undefined,
   };
 }
