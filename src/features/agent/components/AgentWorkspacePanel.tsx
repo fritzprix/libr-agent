@@ -90,7 +90,7 @@ const FileTreeNode = ({
         {node.isDirectory ? (
           <button
             type="button"
-            className="w-4 h-4 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+            className="w-4 h-4 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
             onClick={(e) => {
               e.stopPropagation();
               onToggle(node);
@@ -113,7 +113,7 @@ const FileTreeNode = ({
         <div
           role="button"
           tabIndex={0}
-          className="flex-1 flex items-center gap-1 min-w-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm px-1"
+          className="flex-1 flex items-center gap-1 min-w-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm px-1"
           onClick={(e) => {
             e.stopPropagation();
             if (node.isDirectory) {
