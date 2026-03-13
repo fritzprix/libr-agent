@@ -26,7 +26,7 @@ export function AssistantSelectionCard({
         'group w-full p-5 text-left border rounded-2xl transition-all duration-200',
         'flex flex-col gap-3',
         'hover:shadow-lg hover:bg-accent/40 hover:-translate-y-0.5',
-        'focus:outline-none focus:ring-2 focus:ring-primary/50',
+        'focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         disabled && !isStarting && 'opacity-50 cursor-not-allowed',
         isStarting && 'border-primary bg-primary/10 animate-pulse',
         !disabled && !isStarting && 'hover:border-primary/40',

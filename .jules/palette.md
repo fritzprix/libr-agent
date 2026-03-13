@@ -52,3 +52,8 @@
 
 **Learning:** Found that custom `<button>` and `<div role="button">` elements that bypass the design system's `Button` component lack the standard keyboard focus indicators, making them invisible to keyboard users navigating via Tab.
 **Action:** Always apply `focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none` (along with `rounded` or `rounded-sm` as needed) to any interactive element that acts as a button but does not inherit standard global button styling.
+
+## 2026-03-12 - Missing Keyboard Focus on Native Button and Role-based Elements
+
+**Learning:** Found that custom `<button>` and `<div role="button">` elements that bypass the design system's `Button` component lack the standard keyboard focus indicators, making them invisible to keyboard users navigating via Tab.
+**Action:** Always apply `focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none` (along with `rounded` or `rounded-sm` as needed) to any interactive element that acts as a button but does not inherit standard global button styling.
