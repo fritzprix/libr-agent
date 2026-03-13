@@ -77,3 +77,9 @@
 **Extracted:** 16
 **Languages updated:** [EN, KO]
 **Notes:** Localized `AgentDraftChatView`. Created new nested namespace `agent.draft` in `common.json`. Handled toasts, errors, and static descriptive text strings.
+
+## 2026-03-13 - [AgentModelPicker]
+
+**Extracted:** 4
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AgentModelPicker` provider and model select placeholders, loading state, and refresh button tooltip.

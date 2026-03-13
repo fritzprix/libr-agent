@@ -631,6 +631,12 @@
       "cancelTooltip": "취소",
       "sendAriaLabel": "메시지 보내기",
       "sendTooltip": "보내기"
+    },
+    "modelPicker": {
+      "provider": "제공자",
+      "model": "모델",
+      "loading": "로딩 중...",
+      "refreshModels": "모델 새로고침"
     }
   },
   "scheduledTasks": {
