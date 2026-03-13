@@ -130,6 +130,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -230,7 +231,9 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
       } else {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
-          if (options.forceToolUse) {
+          if (options.disableToolUse) {
+            geminiConfig.functionCallingConfig = { mode: 'none' };
+          } else if (options.forceToolUse) {
             geminiConfig.functionCallingConfig = { mode: 'any' };
           }
         }

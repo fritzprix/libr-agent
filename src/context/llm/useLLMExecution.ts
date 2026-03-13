@@ -236,6 +236,9 @@ export function useLLMExecution({
               });
               const summary = await compactionService.compact(compactRequest, {
                 modelName: model,
+                systemPrompt,
+                sessionContext,
+                availableTools: availableTools || [],
               });
 
               if (unmountedRef.current) return;
