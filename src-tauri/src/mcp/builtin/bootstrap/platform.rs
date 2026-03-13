@@ -227,14 +227,29 @@ fn get_tool_version(tool: &str) -> Option<String> {
     #[cfg(windows)]
     let output = {
         use std::os::windows::process::CommandExt;
-        Command::new(tool)
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg("--version")
-            .output()
-            .ok()?
+        let mut cmd = Command::new(tool);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.arg("--version");
+
+        cmd.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
+
+        cmd.output().ok()?
     };
     #[cfg(not(windows))]
-    let output = Command::new(tool).arg("--version").output().ok()?;
+    let output = {
+        let mut cmd = Command::new(tool);
+        cmd.arg("--version");
+
+        cmd.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            cmd.env(k, v);
+        }
+
+        cmd.output().ok()?
+    };
 
     if !output.status.success() {
         return None;
@@ -258,11 +273,16 @@ fn get_command_path(cmd: &str) -> Option<String> {
     {
         use std::os::windows::process::CommandExt;
         // Windows: Use 'where' command (returns first match)
-        let output = Command::new("where")
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg(cmd)
-            .output()
-            .ok()?;
+        let mut command = Command::new("where");
+        command.creation_flags(CREATE_NO_WINDOW);
+        command.arg(cmd);
+
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
+
+        let output = command.output().ok()?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)
@@ -277,13 +297,18 @@ fn get_command_path(cmd: &str) -> Option<String> {
     #[cfg(not(windows))]
     {
         // Unix-like: Use 'command -v'
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg("command -v \"$1\"")
-            .arg("--")
-            .arg(cmd)
-            .output()
-            .ok()?;
+        let mut command = Command::new("sh");
+        command.arg("-c");
+        command.arg("command -v \"$1\"");
+        command.arg("--");
+        command.arg(cmd);
+
+        command.env_clear();
+        for (k, v) in crate::utils::env::get_isolated_env() {
+            command.env(k, v);
+        }
+
+        let output = command.output().ok()?;
 
         if output.status.success() {
             String::from_utf8(output.stdout)

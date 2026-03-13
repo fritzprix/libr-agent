@@ -124,7 +124,7 @@ impl PersistentShell {
         // We do this BEFORE platform-specific environment adjustments (like Unix PATH fix)
         // to ensure whitelisted variables are isolated but specialized ones are preserved.
         cmd.env_clear();
-        for (k, v) in crate::mcp::utils::env::get_isolated_env() {
+        for (k, v) in crate::utils::env::get_isolated_env() {
             cmd.env(k, v);
         }
 
