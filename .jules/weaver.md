@@ -85,3 +85,5 @@
 - Removed the `useEffect` that listened for prop changes and imperatively reset internal status bar state.
 - Adopted a render-phase mutation pattern where derived values are computed from props and refs inline, reserving state updates solely for genuine user-driven transitions.
 - **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
+
+## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]

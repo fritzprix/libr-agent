@@ -4,26 +4,19 @@ import {
 } from '@/context/AssistantContext';
 import { EditorProvider } from '@/context/EditorContext';
 import type { Assistant } from '@/models/chat';
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import { Button } from '../../components/ui';
 import { Input } from '../../components/ui/input';
 import AssistantEditor from './AssistantEditor';
 import AssistantCard from './Card';
 import { useTranslation } from 'react-i18next';
-import { getLogger } from '@/lib/logger';
 import { Search, X, Users, Plus } from 'lucide-react';
-
-const logger = getLogger('AssistantList');
-
-import { listAvailableBuiltinServerDefinitions } from '@/lib/backend/builtin-tools';
-import { dbUtils } from '@/lib/db/service';
+import { useAssistantsList } from './hooks/useAssistantsList';
 
 export default function AssistantList() {
   const {
     assistants,
     saveAssistant,
-    searchAssistants,
-    setPaginationMode,
     currentPage,
     setPage,
     pageSize,
@@ -31,102 +24,19 @@ export default function AssistantList() {
   } = useAssistantContext();
   const { t } = useTranslation('common');
 
-  const [createNew, setCreateNew] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Assistant[] | null>(null);
-  const [isSearching, setIsSearching] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [builtinToolsMap, setBuiltinToolsMap] = useState<
-    Record<string, string>
-  >({});
-  const [mcpServersMap, setMcpServersMap] = useState<Record<string, string>>(
-    {},
-  );
-
-  // Load builtin tool display names
-  useEffect(() => {
-    async function loadDefinitions() {
-      try {
-        const defs = await listAvailableBuiltinServerDefinitions();
-        const map: Record<string, string> = {};
-        defs.forEach((d) => {
-          map[d.name] = d.metadata.displayName;
-        });
-        setBuiltinToolsMap(map);
-      } catch (err) {
-        logger.error('Failed to load builtin definitions', err);
-      }
-    }
-    loadDefinitions();
-  }, []);
-
-  // Load MCP server names for all assistants
-  useEffect(() => {
-    async function loadMcpServers() {
-      try {
-        logger.info('🔍 Loading MCP servers for assistants', {
-          assistantCount: assistants.length,
-        });
-
-        // Collect all unique MCP server IDs from all assistants
-        const allMcpServerIds = new Set<string>();
-        assistants.forEach((assistant) => {
-          logger.info('📋 Assistant MCP servers', {
-            assistantId: assistant.id,
-            assistantName: assistant.name,
-            mcpServerIds: assistant.mcpServerIds,
-          });
-          assistant.mcpServerIds?.forEach((id) => allMcpServerIds.add(id));
-        });
-
-        logger.info('🎯 Collected unique MCP server IDs', {
-          count: allMcpServerIds.size,
-          ids: Array.from(allMcpServerIds),
-        });
-
-        if (allMcpServerIds.size === 0) {
-          logger.warn('⚠️ No MCP server IDs found in assistants');
-          return;
-        }
-
-        // Fetch server entities from database
-        const serverIds = Array.from(allMcpServerIds);
-        logger.info('📡 Fetching MCP servers from database', { serverIds });
-
-        const entities = await dbUtils.getMCPServersByIds(serverIds);
-
-        logger.info('✅ Received MCP server entities', {
-          count: entities.length,
-          entities: entities.map((e) => ({ id: e.id, name: e.name })),
-        });
-
-        // Build ID -> Name mapping
-        const map: Record<string, string> = {};
-        entities.forEach((entity) => {
-          map[entity.id] = entity.name;
-        });
-
-        logger.info('🗺️ Built MCP servers map', { map });
-        setMcpServersMap(map);
-      } catch (err) {
-        logger.error('❌ Failed to load MCP servers', err);
-      }
-    }
-    loadMcpServers();
-  }, [assistants]);
-
-  const handleToggleExpand = useCallback((id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id));
-  }, []);
-
-  // Enable paginated mode on mount
-  useEffect(() => {
-    setPaginationMode('paginated');
-    return () => {
-      // Reset to full mode when unmounting (for other components)
-      setPaginationMode('full');
-    };
-  }, [setPaginationMode]);
+  const {
+    createNew,
+    setCreateNew,
+    searchQuery,
+    searchResults,
+    isSearching,
+    expandedId,
+    builtinToolsMap,
+    mcpServersMap,
+    handleToggleExpand,
+    handleSearch,
+    handleClearSearch,
+  } = useAssistantsList();
 
   const handleCreateComplete = useCallback(
     (assistant: Assistant) => {
@@ -134,34 +44,6 @@ export default function AssistantList() {
     },
     [saveAssistant],
   );
-
-  const handleSearch = useCallback(
-    async (query: string) => {
-      setSearchQuery(query);
-      if (!query.trim()) {
-        setSearchResults(null);
-        return;
-      }
-
-      setIsSearching(true);
-      try {
-        const results = await searchAssistants(query);
-        setSearchResults(results);
-        logger.debug('Search results:', { query, count: results.length });
-      } catch (error) {
-        logger.error('Search failed', error);
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    },
-    [searchAssistants],
-  );
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery('');
-    setSearchResults(null);
-  }, []);
 
   const displayedAssistants = searchResults ?? assistants;
   const totalPages = Math.ceil(totalAssistants / pageSize);
