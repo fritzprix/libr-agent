@@ -46,6 +46,27 @@ fn test_find_compaction_split_index() {
 }
 
 #[test]
+fn test_find_compaction_split_index_with_calibration() {
+    let mut msgs = vec![];
+    for i in 0..10 {
+        let mut msg = make_message(&format!("msg{}", i), "assistant", "Test content");
+        if i == 5 {
+            // Give it a massively inflated grounded usage to trigger calibration skew
+            msg.usage = Some(json!({ "totalTokens": 20000 }));
+        }
+        msgs.push(msg);
+    }
+    // With 20k grounded tokens but small local text, ratio is high (~300x).
+    // Each message gets multiplied. `keep_threshold` happens quickly within 2-3 iterations from end.
+    let idx = find_compaction_split_index(&msgs, 10000, 0, 0);
+    assert!(
+        idx > 5,
+        "Split idx should be near the end of the stack due to bloated calibrated tokens (idx={})",
+        idx
+    );
+}
+
+#[test]
 fn test_remove_incomplete_tool_chains() {
     let mut msg1 = make_message("m1", "assistant", "I will call tools");
     msg1.tool_calls = Some(vec![

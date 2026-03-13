@@ -30,6 +30,21 @@ pub fn find_compaction_split_index(
     system_prompt_tokens: usize,
     tools_tokens: usize,
 ) -> usize {
+    // 1. Calculate local BPE sum for all messages
+    let total_local_msg_tokens: usize = messages.iter().map(token_utils::estimate_tokens_bpe).sum();
+    let total_local_bpe = total_local_msg_tokens + system_prompt_tokens + tools_tokens;
+
+    // 2. Fetch grounded token stats
+    let api_grounded_tokens =
+        token_utils::calculate_grounded_total_tokens(messages, system_prompt_tokens, tools_tokens);
+
+    // 3. Derive calibration ratio
+    let calibration_ratio = if total_local_bpe > 0 {
+        api_grounded_tokens as f64 / total_local_bpe as f64
+    } else {
+        1.0
+    };
+
     // How much room is actually available for messages?
     let message_budget = threshold.saturating_sub(system_prompt_tokens + tools_tokens);
 
@@ -41,7 +56,10 @@ pub fn find_compaction_split_index(
     let mut split_found = false;
 
     for i in (0..messages.len()).rev() {
-        current_sum += token_utils::estimate_tokens_bpe(&messages[i]);
+        let base_tokens = token_utils::estimate_tokens_bpe(&messages[i]);
+        let calibrated_tokens = (base_tokens as f64 * calibration_ratio).ceil() as usize;
+
+        current_sum += calibrated_tokens;
         if current_sum >= keep_threshold {
             split_idx = i;
             split_found = true;
@@ -252,6 +270,33 @@ pub fn select_messages_within_context(
         }
     }
 
+    // --- Token Calibration Multiplier ---
+    let total_local_msg_tokens: usize = batched_messages
+        .iter()
+        .map(token_utils::estimate_tokens_bpe)
+        .sum();
+    let total_local_bpe = total_local_msg_tokens + non_message_reserved + pinned_message_tokens;
+
+    let api_grounded_tokens = token_utils::calculate_grounded_total_tokens(
+        &batched_messages,
+        system_prompt_tokens,
+        tools_tokens,
+    );
+
+    let calibration_ratio = if total_local_bpe > 0 {
+        api_grounded_tokens as f64 / total_local_bpe as f64
+    } else {
+        1.0
+    };
+
+    log::debug!(
+        "Calibration ratio for context selection: {:.4} (Grounded API: {}, Local BPE: {})",
+        calibration_ratio,
+        api_grounded_tokens,
+        total_local_bpe
+    );
+    // ------------------------------------
+
     let reserved_tokens = non_message_reserved + pinned_message_tokens;
     let token_limit = std::cmp::max(1024, base_token_limit.saturating_sub(reserved_tokens));
 
@@ -268,8 +313,9 @@ pub fn select_messages_within_context(
         }
 
         let tokens = token_utils::estimate_tokens_bpe(msg);
+        let calibrated_tokens = (tokens as f64 * calibration_ratio).ceil() as usize;
 
-        if total_tokens + tokens > token_limit {
+        if total_tokens + calibrated_tokens > token_limit {
             if selected.is_empty() {
                 // Ensure we never return an empty array if we have at least one message.
                 selected.push_front(msg.clone());
@@ -307,7 +353,7 @@ pub fn select_messages_within_context(
         }
 
         selected.push_front(msg.clone());
-        total_tokens += tokens;
+        total_tokens += calibrated_tokens;
     }
 
     let mut final_selected = Vec::from(selected);

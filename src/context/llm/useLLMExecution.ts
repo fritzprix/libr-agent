@@ -216,12 +216,15 @@ export function useLLMExecution({
           compactResolversRef.current.set(sessionId, []);
           setCompactingSet((prev) => new Set([...prev, sessionId]));
 
+          const providerConfigForCompaction =
+            settingsRef.current.serviceConfigs?.[
+              provider as AIServiceProvider
+            ] || {};
+
           const compactionService = AIServiceFactory.getService(
             provider as AIServiceProvider,
             apiKey ?? '',
-            settingsRef.current.serviceConfigs?.[
-              provider as AIServiceProvider
-            ] || {},
+            { ...providerConfigForCompaction, timeout: 120000 },
           );
 
           (async () => {

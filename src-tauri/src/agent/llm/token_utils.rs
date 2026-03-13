@@ -52,8 +52,10 @@ pub fn estimate_tokens_bpe(message: &Message) -> usize {
                 parts.push(arguments.clone());
             }
             MCPContent::Thinking { thinking, .. } => parts.push(thinking.clone()),
-            _ => {
-                // Ignore Image/Audio binary payload for tokens
+            MCPContent::Image { .. } | MCPContent::Audio { .. } => {
+                // Assign a conservative base token cost for media (e.g., 1000 tokens)
+                // This ensures non-zero local BPE sums so the "calibration ratio" algorithm can scale it properly.
+                parts.push(" ".repeat(1000));
             }
         }
     }
