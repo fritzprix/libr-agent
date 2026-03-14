@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2024-05-27 - [Settings]
+
+**Extracted:** 9
+**Languages updated:** [EN, KO]
+**Notes:** Extracted the "Danger Zone" string from `DangerZoneSettings.tsx` and all input placeholders from `SystemPerformanceSettings.tsx` into standard `t()` format. Created `settings.system.placeholders` namespace for inputs.
+
 ## 2026-03-04 - [Sidebar Navigation]
 
 **Extracted:** 3
