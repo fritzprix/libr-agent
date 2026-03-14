@@ -108,7 +108,13 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         disabled={disabled || isRefreshing || !currentProvider}
       >
         <SelectTrigger className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
-          <SelectValue placeholder={isRefreshing ? t('agent.modelPicker.loading') : t('agent.modelPicker.model')} />
+          <SelectValue
+            placeholder={
+              isRefreshing
+                ? t('agent.modelPicker.loading')
+                : t('agent.modelPicker.model')
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {modelOptions.map((opt) => (

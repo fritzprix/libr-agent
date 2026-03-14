@@ -8,7 +8,7 @@ import {
   deleteAllMessagesForSession,
   searchMessages,
 } from './messages';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, RustMessage, ToolCall } from '@/models/chat';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -54,7 +54,7 @@ describe('Message Management Service', () => {
             thinkingSignature: 'sig',
             assistantId: 'assist-1',
             source: 'assistant',
-            error: null,
+            error: undefined,
             usage: {
               promptTokens: 10,
               completionTokens: 20,
@@ -74,18 +74,20 @@ describe('Message Management Service', () => {
           {
             id: 'msg-2',
             sessionId: 'session-1',
-            threadId: null as any, // should fall back to sessionId
+            threadId: (null as unknown) as string, // should fall back to sessionId
             role: 'user',
             content: [{ type: 'text', text: 'How are you?' }],
             createdAt: mockTimestamp,
             updatedAt: mockTimestamp,
             toolCallId: 'tc-1',
-          } as any as RustMessage,
+          } as unknown as RustMessage,
         ],
-        totalCount: 2,
+        totalItems: 2,
         page: 1,
         pageSize: 10,
         totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
       };
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
@@ -105,7 +107,7 @@ describe('Message Management Service', () => {
       });
 
       expect(result.items).toHaveLength(2);
-      expect(result.totalCount).toBe(2);
+      expect(result.totalItems).toBe(2);
 
       // Verify deserialization mappings of msg-1
       expect(result.items[0]).toEqual(
@@ -165,20 +167,23 @@ describe('Message Management Service', () => {
             createdAt: Date.now(),
             updatedAt: Date.now(),
             toolCalls: [
-              {
+              ({
                 id: 'tc-2',
                 // missing type should default to 'function'
                 function: {
                   name: 'test',
                   arguments: '{}',
                 },
-              } as any,
+              } as unknown) as ToolCall,
             ],
-          } as any as RustMessage,
+          } as unknown as RustMessage,
         ],
-        totalCount: 1,
+        totalItems: 1,
         page: 1,
         pageSize: 10,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
       };
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
@@ -195,7 +200,7 @@ describe('Message Management Service', () => {
 
   describe('upsertMessages', () => {
     it('should throw if any message is missing a sessionId', async () => {
-      const msgs = [
+      const msgs = ([
         {
           id: '1',
           role: 'user',
@@ -210,7 +215,7 @@ describe('Message Management Service', () => {
           threadId: 'thread-1',
           createdAt: new Date(),
         },
-      ] as any as Message[];
+      ] as unknown) as Message[];
 
       await expect(upsertMessages(msgs)).rejects.toThrow(
         'Cannot upsert message: missing or empty sessionId for message 1',
@@ -218,7 +223,7 @@ describe('Message Management Service', () => {
     });
 
     it('should throw if any message has empty sessionId', async () => {
-      const msgs = [
+      const msgs = ([
         {
           id: '1',
           role: 'user',
@@ -227,7 +232,7 @@ describe('Message Management Service', () => {
           threadId: 'thread-1',
           createdAt: new Date(),
         },
-      ] as any as Message[];
+      ] as unknown) as Message[];
 
       await expect(upsertMessages(msgs)).rejects.toThrow(
         'Cannot upsert message: missing or empty sessionId for message 1',
@@ -235,7 +240,7 @@ describe('Message Management Service', () => {
     });
 
     it('should throw if any message is missing a threadId', async () => {
-      const msgs = [
+      const msgs = ([
         {
           id: '2',
           role: 'user',
@@ -243,7 +248,7 @@ describe('Message Management Service', () => {
           sessionId: 'sess-1',
           createdAt: new Date(),
         },
-      ] as any as Message[];
+      ] as unknown) as Message[];
 
       await expect(upsertMessages(msgs)).rejects.toThrow(
         'Cannot upsert message: missing or empty threadId for message 2',
@@ -252,14 +257,20 @@ describe('Message Management Service', () => {
 
     it('should properly map frontend message arrays to rust structure', async () => {
       const mockDate = new Date();
-      const msgs = [
+      const msgs: Message[] = [
         {
           id: '1',
           sessionId: 'sess-1',
           threadId: 'thread-1',
           role: 'user',
           content: [{ type: 'text', text: 'hello' }],
-          tool_calls: [{ id: 'call_1', function: { name: 'test', arguments: '{}' } }],
+          tool_calls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'test', arguments: '{}' },
+            },
+          ],
           tool_call_id: 'call_1',
           isStreaming: true,
           thinking: 'hmmm',
@@ -271,7 +282,7 @@ describe('Message Management Service', () => {
           updatedAt: mockDate,
           source: 'ui',
           error: undefined,
-        } satisfies Message,
+        },
       ];
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
@@ -313,15 +324,15 @@ describe('Message Management Service', () => {
       const now = new Date('2024-01-01T00:00:00Z').getTime();
       vi.setSystemTime(now);
 
-      const msgs = [
+      const msgs = ([
         {
           id: '1',
           sessionId: 'sess-1',
           threadId: 'thread-1',
           role: 'user',
           content: [],
-        } as any as Message,
-      ];
+        },
+      ] as unknown) as Message[];
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
@@ -340,13 +351,13 @@ describe('Message Management Service', () => {
 
   describe('upsertMessage', () => {
     it('should throw if message is missing a sessionId', async () => {
-      const msg = {
+      const msg = ({
         id: '1',
         role: 'user',
         content: [],
         threadId: 'thread-1',
         createdAt: new Date(),
-      } as any as Message;
+      } as unknown) as Message;
 
       await expect(upsertMessage(msg)).rejects.toThrow(
         'Cannot upsert message: missing or empty sessionId for message 1',
@@ -355,7 +366,7 @@ describe('Message Management Service', () => {
 
     it('should map frontend message to rust structure', async () => {
       const mockDate = new Date();
-      const msg = {
+      const msg = ({
         id: '1',
         sessionId: 'sess-1',
         threadId: 'thread-1',
@@ -370,7 +381,7 @@ describe('Message Management Service', () => {
         ],
         createdAt: mockDate,
         updatedAt: mockDate,
-      } as any as Message;
+      } as unknown) as Message;
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
@@ -400,13 +411,13 @@ describe('Message Management Service', () => {
       const now = new Date('2024-01-01T00:00:00Z').getTime();
       vi.setSystemTime(now);
 
-      const msg = {
+      const msg = ({
         id: '1',
         sessionId: 'sess-1',
         threadId: 'thread-1',
         role: 'user',
         content: [],
-      } as any as Message;
+      } as unknown) as Message;
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
@@ -459,10 +470,12 @@ describe('Message Management Service', () => {
             createdAt: mockTimestamp,
           },
         ],
-        totalCount: 1,
+        totalItems: 1,
         page: 1,
         pageSize: 25,
         totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
       };
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
@@ -486,7 +499,15 @@ describe('Message Management Service', () => {
     });
 
     it('should handle specific pagination and sessionId', async () => {
-      vi.mocked(safeInvoke).mockResolvedValueOnce({ items: [] });
+      vi.mocked(safeInvoke).mockResolvedValueOnce({
+        items: [],
+        totalItems: 0,
+        page: 1,
+        pageSize: 50,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+      });
 
       await searchMessages('hello', 'sess-1', 2, 50);
 
@@ -506,13 +527,15 @@ describe('Message Management Service', () => {
             sessionId: 'sess-1',
             score: 0.5,
             snippet: null,
-            createdAt: 'invalid-date', // string instead of number
+            createdAt: ('invalid-date' as unknown) as number, // string instead of number
           },
         ],
-        totalCount: 1,
+        totalItems: 1,
         page: 1,
         pageSize: 25,
         totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
       };
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
