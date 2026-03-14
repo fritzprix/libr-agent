@@ -1,5 +1,5 @@
 import { safeInvoke } from '@/lib/backend/core';
-import type { AgentResponse } from '../../models/agent-ipc';
+import type { AgentResponse, AgentRuntimeError } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
@@ -24,7 +24,7 @@ export async function handleLLMResponse(
  */
 export async function handleLLMError(
   sessionId: string,
-  error: string,
+  error: AgentRuntimeError,
 ): Promise<void> {
   await safeInvoke<AgentResponse>('agent_handle_llm_error', {
     sessionId,
@@ -88,7 +88,32 @@ export async function getAgentAvailableTools(
 }
 
 /**
- * Call a builtin tool directly via proxy_manager (session-aware)
+ * Notify Rust backend that frontend compaction LLM call succeeded.
+ * Rust stores the record and clears the in-flight flag.
+ */
+export async function handleCompactResponse(
+  sessionId: string,
+  fromId: string,
+  toId: string,
+  summary: string,
+): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_compact_response', {
+    sessionId,
+    fromId,
+    toId,
+    summary,
+  });
+}
+
+/**
+ * Notify Rust backend that frontend compaction LLM call failed.
+ * Rust clears the in-flight flag so future turns can retry.
+ */
+export async function handleCompactError(sessionId: string): Promise<void> {
+  await safeInvoke<AgentResponse>('agent_handle_compact_error', { sessionId });
+}
+
+/**
  * This ensures the tool runs within the correct session context
  *
  * @param sessionId - The active session ID

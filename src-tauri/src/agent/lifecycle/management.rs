@@ -111,6 +111,9 @@ pub async fn resume_session(
                 pending_approvals: Arc::new(RwLock::new(std::collections::HashMap::new())),
                 context_registry: Arc::new(crate::agent::context::registry::ContextRegistry::new()),
                 compact_context: Arc::new(RwLock::new(compact_context_record)),
+                compact_in_flight: Arc::new(AtomicBool::new(false)),
+                last_compacted_tail_id: Arc::new(RwLock::new(None)),
+                awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
         );

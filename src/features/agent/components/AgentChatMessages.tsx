@@ -11,7 +11,6 @@ import { ErrorBubble } from '@/components/shared/ErrorBubble';
 import { AnalysisLoader } from './shared';
 import { CompactEventDivider } from './shared/CompactEventDivider';
 import { Bot } from 'lucide-react';
-import type { Message } from '@/models/chat';
 import { PendingApprovalWidget } from './PendingApprovalWidget';
 
 export function AgentChatMessages() {
@@ -52,30 +51,9 @@ export function AgentChatMessages() {
   // Get assistant name for message (Agent V2 uses generic "Agent" label)
   const assistantName = session?.assistant?.name || 'Agent';
 
-  // Memoize error objects so ErrorBubble memo stays effective during streaming re-renders
-  const agentError = useMemo(
-    () =>
-      error
-        ? ({
-            type: 'AI_SERVICE_ERROR' as const,
-            displayMessage: error,
-            recoverable: true,
-          } satisfies NonNullable<Message['error']>)
-        : null,
-    [error],
-  );
-
-  const agentLlmError = useMemo(
-    () =>
-      llmError
-        ? ({
-            type: 'MALFORMED_FUNCTION_CALL' as const,
-            displayMessage: llmError,
-            recoverable: true,
-          } satisfies NonNullable<Message['error']>)
-        : null,
-    [llmError],
-  );
+  // Memoize references so ErrorBubble memo stays effective during streaming re-renders
+  const agentError = useMemo(() => error, [error]);
+  const agentLlmError = useMemo(() => llmError, [llmError]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0">

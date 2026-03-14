@@ -11,17 +11,37 @@ import React, {
 
 import { listen } from '@tauri-apps/api/event';
 import { getLogger } from '../lib/logger';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, MessageError, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
 import type {
+  AgentRuntimeError,
   AgentSessionMetadata,
   AgentResponse,
   SendUserMessageRequest,
 } from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionContext');
+
+function buildMessageError(
+  error: string | AgentRuntimeError,
+  fallbackType: MessageError['type'] = 'AI_SERVICE_ERROR',
+): MessageError {
+  if (typeof error !== 'string') {
+    return error;
+  }
+
+  return {
+    type: fallbackType,
+    displayMessage: error,
+    recoverable: true,
+    details: {
+      originalError: error,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
 
 export type AgentEventPayload =
   | {
@@ -35,7 +55,7 @@ export type AgentEventPayload =
   | {
       type: 'workflowError';
       sessionId: string;
-      error: string;
+      error: AgentRuntimeError;
     }
   | {
       type: 'statusChanged';
@@ -98,8 +118,8 @@ interface AgentSessionStateContextValue {
   session: AgentSession | null;
   messages: Message[];
   isSessionLoading: boolean;
-  error: string | null;
-  llmError: string | null;
+  error: MessageError | null;
+  llmError: MessageError | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
   workflowPhase: WorkflowPhase;
   initializationStep: {
@@ -129,7 +149,7 @@ interface AgentSessionActionsContextValue {
   /**
    * Manually set error state (e.g. for client-side failures)
    */
-  setError: (error: string | null) => void;
+  setError: (error: string | AgentRuntimeError | null) => void;
 
   addMessage: (message: Message) => void;
   resumeSession: () => Promise<void>;
@@ -163,8 +183,8 @@ export function AgentSessionProvider({
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [llmError, setLlmError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<MessageError | null>(null);
+  const [llmError, setLlmError] = useState<MessageError | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<
     'idle' | 'busy' | 'paused' | 'error'
   >('idle');
@@ -178,6 +198,13 @@ export function AgentSessionProvider({
   );
   const [yoloModeEnabled, setYoloModeEnabled] = useState(false);
   const yoloModeRef = useRef(yoloModeEnabled);
+
+  const setError = useCallback(
+    (nextError: string | AgentRuntimeError | null) => {
+      setErrorState(nextError ? buildMessageError(nextError) : null);
+    },
+    [],
+  );
 
   useEffect(() => {
     yoloModeRef.current = yoloModeEnabled;
@@ -307,26 +334,18 @@ export function AgentSessionProvider({
             case 'workflowError': {
               setWorkflowStatus('error');
               setIsSessionLoading(false);
-              const errorMsg = payload.error;
+              const nextError = buildMessageError(payload.error);
 
-              // Specific handling for empty LLM responses
-              if (errorMsg.startsWith('EMPTY_LLM_RESPONSE:')) {
-                const cleanMessage = errorMsg.replace(
-                  'EMPTY_LLM_RESPONSE: ',
-                  '',
-                );
-                setLlmError(cleanMessage);
-              } else if (
-                errorMsg.includes('invalid type:') ||
-                errorMsg.includes('expected i64') ||
-                errorMsg.includes('LLM') ||
-                errorMsg.includes('MALFORMED_FUNCTION_CALL') ||
-                errorMsg.toLowerCase().includes('function call') ||
-                errorMsg.toLowerCase().includes('json')
+              if (
+                nextError.type === 'MALFORMED_FUNCTION_CALL' ||
+                nextError.type === 'JSON_PARSING_ERROR' ||
+                nextError.type === 'EMPTY_SELECTION_ERROR'
               ) {
-                setLlmError(errorMsg);
+                setLlmError(nextError);
+                setError(null);
               } else {
-                setError(errorMsg);
+                setError(nextError);
+                setLlmError(null);
               }
               break;
             }

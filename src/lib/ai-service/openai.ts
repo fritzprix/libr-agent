@@ -292,6 +292,7 @@ export class OpenAIService extends BaseAIService<
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -345,9 +346,11 @@ export class OpenAIService extends BaseAIService<
             tools: tools,
             tool_choice: !options.availableTools?.length
               ? undefined
-              : options.forceToolUse
-                ? 'required'
-                : 'auto',
+              : options.disableToolUse
+                ? 'none'
+                : options.forceToolUse
+                  ? 'required'
+                  : 'auto',
           },
           { signal: this.getAbortSignal() },
         ),

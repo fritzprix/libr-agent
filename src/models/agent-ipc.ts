@@ -1,4 +1,4 @@
-import { RustMessage } from './chat';
+import type { MessageError, RustMessage } from './chat';
 import { MCPContent } from '@/lib/mcp';
 
 /**
@@ -105,6 +105,8 @@ export interface AgentResponse<T = unknown> {
   message: string;
   data?: T;
 }
+
+export type AgentRuntimeError = MessageError;
 
 /**
  * Tool execution result from frontend.

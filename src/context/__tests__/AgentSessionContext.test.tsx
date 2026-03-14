@@ -247,14 +247,27 @@ describe('AgentSessionContext (Local)', () => {
                     payload: {
                         type: 'workflowError',
                         sessionId: TEST_SESSION_ID,
-                        error: 'Something went wrong',
+                        error: {
+                            type: 'AI_SERVICE_ERROR',
+                            displayMessage: 'Something went wrong',
+                            recoverable: true,
+                            details: {
+                                originalError: 'Something went wrong',
+                                timestamp: '2026-03-14T00:00:00.000Z',
+                            },
+                        },
                     },
                 });
             });
 
             await waitFor(() => {
                 expect(result.current.workflowStatus).toBe('error');
-                expect(result.current.error).toBe('Something went wrong');
+                expect(result.current.error).toEqual(
+                    expect.objectContaining({
+                        type: 'AI_SERVICE_ERROR',
+                        displayMessage: 'Something went wrong',
+                    }),
+                );
             });
         });
     });

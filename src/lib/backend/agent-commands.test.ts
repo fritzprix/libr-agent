@@ -27,10 +27,19 @@ describe('backend/agent-commands', () => {
   });
 
   it('should handleLLMError', async () => {
-    await handleLLMError('session-1', 'test error');
+    const error = {
+      type: 'AI_SERVICE_ERROR' as const,
+      displayMessage: 'test error',
+      recoverable: true,
+      details: {
+        originalError: 'test error',
+        timestamp: '2026-03-14T00:00:00.000Z',
+      },
+    };
+    await handleLLMError('session-1', error);
     expect(safeInvoke).toHaveBeenCalledWith('agent_handle_llm_error', {
       sessionId: 'session-1',
-      error: 'test error',
+      error,
     });
   });
 

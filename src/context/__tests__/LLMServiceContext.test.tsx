@@ -56,6 +56,21 @@ function TestWrapper({ children }: { children: ReactNode }) {
   );
 }
 
+function WindowStrategyWrapper({ children }: { children: ReactNode }) {
+  return (
+    <SettingsContext.Provider
+      value={{
+        value: { ...DEFAULT_SETTING, contextStrategy: 'window' },
+        update: vi.fn().mockResolvedValue(undefined),
+        isLoading: false,
+        error: null,
+      }}
+    >
+      <LLMServiceProvider>{children}</LLMServiceProvider>
+    </SettingsContext.Provider>
+  );
+}
+
 describe('LLMServiceContext', () => {
   const mockUnlisten = vi.fn();
   const mockStreamChat = vi.fn();
@@ -512,9 +527,156 @@ describe('LLMServiceContext', () => {
       await waitFor(() => {
         expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
           'test-session',
-          'Test error',
+          expect.objectContaining({
+            type: 'AI_SERVICE_ERROR',
+            displayMessage: 'Test error',
+          }),
         );
       });
+    });
+
+    it('should reject payloads that overflow after context injection', async () => {
+      let eventHandler: ((event: unknown) => void) | undefined;
+
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-request') {
+            eventHandler = handler as (event: unknown) => void;
+          }
+          return mockUnlisten;
+        },
+      );
+
+      (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+        streamChat: mockStreamChat,
+        listModels: mockListModels,
+        dispose: mockDispose,
+        prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
+          systemPrompt: 'x'.repeat(30000),
+          messages,
+        })),
+      });
+
+      renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'test-session',
+              threadId: 'test-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          contextUsage: {
+            totalTokens: 100,
+            contextWindow: 4096,
+            modelMaxContext: 128000,
+          },
+        },
+      });
+
+      await waitFor(() => {
+        expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+          'test-session',
+          expect.objectContaining({
+            type: 'CONTEXT_LIMIT_ERROR',
+            displayMessage: expect.stringContaining(
+              'Prepared payload exceeds the effective context limit',
+            ),
+          }),
+        );
+      });
+      expect(agentCommands.handleLLMError).toHaveBeenCalledTimes(1);
+      expect(AIServiceFactory.getService).toHaveBeenCalledTimes(1);
+      expect(mockStreamChat).not.toHaveBeenCalled();
+    });
+
+    it('should skip payload overflow preflight in sliding-window mode', async () => {
+      let eventHandler: ((event: unknown) => void) | undefined;
+
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-request') {
+            eventHandler = handler as (event: unknown) => void;
+          }
+          return mockUnlisten;
+        },
+      );
+
+      mockStreamChat.mockImplementation(async function* () {
+        yield JSON.stringify({ content: 'window-mode ok' });
+      });
+
+      (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+        streamChat: mockStreamChat,
+        listModels: mockListModels,
+        dispose: mockDispose,
+        prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
+          systemPrompt: 'x'.repeat(30000),
+          messages,
+        })),
+      });
+
+      renderHook(() => useLLMService(), {
+        wrapper: WindowStrategyWrapper,
+      });
+
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
+      await eventHandler?.({
+        payload: {
+          sessionId: 'window-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'window-session',
+              threadId: 'window-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          contextUsage: {
+            totalTokens: 100,
+            contextWindow: 4096,
+            modelMaxContext: 128000,
+          },
+        },
+      });
+
+      await waitFor(() => {
+        expect(agentCommands.handleLLMResponse).toHaveBeenCalledWith(
+          'window-session',
+          expect.objectContaining({
+            role: 'assistant',
+          }),
+        );
+      });
+
+      expect(agentCommands.handleLLMError).not.toHaveBeenCalledWith(
+        'window-session',
+        expect.objectContaining({
+          type: 'CONTEXT_LIMIT_ERROR',
+        }),
+      );
+      expect(mockStreamChat).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -601,7 +763,10 @@ describe('LLMServiceContext', () => {
       await waitFor(() => {
         expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
           'sp4-session',
-          expect.any(String),
+          expect.objectContaining({
+            type: 'AI_SERVICE_ERROR',
+            displayMessage: 'persistent failure',
+          }),
         );
       });
 
@@ -643,7 +808,28 @@ describe('LLMServiceContext', () => {
       await waitFor(() => expect(eventHandler).toBeDefined());
 
       await act(async () => {
-        await triggerEvent();
+        await eventHandler?.({
+          payload: {
+            sessionId: 'sp4-session',
+            messages: [
+              {
+                id: 'u1',
+                sessionId: 'sp4-session',
+                role: 'user',
+                content: [{ type: 'text', text: 'hello' }],
+                createdAt: new Date(),
+              },
+            ],
+            model: 'test-model',
+            provider: 'openai',
+            apiKey: 'test-key',
+            contextUsage: {
+              totalTokens: 100,
+              contextWindow: 4096,
+              modelMaxContext: 128000,
+            },
+          },
+        });
       });
 
       await waitFor(() => {
@@ -679,6 +865,6 @@ describe('LLMServiceContext', () => {
       // Only 1 attempt — no retries on abort
       expect(mockStreamChat).toHaveBeenCalledTimes(1);
     });
+
   });
 });
-

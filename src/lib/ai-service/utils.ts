@@ -116,7 +116,7 @@ export function formatUsageMetrics(usage: TokenUsage): {
     usage.cachedPromptTokens ?? usage.details?.cacheReadInputTokens;
   const cacheHitPercent =
     cached !== undefined && usage.promptTokens > 0
-      ? ((cached / usage.promptTokens) * 100).toFixed(0)
+      ? Math.min((cached / usage.promptTokens) * 100, 100).toFixed(0)
       : undefined;
 
   return {

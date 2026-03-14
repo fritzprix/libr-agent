@@ -344,6 +344,7 @@ export class AnthropicService extends BaseAIService<
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(

@@ -60,17 +60,16 @@ impl BuiltinMCPServer for SessionApiServer {
         args: Value,
         caller_session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        handlers::handle_tool_call(tool_name, args, caller_session_id)
-            .await
-            .or_else(|e| {
+        match handlers::handle_tool_call(tool_name, args, caller_session_id).await {
+            Ok(result) => Ok(result),
+            Err(e) => {
                 // Cancellation errors must propagate as Err so the workflow loop
                 // can handle them correctly (abort, surface to user, etc.).
                 if e.contains("cancelled") || e.contains("interrupted") {
                     return Err(e);
                 }
 
-                // Map the raw error to an error_guidance ErrorCategory so the
-                // format matches planning/knowledge/browser builtins.
+                // Map the raw error to an error_guidance ErrorCategory
                 let (norm_category, _) = categorize_session_api_error(&e);
                 let category = match norm_category {
                     ExternalMcpErrorCategory::NotFound
@@ -88,7 +87,8 @@ impl BuiltinMCPServer for SessionApiServer {
                     guided_error(category, format!("[{}] {}", tool_name, e), ToolGroup::Swarm)
                         .to_mcp_result(),
                 )
-            })
+            }
+        }
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {

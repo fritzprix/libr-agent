@@ -1,3 +1,4 @@
+use crate::agent::llm::types::AgentRuntimeError;
 use crate::models::chat::Message;
 use crate::repositories::SessionStatus;
 use log::info;
@@ -27,7 +28,10 @@ pub enum AgentEvent {
 
     /// Workflow encountered an error
     #[serde(rename_all = "camelCase")]
-    WorkflowError { session_id: String, error: String },
+    WorkflowError {
+        session_id: String,
+        error: AgentRuntimeError,
+    },
 
     /// Session status changed
     #[serde(rename_all = "camelCase")]

@@ -469,7 +469,11 @@ impl AgentSessionManager {
     }
 
     /// Handle LLM error from frontend
-    pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
+    pub async fn handle_llm_error(
+        &self,
+        session_id: String,
+        error: crate::agent::llm::types::AgentRuntimeError,
+    ) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(
             &self.session_repo,
             &self.active_sessions,
@@ -478,6 +482,17 @@ impl AgentSessionManager {
             error,
         )
         .await
+    }
+
+    pub async fn get_session_display_name(&self, session_id: &str) -> Option<String> {
+        let active = self.active_sessions.read().await;
+        active.get(session_id).map(|session| {
+            session
+                .metadata
+                .name
+                .clone()
+                .unwrap_or_else(|| session_id.chars().take(8).collect::<String>())
+        })
     }
 
     /// Delete an agent session and all its data
@@ -655,5 +670,111 @@ impl AgentSessionManager {
         repo.upsert(&record).await.map_err(|e| e.to_string())?;
 
         Ok(())
+    }
+
+    /// Handle a successful compact response from the frontend.
+    /// Stores the summary record in-memory + DB and clears the in-flight flag.
+    pub async fn handle_compact_response(
+        &self,
+        session_id: &str,
+        from_id: String,
+        to_id: String,
+        summary: String,
+    ) -> Result<(), String> {
+        log::info!(
+            "✅ Compact response stored for session {}: summary_chars={}, summary_est_tokens=~{}",
+            session_id,
+            summary.len(),
+            summary.len() / 4
+        );
+        let record = CompactContextRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            session_id: session_id.to_string(),
+            from_id,
+            to_id,
+            summary,
+            created_at: chrono::Utc::now().timestamp_millis(),
+        };
+        self.save_compact_context(session_id, record).await?;
+        let should_resume_completion = {
+            let active = self.active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| {
+                    session
+                        .awaiting_compact_completion
+                        .swap(false, Ordering::SeqCst)
+                })
+                .unwrap_or(false)
+        };
+
+        log::info!(
+            "📌 Compact completion decision for session {}: should_resume_completion={}",
+            session_id,
+            should_resume_completion
+        );
+
+        self.clear_compact_in_flight(session_id).await;
+
+        if should_resume_completion {
+            log::info!(
+                "▶️ Resuming blocked LLM completion after compaction for session {}",
+                session_id
+            );
+            let session_repo = self.session_repo.clone();
+            let active_sessions = self.active_sessions.clone();
+            let proxy_manager = self.proxy_manager.clone();
+            let app_handle = self.app_handle.clone();
+            let resume_session_id = session_id.to_string();
+
+            tokio::spawn(async move {
+                if let Err(error) = crate::agent::llm::request_llm_completion(
+                    &session_repo,
+                    &active_sessions,
+                    &proxy_manager,
+                    &app_handle,
+                    resume_session_id.clone(),
+                )
+                .await
+                {
+                    log::error!(
+                        "Failed to resume LLM completion after compaction for session {}: {}",
+                        resume_session_id,
+                        error
+                    );
+
+                    if let Err(handle_error) = crate::agent::llm::handle_llm_error(
+                        &session_repo,
+                        &active_sessions,
+                        &app_handle,
+                        resume_session_id.clone(),
+                        error,
+                    )
+                    .await
+                    {
+                        log::error!(
+                            "Failed to surface post-compaction resume error for session {}: {}",
+                            resume_session_id,
+                            handle_error
+                        );
+                    }
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Clear the compact in-flight flag for a session (called on success or error).
+    pub async fn clear_compact_in_flight(&self, session_id: &str) {
+        let active = self.active_sessions.read().await;
+        if let Some(session) = active.get(session_id) {
+            session
+                .compact_in_flight
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session
+                .awaiting_compact_completion
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 }

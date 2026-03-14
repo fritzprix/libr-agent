@@ -32,6 +32,13 @@ pub fn calculate_compact_threshold(effective_limit: usize) -> usize {
     (effective_limit as f64 * 0.9).floor() as usize
 }
 
+/// Reserves extra headroom for provider-side tokenization drift and frontend-side
+/// payload expansion (attachments, context injection, multimodal wrappers).
+pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
+    let five_percent = (effective_limit as f64 * 0.05).ceil() as usize;
+    five_percent.clamp(1024, 8192)
+}
+
 /// Estimates the token count for a given message using BPE or character fallback.
 /// Translates `estimateTokensBPE` from TS.
 pub fn estimate_tokens_bpe(message: &Message) -> usize {
@@ -111,12 +118,18 @@ pub fn calculate_grounded_total_tokens(
     }
 
     if let Some(idx) = grounded_index {
-        // Check if there is a summary message AFTER the grounded point.
-        let has_summary_after_grounded = messages[idx + 1..]
+        // Check if a compact summary appears BEFORE the grounded assistant.
+        // After compaction, Step A rebuilds messages as [compact-summary, ...tail].
+        // The compact-summary is always at index 0, so it will be at a position
+        // before any assistant message — checking after the grounded point would
+        // never find it and would cause the stale pre-compact usage value to be
+        // used as the base, keeping the token estimate artificially high and
+        // triggering repeated compaction.
+        let has_summary_before_grounded = messages[..idx]
             .iter()
             .any(|m| m.id.starts_with("compact-summary-"));
 
-        if !has_summary_after_grounded {
+        if !has_summary_before_grounded {
             let mut incremental_tokens = 0;
             for msg in &messages[idx + 1..] {
                 incremental_tokens += estimate_tokens_bpe(msg);

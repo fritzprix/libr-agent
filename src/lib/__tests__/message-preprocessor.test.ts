@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { prepareMessageForLLM, prepareMessagesForLLM } from '../message-preprocessor';
+import {
+  calculateContextSafetyMargin,
+  estimatePayloadTokens,
+  prepareMessageForLLM,
+  prepareMessagesForLLM,
+} from '../message-preprocessor';
 import type { Message, AttachmentReference } from '@/models/chat';
 import type { MCPTextContent } from '@/lib/mcp/protocol/content';
 import * as loggerModule from '../logger';
@@ -294,6 +299,26 @@ describe('message-preprocessor', () => {
                 errorMessages: 1
             })
         );
+    });
+  });
+
+  describe('token estimation helpers', () => {
+    it('calculates a bounded context safety margin', () => {
+      expect(calculateContextSafetyMargin(10_000)).toBe(1024);
+      expect(calculateContextSafetyMargin(100_000)).toBe(5000);
+      expect(calculateContextSafetyMargin(500_000)).toBe(8192);
+    });
+
+    it('estimates payload tokens including system prompt and tools', () => {
+      const messages = [
+        createMessage({ content: [{ type: 'text', text: 'hello world' }] }),
+      ];
+
+      const estimate = estimatePayloadTokens('system prompt', messages, [
+        { name: 'toolA', description: 'Test tool' },
+      ]);
+
+      expect(estimate).toBeGreaterThan(0);
     });
   });
 

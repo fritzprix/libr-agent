@@ -16,7 +16,7 @@ import {
 import { useLLMService } from './LLMServiceContext';
 import { getLogger } from '../lib/logger';
 import { isValidMessage } from '@/models/validation';
-import type { Message, RustMessage } from '@/models/chat';
+import type { Message, MessageError, RustMessage } from '@/models/chat';
 import type {
   SendUserMessageRequest,
   InjectMessagesRequest,
@@ -47,8 +47,8 @@ interface AgentChatStateContextValue {
   isSessionLoading: boolean;
   messages: Message[];
   pendingMessages: Message[]; // NEW: Export pending queue for set-based detection
-  error: string | null;
-  llmError: string | null;
+  error: MessageError | null;
+  llmError: MessageError | null;
   workflowStatus: 'idle' | 'busy' | 'paused' | 'error';
   serviceContexts: Record<string, ServiceContext>;
 }

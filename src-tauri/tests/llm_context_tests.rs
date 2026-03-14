@@ -1,4 +1,9 @@
 use serde_json::json;
+use std::collections::HashMap;
+use tauri_mcp_agent_lib::agent::llm::completion::{
+    resolve_context_management_settings, should_trigger_background_compaction,
+    uses_compaction_strategy,
+};
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
 use tauri_mcp_agent_lib::agent::types::{ToolCall as AgentToolCall, ToolCallFunction};
@@ -41,8 +46,9 @@ fn test_find_compaction_split_index() {
     for i in 0..20 {
         msgs.push(make_message(&format!("msg{}", i), "user", "Short message"));
     }
-    let idx = find_compaction_split_index(&msgs, 10000, 0, 0);
-    assert_eq!(idx, 10);
+    // Function always returns messages.len() — compact everything
+    let idx = find_compaction_split_index(&msgs);
+    assert_eq!(idx, 20);
 }
 
 #[test]
@@ -51,19 +57,44 @@ fn test_find_compaction_split_index_with_calibration() {
     for i in 0..10 {
         let mut msg = make_message(&format!("msg{}", i), "assistant", "Test content");
         if i == 5 {
-            // Give it a massively inflated grounded usage to trigger calibration skew
             msg.usage = Some(json!({ "totalTokens": 20000 }));
         }
         msgs.push(msg);
     }
-    // With 20k grounded tokens but small local text, ratio is high (~300x).
-    // Each message gets multiplied. `keep_threshold` happens quickly within 2-3 iterations from end.
-    let idx = find_compaction_split_index(&msgs, 10000, 0, 0);
-    assert!(
-        idx > 5,
-        "Split idx should be near the end of the stack due to bloated calibrated tokens (idx={})",
-        idx
-    );
+    // Function always returns messages.len() — compact everything
+    let idx = find_compaction_split_index(&msgs);
+    assert_eq!(idx, 10);
+}
+
+#[test]
+fn test_find_compaction_split_index_stops_before_unresolved_tool_chain() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tools");
+    assistant.tool_calls = Some(vec![
+        AgentToolCall {
+            id: "call_A".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "toolA".to_string(),
+                arguments: "{}".to_string(),
+            },
+        },
+        AgentToolCall {
+            id: "call_B".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "toolB".to_string(),
+                arguments: "{}".to_string(),
+            },
+        },
+    ]);
+
+    let mut tool_result = make_message("m2", "tool", "result A");
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let idx = find_compaction_split_index(&[intro, assistant, tool_result]);
+    assert_eq!(idx, 1);
 }
 
 #[test]
@@ -150,8 +181,90 @@ fn test_select_messages_regression_large_message() {
     ));
 
     let selected = select_messages_within_context(&msgs, "gemini", Some(10), None, None);
+    assert!(selected.is_empty());
+}
+
+#[test]
+fn test_select_messages_removes_orphaned_tool_tail_without_truncation() {
+    let summary = make_message("compact-summary-1", "user", "Summary");
+
+    let mut orphan_tool = make_message("tool-1", "tool", "orphan result");
+    orphan_tool.tool_call_id = Some("missing_call".to_string());
+
+    let mut paired_assistant = make_message("assistant-1", "assistant", "paired call");
+    paired_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "paired_call".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "tool".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut paired_tool = make_message("tool-2", "tool", "paired result");
+    paired_tool.tool_call_id = Some("paired_call".to_string());
+
+    let selected = select_messages_within_context(
+        &[
+            summary,
+            orphan_tool,
+            paired_assistant.clone(),
+            paired_tool.clone(),
+        ],
+        "gemini",
+        Some(5000),
+        None,
+        None,
+    );
+
+    assert_eq!(selected.len(), 3);
+    assert_eq!(selected[0].id, "compact-summary-1");
+    assert_eq!(selected[1].id, "assistant-1");
+    assert_eq!(selected[2].id, "tool-2");
+}
+
+#[test]
+fn test_select_messages_keeps_single_pinned_user_message_when_it_fits() {
+    let msgs = vec![make_message("msg0", "user", "hello")];
+
+    let selected = select_messages_within_context(&msgs, "gemini", Some(1000), None, None);
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].id, "big_msg");
+    assert_eq!(selected[0].id, "msg0");
+}
+
+#[test]
+fn test_select_recent_messages_fifo_keeps_last_n_messages() {
+    let msgs = vec![
+        make_message("msg0", "user", "zero"),
+        make_message("msg1", "assistant", "one"),
+        make_message("msg2", "user", "two"),
+        make_message("msg3", "assistant", "three"),
+    ];
+
+    let selected = select_recent_messages_fifo(&msgs, "gemini", 2, 100);
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0].id, "msg2");
+    assert_eq!(selected[1].id, "msg3");
+}
+
+#[test]
+fn test_select_recent_messages_fifo_falls_back_to_latest_non_tool_message() {
+    let mut assistant = make_message("assistant-1", "assistant", "tool call");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_1".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "tool".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut tool = make_message("tool-1", "tool", "tool result");
+    tool.tool_call_id = Some("call_1".to_string());
+
+    let selected = select_recent_messages_fifo(&[assistant.clone(), tool], "gemini", 1, 100);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].id, assistant.id);
 }
 
 #[test]
@@ -164,6 +277,66 @@ fn test_estimate_text_tokens() {
 #[test]
 fn test_calculate_compact_threshold() {
     assert_eq!(calculate_compact_threshold(10000), 9000);
+}
+
+#[test]
+fn test_background_compaction_trigger_uses_threshold_boundary() {
+    let safe_limit = 49152;
+    let threshold = calculate_compact_threshold(safe_limit);
+
+    assert!(!should_trigger_background_compaction(
+        threshold, safe_limit, "compact"
+    ));
+    assert!(should_trigger_background_compaction(
+        threshold + 1,
+        safe_limit,
+        "compact"
+    ));
+}
+
+#[test]
+fn test_background_compaction_trigger_respects_strategy() {
+    let safe_limit = 49152;
+    let threshold = calculate_compact_threshold(safe_limit);
+
+    assert!(!should_trigger_background_compaction(
+        threshold + 500,
+        safe_limit,
+        "window"
+    ));
+}
+
+#[test]
+fn test_uses_compaction_strategy_only_for_compact_mode() {
+    assert!(uses_compaction_strategy("compact"));
+    assert!(!uses_compaction_strategy("window"));
+}
+
+#[test]
+fn test_resolve_context_management_settings_prefers_direct_keys_over_legacy_blob() {
+    let legacy = json!({
+        "contextStrategy": "compact",
+        "windowSize": 20,
+        "maxInputContext": 49152,
+        "toolCallGroupVisibleCount": 4
+    });
+    let mut direct = HashMap::new();
+    direct.insert("maxInputContext".to_string(), json!(131072));
+    direct.insert("toolCallGroupVisibleCount".to_string(), json!(8));
+
+    let settings = resolve_context_management_settings(Some(&legacy), &direct);
+
+    assert_eq!(settings.context_strategy(), "compact");
+    assert_eq!(settings.window_size(), 20);
+    assert_eq!(settings.max_input_context(), 131072);
+    assert_eq!(settings.tool_call_group_visible_count(), 8);
+}
+
+#[test]
+fn test_calculate_context_safety_margin() {
+    assert_eq!(calculate_context_safety_margin(10_000), 1024);
+    assert_eq!(calculate_context_safety_margin(100_000), 5000);
+    assert_eq!(calculate_context_safety_margin(500_000), 8192);
 }
 
 #[test]
@@ -217,19 +390,24 @@ fn test_grounded_total_tokens_with_grounding() {
 
 #[test]
 fn test_grounded_total_tokens_ignores_grounding_after_compaction() {
-    let msg1 = make_message_simple("user", "Hello");
-    let mut msg2 = make_message_simple("assistant", "Hi there");
-    msg2.usage = Some(json!({ "totalTokens": 100 }));
+    // After compaction, Step A rebuilds as [compact-summary, ...tail].
+    // compact-summary appears BEFORE the grounded assistant message,
+    // so calculate_grounded_total_tokens must fall back to full BPE.
+    let mut summary = make_message_simple("system", "Summary...");
+    summary.id = "compact-summary-123".to_string();
 
-    let mut msg3 = make_message_simple("system", "Summary...");
-    msg3.id = "compact-summary-123".to_string();
+    let mut grounded = make_message_simple("assistant", "Hi there");
+    grounded.usage = Some(json!({ "totalTokens": 100 }));
 
-    let messages = vec![msg1.clone(), msg2.clone(), msg3.clone()];
+    let tail = make_message_simple("user", "Hello");
+
+    // compact-summary (idx 0) is BEFORE grounded assistant (idx 1) → BPE fallback
+    let messages = vec![summary.clone(), grounded.clone(), tail.clone()];
 
     let tokens = calculate_grounded_total_tokens(&messages, 10, 5);
-    let expected = estimate_tokens_bpe(&msg1)
-        + estimate_tokens_bpe(&msg2)
-        + estimate_tokens_bpe(&msg3)
+    let expected = estimate_tokens_bpe(&summary)
+        + estimate_tokens_bpe(&grounded)
+        + estimate_tokens_bpe(&tail)
         + 10
         + 5;
 

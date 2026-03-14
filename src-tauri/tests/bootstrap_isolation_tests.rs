@@ -20,8 +20,10 @@ fn test_command_exists_env_isolation() {
     );
 
     let fake_path = bin_dir.join(fake_name);
-    let mut f = std::fs::File::create(&fake_path).unwrap();
-    f.write_all(content.as_bytes()).unwrap();
+    {
+        let mut f = std::fs::File::create(&fake_path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
 
     #[cfg(not(windows))]
     {

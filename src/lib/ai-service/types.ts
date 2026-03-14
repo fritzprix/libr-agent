@@ -155,6 +155,12 @@ export interface IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      /**
+       * Disable tool use entirely for this stream, overriding `availableTools`.
+       * Useful when preserving the prompt cache prefix but strictly preventing the
+       * model from using tools (e.g. during compaction summarization).
+       */
+      disableToolUse?: boolean;
     },
   ): AsyncGenerator<string, void, void>;
 
@@ -214,6 +220,9 @@ export interface IAIService {
     options?: {
       modelName?: string;
       config?: AIServiceConfig;
+      systemPrompt?: string;
+      sessionContext?: string;
+      availableTools?: MCPTool[];
     },
   ): Promise<string>;
 

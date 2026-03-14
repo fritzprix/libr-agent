@@ -10,12 +10,14 @@ import { getLogger } from '@/lib/logger';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
-import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
+import {
+  calculateContextSafetyMargin,
+  estimatePayloadTokens,
+  prepareMessagesForLLM,
+} from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
-import { compactContextService } from '@/lib/compact-context-service';
-import { stripCompactSummaryPrefix } from '@/lib/compact-utils';
-import type { Message, ToolCall } from '@/models/chat';
+import type { Message, MessageError, ToolCall } from '@/models/chat';
 import type {
   MCPTool,
   MCPContent,
@@ -26,6 +28,24 @@ import type {
 import type { Settings } from '@/lib/services/settings-service';
 
 const logger = getLogger('useLLMExecution');
+
+function createExecutionError(
+  type: MessageError['type'],
+  displayMessage: string,
+  originalError: unknown,
+  context?: Record<string, unknown>,
+): MessageError {
+  return {
+    type,
+    displayMessage,
+    recoverable: true,
+    details: {
+      originalError,
+      timestamp: new Date().toISOString(),
+      context,
+    },
+  };
+}
 
 interface UseLLMExecutionProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -51,24 +71,6 @@ export function useLLMExecution({
   // Track last streaming UI update time per session (throttle to ~20fps)
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
 
-  // SP17: Compact strategy state
-  const compactCacheRef = useRef<
-    Map<string, { fromId: string; toId: string; summary: string }>
-  >(new Map());
-  // Resolvers receive `true` on successful compaction, `false` on failure.
-  // Waiters use this to decide whether to rebuild the candidate stack.
-  const compactResolversRef = useRef<
-    Map<string, ((success: boolean) => void)[]>
-  >(new Map());
-  // Guard flag: set to true on unmount so background compaction IIFEs avoid
-  // calling state setters on the unmounted component.
-  const unmountedRef = useRef(false);
-
-  const [compactingSet, setCompactingSet] = useState<Set<string>>(new Set());
-  const [awaitingSet, setAwaitingSet] = useState<Set<string>>(new Set());
-  const [compactedRangeMap, setCompactedRangeMap] = useState<
-    ReadonlyMap<string, { fromId: string; toId: string }>
-  >(new Map());
   // Context window usage per session for gauge display
   const [contextUsageMap, setContextUsageMap] = useState<
     ReadonlyMap<
@@ -77,12 +79,65 @@ export function useLLMExecution({
     >
   >(new Map());
 
+  // Tracks which sessions have an async compaction in-flight
+  const [compactingMap, setCompactingMap] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
+  const [compactedRangeMap, setCompactedRangeMap] = useState<
+    ReadonlyMap<string, { fromId: string; toId: string }>
+  >(new Map());
+  const [awaitingCompactMap, setAwaitingCompactMap] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
+
+  const setCompacting = useCallback((sessionId: string, value: boolean) => {
+    setCompactingMap((prev) => {
+      const next = new Map(prev);
+      if (value) {
+        next.set(sessionId, true);
+      } else {
+        next.delete(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  const setCompactedRange = useCallback(
+    (
+      sessionId: string,
+      range: { fromId: string; toId: string } | undefined,
+    ) => {
+      setCompactedRangeMap((prev) => {
+        const next = new Map(prev);
+        if (range) {
+          next.set(sessionId, range);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const setAwaitingCompact = useCallback(
+    (sessionId: string, value: boolean) => {
+      setAwaitingCompactMap((prev) => {
+        const next = new Map(prev);
+        if (value) {
+          next.set(sessionId, true);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   // Clean up on unmount
   useEffect(() => {
-    unmountedRef.current = false;
     return () => {
-      unmountedRef.current = true;
-
       abortControllersRef.current.forEach((controller) => controller.abort());
       abortControllersRef.current.clear();
 
@@ -93,14 +148,6 @@ export function useLLMExecution({
 
       activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
-
-      // Resolve all pending compaction waiters with `false` so they don't
-      // block indefinitely after unmount, then clear both refs.
-      compactResolversRef.current.forEach((resolvers) =>
-        resolvers.forEach((r) => r(false)),
-      );
-      compactResolversRef.current.clear();
-      compactCacheRef.current.clear();
     };
   }, []);
 
@@ -116,7 +163,6 @@ export function useLLMExecution({
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
-      compactRequest?: Message[],
       contextUsage?: {
         totalTokens: number;
         contextWindow: number;
@@ -206,94 +252,7 @@ export function useLLMExecution({
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
-        // ── Prepare context messages based on Rust backend slicing ──────────
-        // 1. If backend requested compaction, trigger it asynchronously
-        if (
-          compactRequest &&
-          compactRequest.length > 0 &&
-          !compactResolversRef.current.has(sessionId)
-        ) {
-          compactResolversRef.current.set(sessionId, []);
-          setCompactingSet((prev) => new Set([...prev, sessionId]));
-
-          const providerConfigForCompaction =
-            settingsRef.current.serviceConfigs?.[
-              provider as AIServiceProvider
-            ] || {};
-
-          const compactionService = AIServiceFactory.getService(
-            provider as AIServiceProvider,
-            apiKey ?? '',
-            { ...providerConfigForCompaction, timeout: 120000 },
-          );
-
-          (async () => {
-            let compactionSucceeded = false;
-            try {
-              logger.info('🚀 Triggering backend-instructed async compaction', {
-                sessionId,
-                oldCount: compactRequest.length,
-              });
-              const summary = await compactionService.compact(compactRequest, {
-                modelName: model,
-              });
-
-              if (unmountedRef.current) return;
-
-              const firstMsg = compactRequest[0];
-              const fromId = stripCompactSummaryPrefix(firstMsg.id);
-              const toId = compactRequest[compactRequest.length - 1].id;
-
-              compactCacheRef.current.set(sessionId, {
-                fromId,
-                toId,
-                summary,
-              });
-              await compactContextService.saveCompactContext(sessionId, {
-                id: `cc_${Date.now()}`,
-                sessionId,
-                fromId,
-                toId,
-                summary,
-                createdAt: Date.now(),
-              });
-
-              if (unmountedRef.current) return;
-
-              setCompactedRangeMap((prev) => {
-                const next = new Map(prev);
-                next.set(sessionId, { fromId, toId });
-                return next;
-              });
-              compactionSucceeded = true;
-              logger.info('✅ Async compaction completed', {
-                sessionId,
-                fromId,
-                toId,
-              });
-            } catch (err) {
-              logger.error('❌ Async compaction failed', {
-                sessionId,
-                error: err,
-              });
-            } finally {
-              compactionService.dispose();
-              if (!unmountedRef.current) {
-                const resolvers =
-                  compactResolversRef.current.get(sessionId) ?? [];
-                resolvers.forEach((r) => r(compactionSucceeded));
-                compactResolversRef.current.delete(sessionId);
-                setCompactingSet((prev) => {
-                  const next = new Set(prev);
-                  next.delete(sessionId);
-                  return next;
-                });
-              }
-            }
-          })();
-        }
-
-        // 2. Process the pre-sliced messages provided by Backend
+        // Process the pre-sliced messages provided by the Rust backend.
         const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
           messages.map(sanitizeMessage),
           provider as AIServiceProvider,
@@ -353,6 +312,34 @@ export function useLLMExecution({
           sessionContext,
           enrichedMessages,
         );
+
+        if (settingsRef.current.contextStrategy === 'compact') {
+          const effectiveContextLimit =
+            contextUsage?.contextWindow ??
+            modelInfo.contextWindow ??
+            128 * 1024;
+          const projectedPayloadTokens = estimatePayloadTokens(
+            effectiveSystemPrompt,
+            effectiveMessages,
+            availableTools,
+          );
+          const safetyMargin = calculateContextSafetyMargin(
+            effectiveContextLimit,
+          );
+
+          if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
+            throw createExecutionError(
+              'CONTEXT_LIMIT_ERROR',
+              `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
+              'prepared_payload_too_large',
+              {
+                projectedPayloadTokens,
+                safetyMargin,
+                effectiveContextLimit,
+              },
+            );
+          }
+        }
 
         const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
@@ -483,7 +470,7 @@ export function useLLMExecution({
                 totalTokens:
                   incomingUsage.totalTokens || finalUsage.totalTokens,
                 cachedPromptTokens:
-                  incomingUsage.cachedPromptTokens ||
+                  incomingUsage.cachedPromptTokens ??
                   finalUsage.cachedPromptTokens,
                 details: {
                   ...finalUsage.details,
@@ -661,7 +648,12 @@ export function useLLMExecution({
             hasContent,
             hasUsage,
           });
-          throw new Error('Received empty response from LLM provider');
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received empty response from LLM provider',
+            'empty_response_from_provider',
+            { sessionId },
+          );
         } else if (!hasContent && hasUsage) {
           logger.warn(
             '⚠️ Response has usage but no content - allowing to proceed',
@@ -745,28 +737,22 @@ export function useLLMExecution({
   }, []);
 
   const clearSessionState = useCallback((sessionId: string) => {
-    compactCacheRef.current.delete(sessionId);
-    compactResolversRef.current.delete(sessionId);
-    setCompactingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
-    setAwaitingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
     setContextUsageMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setCompactingMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
     });
     setCompactedRangeMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setAwaitingCompactMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
@@ -774,17 +760,29 @@ export function useLLMExecution({
   }, []);
 
   /**
-   * Clears in-memory compact state for ALL sessions.
-   * Called when the global context strategy changes so stale caches,
-   * pending resolvers, and UI state don't leak across modes.
+   * Clears in-memory context usage state for ALL sessions.
+   * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
-    compactCacheRef.current.clear();
-    compactResolversRef.current.clear();
-    setCompactingSet(new Set());
-    setAwaitingSet(new Set());
     setContextUsageMap(new Map());
+    setCompactingMap(new Map());
     setCompactedRangeMap(new Map());
+    setAwaitingCompactMap(new Map());
+  }, []);
+
+  /**
+   * Resets the token count for a session to 0 after compaction completes.
+   * Keeps contextWindow/modelMaxContext so the gauge still renders correctly
+   * (showing 0%) until the next LLM call provides the real post-compact estimate.
+   */
+  const resetContextUsageForSession = useCallback((sessionId: string) => {
+    setContextUsageMap((prev) => {
+      const existing = prev.get(sessionId);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(sessionId, { ...existing, totalTokens: 0 });
+      return next;
+    });
   }, []);
 
   return {
@@ -792,8 +790,13 @@ export function useLLMExecution({
     cancelCompletionRequest,
     clearSessionState,
     clearAllCompactState,
-    isCompacting: (sessionId: string) => compactingSet.has(sessionId),
-    isAwaitingCompact: (sessionId: string) => awaitingSet.has(sessionId),
+    resetContextUsageForSession,
+    setCompacting,
+    setCompactedRange,
+    setAwaitingCompact,
+    isCompacting: (sessionId: string) => compactingMap.get(sessionId) === true,
+    isAwaitingCompact: (sessionId: string) =>
+      awaitingCompactMap.get(sessionId) === true,
     getContextUsage: (
       sessionId: string,
     ):

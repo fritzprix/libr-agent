@@ -22,58 +22,54 @@ pub struct SelectedContext {
 }
 
 /// Calculates the split index for compaction.
-/// Messages before this index will be compacted (summarized).
-/// Messages from this index onwards will be kept as "recent context".
-pub fn find_compaction_split_index(
-    messages: &[Message],
-    threshold: usize,
-    system_prompt_tokens: usize,
-    tools_tokens: usize,
-) -> usize {
-    // 1. Calculate local BPE sum for all messages
-    let total_local_msg_tokens: usize = messages.iter().map(token_utils::estimate_tokens_bpe).sum();
-    let total_local_bpe = total_local_msg_tokens + system_prompt_tokens + tools_tokens;
+/// Returns the earliest unresolved assistant tool-call boundary, or `messages.len()`
+/// when the stack contains no in-flight tool chains. This prevents async compaction
+/// from swallowing an assistant tool-call message and leaving future tool results
+/// orphaned behind the compact summary.
+pub fn find_compaction_split_index(messages: &[Message]) -> usize {
+    use std::collections::HashMap;
 
-    // 2. Fetch grounded token stats
-    let api_grounded_tokens =
-        token_utils::calculate_grounded_total_tokens(messages, system_prompt_tokens, tools_tokens);
+    let mut tool_call_owner: HashMap<String, usize> = HashMap::new();
+    let mut open_tool_counts: HashMap<usize, usize> = HashMap::new();
 
-    // 3. Derive calibration ratio
-    let calibration_ratio = if total_local_bpe > 0 {
-        api_grounded_tokens as f64 / total_local_bpe as f64
-    } else {
-        1.0
-    };
+    for (idx, msg) in messages.iter().enumerate() {
+        if msg.role == "assistant" {
+            if let Some(tool_calls) = &msg.tool_calls {
+                if !tool_calls.is_empty() {
+                    open_tool_counts.insert(idx, tool_calls.len());
+                    for tool_call in tool_calls {
+                        tool_call_owner.insert(tool_call.id.clone(), idx);
+                    }
+                }
+            }
+            continue;
+        }
 
-    // How much room is actually available for messages?
-    let message_budget = threshold.saturating_sub(system_prompt_tokens + tools_tokens);
+        if msg.role != "tool" {
+            continue;
+        }
 
-    // Keep the most recent messages up to 50% of the available budget, or at least 1000 tokens
-    let keep_threshold = std::cmp::max(1000, message_budget / 2);
+        let Some(tool_call_id) = &msg.tool_call_id else {
+            continue;
+        };
 
-    let mut current_sum = 0;
-    let mut split_idx = 0;
-    let mut split_found = false;
+        let Some(owner_idx) = tool_call_owner.remove(tool_call_id) else {
+            continue;
+        };
 
-    for i in (0..messages.len()).rev() {
-        let base_tokens = token_utils::estimate_tokens_bpe(&messages[i]);
-        let calibrated_tokens = (base_tokens as f64 * calibration_ratio).ceil() as usize;
-
-        current_sum += calibrated_tokens;
-        if current_sum >= keep_threshold {
-            split_idx = i;
-            split_found = true;
-            break;
+        if let Some(open_count) = open_tool_counts.get_mut(&owner_idx) {
+            *open_count = open_count.saturating_sub(1);
+            if *open_count == 0 {
+                open_tool_counts.remove(&owner_idx);
+            }
         }
     }
 
-    // Fallback: If no split point was found within the keep budget, force a
-    // half-split when the list is large enough.
-    if !split_found && messages.len() >= 10 {
-        split_idx = messages.len() / 2;
-    }
-
-    split_idx
+    open_tool_counts
+        .keys()
+        .min()
+        .copied()
+        .unwrap_or(messages.len())
 }
 
 /// Removes incomplete tool chains.
@@ -226,6 +222,37 @@ pub fn batch_tool_calls_in_messages(
     result
 }
 
+pub fn select_recent_messages_fifo(
+    messages: &[Message],
+    provider_id: &str,
+    max_messages: usize,
+    max_tool_calls_per_message: usize,
+) -> Vec<Message> {
+    if max_messages == 0 {
+        return Vec::new();
+    }
+
+    let batched_messages = batch_tool_calls_in_messages(messages, max_tool_calls_per_message);
+    let start_idx = batched_messages.len().saturating_sub(max_messages);
+    let selected = batched_messages[start_idx..].to_vec();
+
+    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    {
+        remove_incomplete_tool_chains(selected)
+    } else {
+        selected
+    };
+
+    if adjusted.is_empty() {
+        if let Some(latest_non_tool) = batched_messages.iter().rev().find(|msg| msg.role != "tool")
+        {
+            return vec![latest_non_tool.clone()];
+        }
+    }
+
+    adjusted
+}
+
 pub fn select_messages_within_context(
     messages: &[Message],
     provider_id: &str,
@@ -299,6 +326,7 @@ pub fn select_messages_within_context(
 
     let reserved_tokens = non_message_reserved + pinned_message_tokens;
     let token_limit = std::cmp::max(1024, base_token_limit.saturating_sub(reserved_tokens));
+    let pinned_message_budget = base_token_limit.saturating_sub(non_message_reserved);
 
     let mut total_tokens = 0;
     let mut selected = std::collections::VecDeque::new();
@@ -316,16 +344,14 @@ pub fn select_messages_within_context(
         let calibrated_tokens = (tokens as f64 * calibration_ratio).ceil() as usize;
 
         if total_tokens + calibrated_tokens > token_limit {
-            if selected.is_empty() {
-                // Ensure we never return an empty array if we have at least one message.
-                selected.push_front(msg.clone());
-            }
             if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
                 let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                if let Some(pinned) = pinned_message {
-                    return prepend_pinned_message(pinned, adjusted);
-                }
-                return adjusted;
+                return build_selected_with_optional_pinned(
+                    pinned_message.clone(),
+                    pinned_message_tokens,
+                    pinned_message_budget,
+                    adjusted,
+                );
             }
             break;
         }
@@ -343,10 +369,12 @@ pub fn select_messages_within_context(
                 }
                 if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
                     let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                    if let Some(pinned) = pinned_message {
-                        return prepend_pinned_message(pinned, adjusted);
-                    }
-                    return adjusted;
+                    return build_selected_with_optional_pinned(
+                        pinned_message.clone(),
+                        pinned_message_tokens,
+                        pinned_message_budget,
+                        adjusted,
+                    );
                 }
                 break;
             }
@@ -356,17 +384,25 @@ pub fn select_messages_within_context(
         total_tokens += calibrated_tokens;
     }
 
-    let mut final_selected = Vec::from(selected);
-    if let Some(pinned) = pinned_message {
-        final_selected = prepend_pinned_message(pinned, final_selected);
-    }
+    let final_selected = Vec::from(selected);
+    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    {
+        remove_incomplete_tool_chains(final_selected)
+    } else {
+        final_selected
+    };
 
-    final_selected
+    build_selected_with_optional_pinned(
+        pinned_message,
+        pinned_message_tokens,
+        pinned_message_budget,
+        adjusted,
+    )
 }
 
 fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) -> Vec<Message> {
     if selected_msgs.is_empty() {
-        return vec![pinned_msg];
+        return selected_msgs;
     }
 
     if pinned_msg.role == "user" && selected_msgs[0].role == "user" {
@@ -390,5 +426,25 @@ fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) 
     }
 
     selected_msgs.insert(0, pinned_msg);
+    selected_msgs
+}
+
+fn build_selected_with_optional_pinned(
+    pinned_message: Option<Message>,
+    pinned_message_tokens: usize,
+    pinned_message_budget: usize,
+    selected_msgs: Vec<Message>,
+) -> Vec<Message> {
+    if let Some(pinned) = pinned_message {
+        if selected_msgs.is_empty() {
+            if pinned_message_tokens <= pinned_message_budget {
+                return vec![pinned];
+            }
+            return vec![];
+        }
+
+        return prepend_pinned_message(pinned, selected_msgs);
+    }
+
     selected_msgs
 }
