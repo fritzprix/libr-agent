@@ -51,7 +51,10 @@ fn test_command_exists_env_isolation() {
     // We already verified in debug prints that get_isolated_env doesn't include it.
     // To make the test pass, we check a command that actually exists.
 
+    #[cfg(windows)]
     let exists = command_exists("cmd");
+    #[cfg(not(windows))]
+    let exists = command_exists("ls");
 
     // Clean up PATH and SECRET_VAR
     std::env::set_var("PATH", old_path);
