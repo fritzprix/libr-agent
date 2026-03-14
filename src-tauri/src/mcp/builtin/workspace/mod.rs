@@ -261,19 +261,22 @@ impl WorkspaceServer {
                         {
                             // Unix: send SIGTERM
                             use std::process::Command;
-                            let _ = Command::new("kill")
-                                .arg("-TERM")
-                                .arg(pid.to_string())
-                                .output();
+                            let mut cmd = Command::new("kill");
+                            cmd.arg("-TERM").arg(pid.to_string());
+                            crate::utils::env::apply_isolated_env(&mut cmd);
+                            let _ = cmd.output();
                         }
 
                         #[cfg(windows)]
                         {
                             // Windows: use taskkill
+                            use std::os::windows::process::CommandExt;
                             use std::process::Command;
-                            let _ = Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/F"])
-                                .output();
+                            let mut cmd = Command::new("taskkill");
+                            cmd.args(["/PID", &pid.to_string(), "/F"]);
+                            crate::utils::env::apply_isolated_env(&mut cmd);
+                            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                            let _ = cmd.output();
                         }
                     }
                 }

@@ -75,17 +75,19 @@ pub fn open_in_file_manager<P: AsRef<Path>>(path: P) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer")
-            .arg(path)
-            .spawn()
+        let mut cmd = Command::new("explorer");
+        cmd.arg(path);
+        crate::utils::env::apply_isolated_env(&mut cmd);
+        cmd.spawn()
             .map_err(|e| format!("Failed to open Explorer: {}", e))?;
     }
 
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg(path)
-            .spawn()
+        let mut cmd = Command::new("open");
+        cmd.arg(path);
+        crate::utils::env::apply_isolated_env(&mut cmd);
+        cmd.spawn()
             .map_err(|e| format!("Failed to open Finder: {}", e))?;
     }
 
@@ -97,7 +99,11 @@ pub fn open_in_file_manager<P: AsRef<Path>>(path: P) -> Result<(), String> {
         let mut errors: Vec<String> = Vec::new();
 
         for fm in &file_managers {
-            match Command::new(fm).arg(path).spawn() {
+            let mut cmd = Command::new(fm);
+            cmd.arg(path);
+            crate::utils::env::apply_isolated_env(&mut cmd);
+
+            match cmd.spawn() {
                 Ok(_) => {
                     opened = true;
                     break;

@@ -39,3 +39,9 @@
 **Vulnerability:** In `src-tauri/src/mcp/builtin/bootstrap/platform.rs`, `std::process::Command` inherited the parent environment by default when detecting tool versions and command paths, potentially leaking sensitive host secrets (like `OPENAI_API_KEY`) to untrusted executables.
 **Learning:** Even during bootstrap phases and diagnostic checks, external processes spawned via `Command` must not inherit the parent's environment, as any executed tool (even seemingly safe ones like `node` or `python`) can run arbitrary code or scripts.
 **Prevention:** Always use `cmd.env_clear()` before spawning any diagnostic or bootstrap process, and re-apply an explicit whitelist of required system variables using `crate::utils::env::get_isolated_env()`. This pattern has been extended to the shared `command_exists` utility to ensure all tool existence checks are isolated.
+
+## 2026-03-05 - Environment Variable Leakage in System Utility Commands
+
+**Vulnerability:** In `src-tauri/src/mcp/builtin/workspace/handlers/terminal/stop.rs`, `src-tauri/src/mcp/builtin/workspace/mod.rs`, and `src-tauri/src/utils/fs.rs`, `std::process::Command` inherited the parent environment by default when executing system utilities like `kill`, `taskkill`, `explorer`, and `open`. This could potentially leak sensitive host secrets to these executables.
+**Learning:** Even built-in OS utilities and file managers executed via `Command` must not inherit the parent's environment, as any executed tool could potentially log, forward, or otherwise mishandle sensitive environment variables. Every single `Command::new` invocation must be considered a boundary.
+**Prevention:** Always use `cmd.env_clear()` before spawning any system utility process, and re-apply an explicit whitelist of required system variables using `crate::utils::env::get_isolated_env()`. This ensures a secure baseline for all external process execution.
