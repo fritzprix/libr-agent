@@ -618,7 +618,7 @@ pub async fn continue_workflow_after_tool(
                 active_sessions,
                 app_handle,
                 session_id,
-                e.clone(),
+                e.clone().into(),
             )
             .await
             {

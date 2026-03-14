@@ -8,7 +8,12 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 
-import { messageToRustMessage, type Message } from '@/models/chat';
+import {
+  messageToRustMessage,
+  type Message,
+  type MessageError,
+} from '@/models/chat';
+import type { AgentRuntimeError } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
@@ -20,6 +25,46 @@ import type { CompletionRequest } from './types';
 import { isAbortError } from './types';
 
 const logger = getLogger('useLLMListener');
+
+function isMessageError(error: unknown): error is MessageError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'displayMessage' in error &&
+    typeof error.displayMessage === 'string' &&
+    'type' in error &&
+    typeof error.type === 'string' &&
+    'recoverable' in error &&
+    typeof error.recoverable === 'boolean'
+  );
+}
+
+function toAgentRuntimeError(error: unknown): AgentRuntimeError {
+  if (isMessageError(error)) {
+    return error;
+  }
+
+  const displayMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error);
+
+  return {
+    type: 'AI_SERVICE_ERROR',
+    displayMessage,
+    recoverable: true,
+    details: {
+      originalError: error instanceof Error ? error.message : error,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function shouldBypassRetryAndFallback(error: unknown): boolean {
+  return toAgentRuntimeError(error).type === 'CONTEXT_LIMIT_ERROR';
+}
 
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -207,6 +252,9 @@ export function useLLMListener({
                   if (isAbortError(attemptError)) {
                     throw attemptError;
                   }
+                  if (shouldBypassRetryAndFallback(attemptError)) {
+                    throw attemptError;
+                  }
                   if (attempt === SP4_MAX_RETRIES) {
                     throw attemptError;
                   }
@@ -227,6 +275,9 @@ export function useLLMListener({
             } catch (primaryError) {
               if (isAbortError(primaryError)) {
                 throw primaryError; // Let the outer catch handle abort
+              }
+              if (shouldBypassRetryAndFallback(primaryError)) {
+                throw primaryError;
               }
 
               // Primary model exhausted — try configured fallback model
@@ -316,10 +367,7 @@ export function useLLMListener({
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust
-            await handleLLMError(
-              sessionId,
-              error instanceof Error ? error.message : String(error),
-            );
+            await handleLLMError(sessionId, toAgentRuntimeError(error));
           }
         },
       );
@@ -351,7 +399,6 @@ export function useLLMListener({
       }>('llm:compact-request', async (event) => {
         const {
           sessionId,
-          sessionName,
           messages,
           fromId,
           toId,
@@ -376,13 +423,6 @@ export function useLLMListener({
         const providerConfig: AIServiceConfig =
           settings.serviceConfigs?.[provider] ?? {};
 
-        const toastId = `compact-${sessionId}`;
-        toast.loading(`Compacting context…`, {
-          id: toastId,
-          description: sessionName,
-          duration: Infinity,
-        });
-
         try {
           const service = AIServiceFactory.getService(
             provider,
@@ -394,20 +434,10 @@ export function useLLMListener({
           setCompactedRangeForSession(sessionId, { fromId, toId });
           resetContextUsageForSession(sessionId);
           logger.info(`✅ Compact summary stored: session=${sessionId}`);
-          toast.success(`Context compacted`, {
-            id: toastId,
-            description: sessionName,
-            duration: 3000,
-          });
         } catch (error) {
           logger.error(`Compact LLM call failed: session=${sessionId}`, error);
           setAwaitingCompactForSession(sessionId, false);
           await handleCompactError(sessionId);
-          toast.error(`Compaction failed`, {
-            id: toastId,
-            description: sessionName,
-            duration: 4000,
-          });
         }
       });
 
@@ -427,10 +457,35 @@ export function useLLMListener({
     const setupCompactStateListener = async () => {
       const unlistenFn = await listen<{
         sessionId: string;
+        sessionName?: string;
         compacting: boolean;
+        phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
       }>('llm:compact-state', (event) => {
-        const { sessionId, compacting } = event.payload;
+        const { sessionId, sessionName, compacting, phase } = event.payload;
+        const toastId = `compact-${sessionId}`;
+        const description = sessionName ?? sessionId.slice(0, 8);
+
         setCompactingFromEvent(sessionId, compacting);
+        if (phase === 'STARTED') {
+          toast.loading(`Compacting context…`, {
+            id: toastId,
+            description,
+            duration: Infinity,
+          });
+        } else if (phase === 'SUCCEEDED') {
+          toast.success(`Context compacted`, {
+            id: toastId,
+            description,
+            duration: 3000,
+          });
+        } else if (phase === 'FAILED') {
+          toast.error(`Compaction failed`, {
+            id: toastId,
+            description,
+            duration: 4000,
+          });
+        }
+
         if (!compacting) {
           setAwaitingCompactForSession(sessionId, false);
         }

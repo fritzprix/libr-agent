@@ -1,5 +1,5 @@
 import { safeInvoke } from '@/lib/backend/core';
-import type { AgentResponse } from '../../models/agent-ipc';
+import type { AgentResponse, AgentRuntimeError } from '../../models/agent-ipc';
 import type { RustMessage } from '../../models/chat';
 import type { MCPResult } from '../mcp/protocol/response';
 import type { MCPTool } from '@/lib/mcp';
@@ -24,7 +24,7 @@ export async function handleLLMResponse(
  */
 export async function handleLLMError(
   sessionId: string,
-  error: string,
+  error: AgentRuntimeError,
 ): Promise<void> {
   await safeInvoke<AgentResponse>('agent_handle_llm_error', {
     sessionId,

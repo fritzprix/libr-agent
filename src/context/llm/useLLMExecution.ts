@@ -17,7 +17,7 @@ import {
 } from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
-import type { Message, ToolCall } from '@/models/chat';
+import type { Message, MessageError, ToolCall } from '@/models/chat';
 import type {
   MCPTool,
   MCPContent,
@@ -28,6 +28,24 @@ import type {
 import type { Settings } from '@/lib/services/settings-service';
 
 const logger = getLogger('useLLMExecution');
+
+function createExecutionError(
+  type: MessageError['type'],
+  displayMessage: string,
+  originalError: unknown,
+  context?: Record<string, unknown>,
+): MessageError {
+  return {
+    type,
+    displayMessage,
+    recoverable: true,
+    details: {
+      originalError,
+      timestamp: new Date().toISOString(),
+      context,
+    },
+  };
+}
 
 interface UseLLMExecutionProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -295,21 +313,32 @@ export function useLLMExecution({
           enrichedMessages,
         );
 
-        const effectiveContextLimit =
-          contextUsage?.contextWindow ?? modelInfo.contextWindow ?? 128 * 1024;
-        const projectedPayloadTokens = estimatePayloadTokens(
-          effectiveSystemPrompt,
-          effectiveMessages,
-          availableTools,
-        );
-        const safetyMargin = calculateContextSafetyMargin(
-          effectiveContextLimit,
-        );
-
-        if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
-          throw new Error(
-            `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
+        if (settingsRef.current.contextStrategy === 'compact') {
+          const effectiveContextLimit =
+            contextUsage?.contextWindow ??
+            modelInfo.contextWindow ??
+            128 * 1024;
+          const projectedPayloadTokens = estimatePayloadTokens(
+            effectiveSystemPrompt,
+            effectiveMessages,
+            availableTools,
           );
+          const safetyMargin = calculateContextSafetyMargin(
+            effectiveContextLimit,
+          );
+
+          if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
+            throw createExecutionError(
+              'CONTEXT_LIMIT_ERROR',
+              `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
+              'prepared_payload_too_large',
+              {
+                projectedPayloadTokens,
+                safetyMargin,
+                effectiveContextLimit,
+              },
+            );
+          }
         }
 
         const streamGenerator = service.streamChat(effectiveMessages, {
@@ -441,7 +470,7 @@ export function useLLMExecution({
                 totalTokens:
                   incomingUsage.totalTokens || finalUsage.totalTokens,
                 cachedPromptTokens:
-                  incomingUsage.cachedPromptTokens ||
+                  incomingUsage.cachedPromptTokens ??
                   finalUsage.cachedPromptTokens,
                 details: {
                   ...finalUsage.details,
@@ -619,7 +648,12 @@ export function useLLMExecution({
             hasContent,
             hasUsage,
           });
-          throw new Error('Received empty response from LLM provider');
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received empty response from LLM provider',
+            'empty_response_from_provider',
+            { sessionId },
+          );
         } else if (!hasContent && hasUsage) {
           logger.warn(
             '⚠️ Response has usage but no content - allowing to proceed',

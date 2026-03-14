@@ -27,19 +27,24 @@ import { TokenUsage } from '@/lib/ai-service/types';
 import { toast } from 'sonner';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import { useTranslation } from 'react-i18next';
+import { mergeDisplayTokenUsage } from './token-metrics';
+import { useSettings } from '@/context/SettingsContext';
 
 const logger = getLogger('AgentChatStatusBar');
 
 export function AgentChatStatusBar() {
   const { t } = useTranslation();
+  const { value: settings } = useSettings();
   const { session, yoloModeEnabled, toggleYoloMode, updateSessionConfig } =
     useAgentSession();
   const { workflowStatus, error, llmError, retryMessage, resume } =
     useAgentChat();
   const { isCompacting, isAwaitingCompact, getContextUsage } = useLLMService();
+  const isCompactStrategy = settings.contextStrategy === 'compact';
   // Use only contextWindow from the map; totalTokens comes from displayMetrics
   // (API-reported, same source as the badge) to guarantee they always match.
-  const usageInfo = session?.id ? getContextUsage(session.id) : undefined;
+  const usageInfo =
+    isCompactStrategy && session?.id ? getContextUsage(session.id) : undefined;
   const contextWindow = usageInfo?.contextWindow;
   const modelMaxContext = usageInfo?.modelMaxContext;
   const [showToolsModal, setShowToolsModal] = useState(false);
@@ -98,32 +103,10 @@ export function AgentChatStatusBar() {
 
   // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
   // without waiting for the next paint cycle (Effect-less derivation)
-  const displayMetrics = useMemo(() => {
-    if (!metrics) return lastMetrics;
-    if (!lastMetrics) return metrics;
-
-    // Smart merge: update counts but preserve metadata if new chunk lacks it
-    // (Same logic as useEffect but applied immediately during render)
-    return {
-      ...lastMetrics,
-      ...metrics,
-      details: {
-        ...lastMetrics.details,
-        ...metrics.details,
-        // Only overwrite metadata if new value is present and non-zero
-        evalDuration:
-          metrics.details?.evalDuration || lastMetrics.details?.evalDuration,
-        timeToFirstToken:
-          metrics.details?.timeToFirstToken ||
-          lastMetrics.details?.timeToFirstToken,
-        promptEvalDuration:
-          metrics.details?.promptEvalDuration ||
-          lastMetrics.details?.promptEvalDuration,
-        loadDuration:
-          metrics.details?.loadDuration || lastMetrics.details?.loadDuration,
-      },
-    };
-  }, [metrics, lastMetrics]);
+  const displayMetrics = useMemo(
+    () => mergeDisplayTokenUsage(lastMetrics, metrics),
+    [metrics, lastMetrics],
+  );
 
   // Derive gauge data from the same source as the badge (API-reported promptTokens),
   // so gauge numerator === badge prompt token count by definition.
@@ -131,7 +114,10 @@ export function AgentChatStatusBar() {
   // During the TTFT phase promptTokens is 0 (the TTFT chunk carries only
   // details), so we suppress the gauge to avoid a brief 0% flash.
   const contextUsage =
-    displayMetrics && contextWindow && displayMetrics.promptTokens > 0
+    isCompactStrategy &&
+    displayMetrics &&
+    contextWindow &&
+    displayMetrics.promptTokens > 0
       ? {
           totalTokens: displayMetrics.promptTokens,
           contextWindow,
@@ -210,9 +196,12 @@ export function AgentChatStatusBar() {
 
   const getStatusConfig = () => {
     if (error || llmError) {
+      const activeError = error ?? llmError;
       return {
         icon: <AlertCircle className="w-4 h-4" />,
-        text: t('agent.statusBar.statusError', { error: error || llmError }),
+        text: t('agent.statusBar.statusError', {
+          error: activeError?.displayMessage ?? '',
+        }),
         className: 'bg-destructive/10 border-destructive/20 text-destructive',
         showRetry: true,
         showResume: false,

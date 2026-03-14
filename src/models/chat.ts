@@ -97,7 +97,9 @@ export type MessageErrorType =
   | 'RATE_LIMIT_ERROR'
   | 'MALFORMED_FUNCTION_CALL'
   | 'JSON_PARSING_ERROR'
-  | 'AUTHENTICATION_ERROR';
+  | 'AUTHENTICATION_ERROR'
+  | 'CONTEXT_LIMIT_ERROR'
+  | 'EMPTY_SELECTION_ERROR';
 
 export interface Message {
   id: string;
@@ -153,6 +155,8 @@ export interface Message {
     [key: string]: unknown; // Extensible for future metadata
   };
 }
+
+export type MessageError = NonNullable<Message['error']>;
 
 export interface ToolCall {
   id: string;

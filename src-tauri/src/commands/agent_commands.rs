@@ -345,7 +345,7 @@ pub async fn agent_respond_tool_approval(
 pub async fn agent_handle_llm_error(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
-    error: String,
+    error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<AgentResponse, String> {
     manager.handle_llm_error(session_id.clone(), error).await?;
 
@@ -515,10 +515,13 @@ pub async fn agent_handle_compact_response(
     manager
         .handle_compact_response(&session_id, from_id, to_id, summary)
         .await?;
+    let session_name = manager.get_session_display_name(&session_id).await;
 
     let state_event = crate::agent::llm::types::CompactStateEvent {
         session_id: session_id.clone(),
+        session_name,
         compacting: false,
+        phase: crate::agent::llm::types::CompactStatePhase::Succeeded,
     };
     if let Err(e) = app_handle.emit("llm:compact-state", state_event) {
         log::error!("Failed to emit llm:compact-state (done): {}", e);
@@ -539,6 +542,7 @@ pub async fn agent_handle_compact_error(
     session_id: String,
 ) -> Result<AgentResponse, String> {
     manager.clear_compact_in_flight(&session_id).await;
+    let session_name = manager.get_session_display_name(&session_id).await;
     log::warn!(
         "⚠️ Compact error received for session {}, flag cleared",
         session_id
@@ -546,7 +550,9 @@ pub async fn agent_handle_compact_error(
 
     let state_event = crate::agent::llm::types::CompactStateEvent {
         session_id: session_id.clone(),
+        session_name,
         compacting: false,
+        phase: crate::agent::llm::types::CompactStatePhase::Failed,
     };
     if let Err(e) = app_handle.emit("llm:compact-state", state_event) {
         log::error!("Failed to emit llm:compact-state (error): {}", e);

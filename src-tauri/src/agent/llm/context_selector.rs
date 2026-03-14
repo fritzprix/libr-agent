@@ -22,11 +22,54 @@ pub struct SelectedContext {
 }
 
 /// Calculates the split index for compaction.
-/// Returns `messages.len()` to compact ALL current messages. The natural "tail" is
-/// whatever arrives AFTER `to_id` while the async summarization is in-flight —
-/// tracked by `CompactRecord.to_id` in Step A of completion.rs.
+/// Returns the earliest unresolved assistant tool-call boundary, or `messages.len()`
+/// when the stack contains no in-flight tool chains. This prevents async compaction
+/// from swallowing an assistant tool-call message and leaving future tool results
+/// orphaned behind the compact summary.
 pub fn find_compaction_split_index(messages: &[Message]) -> usize {
-    messages.len()
+    use std::collections::HashMap;
+
+    let mut tool_call_owner: HashMap<String, usize> = HashMap::new();
+    let mut open_tool_counts: HashMap<usize, usize> = HashMap::new();
+
+    for (idx, msg) in messages.iter().enumerate() {
+        if msg.role == "assistant" {
+            if let Some(tool_calls) = &msg.tool_calls {
+                if !tool_calls.is_empty() {
+                    open_tool_counts.insert(idx, tool_calls.len());
+                    for tool_call in tool_calls {
+                        tool_call_owner.insert(tool_call.id.clone(), idx);
+                    }
+                }
+            }
+            continue;
+        }
+
+        if msg.role != "tool" {
+            continue;
+        }
+
+        let Some(tool_call_id) = &msg.tool_call_id else {
+            continue;
+        };
+
+        let Some(owner_idx) = tool_call_owner.remove(tool_call_id) else {
+            continue;
+        };
+
+        if let Some(open_count) = open_tool_counts.get_mut(&owner_idx) {
+            *open_count = open_count.saturating_sub(1);
+            if *open_count == 0 {
+                open_tool_counts.remove(&owner_idx);
+            }
+        }
+    }
+
+    open_tool_counts
+        .keys()
+        .min()
+        .copied()
+        .unwrap_or(messages.len())
 }
 
 /// Removes incomplete tool chains.
@@ -179,6 +222,37 @@ pub fn batch_tool_calls_in_messages(
     result
 }
 
+pub fn select_recent_messages_fifo(
+    messages: &[Message],
+    provider_id: &str,
+    max_messages: usize,
+    max_tool_calls_per_message: usize,
+) -> Vec<Message> {
+    if max_messages == 0 {
+        return Vec::new();
+    }
+
+    let batched_messages = batch_tool_calls_in_messages(messages, max_tool_calls_per_message);
+    let start_idx = batched_messages.len().saturating_sub(max_messages);
+    let selected = batched_messages[start_idx..].to_vec();
+
+    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    {
+        remove_incomplete_tool_chains(selected)
+    } else {
+        selected
+    };
+
+    if adjusted.is_empty() {
+        if let Some(latest_non_tool) = batched_messages.iter().rev().find(|msg| msg.role != "tool")
+        {
+            return vec![latest_non_tool.clone()];
+        }
+    }
+
+    adjusted
+}
+
 pub fn select_messages_within_context(
     messages: &[Message],
     provider_id: &str,
@@ -310,11 +384,19 @@ pub fn select_messages_within_context(
         total_tokens += calibrated_tokens;
     }
 
+    let final_selected = Vec::from(selected);
+    let adjusted = if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id)
+    {
+        remove_incomplete_tool_chains(final_selected)
+    } else {
+        final_selected
+    };
+
     build_selected_with_optional_pinned(
         pinned_message,
         pinned_message_tokens,
         pinned_message_budget,
-        Vec::from(selected),
+        adjusted,
     )
 }
 

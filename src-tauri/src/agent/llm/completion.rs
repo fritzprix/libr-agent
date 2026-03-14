@@ -8,13 +8,13 @@ use crate::repositories::settings_repository::SettingsRepository;
 use crate::repositories::CompactContextRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 use super::prompt::build_session_system_prompt_split;
-use super::types::{CompactRequest, CompletionRequest};
+use super::types::{AgentRuntimeError, AgentRuntimeErrorType, CompactRequest, CompletionRequest};
 
 #[derive(Debug)]
 struct OverflowPreflight {
@@ -22,6 +22,278 @@ struct OverflowPreflight {
     total_tokens: usize,
     reserved_tokens: usize,
     safety_margin: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextManagementSettings {
+    context_strategy: String,
+    window_size: usize,
+    max_input_context: usize,
+    tool_call_group_visible_count: usize,
+    model_max_limit: usize,
+}
+
+impl ContextManagementSettings {
+    pub fn context_strategy(&self) -> &str {
+        &self.context_strategy
+    }
+
+    pub fn window_size(&self) -> usize {
+        self.window_size
+    }
+
+    pub fn max_input_context(&self) -> usize {
+        self.max_input_context
+    }
+
+    pub fn tool_call_group_visible_count(&self) -> usize {
+        self.tool_call_group_visible_count
+    }
+}
+
+fn default_context_management_settings() -> ContextManagementSettings {
+    ContextManagementSettings {
+        context_strategy: "compact".to_string(),
+        window_size: 20,
+        max_input_context: 49152,
+        tool_call_group_visible_count: 4,
+        model_max_limit: 128_000,
+    }
+}
+
+fn apply_context_management_setting(
+    settings: &mut ContextManagementSettings,
+    key: &str,
+    value: &serde_json::Value,
+) {
+    match key {
+        "contextStrategy" => {
+            if let Some(strategy) = value.as_str() {
+                settings.context_strategy = strategy.to_string();
+            }
+        }
+        "windowSize" => {
+            if let Some(window_size) = value.as_u64() {
+                settings.window_size = window_size as usize;
+            }
+        }
+        "maxInputContext" => {
+            if let Some(max_input_context) = value.as_u64() {
+                settings.max_input_context = max_input_context as usize;
+            }
+        }
+        "toolCallGroupVisibleCount" => {
+            if let Some(visible_count) = value.as_u64() {
+                settings.tool_call_group_visible_count = visible_count as usize;
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn resolve_context_management_settings(
+    legacy_settings_blob: Option<&serde_json::Value>,
+    direct_settings: &HashMap<String, serde_json::Value>,
+) -> ContextManagementSettings {
+    let mut settings = default_context_management_settings();
+
+    if let Some(legacy_blob) = legacy_settings_blob {
+        if let Some(legacy_object) = legacy_blob.as_object() {
+            for (key, value) in legacy_object {
+                apply_context_management_setting(&mut settings, key, value);
+            }
+        }
+    }
+
+    for (key, value) in direct_settings {
+        apply_context_management_setting(&mut settings, key, value);
+    }
+
+    settings
+}
+
+pub(crate) async fn load_context_management_settings() -> ContextManagementSettings {
+    let settings_repo = crate::state::get_settings_repository();
+    let legacy_settings_blob = settings_repo
+        .get("settings")
+        .await
+        .unwrap_or(None)
+        .and_then(|model| serde_json::from_str::<serde_json::Value>(&model.value).ok());
+
+    let mut direct_settings = HashMap::new();
+    for key in [
+        "contextStrategy",
+        "windowSize",
+        "maxInputContext",
+        "toolCallGroupVisibleCount",
+    ] {
+        if let Some(model) = settings_repo.get(key).await.unwrap_or(None) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&model.value) {
+                direct_settings.insert(key.to_string(), value);
+            }
+        }
+    }
+
+    resolve_context_management_settings(legacy_settings_blob.as_ref(), &direct_settings)
+}
+
+pub fn uses_compaction_strategy(context_strategy: &str) -> bool {
+    context_strategy == "compact"
+}
+
+pub fn should_trigger_background_compaction(
+    current_tokens: usize,
+    safe_input_token_limit: usize,
+    context_strategy: &str,
+) -> bool {
+    uses_compaction_strategy(context_strategy)
+        && current_tokens
+            > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
+}
+
+async fn trigger_background_compaction(
+    app_handle: &AppHandle,
+    session_id: &str,
+    session_name: &str,
+    messages: &[Message],
+    compact_in_flight_arc: &Arc<AtomicBool>,
+    last_compacted_tail_id_arc: &Arc<RwLock<Option<String>>>,
+) -> Result<bool, String> {
+    let split_idx = crate::agent::llm::context_selector::find_compaction_split_index(messages);
+    if split_idx == 0 {
+        return Ok(false);
+    }
+
+    let claimed_in_flight = compact_in_flight_arc
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok();
+
+    if !claimed_in_flight {
+        log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
+        return Ok(false);
+    }
+
+    let current_tail_id = messages.last().map(|m| m.id.clone());
+    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
+
+    if same_tail {
+        compact_in_flight_arc.store(false, Ordering::SeqCst);
+        log::debug!(
+            "⏭️ Compaction skipped (same tail): session={}, tail={}",
+            session_id,
+            current_tail_id.as_deref().unwrap_or("?")
+        );
+        return Ok(false);
+    }
+
+    let compact_msgs = messages[..split_idx].to_vec();
+    let from_id = compact_msgs
+        .first()
+        .map(|m| m.id.clone())
+        .unwrap_or_default();
+    let to_id = compact_msgs
+        .last()
+        .map(|m| m.id.clone())
+        .unwrap_or_default();
+
+    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+
+    let compact_event = CompactRequest {
+        session_id: session_id.to_string(),
+        session_name: session_name.to_string(),
+        messages: compact_msgs,
+        from_id,
+        to_id,
+        resume_completion_after_compact: false,
+    };
+    let app = app_handle.clone();
+    let state_session_id = session_id.to_string();
+    let state_session_name = session_name.to_string();
+    tokio::spawn(async move {
+        let state_event = crate::agent::llm::types::CompactStateEvent {
+            session_id: state_session_id.clone(),
+            session_name: Some(state_session_name),
+            compacting: true,
+            phase: crate::agent::llm::types::CompactStatePhase::Started,
+        };
+        if let Err(e) = app.emit("llm:compact-state", state_event) {
+            log::error!("Failed to emit llm:compact-state: {}", e);
+        }
+        if let Err(e) = app.emit("llm:compact-request", compact_event) {
+            log::error!("Failed to emit llm:compact-request: {}", e);
+        }
+    });
+    log::info!(
+        "🔧 Compaction triggered: session={}, split_idx={}, tail={}",
+        session_id,
+        split_idx,
+        current_tail_id.as_deref().unwrap_or("?")
+    );
+
+    Ok(true)
+}
+
+pub async fn maybe_trigger_post_idle_compaction(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    session_name: &str,
+    messages: &[Message],
+    usage_total_tokens: usize,
+) -> Result<bool, String> {
+    let settings = load_context_management_settings().await;
+    let safe_input_token_limit =
+        std::cmp::min(settings.max_input_context, settings.model_max_limit);
+
+    if !should_trigger_background_compaction(
+        usage_total_tokens,
+        safe_input_token_limit,
+        &settings.context_strategy,
+    ) {
+        return Ok(false);
+    }
+
+    let (compact_context_arc, compact_in_flight_arc, last_compacted_tail_id_arc) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        (
+            session.compact_context.clone(),
+            session.compact_in_flight.clone(),
+            session.last_compacted_tail_id.clone(),
+        )
+    };
+
+    if compact_context_arc.read().await.is_some() {
+        log::debug!(
+            "⏭️ Post-idle compaction skipped (summary cached): session={}",
+            session_id
+        );
+        return Ok(false);
+    }
+
+    let triggered = trigger_background_compaction(
+        app_handle,
+        session_id,
+        session_name,
+        messages,
+        &compact_in_flight_arc,
+        &last_compacted_tail_id_arc,
+    )
+    .await?;
+
+    if triggered {
+        log::info!(
+            "🧹 Post-idle compaction triggered from completed response usage: session={}, total_tokens={}, limit={}",
+            session_id,
+            usage_total_tokens,
+            safe_input_token_limit
+        );
+    }
+
+    Ok(triggered)
 }
 
 /// Request LLM completion from frontend
@@ -33,7 +305,7 @@ pub async fn request_llm_completion(
     proxy_manager: &Arc<MCPServiceProxyManager>,
     app_handle: &AppHandle,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), AgentRuntimeError> {
     // 1. Validate session status before proceeding (Race Condition Fix)
     {
         let sessions = active_sessions.read().await;
@@ -47,13 +319,21 @@ pub async fn request_llm_completion(
                     session.metadata.status,
                     session.cancel_pending.load(Ordering::SeqCst)
                 );
-                return Err(format!(
-                    "Cannot request LLM completion: session status is {:?}",
-                    session.metadata.status
-                ));
+                return Err(AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    format!(
+                        "Cannot request LLM completion: session status is {:?}",
+                        session.metadata.status
+                    ),
+                )
+                .with_code("INVALID_SESSION_STATUS"));
             }
         } else {
-            return Err(format!("Session not found: {}", session_id));
+            return Err(AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                format!("Session not found: {}", session_id),
+            )
+            .with_code("SESSION_NOT_FOUND"));
         }
     }
 
@@ -111,9 +391,13 @@ pub async fn request_llm_completion(
     // 3. Read messages from in-memory cache (now includes the drained pending messages)
     let messages = {
         let sessions = active_sessions.read().await;
-        let session = sessions
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let session = sessions.get(&session_id).ok_or_else(|| {
+            AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                format!("Session not found: {}", session_id),
+            )
+            .with_code("SESSION_NOT_FOUND")
+        })?;
 
         let messages_lock = session.messages.read().await;
         messages_lock
@@ -133,9 +417,13 @@ pub async fn request_llm_completion(
 
     // Get agent config
     let active = active_sessions.read().await;
-    let session = active
-        .get(&session_id)
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    let session = active.get(&session_id).ok_or_else(|| {
+        AgentRuntimeError::new(
+            AgentRuntimeErrorType::AiServiceError,
+            format!("Session not found: {}", session_id),
+        )
+        .with_code("SESSION_NOT_FOUND")
+    })?;
 
     let agent_config = session
         .metadata
@@ -183,60 +471,24 @@ pub async fn request_llm_completion(
     // --- CONTEXT MANAGEMENT ---
     let messages = merge_consecutive_user_messages(messages);
 
-    let settings_repo = crate::state::get_settings_repository();
-    let settings_val = settings_repo.get("settings").await.unwrap_or(None);
-
-    let mut context_strategy = "compact".to_string();
-    let mut window_size = 20;
-    let mut max_input_context = 49152;
-    let mut tool_call_group_visible_count = 4;
-    let model_max_limit = 128_000; // Simplified default fallback
-
-    if let Some(model) = settings_val {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&model.value) {
-            if let Some(strategy) = json.get("contextStrategy").and_then(|v| v.as_str()) {
-                context_strategy = strategy.to_string();
-            }
-            if let Some(ws) = json.get("windowSize").and_then(|v| v.as_u64()) {
-                window_size = ws as usize;
-            }
-            if let Some(mic) = json.get("maxInputContext").and_then(|v| v.as_u64()) {
-                max_input_context = mic as usize;
-            }
-            if let Some(tcgvc) = json
-                .get("toolCallGroupVisibleCount")
-                .and_then(|v| v.as_u64())
-            {
-                tool_call_group_visible_count = tcgvc as usize;
-            }
-        }
-    }
-
-    let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
-
-    let tools_json = available_tools
-        .as_ref()
-        .map(|t| serde_json::to_string(t).unwrap_or_default());
-    let system_prompt_tokens = system_prompt
-        .as_ref()
-        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
-        .unwrap_or(0);
-    let session_context_tokens = session_context
-        .as_ref()
-        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
-        .unwrap_or(0);
-    let tools_tokens = tools_json
-        .as_ref()
-        .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
-        .unwrap_or(0);
+    let context_settings = load_context_management_settings().await;
+    let context_strategy = context_settings.context_strategy.clone();
+    let window_size = context_settings.window_size;
+    let max_input_context = context_settings.max_input_context;
+    let tool_call_group_visible_count = context_settings.tool_call_group_visible_count;
+    let model_max_limit = context_settings.model_max_limit;
 
     // --- Step A: Inject compact summary (if a valid record is cached) ---
     // Clone Arc refs while holding the outer read lock, then release it immediately.
     let (compact_context_arc, compact_in_flight_arc, last_compacted_tail_id_arc) = {
         let active = active_sessions.read().await;
-        let session = active
-            .get(&session_id)
-            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        let session = active.get(&session_id).ok_or_else(|| {
+            AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                format!("Session not found: {}", session_id),
+            )
+            .with_code("SESSION_NOT_FOUND")
+        })?;
         (
             session.compact_context.clone(),
             session.compact_in_flight.clone(),
@@ -247,7 +499,24 @@ pub async fn request_llm_completion(
     let messages = {
         let compact_record = compact_context_arc.read().await.clone();
         if let Some(record) = compact_record {
-            if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
+            if !uses_compaction_strategy(&context_strategy) {
+                *compact_context_arc.write().await = None;
+                let compact_repo = crate::state::get_compact_context_repository();
+                if let Err(e) = compact_repo.delete_by_session_id(&session_id).await {
+                    log::warn!(
+                        "⚠️ Failed to delete compact cache while strategy={} for session {}: {}",
+                        context_strategy,
+                        session_id,
+                        e
+                    );
+                }
+                log::info!(
+                    "🪟 Ignored and cleared stale compact cache because strategy={} for session {}",
+                    context_strategy,
+                    session_id
+                );
+                messages
+            } else if let Some(to_idx) = messages.iter().position(|m| m.id == record.to_id) {
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 let summary_msg = Message {
                     id: format!("compact-summary-{}", session_id),
@@ -313,6 +582,7 @@ pub async fn request_llm_completion(
     };
 
     let mut final_messages = messages.clone();
+    let mut context_usage = None;
 
     let combined_system_prompt = match (&system_prompt, &session_context) {
         (Some(sp), Some(sc)) => Some(format!("{}\n\n{}", sp, sc)),
@@ -321,145 +591,119 @@ pub async fn request_llm_completion(
         (None, None) => None,
     };
 
-    let preflight = build_overflow_preflight(
-        &messages,
-        system_prompt_tokens + session_context_tokens,
-        tools_tokens,
-        safe_input_token_limit,
-    );
+    if uses_compaction_strategy(&context_strategy) {
+        let safe_input_token_limit = std::cmp::min(max_input_context, model_max_limit);
+        let tools_json = available_tools
+            .as_ref()
+            .map(|t| serde_json::to_string(t).unwrap_or_default());
+        let system_prompt_tokens = system_prompt
+            .as_ref()
+            .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+            .unwrap_or(0);
+        let session_context_tokens = session_context
+            .as_ref()
+            .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+            .unwrap_or(0);
+        let tools_tokens = tools_json
+            .as_ref()
+            .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
+            .unwrap_or(0);
 
-    let latest_input_projected_tokens =
-        preflight.reserved_tokens + preflight.latest_message_tokens + preflight.safety_margin;
-    if latest_input_projected_tokens > safe_input_token_limit {
-        return Err(format!(
-            "Latest input is too large for the configured context window (projected {} > limit {}). Reduce the newest message or attachment payload and retry.",
-            latest_input_projected_tokens, safe_input_token_limit
-        ));
-    }
-
-    let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
-    let compact_threshold =
-        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
-
-    if context_strategy == "compact" && projected_total_tokens > safe_input_token_limit {
-        if try_trigger_preflight_compaction(
-            active_sessions,
-            app_handle,
-            &session_id,
-            &session_name,
+        let preflight = build_overflow_preflight(
             &messages,
-        )
-        .await?
-        {
-            log::info!(
-                "⏸️ Pausing LLM request until compaction completes: session={}, projected_total={}, limit={}, margin={}",
-                session_id,
-                projected_total_tokens,
-                safe_input_token_limit,
-                preflight.safety_margin
+            system_prompt_tokens + session_context_tokens,
+            tools_tokens,
+            safe_input_token_limit,
+        );
+
+        let latest_input_projected_tokens =
+            preflight.reserved_tokens + preflight.latest_message_tokens + preflight.safety_margin;
+        if latest_input_projected_tokens > safe_input_token_limit {
+            let mut context = serde_json::Map::new();
+            context.insert(
+                "projectedTokens".to_string(),
+                serde_json::json!(latest_input_projected_tokens),
             );
-            return Ok(());
+            context.insert(
+                "effectiveLimit".to_string(),
+                serde_json::json!(safe_input_token_limit),
+            );
+            return Err(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::ContextLimitError,
+                    format!(
+                        "Latest input is too large for the configured context window (projected {} > limit {}). Reduce the newest message or attachment payload and retry.",
+                        latest_input_projected_tokens, safe_input_token_limit
+                    ),
+                )
+                .with_code("LATEST_INPUT_TOO_LARGE")
+                .with_context(context),
+            );
         }
 
-        return Err(format!(
-            "Conversation context still exceeds the configured limit even after reserving safety margin (projected {} > limit {}). Wait for compaction or reduce recent input size.",
-            projected_total_tokens, safe_input_token_limit
-        ));
-    }
+        let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
+        if projected_total_tokens > safe_input_token_limit {
+            if try_trigger_preflight_compaction(
+                active_sessions,
+                app_handle,
+                &session_id,
+                &session_name,
+                &messages,
+            )
+            .await?
+            {
+                log::info!(
+                    "⏸️ Pausing LLM request until compaction completes: session={}, projected_total={}, limit={}, margin={}",
+                    session_id,
+                    projected_total_tokens,
+                    safe_input_token_limit,
+                    preflight.safety_margin
+                );
+                return Ok(());
+            }
 
-    if context_strategy == "compact" {
+            let mut context = serde_json::Map::new();
+            context.insert(
+                "projectedTokens".to_string(),
+                serde_json::json!(projected_total_tokens),
+            );
+            context.insert(
+                "effectiveLimit".to_string(),
+                serde_json::json!(safe_input_token_limit),
+            );
+            return Err(
+                AgentRuntimeError::new(
+                    AgentRuntimeErrorType::ContextLimitError,
+                    format!(
+                        "Conversation context still exceeds the configured limit even after reserving safety margin (projected {} > limit {}). Wait for compaction or reduce recent input size.",
+                        projected_total_tokens, safe_input_token_limit
+                    ),
+                )
+                .with_code("CONTEXT_LIMIT_EXCEEDED")
+                .with_context(context),
+            );
+        }
+
         let current_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
             &messages,
             system_prompt_tokens + session_context_tokens,
             tools_tokens,
         );
 
-        if current_tokens > compact_threshold {
-            let split_idx =
-                crate::agent::llm::context_selector::find_compaction_split_index(&messages);
-            if split_idx > 0 {
-                // --- Step B: Guards G1 + G2, then fire-and-forget compact trigger ---
-                //
-                // G1: compare_exchange on compact_in_flight — atomically claims the
-                //     in-flight slot BEFORE any await point.  This is critical: a plain
-                //     load→(await)→store sequence has a yield window where a second
-                //     concurrent caller could read the old false value and also proceed.
-                //     compare_exchange(false→true) is inherently atomic in Tokio's
-                //     cooperative scheduler — no other task can execute between the CAS
-                //     and its return, so only one caller can ever win the slot.
-                //
-                // G2: last_compacted_tail_id — guards against re-triggering immediately
-                //     after a successful compact.  After Step A rebuilds messages as
-                //     [summary + tail], the tail's last ID is the same as it was when we
-                //     triggered the previous compact (no new messages yet).  We skip until
-                //     a new tool result or user message advances the tail.  On failure we
-                //     must release G1 (reset in_flight to false) so future turns can retry.
-                let claimed_in_flight = compact_in_flight_arc
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_ok();
-
-                if claimed_in_flight {
-                    // G1 acquired — now safe to await for G2 check.
-                    let current_tail_id = messages.last().map(|m| m.id.clone());
-                    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
-                    let same_tail = current_tail_id.as_deref() == last_compacted_tail.as_deref();
-
-                    if same_tail {
-                        // G2 blocked — release G1 so future turns with new messages can fire.
-                        compact_in_flight_arc.store(false, Ordering::SeqCst);
-                        log::debug!(
-                            "⏭️ Compaction skipped (same tail): session={}, tail={}",
-                            session_id,
-                            current_tail_id.as_deref().unwrap_or("?")
-                        );
-                    } else {
-                        let compact_msgs = messages[..split_idx].to_vec();
-                        let from_id = compact_msgs
-                            .first()
-                            .map(|m| m.id.clone())
-                            .unwrap_or_default();
-                        let to_id = compact_msgs
-                            .last()
-                            .map(|m| m.id.clone())
-                            .unwrap_or_default();
-
-                        // Record the tail ID before spawning so G2 is set atomically
-                        // with in_flight=true.
-                        *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
-
-                        let compact_event = CompactRequest {
-                            session_id: session_id.clone(),
-                            session_name: session_name.clone(),
-                            messages: compact_msgs,
-                            from_id,
-                            to_id,
-                            resume_completion_after_compact: false,
-                        };
-                        let app = app_handle.clone();
-                        let state_session_id = session_id.clone();
-                        tokio::spawn(async move {
-                            let state_event = crate::agent::llm::types::CompactStateEvent {
-                                session_id: state_session_id.clone(),
-                                compacting: true,
-                            };
-                            if let Err(e) = app.emit("llm:compact-state", state_event) {
-                                log::error!("Failed to emit llm:compact-state: {}", e);
-                            }
-                            if let Err(e) = app.emit("llm:compact-request", compact_event) {
-                                log::error!("Failed to emit llm:compact-request: {}", e);
-                            }
-                        });
-                        log::info!(
-                            "🔧 Compaction triggered: session={}, split_idx={}, tail={}",
-                            session_id,
-                            split_idx,
-                            current_tail_id.as_deref().unwrap_or("?")
-                        );
-                    }
-                } else {
-                    log::debug!("⏭️ Compaction skipped (in_flight): session={}", session_id);
-                }
-            }
+        if should_trigger_background_compaction(
+            current_tokens,
+            safe_input_token_limit,
+            &context_strategy,
+        ) {
+            let _ = trigger_background_compaction(
+                app_handle,
+                &session_id,
+                &session_name,
+                &messages,
+                &compact_in_flight_arc,
+                &last_compacted_tail_id_arc,
+            )
+            .await?;
         }
 
         let context_options = crate::agent::llm::context_selector::SelectionOptions {
@@ -482,40 +726,43 @@ pub async fn request_llm_completion(
                 context_window: model_max_limit,
             }),
         );
+
+        let total_estimated_tokens =
+            crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+                &final_messages,
+                system_prompt_tokens + session_context_tokens,
+                tools_tokens,
+            );
+
+        context_usage = Some(serde_json::json!({
+            "totalTokens": total_estimated_tokens,
+            "contextWindow": safe_input_token_limit,
+            "modelMaxContext": model_max_limit,
+        }));
     } else {
-        let context_options = crate::agent::llm::context_selector::SelectionOptions {
-            system_prompt: combined_system_prompt.clone(),
-            tools_json: tools_json.clone(),
-            max_messages: Some(window_size),
-            max_tool_calls_per_message: Some(if provider == "gemini" {
+        final_messages = crate::agent::llm::context_selector::select_recent_messages_fifo(
+            &messages,
+            &provider,
+            window_size,
+            if provider == "gemini" {
                 100
             } else {
                 tool_call_group_visible_count
-            }),
-        };
-
-        final_messages = crate::agent::llm::context_selector::select_messages_within_context(
-            &messages,
-            &provider,
-            Some(safe_input_token_limit),
-            Some(&context_options),
-            Some(&crate::agent::llm::context_selector::ModelContextInfo {
-                context_window: model_max_limit,
-            }),
+            },
         );
     }
 
-    let total_estimated_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
-        &final_messages,
-        system_prompt_tokens + session_context_tokens,
-        tools_tokens,
-    );
-
-    let context_usage = Some(serde_json::json!({
-        "totalTokens": total_estimated_tokens,
-        "contextWindow": safe_input_token_limit,
-        "modelMaxContext": model_max_limit,
-    }));
+    if final_messages.is_empty() {
+        let message = if uses_compaction_strategy(&context_strategy) {
+            "No messages fit within the effective context window. Increase the context limit or reduce the pinned/latest message size and retry."
+        } else {
+            "No messages survived sliding-window FIFO selection. Increase the message window size and retry."
+        };
+        return Err(
+            AgentRuntimeError::new(AgentRuntimeErrorType::EmptySelectionError, message)
+                .with_code("EMPTY_MESSAGE_SELECTION"),
+        );
+    }
 
     let request = CompletionRequest {
         session_id: session_id.clone(),
@@ -532,7 +779,13 @@ pub async fn request_llm_completion(
 
     app_handle
         .emit("llm:completion-request", request)
-        .map_err(|e| format!("Failed to emit LLM completion request: {}", e))?;
+        .map_err(|e| {
+            AgentRuntimeError::new(
+                AgentRuntimeErrorType::AiServiceError,
+                format!("Failed to emit LLM completion request: {}", e),
+            )
+            .with_code("EMIT_COMPLETION_REQUEST_FAILED")
+        })?;
 
     log::info!("Emitted LLM completion request for session: {}", session_id);
 
@@ -605,6 +858,20 @@ async fn try_trigger_preflight_compaction(
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok();
     if !claimed_in_flight {
+        awaiting_compact_arc.store(true, Ordering::SeqCst);
+        let state_event = crate::agent::llm::types::CompactStateEvent {
+            session_id: session_id.to_string(),
+            session_name: Some(session_name.to_string()),
+            compacting: true,
+            phase: crate::agent::llm::types::CompactStatePhase::Started,
+        };
+        app_handle
+            .emit("llm:compact-state", state_event)
+            .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
+        log::info!(
+            "⏳ Reusing in-flight compaction and arming resume-after-compact: session={}",
+            session_id
+        );
         return Ok(true);
     }
 
@@ -638,7 +905,9 @@ async fn try_trigger_preflight_compaction(
     };
     let state_event = crate::agent::llm::types::CompactStateEvent {
         session_id: session_id.to_string(),
+        session_name: Some(session_name.to_string()),
         compacting: true,
+        phase: crate::agent::llm::types::CompactStatePhase::Started,
     };
 
     app_handle
@@ -649,6 +918,46 @@ async fn try_trigger_preflight_compaction(
         .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
 
     Ok(true)
+}
+
+pub async fn trigger_preflight_compaction_for_session(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+) -> Result<bool, String> {
+    let (session_name, messages) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        let session_name = session
+            .metadata
+            .name
+            .clone()
+            .unwrap_or_else(|| session_id.chars().take(8).collect::<String>());
+
+        let messages = session
+            .messages
+            .read()
+            .await
+            .iter()
+            .filter(|m| m.source.as_deref() != Some("recovery"))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        (session_name, messages)
+    };
+
+    let merged_messages = merge_consecutive_user_messages(messages);
+    try_trigger_preflight_compaction(
+        active_sessions,
+        app_handle,
+        session_id,
+        &session_name,
+        &merged_messages,
+    )
+    .await
 }
 
 /// Resolve `@type:arg` references in user messages.

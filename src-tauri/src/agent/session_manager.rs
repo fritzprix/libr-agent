@@ -469,7 +469,11 @@ impl AgentSessionManager {
     }
 
     /// Handle LLM error from frontend
-    pub async fn handle_llm_error(&self, session_id: String, error: String) -> Result<(), String> {
+    pub async fn handle_llm_error(
+        &self,
+        session_id: String,
+        error: crate::agent::llm::types::AgentRuntimeError,
+    ) -> Result<(), String> {
         crate::agent::llm::handle_llm_error(
             &self.session_repo,
             &self.active_sessions,
@@ -478,6 +482,17 @@ impl AgentSessionManager {
             error,
         )
         .await
+    }
+
+    pub async fn get_session_display_name(&self, session_id: &str) -> Option<String> {
+        let active = self.active_sessions.read().await;
+        active.get(session_id).map(|session| {
+            session
+                .metadata
+                .name
+                .clone()
+                .unwrap_or_else(|| session_id.chars().take(8).collect::<String>())
+        })
     }
 
     /// Delete an agent session and all its data
@@ -693,9 +708,19 @@ impl AgentSessionManager {
                 .unwrap_or(false)
         };
 
+        log::info!(
+            "📌 Compact completion decision for session {}: should_resume_completion={}",
+            session_id,
+            should_resume_completion
+        );
+
         self.clear_compact_in_flight(session_id).await;
 
         if should_resume_completion {
+            log::info!(
+                "▶️ Resuming blocked LLM completion after compaction for session {}",
+                session_id
+            );
             let session_repo = self.session_repo.clone();
             let active_sessions = self.active_sessions.clone();
             let proxy_manager = self.proxy_manager.clone();
