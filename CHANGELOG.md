@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.35] - 2026-03-14
+
+### 🚀 Features
+
+- **Context Compaction Optimization**: Re-engineered context management to use a Rust-owned compacting state, significantly improving conversation length stability. Added Sonner toast notifications for compaction events and structured markdown summaries for better transparency.
+- **Media Tools Expansion (SP21)**: Introduced the `MediaServer` builtin MCP tool, enabling agents to "see" and "listen" to multimedia content. Media results are now intelligently injected into the LLM context across supported providers.
+- **UI Resource UX Improvements**: Optimized the UI Resource presentation with enhanced copy-to-clipboard functionality and support for "simple mode" to reduce visual clutter.
+- **Assistant Management Refactor**: Migrated the Assistant List and Skills Editor to a custom hook pattern with SWR integration, ensuring declarative data fetching and eliminating search UI flashing.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Environment Variable Leakage**: Fixed multiple security vulnerabilities where host environment variables could leak into spawned processes during bootstrap platform detection and `command_exists` checks.
+- **Compaction Stability**: Resolved a migration bug in the compaction logic and added token calibration to ensure precise context window management.
+- **Session History Performance**: Enhanced accessibility and data integrity in the `SessionHistoryPanel` by implementing deferred rendering and fixing SWR mutation leaks.
+- **Race Conditions**: Resolved several race conditions in assistant hooks and strengthened IPC boundary reliability during rapid tool-call aborts.
+
+### 🔧 Internal
+
+- **Architecture Decoupling**: Refactored the monolithic Workspace terminal handler and Assistant module into focused sub-modules, improving maintainability.
+- **AI Service Generics**: Applied a generic pattern to `BaseAIService` for type-safe message and tool conversions across all providers.
+- **Built-in Tool Consolidation**: Unified internal tool routing and consolidated legacy built-in tool definitions.
+- **Test Coverage (Sonar/Hermes)**: Expanded the regression test suite covering compaction flows, date-utils coverage, and IPC boundary error handling.
+
 ## [0.5.34] - 2026-03-10
 
 ### 🐛 Fixes
