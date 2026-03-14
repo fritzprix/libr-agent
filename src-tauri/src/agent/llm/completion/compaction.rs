@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
-use crate::agent::llm::types::CompactRequest;
 use super::context::{load_context_management_settings, uses_compaction_strategy};
+use crate::agent::llm::types::CompactRequest;
 
 pub fn should_trigger_background_compaction(
     current_tokens: usize,

@@ -15,7 +15,10 @@ use tokio::sync::RwLock;
 use crate::agent::llm::prompt::build_session_system_prompt_split;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType, CompletionRequest};
 
-use super::compaction::{should_trigger_background_compaction, trigger_background_compaction, try_trigger_preflight_compaction};
+use super::compaction::{
+    should_trigger_background_compaction, trigger_background_compaction,
+    try_trigger_preflight_compaction,
+};
 use super::context::{load_context_management_settings, uses_compaction_strategy};
 
 #[derive(Debug)]
