@@ -52,10 +52,13 @@ fn test_command_exists_env_isolation() {
     let script_exists_in_current = command_exists("check_secret.exe");
     #[cfg(not(windows))]
     let script_exists_in_current = command_exists("check_secret");
-    
+
     // Note: command_exists uses get_isolated_env() which clears SECRET_VAR.
     // So even our fake script called via command_exists should return SUCCESS (true).
-    assert!(script_exists_in_current, "Our fake script should be found and return success because SECRET_VAR is stripped");
+    assert!(
+        script_exists_in_current,
+        "Our fake script should be found and return success because SECRET_VAR is stripped"
+    );
 
     // 2. Verify a standard system command still works
     #[cfg(windows)]
@@ -67,5 +70,8 @@ fn test_command_exists_env_isolation() {
     std::env::set_var("PATH", old_path);
     std::env::remove_var("SECRET_VAR");
 
-    assert!(system_cmd_exists, "Standard system command should be found in isolated env");
+    assert!(
+        system_cmd_exists,
+        "Standard system command should be found in isolated env"
+    );
 }

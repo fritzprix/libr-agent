@@ -2,6 +2,8 @@ import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
+export type { ModelInfo, SamplingOptions, SamplingResponse };
+
 export interface SafetySetting {
   category: string;
   threshold: string;

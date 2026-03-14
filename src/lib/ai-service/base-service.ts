@@ -189,7 +189,10 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   protected shouldRetry(error: unknown): boolean {
     // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
     const status = (error as { status?: number })?.status;
-    if (status === 429 || (status >= 500 && status <= 599)) {
+    if (
+      status !== undefined &&
+      (status === 429 || (status >= 500 && status <= 599))
+    ) {
       return true;
     }
     return false;
@@ -625,14 +628,10 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   abstract convertTools(mcpTools: MCPTool[]): TProviderTool[];
 
   /**
-   * Compresses a slice of conversation messages into a single summary by
-   * preserving the raw array and appending a strong summarisation instruction.
-   * By preserving the raw `Message[]` structure along with the original tools
-   * and system prompt, providers with automatic Prompt Caching (e.g. OpenAI,
-   * Anthropic, Gemini) can achieve near 100% cache hit rates on the massive
-   * preceding conversation history, reducing latency to seconds and massively
-   * cutting costs.
-   *
+   * Compresses a slice of conversation messages into a single summary string
+   * by calling `sampleText()` internally. The default implementation in
+   * `BaseAIService` builds a plain-text summarisation prompt; individual
+   * providers may override for cost or caching optimisations.
    * @param messages The messages to compress.
    * @param options Optional model name, config, system prompt, context, and tools.
    * @param options.modelName The name of the model.
@@ -728,18 +727,19 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
 
   /**
    * Merges the stable system prompt and volatile session context into the
-   * provider's preferred injection channel.
+   * provider's preferred injection channel before each LLM request.
    *
-   * The default implementation concatenates both parts into the system prompt —
-   * safe for all providers and preserves existing behaviour. Providers that
-   * support automatic prefix caching (e.g. OpenAI) can override this to inject
-   * `sessionContext` as an ephemeral tail message instead, keeping the system
-   * prompt fully static and maximising cache hit rates.
+   * The default implementation (in `BaseAIService`) concatenates both parts
+   * into a single system prompt string — safe for all providers. Individual
+   * providers may override to inject `sessionContext` as an ephemeral tail
+   * message instead, which keeps the system prompt fully static and maximises
+   * automatic prefix-cache hit rates.
    *
-   * @param systemPrompt - Stable prompt (sections 1–3, cacheable).
-   * @param sessionContext - Volatile context (sections 4–5, rebuilt per turn).
-   * @param messages - Current conversation message stack.
-   * @returns Effective `systemPrompt` and `messages` to pass to `streamChat`.
+   * @param systemPrompt - Stable system prompt (sections 1–3). Cacheable.
+   * @param sessionContext - Volatile context (sections 4–5). Rebuilt per turn.
+   * @param messages - Current conversation message stack, after context trimming.
+   * @returns The effective system prompt and (possibly augmented) message list to
+   *          pass to `streamChat`.
    */
   prepareContextInjection(
     systemPrompt: string | undefined,
@@ -757,7 +757,6 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
 
   /**
    * Cleans up any resources used by the service instance.
-   * @abstract
    */
   abstract dispose(): void;
 }

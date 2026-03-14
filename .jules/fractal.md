@@ -97,3 +97,8 @@
 
 **Split:** `read_output.rs`, `list.rs`, `stop.rs`, `wait.rs`, `mod.rs`
 **Improvement:** Decoupled `WorkspaceServer` terminal process handler logic (read output, list processes, stop process, wait for process) into distinct modules. Reduced the 749 line `terminal.rs` monolith into manageable components, significantly improving readability and maintainability of the workspace tools.
+
+## 2026-03-14 - src-tauri/src/agent/llm/completion/
+
+**Split:** `context.rs`, `compaction.rs`, `request.rs`, `mod.rs`
+**Improvement:** Decoupled LLM completion request orchestration, context management settings, and background compaction into focused submodules. Reduced completion.rs from >1000 lines into multiple manageable components, improving readability and separation of concerns.
