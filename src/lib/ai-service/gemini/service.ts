@@ -351,6 +351,12 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
 
   /**
    * Performs a non-streaming text generation request using the Gemini API.
+   * @param prompt The prompt to send to the model.
+   * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
+   * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(
     prompt: string,

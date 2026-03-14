@@ -213,6 +213,8 @@ export interface IAIService {
    * providers may override for cost or caching optimisations.
    * @param messages The messages to compress.
    * @param options Optional model name and service configuration overrides.
+   * @param options.modelName The name of the model.
+   * @param options.config Optional configuration for the service.
    * @returns A promise that resolves to the summary text.
    */
   compact(
