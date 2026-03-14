@@ -71,3 +71,9 @@
 **Extracted:** 10
 **Languages updated:** [EN, KO]
 **Notes:** Localized `SettingsPage` provider card labels, descriptions, and actions, and synced EN/KO entries in `common.json`.
+
+## 2026-03-09 - [Agent Draft Chat View]
+
+**Extracted:** 16
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AgentDraftChatView`. Created new nested namespace `agent.draft` in `common.json`. Handled toasts, errors, and static descriptive text strings.

@@ -197,7 +197,7 @@ function DraftChatInner() {
             await rustBackend.registerDroppedFiles(paths);
           } catch (err) {
             logger.error('Failed to register dropped files', err);
-            toast.error('Failed to register dropped files');
+            toast.error(t('agent.draft.failedToRegisterDroppedFiles'));
             return;
           }
           const files: File[] = [];
@@ -210,7 +210,7 @@ function DraftChatInner() {
                 if (pathType === 'directory') {
                   setWorkspaceOverride(filePath);
                 } else {
-                  toast.error('Drop files in the chat input to attach them.');
+                  toast.error(t('agent.draft.dropFilesInChatInput'));
                 }
                 continue;
               }
@@ -240,7 +240,9 @@ function DraftChatInner() {
                 err,
               });
               toast.error(
-                `Failed to process: ${filePath.split(/[\\/]/).pop()}`,
+                t('agent.draft.failedToProcessFile', {
+                  file: filePath.split(/[\\/]/).pop(),
+                }),
               );
             }
           }
@@ -333,7 +335,7 @@ function DraftChatInner() {
     const loadAssistant = async () => {
       const assistantId = searchParams.get('assistantId');
       if (!assistantId) {
-        toast.error('No assistant specified');
+        toast.error(t('agent.draft.noAssistantSpecified'));
         navigate('/agent/start');
         return;
       }
@@ -349,13 +351,13 @@ function DraftChatInner() {
         setAssistant(flattenedAssistant);
       } catch (err) {
         logger.error('Failed to load assistant', err);
-        toast.error('Failed to load assistant');
+        toast.error(t('agent.draft.failedToLoadAssistant'));
       } finally {
         setIsLoadingAssistant(false);
       }
     };
     loadAssistant();
-  }, [searchParams, navigate]);
+  }, [searchParams, navigate, t]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -477,7 +479,7 @@ function DraftChatInner() {
             }
           } catch (err) {
             logger.error('Failed to write pre-session attachment', err);
-            toast.error(`Failed to attach: ${file.name}`);
+            toast.error(t('agent.draft.failedToAttach', { file: file.name }));
           }
         }
 
@@ -527,7 +529,7 @@ function DraftChatInner() {
             : {}),
         };
 
-        if (!toastId) toastId = toast.loading('Creating session...');
+        if (!toastId) toastId = toast.loading(t('agent.draft.creatingSession'));
 
         // Step 1: Create session — this initializes MCPServiceProxy + Content Store
         await safeInvoke<AgentSessionMetadata>('agent_create_session', {
@@ -652,7 +654,7 @@ function DraftChatInner() {
       } catch (err) {
         if (toastId) toast.dismiss(toastId);
         logger.error('Failed to create draft session', err);
-        toast.error('Failed to start session');
+        toast.error(t('agent.draft.failedToStartSession'));
         setIsSubmitting(false);
       } finally {
         if (unlisten) unlisten();
@@ -668,6 +670,7 @@ function DraftChatInner() {
       overrideProvider,
       pendingFiles,
       skills,
+      t,
     ],
   );
 
@@ -703,7 +706,9 @@ function DraftChatInner() {
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
             <span className="font-semibold text-lg">{assistant.name}</span>
-            <span className="text-xs text-muted-foreground">New Session</span>
+            <span className="text-xs text-muted-foreground">
+              {t('agent.draft.newSession')}
+            </span>
           </div>
         </div>
       </div>
@@ -756,15 +761,14 @@ function DraftChatInner() {
               <div className="flex-1 text-left min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-bold text-primary uppercase tracking-tight">
-                    Workspace Override Active
+                    {t('agent.draft.workspaceOverrideActive')}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded">
                   {workspaceOverride}
                 </p>
                 <p className="text-[10px] text-muted-foreground/70 mt-2 leading-tight">
-                  The agent will use this directory as its primary workspace for
-                  this session.
+                  {t('agent.draft.workspaceOverrideDescription')}
                 </p>
               </div>
             </div>
@@ -792,15 +796,12 @@ function DraftChatInner() {
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
                 >
                   <Square size={12} className="opacity-70" />
-                  Basic Tools
+                  {t('agent.draft.basicTools')}
                 </Badge>
               </div>
             </TooltipTrigger>
             <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
-              <p>
-                Includes core capabilities like reading files, managing tasks,
-                and executing code. Always available to help you!
-              </p>
+              <p>{t('agent.draft.basicToolsDescription')}</p>
             </TooltipContent>
           </Tooltip>
 
@@ -857,11 +858,11 @@ function DraftChatInner() {
                   variant="outline"
                   className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
                 >
-                  + Add tools
+                  {t('agent.draft.addTools')}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
-                <p>Add more capabilities in the settings</p>
+                <p>{t('agent.draft.addMoreCapabilities')}</p>
               </TooltipContent>
             </Tooltip>
           </Link>
@@ -889,7 +890,7 @@ function DraftChatInner() {
             title="Local Context Injection Active"
           >
             <MapPin size={10} />
-            Local Context
+            {t('agent.draft.localContext')}
           </div>
         </div>
       </div>

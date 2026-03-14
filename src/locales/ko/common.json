@@ -523,6 +523,24 @@
     }
   },
   "agent": {
+    "draft": {
+      "failedToRegisterDroppedFiles": "드롭된 파일 등록에 실패했습니다",
+      "dropFilesInChatInput": "파일을 첨부하려면 채팅 입력창에 놓아주세요.",
+      "failedToProcessFile": "처리 실패: {{file}}",
+      "noAssistantSpecified": "어시스턴트가 지정되지 않았습니다",
+      "failedToLoadAssistant": "어시스턴트 로드에 실패했습니다",
+      "failedToAttach": "첨부 실패: {{file}}",
+      "creatingSession": "세션 생성 중...",
+      "failedToStartSession": "세션 시작에 실패했습니다",
+      "newSession": "새 세션",
+      "workspaceOverrideActive": "워크스페이스 재정의 활성화",
+      "workspaceOverrideDescription": "이 세션에서는 에이전트가 이 디렉토리를 기본 워크스페이스로 사용합니다.",
+      "basicTools": "기본 도구",
+      "basicToolsDescription": "파일 읽기, 작업 관리, 코드 실행과 같은 핵심 기능이 포함되어 있습니다. 항상 사용할 수 있습니다!",
+      "addTools": "+ 도구 추가",
+      "addMoreCapabilities": "설정에서 더 많은 기능을 추가하세요",
+      "localContext": "로컬 컨텍스트"
+    },
     "header": {
       "copySuccess": "대화 내용이 클립보드에 복사되었습니다",
       "copyError": "클립보드 복사에 실패했습니다",

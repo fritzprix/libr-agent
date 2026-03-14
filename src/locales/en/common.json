@@ -588,6 +588,24 @@
     }
   },
   "agent": {
+    "draft": {
+      "failedToRegisterDroppedFiles": "Failed to register dropped files",
+      "dropFilesInChatInput": "Drop files in the chat input to attach them.",
+      "failedToProcessFile": "Failed to process: {{file}}",
+      "noAssistantSpecified": "No assistant specified",
+      "failedToLoadAssistant": "Failed to load assistant",
+      "failedToAttach": "Failed to attach: {{file}}",
+      "creatingSession": "Creating session...",
+      "failedToStartSession": "Failed to start session",
+      "newSession": "New Session",
+      "workspaceOverrideActive": "Workspace Override Active",
+      "workspaceOverrideDescription": "The agent will use this directory as its primary workspace for this session.",
+      "basicTools": "Basic Tools",
+      "basicToolsDescription": "Includes core capabilities like reading files, managing tasks, and executing code. Always available to help you!",
+      "addTools": "+ Add tools",
+      "addMoreCapabilities": "Add more capabilities in the settings",
+      "localContext": "Local Context"
+    },
     "header": {
       "copySuccess": "Conversation copied to clipboard",
       "copyError": "Failed to copy conversation",
