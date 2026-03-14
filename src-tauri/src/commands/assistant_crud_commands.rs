@@ -30,7 +30,7 @@ impl From<AssistantModel> for AssistantDto {
 pub async fn create_assistant(
     id: String,
     name: String,
-    config: Value,
+    config: String,
 ) -> Result<AssistantDto, String> {
     let result = AssistantService::create_assistant(id, name, config).await?;
     Ok(result.into())
@@ -40,7 +40,7 @@ pub async fn create_assistant(
 pub async fn update_assistant(
     id: String,
     name: Option<String>,
-    config: Option<Value>,
+    config: Option<String>,
 ) -> Result<AssistantDto, String> {
     let result = AssistantService::update_assistant(&id, name, config).await?;
     Ok(result.into())
@@ -68,7 +68,7 @@ pub async fn get_assistant(id: String) -> Result<Option<AssistantDto>, String> {
 pub struct UpsertAssistantPayload {
     pub id: String,
     pub name: String,
-    pub config: Value,
+    pub config: String,
 }
 
 #[command]

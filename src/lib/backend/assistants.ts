@@ -42,7 +42,7 @@ export async function createAssistant(
   const dto = await safeInvoke<AssistantDto>('create_assistant', {
     id: params.id,
     name: params.name,
-    config: JSON.parse(params.config), // Rust generic Value usually expects parsed JSON or string? Command expectation: Value which implies parsed JSON in invoke args
+    config: params.config,
   });
   return parseAssistant(dto);
 }
@@ -57,7 +57,7 @@ export async function updateAssistant(
   const dto = await safeInvoke<AssistantDto>('update_assistant', {
     id: params.id,
     name: params.name,
-    config: JSON.parse(params.config),
+    config: params.config,
   });
   return parseAssistant(dto);
 }
@@ -109,7 +109,7 @@ export async function upsertAssistants(assistants: Assistant[]): Promise<void> {
     return {
       id: params.id,
       name: params.name,
-      config: JSON.parse(params.config),
+      config: params.config,
     };
   });
 

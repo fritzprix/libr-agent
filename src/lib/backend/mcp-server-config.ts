@@ -54,7 +54,7 @@ export async function createMCPServer(
   const params = serializeMCPServer(server);
   const dto = await safeInvoke<MCPServerDto>('create_mcp_server_config', {
     name: params.name,
-    config: JSON.parse(params.config),
+    config: params.config,
   });
   return deserializeMCPServer(dto);
 }
@@ -66,7 +66,7 @@ export async function updateMCPServer(
   const dto = await safeInvoke<MCPServerDto>('update_mcp_server_config', {
     id: server.id,
     name: params.name,
-    config: JSON.parse(params.config),
+    config: params.config,
   });
   return deserializeMCPServer(dto);
 }

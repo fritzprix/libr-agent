@@ -28,7 +28,7 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
 }
 
 #[command]
-pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
+pub async fn create_mcp_server_config(name: String, config: String) -> Result<MCPServerDto, String> {
     let model = McpServerService::create_server_config(name, config).await?;
     Ok(model.into())
 }
@@ -37,7 +37,7 @@ pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCP
 pub async fn update_mcp_server_config(
     id: String,
     name: Option<String>,
-    config: Option<Value>,
+    config: Option<String>,
 ) -> Result<MCPServerDto, String> {
     let updated = McpServerService::update_server_config(id, name, config).await?;
     Ok(updated.into())

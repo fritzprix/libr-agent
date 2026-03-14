@@ -97,7 +97,7 @@ impl McpServerService {
 
     pub async fn create_server_config(
         name: String,
-        config: Value,
+        config_str: String,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         if BuiltinServiceId::from_alias(&name).is_some() {
             return Err(format!(
@@ -105,6 +105,9 @@ impl McpServerService {
                 name
             ));
         }
+
+        let config: Value = serde_json::from_str(&config_str)
+            .map_err(|e| format!("Invalid JSON config: {}", e))?;
 
         // 1. Parse config into MCPServerConfig for verification
         let mut mcp_config: crate::mcp::types::MCPServerConfig =
@@ -143,7 +146,7 @@ impl McpServerService {
     pub async fn update_server_config(
         id: String,
         name: Option<String>,
-        config: Option<Value>,
+        config_str: Option<String>,
     ) -> Result<crate::entity::mcp_server::Model, String> {
         if let Some(ref n) = name {
             if BuiltinServiceId::from_alias(n).is_some() {
@@ -153,6 +156,11 @@ impl McpServerService {
                 ));
             }
         }
+
+        let config: Option<Value> = match config_str {
+            Some(ref s) => Some(serde_json::from_str(s).map_err(|e| format!("Invalid JSON config: {}", e))?),
+            None => None,
+        };
 
         let repo = get_mcp_server_repository();
 

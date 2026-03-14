@@ -1,12 +1,11 @@
 use crate::entity::assistant::Model as AssistantModel;
 use crate::repositories::AssistantRepository;
 use crate::state::get_assistant_repository;
-use serde_json::Value;
 
 pub struct AssistantUpsertPayload {
     pub id: String,
     pub name: String,
-    pub config: Value,
+    pub config: String,
 }
 
 pub struct AssistantService;
@@ -15,10 +14,10 @@ impl AssistantService {
     pub async fn create_assistant(
         id: String,
         name: String,
-        config: Value,
+        config: String,
     ) -> Result<AssistantModel, String> {
         let repo = get_assistant_repository();
-        let config_str = config.to_string();
+        let config_str = config;
 
         repo.create_assistant(id, name, config_str)
             .await
@@ -28,10 +27,10 @@ impl AssistantService {
     pub async fn update_assistant(
         id: &str,
         name: Option<String>,
-        config: Option<Value>,
+        config: Option<String>,
     ) -> Result<AssistantModel, String> {
         let repo = get_assistant_repository();
-        let config_str = config.map(|c| c.to_string());
+        let config_str = config;
 
         repo.update_assistant(id, name, config_str)
             .await

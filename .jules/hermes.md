@@ -100,3 +100,21 @@
 
 - **IPC Fix:** Extracted raw IPC call to a strictly typed `handleLLMError` wrapper in `src/lib/backend/agent-commands.ts`.
 - **Refactor:** Updated `useLLMListener.ts` and associated tests to use the new type-safe boundary.
+
+## 2026-03-12 - IPC JSON Payload Serialization Optimization
+
+**Problem:** Redundant JSON parsing overhead on the bridge: `assistants.ts` and `mcp-server-config.ts` were stringifying JSON configurations, parsing them back to objects to send via `invoke`, while the Rust backend (`Value`) was parsing and stringifying them again to interact with the database.
+
+**Action:**
+
+- **Bridge Payload Optimization:** Changed frontend TS and Tauri Rust boundaries to pass the raw stringified configurations (`String` in Rust, `string` in TS) instead of `any` / `Value`.
+- **Refactor:** Eliminated `JSON.parse(params.config)` from `safeInvoke` calls for `createAssistant`, `updateAssistant`, `upsertAssistants`, `createMCPServer`, and `updateMCPServer`, significantly reducing JSON parsing overhead.
+
+## 2026-03-12 - Core Logger IPC Safety Optimization
+
+**Problem:** `src/lib/logger.ts` was using untyped/raw `invoke` calls from `@tauri-apps/api/core` for `log_batch`, `get_app_logs_dir`, `backup_current_log`, `clear_current_log`, and `list_log_files` to avoid an infinite recursion loop where `safeInvoke` logs its own execution.
+
+**Action:**
+
+- **IPC Fix:** Updated `src/lib/backend/core.ts` `safeInvoke` to bypass logging for specific commands (`log_batch`, `get_app_logs_dir`, etc.).
+- **Optimized:** Replaced all raw `invoke` calls in `src/lib/logger.ts` with `safeInvoke` to strictly enforce type boundaries and centralized error handling across the entire IPC bridge.
