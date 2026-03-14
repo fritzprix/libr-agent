@@ -189,14 +189,10 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   protected shouldRetry(error: unknown): boolean {
     // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
     const status = (error as { status?: number })?.status;
-<<<<<<< HEAD
-    if (status === 429 || (status >= 500 && status <= 599)) {
-=======
     if (
       status !== undefined &&
       (status === 429 || (status >= 500 && status <= 599))
     ) {
->>>>>>> 5baf20ba (refactor: 📦 Decompose completion.rs and fix AI service type pollution)
       return true;
     }
     return false;
