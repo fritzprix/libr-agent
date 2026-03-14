@@ -118,6 +118,9 @@ pub async fn start_workflow(
             // Guards against the case where the frontend crashed mid-compaction
             // and never called agent_handle_compact_error to release the flag.
             session.compact_in_flight.store(false, Ordering::SeqCst);
+            session
+                .awaiting_compact_completion
+                .store(false, Ordering::SeqCst);
         }
     }
 

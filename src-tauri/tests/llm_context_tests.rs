@@ -145,8 +145,16 @@ fn test_select_messages_regression_large_message() {
     ));
 
     let selected = select_messages_within_context(&msgs, "gemini", Some(10), None, None);
+    assert!(selected.is_empty());
+}
+
+#[test]
+fn test_select_messages_keeps_single_pinned_user_message_when_it_fits() {
+    let msgs = vec![make_message("msg0", "user", "hello")];
+
+    let selected = select_messages_within_context(&msgs, "gemini", Some(1000), None, None);
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].id, "big_msg");
+    assert_eq!(selected[0].id, "msg0");
 }
 
 #[test]
@@ -159,6 +167,13 @@ fn test_estimate_text_tokens() {
 #[test]
 fn test_calculate_compact_threshold() {
     assert_eq!(calculate_compact_threshold(10000), 9000);
+}
+
+#[test]
+fn test_calculate_context_safety_margin() {
+    assert_eq!(calculate_context_safety_margin(10_000), 1024);
+    assert_eq!(calculate_context_safety_margin(100_000), 5000);
+    assert_eq!(calculate_context_safety_margin(500_000), 8192);
 }
 
 #[test]

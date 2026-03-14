@@ -252,6 +252,7 @@ pub fn select_messages_within_context(
 
     let reserved_tokens = non_message_reserved + pinned_message_tokens;
     let token_limit = std::cmp::max(1024, base_token_limit.saturating_sub(reserved_tokens));
+    let pinned_message_budget = base_token_limit.saturating_sub(non_message_reserved);
 
     let mut total_tokens = 0;
     let mut selected = std::collections::VecDeque::new();
@@ -269,16 +270,14 @@ pub fn select_messages_within_context(
         let calibrated_tokens = (tokens as f64 * calibration_ratio).ceil() as usize;
 
         if total_tokens + calibrated_tokens > token_limit {
-            if selected.is_empty() {
-                // Ensure we never return an empty array if we have at least one message.
-                selected.push_front(msg.clone());
-            }
             if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
                 let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                if let Some(pinned) = pinned_message {
-                    return prepend_pinned_message(pinned, adjusted);
-                }
-                return adjusted;
+                return build_selected_with_optional_pinned(
+                    pinned_message.clone(),
+                    pinned_message_tokens,
+                    pinned_message_budget,
+                    adjusted,
+                );
             }
             break;
         }
@@ -296,10 +295,12 @@ pub fn select_messages_within_context(
                 }
                 if ["anthropic", "gemini", "openai", "openrouter", "groq"].contains(&provider_id) {
                     let adjusted = remove_incomplete_tool_chains(Vec::from(selected));
-                    if let Some(pinned) = pinned_message {
-                        return prepend_pinned_message(pinned, adjusted);
-                    }
-                    return adjusted;
+                    return build_selected_with_optional_pinned(
+                        pinned_message.clone(),
+                        pinned_message_tokens,
+                        pinned_message_budget,
+                        adjusted,
+                    );
                 }
                 break;
             }
@@ -309,17 +310,17 @@ pub fn select_messages_within_context(
         total_tokens += calibrated_tokens;
     }
 
-    let mut final_selected = Vec::from(selected);
-    if let Some(pinned) = pinned_message {
-        final_selected = prepend_pinned_message(pinned, final_selected);
-    }
-
-    final_selected
+    build_selected_with_optional_pinned(
+        pinned_message,
+        pinned_message_tokens,
+        pinned_message_budget,
+        Vec::from(selected),
+    )
 }
 
 fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) -> Vec<Message> {
     if selected_msgs.is_empty() {
-        return vec![pinned_msg];
+        return selected_msgs;
     }
 
     if pinned_msg.role == "user" && selected_msgs[0].role == "user" {
@@ -343,5 +344,25 @@ fn prepend_pinned_message(pinned_msg: Message, mut selected_msgs: Vec<Message>) 
     }
 
     selected_msgs.insert(0, pinned_msg);
+    selected_msgs
+}
+
+fn build_selected_with_optional_pinned(
+    pinned_message: Option<Message>,
+    pinned_message_tokens: usize,
+    pinned_message_budget: usize,
+    selected_msgs: Vec<Message>,
+) -> Vec<Message> {
+    if let Some(pinned) = pinned_message {
+        if selected_msgs.is_empty() {
+            if pinned_message_tokens <= pinned_message_budget {
+                return vec![pinned];
+            }
+            return vec![];
+        }
+
+        return prepend_pinned_message(pinned, selected_msgs);
+    }
+
     selected_msgs
 }

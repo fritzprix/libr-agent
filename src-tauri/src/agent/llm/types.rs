@@ -34,6 +34,9 @@ pub struct CompactRequest {
     pub messages: Vec<Message>,
     pub from_id: String,
     pub to_id: String,
+    /// When true, Rust is waiting for this compaction to complete before retrying
+    /// the blocked LLM turn.
+    pub resume_completion_after_compact: bool,
 }
 
 /// Event payload emitted as `llm:compact-state`.

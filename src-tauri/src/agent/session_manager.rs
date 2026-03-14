@@ -681,7 +681,62 @@ impl AgentSessionManager {
             created_at: chrono::Utc::now().timestamp_millis(),
         };
         self.save_compact_context(session_id, record).await?;
+        let should_resume_completion = {
+            let active = self.active_sessions.read().await;
+            active
+                .get(session_id)
+                .map(|session| {
+                    session
+                        .awaiting_compact_completion
+                        .swap(false, Ordering::SeqCst)
+                })
+                .unwrap_or(false)
+        };
+
         self.clear_compact_in_flight(session_id).await;
+
+        if should_resume_completion {
+            let session_repo = self.session_repo.clone();
+            let active_sessions = self.active_sessions.clone();
+            let proxy_manager = self.proxy_manager.clone();
+            let app_handle = self.app_handle.clone();
+            let resume_session_id = session_id.to_string();
+
+            tokio::spawn(async move {
+                if let Err(error) = crate::agent::llm::request_llm_completion(
+                    &session_repo,
+                    &active_sessions,
+                    &proxy_manager,
+                    &app_handle,
+                    resume_session_id.clone(),
+                )
+                .await
+                {
+                    log::error!(
+                        "Failed to resume LLM completion after compaction for session {}: {}",
+                        resume_session_id,
+                        error
+                    );
+
+                    if let Err(handle_error) = crate::agent::llm::handle_llm_error(
+                        &session_repo,
+                        &active_sessions,
+                        &app_handle,
+                        resume_session_id.clone(),
+                        error,
+                    )
+                    .await
+                    {
+                        log::error!(
+                            "Failed to surface post-compaction resume error for session {}: {}",
+                            resume_session_id,
+                            handle_error
+                        );
+                    }
+                }
+            });
+        }
+
         Ok(())
     }
 
@@ -691,6 +746,9 @@ impl AgentSessionManager {
         if let Some(session) = active.get(session_id) {
             session
                 .compact_in_flight
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            session
+                .awaiting_compact_completion
                 .store(false, std::sync::atomic::Ordering::SeqCst);
         }
     }

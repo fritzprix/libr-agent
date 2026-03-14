@@ -12,6 +12,7 @@ import { messageToRustMessage, type Message } from '@/models/chat';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import type { AIServiceConfig } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
@@ -44,6 +45,11 @@ interface UseLLMListenerProps {
   >;
   resetContextUsageForSession: (sessionId: string) => void;
   setCompactingFromEvent: (sessionId: string, value: boolean) => void;
+  setCompactedRangeForSession: (
+    sessionId: string,
+    range: { fromId: string; toId: string } | undefined,
+  ) => void;
+  setAwaitingCompactForSession: (sessionId: string, value: boolean) => void;
 }
 
 export function useLLMListener({
@@ -52,6 +58,8 @@ export function useLLMListener({
   setStreamingMessages,
   resetContextUsageForSession,
   setCompactingFromEvent,
+  setCompactedRangeForSession,
+  setAwaitingCompactForSession,
 }: UseLLMListenerProps) {
   // Track listener setup to prevent duplicate registration in React Strict Mode
   const listenerSetupRef = useRef(false);
@@ -339,16 +347,25 @@ export function useLLMListener({
         messages: Message[];
         fromId: string;
         toId: string;
+        resumeCompletionAfterCompact: boolean;
       }>('llm:compact-request', async (event) => {
-        const { sessionId, sessionName, messages, fromId, toId } =
-          event.payload;
+        const {
+          sessionId,
+          sessionName,
+          messages,
+          fromId,
+          toId,
+          resumeCompletionAfterCompact,
+        } = event.payload;
         logger.info(
           `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
         );
+        setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
 
         const settings = settingsRef.current;
         if (!settings) {
           logger.error('No settings available for compact request');
+          setAwaitingCompactForSession(sessionId, false);
           await handleCompactError(sessionId);
           return;
         }
@@ -356,6 +373,8 @@ export function useLLMListener({
         const provider = settings.preferredModel.provider as AIServiceProvider;
         const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
         const model = settings.preferredModel.model;
+        const providerConfig: AIServiceConfig =
+          settings.serviceConfigs?.[provider] ?? {};
 
         const toastId = `compact-${sessionId}`;
         toast.loading(`Compacting context…`, {
@@ -365,9 +384,14 @@ export function useLLMListener({
         });
 
         try {
-          const service = AIServiceFactory.getService(provider, apiKey);
+          const service = AIServiceFactory.getService(
+            provider,
+            apiKey,
+            providerConfig,
+          );
           const summary = await service.compact(messages, { modelName: model });
           await handleCompactResponse(sessionId, fromId, toId, summary);
+          setCompactedRangeForSession(sessionId, { fromId, toId });
           resetContextUsageForSession(sessionId);
           logger.info(`✅ Compact summary stored: session=${sessionId}`);
           toast.success(`Context compacted`, {
@@ -377,6 +401,7 @@ export function useLLMListener({
           });
         } catch (error) {
           logger.error(`Compact LLM call failed: session=${sessionId}`, error);
+          setAwaitingCompactForSession(sessionId, false);
           await handleCompactError(sessionId);
           toast.error(`Compaction failed`, {
             id: toastId,
@@ -406,6 +431,9 @@ export function useLLMListener({
       }>('llm:compact-state', (event) => {
         const { sessionId, compacting } = event.payload;
         setCompactingFromEvent(sessionId, compacting);
+        if (!compacting) {
+          setAwaitingCompactForSession(sessionId, false);
+        }
       });
 
       if (!isMounted) {

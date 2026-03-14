@@ -10,7 +10,11 @@ import { getLogger } from '@/lib/logger';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
-import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
+import {
+  calculateContextSafetyMargin,
+  estimatePayloadTokens,
+  prepareMessagesForLLM,
+} from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
 import type { Message, ToolCall } from '@/models/chat';
@@ -61,6 +65,12 @@ export function useLLMExecution({
   const [compactingMap, setCompactingMap] = useState<
     ReadonlyMap<string, boolean>
   >(new Map());
+  const [compactedRangeMap, setCompactedRangeMap] = useState<
+    ReadonlyMap<string, { fromId: string; toId: string }>
+  >(new Map());
+  const [awaitingCompactMap, setAwaitingCompactMap] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
 
   const setCompacting = useCallback((sessionId: string, value: boolean) => {
     setCompactingMap((prev) => {
@@ -73,6 +83,39 @@ export function useLLMExecution({
       return next;
     });
   }, []);
+
+  const setCompactedRange = useCallback(
+    (
+      sessionId: string,
+      range: { fromId: string; toId: string } | undefined,
+    ) => {
+      setCompactedRangeMap((prev) => {
+        const next = new Map(prev);
+        if (range) {
+          next.set(sessionId, range);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const setAwaitingCompact = useCallback(
+    (sessionId: string, value: boolean) => {
+      setAwaitingCompactMap((prev) => {
+        const next = new Map(prev);
+        if (value) {
+          next.set(sessionId, true);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   // Clean up on unmount
   useEffect(() => {
@@ -251,6 +294,23 @@ export function useLLMExecution({
           sessionContext,
           enrichedMessages,
         );
+
+        const effectiveContextLimit =
+          contextUsage?.contextWindow ?? modelInfo.contextWindow ?? 128 * 1024;
+        const projectedPayloadTokens = estimatePayloadTokens(
+          effectiveSystemPrompt,
+          effectiveMessages,
+          availableTools,
+        );
+        const safetyMargin = calculateContextSafetyMargin(
+          effectiveContextLimit,
+        );
+
+        if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
+          throw new Error(
+            `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
+          );
+        }
 
         const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
@@ -644,7 +704,21 @@ export function useLLMExecution({
 
   const clearSessionState = useCallback((sessionId: string) => {
     setContextUsageMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setCompactingMap((prev) => {
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setCompactedRangeMap((prev) => {
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setAwaitingCompactMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
@@ -657,6 +731,9 @@ export function useLLMExecution({
    */
   const clearAllCompactState = useCallback(() => {
     setContextUsageMap(new Map());
+    setCompactingMap(new Map());
+    setCompactedRangeMap(new Map());
+    setAwaitingCompactMap(new Map());
   }, []);
 
   /**
@@ -681,14 +758,19 @@ export function useLLMExecution({
     clearAllCompactState,
     resetContextUsageForSession,
     setCompacting,
+    setCompactedRange,
+    setAwaitingCompact,
     isCompacting: (sessionId: string) => compactingMap.get(sessionId) === true,
-    isAwaitingCompact: () => false,
+    isAwaitingCompact: (sessionId: string) =>
+      awaitingCompactMap.get(sessionId) === true,
     getContextUsage: (
       sessionId: string,
     ):
       | { totalTokens: number; contextWindow: number; modelMaxContext?: number }
       | undefined => contextUsageMap.get(sessionId),
-    getCompactedRange: (): { fromId: string; toId: string } | undefined =>
-      undefined,
+    getCompactedRange: (
+      sessionId: string,
+    ): { fromId: string; toId: string } | undefined =>
+      compactedRangeMap.get(sessionId),
   };
 }

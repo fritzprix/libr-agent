@@ -137,6 +137,10 @@ pub struct AgentSession {
     /// Replaced when a new compaction fires with a different tail.
     pub last_compacted_tail_id: Arc<RwLock<Option<String>>>,
 
+    /// True when the current turn is blocked waiting for compaction to finish
+    /// before Rust should retry the LLM request.
+    pub awaiting_compact_completion: Arc<AtomicBool>,
+
     /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
     /// instructions, session context). These sections are immutable within a session
     /// so we build them once and reuse on every LLM call to avoid redundant JSON

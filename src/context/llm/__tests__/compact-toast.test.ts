@@ -56,7 +56,7 @@ interface CompactPayload {
 
 interface Settings {
   preferredModel: { provider: string; model: string };
-  serviceConfigs?: Record<string, { apiKey?: string }>;
+  serviceConfigs?: Record<string, { apiKey?: string; baseUrl?: string }>;
 }
 
 /**
@@ -67,10 +67,16 @@ async function handleCompactEvent(
   payload: CompactPayload,
   settings: Settings | null,
   toast: MockToast,
-  compactService: (
-    messages: unknown[],
-    opts: { modelName: string },
-  ) => Promise<string>,
+  getService: (
+    provider: string,
+    apiKey: string,
+    providerConfig: { apiKey?: string; baseUrl?: string },
+  ) => {
+    compact: (
+      messages: unknown[],
+      opts: { modelName: string },
+    ) => Promise<string>;
+  },
   handleCompactResponse: (
     sessionId: string,
     fromId: string,
@@ -78,6 +84,11 @@ async function handleCompactEvent(
     summary: string,
   ) => Promise<void>,
   handleCompactError: (sessionId: string) => Promise<void>,
+  resetContextUsageForSession: (sessionId: string) => void,
+  setCompactedRangeForSession: (
+    sessionId: string,
+    range: { fromId: string; toId: string },
+  ) => void,
 ): Promise<void> {
   const { sessionId, sessionName, messages, fromId, toId } = payload;
 
@@ -86,6 +97,9 @@ async function handleCompactEvent(
     return;
   }
 
+  const provider = settings.preferredModel.provider;
+  const providerConfig = settings.serviceConfigs?.[provider] ?? {};
+  const apiKey = providerConfig.apiKey ?? '';
   const model = settings.preferredModel.model;
 
   const toastId = `compact-${sessionId}`;
@@ -96,8 +110,11 @@ async function handleCompactEvent(
   });
 
   try {
-    const summary = await compactService(messages, { modelName: model });
+    const service = getService(provider, apiKey, providerConfig);
+    const summary = await service.compact(messages, { modelName: model });
     await handleCompactResponse(sessionId, fromId, toId, summary);
+    setCompactedRangeForSession(sessionId, { fromId, toId });
+    resetContextUsageForSession(sessionId);
     toast.success(`Context compacted`, {
       id: toastId,
       description: sessionName,
@@ -146,14 +163,17 @@ describe('compact toast: ID format', () => {
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
     const compactService = vi.fn().mockResolvedValue('summary text');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       toast,
-      compactService,
+      getService,
       handleCompactResponse,
       handleCompactError,
+      vi.fn(),
+      vi.fn(),
     );
 
     const ids = toast.calls.map((c) => c.id);
@@ -174,20 +194,28 @@ describe('compact toast: success path', () => {
   let handleCompactResponse: ReturnType<typeof vi.fn>;
   let handleCompactError: ReturnType<typeof vi.fn>;
   let compactService: ReturnType<typeof vi.fn>;
+  let getService: ReturnType<typeof vi.fn>;
+  let resetContextUsageForSession: ReturnType<typeof vi.fn>;
+  let setCompactedRangeForSession: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     toast = makeToast();
     handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     handleCompactError = vi.fn().mockResolvedValue(undefined);
     compactService = vi.fn().mockResolvedValue('A concise summary.');
+    getService = vi.fn().mockReturnValue({ compact: compactService });
+    resetContextUsageForSession = vi.fn();
+    setCompactedRangeForSession = vi.fn();
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       toast,
-      compactService,
+      getService,
       handleCompactResponse,
       handleCompactError,
+      resetContextUsageForSession,
+      setCompactedRangeForSession,
     );
   });
 
@@ -233,6 +261,17 @@ describe('compact toast: success path', () => {
   it('does NOT call handleCompactError on success', () => {
     expect(handleCompactError).not.toHaveBeenCalled();
   });
+
+  it('resets context usage after successful compaction', () => {
+    expect(resetContextUsageForSession).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('stores the compacted range after successful compaction', () => {
+    expect(setCompactedRangeForSession).toHaveBeenCalledWith(SESSION_ID, {
+      fromId: FROM_ID,
+      toId: TO_ID,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -244,20 +283,24 @@ describe('compact toast: error path', () => {
   let handleCompactResponse: ReturnType<typeof vi.fn>;
   let handleCompactError: ReturnType<typeof vi.fn>;
   let compactService: ReturnType<typeof vi.fn>;
+  let getService: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     toast = makeToast();
     handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     handleCompactError = vi.fn().mockResolvedValue(undefined);
     compactService = vi.fn().mockRejectedValue(new Error('LLM rate limit'));
+    getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       toast,
-      compactService,
+      getService,
       handleCompactResponse,
       handleCompactError,
+      vi.fn(),
+      vi.fn(),
     );
   });
 
@@ -302,14 +345,17 @@ describe('compact toast: missing settings guard', () => {
     const handleCompactResponse = vi.fn().mockResolvedValue(undefined);
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
     const compactService = vi.fn().mockResolvedValue('should not be called');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       null, // no settings
       toast,
-      compactService,
+      getService,
       handleCompactResponse,
       handleCompactError,
+      vi.fn(),
+      vi.fn(),
     );
 
     expect(handleCompactError).toHaveBeenCalledWith(SESSION_ID);
@@ -319,14 +365,17 @@ describe('compact toast: missing settings guard', () => {
     const toast = makeToast();
     const handleCompactError = vi.fn().mockResolvedValue(undefined);
     const compactService = vi.fn();
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       null,
       toast,
-      compactService,
+      getService,
       vi.fn(),
       handleCompactError,
+      vi.fn(),
+      vi.fn(),
     );
 
     expect(toast.calls).toHaveLength(0);
@@ -335,12 +384,15 @@ describe('compact toast: missing settings guard', () => {
   it('does NOT call the compact service when settings are null', async () => {
     const toast = makeToast();
     const compactService = vi.fn();
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       null,
       toast,
-      compactService,
+      getService,
+      vi.fn(),
+      vi.fn(),
       vi.fn(),
       vi.fn(),
     );
@@ -357,6 +409,7 @@ describe('compact toast: LLM service call parameters', () => {
   it('calls compact service with the model from settings.preferredModel.model', async () => {
     const toast = makeToast();
     const compactService = vi.fn().mockResolvedValue('summary');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     const settings: Settings = {
       preferredModel: { provider: 'anthropic', model: 'claude-3-5-sonnet' },
@@ -367,9 +420,11 @@ describe('compact toast: LLM service call parameters', () => {
       DEFAULT_PAYLOAD,
       settings,
       toast,
-      compactService,
+      getService,
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
     );
 
     expect(compactService).toHaveBeenCalledWith(MESSAGES, {
@@ -377,9 +432,39 @@ describe('compact toast: LLM service call parameters', () => {
     });
   });
 
-  it('falls back to empty apiKey when serviceConfigs has no entry for provider', async () => {
+  it('forwards provider config into AIServiceFactory.getService', async () => {
     const toast = makeToast();
     const compactService = vi.fn().mockResolvedValue('summary');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
+
+    const settings: Settings = {
+      preferredModel: { provider: 'openai', model: 'gpt-4o' },
+      serviceConfigs: {
+        openai: { apiKey: 'sk-openai', baseUrl: 'https://example.test/v1' },
+      },
+    };
+
+    await handleCompactEvent(
+      DEFAULT_PAYLOAD,
+      settings,
+      toast,
+      getService,
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
+    );
+
+    expect(getService).toHaveBeenCalledWith('openai', 'sk-openai', {
+      apiKey: 'sk-openai',
+      baseUrl: 'https://example.test/v1',
+    });
+  });
+
+  it('falls back to empty apiKey and empty provider config when serviceConfigs has no entry for provider', async () => {
+    const toast = makeToast();
+    const compactService = vi.fn().mockResolvedValue('summary');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     const settings: Settings = {
       preferredModel: { provider: 'groq', model: 'llama3' },
@@ -390,12 +475,14 @@ describe('compact toast: LLM service call parameters', () => {
       DEFAULT_PAYLOAD,
       settings,
       toast,
-      compactService,
+      getService,
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
     );
 
-    // should not throw, service called (apiKey = '')
+    expect(getService).toHaveBeenCalledWith('groq', '', {});
     expect(compactService).toHaveBeenCalledWith(MESSAGES, { modelName: 'llama3' });
   });
 });
@@ -408,14 +495,17 @@ describe('compact toast: call count', () => {
   it('emits exactly 2 toasts on success (loading + success)', async () => {
     const toast = makeToast();
     const compactService = vi.fn().mockResolvedValue('ok');
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       toast,
-      compactService,
+      getService,
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
     );
 
     expect(toast.calls).toHaveLength(2);
@@ -424,14 +514,17 @@ describe('compact toast: call count', () => {
   it('emits exactly 2 toasts on error (loading + error)', async () => {
     const toast = makeToast();
     const compactService = vi.fn().mockRejectedValue(new Error('fail'));
+    const getService = vi.fn().mockReturnValue({ compact: compactService });
 
     await handleCompactEvent(
       DEFAULT_PAYLOAD,
       DEFAULT_SETTINGS,
       toast,
-      compactService,
+      getService,
       vi.fn().mockResolvedValue(undefined),
       vi.fn().mockResolvedValue(undefined),
+      vi.fn(),
+      vi.fn(),
     );
 
     expect(toast.calls).toHaveLength(2);

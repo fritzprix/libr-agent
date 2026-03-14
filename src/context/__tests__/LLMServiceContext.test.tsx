@@ -516,6 +516,68 @@ describe('LLMServiceContext', () => {
         );
       });
     });
+
+    it('should reject payloads that overflow after context injection', async () => {
+      let eventHandler: ((event: unknown) => void) | undefined;
+
+      (listen as ReturnType<typeof vi.fn>).mockImplementation(
+        async (eventName, handler) => {
+          if (eventName === 'llm:completion-request') {
+            eventHandler = handler as (event: unknown) => void;
+          }
+          return mockUnlisten;
+        },
+      );
+
+      (AIServiceFactory.getService as ReturnType<typeof vi.fn>).mockReturnValue({
+        streamChat: mockStreamChat,
+        listModels: mockListModels,
+        dispose: mockDispose,
+        prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
+          systemPrompt: 'x'.repeat(30000),
+          messages,
+        })),
+      });
+
+      renderHook(() => useLLMService(), {
+        wrapper: TestWrapper,
+      });
+
+      await waitFor(() => {
+        expect(eventHandler).toBeDefined();
+      });
+
+      await eventHandler?.({
+        payload: {
+          sessionId: 'test-session',
+          messages: [
+            {
+              id: 'msg1',
+              sessionId: 'test-session',
+              threadId: 'test-session',
+              role: 'user',
+              content: [{ type: 'text', text: 'Hello' }],
+              createdAt: new Date(),
+            },
+          ],
+          model: 'gpt-4',
+          provider: 'openai',
+          contextUsage: {
+            totalTokens: 100,
+            contextWindow: 4096,
+            modelMaxContext: 128000,
+          },
+        },
+      });
+
+      await waitFor(() => {
+        expect(agentCommands.handleLLMError).toHaveBeenCalledWith(
+          'test-session',
+          expect.stringContaining('Prepared payload exceeds the effective context limit'),
+        );
+      });
+      expect(mockStreamChat).not.toHaveBeenCalled();
+    });
   });
 
   // ─── SP4 regression: Retry & Fallback Recovery ───────────────────────────
@@ -681,4 +743,3 @@ describe('LLMServiceContext', () => {
     });
   });
 });
-

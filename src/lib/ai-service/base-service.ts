@@ -636,13 +636,15 @@ export abstract class BaseAIService<
         instruction;
     }
 
-    compactMessages.push({
+    const instructionMessage: Message = {
       id: `compaction_instruction_${Date.now()}`,
       sessionId: 'internal',
+      threadId: 'internal',
       role: 'user', // "user" role is critical here so it follows valid standard tool sequences
       content: [{ type: 'text', text: instruction }],
       createdAt: new Date(),
-    } as Message);
+    };
+    compactMessages.push(instructionMessage);
 
     const { systemPrompt: effectiveSystemPrompt, messages: effectiveMessages } =
       this.prepareContextInjection(

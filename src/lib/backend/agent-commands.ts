@@ -97,7 +97,7 @@ export async function handleCompactResponse(
   toId: string,
   summary: string,
 ): Promise<void> {
-  await safeInvoke<void>('agent_handle_compact_response', {
+  await safeInvoke<AgentResponse>('agent_handle_compact_response', {
     sessionId,
     fromId,
     toId,
@@ -110,7 +110,7 @@ export async function handleCompactResponse(
  * Rust clears the in-flight flag so future turns can retry.
  */
 export async function handleCompactError(sessionId: string): Promise<void> {
-  await safeInvoke<void>('agent_handle_compact_error', { sessionId });
+  await safeInvoke<AgentResponse>('agent_handle_compact_error', { sessionId });
 }
 
 /**

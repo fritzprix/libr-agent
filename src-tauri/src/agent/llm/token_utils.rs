@@ -32,6 +32,13 @@ pub fn calculate_compact_threshold(effective_limit: usize) -> usize {
     (effective_limit as f64 * 0.9).floor() as usize
 }
 
+/// Reserves extra headroom for provider-side tokenization drift and frontend-side
+/// payload expansion (attachments, context injection, multimodal wrappers).
+pub fn calculate_context_safety_margin(effective_limit: usize) -> usize {
+    let five_percent = (effective_limit as f64 * 0.05).ceil() as usize;
+    five_percent.clamp(1024, 8192)
+}
+
 /// Estimates the token count for a given message using BPE or character fallback.
 /// Translates `estimateTokensBPE` from TS.
 pub fn estimate_tokens_bpe(message: &Message) -> usize {

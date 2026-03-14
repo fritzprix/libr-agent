@@ -114,6 +114,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     clearAllCompactState,
     resetContextUsageForSession,
     setCompacting,
+    setCompactedRange,
+    setAwaitingCompact,
   } = useLLMExecution({
     settingsRef,
     streamingMessages,
@@ -142,6 +144,8 @@ export function LLMServiceProvider({ children }: LLMServiceProviderProps) {
     setStreamingMessages,
     resetContextUsageForSession,
     setCompactingFromEvent: setCompacting,
+    setCompactedRangeForSession: setCompactedRange,
+    setAwaitingCompactForSession: setAwaitingCompact,
   });
 
   const value: LLMServiceContextValue = {

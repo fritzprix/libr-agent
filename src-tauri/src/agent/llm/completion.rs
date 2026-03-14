@@ -5,6 +5,7 @@ use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::repositories::CompactContextRepository;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -14,6 +15,14 @@ use tokio::sync::RwLock;
 
 use super::prompt::build_session_system_prompt_split;
 use super::types::{CompactRequest, CompletionRequest};
+
+#[derive(Debug)]
+struct OverflowPreflight {
+    latest_message_tokens: usize,
+    total_tokens: usize,
+    reserved_tokens: usize,
+    safety_margin: usize,
+}
 
 /// Request LLM completion from frontend
 ///
@@ -280,10 +289,20 @@ pub async fn request_llm_completion(
                 );
                 [vec![summary_msg], tail].concat()
             } else {
-                // Stale: to_id not found in current message stack — invalidate in-memory cache.
+                // Stale: to_id not found in current message stack — invalidate in-memory cache
+                // and delete the persisted record so future resume/cache hydration does not
+                // keep reloading the same dead compact context forever.
                 *compact_context_arc.write().await = None;
+                let compact_repo = crate::state::get_compact_context_repository();
+                if let Err(e) = compact_repo.delete_by_session_id(&session_id).await {
+                    log::warn!(
+                        "⚠️ Failed to delete stale compact cache for session {}: {}",
+                        session_id,
+                        e
+                    );
+                }
                 log::warn!(
-                    "⚠️ Compact cache stale (toId not found), invalidated: session={}",
+                    "⚠️ Compact cache stale (toId not found), invalidated + deleted: session={}",
                     session_id
                 );
                 messages
@@ -302,16 +321,60 @@ pub async fn request_llm_completion(
         (None, None) => None,
     };
 
+    let preflight = build_overflow_preflight(
+        &messages,
+        system_prompt_tokens + session_context_tokens,
+        tools_tokens,
+        safe_input_token_limit,
+    );
+
+    let latest_input_projected_tokens =
+        preflight.reserved_tokens + preflight.latest_message_tokens + preflight.safety_margin;
+    if latest_input_projected_tokens > safe_input_token_limit {
+        return Err(format!(
+            "Latest input is too large for the configured context window (projected {} > limit {}). Reduce the newest message or attachment payload and retry.",
+            latest_input_projected_tokens, safe_input_token_limit
+        ));
+    }
+
+    let projected_total_tokens = preflight.total_tokens + preflight.safety_margin;
+    let compact_threshold =
+        crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
+
+    if context_strategy == "compact" && projected_total_tokens > safe_input_token_limit {
+        if try_trigger_preflight_compaction(
+            active_sessions,
+            app_handle,
+            &session_id,
+            &session_name,
+            &messages,
+        )
+        .await?
+        {
+            log::info!(
+                "⏸️ Pausing LLM request until compaction completes: session={}, projected_total={}, limit={}, margin={}",
+                session_id,
+                projected_total_tokens,
+                safe_input_token_limit,
+                preflight.safety_margin
+            );
+            return Ok(());
+        }
+
+        return Err(format!(
+            "Conversation context still exceeds the configured limit even after reserving safety margin (projected {} > limit {}). Wait for compaction or reduce recent input size.",
+            projected_total_tokens, safe_input_token_limit
+        ));
+    }
+
     if context_strategy == "compact" {
-        let threshold =
-            crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit);
         let current_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
             &messages,
             system_prompt_tokens + session_context_tokens,
             tools_tokens,
         );
 
-        if current_tokens > threshold {
+        if current_tokens > compact_threshold {
             let split_idx =
                 crate::agent::llm::context_selector::find_compaction_split_index(&messages);
             if split_idx > 0 {
@@ -370,6 +433,7 @@ pub async fn request_llm_completion(
                             messages: compact_msgs,
                             from_id,
                             to_id,
+                            resume_completion_after_compact: false,
                         };
                         let app = app_handle.clone();
                         let state_session_id = session_id.clone();
@@ -473,6 +537,118 @@ pub async fn request_llm_completion(
     log::info!("Emitted LLM completion request for session: {}", session_id);
 
     Ok(())
+}
+
+fn build_overflow_preflight(
+    messages: &[Message],
+    system_prompt_tokens: usize,
+    tools_tokens: usize,
+    safe_input_token_limit: usize,
+) -> OverflowPreflight {
+    let latest_message_tokens = messages
+        .last()
+        .map(crate::agent::llm::token_utils::estimate_tokens_bpe)
+        .unwrap_or(0);
+    let total_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
+        messages,
+        system_prompt_tokens,
+        tools_tokens,
+    );
+    let safety_margin =
+        crate::agent::llm::token_utils::calculate_context_safety_margin(safe_input_token_limit);
+
+    OverflowPreflight {
+        latest_message_tokens,
+        total_tokens,
+        reserved_tokens: system_prompt_tokens + tools_tokens,
+        safety_margin,
+    }
+}
+
+async fn try_trigger_preflight_compaction(
+    active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
+    app_handle: &AppHandle,
+    session_id: &str,
+    session_name: &str,
+    messages: &[Message],
+) -> Result<bool, String> {
+    if messages.len() <= 1 {
+        return Ok(false);
+    }
+
+    let split_idx = messages.len() - 1;
+    if split_idx == 0 {
+        return Ok(false);
+    }
+    if split_idx == 1
+        && messages
+            .first()
+            .map(|message| message.id.starts_with("compact-summary-"))
+            .unwrap_or(false)
+    {
+        return Ok(false);
+    }
+
+    let (compact_in_flight_arc, last_compacted_tail_id_arc, awaiting_compact_arc) = {
+        let active = active_sessions.read().await;
+        let session = active
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        (
+            session.compact_in_flight.clone(),
+            session.last_compacted_tail_id.clone(),
+            session.awaiting_compact_completion.clone(),
+        )
+    };
+
+    let claimed_in_flight = compact_in_flight_arc
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok();
+    if !claimed_in_flight {
+        return Ok(true);
+    }
+
+    let current_tail_id = messages.last().map(|m| m.id.clone());
+    let last_compacted_tail = last_compacted_tail_id_arc.read().await.clone();
+    if current_tail_id.as_deref() == last_compacted_tail.as_deref() {
+        compact_in_flight_arc.store(false, Ordering::SeqCst);
+        return Ok(false);
+    }
+
+    let compact_msgs = messages[..split_idx].to_vec();
+    let from_id = compact_msgs
+        .first()
+        .map(|m| m.id.clone())
+        .unwrap_or_default();
+    let to_id = compact_msgs
+        .last()
+        .map(|m| m.id.clone())
+        .unwrap_or_default();
+
+    awaiting_compact_arc.store(true, Ordering::SeqCst);
+    *last_compacted_tail_id_arc.write().await = current_tail_id.clone();
+
+    let compact_event = CompactRequest {
+        session_id: session_id.to_string(),
+        session_name: session_name.to_string(),
+        messages: compact_msgs,
+        from_id,
+        to_id,
+        resume_completion_after_compact: true,
+    };
+    let state_event = crate::agent::llm::types::CompactStateEvent {
+        session_id: session_id.to_string(),
+        compacting: true,
+    };
+
+    app_handle
+        .emit("llm:compact-state", state_event)
+        .map_err(|e| format!("Failed to emit llm:compact-state: {}", e))?;
+    app_handle
+        .emit("llm:compact-request", compact_event)
+        .map_err(|e| format!("Failed to emit llm:compact-request: {}", e))?;
+
+    Ok(true)
 }
 
 /// Resolve `@type:arg` references in user messages.

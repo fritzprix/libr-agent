@@ -177,6 +177,7 @@ pub async fn recover_sessions(
                         compact_context: Arc::new(RwLock::new(None)),
                         compact_in_flight: Arc::new(AtomicBool::new(false)),
                         last_compacted_tail_id: Arc::new(RwLock::new(None)),
+                        awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
                         cached_stable_prompt: Arc::new(RwLock::new(None)),
                     },
                 );

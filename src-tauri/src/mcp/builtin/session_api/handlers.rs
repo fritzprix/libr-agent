@@ -514,7 +514,50 @@ pub async fn handle_tool_call(
         }
         "listAgentTypes" => {
             let data = call_json(Method::GET, "/api/assistants", None, None).await?;
-            Ok(success_result("Assistants listed".to_string(), data))
+            let assistants = data
+                .as_array()
+                .cloned()
+                .or_else(|| data.get("assistants").and_then(|v| v.as_array()).cloned())
+                .or_else(|| data.get("items").and_then(|v| v.as_array()).cloned())
+                .unwrap_or_default();
+
+            let message = if assistants.is_empty() {
+                "No assistant types available.".to_string()
+            } else {
+                let mut lines = vec![format!("Available assistant types ({}):", assistants.len())];
+
+                for assistant in &assistants {
+                    let id = assistant
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let name = assistant
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unnamed");
+
+                    let config = assistant.get("config").cloned().unwrap_or(json!({}));
+                    let parsed_config = if let Some(s) = config.as_str() {
+                        serde_json::from_str::<Value>(s).unwrap_or(json!({}))
+                    } else {
+                        config
+                    };
+                    let description = extract_assistant_description(&parsed_config);
+                    let model = parsed_config
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+
+                    lines.push(format!(
+                        "- {} [ID: {}]\n  model: {}\n  description: {}",
+                        name, id, model, description
+                    ));
+                }
+
+                lines.join("\n")
+            };
+
+            Ok(success_result(message, data))
         }
         "getAgentConfig" => {
             let assistant_id = read_required_string(&args, "assistantId")?;
