@@ -208,3 +208,13 @@
 
 **Drift:** Rust documentation generated warnings due to unresolved links (`[validate_path]`, `[call_tool]`) and unclosed HTML tags (`Arc<RwLock>`, `Option<String>`, `Option<T>`).
 **Reality:** Fixed the links to correctly resolve to their respective struct methods and wrapped the HTML-like types in backticks (e.g., `Arc<RwLock>`) to eliminate rustdoc warnings.
+
+## 2026-03-12 - src/lib/ai-service/anthropic.ts
+
+**Drift:** JSDoc for `convertMessages` was missing the `@param systemPrompt`.
+**Reality:** Added missing `@param systemPrompt`.
+
+## 2026-03-12 - src/lib/ai-service/base-service.ts
+
+**Drift:** JSDoc for `mergeConfig` incorrectly suggested that `options.config` was not part of the `options` object.
+**Reality:** Restored `@param options.config` to accurately reflect the actual method signature.
