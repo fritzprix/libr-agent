@@ -68,8 +68,9 @@ describe('AgentSessionContext (Local)', () => {
             id: TEST_SESSION_ID,
             name: 'Test Session',
             status: 'idle',
-            created_at: Date.now(),
-            updated_at: Date.now(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            yoloMode: false,
         });
     });
 

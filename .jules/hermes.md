@@ -109,3 +109,5 @@
 
 - **IPC Fix:** Replaced `vi.mock('@tauri-apps/api/core')` with `vi.mock('@/lib/backend/core')` across all test files in `src/context/__tests__`.
 - **Refactor:** Replaced `invoke` imports, `mockInvoke` implementations, and `expect(invoke).toHaveBeenCalledWith` assertions with `safeInvoke`, aligning the test boundary with the application code.
+- **Accuracy:** Fixed `safeInvoke` mock response shapes to use camelCase (`createdAt`/`updatedAt`) instead of snake_case to match production models (`AgentSessionMetadata`).
+- **Robustness:** Updated `agent_send_message` assertions to use `expect.objectContaining` to handle additional fields (`toolCalls`, `toolCallId`) added during message processing.

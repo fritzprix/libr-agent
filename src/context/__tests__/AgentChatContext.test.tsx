@@ -194,14 +194,14 @@ describe('AgentChatContext', () => {
 
       // Expect Date to be converted to Unix timestamp
       expect(safeInvoke).toHaveBeenCalledWith('agent_send_message', {
-        request: {
+        request: expect.objectContaining({
           sessionId: 'test-session',
-          message: {
+          message: expect.objectContaining({
             ...newMessage,
             createdAt: createdAt.getTime(),
             updatedAt: createdAt.getTime(),
-          },
-        },
+          }),
+        }),
       });
     });
 
