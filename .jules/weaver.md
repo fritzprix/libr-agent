@@ -87,3 +87,13 @@
 - **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
 
 ## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]
+
+## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [State Duplicator / Action-Effect Chain] **Woven:** [Adjusting State During Render Pattern]
+- Removed the `useEffect` hooks that synced the `metrics` stream into a local `lastMetrics` state.
+- Utilized the Adjusting State During Render pattern to compare `prevMetrics` with current `metrics` and update `lastMetrics` state directly during the render cycle when new data arrives.
+- **Renders Saved:** Eradicated the Action-Effect chain by avoiding post-render effect cascades, whilst strictly adhering to React's purity rules by avoiding in-render ref mutations.
+
+## 2026-03-14 - [useWorkspaceFiles] **Eradicated:** [Effect State Syncing] **Woven:** [Adjusting State During Render]
+- Removed two `useEffect` blocks that manually reset local state (`lastDepthRef`, `allPaths`) when `sessionId` or `query` changed.
+- Tracked previous prop values (`prevSessionId`, `prevQueryIsNull`) and performed the state resets directly during render.
+- **Benefits:** Prevents the "Action-Effect Chain" double-render and ensures cache resets happen instantly before the new effect fetches paths.

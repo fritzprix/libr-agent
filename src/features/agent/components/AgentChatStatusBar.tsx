@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -47,21 +47,24 @@ export function AgentChatStatusBar() {
   // ✅ Fetch real-time token metrics
   const { metrics } = useTokenMetrics(session?.id);
 
-  // Persist last metrics to show after streaming ends
-  const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
-
+  // Track the session to reset accumulated metrics
   const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
     session?.id,
   );
 
-  // Render-phase mutation to clear metrics when session changes
+  // Persist last metrics to show after streaming ends
+  const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
+  const [prevMetrics, setPrevMetrics] = useState<TokenUsage | null>(null);
+
+  // Adjusting State During Render: Handle session change
   if (session?.id !== prevSessionId) {
     setPrevSessionId(session?.id);
     setLastMetrics(null);
-  }
+    setPrevMetrics(null);
+  } else if (metrics !== prevMetrics) {
+    // Adjusting State During Render: Handle metrics update
+    setPrevMetrics(metrics);
 
-  useEffect(() => {
-    // Update last metrics only when we have meaningful new data
     if (metrics) {
       const hasData =
         metrics.promptTokens > 0 ||
@@ -94,16 +97,17 @@ export function AgentChatStatusBar() {
         });
       }
     }
-  }, [metrics]);
+  }
 
-  // Derive displayMetrics during render to ensure UI reflects the absolute latest chunk
-  // without waiting for the next paint cycle (Effect-less derivation)
+  // Derive displayMetrics. If metrics is null (e.g. stream ended), use the last valid metrics.
+  // We use useMemo to avoid recreating the object if metrics is provided but we need to merge it with lastMetrics.
   const displayMetrics = useMemo(() => {
     if (!metrics) return lastMetrics;
     if (!lastMetrics) return metrics;
 
-    // Smart merge: update counts but preserve metadata if new chunk lacks it
-    // (Same logic as useEffect but applied immediately during render)
+    // Fast-path: if they are the same object, just return it
+    if (metrics === lastMetrics) return metrics;
+
     return {
       ...lastMetrics,
       ...metrics,

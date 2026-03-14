@@ -26,18 +26,28 @@ export function useWorkspaceFiles(
   const [allPaths, setAllPaths] = useState<string[]>([]);
   const lastDepthRef = useRef<number>(0);
 
-  // Reset cache when session changes.
-  useEffect(() => {
-    lastDepthRef.current = 0;
-    setAllPaths([]);
-  }, [sessionId]);
+  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
+    sessionId,
+  );
+  const [prevQueryIsNull, setPrevQueryIsNull] = useState<boolean>(
+    query === null,
+  );
 
-  // Reset depth when query becomes null so the next open refetches.
-  useEffect(() => {
-    if (query === null) {
-      lastDepthRef.current = 0;
+  // Adjusting State During Render: Reset cache when session changes.
+  if (sessionId !== prevSessionId) {
+    setPrevSessionId(sessionId);
+    lastDepthRef.current = 0; // Safe to mutate non-rendered ref during gated state update
+    setAllPaths([]);
+  }
+
+  // Adjusting State During Render: Keep track of previous query state.
+  const currentQueryIsNull = query === null;
+  if (currentQueryIsNull !== prevQueryIsNull) {
+    setPrevQueryIsNull(currentQueryIsNull);
+    if (currentQueryIsNull) {
+      lastDepthRef.current = 0; // Safe to mutate non-rendered ref during gated state update
     }
-  }, [query]);
+  }
 
   useEffect(() => {
     if (!sessionId || query === null) return;
