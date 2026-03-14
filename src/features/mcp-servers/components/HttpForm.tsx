@@ -207,7 +207,7 @@ export function HttpForm({
           onClick={() => setShowAdvanced(!showAdvanced)}
           aria-expanded={showAdvanced}
           aria-controls={advancedPanelId}
-          className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none rounded-md"
+          className="flex items-center justify-between w-full px-4 py-2 text-sm font-medium hover:bg-muted/50 transition-colors focus-visible:border-ring focus-visible:ring-ring focus-visible:outline-none rounded-md"
         >
           <span>
             {t('mcpServer.dialog.advancedSettings', 'Advanced Settings')}

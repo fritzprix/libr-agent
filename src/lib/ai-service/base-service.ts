@@ -25,8 +25,7 @@ import { extractMediaContent as extractMedia } from './utils';
 export abstract class BaseAIService<
   TProviderMessage = unknown,
   TProviderTool = unknown,
-> implements IAIService
-{
+> implements IAIService {
   /**
    * The default configuration for the service.
    * @protected
