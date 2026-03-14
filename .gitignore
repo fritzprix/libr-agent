@@ -78,3 +78,4 @@ a42/
 test_results.txt
 test_results_*.txt
 .trace.json
+.idea.md

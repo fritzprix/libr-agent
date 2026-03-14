@@ -1,4 +1,6 @@
-/// Returns a list of environment variables that are safe to pass to MCP servers
+use std::process::Command;
+
+/// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
 pub fn get_isolated_env() -> Vec<(String, String)> {
     let preserved_vars = [
@@ -23,6 +25,9 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
         "TMPDIR",
         "TERM",
         "LANG",
+        "DISPLAY",                  // GUI session (Unix)
+        "WAYLAND_DISPLAY",          // GUI session (Unix)
+        "DBUS_SESSION_BUS_ADDRESS", // GUI session (Unix)
     ];
 
     let mut envs = Vec::new();
@@ -43,4 +48,12 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
     }
 
     envs
+}
+
+/// Scrubs the environment of the given command and applies the safe, isolated whitelist.
+pub fn apply_isolated_env(cmd: &mut Command) {
+    cmd.env_clear();
+    for (k, v) in get_isolated_env() {
+        cmd.env(k, v);
+    }
 }

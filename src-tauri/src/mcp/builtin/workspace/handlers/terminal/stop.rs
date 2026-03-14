@@ -109,22 +109,18 @@ impl WorkspaceServer {
                         use std::process::Command;
                         let mut cmd = Command::new("kill");
                         cmd.arg("-TERM").arg(pid.to_string());
-                        cmd.env_clear();
-                        for (k, v) in crate::utils::env::get_isolated_env() {
-                            cmd.env(k, v);
-                        }
+                        crate::utils::env::apply_isolated_env(&mut cmd);
                         let _ = cmd.output();
                     }
 
                     #[cfg(windows)]
                     {
+                        use std::os::windows::process::CommandExt;
                         use std::process::Command;
                         let mut cmd = Command::new("taskkill");
                         cmd.args(["/PID", &pid.to_string(), "/F"]);
-                        cmd.env_clear();
-                        for (k, v) in crate::utils::env::get_isolated_env() {
-                            cmd.env(k, v);
-                        }
+                        crate::utils::env::apply_isolated_env(&mut cmd);
+                        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
                         let _ = cmd.output();
                     }
                 }
