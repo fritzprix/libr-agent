@@ -14,6 +14,7 @@ import {
 import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { useClipboard } from '@/hooks/useClipboard';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -30,6 +31,7 @@ export function AgentChatHeader({
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
   const [isCopying, setIsCopying] = useState(false);
+  const { copyToClipboard } = useClipboard();
 
   // Planning toggle comes from AgentPlanningContext to keep state in sync
   const handleTogglePlanning = () => {
@@ -53,7 +55,7 @@ export function AgentChatHeader({
     setIsCopying(true);
     try {
       const json = JSON.stringify(messages, null, 2);
-      await navigator.clipboard.writeText(json);
+      await copyToClipboard(json);
       toast.success(t('agent.header.copySuccess'));
     } catch {
       toast.error(t('agent.header.copyError'));
