@@ -5,7 +5,7 @@ import {
     useAgentSessionListState,
     useAgentSessionListActions,
 } from '../AgentSessionListContext';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Assistant } from '@/models/chat';
 
@@ -20,8 +20,8 @@ const mockAssistant: Assistant = {
 };
 
 // Mock Tauri APIs
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('@/lib/backend/core', () => ({
+    safeInvoke: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -97,7 +97,7 @@ describe('AgentSessionListContext', () => {
     });
 
     it('should load sessions on mount', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
             {
                 id: 'session-1',
                 name: 'Test Session',
@@ -116,12 +116,12 @@ describe('AgentSessionListContext', () => {
             expect(result.current.sessions[0].id).toBe('session-1');
         });
 
-        expect(invoke).toHaveBeenCalledWith('agent_get_all_sessions', expect.anything());
+        expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
     });
 
     it('should create a new session', async () => {
         // Mock create response
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
             if (cmd === 'agent_get_all_sessions') return Promise.resolve([]);
             if (cmd === 'get_assistant') {
                 return Promise.resolve({
@@ -164,12 +164,12 @@ describe('AgentSessionListContext', () => {
             expect(result.current.state.sessions[0].name).toBe('New Session');
         });
 
-        expect(invoke).toHaveBeenCalledWith('agent_create_session', expect.anything());
+        expect(safeInvoke).toHaveBeenCalledWith('agent_create_session', expect.anything());
     });
 
     it('should delete a session', async () => {
         // Setup: Load one session
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions') return Promise.resolve([
                 {
                     id: 'session-1',
@@ -199,7 +199,7 @@ describe('AgentSessionListContext', () => {
             expect(result.current.state.sessions).toHaveLength(0);
         });
 
-        expect(invoke).toHaveBeenCalledWith('agent_delete_session', { sessionId: 'session-1' });
+        expect(safeInvoke).toHaveBeenCalledWith('agent_delete_session', { sessionId: 'session-1' });
     });
 });
 
@@ -226,7 +226,7 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         );
 
         // Return a single existing session (paused – simulates crash-recovered child)
-        (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
             {
                 id: 'session-child',
                 name: 'Child Session',
@@ -282,7 +282,7 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
     });
 
     it('patches "busy" → "paused" correctly (e.g. intentional pause)', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockResolvedValue([
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([
             {
                 id: 'session-x',
                 name: 'Running Session',
@@ -322,7 +322,7 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
             expect(agentEventHandler).toBeDefined();
         });
 
-        const invokeCallsBefore = (invoke as ReturnType<typeof vi.fn>).mock.calls.length;
+        const invokeCallsBefore = (safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length;
 
         act(() => {
             agentEventHandler?.({
@@ -335,7 +335,7 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
             await new Promise((r) => setTimeout(r, 50));
         });
 
-        expect((invoke as ReturnType<typeof vi.fn>).mock.calls.length).toBe(invokeCallsBefore);
+        expect((safeInvoke as ReturnType<typeof vi.fn>).mock.calls.length).toBe(invokeCallsBefore);
 
         // Status IS updated without a reload
         expect(result.current.sessions[0].status).toBe('busy');
@@ -420,7 +420,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
     // ── deleteSession (cascade) ──────────────────────────────────────────────
 
     it('deleteSession: BFS removes parent AND direct child from UI', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions')
                 return Promise.resolve([
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
@@ -443,11 +443,11 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
 
         // Both parent and child must be removed
         await waitFor(() => expect(result.current.state.sessions).toHaveLength(0));
-        expect(invoke).toHaveBeenCalledWith('agent_delete_session', { sessionId: 'parent' });
+        expect(safeInvoke).toHaveBeenCalledWith('agent_delete_session', { sessionId: 'parent' });
     });
 
     it('deleteSession: BFS removes entire 3-level tree (grandparent → parent → child)', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions')
                 return Promise.resolve([
                     { id: 'gp', name: 'Grandparent', status: 'idle', createdAt: Date.now() },
@@ -476,7 +476,7 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
     // ── deleteSessionOnly (orphan) ───────────────────────────────────────────
 
     it('deleteSessionOnly: removes parent, direct child becomes top-level (parentSessionId cleared)', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions')
                 return Promise.resolve([
                     { id: 'parent', name: 'Parent', status: 'idle', createdAt: Date.now() },
@@ -503,14 +503,14 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
         expect(remaining.id).toBe('child');
         // Direct child must be orphaned (no parentSessionId)
         expect(remaining.parentSessionId).toBeUndefined();
-        expect(invoke).toHaveBeenCalledWith('agent_delete_session_only', { sessionId: 'parent' });
+        expect(safeInvoke).toHaveBeenCalledWith('agent_delete_session_only', { sessionId: 'parent' });
     });
 
     it('deleteSessionOnly: grandchild still linked to its own parent after orphan', async () => {
         // Tree: gp → p → c. Delete p with deleteSessionOnly.
         // Expected: gp gone (not deleted here), c.parentSessionId still 'p' (unchanged – p was NOT deleted here)
         // More precisely: only 'p' is removed; 'gp' and 'c' remain; 'c.parentSessionId' stays 'p'
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions')
                 return Promise.resolve([
                     { id: 'gp', name: 'Grandparent', status: 'idle', createdAt: Date.now() },
@@ -577,7 +577,7 @@ describe('AgentSessionListContext – toggleBookmark', () => {
     });
 
     function setupWithSessions(sessions: ReturnType<typeof makeSession>[]) {
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions') return Promise.resolve(sessions);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.resolve(undefined);
             return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
@@ -599,7 +599,7 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         });
 
         expect(result.current.state.sessions[0].isBookmarked).toBe(true);
-        expect(invoke).toHaveBeenCalledWith(
+        expect(safeInvoke).toHaveBeenCalledWith(
             'agent_toggle_session_bookmark',
             expect.objectContaining({ sessionId: 's1', bookmarked: true }),
         );
@@ -620,14 +620,14 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         });
 
         expect(result.current.state.sessions[0].isBookmarked).toBe(false);
-        expect(invoke).toHaveBeenCalledWith(
+        expect(safeInvoke).toHaveBeenCalledWith(
             'agent_toggle_session_bookmark',
             expect.objectContaining({ sessionId: 's1', bookmarked: false }),
         );
     });
 
     it('reverts optimistic update when IPC call fails', async () => {
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd) => {
             if (cmd === 'agent_get_all_sessions') return Promise.resolve([makeSession('s1', false)]);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.reject(new Error('network error'));
             return Promise.reject(new Error(`Unexpected cmd: ${cmd}`));
@@ -654,7 +654,7 @@ describe('AgentSessionListContext – toggleBookmark', () => {
         setupWithSessions([makeSession('s1', false)]);
 
         const invokeArgs: unknown[] = [];
-        (invoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation((cmd, args) => {
             invokeArgs.push({ cmd, args });
             if (cmd === 'agent_get_all_sessions') return Promise.resolve([makeSession('s1', false)]);
             if (cmd === 'agent_toggle_session_bookmark') return Promise.resolve(undefined);

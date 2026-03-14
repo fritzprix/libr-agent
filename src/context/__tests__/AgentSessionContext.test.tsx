@@ -5,7 +5,7 @@ import {
     useAgentSessionState,
 } from '../AgentSessionContext';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import * as messagesBackend from '@/lib/backend/messages';
 import type { Message } from '@/models/chat';
 
@@ -14,8 +14,8 @@ vi.mock('@tauri-apps/api/event', () => ({
     listen: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn(),
+vi.mock('@/lib/backend/core', () => ({
+    safeInvoke: vi.fn(),
 }));
 
 // Mock logger
@@ -64,12 +64,13 @@ describe('AgentSessionContext (Local)', () => {
         });
 
         // Mock get_session interaction for initialization
-        (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue({
             id: TEST_SESSION_ID,
             name: 'Test Session',
             status: 'idle',
-            created_at: Date.now(),
-            updated_at: Date.now(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            yoloMode: false,
         });
     });
 
@@ -90,7 +91,7 @@ describe('AgentSessionContext (Local)', () => {
         expect(result.current.workflowStatus).toBe('idle');
         expect(result.current.messages).toEqual([]);
 
-        expect(invoke).toHaveBeenCalledWith('agent_get_session', { sessionId: TEST_SESSION_ID });
+        expect(safeInvoke).toHaveBeenCalledWith('agent_get_session', { sessionId: TEST_SESSION_ID });
     });
 
     it('should register event listener for the session', async () => {

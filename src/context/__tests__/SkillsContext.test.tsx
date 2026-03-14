@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import { SkillsProvider, useSkills } from '../SkillsContext';
 
 // Mock Tauri APIs
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('@/lib/backend/core', () => ({
+  safeInvoke: vi.fn(),
 }));
 
 // Mock useSettings
@@ -23,11 +23,11 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-import { invoke } from '@tauri-apps/api/core';
+import { safeInvoke } from '@/lib/backend/core';
 import { useSettings } from '@/hooks/use-settings';
 import type { SkillMetadata } from '@/types/skills';
 
-const mockInvoke = vi.mocked(invoke);
+const mockInvoke = vi.mocked(safeInvoke);
 const mockUseSettings = vi.mocked(useSettings);
 
 const MOCK_SKILLS: SkillMetadata[] = [
