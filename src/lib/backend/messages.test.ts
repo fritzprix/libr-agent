@@ -1,6 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { safeInvoke } from './core';
-import { getMessagesPageForSession, upsertMessages, upsertMessage, deleteMessage, deleteAllMessagesForSession, searchMessages } from './messages';
+import {
+  getMessagesPageForSession,
+  upsertMessages,
+  upsertMessage,
+  deleteMessage,
+  deleteAllMessagesForSession,
+  searchMessages,
+} from './messages';
+import type { Message, RustMessage } from '@/models/chat';
 
 vi.mock('./core', () => ({
   safeInvoke: vi.fn(),
@@ -11,13 +19,21 @@ describe('Message Management Service', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe('getMessagesPageForSession', () => {
     it('should throw if sessionId is missing', async () => {
-      await expect(getMessagesPageForSession('', 'thread-1', 1, 10)).rejects.toThrow('sessionId and threadId are required');
+      await expect(
+        getMessagesPageForSession('', 'thread-1', 1, 10),
+      ).rejects.toThrow('sessionId and threadId are required');
     });
 
     it('should throw if threadId is missing', async () => {
-      await expect(getMessagesPageForSession('session-1', '', 1, 10)).rejects.toThrow('sessionId and threadId are required');
+      await expect(
+        getMessagesPageForSession('session-1', '', 1, 10),
+      ).rejects.toThrow('sessionId and threadId are required');
     });
 
     it('should fetch and deserialize messages successfully', async () => {
@@ -30,7 +46,7 @@ describe('Message Management Service', () => {
             sessionId: 'session-1',
             threadId: 'thread-1',
             role: 'assistant',
-            content: 'Hello World',
+            content: [{ type: 'text', text: 'Hello World' }],
             createdAt: mockTimestamp,
             updatedAt: mockTimestamp,
             isStreaming: false,
@@ -54,17 +70,17 @@ describe('Message Management Service', () => {
                 },
               },
             ],
-          },
+          } satisfies RustMessage,
           {
             id: 'msg-2',
             sessionId: 'session-1',
-            threadId: null, // should fall back to sessionId
+            threadId: null as any, // should fall back to sessionId
             role: 'user',
-            content: 'How are you?',
+            content: [{ type: 'text', text: 'How are you?' }],
             createdAt: mockTimestamp,
             updatedAt: mockTimestamp,
             toolCallId: 'tc-1',
-          }
+          } as any as RustMessage,
         ],
         totalCount: 2,
         page: 1,
@@ -74,7 +90,12 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession('session-1', 'thread-1', 1, 10);
+      const result = await getMessagesPageForSession(
+        'session-1',
+        'thread-1',
+        1,
+        10,
+      );
 
       expect(safeInvoke).toHaveBeenCalledWith('messages_get_page', {
         sessionId: 'session-1',
@@ -87,54 +108,60 @@ describe('Message Management Service', () => {
       expect(result.totalCount).toBe(2);
 
       // Verify deserialization mappings of msg-1
-      expect(result.items[0]).toEqual(expect.objectContaining({
-        id: 'msg-1',
-        sessionId: 'session-1',
-        threadId: 'thread-1',
-        role: 'assistant',
-        content: 'Hello World',
-        isStreaming: false,
-        thinking: 'A thinking process',
-        thinkingSignature: 'sig',
-        assistantId: 'assist-1',
-        source: 'assistant',
-        createdAt: new Date(mockTimestamp),
-        updatedAt: new Date(mockTimestamp),
-        usage: mockRustResponse.items[0].usage,
-      }));
-      expect(result.items[0].tool_calls).toEqual([{
-        id: 'tc-1',
-        type: 'function',
-        function: {
-          name: 'getWeather',
-          arguments: '{"location": "Tokyo"}',
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          id: 'msg-1',
+          sessionId: 'session-1',
+          threadId: 'thread-1',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hello World' }],
+          isStreaming: false,
+          thinking: 'A thinking process',
+          thinkingSignature: 'sig',
+          assistantId: 'assist-1',
+          source: 'assistant',
+          createdAt: new Date(mockTimestamp),
+          updatedAt: new Date(mockTimestamp),
+          usage: mockRustResponse.items[0].usage,
+        }),
+      );
+      expect(result.items[0].tool_calls).toEqual([
+        {
+          id: 'tc-1',
+          type: 'function',
+          function: {
+            name: 'getWeather',
+            arguments: '{"location": "Tokyo"}',
+          },
         },
-      }]);
+      ]);
 
       // Verify fallback and optional missing properties of msg-2
-      expect(result.items[1]).toEqual(expect.objectContaining({
-        id: 'msg-2',
-        sessionId: 'session-1',
-        threadId: 'session-1', // fallback logic
-        role: 'user',
-        content: 'How are you?',
-        tool_call_id: 'tc-1',
-        createdAt: new Date(mockTimestamp),
-        updatedAt: new Date(mockTimestamp),
-      }));
+      expect(result.items[1]).toEqual(
+        expect.objectContaining({
+          id: 'msg-2',
+          sessionId: 'session-1',
+          threadId: 'session-1', // fallback logic
+          role: 'user',
+          content: [{ type: 'text', text: 'How are you?' }],
+          tool_call_id: 'tc-1',
+          createdAt: new Date(mockTimestamp),
+          updatedAt: new Date(mockTimestamp),
+        }),
+      );
       expect(result.items[1].tool_calls).toBeUndefined();
       expect(result.items[1].isStreaming).toBeUndefined();
     });
 
     it('should map tool_calls without explicit type to type "function"', async () => {
-       const mockRustResponse = {
+      const mockRustResponse = {
         items: [
           {
             id: 'msg-3',
             sessionId: 'session-1',
             threadId: 'thread-1',
             role: 'assistant',
-            content: '',
+            content: [],
             createdAt: Date.now(),
             updatedAt: Date.now(),
             toolCalls: [
@@ -145,9 +172,9 @@ describe('Message Management Service', () => {
                   name: 'test',
                   arguments: '{}',
                 },
-              },
+              } as any,
             ],
-          }
+          } as any as RustMessage,
         ],
         totalCount: 1,
         page: 1,
@@ -156,7 +183,12 @@ describe('Message Management Service', () => {
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(mockRustResponse);
 
-      const result = await getMessagesPageForSession('session-1', 'thread-1', 1, 10);
+      const result = await getMessagesPageForSession(
+        'session-1',
+        'thread-1',
+        1,
+        10,
+      );
       expect(result.items[0].tool_calls?.[0].type).toBe('function');
     });
   });
@@ -164,27 +196,58 @@ describe('Message Management Service', () => {
   describe('upsertMessages', () => {
     it('should throw if any message is missing a sessionId', async () => {
       const msgs = [
-        { id: '1', role: 'user', content: 'hello', threadId: 'thread-1', createdAt: new Date() },
-        { id: '2', role: 'assistant', content: 'hi', threadId: 'thread-1', createdAt: new Date() }
-      ] as any[];
+        {
+          id: '1',
+          role: 'user',
+          content: [],
+          threadId: 'thread-1',
+          createdAt: new Date(),
+        },
+        {
+          id: '2',
+          role: 'assistant',
+          content: [],
+          threadId: 'thread-1',
+          createdAt: new Date(),
+        },
+      ] as any as Message[];
 
-      await expect(upsertMessages(msgs)).rejects.toThrow('Cannot upsert message: missing or empty sessionId for message 1');
+      await expect(upsertMessages(msgs)).rejects.toThrow(
+        'Cannot upsert message: missing or empty sessionId for message 1',
+      );
     });
 
     it('should throw if any message has empty sessionId', async () => {
       const msgs = [
-        { id: '1', role: 'user', content: 'hello', sessionId: ' ', threadId: 'thread-1', createdAt: new Date() }
-      ] as any[];
+        {
+          id: '1',
+          role: 'user',
+          content: [],
+          sessionId: ' ',
+          threadId: 'thread-1',
+          createdAt: new Date(),
+        },
+      ] as any as Message[];
 
-      await expect(upsertMessages(msgs)).rejects.toThrow('Cannot upsert message: missing or empty sessionId for message 1');
+      await expect(upsertMessages(msgs)).rejects.toThrow(
+        'Cannot upsert message: missing or empty sessionId for message 1',
+      );
     });
 
     it('should throw if any message is missing a threadId', async () => {
       const msgs = [
-        { id: '2', role: 'user', content: 'hello', sessionId: 'sess-1', createdAt: new Date() }
-      ] as any[];
+        {
+          id: '2',
+          role: 'user',
+          content: [],
+          sessionId: 'sess-1',
+          createdAt: new Date(),
+        },
+      ] as any as Message[];
 
-      await expect(upsertMessages(msgs)).rejects.toThrow('Cannot upsert message: missing or empty threadId for message 2');
+      await expect(upsertMessages(msgs)).rejects.toThrow(
+        'Cannot upsert message: missing or empty threadId for message 2',
+      );
     });
 
     it('should properly map frontend message arrays to rust structure', async () => {
@@ -195,49 +258,53 @@ describe('Message Management Service', () => {
           sessionId: 'sess-1',
           threadId: 'thread-1',
           role: 'user',
-          content: 'hello',
-          tool_calls: [
-            { id: 'call_1', function: { name: 'test', arguments: '{}' } }
-          ],
+          content: [{ type: 'text', text: 'hello' }],
+          tool_calls: [{ id: 'call_1', function: { name: 'test', arguments: '{}' } }],
           tool_call_id: 'call_1',
           isStreaming: true,
           thinking: 'hmmm',
           thinkingSignature: 'sig',
           assistantId: 'asst-1',
           attachments: [],
-          tool_use: null,
+          tool_use: undefined,
           createdAt: mockDate,
           updatedAt: mockDate,
           source: 'ui',
-          error: 'some err',
-        }
-      ] as any[];
+          error: undefined,
+        } satisfies Message,
+      ];
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
       await upsertMessages(msgs);
 
       expect(safeInvoke).toHaveBeenCalledWith('messages_upsert_many', {
-        messages: [{
-          id: '1',
-          sessionId: 'sess-1',
-          role: 'user',
-          content: 'hello',
-          toolCalls: [
-            { id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }
-          ],
-          toolCallId: 'call_1',
-          isStreaming: true,
-          thinking: 'hmmm',
-          thinkingSignature: 'sig',
-          assistantId: 'asst-1',
-          attachments: [],
-          toolUse: null,
-          createdAt: mockDate.getTime(),
-          updatedAt: mockDate.getTime(),
-          source: 'ui',
-          error: 'some err',
-        }]
+        messages: [
+          {
+            id: '1',
+            sessionId: 'sess-1',
+            role: 'user',
+            content: [{ type: 'text', text: 'hello' }],
+            toolCalls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: { name: 'test', arguments: '{}' },
+              },
+            ],
+            toolCallId: 'call_1',
+            isStreaming: true,
+            thinking: 'hmmm',
+            thinkingSignature: 'sig',
+            assistantId: 'asst-1',
+            attachments: [],
+            toolUse: null,
+            createdAt: mockDate.getTime(),
+            updatedAt: mockDate.getTime(),
+            source: 'ui',
+            error: null,
+          },
+        ],
       });
     });
 
@@ -252,30 +319,38 @@ describe('Message Management Service', () => {
           sessionId: 'sess-1',
           threadId: 'thread-1',
           role: 'user',
-          content: 'hello',
-        }
-      ] as any[];
+          content: [],
+        } as any as Message,
+      ];
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
       await upsertMessages(msgs);
 
       expect(safeInvoke).toHaveBeenCalledWith('messages_upsert_many', {
-        messages: [expect.objectContaining({
-          createdAt: now,
-          updatedAt: now,
-        })]
+        messages: [
+          expect.objectContaining({
+            createdAt: now,
+            updatedAt: now,
+          }),
+        ],
       });
-
-      vi.useRealTimers();
     });
   });
 
   describe('upsertMessage', () => {
     it('should throw if message is missing a sessionId', async () => {
-      const msg = { id: '1', role: 'user', content: 'hello', threadId: 'thread-1', createdAt: new Date() } as any;
+      const msg = {
+        id: '1',
+        role: 'user',
+        content: [],
+        threadId: 'thread-1',
+        createdAt: new Date(),
+      } as any as Message;
 
-      await expect(upsertMessage(msg)).rejects.toThrow('Cannot upsert message: missing or empty sessionId for message 1');
+      await expect(upsertMessage(msg)).rejects.toThrow(
+        'Cannot upsert message: missing or empty sessionId for message 1',
+      );
     });
 
     it('should map frontend message to rust structure', async () => {
@@ -285,13 +360,17 @@ describe('Message Management Service', () => {
         sessionId: 'sess-1',
         threadId: 'thread-1',
         role: 'user',
-        content: 'hello',
+        content: [{ type: 'text', text: 'hello' }],
         tool_calls: [
-          { id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }
+          {
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'test', arguments: '{}' },
+          },
         ],
         createdAt: mockDate,
         updatedAt: mockDate,
-      } as any;
+      } as any as Message;
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
@@ -302,13 +381,17 @@ describe('Message Management Service', () => {
           id: '1',
           sessionId: 'sess-1',
           role: 'user',
-          content: 'hello',
+          content: [{ type: 'text', text: 'hello' }],
           toolCalls: [
-            { id: 'call_1', type: 'function', function: { name: 'test', arguments: '{}' } }
+            {
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'test', arguments: '{}' },
+            },
           ],
           createdAt: mockDate.getTime(),
           updatedAt: mockDate.getTime(),
-        })
+        }),
       });
     });
 
@@ -322,8 +405,8 @@ describe('Message Management Service', () => {
         sessionId: 'sess-1',
         threadId: 'thread-1',
         role: 'user',
-        content: 'hello',
-      } as any;
+        content: [],
+      } as any as Message;
 
       vi.mocked(safeInvoke).mockResolvedValueOnce(undefined);
 
@@ -333,10 +416,8 @@ describe('Message Management Service', () => {
         message: expect.objectContaining({
           createdAt: now,
           updatedAt: now,
-        })
+        }),
       });
-
-      vi.useRealTimers();
     });
   });
 
@@ -346,7 +427,9 @@ describe('Message Management Service', () => {
 
       await deleteMessage('msg-1');
 
-      expect(safeInvoke).toHaveBeenCalledWith('messages_delete', { messageId: 'msg-1' });
+      expect(safeInvoke).toHaveBeenCalledWith('messages_delete', {
+        messageId: 'msg-1',
+      });
     });
   });
 
@@ -356,7 +439,9 @@ describe('Message Management Service', () => {
 
       await deleteAllMessagesForSession('sess-1');
 
-      expect(safeInvoke).toHaveBeenCalledWith('messages_delete_all_for_session', { sessionId: 'sess-1' });
+      expect(safeInvoke).toHaveBeenCalledWith('messages_delete_all_for_session', {
+        sessionId: 'sess-1',
+      });
     });
   });
 
@@ -372,7 +457,7 @@ describe('Message Management Service', () => {
             score: 0.95,
             snippet: 'hello world',
             createdAt: mockTimestamp,
-          }
+          },
         ],
         totalCount: 1,
         page: 1,
@@ -422,7 +507,7 @@ describe('Message Management Service', () => {
             score: 0.5,
             snippet: null,
             createdAt: 'invalid-date', // string instead of number
-          }
+          },
         ],
         totalCount: 1,
         page: 1,
