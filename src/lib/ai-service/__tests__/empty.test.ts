@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { EmptyAIService } from '../empty';
 import { AIServiceProvider, AIServiceError } from '../types';
 import { MCPTool } from '@/lib/mcp';

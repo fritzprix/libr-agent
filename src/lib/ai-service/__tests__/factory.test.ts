@@ -10,7 +10,6 @@ import { CerebrasService } from '../cerebras';
 import { OllamaService } from '../ollama';
 import { OpenRouterService } from '../openrouter';
 import { EmptyAIService } from '../empty';
-import { LLMConfigManager } from '../../llm-config-manager';
 
 // Mock the config manager to ensure reliable API key requirements
 vi.mock('../../llm-config-manager', () => {
