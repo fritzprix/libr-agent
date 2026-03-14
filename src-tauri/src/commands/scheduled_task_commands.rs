@@ -2,9 +2,9 @@
 
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::services::ScheduledTaskService;
+use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
 use tauri::command;
-use crate::state::get_scheduled_task_repository;
 
 /// Data-transfer object for scheduled tasks returned to the frontend
 #[derive(Debug, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ pub async fn create_scheduled_task(
     request: CreateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
     ScheduledTaskService::create_scheduled_task(
-        &*get_scheduled_task_repository(),
+        get_scheduled_task_repository(),
         request.name,
         request.cron_expression,
         request.assistant_id,
@@ -84,15 +84,18 @@ pub async fn create_scheduled_task(
 pub async fn list_scheduled_tasks(
     assistant_id: Option<String>,
 ) -> Result<Vec<ScheduledTaskDto>, String> {
-    ScheduledTaskService::list_scheduled_tasks(&*get_scheduled_task_repository(), assistant_id.as_deref())
-        .await
-        .map(|v| v.into_iter().map(ScheduledTaskDto::from).collect())
+    ScheduledTaskService::list_scheduled_tasks(
+        get_scheduled_task_repository(),
+        assistant_id.as_deref(),
+    )
+    .await
+    .map(|v| v.into_iter().map(ScheduledTaskDto::from).collect())
 }
 
 /// Get a single scheduled task by ID
 #[command]
 pub async fn get_scheduled_task(id: String) -> Result<Option<ScheduledTaskDto>, String> {
-    ScheduledTaskService::get_scheduled_task(&*get_scheduled_task_repository(), &id)
+    ScheduledTaskService::get_scheduled_task(get_scheduled_task_repository(), &id)
         .await
         .map(|opt| opt.map(ScheduledTaskDto::from))
 }
@@ -104,7 +107,7 @@ pub async fn update_scheduled_task(
     request: UpdateScheduledTaskRequest,
 ) -> Result<ScheduledTaskDto, String> {
     ScheduledTaskService::update_scheduled_task(
-        &*get_scheduled_task_repository(),
+        get_scheduled_task_repository(),
         &id,
         request.name,
         request.cron_expression,
@@ -118,7 +121,7 @@ pub async fn update_scheduled_task(
 /// Toggle enabled/disabled state of a scheduled task
 #[command]
 pub async fn toggle_scheduled_task(id: String, enabled: bool) -> Result<ScheduledTaskDto, String> {
-    ScheduledTaskService::toggle_scheduled_task(&*get_scheduled_task_repository(), &id, enabled)
+    ScheduledTaskService::toggle_scheduled_task(get_scheduled_task_repository(), &id, enabled)
         .await
         .map(ScheduledTaskDto::from)
 }
@@ -126,5 +129,5 @@ pub async fn toggle_scheduled_task(id: String, enabled: bool) -> Result<Schedule
 /// Delete a scheduled task
 #[command]
 pub async fn delete_scheduled_task(id: String) -> Result<(), String> {
-    ScheduledTaskService::delete_scheduled_task(&*get_scheduled_task_repository(), &id).await
+    ScheduledTaskService::delete_scheduled_task(get_scheduled_task_repository(), &id).await
 }

@@ -15,7 +15,11 @@ use crate::mcp::{MCPServerManager, MCPTool};
 /// Returns the number of tools discovered and their names.
 #[tauri::command]
 pub async fn probe_mcp_server(server_id: String) -> Result<Vec<MCPTool>, String> {
-    crate::services::mcp_server_service::McpServerService::probe_server(&server_id).await
+    crate::services::mcp_server_service::McpServerService::probe_server(
+        crate::state::get_mcp_server_repository(),
+        &server_id,
+    )
+    .await
 }
 
 /// Validates the JSON schema of a single MCP tool.

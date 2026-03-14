@@ -39,13 +39,14 @@ pub struct PlaybookService;
 
 impl PlaybookService {
     pub async fn create_playbook(
+        repo: &dyn PlaybookRepository,
+        session_repo: &dyn SessionRepository,
         id: String,
         session_id: &str,
         goal: String,
         workflow: Value,
     ) -> Result<PlaybookModel, String> {
-        let repo = crate::state::get_playbook_repository();
-        let assistant_id = Self::get_assistant_id_from_session(session_id).await?;
+        let assistant_id = Self::get_assistant_id_from_session(session_repo, session_id).await?;
 
         repo.create_playbook(id, assistant_id, goal, workflow.to_string())
             .await
@@ -53,13 +54,14 @@ impl PlaybookService {
     }
 
     pub async fn update_playbook(
+        repo: &dyn PlaybookRepository,
+        session_repo: &dyn SessionRepository,
         id: &str,
         session_id: &str,
         goal: Option<String>,
         workflow: Option<Value>,
     ) -> Result<PlaybookModel, String> {
-        let repo = crate::state::get_playbook_repository();
-        let assistant_id = Self::get_assistant_id_from_session(session_id).await?;
+        let assistant_id = Self::get_assistant_id_from_session(session_repo, session_id).await?;
 
         repo.update_playbook(
             id,
@@ -72,29 +74,32 @@ impl PlaybookService {
         .map_err(|e| format!("Failed to update playbook: {}", e))
     }
 
-    pub async fn delete_playbook(id: &str, assistant_id: &str) -> Result<(), String> {
-        let repo = crate::state::get_playbook_repository();
+    pub async fn delete_playbook(
+        repo: &dyn PlaybookRepository,
+        id: &str,
+        assistant_id: &str,
+    ) -> Result<(), String> {
         repo.delete_playbook(id, assistant_id)
             .await
             .map_err(|e| format!("Failed to delete playbook: {}", e))
     }
 
     pub async fn get_playbook(
+        repo: &dyn PlaybookRepository,
         id: &str,
         assistant_id: &str,
     ) -> Result<Option<PlaybookModel>, String> {
-        let repo = crate::state::get_playbook_repository();
         repo.get_playbook(id, assistant_id)
             .await
             .map_err(|e| format!("Failed to get playbook: {}", e))
     }
 
     pub async fn toggle_playbook_bookmark(
+        repo: &dyn PlaybookRepository,
         id: &str,
         assistant_id: &str,
         bookmarked: bool,
     ) -> Result<(), String> {
-        let repo = crate::state::get_playbook_repository();
         repo.update_playbook(id, assistant_id, None, None, Some(bookmarked))
             .await
             .map_err(|e| format!("Failed to toggle bookmark: {}", e))?;
@@ -102,8 +107,11 @@ impl PlaybookService {
     }
 
     /// Helper to get assistant_id from session
-    pub async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
-        let session_model = crate::state::get_session_repository()
+    pub async fn get_assistant_id_from_session(
+        session_repo: &dyn SessionRepository,
+        session_id: &str,
+    ) -> Result<String, String> {
+        let session_model = session_repo
             .get_session(session_id)
             .await
             .map_err(|e| format!("Failed to query session: {}", e))?
@@ -132,12 +140,11 @@ impl PlaybookService {
     }
 
     pub async fn list_playbooks(
+        repo: &dyn PlaybookRepository,
         assistant_id: String,
         sort_by: Option<String>,
         bookmark_first: Option<bool>,
     ) -> Result<Vec<PlaybookDto>, String> {
-        let repo = crate::state::get_playbook_repository();
-
         let assistant_id_filter = if assistant_id.is_empty() {
             None
         } else {
