@@ -1,39 +1,60 @@
-import { extractMedia } from '@/lib/ai-service/utils';
-import { AIServiceError } from '@/lib/error-contract';
+import { extractMediaContent } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
-import type {
-  AIServiceConfig,
-  AIServiceProvider,
-  IAIService,
-  ModelInfo,
-  SamplingOptions,
-  SamplingResponse,
+import {
+  type AIServiceConfig,
+  type AIServiceProvider,
+  AIServiceError,
+  type IAIService,
+  type ModelInfo,
+  type SamplingOptions,
+  type SamplingResponse,
 } from './types';
 import type { Message } from '@/models/chat';
 
 /**
- * Base class for AI services. Provides common functionality for interacting with
- * various AI providers.
+ * An abstract base class that provides common functionality for all AI services.
+ * It implements the `IAIService` interface and handles API key validation,
+ * message validation, retry logic, and configuration merging.
  * @template TProviderMessage The type of message objects used by the provider's API.
  * @template TProviderTool The type of tool objects used by the provider's API.
  */
 export abstract class BaseAIService<TProviderMessage, TProviderTool>
   implements IAIService
 {
-  protected defaultConfig: AIServiceConfig;
-  protected abortController: AbortController;
-  protected logger = getLogger(this.getProvider());
+  /**
+   * The default configuration for the service.
+   * @protected
+   */
+  protected defaultConfig: AIServiceConfig = {
+    timeout: 30000,
+    maxRetries: 3,
+    retryDelay: 1000,
+    maxTokens: 8192,
+  };
 
   /**
-   * Constructs a new `BaseAIService` instance.
+   * A logger instance for the base service.
+   * @protected
+   */
+  protected logger = getLogger(this.getProvider());
+
+  // Instance-level AbortController for stream cancellation
+  protected abortController: AbortController = new AbortController();
+
+  /**
+   * Initializes a new instance of the `BaseAIService`.
+   * @param apiKey The API key for the service.
    * @param config Optional configuration to override the defaults.
    */
-  constructor(config?: AIServiceConfig) {
-    this.defaultConfig = config || llmConfigManager.getDefaultConfig();
-    this.abortController = new AbortController();
+  constructor(
+    protected apiKey: string,
+    protected config?: AIServiceConfig,
+  ) {
+    this.validateApiKey(apiKey);
+    this.defaultConfig = { ...this.defaultConfig, ...config };
   }
 
   /**
@@ -41,14 +62,17 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param config The new default configuration.
    */
   setDefaultConfig(config: AIServiceConfig): void {
-    this.defaultConfig = config;
+    this.defaultConfig = { ...this.defaultConfig, ...config };
   }
 
   /**
    * Cancels any ongoing streaming request.
    */
   cancel(): void {
-    this.abortController.abort();
+    if (!this.abortController.signal.aborted) {
+      this.logger.info('Cancelling active stream');
+      this.abortController.abort();
+    }
     // Re-create the AbortController for the next request
     this.abortController = new AbortController();
   }
@@ -63,19 +87,62 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   }
 
   /**
+   * Validates the provided API key.
+   * @param apiKey The API key to validate.
+   * @throws `AIServiceError` if the API key is invalid.
+   * @protected
+   */
+  protected validateApiKey(apiKey: string): void {
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+      throw new AIServiceError('Invalid API key provided', this.getProvider());
+    }
+  }
+
+  /**
+   * Common validation logic for messages.
+   * @param messages The messages to validate.
+   * @throws `AIServiceError` if validation fails.
+   * @protected
+   */
+  protected validateMessages(messages: Message[]): void {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      throw new AIServiceError(
+        'Messages array is empty or undefined',
+        this.getProvider(),
+      );
+    }
+    messages.forEach((message) => {
+      if (!message.id || typeof message.id !== 'string') {
+        throw new Error('Message must have a valid id');
+      }
+      if (
+        (!message.content &&
+          (message.role === 'user' || message.role === 'system')) ||
+        (typeof message.content !== 'string' && !Array.isArray(message.content))
+      ) {
+        throw new Error('Message must have valid content');
+      }
+      if (!['user', 'assistant', 'system', 'tool'].includes(message.role)) {
+        throw new Error('Message must have a valid role');
+      }
+    });
+  }
+
+  /**
    * Executes a function with retry logic.
+   * @template T The type of the result of the operation.
    * @param fn The function to execute.
    * @returns A promise that resolves to the result of the function.
    * @protected
    */
   protected async withRetry<T>(fn: () => Promise<T>): Promise<T> {
     const maxRetries = this.defaultConfig.maxRetries ?? 3;
-    let lastError: any;
+    let lastError: unknown;
 
     for (let i = 0; i <= maxRetries; i++) {
       try {
         return await fn();
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
 
         // Don't retry on cancellation
@@ -85,7 +152,8 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
 
         // Only retry on certain errors (e.g., rate limits, network issues)
         if (this.shouldRetry(error)) {
-          const delay = Math.pow(2, i) * 1000;
+          const delay =
+            Math.pow(2, i) * (this.defaultConfig.retryDelay ?? 1000);
           this.logger.warn(
             `Retrying request (${i + 1}/${maxRetries}) after ${delay}ms...`,
           );
@@ -96,7 +164,20 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
       }
     }
 
-    throw lastError;
+    if (lastError instanceof Error) {
+      throw new AIServiceError(
+        lastError.message,
+        this.getProvider(),
+        undefined,
+        lastError,
+      );
+    }
+    throw new AIServiceError(
+      String(lastError),
+      this.getProvider(),
+      undefined,
+      undefined,
+    );
   }
 
   /**
@@ -105,27 +186,80 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @returns `true` if the request should be retried, `false` otherwise.
    * @protected
    */
-  protected shouldRetry(error: any): boolean {
+  protected shouldRetry(error: unknown): boolean {
     // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
-    if (error.status === 429 || (error.status >= 500 && error.status <= 599)) {
+    const status = (error as { status?: number })?.status;
+    if (status === 429 || (status >= 500 && status <= 599)) {
       return true;
     }
     return false;
   }
 
   /**
-   * Common validation logic for messages.
-   * @param messages The messages to validate.
-   * @throws `AIServiceError` if validation fails.
+   * Processes an array of `MCPContent` parts into a single string,
+   * extracting only the text content.
+   * @param content The array of `MCPContent` to process.
+   * @returns A single string concatenating all text parts.
    * @protected
    */
-  protected validateMessages(messages: Message[]): void {
-    if (!messages || messages.length === 0) {
-      throw new AIServiceError(
-        'Messages array is empty or undefined',
-        this.getProvider(),
-      );
-    }
+  protected processMessageContent(content: MCPContent[]): string {
+    // Extracts only the text from the MCPContent array
+    return content
+      .filter((item) => item.type === 'text')
+      .map((item) => (item as { text: string }).text)
+      .join('\n');
+  }
+
+  /**
+   * Processes an array of `MCPContent` parts for a multimodal LLM,
+   * handling both text and image content.
+   * @param content The array of `MCPContent` to process.
+   * @returns An array of objects suitable for a multimodal API,
+   *          containing either text or image data.
+   * @protected
+   */
+  protected processMultiModalContent(content: MCPContent[]): Array<{
+    type: string;
+    text?: string;
+    image?: string;
+    audio?: string;
+    mimeType?: string;
+  }> {
+    type MediaItem = {
+      data?: string;
+      mimeType?: string;
+      source?: { data?: string; uri?: string; mimeType?: string };
+    };
+    return content.map((item) => {
+      switch (item.type) {
+        case 'text':
+          return { type: 'text', text: (item as { text: string }).text };
+        case 'image':
+          return {
+            type: 'image',
+            image:
+              (item as MediaItem).data ||
+              (item as MediaItem).source?.data ||
+              (item as MediaItem).source?.uri,
+            mimeType:
+              (item as MediaItem).mimeType ||
+              (item as MediaItem).source?.mimeType,
+          };
+        case 'audio':
+          return {
+            type: 'audio',
+            audio:
+              (item as MediaItem).data ||
+              (item as MediaItem).source?.data ||
+              (item as MediaItem).source?.uri,
+            mimeType:
+              (item as MediaItem).mimeType ||
+              (item as MediaItem).source?.mimeType,
+          };
+        default:
+          return { type: 'text', text: `[${item.type}]` };
+      }
+    });
   }
 
   /**
@@ -243,6 +377,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
     this.validateMessages(messages);
     const config = this.mergeConfig(options);
 
+    // Re-initialize AbortController for this call
     this.abortController = new AbortController();
 
     const tools = options.availableTools
@@ -279,7 +414,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @protected
    */
   protected extractMediaContent(content: MCPContent[]): MCPContent[] {
-    return extractMedia(content);
+    return extractMediaContent(content);
   }
 
   /**
@@ -499,7 +634,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * cutting costs.
    *
    * @param messages The messages to compress.
-   * @param options Optional model name and service configuration overrides.
+   * @param options Optional model name, config, system prompt, context, and tools.
    * @param options.modelName The name of the model.
    * @param options.config Optional configuration for the service.
    * @returns A promise that resolves to the summary text.
