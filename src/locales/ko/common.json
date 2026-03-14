@@ -325,7 +325,17 @@
       "backgroundTasks": "백그라운드 작업",
       "mcpToolTimeoutDisabled": "비활성화",
       "networkRestartFailed": "앱 재시작에 실패했습니다. 수동으로 재시작해 주세요.",
-      "networkRestartNotice": "HTTP 서버 네트워크 설정 변경사항은 앱 재시작 후 적용됩니다."
+      "networkRestartNotice": "HTTP 서버 네트워크 설정 변경사항은 앱 재시작 후 적용됩니다.",
+      "placeholders": {
+        "maxFileUploadSize": "예: 50",
+        "workspaceCapacity": "예: 10",
+        "searchIndexFrequency": "예: 5",
+        "webActionTimeout": "예: 30",
+        "mcpServerStartupTimeout": "예: 60",
+        "mcpToolTimeout": "0 (비활성화)",
+        "activeSessionRetention": "예: 24",
+        "httpServerPort": "예: 3030"
+      }
     },
     "about": {
       "title": "정보",
@@ -342,13 +352,22 @@
       "title": "초기화",
       "resetting": "초기화 중...",
       "success": "초기화가 완료되었습니다. 변경사항을 완전히 적용하려면 재시작이 필요합니다.",
-      "error": "초기화에 실패했습니다. 로그를 확인해 주세요."
+      "error": "초기화에 실패했습니다. 로그를 확인해 주세요.",
+      "description": "이 작업은 완전한 공장 초기화를 수행합니다. 모든 데이터를 삭제합니다.",
+      "button": "모든 데이터 및 설정 초기화",
+      "confirmTitle": "공장 초기화 확인",
+      "confirmDescription": "세션, 어시스턴트, MCP 서버 및 플레이북을 포함한 모든 데이터를 영구적으로 삭제합니다. 확실합니까?",
+      "confirmButton": "모두 초기화"
     },
     "dataReset": {
       "title": "데이터 & 초기화",
       "deleting": "삭제 중...",
       "success": "모든 세션이 삭제되었습니다. 재시작을 권장합니다.",
-      "error": "세션 삭제에 실패했습니다."
+      "error": "세션 삭제에 실패했습니다.",
+      "description": "모든 로컬 세션, 메시지 및 작업 공간 파일 저장소를 영구적으로 삭제합니다.",
+      "clearAll": "모든 세션 및 작업 공간 지우기",
+      "confirmTitle": "모든 세션, 메시지 및 작업 공간 삭제",
+      "confirmDescription": "이 작업은 모든 로컬 세션, 메시지 및 작업 공간 파일 저장소를 영구적으로 삭제합니다. 이 작업은 취소할 수 없습니다. 계속하시겠습니까?"
     },
     "skills": {
       "modalTitle": "사용 가능한 스킬 ({{count}})",
@@ -375,6 +394,9 @@
       "revert": "전역으로 되돌리기",
       "resetTitle": "스킬 재정의를 초기화하시겠습니까?",
       "resetConfirm": "이 작업은 모든 어시스턴트 전용 스킬을 제거하고 전역 기본값으로 되돌립니다. 이 작업은 되돌릴 수 없습니다."
+    },
+    "dangerZone": {
+      "title": "⚠️ 위험 구역"
     }
   },
   "mcpServer": {

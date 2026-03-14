@@ -83,3 +83,9 @@
 **Extracted:** 4
 **Languages updated:** [EN, KO]
 **Notes:** Localized `AgentModelPicker` provider and model select placeholders, loading state, and refresh button tooltip.
+
+## 2026-03-14 - [Settings]
+
+**Extracted:** 9
+**Languages updated:** [EN, KO]
+**Notes:** Localized "Danger Zone" title and performance input placeholders across settings components. Synced missing reset-related strings in Korean.

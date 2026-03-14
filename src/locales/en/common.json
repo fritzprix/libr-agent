@@ -373,7 +373,17 @@
       "activeSessionRetention": "Keep Active Sessions For (Hours)",
       "activeSessionRetentionDescription": "How long to keep session data in fast memory.",
       "networkRestartFailed": "Failed to restart the app. Please restart manually.",
-      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
+      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app.",
+      "placeholders": {
+        "maxFileUploadSize": "e.g., 50",
+        "workspaceCapacity": "e.g., 10",
+        "searchIndexFrequency": "e.g., 5",
+        "webActionTimeout": "e.g., 30",
+        "mcpServerStartupTimeout": "e.g., 60",
+        "mcpToolTimeout": "0 (disabled)",
+        "activeSessionRetention": "e.g., 24",
+        "httpServerPort": "e.g., 3030"
+      }
     },
     "about": {
       "title": "About",
@@ -387,7 +397,7 @@
       "checkForUpdates": "Check for Updates"
     },
     "dangerZone": {
-      "title": "Danger Zone"
+      "title": "⚠️ Danger Zone"
     },
     "factoryReset": {
       "title": "Factory Reset",
