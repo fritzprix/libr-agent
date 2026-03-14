@@ -23,3 +23,5 @@
 ## 2026-03-03 - [SessionHistoryPanel] **Bottleneck:** [Main-Thread Block: filtering large array of 10,000+ items directly inside the render cycle blocking typing] **Flow Restored:** [Applied `useDeferredValue` to search queries and session list to unblock text input and applied transparency during filtering transition]
 
 ## 2026-03-03 - [AssistantCard/handleDeleteClick] **Bottleneck:** Native `alert()` modal triggered on deletion of protected assistants, completely blocking the browser/webview execution thread. **Flow Restored:** Replaced `alert()` with non-blocking `toast.error()` from sonner for immediate visual feedback without freezing the UI.
+
+## 2026-03-13 - [AgentChatHeader] **Bottleneck:** [Naked await / missing feedback on copy] **Flow Restored:** [Added isCopying state and disabled button during clipboard write]
