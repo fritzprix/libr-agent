@@ -717,6 +717,12 @@
     "compactDivider": {
       "label": "Context compressed above",
       "ariaLabel": "Context compressed at this point"
+    },
+    "modelPicker": {
+      "provider": "Provider",
+      "model": "Model",
+      "loading": "Loading...",
+      "refreshModels": "Refresh models"
     }
   },
   "scheduledTasks": {

@@ -1,6 +1,7 @@
 import { FC, useCallback, useMemo } from 'react';
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import {
   Select,
@@ -28,6 +29,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
   disabled = false,
   onConfigUpdate,
 }) => {
+  const { t } = useTranslation('common');
   const { availableModels, isRefreshing, refreshModels } =
     useAgentModels(currentProvider);
 
@@ -86,7 +88,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         disabled={disabled}
       >
         <SelectTrigger className="w-24 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
-          <SelectValue placeholder="Provider" />
+          <SelectValue placeholder={t('agent.modelPicker.provider')} />
         </SelectTrigger>
         <SelectContent>
           {providerOptions.map((opt) => (
@@ -106,7 +108,13 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         disabled={disabled || isRefreshing || !currentProvider}
       >
         <SelectTrigger className="min-w-32 h-6 text-xs bg-transparent border-none focus:ring-0 shadow-none px-1 gap-1">
-          <SelectValue placeholder={isRefreshing ? 'Loading...' : 'Model'} />
+          <SelectValue
+            placeholder={
+              isRefreshing
+                ? t('agent.modelPicker.loading')
+                : t('agent.modelPicker.model')
+            }
+          />
         </SelectTrigger>
         <SelectContent>
           {modelOptions.map((opt) => (
@@ -123,7 +131,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
           onClick={() => refreshModels()}
           disabled={disabled || isRefreshing}
           className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors"
-          title="Refresh models"
+          title={t('agent.modelPicker.refreshModels')}
         >
           <RefreshCw
             className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
