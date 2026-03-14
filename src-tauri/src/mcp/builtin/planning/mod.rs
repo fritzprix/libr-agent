@@ -26,7 +26,7 @@ pub struct PlanningServer {
 }
 
 impl PlanningServer {
-    /// Create a new PlanningServer for the given session
+    /// Create a new `PlanningServer` for the given session
     pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         let server = Self {
             session_id: session_id.clone(),

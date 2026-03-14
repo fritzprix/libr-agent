@@ -2,7 +2,7 @@
 ///
 /// This module contains commands related to built-in MCP servers,
 /// server probing, OAuth token management, and tool schema validation.
-/// Session-isolated external servers are managed through MCPServiceProxyManager per session.
+/// Session-isolated external servers are managed through `MCPServiceProxyManager` per session.
 use crate::mcp::types::BuiltinServerInfo;
 use crate::mcp::{MCPServerManager, MCPTool};
 

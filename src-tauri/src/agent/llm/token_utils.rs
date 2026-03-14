@@ -1,11 +1,11 @@
 use std::sync::OnceLock;
 use tiktoken_rs::{cl100k_base, CoreBPE};
 
-/// Singleton tiktoken encoder for cl100k_base.
+/// Singleton tiktoken encoder for `cl100k_base`.
 /// Creating/freeing the BPE encoder can be expensive. We keep one instance alive for the app lifetime.
 static SHARED_ENCODER: OnceLock<Option<CoreBPE>> = OnceLock::new();
 
-/// Gets a reference to the shared cl100k_base encoder, initializing it if necessary.
+/// Gets a reference to the shared `cl100k_base` encoder, initializing it if necessary.
 pub fn get_shared_encoder() -> Option<&'static CoreBPE> {
     SHARED_ENCODER.get_or_init(|| cl100k_base().ok()).as_ref()
 }

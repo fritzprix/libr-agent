@@ -45,7 +45,7 @@ impl FromStr for SessionStatus {
     }
 }
 
-/// Session metadata stored in SQLite
+/// Session metadata stored in `SQLite`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionMetadata {
@@ -104,7 +104,7 @@ pub trait SessionRepository: Send + Sync {
     /// Update session status
     async fn update_status(&self, session_id: &str, status: SessionStatus) -> Result<(), DbError>;
 
-    /// Update session configuration (model, provider, and/or agent_config)
+    /// Update session configuration (model, provider, and/or `agent_config`)
     async fn update_session_config(
         &self,
         session_id: &str,
@@ -122,7 +122,7 @@ pub trait SessionRepository: Send + Sync {
     /// Delete a session
     async fn delete_session(&self, session_id: &str) -> Result<(), DbError>;
 
-    /// Delete only this session, orphaning its direct children (set their parent_session_id to NULL)
+    /// Delete only this session, orphaning its direct children (set their `parent_session_id` to NULL)
     async fn orphan_and_delete_session(&self, session_id: &str) -> Result<(), DbError>;
 
     /// Toggle the bookmark flag for a session
@@ -139,14 +139,14 @@ pub trait SessionRepository: Send + Sync {
     ) -> Result<(), DbError>;
 }
 
-/// SQLite implementation of SessionRepository using SeaORM
+/// `SQLite` implementation of `SessionRepository` using `SeaORM`
 #[derive(Debug, Clone)]
 pub struct SqliteSessionRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteSessionRepository {
-    /// Create a new SQLite session repository with the given database connection
+    /// Create a new `SQLite` session repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

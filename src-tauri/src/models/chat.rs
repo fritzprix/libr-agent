@@ -20,7 +20,7 @@ pub struct Message {
     pub id: String,
     pub session_id: String,
     pub role: String,
-    /// Structured content array (MCPContent[]) - matches TypeScript
+    /// Structured content array (`MCPContent`[]) - matches TypeScript
     pub content: Vec<MCPContent>,
     /// Tool calls as structured array - matches TypeScript
     pub tool_calls: Option<Vec<ToolCall>>,

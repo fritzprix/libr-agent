@@ -18,7 +18,7 @@ pub struct PendingToolExecution {
     pub message_id: String,
     pub total_expected: usize,
     pub results: Vec<Message>,
-    /// Maps tool_call_id to tool_name for event emission
+    /// Maps `tool_call_id` to `tool_name` for event emission
     pub tool_names: HashMap<String, String>,
     /// Tool call IDs expected for the current message execution
     pub expected_tool_call_ids: HashSet<String>,
@@ -100,7 +100,7 @@ pub struct AgentSession {
     pub pending_execution: Option<PendingToolExecution>,
 
     /// In-memory message cache (loaded once on init, updated in-place)
-    /// Thread-safe: Arc allows shared ownership, RwLock allows concurrent reads
+    /// Thread-safe: Arc allows shared ownership, `RwLock` allows concurrent reads
     pub messages: Arc<RwLock<Vec<Message>>>,
 
     /// Flag indicating if cache has been initialized from DB
@@ -110,7 +110,7 @@ pub struct AgentSession {
     pub last_synced_at: Arc<RwLock<Option<SystemTime>>>,
 
     /// Circuit breaker: consecutive thinking-only response count
-    /// Reset to 0 when content or tool_calls are generated
+    /// Reset to 0 when content or `tool_calls` are generated
     /// Max allowed: 3 (prevents infinite thinking loops)
     pub thinking_only_count: Arc<RwLock<u32>>,
 
@@ -118,7 +118,7 @@ pub struct AgentSession {
     pub pending_events: Arc<RwLock<PendingEventManager>>,
 
     /// Channels for pending tool execution approvals
-    /// Maps tool_call_id to PendingApprovalData (which unblocks the workflow with a bool)
+    /// Maps `tool_call_id` to `PendingApprovalData` (which unblocks the workflow with a bool)
     pub pending_approvals: Arc<RwLock<HashMap<String, PendingApprovalData>>>,
 
     /// Context registry for read-only information providers

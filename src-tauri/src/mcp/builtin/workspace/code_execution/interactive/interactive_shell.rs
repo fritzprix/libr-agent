@@ -11,7 +11,7 @@ use super::ui;
 
 impl WorkspaceServer {
     /// Handle interactive shell execution (1st tool call)
-    /// Returns UIResource with execution_id for user input
+    /// Returns `UIResource` with `execution_id` for user input
     pub(crate) async fn handle_interactive_shell(
         &self,
         command: &str,
@@ -87,7 +87,7 @@ impl WorkspaceServer {
     }
 
     /// Get platform-aware prompt configuration for user input
-    /// Returns (prompt, input_type) tuple
+    /// Returns (prompt, `input_type`) tuple
     fn get_prompt_config<'a>(&self, command: &str, args: &'a Value) -> (&'a str, &'a str) {
         // Check if privilege escalation detected (Unix only)
         let is_privilege_cmd = validation::detect_privilege_escalation(command);

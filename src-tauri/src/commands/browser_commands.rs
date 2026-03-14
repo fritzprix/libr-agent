@@ -155,7 +155,7 @@ pub async fn browser_script_result(
 ///
 /// # Arguments
 /// * `session_id` - The ID of the browser session.
-/// * `server` - The InteractiveBrowserServer state.
+/// * `server` - The `InteractiveBrowserServer` state.
 #[tauri::command]
 pub async fn browser_page_loaded(
     server: State<'_, InteractiveBrowserServer>,

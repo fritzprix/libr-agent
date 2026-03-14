@@ -35,7 +35,7 @@ impl BackupManager {
 
     /// Create a timestamped backup of the database using VACUUM INTO for WAL-safe snapshot.
     ///
-    /// `VACUUM INTO` is the only reliable way to back up a WAL-mode SQLite database:
+    /// `VACUUM INTO` is the only reliable way to back up a WAL-mode `SQLite` database:
     /// it performs an atomic, consistent copy that includes all committed WAL data
     /// without requiring a checkpoint or file-level copy.
     pub async fn create_backup(&self, db: &DatabaseConnection) -> DatabaseResult<PathBuf> {

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{App, Emitter, Listener, Manager};
 
-/// Marker file written into every bundled skill directory in AppData.
+/// Marker file written into every bundled skill directory in `AppData`.
 /// Used to distinguish bundled skills from user-created ones so that skills
 /// removed from the bundle can be cleaned up automatically on the next launch.
 const BUNDLED_SKILL_MARKER: &str = ".bundled_skill";

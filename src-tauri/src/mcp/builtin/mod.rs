@@ -356,7 +356,7 @@ impl BuiltinServerRegistry {
     /// using the provided `SessionManager`.
     ///
     /// Note: Only registers stateless servers. Stateful servers (knowledge, planning, playbook,
-    /// assistant, browser) are instantiated per-session in MCPServiceProxy.
+    /// assistant, browser) are instantiated per-session in `MCPServiceProxy`.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
@@ -387,11 +387,11 @@ impl BuiltinServerRegistry {
         registry
     }
 
-    /// Creates a new `BuiltinServerRegistry` with SQLite support.
+    /// Creates a new `BuiltinServerRegistry` with `SQLite` support.
     ///
     /// # Arguments
     /// * `session_manager` - A shared reference to the `SessionManager`.
-    /// * `sqlite_db_url` - The connection URL for the SQLite database.
+    /// * `sqlite_db_url` - The connection URL for the `SQLite` database.
     pub async fn new_with_session_manager_and_sqlite(
         session_manager: std::sync::Arc<SessionManager>,
         sqlite_db_url: String,
@@ -430,11 +430,11 @@ impl BuiltinServerRegistry {
         registry
     }
 
-    /// Creates a new `BuiltinServerRegistry` with SeaORM DatabaseConnection.
+    /// Creates a new `BuiltinServerRegistry` with `SeaORM` `DatabaseConnection`.
     ///
     /// # Arguments
     /// * `session_manager` - A shared reference to the `SessionManager`.
-    /// * `db` - The SeaORM DatabaseConnection instance.
+    /// * `db` - The `SeaORM` `DatabaseConnection` instance.
     pub async fn new_with_session_manager_and_db(
         session_manager: std::sync::Arc<SessionManager>,
         db: sea_orm::DatabaseConnection,

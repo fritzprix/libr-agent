@@ -27,14 +27,14 @@ pub trait SettingsRepository: Send + Sync {
     async fn list(&self) -> Result<Vec<settings::Model>, DbError>;
 }
 
-/// SQLite implementation of SettingsRepository using SeaORM
+/// `SQLite` implementation of `SettingsRepository` using `SeaORM`
 #[derive(Debug, Clone)]
 pub struct SqliteSettingsRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteSettingsRepository {
-    /// Create a new SQLite settings repository with the given database connection
+    /// Create a new `SQLite` settings repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

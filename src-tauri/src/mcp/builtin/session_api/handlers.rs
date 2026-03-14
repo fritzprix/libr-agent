@@ -12,7 +12,7 @@ use super::formatting::*;
 use super::types::*;
 use super::utils::*;
 
-/// Helper to map raw session JSON to the standardized AgentSessionResponse.
+/// Helper to map raw session JSON to the standardized `AgentSessionResponse`.
 fn map_session_response(
     session: &Value,
     turn_count: usize,

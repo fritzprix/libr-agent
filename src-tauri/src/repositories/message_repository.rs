@@ -71,7 +71,7 @@ pub trait MessageRepository: Send + Sync {
     /// Get all distinct session IDs that have messages
     async fn get_distinct_sessions(&self) -> Result<Vec<String>, DbError>;
 
-    /// Get message models (raw SeaORM models) for search indexing
+    /// Get message models (raw `SeaORM` models) for search indexing
     async fn get_message_models_by_session(
         &self,
         session_id: &str,
@@ -82,19 +82,19 @@ pub trait MessageRepository: Send + Sync {
     async fn get_recent_message_models(&self, limit: u64) -> Result<Vec<message::Model>, DbError>;
 }
 
-/// SQLite implementation of MessageRepository using SeaORM
+/// `SQLite` implementation of `MessageRepository` using `SeaORM`
 #[derive(Debug)]
 pub struct SqliteMessageRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteMessageRepository {
-    /// Create a new SQLite message repository with the given database connection
+    /// Create a new `SQLite` message repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
 
-    /// Convert SeaORM message model to Message type
+    /// Convert `SeaORM` message model to Message type
     fn model_to_message(model: message::Model) -> Message {
         let content: Vec<crate::mcp::types::MCPContent> = from_json_or_default(&model.content);
 
@@ -131,7 +131,7 @@ impl SqliteMessageRepository {
         }
     }
 
-    /// Convert Message type to SeaORM ActiveModel
+    /// Convert Message type to `SeaORM` `ActiveModel`
     fn message_to_active_model(message: &Message) -> Result<message::ActiveModel, DbError> {
         // Serialize structured types to JSON strings for DB storage
         let content_json = serde_json::to_string(&message.content).map_err(|e| {
@@ -179,7 +179,7 @@ impl SqliteMessageRepository {
         })
     }
 
-    /// Helper to get the OnConflict strategy for upserting messages
+    /// Helper to get the `OnConflict` strategy for upserting messages
     fn get_upsert_on_conflict() -> sea_orm::sea_query::OnConflict {
         use sea_orm::sea_query::OnConflict;
         OnConflict::column(message::Column::Id)

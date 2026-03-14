@@ -2,8 +2,8 @@ use crate::mcp::builtin::workspace::tools::code_tools::{
     CANCEL_PENDING_EXECUTION, EXECUTE_PENDING_SHELL,
 };
 
-/// Build UIResource HTML for shell input form
-/// Returns HTML string with embedded execution_id, prompt, and input type
+/// Build `UIResource` HTML for shell input form
+/// Returns HTML string with embedded `execution_id`, prompt, and input type
 pub fn build_shell_input_ui(
     execution_id: &str,
     prompt: &str,

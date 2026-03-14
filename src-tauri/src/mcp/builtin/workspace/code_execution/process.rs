@@ -150,7 +150,7 @@ fn decode_process_output(bytes: &[u8]) -> String {
 }
 
 /// Spawn process and stream stdout/stderr to files (common logic for sync/async)
-/// Returns (pid, exit_code, stdout_content, stderr_content)
+/// Returns (pid, `exit_code`, `stdout_content`, `stderr_content`)
 /// Respects cancellation token for graceful shutdown
 pub async fn spawn_and_stream_to_files(
     mut cmd: Command,
@@ -417,7 +417,7 @@ pub async fn spawn_and_stream_to_files(
 }
 
 /// Spawn process and stream output to both in-memory buffers and files (for async/long-running processes)
-/// Returns (pid, exit_code, streaming_handle)
+/// Returns (pid, `exit_code`, `streaming_handle`)
 /// Provides real-time access to output through broadcast channels and circular buffers
 pub async fn spawn_and_stream_hybrid(
     mut cmd: Command,

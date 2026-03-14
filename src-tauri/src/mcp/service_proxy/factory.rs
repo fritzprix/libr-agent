@@ -14,7 +14,7 @@ use tauri::AppHandle;
 /// # Arguments
 /// * `tool_id` - The builtin tool identifier (e.g., "knowledge", "planning")
 /// * `session_id` - The session to bind the server to
-/// * `db` - Shared SeaORM database connection
+/// * `db` - Shared `SeaORM` database connection
 ///
 /// # Returns
 /// * `Ok(Some(Box<dyn BuiltinMCPServer>))` - Server instance

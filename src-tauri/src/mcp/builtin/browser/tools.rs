@@ -259,7 +259,7 @@ pub fn close_session_tool() -> MCPTool {
 
 // --- Alias wrappers (Playwright-style short names) ---
 
-/// Alias for navigate_to_url_tool with short name "goto"
+/// Alias for `navigate_to_url_tool` with short name "goto"
 pub fn goto_tool() -> MCPTool {
     let mut tool = navigate_to_url_tool();
     tool.name = "goto".to_string();
@@ -267,7 +267,7 @@ pub fn goto_tool() -> MCPTool {
     tool
 }
 
-/// Alias for extract_web_content_tool with merged schema including `page` for cache reads
+/// Alias for `extract_web_content_tool` with merged schema including `page` for cache reads
 pub fn content_tool() -> MCPTool {
     let mut tool = extract_web_content_tool();
     tool.name = "content".to_string();
@@ -337,7 +337,7 @@ NEXT STEPS:
     }
 }
 
-/// Alias for click_element_tool with short name "click"
+/// Alias for `click_element_tool` with short name "click"
 pub fn click_tool() -> MCPTool {
     let mut tool = click_element_tool();
     tool.name = "click".to_string();
@@ -345,7 +345,7 @@ pub fn click_tool() -> MCPTool {
     tool
 }
 
-/// Alias for input_text_tool with short name "fill"
+/// Alias for `input_text_tool` with short name "fill"
 pub fn fill_tool() -> MCPTool {
     let mut tool = input_text_tool();
     tool.name = "fill".to_string();
@@ -355,21 +355,21 @@ pub fn fill_tool() -> MCPTool {
     tool
 }
 
-/// Alias for scroll_page_tool with short name "scroll"
+/// Alias for `scroll_page_tool` with short name "scroll"
 pub fn scroll_tool() -> MCPTool {
     let mut tool = scroll_page_tool();
     tool.name = "scroll".to_string();
     tool
 }
 
-/// Alias for navigate_back_tool with short name "back"
+/// Alias for `navigate_back_tool` with short name "back"
 pub fn back_tool() -> MCPTool {
     let mut tool = navigate_back_tool();
     tool.name = "back".to_string();
     tool
 }
 
-/// Alias for navigate_forward_tool with short name "forward"
+/// Alias for `navigate_forward_tool` with short name "forward"
 pub fn forward_tool() -> MCPTool {
     let mut tool = navigate_forward_tool();
     tool.name = "forward".to_string();

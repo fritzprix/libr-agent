@@ -151,7 +151,7 @@ impl ContentStoreStorage {
         })
     }
 
-    /// Create storage with existing SeaORM DatabaseConnection
+    /// Create storage with existing `SeaORM` `DatabaseConnection`
     pub async fn new_with_db(db: sea_orm::DatabaseConnection) -> Result<Self, String> {
         // Note: Migrations should already be run at application startup
 
@@ -172,7 +172,7 @@ impl ContentStoreStorage {
         })
     }
 
-    /// List contents for a session, sorted by uploaded_at (newest first)
+    /// List contents for a session, sorted by `uploaded_at` (newest first)
     pub async fn list_contents_by_session(
         &self,
         session_id: &str,
@@ -482,7 +482,7 @@ impl ContentStoreStorage {
         Ok((paginated, total))
     }
 
-    /// Get session_id for a content item
+    /// Get `session_id` for a content item
     pub fn get_content_session_id(&self, content_id: &str) -> Option<String> {
         self.contents
             .get(content_id)

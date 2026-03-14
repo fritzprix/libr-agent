@@ -2,7 +2,7 @@
 //!
 //! Shared patterns for safe, idempotent migration operations.
 //! Use these instead of raw SQL strings to avoid common pitfalls:
-//! - `COUNT(*)` column aliasing for SeaORM compatibility
+//! - `COUNT(*)` column aliasing for `SeaORM` compatibility
 //! - Table/column existence checks
 //! - Idempotent inserts
 
@@ -15,7 +15,7 @@ use sea_orm_migration::sea_orm::Statement;
 /// or `Some(n)` with the row count.
 ///
 /// # Why not `COUNT(*)`?
-/// SeaORM's `try_get("", "COUNT(*)")` is unreliable across backends.
+/// `SeaORM`'s `try_get("", "COUNT(*)")` is unreliable across backends.
 /// This helper always aliases the column to `row_count` for safe extraction.
 pub async fn count_rows(
     manager: &SchemaManager<'_>,
@@ -40,7 +40,7 @@ pub async fn count_rows(
     }
 }
 
-/// Check whether a table exists in the SQLite schema.
+/// Check whether a table exists in the `SQLite` schema.
 pub async fn table_exists(manager: &SchemaManager<'_>, table_name: &str) -> Result<bool, DbErr> {
     let result = manager
         .get_connection()
@@ -54,7 +54,7 @@ pub async fn table_exists(manager: &SchemaManager<'_>, table_name: &str) -> Resu
     Ok(result.is_some())
 }
 
-/// Check whether a column exists in a SQLite table via PRAGMA table_info.
+/// Check whether a column exists in a `SQLite` table via PRAGMA `table_info`.
 pub async fn column_exists(
     manager: &SchemaManager<'_>,
     table_name: &str,

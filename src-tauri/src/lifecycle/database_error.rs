@@ -40,7 +40,7 @@ pub enum DatabaseError {
         found_hash: String,
     },
 
-    /// SeaORM error
+    /// `SeaORM` error
     SeaOrmError(DbErr),
 
     /// IO error

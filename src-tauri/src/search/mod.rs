@@ -4,7 +4,7 @@
 /// - BM25 search engine for message content
 /// - Session-level index management with persistence
 /// - Incremental index building and background reindexing
-/// - Index metadata tracking in SQLite
+/// - Index metadata tracking in `SQLite`
 pub mod background_worker;
 pub mod index_storage;
 pub mod message_index;

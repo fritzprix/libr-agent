@@ -1,15 +1,15 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-/// The main entry point for the LibrAgent application.
+/// The main entry point for the `LibrAgent` application.
 ///
 /// This function is responsible for:
-/// 1. Setting Linux-specific WebKit compatibility environment variables (if on Linux)
+/// 1. Setting Linux-specific `WebKit` compatibility environment variables (if on Linux)
 /// 2. Loading environment variables from .env file (development mode only)
-/// 3. Determining the path for the SQLite database. It prioritizes the `LIBRAGENT_DB_PATH`
+/// 3. Determining the path for the `SQLite` database. It prioritizes the `LIBRAGENT_DB_PATH`
 ///    environment variable, falling back to a default location within the user's data directory.
 /// 4. Ensuring the directory for the database exists.
-/// 5. Constructing the final SQLite connection URL.
+/// 5. Constructing the final `SQLite` connection URL.
 /// 6. Calling the main application runner (`run_with_sqlite_sync`) from the `tauri_mcp_agent_lib`
 ///    crate, passing it the database URL to initialize the application with database support.
 fn main() {

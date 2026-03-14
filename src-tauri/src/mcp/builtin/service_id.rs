@@ -32,7 +32,7 @@ use std::fmt;
 
 /// Type-safe, stable identifier for a builtin MCP service.
 ///
-/// The serde representation (snake_case of the variant name) is the **stable DB key**
+/// The serde representation (`snake_case` of the variant name) is the **stable DB key**
 /// — it must never change.  The `name()` method currently returns the same values,
 /// so **both must be kept in sync**.  To truly decouple them, add explicit
 /// `#[serde(rename = "...")]` attributes to each variant and then `name()` can

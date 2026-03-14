@@ -1,4 +1,4 @@
-/// Centralized configuration management for LibrAgent
+/// Centralized configuration management for `LibrAgent`
 ///
 /// This module provides environment-driven configuration with fallback defaults.
 /// All configuration values can be overridden via environment variables.
@@ -19,7 +19,7 @@
 /// - `LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT`: Graceful shutdown timeout in seconds (default: 3)
 /// - `LIBRAGENT_POLL_THRESHOLD`: Excessive polling detection threshold (default: 5 consecutive polls)
 /// - `MESSAGE_INDEX_SNIPPET_LENGTH`: Message snippet length for search index (default: 200)
-/// - `LIBRAGENT_DB_PATH`: SQLite database file path (default: user data directory)
+/// - `LIBRAGENT_DB_PATH`: `SQLite` database file path (default: user data directory)
 /// - `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES`: MCP server idle timeout in minutes (default: 5)
 /// - `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES`: MCP cleanup interval in minutes (default: 5)
 use std::env;
@@ -44,7 +44,7 @@ const DEFAULT_POLL_THRESHOLD: u32 = 5;
 
 /// Get maximum output size for process stdout/stderr capture from environment or use default
 ///
-/// Environment variable: LIBRAGENT_MAX_OUTPUT_SIZE
+/// Environment variable: `LIBRAGENT_MAX_OUTPUT_SIZE`
 /// Default: 104857600 (100 MB)
 pub fn max_output_size() -> u64 {
     env::var("LIBRAGENT_MAX_OUTPUT_SIZE")
@@ -64,7 +64,7 @@ const DEFAULT_GRACEFUL_SHUTDOWN_TIMEOUT: u64 = 3;
 
 /// Get graceful shutdown timeout (seconds) from environment or default
 ///
-/// Environment variable: LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT
+/// Environment variable: `LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT`
 pub fn graceful_shutdown_timeout() -> u64 {
     env::var("LIBRAGENT_GRACEFUL_SHUTDOWN_TIMEOUT")
         .ok()
@@ -80,7 +80,7 @@ pub fn graceful_shutdown_timeout() -> u64 {
 
 /// Get maximum file size from environment or use default
 ///
-/// Environment variable: LIBRAGENT_MAX_FILE_SIZE
+/// Environment variable: `LIBRAGENT_MAX_FILE_SIZE`
 /// Default: 104857600 (100 MB)
 pub fn max_file_size() -> usize {
     env::var("LIBRAGENT_MAX_FILE_SIZE")
@@ -97,7 +97,7 @@ pub fn max_file_size() -> usize {
 
 /// Get default execution timeout from environment or use default
 ///
-/// Environment variable: LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT
+/// Environment variable: `LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT`
 /// Default: 30 seconds
 pub fn default_execution_timeout() -> u64 {
     env::var("LIBRAGENT_DEFAULT_EXECUTION_TIMEOUT")
@@ -114,7 +114,7 @@ pub fn default_execution_timeout() -> u64 {
 
 /// Get maximum execution timeout from environment or use default
 ///
-/// Environment variable: LIBRAGENT_MAX_EXECUTION_TIMEOUT
+/// Environment variable: `LIBRAGENT_MAX_EXECUTION_TIMEOUT`
 /// Default: 300 seconds (5 minutes)
 pub fn max_execution_timeout() -> u64 {
     let max_timeout = env::var("LIBRAGENT_MAX_EXECUTION_TIMEOUT")
@@ -144,7 +144,7 @@ pub fn max_execution_timeout() -> u64 {
 
 /// Get message index snippet length from environment or use default
 ///
-/// Environment variable: MESSAGE_INDEX_SNIPPET_LENGTH
+/// Environment variable: `MESSAGE_INDEX_SNIPPET_LENGTH`
 /// Default: 200 characters
 pub fn message_index_snippet_length() -> usize {
     env::var("MESSAGE_INDEX_SNIPPET_LENGTH")
@@ -161,7 +161,7 @@ pub fn message_index_snippet_length() -> usize {
 
 /// Get polling threshold for excessive polling detection from environment or use default
 ///
-/// Environment variable: LIBRAGENT_POLL_THRESHOLD
+/// Environment variable: `LIBRAGENT_POLL_THRESHOLD`
 /// Default: 5 consecutive polls while process is running
 pub fn poll_threshold() -> u32 {
     env::var("LIBRAGENT_POLL_THRESHOLD")
@@ -181,7 +181,7 @@ const DEFAULT_MCP_IDLE_TIMEOUT_MINUTES: u64 = 5;
 
 /// Get MCP server idle timeout in minutes from environment or use default
 ///
-/// Environment variable: LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES
+/// Environment variable: `LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES`
 /// Default: 5 minutes
 pub fn mcp_idle_timeout_minutes() -> u64 {
     env::var("LIBRAGENT_MCP_IDLE_TIMEOUT_MINUTES")
@@ -201,7 +201,7 @@ const DEFAULT_MCP_CLEANUP_INTERVAL_MINUTES: u64 = 5;
 
 /// Get MCP cleanup interval in minutes from environment or use default
 ///
-/// Environment variable: LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES
+/// Environment variable: `LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES`
 /// Default: 5 minutes
 pub fn mcp_cleanup_interval_minutes() -> u64 {
     env::var("LIBRAGENT_MCP_CLEANUP_INTERVAL_MINUTES")
@@ -222,7 +222,7 @@ const DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS: u64 = 30;
 /// Get MCP server startup timeout in seconds
 ///
 /// Returns the default value of 30 seconds.
-/// User settings are applied through SessionIsolationConfig after initialization.
+/// User settings are applied through `SessionIsolationConfig` after initialization.
 pub fn mcp_startup_timeout_seconds() -> u64 {
     DEFAULT_MCP_STARTUP_TIMEOUT_SECONDS
 }

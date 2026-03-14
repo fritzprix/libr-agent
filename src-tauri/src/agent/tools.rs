@@ -319,7 +319,7 @@ pub fn create_error_tool_result(
     }
 }
 
-/// Convert MCP response result to agent MCPContent
+/// Convert MCP response result to agent `MCPContent`
 pub fn convert_mcp_response_content(
     result: Option<crate::mcp::types::MCPResponseResult>,
 ) -> Option<Vec<crate::mcp::types::MCPContent>> {

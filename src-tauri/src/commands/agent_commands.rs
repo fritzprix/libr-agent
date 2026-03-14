@@ -180,7 +180,7 @@ pub async fn agent_inject_messages(
     })
 }
 
-/// Handle LLM response from frontend (called by LLMServiceProvider in TS)
+/// Handle LLM response from frontend (called by `LLMServiceProvider` in TS)
 #[command]
 pub async fn agent_handle_llm_response(
     manager: State<'_, AgentSessionManager>,
@@ -302,7 +302,7 @@ pub struct ToolExecutionResult {
     pub is_error: bool,
 }
 
-/// Handle tool execution result from frontend (called by ToolBridgeProvider in TS)
+/// Handle tool execution result from frontend (called by `ToolBridgeProvider` in TS)
 #[command]
 pub async fn agent_handle_tool_result(
     manager: State<'_, AgentSessionManager>,
@@ -340,7 +340,7 @@ pub async fn agent_respond_tool_approval(
     })
 }
 
-/// Handle LLM error from frontend (called by LLMServiceProvider in TS)
+/// Handle LLM error from frontend (called by `LLMServiceProvider` in TS)
 #[command]
 pub async fn agent_handle_llm_error(
     manager: State<'_, AgentSessionManager>,
@@ -356,8 +356,8 @@ pub async fn agent_handle_llm_error(
     })
 }
 
-/// Call a builtin tool directly via proxy_manager (for testing and direct execution)
-/// Returns the unwrapped MCPResult (not the full MCPResponse wrapper)
+/// Call a builtin tool directly via `proxy_manager` (for testing and direct execution)
+/// Returns the unwrapped `MCPResult` (not the full `MCPResponse` wrapper)
 #[command]
 pub async fn agent_call_builtin_tool(
     session_id: String,

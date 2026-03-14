@@ -66,7 +66,7 @@ pub fn validate_timeout(timeout: Option<u64>) -> u64 {
 /// Shared utility used across workspace server components
 ///
 /// # Security
-/// This function sanitizes commands before storing them in logs or ProcessRegistry
+/// This function sanitizes commands before storing them in logs or `ProcessRegistry`
 /// to prevent revealing sensitive implementation details like stdin-based password transmission.
 ///
 /// # Examples

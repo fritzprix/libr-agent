@@ -111,8 +111,8 @@ impl AgentService {
             })
     }
 
-    /// Call a builtin tool directly via proxy_manager (for testing and direct execution)
-    /// Returns the unwrapped MCPResult (not the full MCPResponse wrapper)
+    /// Call a builtin tool directly via `proxy_manager` (for testing and direct execution)
+    /// Returns the unwrapped `MCPResult` (not the full `MCPResponse` wrapper)
     pub async fn call_builtin_tool(
         session_id: String,
         tool_name: String,

@@ -32,17 +32,17 @@ pub struct MCPServiceProxy {
     session_id: String,
 
     /// Session-specific builtin server instances
-    /// Key: tool_id (e.g., "knowledge", "planning")
-    /// Value: Boxed trait object implementing BuiltinMCPServer
+    /// Key: `tool_id` (e.g., "knowledge", "planning")
+    /// Value: Boxed trait object implementing `BuiltinMCPServer`
     builtin_servers: HashMap<String, Box<dyn BuiltinMCPServer>>,
 
     /// Cached tools from session-isolated stdio servers
-    /// Key: server_name, Value: list of tools
+    /// Key: `server_name`, Value: list of tools
     /// This cache is populated during session creation (eager tool discovery)
     session_stdio_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
 
     /// Cached tools from session-isolated HTTP servers
-    /// Key: server_name, Value: list of tools
+    /// Key: `server_name`, Value: list of tools
     session_http_tool_cache: Arc<RwLock<HashMap<String, Vec<MCPTool>>>>,
 
     /// Session-specific managers
@@ -58,8 +58,8 @@ impl MCPServiceProxy {
     /// # Arguments
     /// * `session_id` - Unique identifier for the agent session
     /// * `external_mcp_manager` - Shared manager for external MCP servers
-    /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/attachments
+    /// * `db` - Shared `SeaORM` database connection
+    /// * `session_manager` - Shared `SessionManager` for workspace/attachments
     /// * `http_manager` - Session-specific HTTP manager
     /// * `stdio_manager` - Session-specific Stdio manager
     ///
@@ -130,11 +130,11 @@ impl MCPServiceProxy {
     /// Call a tool through this proxy
     ///
     /// Routes the call to either:
-    /// - Builtin server (if tool_name's service prefix matches a known builtin service)
+    /// - Builtin server (if `tool_name`'s service prefix matches a known builtin service)
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "attachments__addContent")
+    /// * `tool_name` - Full tool name (e.g., "`attachments__addContent`")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -517,7 +517,7 @@ impl MCPServiceProxy {
     /// unnecessary DB round-trips when context would be empty.
     ///
     /// # Returns
-    /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
+    /// * `HashMap<String, ServiceContext>` - Map of `tool_id` -> `ServiceContext`
     pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
         let futures: Vec<_> = self
             .builtin_servers

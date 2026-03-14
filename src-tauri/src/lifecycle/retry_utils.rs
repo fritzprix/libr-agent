@@ -40,7 +40,7 @@ where
     unreachable!()
 }
 
-/// Async version of retry_with_backoff
+/// Async version of `retry_with_backoff`
 pub async fn retry_with_backoff_async<F, Fut, T, E>(
     mut operation: F,
     max_attempts: u32,

@@ -307,7 +307,7 @@ pub async fn import_assistant_skills(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Synchronous implementation of skill import, safe to run inside spawn_blocking.
+/// Synchronous implementation of skill import, safe to run inside `spawn_blocking`.
 fn import_assistant_skills_blocking(
     assistant_skills_dir: PathBuf,
     temp_dir: PathBuf,

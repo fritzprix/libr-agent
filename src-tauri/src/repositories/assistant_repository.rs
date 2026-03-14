@@ -56,14 +56,14 @@ pub trait AssistantRepository: Send + Sync {
     async fn count_assistants(&self) -> Result<u64, DbError>;
 }
 
-/// SQLite implementation of AssistantRepository using SeaORM
+/// `SQLite` implementation of `AssistantRepository` using `SeaORM`
 #[derive(Debug, Clone)]
 pub struct SqliteAssistantRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteAssistantRepository {
-    /// Create a new SQLite assistant repository with the given database connection
+    /// Create a new `SQLite` assistant repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

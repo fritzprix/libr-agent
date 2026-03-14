@@ -17,8 +17,8 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager
     ///
     /// # Arguments
-    /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/attachments
+    /// * `db` - Shared `SeaORM` database connection
+    /// * `session_manager` - Shared `SessionManager` for workspace/attachments
     pub fn new(db: Arc<DatabaseConnection>, session_manager: Arc<SessionManager>) -> Self {
         Self::new_with_config(db, session_manager, SessionIsolationConfig::default())
     }
@@ -26,8 +26,8 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager with custom configuration
     ///
     /// # Arguments
-    /// * `db` - Shared SeaORM database connection
-    /// * `session_manager` - Shared SessionManager for workspace/attachments
+    /// * `db` - Shared `SeaORM` database connection
+    /// * `session_manager` - Shared `SessionManager` for workspace/attachments
     /// * `config` - Session isolation configuration
     pub fn new_with_config(
         db: Arc<DatabaseConnection>,
@@ -54,7 +54,7 @@ impl MCPServiceProxyManager {
     /// Create a new proxy manager from static singleton references
     ///
     /// This is a convenience constructor that retrieves the global MCP manager
-    /// and SeaORM database connection from the application state and creates Arc references.
+    /// and `SeaORM` database connection from the application state and creates Arc references.
     pub fn new_from_static_refs() -> Self {
         use crate::state::get_database_connection;
 

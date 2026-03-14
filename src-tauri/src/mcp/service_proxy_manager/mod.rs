@@ -28,10 +28,10 @@ pub use caching::spawn_tool_cache_update;
 ///
 /// # Session Isolation for External MCP Servers
 ///
-/// - **Stdio servers**: Each session gets independent process instances via SessionMCPManager
-/// - **HTTP servers**: Shared connections with session ID injection via HttpSessionManager
+/// - **Stdio servers**: Each session gets independent process instances via `SessionMCPManager`
+/// - **HTTP servers**: Shared connections with session ID injection via `HttpSessionManager`
 pub struct MCPServiceProxyManager {
-    /// Map of session_id to session-specific proxy instances
+    /// Map of `session_id` to session-specific proxy instances
     proxies: Arc<RwLock<HashMap<String, Arc<MCPServiceProxy>>>>,
 
     /// Session-specific stdio MCP server managers (lazy-spawned per session)
@@ -40,10 +40,10 @@ pub struct MCPServiceProxyManager {
     /// Session-specific HTTP MCP server managers (shared connections with session headers)
     session_http_managers: Arc<RwLock<HashMap<String, HttpSessionManager>>>,
 
-    /// Shared SeaORM database connection for all sessions
+    /// Shared `SeaORM` database connection for all sessions
     db: Arc<DatabaseConnection>,
 
-    /// Shared SessionManager for workspace/attachments servers
+    /// Shared `SessionManager` for workspace/attachments servers
     session_manager: Arc<SessionManager>,
 
     /// Background cleanup task handle
@@ -60,7 +60,7 @@ pub struct MCPServiceProxyManager {
     proxy_readiness: Arc<RwLock<HashMap<String, Arc<tokio::sync::watch::Sender<bool>>>>>,
 
     /// Per-session creation lock to prevent duplicate proxy creation under concurrent calls.
-    /// Two concurrent `create_proxy` calls for the same session_id will serialize here;
+    /// Two concurrent `create_proxy` calls for the same `session_id` will serialize here;
     /// the second caller blocks until the first finishes and then hits the idempotency re-check.
     creation_guards: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }

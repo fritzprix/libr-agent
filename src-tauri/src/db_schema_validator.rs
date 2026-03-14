@@ -33,7 +33,7 @@ impl std::error::Error for SchemaValidationError {}
 /// - Core tables exist (sessions, messages, assistants)
 /// - Planning module tables have correct columns
 ///
-/// Returns Ok(()) if validation passes, or SchemaValidationError if any check fails
+/// Returns Ok(()) if validation passes, or `SchemaValidationError` if any check fails
 pub async fn validate_schema(db: &DatabaseConnection) -> Result<(), SchemaValidationError> {
     info!("🔍 Validating database schema...");
 

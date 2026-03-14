@@ -101,7 +101,7 @@ impl PlaybookService {
         Ok(())
     }
 
-    /// Helper to get assistant_id from session
+    /// Helper to get `assistant_id` from session
     pub async fn get_assistant_id_from_session(session_id: &str) -> Result<String, String> {
         let session_model = crate::state::get_session_repository()
             .get_session(session_id)

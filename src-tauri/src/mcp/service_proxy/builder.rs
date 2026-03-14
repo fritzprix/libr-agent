@@ -5,7 +5,7 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tauri::AppHandle;
 
-/// Builder for MCPServiceProxy
+/// Builder for `MCPServiceProxy`
 pub struct MCPServiceProxyBuilder {
     session_id: String,
     tool_ids: Vec<String>,
@@ -49,7 +49,7 @@ impl MCPServiceProxyBuilder {
         self
     }
 
-    /// Build the MCPServiceProxy
+    /// Build the `MCPServiceProxy`
     pub async fn build(self) -> Result<MCPServiceProxy, String> {
         // Fetch system settings to get timeout configuration
         let timeout = Self::fetch_tool_timeout().await;

@@ -14,14 +14,14 @@ pub trait ContentStoreRepository: Send + Sync {
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError>;
 }
 
-/// SQLite implementation of ContentStoreRepository
+/// `SQLite` implementation of `ContentStoreRepository`
 #[derive(Debug)]
 pub struct SqliteContentStoreRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteContentStoreRepository {
-    /// Create a new SQLite content store repository with the given database connection
+    /// Create a new `SQLite` content store repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

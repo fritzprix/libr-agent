@@ -104,8 +104,8 @@ pub fn emit_agent_event(app_handle: &AppHandle, event: AgentEvent) -> Result<(),
 
 /// Emit a resource update event (convenience wrapper)
 ///
-/// This is a shorthand for emitting ResourceUpdated events from builtin tools.
-/// Falls back silently if AppHandle is not available (e.g., during tests).
+/// This is a shorthand for emitting `ResourceUpdated` events from builtin tools.
+/// Falls back silently if `AppHandle` is not available (e.g., during tests).
 pub fn emit_resource_updated(resource_type: &str, action: &str, resource_id: Option<String>) {
     if let Some(app_handle) = crate::state::get_app_handle() {
         let event = AgentEvent::ResourceUpdated {

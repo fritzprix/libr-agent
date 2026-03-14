@@ -17,7 +17,7 @@ use crate::session_isolation::types::ShellType;
 /// handling lifecycle management and cleanup.
 #[derive(Debug)]
 pub struct PersistentShellManager {
-    /// session_id -> PersistentShell mapping
+    /// `session_id` -> `PersistentShell` mapping
     shells: Arc<Mutex<HashMap<String, Arc<Mutex<PersistentShell>>>>>,
 
     /// Maximum shells per session (resource limit)
@@ -85,7 +85,7 @@ impl PersistentShellManager {
     /// Execute command in persistent shell
     ///
     /// Automatically handles shell creation and retries on crash.
-    /// Returns (stdout, stderr, exit_code, cwd).
+    /// Returns (stdout, stderr, `exit_code`, cwd).
     pub async fn execute(
         &self,
         session_id: String,

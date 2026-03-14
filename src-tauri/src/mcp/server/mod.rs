@@ -47,7 +47,7 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// Creates a new `MCPServerManager` with support for both `SessionManager` and SQLite.
+    /// Creates a new `MCPServerManager` with support for both `SessionManager` and `SQLite`.
     pub async fn new_with_session_manager_and_sqlite(
         session_manager: Arc<SessionManager>,
         sqlite_db_url: String,
@@ -74,7 +74,7 @@ impl MCPServerManager {
         server_manager
     }
 
-    /// Creates a new `MCPServerManager` with support for both `SessionManager` and SeaORM DatabaseConnection.
+    /// Creates a new `MCPServerManager` with support for both `SessionManager` and `SeaORM` `DatabaseConnection`.
     pub async fn new_with_session_manager_and_db(
         session_manager: Arc<SessionManager>,
         db: sea_orm::DatabaseConnection,

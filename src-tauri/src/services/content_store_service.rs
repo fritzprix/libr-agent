@@ -8,7 +8,7 @@ pub struct ContentStoreService;
 impl ContentStoreService {
     /// Delete content store data for a session.
     ///
-    /// Removes SQLite rows (stores/contents/chunks) when a SQLite DB URL is configured,
+    /// Removes `SQLite` rows (stores/contents/chunks) when a `SQLite` DB URL is configured,
     /// and removes the content store search index directory under the session workspace.
     pub async fn delete_content_store(session_id: &str) -> Result<(), String> {
         // 1) Remove SQLite entries if SQLITE_DB_URL configured

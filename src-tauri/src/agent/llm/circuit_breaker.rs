@@ -41,7 +41,7 @@ fn is_tool_error_message(message: &Message) -> bool {
     })
 }
 
-/// Build (name_by_id, signature_by_id) lookup maps from message history in a single pass.
+/// Build (`name_by_id`, `signature_by_id`) lookup maps from message history in a single pass.
 pub(crate) fn build_tool_call_indices(
     messages: &[Message],
 ) -> (HashMap<String, String>, HashMap<String, String>) {

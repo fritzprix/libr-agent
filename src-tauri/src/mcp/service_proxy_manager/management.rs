@@ -111,7 +111,7 @@ impl MCPServiceProxyManager {
     ///
     /// # Arguments
     /// * `session_id` - The session making the tool call
-    /// * `tool_name` - Name of the tool to invoke (e.g., "attachments__addContent" or "filesystem__read_file")
+    /// * `tool_name` - Name of the tool to invoke (e.g., "`attachments__addContent`" or "`filesystem__read_file`")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns

@@ -3,7 +3,7 @@ use thiserror::Error;
 /// Database error types for repository operations
 #[derive(Debug, Error)]
 pub enum DbError {
-    /// SeaORM database query execution failed
+    /// `SeaORM` database query execution failed
     #[error("SeaORM query failed: {0}")]
     SeaOrmQueryFailed(#[from] sea_orm::DbErr),
 
@@ -32,7 +32,7 @@ pub enum DbError {
     ResourceNotFound(String),
 }
 
-/// Convert DbError to String for Tauri command compatibility
+/// Convert `DbError` to String for Tauri command compatibility
 impl From<DbError> for String {
     fn from(err: DbError) -> String {
         err.to_string()

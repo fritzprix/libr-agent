@@ -8,8 +8,8 @@ pub mod time_location;
 
 /// Trait for providers that inject read-only context into system prompts
 ///
-/// Unlike BuiltinMCPServer which provides tools + stateful context,
-/// ContextProvider is for information-only providers (skills, time, preferences, etc.)
+/// Unlike `BuiltinMCPServer` which provides tools + stateful context,
+/// `ContextProvider` is for information-only providers (skills, time, preferences, etc.)
 #[async_trait]
 pub trait ContextProvider: Send + Sync {
     /// Unique identifier for this provider

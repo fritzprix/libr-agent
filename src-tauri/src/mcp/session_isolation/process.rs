@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 /// Represents a running MCP server process with its associated client and metadata.
 ///
-/// Note: The actual child process is managed internally by rmcp's TokioChildProcess.
+/// Note: The actual child process is managed internally by rmcp's `TokioChildProcess`.
 /// We only store the client handle and metadata here.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -25,7 +25,7 @@ pub struct MCPProcess {
 }
 
 impl MCPProcess {
-    /// Creates a new MCPProcess instance.
+    /// Creates a new `MCPProcess` instance.
     pub fn new(client: rmcp::service::RunningService<rmcp::service::RoleClient, ()>) -> Self {
         Self {
             client,
@@ -38,7 +38,7 @@ impl MCPProcess {
     /// Gracefully shutdown the process.
     ///
     /// This will cancel the rmcp client, which will also terminate the underlying
-    /// child process managed by TokioChildProcess.
+    /// child process managed by `TokioChildProcess`.
     pub async fn shutdown(self) {
         debug!("Shutting down MCP process");
 

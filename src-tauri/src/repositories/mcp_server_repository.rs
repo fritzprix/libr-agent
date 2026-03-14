@@ -43,14 +43,14 @@ pub trait MCPServerRepository: Send + Sync {
     ) -> Result<(), DbError>;
 }
 
-/// SQLite implementation of MCPServerRepository using SeaORM
+/// `SQLite` implementation of `MCPServerRepository` using `SeaORM`
 #[derive(Debug, Clone)]
 pub struct SqliteMCPServerRepository {
     db: DatabaseConnection,
 }
 
 impl SqliteMCPServerRepository {
-    /// Create a new SQLite MCP server repository with the given database connection
+    /// Create a new `SQLite` MCP server repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

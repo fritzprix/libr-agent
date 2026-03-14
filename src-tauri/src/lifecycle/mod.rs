@@ -14,7 +14,7 @@ use crate::session::get_session_manager;
 use crate::state::set_sqlite_db_url;
 use log::info;
 
-/// A synchronous wrapper to initialize and run the application with SQLite support.
+/// A synchronous wrapper to initialize and run the application with `SQLite` support.
 pub fn run_with_sqlite_sync(db_url: String) {
     // Set the SQLite URL
     set_sqlite_db_url(db_url.clone());

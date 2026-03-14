@@ -49,7 +49,7 @@ pub struct PendingShellExecution {
 }
 
 /// Thread-safe storage for pending shell executions
-/// Manages a map of execution_id -> PendingShellExecution
+/// Manages a map of `execution_id` -> `PendingShellExecution`
 #[derive(Debug)]
 pub struct PendingExecutions(Mutex<HashMap<String, PendingShellExecution>>);
 

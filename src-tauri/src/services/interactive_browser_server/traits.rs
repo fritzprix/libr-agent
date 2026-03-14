@@ -9,7 +9,7 @@ pub struct CreateWindowParams<'a> {
     pub on_close: Box<dyn Fn() + Send + Sync>,
 }
 
-/// Trait defining the environment adapter for the InteractiveBrowserServer.
+/// Trait defining the environment adapter for the `InteractiveBrowserServer`.
 /// This decouples the domain logic from the underlying framework (e.g., Tauri).
 pub trait BrowserEnvironment: Send + Sync {
     /// Creates a new browser window/session.

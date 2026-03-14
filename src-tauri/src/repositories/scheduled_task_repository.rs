@@ -32,7 +32,7 @@ pub trait ScheduledTaskRepository: Send + Sync {
         assistant_id: Option<&str>,
     ) -> Result<Vec<scheduled_task::Model>, DbErr>;
 
-    /// List enabled tasks whose next_run_at is <= the given epoch ms (due tasks)
+    /// List enabled tasks whose `next_run_at` is <= the given epoch ms (due tasks)
     async fn list_due_tasks(&self, now_ms: i64) -> Result<Vec<scheduled_task::Model>, DbErr>;
 
     /// Update mutable fields of a scheduled task
@@ -46,7 +46,7 @@ pub trait ScheduledTaskRepository: Send + Sync {
         next_run_at: Option<Option<i64>>,
     ) -> Result<scheduled_task::Model, DbErr>;
 
-    /// Record that a task has just run: update session_id, last_run_at, next_run_at
+    /// Record that a task has just run: update `session_id`, `last_run_at`, `next_run_at`
     async fn record_run(
         &self,
         id: &str,

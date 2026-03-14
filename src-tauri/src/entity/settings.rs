@@ -1,6 +1,6 @@
 //! Settings entity definition for generic key-value storage
 //!
-//! This entity replaces the `objects` table in IndexedDB.
+//! This entity replaces the `objects` table in `IndexedDB`.
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};

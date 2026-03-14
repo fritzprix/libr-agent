@@ -102,13 +102,13 @@ pub use state::{
     set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
 };
 
-/// A synchronous wrapper to initialize and run the application with SQLite support.
+/// A synchronous wrapper to initialize and run the application with `SQLite` support.
 ///
 /// This function sets up a Tokio runtime to perform async initialization of the
-/// `MCPServerManager` with a SQLite database, then calls the main `run` function.
+/// `MCPServerManager` with a `SQLite` database, then calls the main `run` function.
 ///
 /// # Arguments
-/// * `db_url` - The connection URL for the SQLite database.
+/// * `db_url` - The connection URL for the `SQLite` database.
 pub fn run_with_sqlite_sync(db_url: String) {
     lifecycle::run_with_sqlite_sync(db_url);
 }
@@ -120,7 +120,7 @@ pub fn run_with_sqlite_sync(db_url: String) {
 /// - The Tauri application builder with all necessary plugins (dialog, logging, opener).
 /// - The full list of invoke handlers (Tauri commands) available to the frontend.
 /// - A setup hook to initialize managed state like `SecureFileManager` and `InteractiveBrowserServer`.
-/// - Linux-specific environment variables and checks for WebKit compatibility.
+/// - Linux-specific environment variables and checks for `WebKit` compatibility.
 /// - Graceful error handling for panics that may occur during application startup.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

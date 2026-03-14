@@ -47,17 +47,17 @@ fn needs_shell_wrapper(command: &str) -> bool {
 
 /// Wraps a command with appropriate shell on Windows if needed
 ///
-/// Returns (final_command, final_args) tuple:
-/// - On Windows with .cmd/.bat files: ("cmd.exe", ["/C", original_command, ...args])
-/// - On Windows with .ps1 files: ("powershell.exe", ["-File", original_command, ...args])
-/// - Otherwise: (original_command, args)
+/// Returns (`final_command`, `final_args`) tuple:
+/// - On Windows with .cmd/.bat files: ("cmd.exe", ["/C", `original_command`, ...args])
+/// - On Windows with .ps1 files: ("powershell.exe", ["-File", `original_command`, ...args])
+/// - Otherwise: (`original_command`, args)
 ///
 /// # Arguments
 /// * `command` - The command to execute
 /// * `args` - Command arguments
 ///
 /// # Returns
-/// Tuple of (final_command, final_args) ready for Command::new()
+/// Tuple of (`final_command`, `final_args`) ready for `Command::new()`
 pub fn prepare_command(command: &str, args: &[String]) -> (String, Vec<String>) {
     #[cfg(windows)]
     {

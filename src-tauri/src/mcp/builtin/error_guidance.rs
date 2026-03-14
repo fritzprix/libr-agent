@@ -2,7 +2,7 @@
 ///
 /// This module provides a centralized error guidance system that ensures consistent,
 /// actionable error messages across all built-in tools. It follows the best practices
-/// documented in docs/guides/builtin_tool_bp.md.
+/// documented in `docs/guides/builtin_tool_bp.md`.
 ///
 /// Key principles:
 /// - Every error includes visual markers (✗)
@@ -65,7 +65,7 @@ pub struct ErrorGuidance {
 /// Canonical builder for constructing `ErrorGuidance` instances.
 ///
 /// Why this exists:
-/// - Makes the "category + message + tool_group + guidance" contract explicit.
+/// - Makes the "category + message + `tool_group` + guidance" contract explicit.
 /// - Allows optional override of default guidance in a consistent way.
 /// - Enables gradual migration without breaking the existing helper functions.
 #[must_use]
@@ -158,7 +158,7 @@ impl ErrorGuidance {
         }
     }
 
-    /// Convert to MCPResult
+    /// Convert to `MCPResult`
     pub fn to_mcp_result(&self) -> MCPResult {
         let guidance_text = self
             .guidance
@@ -410,12 +410,12 @@ impl SuccessHint {
         }
     }
 
-    /// Create a success MCPResult with hints
+    /// Create a success `MCPResult` with hints
     pub fn to_mcp_result(&self) -> MCPResult {
         self.to_mcp_result_with_data(None)
     }
 
-    /// Create a success MCPResult with hints and structured data
+    /// Create a success `MCPResult` with hints and structured data
     pub fn to_mcp_result_with_data(&self, data: Option<serde_json::Value>) -> MCPResult {
         let hint_text = if self.next_actions.is_empty() {
             String::new()

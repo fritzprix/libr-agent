@@ -1,7 +1,7 @@
 /// Global state management module
 ///
 /// This module provides centralized access to application-wide state including
-/// the MCP service proxy manager, SQLite database URL,
+/// the MCP service proxy manager, `SQLite` database URL,
 /// database connection, and repositories.
 use crate::agent::concurrency::ConcurrencyGate;
 use crate::agent::session_bus::SessionBus;
@@ -23,7 +23,7 @@ use tokio::sync::RwLock as TokioRwLock;
 /// A global, thread-safe, once-initialized instance of the `MCPServiceProxyManager`.
 static MCP_SERVICE_PROXY_MANAGER: OnceLock<Arc<MCPServiceProxyManager>> = OnceLock::new();
 
-/// A global, thread-safe, once-initialized string for the SQLite database URL.
+/// A global, thread-safe, once-initialized string for the `SQLite` database URL.
 static SQLITE_DB_URL: OnceLock<String> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized database connection.
@@ -62,7 +62,7 @@ static SCHEDULED_TASK_REPOSITORY: OnceLock<SqliteScheduledTaskRepository> = Once
 /// A global, thread-safe, once-initialized compact context repository.
 static COMPACT_CONTEXT_REPOSITORY: OnceLock<SqliteCompactContextRepository> = OnceLock::new();
 
-/// A global, thread-safe, once-initialized Tauri AppHandle for event emission.
+/// A global, thread-safe, once-initialized Tauri `AppHandle` for event emission.
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized session event bus (SP1).
@@ -72,11 +72,11 @@ static SESSION_BUS: OnceLock<SessionBus> = OnceLock::new();
 static CONCURRENCY_GATE: OnceLock<ConcurrencyGate> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized active sessions map (SP6).
-/// Shared Arc from AgentSessionManager so external subsystems (e.g. builtin MCP tools)
+/// Shared Arc from `AgentSessionManager` so external subsystems (e.g. builtin MCP tools)
 /// can read per-session cancellation tokens without going through Tauri managed state.
 static ACTIVE_SESSIONS: OnceLock<Arc<TokioRwLock<HashMap<String, AgentSession>>>> = OnceLock::new();
 
-/// Initialize the global AppHandle
+/// Initialize the global `AppHandle`
 /// Should be called once during application setup
 pub fn init_app_handle(handle: AppHandle) {
     if APP_HANDLE.set(handle).is_err() {
@@ -84,13 +84,13 @@ pub fn init_app_handle(handle: AppHandle) {
     }
 }
 
-/// Get the global AppHandle for event emission
+/// Get the global `AppHandle` for event emission
 /// Returns None if not initialized yet
 pub fn get_app_handle() -> Option<&'static AppHandle> {
     APP_HANDLE.get()
 }
 
-/// Sets the global SQLite database URL.
+/// Sets the global `SQLite` database URL.
 ///
 /// # Panics
 /// This function will panic if the URL is already set.
@@ -98,7 +98,7 @@ pub fn set_sqlite_db_url(url: String) {
     SQLITE_DB_URL.set(url).expect("SQLite DB URL already set");
 }
 
-/// Gets a reference to the global SQLite database URL, if it has been set.
+/// Gets a reference to the global `SQLite` database URL, if it has been set.
 ///
 /// # Returns
 /// An `Option` containing a reference to the URL string, or `None` if not yet set.
@@ -447,7 +447,7 @@ pub fn get_active_sessions() -> &'static Arc<TokioRwLock<HashMap<String, AgentSe
 
 /// Retrieve the `cancel_pending` flag Arc for the given session, or `None` if the
 /// session is not currently active.  Holds the read-lock only for the duration of
-/// the clone — very cheap.  Callers can then poll the AtomicBool without holding
+/// the clone — very cheap.  Callers can then poll the `AtomicBool` without holding
 /// any lock, making this safe to use inside hot async loops.
 pub async fn get_session_cancel_pending(session_id: &str) -> Option<Arc<AtomicBool>> {
     let sessions = get_active_sessions().read().await;

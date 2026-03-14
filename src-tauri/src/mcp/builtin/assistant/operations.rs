@@ -109,7 +109,7 @@ fn merge_config_from_request(params: ConfigMergeParams<'_>) -> Value {
     config
 }
 
-/// Validate that all mcpServerIds exist in the mcp_servers table
+/// Validate that all mcpServerIds exist in the `mcp_servers` table
 async fn validate_mcp_server_ids(
     db: &sea_orm::DatabaseConnection,
     server_ids: &[String],
@@ -410,7 +410,7 @@ pub async fn update_assistant(
 /// Used by the self-modification and self-deletion guards. Returns an error
 /// if the session doesn't exist or has no assistant binding — callers treat
 /// that as "no guard needed" (fail-open is intentional: a session without a
-/// known assistant_id should not be blocked).
+/// known `assistant_id` should not be blocked).
 async fn get_caller_assistant_id(session_id: &str) -> Result<String, String> {
     let session = crate::get_session_repository()
         .get_session(session_id)

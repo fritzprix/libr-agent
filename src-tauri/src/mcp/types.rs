@@ -241,7 +241,7 @@ pub enum MCPContent {
 }
 
 /// Represents the pure result of a tool execution (without JSON-RPC wrapper).
-/// This is what built-in tools should return before being wrapped in MCPResponse.
+/// This is what built-in tools should return before being wrapped in `MCPResponse`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MCPResult {
@@ -257,7 +257,7 @@ pub struct MCPResult {
 }
 
 impl MCPResult {
-    /// Creates a successful MCPResult with text content.
+    /// Creates a successful `MCPResult` with text content.
     #[allow(dead_code)]
     pub fn success(text: &str) -> Self {
         Self {
@@ -270,7 +270,7 @@ impl MCPResult {
         }
     }
 
-    /// Creates a successful MCPResult with text and structured content.
+    /// Creates a successful `MCPResult` with text and structured content.
     #[allow(dead_code)]
     pub fn success_with_data(text: &str, data: serde_json::Value) -> Self {
         Self {
@@ -283,7 +283,7 @@ impl MCPResult {
         }
     }
 
-    /// Creates an error MCPResult.
+    /// Creates an error `MCPResult`.
     #[allow(dead_code)]
     pub fn error(message: &str) -> Self {
         Self {
@@ -296,7 +296,7 @@ impl MCPResult {
         }
     }
 
-    /// Creates an error MCPResult with additional structured data.
+    /// Creates an error `MCPResult` with additional structured data.
     #[allow(dead_code)]
     pub fn error_with_data(message: &str, data: serde_json::Value) -> Self {
         Self {
@@ -486,7 +486,7 @@ pub struct ServiceContext<T = serde_json::Value> {
 // Builtin Server Metadata (UI-facing)
 // ========================================
 
-/// UI metadata for builtin MCP servers (matches TypeScript ServiceMetadata interface)
+/// UI metadata for builtin MCP servers (matches TypeScript `ServiceMetadata` interface)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuiltinServerMetadata {

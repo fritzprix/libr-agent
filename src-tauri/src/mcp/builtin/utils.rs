@@ -244,7 +244,7 @@ use serde_json::json;
 /// for correct routing of user interactions on the frontend.
 ///
 /// # Arguments
-/// * `uri` - The resource URI (e.g., "ui://prompt/123")
+/// * `uri` - The resource URI (e.g., "<ui://prompt/123>")
 /// * `mime_type` - The MIME type (typically "text/html")
 /// * `html` - The rendered HTML content
 /// * `server_name` - The name of the server (e.g., "ui", "playbook")

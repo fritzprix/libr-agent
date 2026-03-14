@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Snapshot of the `schema_version` table row created by migration #10.
 ///
-/// Columns: version (PK, string), migration_count (integer), applied_at (bigint), checksum (string nullable)
+/// Columns: version (PK, string), `migration_count` (integer), `applied_at` (bigint), checksum (string nullable)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaVersionRecord {
     /// Semver string from Cargo.toml at migration time (e.g. "0.5.3")

@@ -5,7 +5,7 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use tauri::AppHandle;
 
-/// Configuration for creating an MCPServiceProxy
+/// Configuration for creating an `MCPServiceProxy`
 #[derive(Debug)]
 pub struct ProxyConfig {
     /// Unique identifier for the agent session
@@ -16,14 +16,14 @@ pub struct ProxyConfig {
     pub app_handle: Option<AppHandle>,
 }
 
-/// Shared manager dependencies for MCPServiceProxy
+/// Shared manager dependencies for `MCPServiceProxy`
 #[derive(Debug, Clone)]
 pub struct SharedManagers {
     /// Shared manager for external MCP servers
     pub external_mcp: Arc<MCPServerManager>,
-    /// Shared SeaORM database connection
+    /// Shared `SeaORM` database connection
     pub db: Arc<DatabaseConnection>,
-    /// Shared SessionManager for workspace/attachments
+    /// Shared `SessionManager` for workspace/attachments
     pub session_manager: Arc<SessionManager>,
 }
 

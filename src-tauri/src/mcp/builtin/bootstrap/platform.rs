@@ -3,7 +3,7 @@
 //! This module provides comprehensive, cross-platform detection of system information.
 //!
 //! ## Supported Platforms
-//! - **Windows**: Full support via `where` command and PowerShell detection
+//! - **Windows**: Full support via `where` command and `PowerShell` detection
 //! - **macOS**: Full support via `command -v` and Homebrew detection
 //! - **Linux**: Full support with distro detection via `/etc/os-release`
 //!

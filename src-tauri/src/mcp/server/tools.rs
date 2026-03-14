@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-/// Helper function to convert serde_json::Value to JsonRpcId
+/// Helper function to convert `serde_json::Value` to `JsonRpcId`
 fn value_to_json_rpc_id(value: serde_json::Value) -> JsonRpcId {
     match value {
         serde_json::Value::String(s) => JsonRpcId::String(s),
@@ -580,7 +580,7 @@ pub async fn get_service_context(
 /// - Knowledge (5 tools): Assistant-scoped knowledge base
 /// - Browser (13 tools): Web browser automation
 /// - Workspace (30+ tools): File operations and shell execution
-/// - ContentStore (5 tools): File attachment and semantic search
+/// - `ContentStore` (5 tools): File attachment and semantic search
 /// - Assistant (4 tools): Assistant configuration management
 /// - Playbook (4 tools): Playbook execution
 /// - Bootstrap (2 tools): Platform and environment info

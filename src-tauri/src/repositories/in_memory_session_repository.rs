@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// In-memory implementation of SessionRepository for ephemeral sessions
+/// In-memory implementation of `SessionRepository` for ephemeral sessions
 ///
 /// This implementation stores session data in memory only, without DB persistence.
 /// Ideal for temporary sessions that are converted to persistent later.
@@ -149,7 +149,7 @@ impl SessionRepository for InMemorySessionRepository {
 
     /// Get all sessions stored in memory
     ///
-    /// Returns sessions in arbitrary order (HashMap iteration order).
+    /// Returns sessions in arbitrary order (`HashMap` iteration order).
     async fn get_all_sessions(&self) -> Result<Vec<SessionMetadata>, DbError> {
         let sessions = self.sessions.read().await;
         let result: Vec<SessionMetadata> = sessions.values().cloned().collect();

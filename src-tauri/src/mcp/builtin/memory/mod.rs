@@ -22,7 +22,7 @@ pub struct MemoryServer {
 }
 
 impl MemoryServer {
-    /// Create a new MemoryServer for the given session.
+    /// Create a new `MemoryServer` for the given session.
     pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         Ok(Self { session_id, db })
     }

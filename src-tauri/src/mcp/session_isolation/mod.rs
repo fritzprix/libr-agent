@@ -5,8 +5,8 @@
 /// state conflicts during concurrent execution.
 ///
 /// ## Architecture:
-/// - **Stdio servers**: Independent processes per session (SessionMCPManager)
-/// - **HTTP servers**: Shared connections with session ID injection (HttpSessionManager)
+/// - **Stdio servers**: Independent processes per session (`SessionMCPManager`)
+/// - **HTTP servers**: Shared connections with session ID injection (`HttpSessionManager`)
 pub mod error;
 pub mod http_manager;
 pub mod process;

@@ -20,7 +20,7 @@ use super::super::normalization;
 use super::security;
 
 impl WorkspaceServer {
-    /// Handle execute_pending_shell tool call (2nd tool call)
+    /// Handle `execute_pending_shell` tool call (2nd tool call)
     /// Executes pending command with user input via stdin
     pub async fn handle_execute_pending_shell(
         &self,

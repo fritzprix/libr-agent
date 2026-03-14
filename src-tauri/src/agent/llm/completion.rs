@@ -298,7 +298,7 @@ pub async fn maybe_trigger_post_idle_compaction(
 
 /// Request LLM completion from frontend
 ///
-/// Note: session_repo is passed through to handle_llm_response which uses it for status updates
+/// Note: `session_repo` is passed through to `handle_llm_response` which uses it for status updates
 pub async fn request_llm_completion(
     _session_repo: &Arc<dyn SessionRepository>,
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
@@ -1003,7 +1003,7 @@ async fn resolve_message_references(
 /// user message sits at the tail of history and the user sends another message
 /// before the agent can respond. The content of subsequent user messages is
 /// appended to the first with a separator. IDs and metadata from the first
-/// message are preserved. This operates on the CompletionRequest payload only —
+/// message are preserved. This operates on the `CompletionRequest` payload only —
 /// stored messages are never mutated.
 fn merge_consecutive_user_messages(messages: Vec<Message>) -> Vec<Message> {
     let mut result: Vec<Message> = Vec::with_capacity(messages.len());

@@ -41,7 +41,7 @@ impl std::fmt::Debug for AgentSessionManager {
 }
 
 impl AgentSessionManager {
-    /// Create a new AgentSessionManager with dependency injection
+    /// Create a new `AgentSessionManager` with dependency injection
     pub fn new(
         app_handle: AppHandle,
         proxy_manager: Arc<MCPServiceProxyManager>,
@@ -88,7 +88,7 @@ impl AgentSessionManager {
         }
     }
 
-    /// Create a new session (wrapper around create_session_with_repo using internal repo)
+    /// Create a new session (wrapper around `create_session_with_repo` using internal repo)
     pub async fn create_session(
         &self,
         session_id: String,
@@ -459,7 +459,7 @@ impl AgentSessionManager {
         Ok(())
     }
 
-    /// Returns the current yolo_mode for a session (false if session not found).
+    /// Returns the current `yolo_mode` for a session (false if session not found).
     pub async fn get_yolo_mode(&self, session_id: &str) -> bool {
         let active = self.active_sessions.read().await;
         active
@@ -608,7 +608,7 @@ impl AgentSessionManager {
     }
 
     /// Remove a message from the in-memory cache
-    /// Used when messages are deleted via messages_delete command to keep cache in sync
+    /// Used when messages are deleted via `messages_delete` command to keep cache in sync
     pub async fn remove_message_from_cache(
         &self,
         session_id: &str,

@@ -148,7 +148,7 @@ impl BrowserContentStore {
             .retain(|_, session| now.saturating_sub(session.timestamp) < max_age_secs);
     }
 
-    /// Count tokens in text using cl100k_base tokenizer (GPT-4, GPT-3.5-turbo)
+    /// Count tokens in text using `cl100k_base` tokenizer (GPT-4, GPT-3.5-turbo)
     fn count_tokens(text: &str) -> usize {
         match cl100k_base() {
             Ok(bpe) => bpe.encode_with_special_tokens(text).len(),

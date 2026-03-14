@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, RwLock};
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 impl SessionMCPManager {
-    /// Creates a new SessionMCPManager for the given session.
+    /// Creates a new `SessionMCPManager` for the given session.
     pub fn new(
         session_id: String,
         server_configs: HashMap<String, MCPServerConfig>,

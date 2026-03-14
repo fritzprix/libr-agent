@@ -24,9 +24,9 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tracing::{debug, warn};
 
-/// Read a line from BufReader with lossy UTF-8 conversion
+/// Read a line from `BufReader` with lossy UTF-8 conversion
 ///
-/// This handles PowerShell error messages that may contain non-UTF8 characters
+/// This handles `PowerShell` error messages that may contain non-UTF8 characters
 /// (e.g., Windows CP949 encoding for Korean error messages).
 ///
 /// # Arguments
@@ -81,10 +81,10 @@ impl PersistentShell {
     /// # Arguments
     /// * `session_id` - Unique identifier for this shell session
     /// * `workspace_path` - Working directory for the shell session
-    /// * `shell_type` - Type of shell to spawn (Bash, PowerShell, or Cmd)
+    /// * `shell_type` - Type of shell to spawn (Bash, `PowerShell`, or Cmd)
     ///
     /// # Platform-specific behavior
-    /// - Unix: Spawns `bash --norc --noprofile` (shell_type must be Bash)
+    /// - Unix: Spawns `bash --norc --noprofile` (`shell_type` must be Bash)
     /// - Windows (PowerShell): Spawns `powershell.exe -NoProfile -NoLogo -NonInteractive`
     /// - Windows (Cmd): Spawns `cmd.exe /Q /K` (no echo, keep running)
     pub async fn new(
@@ -234,7 +234,7 @@ impl PersistentShell {
     ///
     /// # Returns
     ///
-    /// Tuple of (stdout, stderr, exit_code, cwd)
+    /// Tuple of (stdout, stderr, `exit_code`, cwd)
     ///
     /// # Algorithm
     ///
@@ -456,7 +456,7 @@ impl PersistentShell {
     /// * `user_input` - Input to inject via stdin
     ///
     /// # Returns
-    /// Tuple of (stdout, stderr, exit_code, cwd)
+    /// Tuple of (stdout, stderr, `exit_code`, cwd)
     ///
     /// # Security
     /// Input is passed via stdin pipe, not visible in process command line

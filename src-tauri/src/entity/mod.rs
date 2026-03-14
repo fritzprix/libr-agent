@@ -1,6 +1,6 @@
-//! SeaORM Entity Definitions
+//! `SeaORM` Entity Definitions
 //!
-//! This module contains all entity definitions for the LibrAgent database.
+//! This module contains all entity definitions for the `LibrAgent` database.
 
 // Core entities (sessions and messages)
 pub mod compact_context;

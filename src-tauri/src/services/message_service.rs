@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
-/// Global cache for loaded search indices (session_id -> MessageSearchEngine)
+/// Global cache for loaded search indices (`session_id` -> `MessageSearchEngine`)
 static INDEX_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, MessageSearchEngine>>> =
     once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 

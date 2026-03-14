@@ -31,7 +31,7 @@ impl SessionCleanupService {
     /// 2. Database Metadata (SQL)
     ///
     /// Note: This does NOT remove the workspace directory or update the session pool.
-    /// The caller must handle that via SessionManager or DirectoryService.
+    /// The caller must handle that via `SessionManager` or `DirectoryService`.
     pub async fn cleanup_auxiliary_resources(
         session_id: &str,
         message_repo: &impl MessageRepository,

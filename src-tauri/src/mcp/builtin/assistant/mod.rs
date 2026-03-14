@@ -24,7 +24,7 @@ struct ContextCache {
 /// Assistant MCP Server
 ///
 /// Provides global assistant configuration management.
-/// Global scope: Assistants are shared across all sessions (no session_id FK).
+/// Global scope: Assistants are shared across all sessions (no `session_id` FK).
 #[derive(Debug)]
 pub struct AssistantServer {
     db: Arc<DatabaseConnection>,
@@ -32,7 +32,7 @@ pub struct AssistantServer {
 }
 
 impl AssistantServer {
-    /// Create a new AssistantServer
+    /// Create a new `AssistantServer`
     ///
     /// Note: Unlike other servers, this is NOT session-bound.
     /// Assistants are global and can be reused across multiple sessions.

@@ -208,3 +208,7 @@
 
 **Drift:** Rust documentation generated warnings due to unresolved links (`[validate_path]`, `[call_tool]`) and unclosed HTML tags (`Arc<RwLock>`, `Option<String>`, `Option<T>`).
 **Reality:** Fixed the links to correctly resolve to their respective struct methods and wrapped the HTML-like types in backticks (e.g., `Arc<RwLock>`) to eliminate rustdoc warnings.
+
+## 2026-03-14 - src-tauri/src/*
+**Drift:** Rust documentation generated 258 `clippy::doc_markdown` warnings due to missing backticks for types, variables, and code keywords across the rust codebase.
+**Reality:** Ran `cargo clippy --fix` to wrap terms like `SQLite`, `SeaORM`, `AppHandle`, and variable names in backticks to conform to Rust doc standards and remove warnings.

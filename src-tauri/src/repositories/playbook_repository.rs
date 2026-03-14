@@ -71,14 +71,14 @@ pub trait PlaybookRepository: Send + Sync {
     async fn count_playbooks(&self, assistant_id: &str) -> Result<u64, DbError>;
 }
 
-/// SQLite implementation of PlaybookRepository using SeaORM
+/// `SQLite` implementation of `PlaybookRepository` using `SeaORM`
 #[derive(Debug, Clone)]
 pub struct SqlitePlaybookRepository {
     db: DatabaseConnection,
 }
 
 impl SqlitePlaybookRepository {
-    /// Create a new SQLite playbook repository with the given database connection
+    /// Create a new `SQLite` playbook repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }

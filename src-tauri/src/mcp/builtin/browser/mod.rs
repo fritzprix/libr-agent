@@ -15,7 +15,7 @@ mod navigation;
 mod session;
 mod tools;
 
-/// A built-in MCP server that constructs a bridge to the InteractiveBrowserServer service
+/// A built-in MCP server that constructs a bridge to the `InteractiveBrowserServer` service
 ///
 /// # Browser Tool Workflows
 ///

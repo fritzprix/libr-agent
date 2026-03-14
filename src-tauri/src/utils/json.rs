@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Helper to serialize optional JSON fields to `Option<String>`.
 /// Returns None if the input is None.
-/// Returns Ok(Some(json_string)) if serialization succeeds.
+/// Returns `Ok(Some(json_string))` if serialization succeeds.
 /// Returns Err if serialization fails.
 pub fn to_json_option<T: Serialize>(
     value: &Option<T>,
@@ -27,7 +27,7 @@ pub fn from_json_option<T: for<'a> Deserialize<'a>>(value: &Option<String>) -> O
     }
 }
 
-/// Helper to deserialize a JSON string to T, or return T::default() if deserialization fails.
+/// Helper to deserialize a JSON string to T, or return `T::default()` if deserialization fails.
 /// Useful for mandatory fields that might be corrupt or in an old format.
 pub fn from_json_or_default<T: for<'a> Deserialize<'a> + Default>(value: &str) -> T {
     serde_json::from_str(value).unwrap_or_default()

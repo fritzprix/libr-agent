@@ -15,7 +15,7 @@ mod tools;
 /// Knowledge Server - Session-scoped knowledge base with full-text search
 ///
 /// This server provides session-specific knowledge storage and retrieval using
-/// SQLite FTS5 for efficient full-text search.
+/// `SQLite` FTS5 for efficient full-text search.
 #[derive(Debug)]
 pub struct KnowledgeServer {
     assistant_id: String,
@@ -23,7 +23,7 @@ pub struct KnowledgeServer {
 }
 
 impl KnowledgeServer {
-    /// Create a new KnowledgeServer instance for a specific assistant
+    /// Create a new `KnowledgeServer` instance for a specific assistant
     pub async fn new(assistant_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         let server = Self { assistant_id, db };
 

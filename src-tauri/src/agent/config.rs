@@ -20,7 +20,7 @@ pub struct AgentConfig {
     /// System prompt defining the agent's role and behavior
     pub system_prompt: String,
 
-    /// MCP server IDs to connect to (references to MCPServerEntity IDs)
+    /// MCP server IDs to connect to (references to `MCPServerEntity` IDs)
     #[serde(default)]
     pub mcp_server_ids: Vec<String>,
 

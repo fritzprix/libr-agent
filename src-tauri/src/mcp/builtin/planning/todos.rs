@@ -7,7 +7,7 @@ use crate::state::get_planning_repository;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
-/// Unified todo update — dispatches to check_todo or cancel_todo based on action.
+/// Unified todo update — dispatches to `check_todo` or `cancel_todo` based on action.
 pub async fn update_todo(
     db: &DatabaseConnection,
     session_id: &str,
