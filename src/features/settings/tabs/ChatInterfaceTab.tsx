@@ -69,7 +69,7 @@ function ChatInterfaceTabComponent({
                 aria-checked={isSelected}
                 onClick={() => onContextStrategyChange(strategy)}
                 className={[
-                  'flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors',
+                  'flex flex-col gap-1 rounded-lg border p-4 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                   isSelected
                     ? 'border-primary bg-primary/5 text-foreground'
                     : 'border-border bg-background text-muted-foreground hover:border-primary/50',

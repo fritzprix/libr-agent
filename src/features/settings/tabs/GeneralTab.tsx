@@ -214,7 +214,7 @@ function GeneralTabComponent({
             {verificationStatus === 'success' && (
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-2 hover:underline focus:outline-none"
+                className="flex items-center gap-2 hover:underline rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <CheckCircle className="w-4 h-4 text-success" />
                 <span className="text-success">
