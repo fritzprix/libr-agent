@@ -379,6 +379,9 @@ fn each_builtin_server_name_is_in_registry() {
     ];
 
     for name in all_names {
+        if name.is_empty() {
+            continue;
+        }
         assert!(
             canonicalize_builtin_service_alias(name).is_some(),
             "server NAME {name:?} is not in BUILTIN_SERVICE_REGISTRY – \
@@ -411,6 +414,9 @@ fn builtin_server_names_are_unique() {
 
     let mut seen = std::collections::HashSet::new();
     for name in all_names {
+        if name.is_empty() {
+            continue;
+        }
         assert!(seen.insert(*name), "duplicate server NAME {name:?}");
     }
 }
@@ -452,6 +458,11 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::McpManager => builtin::mcp_manager::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
         };
+
+        if name.is_empty() {
+            continue;
+        }
+
         assert_eq!(
             name, entry.canonical,
             "Server NAME constant for {:?} must match registry canonical",

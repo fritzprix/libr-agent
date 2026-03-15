@@ -120,15 +120,40 @@ impl BuiltinMCPServer for AgentServer {
 
         let repo = crate::repositories::SqliteAssistantRepository::new(self.get_db().clone());
         let total_agents = repo.count_assistants().await.unwrap_or(0);
+        let agents = repo.list_assistants().await.unwrap_or_default();
 
         let mut context_prompt = format!(
             "# Agent System Status\n\
             **Status**: Active\n\
             **Total Agent Configs**: {}\n\n\
-            Use `agent__list(type='configs')` to see available specialized agents.\n\
-            Use `agent__startSession` to delegate tasks to them.",
+            ### Available Specialized Agents\n",
             total_agents
         );
+
+        if agents.is_empty() {
+            context_prompt
+                .push_str("*No agents configured yet. Use `agent__create` to add one.*\n");
+        } else {
+            for agent in agents.iter().take(5) {
+                let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
+                let desc = config
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No description");
+                context_prompt.push_str(&format!(
+                    "- **{}** (ID: `{}`): {}\n",
+                    agent.name, agent.id, desc
+                ));
+            }
+            if total_agents > 5 {
+                context_prompt.push_str(&format!(
+                    "*...and {} more. Use `agent__list(type='configs')` for full list.*\n",
+                    total_agents - 5
+                ));
+            }
+        }
+
+        context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to these specialists.");
 
         // Try to add sub-session info
         use crate::mcp::builtin::session_api::formatting::build_swarm_snapshot_text;

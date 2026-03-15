@@ -485,19 +485,26 @@ impl BuiltinServerRegistry {
     /// # Arguments
     /// * `name` - The name of the server to retrieve.
     pub fn get_server(&self, name: &str) -> Option<&dyn BuiltinMCPServer> {
+        if name.is_empty() {
+            return None;
+        }
         self.servers.get(name).map(|s| s.as_ref())
     }
 
     /// Lists the names of all registered built-in servers.
     pub fn list_servers(&self) -> Vec<String> {
-        self.servers.keys().cloned().collect()
+        self.servers
+            .keys()
+            .filter(|k| !k.is_empty())
+            .cloned()
+            .collect()
     }
 
     /// Lists all tools from all registered built-in servers.
     pub fn list_all_tools(&self) -> Vec<MCPTool> {
         let mut all_tools = Vec::new();
 
-        for server in self.servers.values() {
+        for server in self.servers.values().filter(|s| !s.name().is_empty()) {
             let tools = server.tools();
             // Prefix tool names with server name for uniqueness
             all_tools.extend(tools);

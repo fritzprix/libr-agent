@@ -1,7 +1,6 @@
 use reqwest::Method;
 use serde_json::{json, Value};
 
-use crate::mcp::builtin::assistant::queries as assistant_queries;
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::session_api::client::call_json;
 use crate::mcp::builtin::session_api::formatting::{
@@ -12,6 +11,7 @@ use crate::mcp::builtin::session_api::utils::{
     wait_until_session_terminal,
 };
 use crate::mcp::types::MCPResult;
+use crate::repositories::AssistantRepository;
 
 use super::AgentServer;
 
@@ -66,7 +66,57 @@ pub async fn list_agents_or_sessions(
         .unwrap_or("configs");
 
     match list_type {
-        "configs" => assistant_queries::list_assistants(server.get_db(), args).await,
+        "configs" => {
+            let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
+            let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
+
+            // Filter by query if provided
+            if let Some(query) = args.get("query").and_then(|v| v.as_str()) {
+                let q = query.to_lowercase();
+                agents.retain(|a| {
+                    a.name.to_lowercase().contains(&q) || a.config.to_lowercase().contains(&q)
+                });
+            }
+
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
+            let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+            let total = agents.len();
+            let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();
+
+            let mut results = Vec::new();
+            let mut text_summary = format!("Found {} agent configurations.\n\n", total);
+
+            for agent in paged_agents {
+                let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
+                let desc = config
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No description");
+                let tools = config
+                    .get("allowedBuiltInServiceAliases")
+                    .cloned()
+                    .unwrap_or(json!([]));
+
+                text_summary.push_str(&format!(
+                    "- **{}** (ID: `{}`)\n  Description: {}\n  Capabilities: {:?}\n\n",
+                    agent.name, agent.id, desc, tools
+                ));
+
+                results.push(json!({
+                    "id": agent.id,
+                    "name": agent.name,
+                    "description": desc,
+                    "capabilities": tools
+                }));
+            }
+
+            let hint = SuccessHint::new(
+                text_summary,
+                vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
+            );
+            Ok(hint.to_mcp_result_with_data(Some(json!({ "agents": results, "total": total }))))
+        }
         "sessions" => {
             // Logic from getChildAgents
             let data: Value = call_json(

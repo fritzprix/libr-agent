@@ -39,10 +39,11 @@ fn list_tool() -> MCPTool {
     MCPTool {
         name: "list".to_string(),
         title: Some("List Agents and Sessions".to_string()),
-        description: "List available agent configurations or active sub-agent sessions.".to_string(),
+        description: "List available agent configurations or active sub-agent sessions. Use this to discover specialized agents by name or description.".to_string(),
         input_schema: object_prop(
             vec![
                 ("type".to_string(), string_prop(None, None, Some("What to list: 'configs' (default) or 'sessions' (sub-agents of current session)."))),
+                ("query".to_string(), string_prop(None, None, Some("Optional search term to filter agent configurations by name or description."))),
                 ("limit".to_string(), integer_prop(Some(1), Some(100), Some("Maximum number of items to return."))),
                 ("offset".to_string(), integer_prop(Some(0), None, Some("Pagination offset."))),
             ],

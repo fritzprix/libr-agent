@@ -422,6 +422,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
 
     BUILTIN_SERVICE_REGISTRY
         .iter()
+        .filter(|entry| !entry.canonical.is_empty())
         .map(|entry| {
             let name = entry.canonical.to_string();
             let tool_count = get_static_tools_for_server(&name).len();
@@ -564,7 +565,10 @@ pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
 
     BUILTIN_SERVICE_REGISTRY
         .iter()
-        .flat_map(|entry| get_static_tools_for_server(entry.canonical))
+        .flat_map(|entry| {
+            // If tools are empty or name is empty, they won't reach the agent
+            get_static_tools_for_server(entry.canonical)
+        })
         .collect()
 }
 
