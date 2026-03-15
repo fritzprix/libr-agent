@@ -1,5 +1,5 @@
 import type { Message } from '@/models/chat';
-import { AIServiceProvider } from './types';
+import type { IAIService } from './types';
 import { getLogger } from '../logger';
 import type { MCPContent } from '@/lib/mcp';
 
@@ -166,6 +166,67 @@ export function validateToolCallPairing(messages: Message[]): Message[] {
 }
 
 /**
+ * Merges consecutive user messages into a single message while preserving
+ * attachments from all merged messages.
+ *
+ * This runs after provider-specific sanitization so tool/assistant boundaries
+ * remain intact and only adjacent user messages are coalesced.
+ *
+ * @param messages The array of sanitized messages to merge.
+ * @returns A new array where adjacent user messages have been merged.
+ */
+export function mergeConsecutiveUserMessages(messages: Message[]): Message[] {
+  const merged: Message[] = [];
+
+  for (const msg of messages) {
+    const last = merged[merged.length - 1];
+
+    if (last && last.role === 'user' && msg.role === 'user') {
+      const lastContent = Array.isArray(last.content)
+        ? (last.content as MCPContent[])
+        : ([{ type: 'text', text: String(last.content) }] as MCPContent[]);
+      const nextContent = Array.isArray(msg.content)
+        ? (msg.content as MCPContent[])
+        : ([{ type: 'text', text: String(msg.content) }] as MCPContent[]);
+
+      last.content = [
+        ...lastContent,
+        { type: 'text', text: '\n\n' } as MCPContent,
+        ...nextContent,
+      ];
+
+      if (msg.attachments?.length) {
+        last.attachments = [...(last.attachments ?? []), ...msg.attachments];
+      }
+
+      logger.debug('Merged consecutive user messages in generic layer', {
+        id1: last.id,
+        id2: msg.id,
+      });
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Runs the common message normalization pipeline using a concrete AI service
+ * instance for provider-specific sanitization.
+ *
+ * @param messages The array of messages to sanitize.
+ * @param service The target AI service instance.
+ * @returns A new array of sanitized messages ready for API submission.
+ */
+export function sanitizeMessagesForService(
+  messages: Message[],
+  service: IAIService,
+): Message[] {
+  return mergeConsecutiveUserMessages(service.sanitizeMessages(messages));
+}
+
+/**
  * A utility class for normalizing and sanitizing message objects to ensure
  * compatibility with various AI service providers.
  *
@@ -191,243 +252,6 @@ export class MessageNormalizer {
    * @returns Sanitized array with valid tool-call pairings only
    */
   static validateToolCallPairing = validateToolCallPairing;
-
-  /**
-   * Sanitizes an array of messages for a specific AI service provider.
-   * This is the main entry point for message normalization. It executes a pipeline of
-   * validation and sanitization steps to prevent API errors (e.g., 400 Bad Request).
-   *
-   * Pipeline:
-   * 1. Filter System Errors: Remove network/API errors but keep tool execution failures.
-   * 2. Validate Tool Pairing: Ensure every tool response has a matching tool call.
-   * 3. Provider Sanitization: Apply specific rules (e.g., removing 'thinking' fields).
-   *
-   * @param messages The array of messages to sanitize.
-   * @param targetProvider The target AI service provider.
-   * @returns A new array of sanitized messages ready for API submission.
-   */
-  static sanitizeMessagesForProvider(
-    messages: Message[],
-    targetProvider: AIServiceProvider,
-  ): Message[] {
-    // Zero pass: filter out system errors (prevents polluting context)
-    // but preserve tool execution errors which are part of the conversation flow
-    const validMessages = this.filterSystemErrors(messages);
-
-    // First pass: handle tool call relationships (Common for all providers)
-    const processedMessages = this.validateToolCallPairing(validMessages);
-
-    // Second pass: sanitize individual messages
-    const sanitized = processedMessages
-      .map((msg) => this.sanitizeSingleMessage(msg, targetProvider))
-      .filter((msg) => msg !== null) as Message[];
-
-    // Third pass: Merge consecutive 'user' messages only.
-    // This handles multiple user inputs (e.g. pending messages) in a common layer.
-    // We EXCLUDE 'tool' and 'assistant' from this auto-merging to preserve
-    // logical boundaries and maximize prefix caching for providers like Gemini.
-    const merged: Message[] = [];
-
-    for (const msg of sanitized) {
-      const last = merged[merged.length - 1];
-
-      // CRITICAL: Only merge if role is 'user'.
-      // Do NOT merge 'tool' or 'assistant' here.
-      if (last && last.role === 'user' && msg.role === 'user') {
-        const lastContent = Array.isArray(last.content)
-          ? (last.content as MCPContent[])
-          : ([{ type: 'text', text: String(last.content) }] as MCPContent[]);
-        const nextContent = Array.isArray(msg.content)
-          ? (msg.content as MCPContent[])
-          : ([{ type: 'text', text: String(msg.content) }] as MCPContent[]);
-
-        // Combine into single message with double newline separator
-        last.content = [
-          ...lastContent,
-          { type: 'text', text: '\n\n' } as MCPContent,
-          ...nextContent,
-        ];
-
-        // Preserve attachments from both messages
-        if (msg.attachments?.length) {
-          last.attachments = [...(last.attachments ?? []), ...msg.attachments];
-        }
-
-        logger.debug('Merged consecutive user messages in generic layer', {
-          id1: last.id,
-          id2: msg.id,
-        });
-      } else {
-        merged.push({ ...msg });
-      }
-    }
-
-    return merged;
-  }
-
-  /**
-   * Sanitizes a single message based on the target provider.
-   * This acts as a dispatcher to the provider-specific sanitization methods.
-   * @param message The message to sanitize.
-   * @param targetProvider The target AI service provider.
-   * @returns The sanitized message, or null if the message should be filtered out.
-   * @private
-   */
-  private static sanitizeSingleMessage(
-    message: Message,
-    targetProvider: AIServiceProvider,
-  ): Message | null {
-    const sanitized = { ...message };
-
-    switch (targetProvider) {
-      case AIServiceProvider.Anthropic:
-        return this.sanitizeForAnthropic(sanitized);
-      case AIServiceProvider.OpenAI:
-      case AIServiceProvider.Groq:
-      case AIServiceProvider.Cerebras:
-      case AIServiceProvider.Fireworks:
-        return this.sanitizeForOpenAIFamily(sanitized);
-      case AIServiceProvider.Gemini:
-        return this.sanitizeForGemini(sanitized);
-      case AIServiceProvider.Ollama:
-        return this.sanitizeForOllama(sanitized);
-      case AIServiceProvider.Empty:
-        return sanitized; // No sanitization needed for empty provider
-      default:
-        logger.warn(`Unknown provider for sanitization: ${targetProvider}`);
-        return sanitized;
-    }
-  }
-
-  /**
-   * Sanitizes a message for the Anthropic provider.
-   * It filters out tool messages that are missing a `tool_call_id`.
-   * Note: tool_calls to tool_use conversion is handled by AnthropicService.
-   * @param message The message to sanitize.
-   * @returns The sanitized message, or null if it should be filtered.
-   * @private
-   */
-  private static sanitizeForAnthropic(message: Message): Message | null {
-    // Filter out tool messages without tool_call_id
-    if (message.role === 'tool' && !message.tool_call_id) {
-      logger.debug('Filtering out tool message without tool_call_id', {
-        messageId: message.id,
-      });
-      return null;
-    }
-
-    return message;
-  }
-
-  /**
-   * Sanitizes a message for OpenAI-compatible providers (OpenAI, Groq, etc.).
-   * It removes thinking-related fields and converts `tool_use` to the standard `tool_calls` format.
-   * @param message The message to sanitize.
-   * @returns The sanitized message.
-   * @private
-   */
-  private static sanitizeForOpenAIFamily(message: Message): Message {
-    // Remove thinking-related fields that OpenAI family doesn't support
-    if (message.thinking) {
-      logger.debug('Removing thinking field for OpenAI family', {
-        messageId: message.id,
-      });
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
-
-    // Convert tool_use to tool_calls for OpenAI family
-    if (message.tool_use && !message.tool_calls) {
-      message.tool_calls = [
-        {
-          id: message.tool_use.id,
-          type: 'function',
-          function: {
-            name: message.tool_use.name,
-            arguments: JSON.stringify(message.tool_use.input),
-          },
-        },
-      ];
-      logger.debug('Converted tool_use to tool_calls for OpenAI family', {
-        messageId: message.id,
-        toolName: message.tool_use.name,
-      });
-      delete message.tool_use;
-    }
-
-    return message;
-  }
-
-  /**
-   * Sanitizes a message for the Gemini provider.
-   * It removes unsupported fields like `thinking` and `tool_use`.
-   * @param message The message to sanitize.
-   * @returns The sanitized message.
-   * @private
-   */
-  private static sanitizeForGemini(message: Message): Message {
-    // Remove thinking fields that Gemini doesn't support
-    if (message.thinking) {
-      logger.debug('Removing thinking field for Gemini', {
-        messageId: message.id,
-      });
-      delete message.thinking;
-    }
-    // message.thinkingSignature MUST be preserved for Gemini 3+ models
-    // It is required for history validation in tool use scenarios
-
-    // Gemini-specific tool handling would be implemented here
-    // For now, just remove unsupported fields
-    if (message.tool_use) {
-      logger.debug('Removing tool_use field for Gemini (not yet implemented)', {
-        messageId: message.id,
-      });
-      delete message.tool_use;
-    }
-
-    return message;
-  }
-
-  /**
-   * Sanitizes a message for the Ollama provider.
-   * It removes thinking-related fields and ensures tool calls are in the standard format.
-   * @param message The message to sanitize.
-   * @returns The sanitized message.
-   * @private
-   */
-  private static sanitizeForOllama(message: Message): Message {
-    // Remove thinking fields that Ollama doesn't support
-    if (message.thinking) {
-      logger.debug('Removing thinking field for Ollama', {
-        messageId: message.id,
-      });
-      delete message.thinking;
-    }
-    if (message.thinkingSignature) {
-      delete message.thinkingSignature;
-    }
-
-    // Convert tool_use to tool_calls if needed (Ollama typically follows OpenAI format)
-    if (message.tool_use && !message.tool_calls) {
-      message.tool_calls = [
-        {
-          id: message.tool_use.id,
-          type: 'function',
-          function: {
-            name: message.tool_use.name,
-            arguments: JSON.stringify(message.tool_use.input),
-          },
-        },
-      ];
-      logger.debug('Converted tool_use to tool_calls for Ollama', {
-        messageId: message.id,
-        toolName: message.tool_use.name,
-      });
-      delete message.tool_use;
-    }
-
-    return message;
-  }
+  static mergeConsecutiveUserMessages = mergeConsecutiveUserMessages;
+  static sanitizeMessagesForService = sanitizeMessagesForService;
 }

@@ -445,21 +445,31 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
+  static supportsToolsForModel(modelName: string): boolean {
     const lowerName = modelName.toLowerCase();
-    // Gemini 1.5 Pro and Flash support tools
     return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('gemini-1.5-pro')) return 2000000;
+    if (lowerName.includes('gemini-1.5-flash')) return 1000000;
+    if (lowerName.includes('gemini-2.0-flash')) return 1000000;
+    return 1000000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return GeminiService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('gemini-1.5-pro')) return 2000000;
-    if (lowerName.includes('gemini-1.5-flash')) return 1000000;
-    if (lowerName.includes('gemini-2.0-flash')) return 1000000;
-    return 1000000;
+    return GeminiService.estimateContextWindowForModel(modelName);
   }
 
   /**

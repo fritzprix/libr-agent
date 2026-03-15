@@ -687,19 +687,29 @@ export class AnthropicService extends BaseAIService<
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
+  static supportsToolsForModel(modelName: string): boolean {
     const lowerName = modelName.toLowerCase();
-    // Claude 3+ supports tools
     return lowerName.includes('claude-3') || lowerName.includes('claude-opus');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('claude-3')) return 200000;
+    return 100000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return AnthropicService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('claude-3')) return 200000;
-    return 100000;
+    return AnthropicService.estimateContextWindowForModel(modelName);
   }
 
   /**

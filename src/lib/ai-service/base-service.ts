@@ -430,9 +430,8 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * The base implementation calls sanitizeSingleMessage for each message.
    * @param messages The messages to sanitize.
    * @returns An array of sanitized messages.
-   * @protected
    */
-  protected sanitizeMessages(messages: Message[]): Message[] {
+  sanitizeMessages(messages: Message[]): Message[] {
     const validMessages = filterSystemErrors(messages);
     const processedMessages = validateToolCallPairing(validMessages);
 

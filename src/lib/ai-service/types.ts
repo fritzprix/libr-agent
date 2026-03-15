@@ -270,6 +270,13 @@ export interface IAIService {
   dispose(): void;
 
   /**
+   * Sanitizes messages for provider-specific compatibility.
+   * @param messages The messages to sanitize.
+   * @returns An array of sanitized messages.
+   */
+  sanitizeMessages(messages: Message[]): Message[];
+
+  /**
    * Sanitizes a single message based on the provider's requirements.
    * @param message The message to sanitize.
    * @returns The sanitized message, or null if it should be filtered out.

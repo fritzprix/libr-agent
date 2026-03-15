@@ -77,17 +77,28 @@ export class EmptyAIService extends BaseAIService<unknown, never> {
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
+  static supportsToolsForModel(modelName: string): boolean {
     void modelName;
     return false;
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    void modelName;
+    return 0;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return EmptyAIService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    void modelName;
-    return 0;
+    return EmptyAIService.estimateContextWindowForModel(modelName);
   }
 
   /**

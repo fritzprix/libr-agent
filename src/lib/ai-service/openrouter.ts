@@ -61,20 +61,28 @@ export class OpenRouterService extends OpenAIService {
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
-    // OpenRouter handles 200+ models. We return true here and rely on the UI/capabilities check if possible.
-    // In practice, many models on OpenRouter support tools.
+  static supportsToolsForModel(modelName: string): boolean {
     void modelName;
     return true;
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    void modelName;
+    return 128000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return OpenRouterService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    // listModels() provides the exact context window, but this sync method needs a heuristic or default
-    void modelName;
-    return 128000; // Common default for modern models on OpenRouter
+    return OpenRouterService.estimateContextWindowForModel(modelName);
   }
 
   /**

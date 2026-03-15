@@ -224,12 +224,13 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         Ok(_) => {
             let hint = SuccessHint::new(
                 format!(
-                    "Assistant '{}' created successfully (ID: {})",
+                    "Agent configuration '{}' created successfully (ID: {})",
                     request.name, id
                 ),
                 vec![
-                    "Use builtin_assistant__listAssistants to see all assistants".to_string(),
-                    "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
+                    "List agent configurations to review the new configuration".to_string(),
+                    "Update the configuration if you want to refine its prompt, model, or capabilities"
+                        .to_string(),
                 ],
             );
 
@@ -246,7 +247,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Failed to create assistant: {}", e),
+            format!("Failed to create agent configuration: {}", e),
             ToolGroup::Agent,
         )
         .with_guidance(vec!["Try again".to_string()])
@@ -282,7 +283,11 @@ pub async fn update_assistant(
         });
         (model.name, parsed_config)
     } else {
-        return Ok(not_found_error("Assistant", &request.id, ToolGroup::Agent));
+        return Ok(not_found_error(
+            "Agent configuration",
+            &request.id,
+            ToolGroup::Agent,
+        ));
     };
 
     // Self-modification guard: an AI agent must not modify the assistant it is
@@ -298,8 +303,10 @@ pub async fn update_assistant(
                 )
                 .with_guidance(vec![
                     "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
-                    "If this task requires a different assistant configuration, delegate it: use spawnAgent with the assistantId of an assistant that has the required permissions.".to_string(),
-                    "Use listAssistants to find an assistant suited for this task, then call spawnAgent to hand off the work.".to_string(),
+                    "If this task requires a different configuration, delegate it using another agent configuration with the required permissions."
+                        .to_string(),
+                    "List available agent configurations, then start a new delegated session with one that can perform the change."
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -371,8 +378,11 @@ pub async fn update_assistant(
     match result {
         Ok(_) => {
             let hint = SuccessHint::new(
-                format!("Assistant '{}' updated successfully", request.id),
-                vec!["Use builtin_assistant__getAssistant to verify changes".to_string()],
+                format!("Agent configuration '{}' updated successfully", request.id),
+                vec![
+                    "Inspect the configuration details to verify the changes".to_string(),
+                    "Start a new delegated session to apply the updated configuration".to_string(),
+                ],
             );
 
             server.invalidate_cache().await;
@@ -389,12 +399,12 @@ pub async fn update_assistant(
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Failed to update assistant {}: {}", request.id, e),
+            format!("Failed to update agent configuration {}: {}", request.id, e),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
-            "Use builtin_assistant__listAssistants to verify the assistant exists".to_string(),
+            "List agent configurations to verify the configuration still exists".to_string(),
         ])
         .to_mcp_result()),
     }
@@ -454,8 +464,10 @@ pub async fn delete_assistant(
                 )
                 .with_guidance(vec![
                     "This restriction prevents an agent from removing its own identity during an active session.".to_string(),
-                    "If this task genuinely requires deleting this assistant, delegate it: use spawnAgent with the assistantId of an assistant that has the required permissions.".to_string(),
-                    "Use listAssistants to find an assistant suited for this task, then call spawnAgent to hand off the work.".to_string(),
+                    "If this task genuinely requires deletion, delegate it using a different agent configuration with the required permissions."
+                        .to_string(),
+                    "List available agent configurations, then start a delegated session with one that can perform the deletion."
+                        .to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -472,11 +484,11 @@ pub async fn delete_assistant(
     if !exists {
         return Ok(guided_error(
             ErrorCategory::ResourceNotFound,
-            format!("Assistant '{}' not found", request.id),
+            format!("Agent configuration '{}' not found", request.id),
             ToolGroup::Agent,
         )
         .with_guidance(vec![
-            "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
+            "List agent configurations to find the correct ID".to_string()
         ])
         .to_mcp_result());
     }
@@ -491,10 +503,8 @@ pub async fn delete_assistant(
             events::emit_resource_updated("assistant", "delete", Some(request.id.clone()));
 
             let hint = SuccessHint::new(
-                format!("Assistant '{}' deleted successfully", request.id),
-                vec![
-                    "Use builtin_assistant__listAssistants to see remaining assistants".to_string(),
-                ],
+                format!("Agent configuration '{}' deleted successfully", request.id),
+                vec!["List agent configurations to review the remaining entries".to_string()],
             );
 
             Ok(hint.to_mcp_result_with_data(Some(json!({
@@ -504,7 +514,7 @@ pub async fn delete_assistant(
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Failed to delete assistant {}: {}", request.id, e),
+            format!("Failed to delete agent configuration {}: {}", request.id, e),
             ToolGroup::Agent,
         )
         .with_guidance(vec![

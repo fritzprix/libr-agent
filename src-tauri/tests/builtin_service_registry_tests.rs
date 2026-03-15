@@ -18,6 +18,7 @@ use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
     BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
+use tauri_mcp_agent_lib::mcp::builtin::ui::tools as ui_tools;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -238,6 +239,35 @@ fn tool_is_always_enabled_for_any_explicit_alias_list() {
         tool_ids.contains(&"tool".to_string()),
         "tool must always be present (it is a core alias), \
          but was missing when only 'browser' was in allowedBuiltInServiceAliases"
+    );
+}
+
+#[test]
+fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
+    let tool_names: Vec<String> = ui_tools::all_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+
+    assert!(
+        tool_names.contains(&"presentInteractive".to_string()),
+        "presentInteractive must remain on the public UI surface"
+    );
+    assert!(
+        tool_names.contains(&"waitForUserResume".to_string()),
+        "waitForUserResume remains public because it has distinct pause/resume semantics"
+    );
+    assert!(
+        !tool_names.contains(&"visualizeData".to_string()),
+        "visualizeData should be hidden from the AI-facing UI surface in favor of presentInteractive"
+    );
+    assert!(
+        !tool_names.contains(&"promptUser".to_string()),
+        "legacy promptUser should be hidden from the AI-facing UI surface"
+    );
+    assert!(
+        !tool_names.contains(&"presentContent".to_string()),
+        "legacy presentContent should be hidden from the AI-facing UI surface"
     );
 }
 

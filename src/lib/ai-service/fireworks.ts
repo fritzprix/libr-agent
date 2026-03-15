@@ -49,19 +49,29 @@ export class FireworksService extends OpenAIService {
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
-    // Fireworks supports tools for most of its models (Llama 3, Qwen, etc.)
+  static supportsToolsForModel(modelName: string): boolean {
     void modelName;
     return true;
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama-3.1-405b')) return 128000;
+    if (lowerName.includes('qwen')) return 32768;
+    return 128000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return FireworksService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama-3.1-405b')) return 128000;
-    if (lowerName.includes('qwen')) return 32768;
-    return 128000; // Common for Fireworks models
+    return FireworksService.estimateContextWindowForModel(modelName);
   }
 }

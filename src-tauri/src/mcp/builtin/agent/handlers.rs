@@ -2,7 +2,10 @@ use reqwest::Method;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::error_guidance::{
+    guided_error, missing_agent_config_error, missing_agent_session_error, ErrorCategory,
+    SuccessHint, ToolGroup,
+};
 use crate::mcp::builtin::session_api::client::call_json;
 use crate::mcp::builtin::session_api::formatting::{
     extract_session_status, latest_assistant_message_text,
@@ -219,10 +222,19 @@ pub async fn list_agents_or_sessions(
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({ "sessions": results }))))
         }
-        _ => Err(format!(
-            "Invalid list type: {}. Use 'configs' or 'sessions'.",
-            list_type
-        )),
+        _ => Ok(guided_error(
+            ErrorCategory::InvalidInput,
+            format!(
+                "Invalid list type '{}'. Use 'configs' or 'sessions'.",
+                list_type
+            ),
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Use list(type=\"configs\") to see agent configurations".to_string(),
+            "Use list(type=\"sessions\") to inspect delegated sub-agent sessions".to_string(),
+        ])
+        .to_mcp_result()),
     }
 }
 
@@ -249,7 +261,16 @@ pub async fn start_session(
         body["contextFiles"] = files.clone();
     }
 
-    let data: Value = call_json(Method::POST, "/api/sessions", Some(body), None).await?;
+    let data: Value = match call_json(Method::POST, "/api/sessions", Some(body), None).await {
+        Ok(data) => data,
+        Err(err)
+            if err.contains("Assistant not found:")
+                || err.contains("Request failed (404): Assistant not found:") =>
+        {
+            return Ok(missing_agent_config_error(&agent_id));
+        }
+        Err(err) => return Err(err),
+    };
     let session_id = data
         .get("id")
         .and_then(|v: &Value| v.as_str())
@@ -289,13 +310,20 @@ pub async fn message_to_session(
     let session_id = read_required_string(&args, "sessionId")?;
     let message = read_required_string(&args, "message")?;
 
-    let data: Value = call_json(
+    let data: Value = match call_json(
         Method::POST,
         &format!("/api/sessions/{}/messages", session_id),
         Some(json!({ "content": message })),
         None,
     )
-    .await?;
+    .await
+    {
+        Ok(data) => data,
+        Err(err) if err.contains("Request failed (404):") => {
+            return Ok(missing_agent_session_error(&session_id));
+        }
+        Err(err) => return Err(err),
+    };
 
     let hint = SuccessHint::new(
         format!("Message sent to session {}.", session_id),
@@ -340,13 +368,20 @@ pub async fn check_session(
         let turn_count = count_session_turns(&session_id).await;
 
         // Fetch latest messages to get the result
-        let messages_data: Value = call_json(
+        let messages_data: Value = match call_json(
             Method::GET,
             &format!("/api/sessions/{}/messages", session_id),
             None,
             Some(vec![("limit".to_string(), "5".to_string())]),
         )
-        .await?;
+        .await
+        {
+            Ok(data) => data,
+            Err(err) if err.contains("Request failed (404):") => {
+                return Ok(missing_agent_session_error(&session_id));
+            }
+            Err(err) => return Err(err),
+        };
 
         let messages = messages_data
             .get("messages")
@@ -373,13 +408,20 @@ pub async fn check_session(
     }
 
     // Just check status
-    let data: Value = call_json(
+    let data: Value = match call_json(
         Method::GET,
         &format!("/api/sessions/{}", session_id),
         None,
         None,
     )
-    .await?;
+    .await
+    {
+        Ok(data) => data,
+        Err(err) if err.contains("Request failed (404):") => {
+            return Ok(missing_agent_session_error(&session_id));
+        }
+        Err(err) => return Err(err),
+    };
     let status = extract_session_status(&data);
     let turn_count = count_session_turns(&session_id).await;
 
@@ -411,16 +453,34 @@ pub async fn stop_session(
     let session_id = read_required_string(&args, "sessionId")?;
 
     if caller_session_id == session_id {
-        return Err("Self-termination is not allowed via stopSession.".to_string());
+        return Ok(guided_error(
+            ErrorCategory::InvalidState,
+            "Self-termination is not allowed via stopSession.",
+            ToolGroup::Agent,
+        )
+        .with_guidance(vec![
+            "Use stopSession only for child or delegated sessions".to_string(),
+            "If you need to inspect active delegated work, use list(type=\"sessions\")".to_string(),
+            "If the current workflow should stop, use the normal session cancellation controls instead"
+                .to_string(),
+        ])
+        .to_mcp_result());
     }
 
-    call_json(
+    match call_json(
         Method::POST,
         &format!("/api/sessions/{}/terminate", session_id),
         None,
         None,
     )
-    .await?;
+    .await
+    {
+        Ok(_) => {}
+        Err(err) if err.contains("Request failed (404):") => {
+            return Ok(missing_agent_session_error(&session_id));
+        }
+        Err(err) => return Err(err),
+    };
 
     let hint = SuccessHint::new(format!("Session {} stopped.", session_id), vec![]);
 

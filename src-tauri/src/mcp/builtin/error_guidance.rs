@@ -252,9 +252,10 @@ impl ErrorGuidance {
 
             // Agent tool errors (Unified Assistant/Swarm)
             (ErrorCategory::ResourceNotFound, ToolGroup::Agent) => vec![
-                "Verify the ID (Agent, Assistant, or Session) is correct".to_string(),
-                "Use listAssistants to find available configurations".to_string(),
-                "Use getAgentStatus to check active session state".to_string(),
+                "Verify the agentId or sessionId is correct".to_string(),
+                "Use list(type=\"configs\") to find available agent configurations".to_string(),
+                "Use list(type=\"sessions\") or checkSession to inspect active delegated sessions"
+                    .to_string(),
             ],
             (ErrorCategory::DuplicateResource, ToolGroup::Agent) => vec![
                 "Use a different name for the new Agent or Assistant".to_string(),
@@ -633,6 +634,42 @@ pub fn operation_failed_error(
         guidance,
         tool_group,
     )
+    .to_mcp_result()
+}
+
+/// Create a guided error for a missing agent configuration during `startSession`.
+pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::ResourceNotFound,
+        format!("Agent configuration '{}' not found", agent_id),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        "Use list(type=\"configs\") to see available agent configurations".to_string(),
+        format!(
+            "Verify agentId '{}' matches one of the listed IDs",
+            agent_id
+        ),
+        "Retry startSession with a valid agentId".to_string(),
+    ])
+    .to_mcp_result()
+}
+
+/// Create a guided error for a missing delegated agent session.
+pub fn missing_agent_session_error(session_id: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::ResourceNotFound,
+        format!("Agent session '{}' not found", session_id),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        "Use list(type=\"sessions\") to see active delegated sessions".to_string(),
+        format!(
+            "Verify sessionId '{}' matches one of the listed active session IDs",
+            session_id
+        ),
+        "The session may have already finished, been stopped, or expired".to_string(),
+    ])
     .to_mcp_result()
 }
 

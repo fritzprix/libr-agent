@@ -214,9 +214,8 @@ export class GroqService extends BaseAIService<
   /**
    * @inheritdoc
    */
-  supportsTools(modelName: string): boolean {
+  static supportsToolsForModel(modelName: string): boolean {
     const lowerName = modelName.toLowerCase();
-    // Llama 3 models on Groq support tools
     return (
       lowerName.includes('llama3') ||
       lowerName.includes('llama-3') ||
@@ -224,15 +223,26 @@ export class GroqService extends BaseAIService<
     );
   }
 
-  /**
-   * @inheritdoc
-   */
-  estimateContextWindow(modelName: string): number {
+  static estimateContextWindowForModel(modelName: string): number {
     const lowerName = modelName.toLowerCase();
     if (lowerName.includes('llama-3.1-405b')) return 128000;
     if (lowerName.includes('llama-3.1-70b')) return 128000;
     if (lowerName.includes('llama-3.1-8b')) return 128000;
     return 32768;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return GroqService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return GroqService.estimateContextWindowForModel(modelName);
   }
 
   /**

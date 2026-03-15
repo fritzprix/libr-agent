@@ -194,11 +194,9 @@ pub async fn list_assistants(
                         offset, total_count
                     )]
                 } else if total_count > 0 {
-                    vec!["Use builtin_assistant__getAssistant to view details".to_string()]
+                    vec!["Inspect a configuration entry to view full details".to_string()]
                 } else {
-                    vec![
-                        "Use builtin_assistant__createAssistant to create an assistant".to_string(),
-                    ]
+                    vec!["Create a new agent configuration to get started".to_string()]
                 },
             );
 
@@ -286,9 +284,9 @@ pub async fn search_assistant(
                     assistants_text
                 ),
                 if assistants.is_empty() {
-                    vec!["Use builtin_assistant__listAssistants to see all assistants".to_string()]
+                    vec!["List all agent configurations to broaden the search".to_string()]
                 } else {
-                    vec!["Use builtin_assistant__getAssistant to view details".to_string()]
+                    vec!["Inspect a matching configuration to view full details".to_string()]
                 },
             );
 
@@ -391,8 +389,9 @@ pub async fn get_assistant(
             let hint = SuccessHint::new(
                 report,
                 vec![
-                    "Use builtin_assistant__updateAssistant to modify configuration".to_string(),
-                    "Use builtin_assistant__listAssistants to verify other assistants".to_string(),
+                    "Update this configuration to refine its prompt, model, or capabilities"
+                        .to_string(),
+                    "List other agent configurations to compare available specialists".to_string(),
                 ],
             );
 
@@ -410,7 +409,7 @@ pub async fn get_assistant(
             ToolGroup::Agent,
         )
         .with_guidance(vec![
-            "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
+            "List agent configurations to find the correct ID".to_string()
         ])
         .to_mcp_result()),
         Err(e) => Ok(guided_error(

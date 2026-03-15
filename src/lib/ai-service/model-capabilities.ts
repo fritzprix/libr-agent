@@ -12,7 +12,7 @@ const logger = getLogger('ModelCapabilities');
  * This avoids a direct import and thus prevents circular dependencies.
  */
 interface FactoryInterface {
-  getService(provider: AIServiceProvider, apiKey: string): unknown;
+  getCapabilityDelegate(provider: AIServiceProvider): ServiceInterface;
 }
 
 interface ServiceInterface {
@@ -256,17 +256,20 @@ export function supportsTools(
 ): boolean {
   try {
     if (registeredFactory) {
-      const service = registeredFactory.getService(
-        provider,
-        'dummy',
-      ) as ServiceInterface;
+      const service = registeredFactory.getCapabilityDelegate(provider);
       return service.supportsTools(modelName);
     }
     throw new Error('AIServiceFactory not registered');
   } catch {
     // Fallback if factory or service logic fails
     const lowerName = modelName.toLowerCase();
-    if (provider === AIServiceProvider.OpenAI) return true;
+    if (provider === AIServiceProvider.OpenAI) {
+      return (
+        lowerName.includes('gpt-4') ||
+        lowerName.includes('gpt-3.5-turbo') ||
+        /^o(?:1|3|4)(?:$|[-.])/.test(lowerName)
+      );
+    }
     if (provider === AIServiceProvider.Anthropic)
       return lowerName.includes('claude-3');
     if (provider === AIServiceProvider.Gemini) return true;
@@ -284,10 +287,7 @@ export function estimateContextWindow(
 ): number {
   try {
     if (registeredFactory) {
-      const service = registeredFactory.getService(
-        provider,
-        'dummy',
-      ) as ServiceInterface;
+      const service = registeredFactory.getCapabilityDelegate(provider);
       return service.estimateContextWindow(modelName);
     }
     throw new Error('AIServiceFactory not registered');

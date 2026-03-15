@@ -98,8 +98,23 @@ export class CerebrasService extends BaseAIService<
   /**
    * @inheritdoc
    */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('llama3.1') || lowerName.includes('llama-3.1');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama3.1-70b')) return 131072;
+    if (lowerName.includes('llama3.1-8b')) return 131072;
+    return 8192;
+  }
+
+  /**
+   * @inheritdoc
+   */
   sanitizeSingleMessage(message: Message): Message | null {
-    // Cerebras doesn't supported special thinking fields yet
+    // Cerebras doesn't support special thinking fields yet
     if (message.thinking) {
       delete message.thinking;
     }
@@ -113,19 +128,14 @@ export class CerebrasService extends BaseAIService<
    * @inheritdoc
    */
   supportsTools(modelName: string): boolean {
-    const lowerName = modelName.toLowerCase();
-    // Cerebras Llama 3.1 models support tools
-    return lowerName.includes('llama3.1') || lowerName.includes('llama-3.1');
+    return CerebrasService.supportsToolsForModel(modelName);
   }
 
   /**
    * @inheritdoc
    */
   estimateContextWindow(modelName: string): number {
-    const lowerName = modelName.toLowerCase();
-    if (lowerName.includes('llama3.1-70b')) return 131072;
-    if (lowerName.includes('llama3.1-8b')) return 131072;
-    return 8192; // Fallback
+    return CerebrasService.estimateContextWindowForModel(modelName);
   }
 
   /**
