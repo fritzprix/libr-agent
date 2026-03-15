@@ -102,3 +102,8 @@
 
 **Split:** `context.rs`, `compaction.rs`, `request.rs`, `mod.rs`
 **Improvement:** Decoupled LLM completion request orchestration, context management settings, and background compaction into focused submodules. Reduced completion.rs from >1000 lines into multiple manageable components, improving readability and separation of concerns.
+
+## 2026-03-15 - src-tauri/src/agent/workflow
+
+**Split:** start.rs, pause_resume.rs, cancel.rs, tool.rs
+**Improvement:** Decoupled workflow actions into separate modules to reduce file size.
