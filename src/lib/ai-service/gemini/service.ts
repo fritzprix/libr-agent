@@ -120,6 +120,7 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
    */
   protected async *doStreamChat(

@@ -333,6 +333,7 @@ export class AnthropicService extends BaseAIService<
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @yields A JSON string for each chunk of the response. The format can be `{ content: string }`
    *         for text, `{ thinking: object }` for thinking state, or `{ tool_calls: [...] }` for tool calls.
    */

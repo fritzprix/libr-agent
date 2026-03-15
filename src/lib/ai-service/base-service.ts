@@ -276,6 +276,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param context.options.systemPrompt The system prompt.
    * @param context.options.availableTools Tools available.
    * @param context.options.config The service configuration.
+   * @param context.options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @param context.config The current AI configuration.
    * @throws `AIServiceError`
    * @protected
@@ -360,6 +361,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param options.systemPrompt The system prompt.
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An object containing the final configuration, converted tools, and sanitized messages.
    * @protected
    */
@@ -463,6 +465,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An async generator that yields chunks of the response as strings.
    */
   async *streamChat(
@@ -567,6 +570,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An async generator that yields chunks of the response as strings.
    * @protected
    * @abstract
@@ -636,6 +640,9 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @param options Optional model name, config, system prompt, context, and tools.
    * @param options.modelName The name of the model.
    * @param options.config Optional configuration for the service.
+   * @param options.systemPrompt The system prompt.
+   * @param options.sessionContext The session context.
+   * @param options.availableTools Optional array of tools available to the model.
    * @returns A promise that resolves to the summary text.
    */
   async compact(
