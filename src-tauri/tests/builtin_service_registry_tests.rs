@@ -290,14 +290,29 @@ fn contentstore_without_underscore_resolves_to_attachments() {
     );
 }
 
-/// "assistant_manager" is a historical variant of "assistant" used in some
-/// UI definitions. Must resolve to the canonical "assistant".
+/// Legacy assistant/swarm aliases must collapse to the canonical "agent"
+/// so older configs keep working without reintroducing deprecated public services.
 #[test]
-fn assistant_manager_alias_maps_to_assistant() {
+fn legacy_agent_aliases_map_to_agent() {
     assert_eq!(
         canonicalize_builtin_service_alias("assistant_manager"),
-        Some("assistant"),
-        "'assistant_manager' must resolve to 'assistant' canonical"
+        Some("agent"),
+        "'assistant_manager' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("assistant"),
+        Some("agent"),
+        "'assistant' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("swarm"),
+        Some("agent"),
+        "'swarm' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("session_api"),
+        Some("agent"),
+        "'session_api' must resolve to 'agent' canonical"
     );
 }
 
@@ -314,11 +329,10 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Scratchpad, "scratchpad"),
         (BuiltinServiceId::Workspace, "workspace"),
         (BuiltinServiceId::Knowledge, "knowledge"),
-        (BuiltinServiceId::Assistant, "assistant"),
+        (BuiltinServiceId::Agent, "agent"),
         (BuiltinServiceId::Skills, "skills"),
         (BuiltinServiceId::Playbook, "playbook"),
         (BuiltinServiceId::Attachments, "attachments"),
-        (BuiltinServiceId::Swarm, "swarm"),
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
         (BuiltinServiceId::Bootstrap, "bootstrap"),
@@ -366,11 +380,10 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
-        builtin::assistant::NAME,
+        builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
         builtin::content_store::NAME,
-        builtin::session_api::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
@@ -400,11 +413,10 @@ fn builtin_server_names_are_unique() {
         builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
-        builtin::assistant::NAME,
+        builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
         builtin::content_store::NAME,
-        builtin::session_api::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
@@ -447,11 +459,9 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Workspace => builtin::workspace::NAME,
             BuiltinServiceId::Agent => builtin::agent::NAME,
             BuiltinServiceId::Knowledge => builtin::knowledge::NAME,
-            BuiltinServiceId::Assistant => builtin::assistant::NAME,
             BuiltinServiceId::Skills => builtin::skills::NAME,
             BuiltinServiceId::Playbook => builtin::playbook::NAME,
             BuiltinServiceId::Attachments => builtin::content_store::NAME,
-            BuiltinServiceId::Swarm => builtin::session_api::NAME,
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,

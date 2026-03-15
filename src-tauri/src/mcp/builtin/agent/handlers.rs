@@ -14,11 +14,12 @@ use crate::mcp::builtin::session_api::utils::{
 use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 
-use super::AgentServer;
 use super::formatting::{
     build_server_name_lookup, extract_string_list, format_capability_list,
-    format_external_server_refs, format_registered_external_servers, resolve_external_server_labels,
+    format_external_server_refs, format_registered_external_servers,
+    resolve_external_server_labels,
 };
+use super::AgentServer;
 
 /// Unified create_agent handler (from createAssistant)
 pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult, String> {

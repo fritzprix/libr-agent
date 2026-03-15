@@ -10,14 +10,17 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
+    #[serde(
+        alias = "assistant",
+        alias = "assistant_manager",
+        alias = "swarm",
+        alias = "session_api"
+    )]
     Agent, // Unified Agent Domain
-    Assistant,
     Skills,
     Playbook,
     #[serde(alias = "content_store", alias = "contentstore")]
     Attachments,
-    #[serde(alias = "session_api")]
-    Swarm,
     Ui,
     Browser,
     Bootstrap,
@@ -42,12 +45,12 @@ impl BuiltinServiceId {
             "scratchpad" | "memory" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
-            "agent" => Some(Self::Agent),
-            "assistant" | "assistant_manager" => Some(Self::Assistant),
+            "agent" | "assistant" | "assistant_manager" | "swarm" | "session_api" => {
+                Some(Self::Agent)
+            }
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
             "attachments" | "content_store" | "contentstore" => Some(Self::Attachments),
-            "swarm" | "session_api" => Some(Self::Swarm),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
@@ -65,11 +68,9 @@ impl BuiltinServiceId {
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
             Self::Agent => "agent",
-            Self::Assistant => "assistant",
             Self::Skills => "skills",
             Self::Playbook => "playbook",
             Self::Attachments => "attachments",
-            Self::Swarm => "swarm",
             Self::Ui => "ui",
             Self::Browser => "browser",
             Self::Bootstrap => "bootstrap",
@@ -107,11 +108,6 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::Assistant,
-        canonical: "assistant",
-        optional: true,
-    },
-    BuiltinServiceEntry {
         variant: BuiltinServiceId::Skills,
         canonical: "skills",
         optional: false,
@@ -125,11 +121,6 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         variant: BuiltinServiceId::Attachments,
         canonical: "attachments",
         optional: false,
-    },
-    BuiltinServiceEntry {
-        variant: BuiltinServiceId::Swarm,
-        canonical: "swarm",
-        optional: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Ui,
@@ -197,6 +188,30 @@ mod tests {
         assert_eq!(
             BuiltinServiceId::from_alias("memory"),
             Some(BuiltinServiceId::Scratchpad)
+        );
+    }
+
+    #[test]
+    fn assistant_legacy_alias_resolves_to_agent() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("assistant"),
+            Some(BuiltinServiceId::Agent)
+        );
+        assert_eq!(
+            BuiltinServiceId::from_alias("assistant_manager"),
+            Some(BuiltinServiceId::Agent)
+        );
+    }
+
+    #[test]
+    fn swarm_legacy_alias_resolves_to_agent() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("swarm"),
+            Some(BuiltinServiceId::Agent)
+        );
+        assert_eq!(
+            BuiltinServiceId::from_alias("session_api"),
+            Some(BuiltinServiceId::Agent)
         );
     }
 

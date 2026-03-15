@@ -210,7 +210,7 @@ impl WorkspaceServer {
                 };
 
                 Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     error_title,
                     ToolGroup::Workspace,
                 )

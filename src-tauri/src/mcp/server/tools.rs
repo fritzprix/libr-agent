@@ -435,13 +435,11 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Attachments => {
                     content_store::ContentStoreServer::metadata_static()
                 }
-                BuiltinServiceId::Assistant => assistant::AssistantServer::metadata_static(),
                 BuiltinServiceId::Agent => agent::AgentServer::metadata_static(),
                 BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
                 BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
                 BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
                 BuiltinServiceId::Tool => tool::ToolServer::new().metadata(),
-                BuiltinServiceId::Swarm => session_api::SessionApiServer::metadata_static(),
                 BuiltinServiceId::Media => media::MediaServer::metadata_static(),
                 BuiltinServiceId::Skills => BuiltinServerMetadata {
                     display_name: "Skills".to_string(),
@@ -545,20 +543,20 @@ pub async fn get_service_context(
 /// Get static tool definitions for ALL builtin servers without requiring runtime instantiation.
 /// This provides a centralized access point for discovering all available builtin tools.
 ///
-/// Returns a complete list of tool schemas from all 10 builtin servers:
+/// Returns a complete list of tool schemas from all active builtin servers:
 /// - Planning (15 tools): Goal and todo management
 /// - Knowledge (5 tools): Assistant-scoped knowledge base
 /// - Browser (13 tools): Web browser automation
 /// - Workspace (30+ tools): File operations and shell execution
 /// - ContentStore (5 tools): File attachment and semantic search
-/// - Assistant (4 tools): Assistant configuration management
+/// - Agent (7 tools): Agent configuration and sub-session orchestration
 /// - Playbook (4 tools): Playbook execution
 /// - Bootstrap (2 tools): Platform and environment info
 /// - UI (2 tools): User interaction prompts
 /// - MCP Manager (8 tools): MCP server management
 ///
 /// # Returns
-/// A vector containing all tool schemas (88+ tools total)
+/// A vector containing all active builtin tool schemas
 pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
     use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
 
@@ -598,15 +596,11 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Attachments => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
-        BuiltinServiceId::Assistant => {
-            crate::mcp::builtin::assistant::AssistantServer::tools_static()
-        }
         BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
         BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
         BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),
         BuiltinServiceId::Tool => crate::mcp::builtin::tool::tools::all_tools(),
-        BuiltinServiceId::Swarm => crate::mcp::builtin::session_api::tools::all_tools(),
         // Skills tools are session-bound; no static definition available.
         BuiltinServiceId::Skills => Vec::new(),
         BuiltinServiceId::Media => crate::mcp::builtin::media::MediaServer::tools_static(),

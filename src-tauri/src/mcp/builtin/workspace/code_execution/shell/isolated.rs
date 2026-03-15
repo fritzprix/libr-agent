@@ -42,7 +42,7 @@ impl WorkspaceServer {
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
             return Ok(guided_error(
-                ErrorCategory::InvalidState,
+                ErrorCategory::InternalError,
                 "Create temp directory failed".to_string(),
                 ToolGroup::Workspace,
             )
@@ -80,7 +80,7 @@ impl WorkspaceServer {
             Ok(cmd) => cmd,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::PermissionDenied,
+                    ErrorCategory::InternalError,
                     "Create isolated shell command failed".to_string(),
                     ToolGroup::Workspace,
                 )

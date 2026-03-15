@@ -37,6 +37,23 @@ pub enum ErrorCategory {
     PermissionDenied,
 }
 
+impl ErrorCategory {
+    /// Returns true when the failure is attributable to tool misuse or invalid tool input.
+    pub fn uses_error_semantics(self) -> bool {
+        matches!(
+            self,
+            Self::MissingRequiredParam
+                | Self::InvalidInput
+                | Self::InvalidFormat
+                | Self::ResourceNotFound
+                | Self::DuplicateResource
+                | Self::InvalidState
+                | Self::NestingTooDeep
+                | Self::PermissionDenied
+        )
+    }
+}
+
 /// Tool group for isolation of tool suggestions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolGroup {
@@ -168,9 +185,20 @@ impl ErrorGuidance {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let formatted_message = format!("✗ {}\n\n💡 Next Steps:\n{}", self.message, guidance_text);
+        let formatted_message = if self.category.uses_error_semantics() {
+            format!("✗ {}\n\n💡 Next Steps:\n{}", self.message, guidance_text)
+        } else {
+            format!(
+                "Notice: {}\n\n💡 Next Steps:\n{}",
+                self.message, guidance_text
+            )
+        };
 
-        MCPResult::error(&formatted_message)
+        if self.category.uses_error_semantics() {
+            MCPResult::error(&formatted_message)
+        } else {
+            MCPResult::informational(&formatted_message)
+        }
     }
 
     /// Get default guidance for an error category within a tool group
@@ -650,6 +678,27 @@ mod tests {
     }
 
     #[test]
+    fn test_internal_error_guidance_is_informational() {
+        let error = ErrorGuidance::new(
+            ErrorCategory::InternalError,
+            "Database connection dropped",
+            ToolGroup::Knowledge,
+        );
+
+        let result = error.to_mcp_result();
+
+        assert_eq!(result.is_error, Some(false));
+
+        if let Some(content) = result.content {
+            if let Some(crate::mcp::types::MCPContent::Text { text, is_error }) = content.first() {
+                assert_eq!(*is_error, None);
+                assert!(text.contains("Notice:"));
+                assert!(text.contains("💡 Next Steps:"));
+            }
+        }
+    }
+
+    #[test]
     fn test_success_hint_formatting() {
         let hint = SuccessHint::new(
             "Todo created successfully",
@@ -721,6 +770,31 @@ mod tests {
         // Default guidance for (ResourceNotFound, Browser) includes createSession.
         assert!(text.contains("createSession"));
         assert!(text.contains("✗"));
+        assert!(text.contains("💡 Next Steps:"));
+    }
+
+    #[test]
+    fn test_timeout_guided_error_builder_is_informational() {
+        let result = guided_error(
+            ErrorCategory::Timeout,
+            "Waiting for browser session timed out",
+            ToolGroup::Browser,
+        )
+        .to_mcp_result();
+
+        assert_eq!(result.is_error, Some(false));
+
+        let content = result.content.expect("Expected MCPResult.content");
+        let crate::mcp::types::MCPContent::Text { text, is_error } = content
+            .first()
+            .expect("Expected at least one content item")
+            .clone()
+        else {
+            panic!("Expected Text content");
+        };
+
+        assert_eq!(is_error, None);
+        assert!(text.contains("Notice:"));
         assert!(text.contains("💡 Next Steps:"));
     }
 

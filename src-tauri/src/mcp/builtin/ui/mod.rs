@@ -214,14 +214,7 @@ impl UiServer {
             .unwrap_or(false);
 
         if cancelled {
-            return Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: "User cancelled the prompt.".to_string(),
-                    is_error: Some(true),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            });
+            return Ok(MCPResult::informational("User cancelled the prompt."));
         }
 
         let answer_str = if let Some(ans) = answer {

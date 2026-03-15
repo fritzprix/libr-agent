@@ -79,7 +79,7 @@ impl WorkspaceServer {
             Ok(dir) => dir,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::InternalError,
                     "Create exports directory failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -112,7 +112,7 @@ impl WorkspaceServer {
             let export_path = exports_dir.join("files").join(&export_filename);
             if let Err(e) = std::fs::copy(&source_path, &export_path) {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     "Export file failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -170,7 +170,7 @@ impl WorkspaceServer {
             Ok(file) => file,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     "Create ZIP file failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -242,7 +242,7 @@ impl WorkspaceServer {
 
         if let Err(e) = zip.finish() {
             return Ok(guided_error(
-                ErrorCategory::InvalidState,
+                ErrorCategory::OperationFailed,
                 "Finalize ZIP file failed".to_string(),
                 ToolGroup::Workspace,
             )

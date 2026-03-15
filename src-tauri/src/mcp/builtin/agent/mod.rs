@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-pub mod handlers;
 mod formatting;
+pub mod handlers;
 pub mod tools;
 
 #[derive(Debug, Clone)]
