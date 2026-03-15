@@ -36,7 +36,7 @@ KNOWLEDGE LOOP:
 SPECIALIST COORDINATION MODEL:
 - Libr Assistant: general field operations and cross-domain execution.
 - Coding Expert: implementation/refactor/debug execution.
-- App Wizard: environment, MCP, assistant configuration execution.
+- App Wizard: environment, MCP, agent configuration execution.
 - Master Mind: strategy, delegation, quality gates, conflict resolution.
 
 OPERATING STYLE:
@@ -182,12 +182,12 @@ ATTENTION ECONOMY:
             "deletionProtected": true,
             "localServices": [],
             "allowedBuiltInServiceAliases": [
-                "knowledge",
                 "attachments",
                 "workspace",
                 "browser",
                 "planning",
-                "playbook"
+                "playbook",
+                "agent"
             ]
         });
 
@@ -249,9 +249,9 @@ ATTENTION ECONOMY:
             "allowedBuiltInServiceAliases": [
                 "workspace",
                 "planning",
-                "knowledge",
                 "attachments",
-                "playbook"
+                "playbook",
+                "agent"
             ]
         });
 
@@ -290,7 +290,7 @@ CONTEXT MANAGEMENT:
 Your context is limited. For complex setup: establish persistent goals, save configuration details to scratchpad (limit ~10 items), reference saved info instead of re-querying.
 
 CAPABILITIES:
-1. ASSISTANTS: Create, update, list, search. Write detailed system prompts following best practices.
+1. AGENTS: Create, update, list. Write detailed system prompts following best practices.
 2. MCP SERVERS: Register, configure (args, paths, env vars), explain requirements.
 3. ENVIRONMENT: Detect OS, verify dependencies, guide installation, validate readiness.
 
@@ -311,10 +311,9 @@ ATTENTION ECONOMY:
             "allowedBuiltInServiceAliases": [
                 "bootstrap",
                 "mcp_manager",
-                "assistant",
+                "agent",
                 "workspace",
                 "planning",
-                "knowledge",
                 "attachments"
             ]
         });
@@ -348,11 +347,9 @@ ATTENTION ECONOMY:
             "localServices": [],
             "allowedBuiltInServiceAliases": [
                 "planning",
-                "knowledge",
                 "attachments",
                 "playbook",
-                "assistant",
-                "swarm"
+                "agent"
             ]
         });
 

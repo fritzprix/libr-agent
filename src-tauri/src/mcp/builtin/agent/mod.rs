@@ -137,12 +137,11 @@ impl BuiltinMCPServer for AgentServer {
         if let Ok((rows, truncated)) = collect_descendant_snapshot(&self.session_id, 20).await {
             if !rows.is_empty() {
                 context_prompt.push_str("\n\n### Active Sub-Agent Sessions\n");
-                context_prompt.push_str(&build_swarm_snapshot_text(
-                    &self.session_id,
-                    &rows,
-                    truncated,
-                    20,
-                ));
+                let snapshot_text =
+                    build_swarm_snapshot_text(&self.session_id, &rows, truncated, 20);
+                // Neutralize text
+                context_prompt
+                    .push_str(&snapshot_text.replace("Swarm Board", "Agent Session Roster"));
             }
         }
 
