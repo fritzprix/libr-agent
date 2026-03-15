@@ -10,30 +10,16 @@ pub mod operations;
 pub mod queries;
 pub mod tools;
 
-use std::time::Instant;
-use tokio::sync::RwLock;
-
-#[derive(Debug, Clone)]
-struct ContextCache {
-    #[allow(dead_code)]
-    prompt: String,
-    #[allow(dead_code)]
-    last_update: Instant,
-}
-
 /// Assistant MCP Server - DEPRECATED
 #[derive(Debug)]
 pub struct AssistantServer {
+    #[allow(dead_code)]
     db: Arc<DatabaseConnection>,
-    cache: Arc<RwLock<Option<ContextCache>>>,
 }
 
 impl AssistantServer {
     pub async fn new(db: Arc<DatabaseConnection>) -> Result<Self, String> {
-        Ok(Self {
-            db,
-            cache: Arc::new(RwLock::new(None)),
-        })
+        Ok(Self { db })
     }
 
     pub fn get_db(&self) -> &DatabaseConnection {
@@ -41,9 +27,7 @@ impl AssistantServer {
     }
 
     pub(crate) async fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = None;
-        }
+        // No-op for deprecated server
     }
 
     pub fn tools_static() -> Vec<MCPTool> {

@@ -1,5 +1,6 @@
 use reqwest::Method;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use crate::mcp::builtin::error_guidance::SuccessHint;
 use crate::mcp::builtin::session_api::client::call_json;
@@ -11,7 +12,7 @@ use crate::mcp::builtin::session_api::utils::{
     wait_until_session_terminal,
 };
 use crate::mcp::types::MCPResult;
-use crate::repositories::AssistantRepository;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
 
 use super::AgentServer;
 
@@ -27,19 +28,11 @@ pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult
         mapped_args["mcpServerIds"] = externals.clone();
     }
 
-    let res = crate::mcp::builtin::assistant::operations::create_assistant(
-        &crate::mcp::builtin::assistant::AssistantServer::new(server.get_db().clone().into())
-            .await?,
-        mapped_args,
-    )
-    .await;
-
-    if let Ok(ref mcp_res) = res {
-        if mcp_res.is_error != Some(true) {
-            server.invalidate_cache().await;
-        }
-    }
-    res
+    let assistant_server =
+        crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
+            .await?;
+    crate::mcp::builtin::assistant::operations::create_assistant(&assistant_server, mapped_args)
+        .await
 }
 
 /// Unified update_agent handler (from updateAssistant)
@@ -58,20 +51,15 @@ pub async fn update_agent(
         mapped_args["mcpServerIds"] = externals.clone();
     }
 
-    let res = crate::mcp::builtin::assistant::operations::update_assistant(
-        &crate::mcp::builtin::assistant::AssistantServer::new(server.get_db().clone().into())
-            .await?,
+    let assistant_server =
+        crate::mcp::builtin::assistant::AssistantServer::new(Arc::new(server.get_db().clone()))
+            .await?;
+    crate::mcp::builtin::assistant::operations::update_assistant(
+        &assistant_server,
         mapped_args,
         caller_session_id,
     )
-    .await;
-
-    if let Ok(ref mcp_res) = res {
-        if mcp_res.is_error != Some(true) {
-            server.invalidate_cache().await;
-        }
-    }
-    res
+    .await
 }
 
 /// Unified list handler: lists configs or sub-sessions
@@ -87,6 +75,7 @@ pub async fn list_agents_or_sessions(
 
     match list_type {
         "configs" => {
+            use crate::repositories::AssistantRepository;
             let repo = crate::repositories::SqliteAssistantRepository::new(server.get_db().clone());
             let mut agents = repo.list_assistants().await.map_err(|e| e.to_string())?;
 
@@ -137,18 +126,22 @@ pub async fn list_agents_or_sessions(
             use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
             let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
                 .iter()
-                .filter(|e| !e.canonical.is_empty() && e.canonical != "agent")
+                .filter(|e| {
+                    !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool"
+                })
                 .map(|e| e.canonical)
                 .collect();
-            
+
             text_summary.push_str("\n--- \n## System Capability Catalog\n");
             text_summary.push_str(&format!("Available Builtins: {:?}\n", available_builtins));
-            
+
             let mcp_repo = crate::state::get_mcp_server_repository();
-            if let Ok(external_servers) = mcp_repo.list_servers().await {
-                let external_ids: Vec<_> = external_servers.iter().map(|s| &s.id).collect();
+            if let Ok(external_servers) = mcp_repo.list().await {
+                let external_ids: Vec<String> =
+                    external_servers.iter().map(|s| s.id.clone()).collect();
                 if !external_ids.is_empty() {
-                    text_summary.push_str(&format!("Available External MCPs: {:?}\n", external_ids));
+                    text_summary
+                        .push_str(&format!("Available External MCPs: {:?}\n", external_ids));
                 }
             }
 
@@ -226,7 +219,7 @@ pub async fn list_agents_or_sessions(
 
 /// startSession handler (from spawnAgent)
 pub async fn start_session(
-    server: &AgentServer,
+    _server: &AgentServer,
     args: Value,
     caller_session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -257,7 +250,7 @@ pub async fn start_session(
     if wait_for_result {
         // Reuse check_session logic
         return check_session(
-            server,
+            _server,
             json!({ "sessionId": session_id, "wait": true }),
             caller_session_id,
         )

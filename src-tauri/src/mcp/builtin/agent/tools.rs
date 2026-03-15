@@ -15,7 +15,7 @@ pub fn all_tools() -> Vec<MCPTool> {
 
 fn create_tool() -> MCPTool {
     MCPTool {
-        name: "create".to_string(),
+        name: "agent__create".to_string(),
         title: Some("Create Agent Configuration".to_string()),
         description: "Create a new named agent configuration (assistant) with a specific system prompt, model settings, and tool capabilities.".to_string(),
         input_schema: object_prop(

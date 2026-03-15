@@ -14,7 +14,6 @@ pub mod browser_content_store;
 pub mod content_store;
 pub mod error_guidance;
 pub mod knowledge;
-pub mod mcp_manager;
 pub mod media;
 pub mod planning;
 pub mod playbook;
@@ -22,6 +21,7 @@ pub mod scratchpad;
 pub mod service_id;
 pub mod session_api;
 pub mod skills;
+pub mod tool;
 pub mod ui;
 pub mod utils;
 pub mod workspace;
@@ -379,7 +379,8 @@ impl BuiltinServerRegistry {
         ));
 
         registry.register_server(Box::new(ui::UiServer::new()));
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         // Session-specific servers (knowledge, planning, playbook, assistant, browser, scratchpad) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
@@ -424,7 +425,8 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
@@ -466,7 +468,8 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
+        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
@@ -485,26 +488,19 @@ impl BuiltinServerRegistry {
     /// # Arguments
     /// * `name` - The name of the server to retrieve.
     pub fn get_server(&self, name: &str) -> Option<&dyn BuiltinMCPServer> {
-        if name.is_empty() {
-            return None;
-        }
         self.servers.get(name).map(|s| s.as_ref())
     }
 
     /// Lists the names of all registered built-in servers.
     pub fn list_servers(&self) -> Vec<String> {
-        self.servers
-            .keys()
-            .filter(|k| !k.is_empty())
-            .cloned()
-            .collect()
+        self.servers.keys().cloned().collect()
     }
 
     /// Lists all tools from all registered built-in servers.
     pub fn list_all_tools(&self) -> Vec<MCPTool> {
         let mut all_tools = Vec::new();
 
-        for server in self.servers.values().filter(|s| !s.name().is_empty()) {
+        for server in self.servers.values() {
             let tools = server.tools();
             // Prefix tool names with server name for uniqueness
             all_tools.extend(tools);

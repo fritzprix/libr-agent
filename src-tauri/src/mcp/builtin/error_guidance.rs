@@ -49,7 +49,7 @@ pub enum ToolGroup {
     Knowledge,
     Playbook,
     UI,
-    McpManager,
+    Tool,
     Bootstrap,
     Swarm,
 }
@@ -279,17 +279,17 @@ impl ErrorGuidance {
             ],
 
             // MCP Manager tool errors
-            (ErrorCategory::ResourceNotFound, ToolGroup::McpManager) => vec![
+            (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
                 "Use listTools to see available MCP servers".to_string(),
                 "Verify the server name is correct".to_string(),
                 "Use listTools with a query to search servers by name".to_string(),
             ],
-            (ErrorCategory::InvalidInput, ToolGroup::McpManager) => vec![
+            (ErrorCategory::InvalidInput, ToolGroup::Tool) => vec![
                 "Ensure server name is provided".to_string(),
                 "Verify transport configuration is valid".to_string(),
                 "Check transport type is stdio or http".to_string(),
             ],
-            (ErrorCategory::OperationFailed, ToolGroup::McpManager) => vec![
+            (ErrorCategory::OperationFailed, ToolGroup::Tool) => vec![
                 "Check server configuration is correct".to_string(),
                 "Verify the server binary/command exists".to_string(),
                 "Use listTools to see server status".to_string(),
@@ -515,14 +515,14 @@ impl SuccessHint {
             }
 
             // MCP Manager tools
-            ("listTools", ToolGroup::McpManager) => vec![
+            ("listTools", ToolGroup::Tool) => vec![
                 "Use registerServer to add new external servers".to_string(),
                 "Use updateAssistant to give an assistant access to found servers".to_string(),
             ],
-            ("registerServer", ToolGroup::McpManager) => {
+            ("registerServer", ToolGroup::Tool) => {
                 vec!["Use listTools to verify server was created".to_string()]
             }
-            ("connectServer", ToolGroup::McpManager) => {
+            ("connectServer", ToolGroup::Tool) => {
                 vec!["Server is now available for tool calls".to_string()]
             }
 

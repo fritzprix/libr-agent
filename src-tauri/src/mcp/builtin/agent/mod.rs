@@ -2,7 +2,7 @@ use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup
 use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::types::{BuiltinServerMetadata, MCPResult, ServiceContext};
 use crate::mcp::MCPTool;
-use crate::repositories::AssistantRepository;
+use crate::repositories::mcp_server_repository::MCPServerRepository;
 use async_trait::async_trait;
 use sea_orm::DatabaseConnection;
 use serde_json::Value;
@@ -20,9 +20,6 @@ struct ContextCache {
 }
 
 /// Agent MCP Server
-///
-/// Unified domain for managing agent configurations (Assistants) and
-/// orchestrating agent sessions (Swarm).
 #[derive(Debug)]
 pub struct AgentServer {
     session_id: String,
@@ -41,12 +38,6 @@ impl AgentServer {
 
     pub fn get_db(&self) -> &DatabaseConnection {
         &self.db
-    }
-
-    pub(crate) async fn invalidate_cache(&self) {
-        if let Ok(mut cache) = self.cache.try_write() {
-            *cache = None;
-        }
     }
 
     pub fn tools_static() -> Vec<MCPTool> {
@@ -118,89 +109,36 @@ impl BuiltinMCPServer for AgentServer {
             }
         }
 
-        let repo = crate::repositories::SqliteAssistantRepository::new(self.get_db().clone());
-        let total_agents = repo.count_assistants().await.unwrap_or(0);
-        let agents = repo.list_assistants().await.unwrap_or_default();
+        let mut context_prompt = "# System Capability Catalog\n\n".to_string();
 
-        let mut context_prompt = format!(
-            "# Agent System Status\n\
-            **Status**: Active\n\
-            **Total Agent Configs**: {}\n\n\
-            ### Available Specialized Agents\n",
-            total_agents
-        );
-
-        if agents.is_empty() {
-            context_prompt
-                .push_str("*No agents configured yet. Use `agent__create` to add one.*\n");
-        } else {
-            for agent in agents.iter().take(5) {
-                let config: Value = serde_json::from_str(&agent.config).unwrap_or_default();
-                let desc = config
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No description");
-                let builtins = config
-                    .get("allowedBuiltInServiceAliases")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                let externals = config
-                    .get("mcpServerIds")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-
-                context_prompt.push_str(&format!(
-                    "- **{}** (ID: `{}`): {} [{} builtins, {} external MCPs]\n",
-                    agent.name, agent.id, desc, builtins, externals
-                ));
-            }
-            if total_agents > 5 {
-                context_prompt.push_str(&format!(
-                    "*...and {} more. Use `agent__list(type='configs')` for full list.*\n",
-                    total_agents - 5
-                ));
-            }
-        }
-
-        context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to these specialists.");
-
-        // Add System Capability Catalog
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
         let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
             .iter()
-            .filter(|e| !e.canonical.is_empty() && e.canonical != "agent")
+            .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
             .map(|e| e.canonical)
             .collect();
-            
-        context_prompt.push_str("\n\n## System Capability Catalog\n");
-        context_prompt.push_str(&format!("- **Available Builtin Capabilities**: {:?}\n", available_builtins));
-        
+
+        context_prompt.push_str("### Available Builtin Capabilities\n");
+        context_prompt.push_str(&format!("- {:?}\n", available_builtins));
+        context_prompt
+            .push_str("> Grant these via `agent__update(builtinCapabilities=[...])`.\n\n");
+
         let mcp_repo = crate::state::get_mcp_server_repository();
-        if let Ok(external_servers) = mcp_repo.list_servers().await {
-            let external_ids: Vec<_> = external_servers.iter().map(|s| &s.id).collect();
+        context_prompt.push_str("### Registered External MCP Servers\n");
+
+        if let Ok(external_servers) = mcp_repo.list().await {
+            let external_ids: Vec<String> = external_servers.iter().map(|s| s.id.clone()).collect();
             if !external_ids.is_empty() {
-                context_prompt.push_str(&format!("- **Available External MCP Servers**: {:?}\n", external_ids));
+                context_prompt.push_str(&format!(
+                    "- **Available External MCP Servers**: {:?}\n",
+                    external_ids
+                ));
+            } else {
+                context_prompt.push_str("*No external MCP servers registered.*\n");
             }
         }
-        
-        context_prompt.push_str("- **Note**: You can grant these capabilities to agents via `agent__create` or `agent__update` using the `builtinCapabilities` or `externalMcpServers` parameters.");
 
-        // Try to add sub-session info
-        use crate::mcp::builtin::session_api::formatting::build_swarm_snapshot_text;
-        use crate::mcp::builtin::session_api::utils::collect_descendant_snapshot;
-
-        if let Ok((rows, truncated)) = collect_descendant_snapshot(&self.session_id, 20).await {
-            if !rows.is_empty() {
-                context_prompt.push_str("\n\n### Active Sub-Agent Sessions\n");
-                let snapshot_text =
-                    build_swarm_snapshot_text(&self.session_id, &rows, truncated, 20);
-                // Neutralize text
-                context_prompt
-                    .push_str(&snapshot_text.replace("Swarm Board", "Agent Session Roster"));
-            }
-        }
+        context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to specialists.");
 
         if let Ok(mut cache) = self.cache.try_write() {
             *cache = Some(ContextCache {

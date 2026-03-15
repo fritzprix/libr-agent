@@ -19,7 +19,7 @@ export const BUILTIN_SERVICE_CANONICAL_NAMES = [
   'ui',
   'browser',
   'bootstrap',
-  'mcp_manager',
+  'tool',
   'media',
 ] as const;
 
@@ -45,6 +45,7 @@ export const ALL_BUILTIN_SERVICE_ALIASES = [
   'ui',
   'browser',
   'bootstrap',
+  'tool',
   'mcp_manager',
   'media',
 ] as const;

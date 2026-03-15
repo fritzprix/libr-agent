@@ -33,7 +33,7 @@ impl KnowledgeServer {
 
     /// Get tools statically (without an instance)
     pub fn tools_static() -> Vec<MCPTool> {
-        Vec::new()
+        Vec::new() // Deprecated: return empty
     }
 
     /// Get metadata statically (without an instance)
@@ -67,7 +67,7 @@ impl BuiltinMCPServer for KnowledgeServer {
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        Vec::new()
+        Vec::new() // Deprecated: return empty
     }
 
     async fn call_tool(

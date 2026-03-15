@@ -21,7 +21,8 @@ pub enum BuiltinServiceId {
     Ui,
     Browser,
     Bootstrap,
-    McpManager,
+    #[serde(alias = "mcp_manager")]
+    Tool, // Unified Tool Domain
     Media,
 }
 
@@ -31,7 +32,6 @@ pub struct BuiltinServiceEntry {
     pub variant: BuiltinServiceId,
     pub canonical: &'static str,
     pub optional: bool,
-    pub stateful: bool,
 }
 
 impl BuiltinServiceId {
@@ -51,7 +51,7 @@ impl BuiltinServiceId {
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
-            "mcp_manager" => Some(Self::McpManager),
+            "tool" | "mcp_manager" => Some(Self::Tool),
             "media" => Some(Self::Media),
             _ => None,
         }
@@ -73,7 +73,7 @@ impl BuiltinServiceId {
             Self::Ui => "ui",
             Self::Browser => "browser",
             Self::Bootstrap => "bootstrap",
-            Self::McpManager => "mcp_manager",
+            Self::Tool => "tool",
             Self::Media => "media",
         }
     }
@@ -85,91 +85,76 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         variant: BuiltinServiceId::Planning,
         canonical: "planning",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Scratchpad,
         canonical: "scratchpad",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Workspace,
         canonical: "workspace",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Knowledge,
         canonical: "knowledge",
         optional: true,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Agent,
         canonical: "agent",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Assistant,
         canonical: "assistant",
         optional: true,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Skills,
         canonical: "skills",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Playbook,
         canonical: "playbook",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Attachments,
         canonical: "attachments",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Swarm,
         canonical: "swarm",
         optional: true,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Ui,
         canonical: "ui",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Browser,
         canonical: "browser",
         optional: true,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Bootstrap,
         canonical: "bootstrap",
         optional: true,
-        stateful: false,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::McpManager,
-        canonical: "mcp_manager",
+        variant: BuiltinServiceId::Tool,
+        canonical: "tool",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Media,
         canonical: "media",
         optional: true,
-        stateful: false,
     },
 ];
 
@@ -182,7 +167,7 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
     "playbook",
     "attachments",
     "ui",
-    "mcp_manager",
+    "tool",
 ];
 
 impl fmt::Display for BuiltinServiceId {

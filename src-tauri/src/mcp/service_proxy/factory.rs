@@ -47,7 +47,7 @@ pub(crate) async fn create_builtin_server(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
         BuiltinServiceId::Agent => Ok(Some(Box::new(
-            crate::mcp::builtin::agent::AgentServer::new(_session_id, _db).await?,
+            crate::mcp::builtin::agent::AgentServer::new(_session_id, _db.clone()).await?,
         ))),
         BuiltinServiceId::Scratchpad => Ok(Some(Box::new(
             crate::mcp::builtin::scratchpad::ScratchpadServer::new(_session_id, _db).await?,
@@ -78,9 +78,7 @@ pub(crate) async fn create_builtin_server(
                 Ok(None)
             }
         }
-        BuiltinServiceId::McpManager => Ok(Some(Box::new(
-            crate::mcp::builtin::mcp_manager::MCPManagerServer::new(),
-        ))),
+        BuiltinServiceId::Tool => Ok(Some(Box::new(crate::mcp::builtin::tool::ToolServer::new()))),
         BuiltinServiceId::Swarm => Ok(Some(Box::new(
             crate::mcp::builtin::session_api::SessionApiServer::new(),
         ))),

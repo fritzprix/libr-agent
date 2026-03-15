@@ -422,7 +422,6 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
 
     BUILTIN_SERVICE_REGISTRY
         .iter()
-        .filter(|entry| !entry.canonical.is_empty())
         .map(|entry| {
             let name = entry.canonical.to_string();
             let tool_count = get_static_tools_for_server(&name).len();
@@ -441,7 +440,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
                 BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
                 BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
-                BuiltinServiceId::McpManager => mcp_manager::MCPManagerServer::new().metadata(),
+                BuiltinServiceId::Tool => tool::ToolServer::new().metadata(),
                 BuiltinServiceId::Swarm => session_api::SessionApiServer::metadata_static(),
                 BuiltinServiceId::Media => media::MediaServer::metadata_static(),
                 BuiltinServiceId::Skills => BuiltinServerMetadata {
@@ -565,10 +564,7 @@ pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
 
     BUILTIN_SERVICE_REGISTRY
         .iter()
-        .flat_map(|entry| {
-            // If tools are empty or name is empty, they won't reach the agent
-            get_static_tools_for_server(entry.canonical)
-        })
+        .flat_map(|entry| get_static_tools_for_server(entry.canonical))
         .collect()
 }
 
@@ -602,13 +598,15 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Attachments => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
-        BuiltinServiceId::Assistant => Vec::new(),
+        BuiltinServiceId::Assistant => {
+            crate::mcp::builtin::assistant::AssistantServer::tools_static()
+        }
         BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
         BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
         BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),
-        BuiltinServiceId::McpManager => crate::mcp::builtin::mcp_manager::tools::all_tools(),
-        BuiltinServiceId::Swarm => Vec::new(),
+        BuiltinServiceId::Tool => crate::mcp::builtin::tool::tools::all_tools(),
+        BuiltinServiceId::Swarm => crate::mcp::builtin::session_api::tools::all_tools(),
         // Skills tools are session-bound; no static definition available.
         BuiltinServiceId::Skills => Vec::new(),
         BuiltinServiceId::Media => crate::mcp::builtin::media::MediaServer::tools_static(),

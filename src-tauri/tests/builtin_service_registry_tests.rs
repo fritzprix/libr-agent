@@ -223,32 +223,32 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
     );
 }
 
-/// Regression: mcp_manager was registered as optional:false but omitted from
+/// Regression: tool was registered as optional:false but omitted from
 /// CORE_BUILTIN_SERVICE_ALIASES, so assistants with an explicit alias list
-/// couldn't call mcp_manager tools ("Built-in server 'mcp_manager' not enabled").
-/// This test ensures mcp_manager is always available even when only a single
+/// couldn't call tool tools ("Built-in server 'tool' not enabled").
+/// This test ensures tool is always available even when only a single
 /// unrelated optional service is requested.
 #[test]
-fn mcp_manager_is_always_enabled_for_any_explicit_alias_list() {
-    // Only "browser" explicitly requested — mcp_manager must still be present
+fn tool_is_always_enabled_for_any_explicit_alias_list() {
+    // Only "browser" explicitly requested — tool must still be present
     // because it is a core alias.
     let config = mock_agent_config(Some(vec!["browser"]));
     let tool_ids = extract_builtin_tool_ids(&config);
     assert!(
-        tool_ids.contains(&"mcp_manager".to_string()),
-        "mcp_manager must always be present (it is a core alias), \
+        tool_ids.contains(&"tool".to_string()),
+        "tool must always be present (it is a core alias), \
          but was missing when only 'browser' was in allowedBuiltInServiceAliases"
     );
 }
 
 #[test]
-fn mcp_manager_is_enabled_even_with_empty_alias_list() {
+fn tool_is_enabled_even_with_empty_alias_list() {
     // Empty explicit list → only core aliases should be enabled.
     let config = mock_agent_config(Some(vec![]));
     let tool_ids = extract_builtin_tool_ids(&config);
     assert!(
-        tool_ids.contains(&"mcp_manager".to_string()),
-        "mcp_manager must be present even when allowedBuiltInServiceAliases is empty"
+        tool_ids.contains(&"tool".to_string()),
+        "tool must be present even when allowedBuiltInServiceAliases is empty"
     );
 }
 
@@ -322,7 +322,7 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
         (BuiltinServiceId::Bootstrap, "bootstrap"),
-        (BuiltinServiceId::McpManager, "mcp_manager"),
+        (BuiltinServiceId::Tool, "tool"),
     ];
     for (id, expected) in cases {
         let json = serde_json::to_string(&id).unwrap();
@@ -375,7 +375,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
-        builtin::mcp_manager::NAME,
+        builtin::tool::NAME,
     ];
 
     for name in all_names {
@@ -409,7 +409,7 @@ fn builtin_server_names_are_unique() {
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
-        builtin::mcp_manager::NAME,
+        builtin::tool::NAME,
     ];
 
     let mut seen = std::collections::HashSet::new();
@@ -455,7 +455,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
-            BuiltinServiceId::McpManager => builtin::mcp_manager::NAME,
+            BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
         };
 
