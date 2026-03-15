@@ -436,6 +436,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                     content_store::ContentStoreServer::metadata_static()
                 }
                 BuiltinServiceId::Assistant => assistant::AssistantServer::metadata_static(),
+                BuiltinServiceId::Agent => agent::AgentServer::metadata_static(),
                 BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
                 BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
                 BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
@@ -600,6 +601,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Assistant => {
             crate::mcp::builtin::assistant::AssistantServer::tools_static()
         }
+        BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
         BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
         BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),

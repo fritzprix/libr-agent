@@ -6,13 +6,13 @@ use crate::mcp::builtin::BuiltinMCPServer;
 use crate::mcp::error_normalization::{categorize_session_api_error, ExternalMcpErrorCategory};
 use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
 
-mod cache;
-mod client;
-mod formatting;
-mod handlers;
+pub mod cache;
+pub mod client;
+pub mod formatting;
+pub mod handlers;
 pub mod tools;
-mod types;
-mod utils;
+pub mod types;
+pub mod utils;
 
 #[derive(Debug, Default)]
 pub struct SessionApiServer;

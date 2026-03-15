@@ -46,6 +46,9 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Planning => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
+        BuiltinServiceId::Agent => Ok(Some(Box::new(
+            crate::mcp::builtin::agent::AgentServer::new(_session_id, _db).await?,
+        ))),
         BuiltinServiceId::Scratchpad => Ok(Some(Box::new(
             crate::mcp::builtin::scratchpad::ScratchpadServer::new(_session_id, _db).await?,
         ))),

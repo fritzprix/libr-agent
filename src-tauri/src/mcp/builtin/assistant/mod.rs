@@ -8,8 +8,8 @@ use sea_orm::DatabaseConnection;
 use serde_json::Value;
 use std::sync::Arc;
 
-mod operations;
-mod queries;
+pub mod operations;
+pub mod queries;
 pub mod tools;
 
 use std::time::{Duration, Instant};

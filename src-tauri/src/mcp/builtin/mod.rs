@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::info;
 
+pub mod agent;
 pub mod assistant;
 pub mod bootstrap;
 pub mod browser;

@@ -191,8 +191,8 @@ fn extract_builtin_tool_ids_core_aliases_always_present_despite_unknown_inputs()
 
     // These are present because they are CORE aliases, not because of alias normalization.
     assert!(
-        tool_ids.contains(&"swarm".to_string()),
-        "swarm is a core alias and must always be present"
+        tool_ids.contains(&"agent".to_string()),
+        "agent is a core alias and must always be present"
     );
     assert!(
         tool_ids.contains(&"attachments".to_string()),
@@ -439,6 +439,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Planning => builtin::planning::NAME,
             BuiltinServiceId::Scratchpad => builtin::scratchpad::NAME,
             BuiltinServiceId::Workspace => builtin::workspace::NAME,
+            BuiltinServiceId::Agent => builtin::agent::NAME,
             BuiltinServiceId::Knowledge => builtin::knowledge::NAME,
             BuiltinServiceId::Assistant => builtin::assistant::NAME,
             BuiltinServiceId::Skills => builtin::skills::NAME,

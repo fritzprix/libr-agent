@@ -10,6 +10,7 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
+    Agent, // Unified Agent Domain
     Assistant,
     Skills,
     Playbook,
@@ -41,6 +42,7 @@ impl BuiltinServiceId {
             "scratchpad" | "memory" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
+            "agent" => Some(Self::Agent),
             "assistant" | "assistant_manager" => Some(Self::Assistant),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
@@ -62,6 +64,7 @@ impl BuiltinServiceId {
             Self::Scratchpad => "scratchpad",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
+            Self::Agent => "agent",
             Self::Assistant => "assistant",
             Self::Skills => "skills",
             Self::Playbook => "playbook",
@@ -76,7 +79,7 @@ impl BuiltinServiceId {
     }
 }
 
-// Registry 정의 (이게 SSOT 역할을 함)
+// Registry SSOT
 pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Planning,
@@ -103,9 +106,15 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         stateful: true,
     },
     BuiltinServiceEntry {
+        variant: BuiltinServiceId::Agent,
+        canonical: "agent",
+        optional: false,
+        stateful: false,
+    },
+    BuiltinServiceEntry {
         variant: BuiltinServiceId::Assistant,
         canonical: "assistant",
-        optional: false,
+        optional: true,
         stateful: true,
     },
     BuiltinServiceEntry {
@@ -129,7 +138,7 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Swarm,
         canonical: "swarm",
-        optional: false,
+        optional: true,
         stateful: false,
     },
     BuiltinServiceEntry {
@@ -168,11 +177,10 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
     "planning",
     "scratchpad",
     "workspace",
-    "assistant",
+    "agent",
     "skills",
     "playbook",
     "attachments",
-    "swarm",
     "ui",
     "mcp_manager",
 ];
