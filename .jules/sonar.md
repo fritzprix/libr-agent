@@ -33,3 +33,4 @@
 ## 2026-03-13 - src/lib/backend/messages.ts **Coverage Expanded:** Message Management and Search **Assertions:** Validated input checking, type mapping, and SafeInvoke bridging
 
 ## 2026-03-14 - src/lib/ai-service/factory.ts, src/lib/ai-service/empty.ts, src/lib/ai-service/fireworks.ts **Coverage Expanded:** AIServiceFactory, EmptyAIService, FireworksService **Assertions:** Verified factory creation patterns for all supported LLM providers, TTL caching logic, API key fallback mappings, EmptyAIService safety fallbacks for unsupported operations, and Fireworks endpoint mapping configuration.
+## 2026-03-15 - [src/lib/services/rust-assistant-service.ts] **Coverage Expanded:** [RustAssistantService] **Assertions:** [Verified mapping logic, error handling, pagination, event emission, and mock isolation for all Tauri IPC boundary methods]
