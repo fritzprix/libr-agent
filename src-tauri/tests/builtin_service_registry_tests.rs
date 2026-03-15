@@ -13,11 +13,11 @@ use tauri_mcp_agent_lib::agent::tools::{
     create_tool_result_message, create_tool_result_message_with_content, extract_builtin_tool_ids,
     ToolResultAcceptance,
 };
+use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
     BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
-use tauri_mcp_agent_lib::agent::AgentConfig;
-use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
