@@ -17,7 +17,7 @@ fn create_tool() -> MCPTool {
     MCPTool {
         name: "create".to_string(),
         title: Some("Create Agent Configuration".to_string()),
-        description: "Create a new named agent configuration (assistant) with a specific system prompt and model settings.".to_string(),
+        description: "Create a new named agent configuration (assistant) with a specific system prompt, model settings, and tool capabilities.".to_string(),
         input_schema: object_prop(
             vec![
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
@@ -26,6 +26,8 @@ fn create_tool() -> MCPTool {
                 ("modelProvider".to_string(), string_prop(None, None, Some("LLM provider (e.g., 'openai', 'anthropic', 'ollama')."))),
                 ("modelName".to_string(), string_prop(None, None, Some("Specific model to use (e.g., 'gpt-4o', 'claude-3-5-sonnet')."))),
                 ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0)."))),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of builtin service aliases to allow (e.g. ['workspace', 'browser', 'planning'])."))),
+                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search'])."))),
             ],
             vec!["name".to_string()],
             None,
@@ -59,7 +61,7 @@ fn update_tool() -> MCPTool {
     MCPTool {
         name: "update".to_string(),
         title: Some("Update Agent Configuration".to_string()),
-        description: "Update an existing agent configuration (assistant).".to_string(),
+        description: "Update an existing agent configuration (assistant) including its system prompt and tool access.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -90,6 +92,8 @@ fn update_tool() -> MCPTool {
                     "temperature".to_string(),
                     number_prop(Some(0.0), Some(2.0), Some("Change temperature.")),
                 ),
+                ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("Update allowed builtin service aliases."))),
+                ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("Update allowed external MCP server IDs."))),
             ],
             vec!["id".to_string()],
             None,

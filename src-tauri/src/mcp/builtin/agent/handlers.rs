@@ -17,10 +17,20 @@ use super::AgentServer;
 
 /// Unified create_agent handler (from createAssistant)
 pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult, String> {
+    let mut mapped_args = args.clone();
+
+    // Map Agent Domain friendly names to underlying config fields
+    if let Some(builtins) = args.get("builtinCapabilities") {
+        mapped_args["allowedBuiltInServiceAliases"] = builtins.clone();
+    }
+    if let Some(externals) = args.get("externalMcpServers") {
+        mapped_args["mcpServerIds"] = externals.clone();
+    }
+
     let res = crate::mcp::builtin::assistant::operations::create_assistant(
         &crate::mcp::builtin::assistant::AssistantServer::new(server.get_db().clone().into())
             .await?,
-        args,
+        mapped_args,
     )
     .await;
 
@@ -38,10 +48,20 @@ pub async fn update_agent(
     args: Value,
     caller_session_id: Option<String>,
 ) -> Result<MCPResult, String> {
+    let mut mapped_args = args.clone();
+
+    // Map Agent Domain friendly names to underlying config fields
+    if let Some(builtins) = args.get("builtinCapabilities") {
+        mapped_args["allowedBuiltInServiceAliases"] = builtins.clone();
+    }
+    if let Some(externals) = args.get("externalMcpServers") {
+        mapped_args["mcpServerIds"] = externals.clone();
+    }
+
     let res = crate::mcp::builtin::assistant::operations::update_assistant(
         &crate::mcp::builtin::assistant::AssistantServer::new(server.get_db().clone().into())
             .await?,
-        args,
+        mapped_args,
         caller_session_id,
     )
     .await;
@@ -97,10 +117,7 @@ pub async fn list_agents_or_sessions(
                     .get("allowedBuiltInServiceAliases")
                     .cloned()
                     .unwrap_or(json!([]));
-                let externals = config
-                    .get("mcpServerIds")
-                    .cloned()
-                    .unwrap_or(json!([]));
+                let externals = config.get("mcpServerIds").cloned().unwrap_or(json!([]));
 
                 text_summary.push_str(&format!(
                     "- **{}** (ID: `{}`)\n  Description: {}\n  Builtin Capabilities: {:?}\n  External MCP Servers: {:?}\n\n",
