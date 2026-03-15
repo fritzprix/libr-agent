@@ -166,6 +166,27 @@ impl BuiltinMCPServer for AgentServer {
 
         context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to these specialists.");
 
+        // Add System Capability Catalog
+        use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
+        let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
+            .iter()
+            .filter(|e| !e.canonical.is_empty() && e.canonical != "agent")
+            .map(|e| e.canonical)
+            .collect();
+            
+        context_prompt.push_str("\n\n## System Capability Catalog\n");
+        context_prompt.push_str(&format!("- **Available Builtin Capabilities**: {:?}\n", available_builtins));
+        
+        let mcp_repo = crate::state::get_mcp_server_repository();
+        if let Ok(external_servers) = mcp_repo.list_servers().await {
+            let external_ids: Vec<_> = external_servers.iter().map(|s| &s.id).collect();
+            if !external_ids.is_empty() {
+                context_prompt.push_str(&format!("- **Available External MCP Servers**: {:?}\n", external_ids));
+            }
+        }
+        
+        context_prompt.push_str("- **Note**: You can grant these capabilities to agents via `agent__create` or `agent__update` using the `builtinCapabilities` or `externalMcpServers` parameters.");
+
         // Try to add sub-session info
         use crate::mcp::builtin::session_api::formatting::build_swarm_snapshot_text;
         use crate::mcp::builtin::session_api::utils::collect_descendant_snapshot;

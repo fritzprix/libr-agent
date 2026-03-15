@@ -133,6 +133,25 @@ pub async fn list_agents_or_sessions(
                 }));
             }
 
+            // Add system capability catalog to summary
+            use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
+            let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
+                .iter()
+                .filter(|e| !e.canonical.is_empty() && e.canonical != "agent")
+                .map(|e| e.canonical)
+                .collect();
+            
+            text_summary.push_str("\n--- \n## System Capability Catalog\n");
+            text_summary.push_str(&format!("Available Builtins: {:?}\n", available_builtins));
+            
+            let mcp_repo = crate::state::get_mcp_server_repository();
+            if let Ok(external_servers) = mcp_repo.list_servers().await {
+                let external_ids: Vec<_> = external_servers.iter().map(|s| &s.id).collect();
+                if !external_ids.is_empty() {
+                    text_summary.push_str(&format!("Available External MCPs: {:?}\n", external_ids));
+                }
+            }
+
             let hint = SuccessHint::new(
                 text_summary,
                 vec!["Use startSession(agentId=\"...\") to delegate work".to_string()],
