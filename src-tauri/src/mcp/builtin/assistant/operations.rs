@@ -173,7 +173,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         return Ok(duplicate_error(
             "Assistant",
             &request.name,
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         ));
     }
 
@@ -197,7 +197,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 .collect();
 
             if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
-                return Ok(invalid_input_error(&err_msg, ToolGroup::Assistant));
+                return Ok(invalid_input_error(&err_msg, ToolGroup::Agent));
             }
         }
     }
@@ -209,7 +209,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Failed to serialize assistant config: {}", e),
-                ToolGroup::Assistant,
+                ToolGroup::Agent,
             )
             .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
             .to_mcp_result());
@@ -247,7 +247,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to create assistant: {}", e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec!["Try again".to_string()])
         .to_mcp_result()),
@@ -282,11 +282,7 @@ pub async fn update_assistant(
         });
         (model.name, parsed_config)
     } else {
-        return Ok(not_found_error(
-            "Assistant",
-            &request.id,
-            ToolGroup::Assistant,
-        ));
+        return Ok(not_found_error("Assistant", &request.id, ToolGroup::Agent));
     };
 
     // Self-modification guard: an AI agent must not modify the assistant it is
@@ -298,7 +294,7 @@ pub async fn update_assistant(
                 return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     "Self-modification is not allowed: an agent cannot update the assistant configuration it is currently running as.",
-                    ToolGroup::Assistant,
+                    ToolGroup::Agent,
                 )
                 .with_guidance(vec![
                     "This restriction prevents privilege escalation and identity drift during a session.".to_string(),
@@ -342,15 +338,14 @@ pub async fn update_assistant(
                 .collect();
 
             if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    err_msg,
-                    ToolGroup::Assistant,
-                )
-                .with_guidance(vec![
-                    "Use builtin_mcp_manager__listTools to see available servers".to_string(),
-                ])
-                .to_mcp_result());
+                return Ok(
+                    guided_error(ErrorCategory::InvalidInput, err_msg, ToolGroup::Agent)
+                        .with_guidance(vec![
+                            "Use builtin_mcp_manager__listTools to see available servers"
+                                .to_string(),
+                        ])
+                        .to_mcp_result(),
+                );
             }
         }
     }
@@ -362,7 +357,7 @@ pub async fn update_assistant(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Failed to serialize assistant config: {}", e),
-                ToolGroup::Assistant,
+                ToolGroup::Agent,
             )
             .with_guidance(vec!["Ensure config fields are valid JSON".to_string()])
             .to_mcp_result());
@@ -395,7 +390,7 @@ pub async fn update_assistant(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to update assistant {}: {}", request.id, e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -455,7 +450,7 @@ pub async fn delete_assistant(
                 return Ok(guided_error(
                     ErrorCategory::PermissionDenied,
                     "Self-deletion is not allowed: an agent cannot delete the assistant configuration it is currently running as.",
-                    ToolGroup::Assistant,
+                    ToolGroup::Agent,
                 )
                 .with_guidance(vec![
                     "This restriction prevents an agent from removing its own identity during an active session.".to_string(),
@@ -478,7 +473,7 @@ pub async fn delete_assistant(
         return Ok(guided_error(
             ErrorCategory::ResourceNotFound,
             format!("Assistant '{}' not found", request.id),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
@@ -510,7 +505,7 @@ pub async fn delete_assistant(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to delete assistant {}: {}", request.id, e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),

@@ -34,7 +34,7 @@ pub fn swarm_error(
     crate::mcp::builtin::error_guidance::guided_error(
         category,
         format!("[{}] {}", operation, cause),
-        crate::mcp::builtin::error_guidance::ToolGroup::Swarm,
+        crate::mcp::builtin::error_guidance::ToolGroup::Agent,
     )
     .guidance(hints)
     .to_mcp_result()

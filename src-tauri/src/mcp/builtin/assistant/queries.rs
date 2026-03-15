@@ -214,7 +214,7 @@ pub async fn list_assistants(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to list assistants: {}", e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -234,7 +234,7 @@ pub async fn search_assistant(
 
     let query = match args.get("query").and_then(|v| v.as_str()) {
         Some(v) => v,
-        Option::None => return Ok(missing_param_error("query", ToolGroup::Assistant)),
+        Option::None => return Ok(missing_param_error("query", ToolGroup::Agent)),
     };
 
     let limit = args
@@ -300,7 +300,7 @@ pub async fn search_assistant(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to search assistants for '{}': {}", query, e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -320,7 +320,7 @@ pub async fn get_assistant(
 
     let id = match args.get("id").and_then(|v| v.as_str()) {
         Some(v) => v,
-        Option::None => return Ok(missing_param_error("id", ToolGroup::Assistant)),
+        Option::None => return Ok(missing_param_error("id", ToolGroup::Agent)),
     };
 
     let result = repo.get_assistant(id).await;
@@ -407,7 +407,7 @@ pub async fn get_assistant(
         Ok(None) => Ok(guided_error(
             ErrorCategory::ResourceNotFound,
             format!("Assistant '{}' not found", id),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Use builtin_assistant__listAssistants to find the correct ID".to_string(),
@@ -416,7 +416,7 @@ pub async fn get_assistant(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to get assistant '{}': {}", id, e),
-            ToolGroup::Assistant,
+            ToolGroup::Agent,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),

@@ -94,7 +94,7 @@ impl BuiltinMCPServer for AgentServer {
             if e.contains("cancelled") || e.contains("interrupted") {
                 return Err(e);
             }
-            Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Assistant).to_mcp_result())
+            Ok(guided_error(ErrorCategory::InternalError, e, ToolGroup::Agent).to_mcp_result())
         })
     }
 

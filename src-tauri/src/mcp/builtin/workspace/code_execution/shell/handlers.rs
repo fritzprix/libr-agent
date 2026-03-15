@@ -5,7 +5,7 @@ use crate::mcp::builtin::error_guidance::{
 };
 use crate::mcp::types::MCPResult;
 
-use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL};
+use super::super::super::{utils, WorkspaceServer, PERSISTENT_SHELL_TOOL, RUN_SHELL_TOOL};
 use super::super::validation;
 
 impl WorkspaceServer {
@@ -82,7 +82,7 @@ impl WorkspaceServer {
         }
 
         // Execute with persistent shell (state preservation)
-        self.execute_shell_persistent(raw_command, timeout_secs, session_id)
+        self.execute_shell_persistent(raw_command, PERSISTENT_SHELL_TOOL, timeout_secs, session_id)
             .await
     }
 
@@ -168,6 +168,7 @@ impl WorkspaceServer {
         let isolation_level = utils::get_shell_isolation_level().await;
         self.execute_shell_with_isolation(
             raw_command,
+            RUN_SHELL_TOOL,
             isolation_level,
             timeout_secs,
             session_id,

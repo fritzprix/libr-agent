@@ -67,12 +67,13 @@ fn guided_error_includes_next_steps_section() {
 }
 
 #[test]
-fn not_found_error_mentions_the_missing_resource() {
-    let r = not_found_error("Assistant", "asst_123", ToolGroup::Assistant);
+fn not_found_error_is_informational() {
+    let r = not_found_error("Assistant", "asst_123", ToolGroup::Agent);
     let text = extract_text(&r);
 
-    assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert_eq!(r.is_error, Some(false));
+    assert_eq!(extract_text_error_flag(&r), None);
+    assert!(text.contains("Notice:"));
     assert!(text.contains("asst_123"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
 }
