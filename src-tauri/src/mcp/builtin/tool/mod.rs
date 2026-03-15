@@ -43,6 +43,28 @@ impl ToolServer {
 
 pub const NAME: &str = "tool";
 
+fn format_capability_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "None".to_string()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn format_registered_external_servers(
+    server_models: &[crate::entity::mcp_server::Model],
+) -> String {
+    if server_models.is_empty() {
+        "None".to_string()
+    } else {
+        server_models
+            .iter()
+            .map(|server| format!("{} (ID: {})", server.name, server.id))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
 #[async_trait]
 impl BuiltinMCPServer for ToolServer {
     fn name(&self) -> &str {
@@ -64,7 +86,7 @@ impl BuiltinMCPServer for ToolServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "tool__list" => operations::list_tools(args).await,
+            "list" => operations::list_tools(args).await,
             "register" => operations::register_server(self, args).await,
             "update" => operations::update_server(self, args).await,
             "delete" => operations::delete_server(self, args).await,
@@ -96,19 +118,22 @@ impl BuiltinMCPServer for ToolServer {
                 .to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
+        let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
             .iter()
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .map(|e| e.canonical)
+            .map(|e| e.canonical.to_string())
             .collect();
-        context_prompt.push_str(&format!("Available Builtins: {:?}\n", available_builtins));
+        context_prompt.push_str(&format!(
+            "Available Builtins: {}\n",
+            format_capability_list(&available_builtins)
+        ));
 
         let mcp_repo = crate::state::get_mcp_server_repository();
         if let Ok(external_servers) = mcp_repo.list().await {
-            let external_ids: Vec<String> = external_servers.iter().map(|s| s.id.clone()).collect();
-            if !external_ids.is_empty() {
-                context_prompt.push_str(&format!("Available External MCPs: {:?}\n", external_ids));
-            }
+            context_prompt.push_str(&format!(
+                "Available External MCPs: {}\n",
+                format_registered_external_servers(&external_servers)
+            ));
         }
 
         let structured_state = json!({

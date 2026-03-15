@@ -15,6 +15,10 @@ use crate::mcp::types::MCPResult;
 use crate::repositories::mcp_server_repository::MCPServerRepository;
 
 use super::AgentServer;
+use super::formatting::{
+    build_server_name_lookup, extract_string_list, format_capability_list,
+    format_external_server_refs, format_registered_external_servers, resolve_external_server_labels,
+};
 
 /// Unified create_agent handler (from createAssistant)
 pub async fn create_agent(server: &AgentServer, args: Value) -> Result<MCPResult, String> {
@@ -92,6 +96,9 @@ pub async fn list_agents_or_sessions(
 
             let total = agents.len();
             let paged_agents: Vec<_> = agents.into_iter().skip(offset).take(limit).collect();
+            let mcp_repo = crate::state::get_mcp_server_repository();
+            let external_servers = mcp_repo.list().await.map_err(|e| e.to_string())?;
+            let server_name_lookup = build_server_name_lookup(&external_servers);
 
             let mut results = Vec::new();
             let mut text_summary = format!("Found {} agent configurations.\n\n", total);
@@ -102,15 +109,18 @@ pub async fn list_agents_or_sessions(
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                let builtins = config
-                    .get("allowedBuiltInServiceAliases")
-                    .cloned()
-                    .unwrap_or(json!([]));
-                let externals = config.get("mcpServerIds").cloned().unwrap_or(json!([]));
+                let builtins = extract_string_list(config.get("allowedBuiltInServiceAliases"));
+                let external_ids = extract_string_list(config.get("mcpServerIds"));
+                let external_labels =
+                    resolve_external_server_labels(&external_ids, &server_name_lookup);
 
                 text_summary.push_str(&format!(
-                    "- **{}** (ID: `{}`)\n  Description: {}\n  Builtin Capabilities: {:?}\n  External MCP Servers: {:?}\n\n",
-                    agent.name, agent.id, desc, builtins, externals
+                    "- **{}** (ID: `{}`)\n  Description: {}\n  Builtin Capabilities: {}\n  External MCP Servers: {}\n\n",
+                    agent.name,
+                    agent.id,
+                    desc,
+                    format_capability_list(&builtins),
+                    format_external_server_refs(&external_ids, &server_name_lookup)
                 ));
 
                 results.push(json!({
@@ -118,32 +128,30 @@ pub async fn list_agents_or_sessions(
                     "name": agent.name,
                     "description": desc,
                     "builtinCapabilities": builtins,
-                    "externalMcpServers": externals
+                    "externalMcpServers": external_ids,
+                    "externalMcpServerLabels": external_labels
                 }));
             }
 
             // Add system capability catalog to summary
             use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-            let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
+            let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
                 .iter()
                 .filter(|e| {
                     !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool"
                 })
-                .map(|e| e.canonical)
+                .map(|e| e.canonical.to_string())
                 .collect();
 
             text_summary.push_str("\n--- \n## System Capability Catalog\n");
-            text_summary.push_str(&format!("Available Builtins: {:?}\n", available_builtins));
-
-            let mcp_repo = crate::state::get_mcp_server_repository();
-            if let Ok(external_servers) = mcp_repo.list().await {
-                let external_ids: Vec<String> =
-                    external_servers.iter().map(|s| s.id.clone()).collect();
-                if !external_ids.is_empty() {
-                    text_summary
-                        .push_str(&format!("Available External MCPs: {:?}\n", external_ids));
-                }
-            }
+            text_summary.push_str(&format!(
+                "Available Builtins: {}\n",
+                format_capability_list(&available_builtins)
+            ));
+            text_summary.push_str(&format!(
+                "Available External MCPs:\n{}\n",
+                format_registered_external_servers(&external_servers)
+            ));
 
             let hint = SuccessHint::new(
                 text_summary,

@@ -156,7 +156,7 @@ pub fn verify_server_tool() -> MCPTool {
 /// Find tools across all sources in one call (unified discovery)
 pub fn list_tools_tool() -> MCPTool {
     MCPTool {
-        name: "tool__list".to_string(),
+        name: "list".to_string(),
         title: Some("Find Tools".to_string()),
         description: "Search servers and tools across builtin and external MCP servers. Omit query to see a compact summary of all servers.".to_string(),
         input_schema: object_prop(

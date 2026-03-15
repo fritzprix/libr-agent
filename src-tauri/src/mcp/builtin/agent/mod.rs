@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
 pub mod handlers;
+mod formatting;
 pub mod tools;
 
 #[derive(Debug, Clone)]
@@ -112,14 +113,17 @@ impl BuiltinMCPServer for AgentServer {
         let mut context_prompt = "# System Capability Catalog\n\n".to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins: Vec<_> = BUILTIN_SERVICE_REGISTRY
+        let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
             .iter()
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .map(|e| e.canonical)
+            .map(|e| e.canonical.to_string())
             .collect();
 
         context_prompt.push_str("### Available Builtin Capabilities\n");
-        context_prompt.push_str(&format!("- {:?}\n", available_builtins));
+        context_prompt.push_str(&format!(
+            "- {}\n",
+            formatting::format_capability_list(&available_builtins)
+        ));
         context_prompt
             .push_str("> Grant these via `agent__update(builtinCapabilities=[...])`.\n\n");
 
@@ -127,15 +131,10 @@ impl BuiltinMCPServer for AgentServer {
         context_prompt.push_str("### Registered External MCP Servers\n");
 
         if let Ok(external_servers) = mcp_repo.list().await {
-            let external_ids: Vec<String> = external_servers.iter().map(|s| s.id.clone()).collect();
-            if !external_ids.is_empty() {
-                context_prompt.push_str(&format!(
-                    "- **Available External MCP Servers**: {:?}\n",
-                    external_ids
-                ));
-            } else {
-                context_prompt.push_str("*No external MCP servers registered.*\n");
-            }
+            context_prompt.push_str(&format!(
+                "{}\n",
+                formatting::format_registered_external_servers(&external_servers)
+            ));
         }
 
         context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to specialists.");
