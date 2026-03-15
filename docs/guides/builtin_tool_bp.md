@@ -78,6 +78,26 @@ match tool_name {
 - Agent will consult available tools list (from `list_tools()`)
 - Agent learns canonical names from schema definitions
 
+#### 2.1.2 Current Canonical Builtin Service Names (Implemented)
+
+As of the March 2026 cleanup, the active public builtin service canonicals are:
+
+- `planning`
+- `scratchpad`
+- `workspace`
+- `knowledge`
+- `agent`
+- `skills`
+- `playbook`
+- `attachments`
+- `ui`
+- `browser`
+- `bootstrap`
+- `tool`
+- `media`
+
+Legacy names such as `assistant`, `assistant_manager`, `swarm`, and `session_api` still resolve for backward compatibility, but they are **aliases only**. They must not be reintroduced as separate public builtin services.
+
 ### 2.2 Trait-Based Interface
 
 All tools must implement the standard `BuiltinMCPServer` trait to ensure polymorphic handling by the Agent Runtime.
@@ -233,6 +253,57 @@ match execute_script(...) {
 ```
 
 **Why This Matters:** If `clickElement` fails due to invalid CSS selector, suggesting "check for page changes" wastes AI tokens on non-existent changes.
+
+### 6.4 Implemented Builtin Error Semantics (March 2026)
+
+The current builtin behavior is now stricter than the older generic "everything failed = error" approach.
+
+#### What uses hard tool errors (`is_error: true`)
+
+Use hard error semantics only when the agent can reasonably fix the problem by changing the tool call:
+
+- missing required parameters
+- invalid input / invalid format
+- missing resources / wrong IDs
+- duplicate-resource conflicts
+- explicit permission / ownership violations
+- invalid agent-visible state such as "already terminated" or "process belongs to another session"
+
+#### What uses informational non-error results (`is_error: false`)
+
+These cases should stay visible to the agent, but they are **not** agent-fault errors:
+
+- builtin proxy execution timeouts
+- builtin internal exceptions wrapped through `guided_error(...)`
+- backend operation failures such as temp directory creation, ZIP finalization, process spawn/stdin failures
+- user-driven cancellation flows such as `ui / getUserAnswer(cancelled=true)`
+- interactive command non-zero exits where the command failed, but the tool call itself was valid
+
+#### Implemented code paths
+
+The current implementation is centered in:
+
+- `src-tauri/src/mcp/types.rs`
+  - `MCPResult::informational(...)`
+  - `MCPResult::informational_with_data(...)`
+- `src-tauri/src/mcp/builtin/error_guidance.rs`
+  - `ErrorCategory::uses_error_semantics()`
+  - `ErrorGuidance::to_mcp_result()`
+- `src-tauri/src/mcp/service_proxy/mod.rs`
+  - builtin timeout conversion to non-error tool results
+
+#### Regression coverage
+
+This contract is enforced by integration tests in:
+
+- `src-tauri/tests/error_contract_guards.rs`
+
+Those tests currently pin:
+
+- `guided_error(ErrorCategory::Timeout, ...)` → non-error
+- `guided_error(ErrorCategory::InternalError, ...)` → non-error
+- session wait timeout conversion → success/informational result
+- UI prompt cancellation → non-error informational result
 
 ---
 
