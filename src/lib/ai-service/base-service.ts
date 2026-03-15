@@ -2,7 +2,10 @@ import { extractMediaContent } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
-import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
+import {
+  filterSystemErrors,
+  validateToolCallPairing,
+} from '@/lib/ai-service/message-normalizer';
 import {
   type AIServiceConfig,
   type AIServiceProvider,
@@ -126,6 +129,35 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
         throw new Error('Message must have a valid role');
       }
     });
+  }
+
+  /**
+   * Validates the basic structure of an `MCPTool`.
+   * @param tool The tool to validate.
+   * @throws An error if the tool is missing required fields.
+   * @protected
+   */
+  protected validateTool(tool: MCPTool): void {
+    if (!tool.name || typeof tool.name !== 'string') {
+      throw new Error(
+        `Tool must have a valid name (provider: ${this.getProvider()})`,
+      );
+    }
+    if (!tool.description || typeof tool.description !== 'string') {
+      throw new Error(
+        `Tool must have a valid description (tool: ${tool.name})`,
+      );
+    }
+    if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
+      throw new Error(
+        `Tool must have a valid inputSchema (tool: ${tool.name})`,
+      );
+    }
+    if (tool.inputSchema.type !== 'object') {
+      throw new Error(
+        `Tool inputSchema must be of type "object" (tool: ${tool.name})`,
+      );
+    }
   }
 
   /**
@@ -395,17 +427,18 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
 
   /**
    * Sanitizes messages for provider-specific compatibility.
-   * The base implementation uses the `MessageNormalizer`, but services can override this
-   * for custom sanitization logic.
+   * The base implementation calls sanitizeSingleMessage for each message.
    * @param messages The messages to sanitize.
    * @returns An array of sanitized messages.
    * @protected
    */
   protected sanitizeMessages(messages: Message[]): Message[] {
-    return MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      this.getProvider(),
-    );
+    const validMessages = filterSystemErrors(messages);
+    const processedMessages = validateToolCallPairing(validMessages);
+
+    return processedMessages
+      .map((msg) => this.sanitizeSingleMessage(msg))
+      .filter((msg): msg is Message => msg !== null);
   }
 
   /**
@@ -626,6 +659,21 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
    * @abstract
    */
   abstract convertTools(mcpTools: MCPTool[]): TProviderTool[];
+
+  /**
+   * @inheritdoc
+   */
+  abstract sanitizeSingleMessage(message: Message): Message | null;
+
+  /**
+   * @inheritdoc
+   */
+  abstract supportsTools(modelName: string): boolean;
+
+  /**
+   * @inheritdoc
+   */
+  abstract estimateContextWindow(modelName: string): number;
 
   /**
    * Compresses a slice of conversation messages into a single summary string

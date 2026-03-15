@@ -69,6 +69,29 @@ export class EmptyAIService extends BaseAIService<unknown, never> {
 
   /**
    * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    void modelName;
+    return false;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    void modelName;
+    return 0;
+  }
+
+  /**
+   * @inheritdoc
    * @description This is a no-op as there are no resources to clean up.
    */
   dispose(): void {

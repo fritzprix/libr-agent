@@ -18,7 +18,6 @@ import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
-import { convertMCPToolToAnthropic } from './tool-converters';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
@@ -178,17 +177,33 @@ export class AnthropicService extends BaseAIService<
    * @inheritdoc
    *
    * Marks the last tool with `cache_control: { type: 'ephemeral' }` so that
-   * Anthropic caches the entire tool list as a second cache breakpoint. The
-   * tool list is stable within a session (tools don't change between turns),
-   * so this can save significant input tokens on every request after the first.
+   * Anthropic caches the entire tool list as a second cache breakpoint.
    */
   convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
-    const tools = mcpTools.map(convertMCPToolToAnthropic);
-    if (tools.length > 0) {
-      tools[tools.length - 1] = {
-        ...tools[tools.length - 1],
-        cache_control: { type: 'ephemeral' },
+    const tools = mcpTools.map((mcpTool) => {
+      const properties = mcpTool.inputSchema.properties || {};
+      const required = mcpTool.inputSchema.required || [];
+
+      // Anthropic requires 'type' in schema
+      const input_schema = {
+        type: 'object' as const,
+        properties: properties,
+        required: required,
       };
+
+      return {
+        name: mcpTool.name,
+        description: mcpTool.description,
+        input_schema: input_schema as AnthropicTool['input_schema'],
+      } as AnthropicTool;
+    });
+
+    if (tools.length > 0) {
+      (
+        tools[tools.length - 1] as AnthropicTool & {
+          cache_control?: { type: 'ephemeral' };
+        }
+      ).cache_control = { type: 'ephemeral' };
     }
     return tools;
   }
@@ -653,6 +668,38 @@ export class AnthropicService extends BaseAIService<
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }
+  }
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Filter out tool messages without tool_call_id
+    if (message.role === 'tool' && !message.tool_call_id) {
+      logger.debug('Filtering out tool message without tool_call_id', {
+        messageId: message.id,
+      });
+      return null;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    // Claude 3+ supports tools
+    return lowerName.includes('claude-3') || lowerName.includes('claude-opus');
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('claude-3')) return 200000;
+    return 100000;
   }
 
   /**

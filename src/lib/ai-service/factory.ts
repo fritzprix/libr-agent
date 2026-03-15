@@ -10,6 +10,7 @@ import { OllamaService } from './ollama';
 import { OpenRouterService } from './openrouter';
 import { EmptyAIService } from './empty';
 import { LLMConfigManager } from '../llm-config-manager';
+import { registerAIServiceFactory } from './model-capabilities';
 
 const logger = getLogger('AIService');
 const configManager = new LLMConfigManager();
@@ -151,3 +152,6 @@ export class AIServiceFactory {
     }
   }
 }
+
+// Register factory for capability delegation
+registerAIServiceFactory(AIServiceFactory);

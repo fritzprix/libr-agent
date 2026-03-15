@@ -1,18 +1,3 @@
-/**
- * Model capability detection utilities.
- * Provides dynamic detection for model features like thinking/reasoning support.
- *
- * Strategy:
- * 1. Primary: OpenRouter metadata API (unified source for all providers)
- * 2. Secondary: Provider-specific API (Ollama /api/show, etc.)
- * 3. Fallback: Minimal pattern matching for known model families
- * 4. Cache: Store results for 24 hours to avoid repeated API calls
- *
- * CRITICAL: Uses OpenRouter as "metadata database" WITHOUT routing API calls!
- * - Metadata: OpenRouter API (free, public endpoint)
- * - Actual chat: Direct to user's configured provider (Ollama, OpenAI, etc.)
- */
-
 import { AIServiceProvider } from './types';
 import { getLogger } from '../logger';
 import {
@@ -21,6 +6,30 @@ import {
 } from './openrouter-metadata';
 
 const logger = getLogger('ModelCapabilities');
+
+/**
+ * Interface matching the static part of AIServiceFactory that we need.
+ * This avoids a direct import and thus prevents circular dependencies.
+ */
+interface FactoryInterface {
+  getService(provider: AIServiceProvider, apiKey: string): unknown;
+}
+
+interface ServiceInterface {
+  supportsTools(modelName: string): boolean;
+  estimateContextWindow(modelName: string): number;
+}
+
+let registeredFactory: FactoryInterface | null = null;
+
+/**
+ * Registers the AIServiceFactory to be used for late-bound capability delegation.
+ * This pattern avoids circular dependencies: Services -> Capabilities -> Factory -> Services.
+ * @param factory The AIServiceFactory implementation.
+ */
+export function registerAIServiceFactory(factory: FactoryInterface): void {
+  registeredFactory = factory;
+}
 
 /**
  * Cache for model capabilities to avoid repeated API calls.
@@ -36,35 +45,22 @@ interface CapabilityCache {
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const capabilityCache = new Map<string, CapabilityCache>();
 
+function isCacheValid(cached: CapabilityCache): boolean {
+  return Date.now() - cached.timestamp < CACHE_TTL;
+}
+
+function getCacheKey(provider: AIServiceProvider, modelName: string): string {
+  return `${provider}:${modelName}`;
+}
+
 /**
  * Minimal fallback patterns for known model families that support thinking.
- * Only includes most common/stable patterns to avoid maintenance burden.
- *
- * NOTE: This is a LAST RESORT fallback. Primary detection is via:
- * 1. OpenRouter metadata API
- * 2. Provider-specific APIs (Ollama /api/show)
- *
- * Keep this list MINIMAL - only add patterns for well-established model families.
  */
 const FALLBACK_THINKING_PATTERNS: Record<string, string[]> = {
-  [AIServiceProvider.Ollama]: [
-    'qwen', // Qwen family (popular thinking models)
-    'deepseek', // DeepSeek-R1 family
-  ],
-  [AIServiceProvider.OpenAI]: [
-    'o1', // o1 reasoning series
-    'o3', // o3 reasoning series
-    'o4', // o4 reasoning series
-  ],
-  [AIServiceProvider.Anthropic]: [
-    'claude-opus-4', // Claude 4 Opus with extended thinking
-    'claude-sonnet-4', // Claude 4 Sonnet with extended thinking
-  ],
-  [AIServiceProvider.Gemini]: [
-    'gemini-2.5', // Gemini 2.5 with thinking budget
-    'gemini-2.0', // Gemini 2.0 experimental thinking
-  ],
-  // Most providers should be detected via OpenRouter API
+  [AIServiceProvider.Ollama]: ['qwen', 'deepseek'],
+  [AIServiceProvider.OpenAI]: ['o1', 'o3', 'o4'],
+  [AIServiceProvider.Anthropic]: ['claude-opus-4', 'claude-sonnet-4'],
+  [AIServiceProvider.Gemini]: ['gemini-2.5', 'gemini-2.0'],
   [AIServiceProvider.Groq]: [],
   [AIServiceProvider.Cerebras]: [],
   [AIServiceProvider.Fireworks]: [],
@@ -72,29 +68,7 @@ const FALLBACK_THINKING_PATTERNS: Record<string, string[]> = {
 };
 
 /**
- * Checks if a cached capability is still valid.
- * @param cached A previously cached value.
- */
-function isCacheValid(cached: CapabilityCache): boolean {
-  return Date.now() - cached.timestamp < CACHE_TTL;
-}
-
-/**
- * Gets a cache key for a model.
- * @param provider The AI Service Provider enum identifier.
- * @param modelName The identifier of the model.
- */
-function getCacheKey(provider: AIServiceProvider, modelName: string): string {
-  return `${provider}:${modelName}`;
-}
-
-/**
  * Fetches thinking capability from Ollama's /api/show endpoint.
- * This is the most reliable method for Ollama models.
- *
- * @param modelName - The Ollama model name
- * @param apiBase - Ollama server URL (default: http://localhost:11434)
- * @returns True if model supports thinking, false otherwise
  */
 export async function fetchOllamaModelInfo(
   modelName: string,
@@ -114,14 +88,11 @@ export async function fetchOllamaModelInfo(
 
     const data = await response.json();
 
-    // Check if model has thinking parameter in modelfile or template
     const hasThinkingParam =
       data.modelfile?.toLowerCase().includes('think') ||
       data.template?.toLowerCase().includes('thinking') ||
       data.parameters?.think !== undefined;
 
-    // Extract context window from parameters or model_info
-    // Search for any *.context_length key in model_info (supports all model families)
     let contextWindow = data.parameters?.num_ctx;
 
     if (!contextWindow && data.model_info) {
@@ -130,12 +101,6 @@ export async function fetchOllamaModelInfo(
       );
       contextWindow = contextEntry?.[1] as number | undefined;
     }
-
-    logger.debug(`Ollama model info for ${modelName}`, {
-      hasThinkingParam,
-      contextWindow,
-      modelfile: data.modelfile?.substring(0, 200), // Log first 200 chars
-    });
 
     return {
       thinking: hasThinkingParam,
@@ -149,106 +114,57 @@ export async function fetchOllamaModelInfo(
 
 /**
  * Detects if a model supports thinking/reasoning mode.
- * Uses a multi-tier approach:
- * 1. Check cache first
- * 2. Try OpenRouter metadata API (unified for all providers)
- * 3. For Ollama: Query /api/show endpoint
- * 4. Fallback: Minimal pattern matching
- *
- * @param modelName - The name of the model to check
- * @param provider - The AI service provider
- * @param options - Optional configuration (apiBase for Ollama)
- * @param options.apiBase The base URL for the API.
- * @param options.skipCache Whether to bypass any internal caches.
- * @returns Promise<boolean> - True if the model likely supports thinking mode
- *
- * @example
- * ```typescript
- * const canThink = await supportsThinking('qwen2.5:latest', 'ollama');
- * const canThinkOpenAI = await supportsThinking('o3-mini', 'openai');
- * const canThinkViaOR = await supportsThinking('gpt-4o', 'openai'); // Uses OpenRouter metadata
- * ```
  */
 export async function supportsThinking(
   modelName: string,
   provider: AIServiceProvider,
   options?: { apiBase?: string; skipCache?: boolean },
 ): Promise<boolean> {
-  if (!modelName) {
-    logger.warn('Empty model name provided for thinking support check');
-    return false;
-  }
+  if (!modelName) return false;
 
-  // Check cache first (unless explicitly skipped)
   if (!options?.skipCache) {
     const cacheKey = getCacheKey(provider, modelName);
     const cached = capabilityCache.get(cacheKey);
-    if (cached && isCacheValid(cached)) {
-      logger.debug(
-        `Using cached thinking capability for ${modelName}:`,
-        cached.thinking,
-      );
-      return cached.thinking;
-    }
+    if (cached && isCacheValid(cached)) return cached.thinking;
   }
 
   let thinking = false;
 
-  // TIER 1: OpenRouter metadata API (works for ALL providers except Ollama)
   if (provider !== AIServiceProvider.Ollama) {
     try {
       thinking = await supportsReasoningViaOpenRouter(modelName, provider);
       if (thinking) {
-        logger.info(
-          `Detected thinking via OpenRouter for ${provider}/${modelName}`,
-        );
-
-        // Cache the result
         capabilityCache.set(getCacheKey(provider, modelName), {
           thinking: true,
           tools: true,
-          contextWindow: 8192, // Will be overridden by actual API call
+          contextWindow: 8192,
           timestamp: Date.now(),
         });
-
         return true;
       }
     } catch (error) {
-      logger.warn(
-        `OpenRouter metadata fetch failed for ${modelName}, falling back`,
-        error,
-      );
+      logger.warn(`OpenRouter metadata fetch failed for ${modelName}`, error);
     }
   }
 
-  // TIER 2: Ollama-specific API
   if (provider === AIServiceProvider.Ollama) {
     const modelInfo = await fetchOllamaModelInfo(modelName, options?.apiBase);
     if (modelInfo !== null) {
       thinking = modelInfo.thinking;
-
-      // Cache the result
       capabilityCache.set(getCacheKey(provider, modelName), {
         thinking: modelInfo.thinking,
         tools: true,
         contextWindow: modelInfo.contextWindow || 4096,
         timestamp: Date.now(),
       });
-
-      logger.info(
-        `Detected thinking capability for ${modelName} via Ollama API:`,
-        thinking,
-      );
       return thinking;
     }
   }
 
-  // TIER 3: Minimal pattern matching fallback
   const patterns = FALLBACK_THINKING_PATTERNS[provider] || [];
   const lowerName = modelName.toLowerCase();
   thinking = patterns.some((pattern) => lowerName.includes(pattern));
 
-  // Cache fallback result
   capabilityCache.set(getCacheKey(provider, modelName), {
     thinking,
     tools: true,
@@ -256,57 +172,27 @@ export async function supportsThinking(
     timestamp: Date.now(),
   });
 
-  logger.debug(`Using fallback thinking detection for ${modelName}:`, thinking);
   return thinking;
 }
 
 /**
  * Gets the context window size for a model using dynamic detection.
- * Uses a multi-tier approach similar to supportsThinking():
- * 1. Check cache first
- * 2. Try OpenRouter metadata API (unified for all providers except Ollama)
- * 3. For Ollama: Query /api/show endpoint
- * 4. Fallback: estimateContextWindow() heuristic
- *
- * @param modelName - The name of the model to check
- * @param provider - The AI service provider
- * @param options - Optional configuration (apiBase for Ollama)
- * @param options.apiBase The base URL for the API.
- * @param options.skipCache Whether to bypass any internal caches.
- * @returns Promise<number> - Context window size in tokens
- *
- * @example
- * ```typescript
- * const contextWindow = await getContextWindow('gpt-4o', 'openai');
- * const ollamaContext = await getContextWindow('llama3.1', 'ollama', { apiBase: 'http://localhost:11434' });
- * ```
  */
 export async function getContextWindow(
   modelName: string,
   provider: AIServiceProvider,
   options?: { apiBase?: string; skipCache?: boolean },
 ): Promise<number> {
-  if (!modelName) {
-    logger.warn('Empty model name provided for context window check');
-    return 32768; // Safe default
-  }
+  if (!modelName) return 32768;
 
-  // Check cache first (unless explicitly skipped)
   if (!options?.skipCache) {
     const cacheKey = getCacheKey(provider, modelName);
     const cached = capabilityCache.get(cacheKey);
-    if (cached && isCacheValid(cached)) {
-      logger.debug(
-        `Using cached context window for ${modelName}:`,
-        cached.contextWindow,
-      );
-      return cached.contextWindow;
-    }
+    if (cached && isCacheValid(cached)) return cached.contextWindow;
   }
 
   let contextWindow: number;
 
-  // TIER 1: OpenRouter metadata API (works for ALL providers except Ollama)
   if (provider !== AIServiceProvider.Ollama) {
     try {
       const contextLength = await getContextLengthViaOpenRouter(
@@ -315,11 +201,6 @@ export async function getContextWindow(
       );
       if (contextLength !== null) {
         contextWindow = contextLength;
-        logger.info(
-          `Detected context window via OpenRouter for ${provider}/${modelName}: ${contextWindow}`,
-        );
-
-        // Update cache
         const cacheKey = getCacheKey(provider, modelName);
         const existing = capabilityCache.get(cacheKey);
         capabilityCache.set(cacheKey, {
@@ -328,24 +209,17 @@ export async function getContextWindow(
           contextWindow,
           timestamp: Date.now(),
         });
-
         return contextWindow;
       }
     } catch (error) {
-      logger.warn(
-        `OpenRouter metadata fetch failed for ${modelName}, falling back`,
-        error,
-      );
+      logger.warn(`OpenRouter metadata fetch failed for ${modelName}`, error);
     }
   }
 
-  // TIER 2: Ollama-specific API
   if (provider === AIServiceProvider.Ollama) {
     const modelInfo = await fetchOllamaModelInfo(modelName, options?.apiBase);
     if (modelInfo !== null && modelInfo.contextWindow) {
       contextWindow = modelInfo.contextWindow;
-
-      // Update cache
       const cacheKey = getCacheKey(provider, modelName);
       const existing = capabilityCache.get(cacheKey);
       capabilityCache.set(cacheKey, {
@@ -354,18 +228,12 @@ export async function getContextWindow(
         contextWindow,
         timestamp: Date.now(),
       });
-
-      logger.info(
-        `Detected context window for ${modelName} via Ollama API: ${contextWindow}`,
-      );
       return contextWindow;
     }
   }
 
-  // TIER 3: Fallback heuristic
   contextWindow = estimateContextWindow(modelName, provider);
 
-  // Cache fallback result
   const cacheKey = getCacheKey(provider, modelName);
   const existing = capabilityCache.get(cacheKey);
   capabilityCache.set(cacheKey, {
@@ -375,48 +243,64 @@ export async function getContextWindow(
     timestamp: Date.now(),
   });
 
-  logger.debug(
-    `Using fallback context window estimation for ${modelName}: ${contextWindow}`,
-  );
   return contextWindow;
 }
 
 /**
- * Get recommended reasoning level based on model capabilities.
- * Higher-tier models default to higher reasoning levels.
- *
- * @param modelName - The model identifier
- * @param provider - The AI service provider
- * @returns Recommended reasoning effort level ('low' | 'medium' | 'high')
+ * Checks if a model supports tool use based on its name.
+ * This is now delegated to the respective service class via late-bound factory access.
  */
-export function getRecommendedReasoningLevel(
+export function supportsTools(
   modelName: string,
   provider: AIServiceProvider,
-): 'low' | 'medium' | 'high' {
-  const lowerName = modelName.toLowerCase();
-
-  // OpenAI o3 models perform better with higher reasoning effort
-  if (provider === AIServiceProvider.OpenAI && lowerName.includes('o3')) {
-    return 'medium';
+): boolean {
+  try {
+    if (registeredFactory) {
+      const service = registeredFactory.getService(
+        provider,
+        'dummy',
+      ) as ServiceInterface;
+      return service.supportsTools(modelName);
+    }
+    throw new Error('AIServiceFactory not registered');
+  } catch {
+    // Fallback if factory or service logic fails
+    const lowerName = modelName.toLowerCase();
+    if (provider === AIServiceProvider.OpenAI) return true;
+    if (provider === AIServiceProvider.Anthropic)
+      return lowerName.includes('claude-3');
+    if (provider === AIServiceProvider.Gemini) return true;
+    return false;
   }
-
-  // DeepSeek R1 models benefit from higher thinking levels
-  if (
-    provider === AIServiceProvider.Ollama &&
-    lowerName.includes('deepseek-r1')
-  ) {
-    return 'medium';
-  }
-
-  // Default to 'low' for cost/performance balance
-  return 'low';
 }
 
 /**
- * Clears the capability cache for a specific model or all models.
- *
- * @param provider - Optional provider to clear cache for
- * @param modelName - Optional specific model to clear
+ * Estimates context window size based on model name.
+ * This is now delegated to the respective service class via late-bound factory access.
+ */
+export function estimateContextWindow(
+  modelName: string,
+  provider: AIServiceProvider,
+): number {
+  try {
+    if (registeredFactory) {
+      const service = registeredFactory.getService(
+        provider,
+        'dummy',
+      ) as ServiceInterface;
+      return service.estimateContextWindow(modelName);
+    }
+    throw new Error('AIServiceFactory not registered');
+  } catch {
+    // Basic heuristics if delegation fails
+    if (provider === AIServiceProvider.Anthropic) return 200000;
+    if (provider === AIServiceProvider.OpenAI) return 128000;
+    return 4096;
+  }
+}
+
+/**
+ * Clear the capability cache.
  */
 export function clearCapabilityCache(
   provider?: AIServiceProvider,
@@ -425,99 +309,35 @@ export function clearCapabilityCache(
   if (provider && modelName) {
     capabilityCache.delete(getCacheKey(provider, modelName));
   } else if (provider) {
-    // Clear all models for this provider
     for (const key of capabilityCache.keys()) {
       if (key.startsWith(`${provider}:`)) {
         capabilityCache.delete(key);
       }
     }
   } else {
-    // Clear all
     capabilityCache.clear();
   }
-  logger.info('Cleared capability cache', { provider, modelName });
 }
 
 /**
- * Checks if a model supports tool use based on its name.
- * This is a heuristic approach similar to thinking support detection.
- *
- * @param modelName - The name of the model to check
- * @param provider - The AI service provider
- * @returns True if the model likely supports tool calling
+ * Get recommended reasoning level based on model capabilities.
  */
-export function supportsTools(
+export function getRecommendedReasoningLevel(
   modelName: string,
   provider: AIServiceProvider,
-): boolean {
+): 'low' | 'medium' | 'high' {
   const lowerName = modelName.toLowerCase();
 
-  switch (provider) {
-    case AIServiceProvider.Ollama: {
-      // Most modern Ollama models support tools
-      const noToolModels = ['llama2', 'codellama:7b'];
-      return !noToolModels.some((m) => lowerName.includes(m));
-    }
-
-    case AIServiceProvider.OpenAI:
-      // All GPT-4, GPT-3.5-turbo, and o-series support tools
-      return (
-        lowerName.includes('gpt-4') ||
-        lowerName.includes('gpt-3.5-turbo') ||
-        lowerName.startsWith('o')
-      );
-
-    case AIServiceProvider.Anthropic:
-      // Claude 3+ supports tools
-      return (
-        lowerName.includes('claude-3') || lowerName.includes('claude-opus')
-      );
-
-    case AIServiceProvider.Gemini:
-      // Gemini 1.5+ supports tools
-      return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
-
-    default:
-      return false;
+  if (provider === AIServiceProvider.OpenAI && lowerName.includes('o3')) {
+    return 'medium';
   }
-}
 
-/**
- * Estimates context window size based on model name.
- * This is a fallback when API doesn't provide this information.
- *
- * @param modelName - The name of the model
- * @param provider - The AI service provider
- * @returns Estimated context window size in tokens
- */
-export function estimateContextWindow(
-  modelName: string,
-  provider: AIServiceProvider,
-): number {
-  const lowerName = modelName.toLowerCase();
-
-  switch (provider) {
-    case AIServiceProvider.Ollama:
-      // Ollama models should be detected via /api/show endpoint
-      // This fallback should rarely be used
-      return 32768; // Safe default to avoid context overflow
-
-    case AIServiceProvider.OpenAI:
-      if (lowerName.includes('gpt-4.1')) return 1000000;
-      if (lowerName.includes('gpt-4o')) return 128000;
-      if (lowerName.includes('o3') || lowerName.includes('o4')) return 200000;
-      return 8192;
-
-    case AIServiceProvider.Anthropic:
-      if (lowerName.includes('claude-3')) return 200000;
-      return 100000;
-
-    case AIServiceProvider.Gemini:
-      if (lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2'))
-        return 1000000;
-      return 32000;
-
-    default:
-      return 4096;
+  if (
+    provider === AIServiceProvider.Ollama &&
+    lowerName.includes('deepseek-r1')
+  ) {
+    return 'medium';
   }
+
+  return 'low';
 }
