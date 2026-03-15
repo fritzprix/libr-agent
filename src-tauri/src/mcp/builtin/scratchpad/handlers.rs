@@ -22,7 +22,7 @@ pub async fn add(
 
     let note_content = match note {
         Some(n) => n,
-        None => return Ok(missing_param_error("content", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("content", ToolGroup::Scratchpad)),
     };
     let source = args
         .get("source")
@@ -43,12 +43,12 @@ pub async fn add(
             if count >= 10 {
                 return Ok(guided_error(
                     ErrorCategory::InvalidState,
-                    "Memory limit reached (10 items)",
-                    ToolGroup::Memory,
+                    "Scratchpad limit reached (10 items)",
+                    ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec![
-                    "Use memory__update to modify existing notes".to_string(),
-                    "Use memory__clear to remove old items".to_string(),
+                    "Use scratchpad__update to modify existing notes".to_string(),
+                    "Use scratchpad__clear to remove old items".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -57,7 +57,7 @@ pub async fn add(
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Database error: {}", e),
-                ToolGroup::Memory,
+                ToolGroup::Scratchpad,
             )
             .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
@@ -70,11 +70,11 @@ pub async fn add(
                 if is_dup {
                     return Ok(guided_error(
                         ErrorCategory::DuplicateResource,
-                        format!("Memory note with title '{}' already exists", t),
-                        ToolGroup::Memory,
+                        format!("Scratchpad note with title '{}' already exists", t),
+                        ToolGroup::Scratchpad,
                     )
                     .with_guidance(vec![
-                        "Use memory__update to modify the existing note".to_string(),
+                        "Use scratchpad__update to modify the existing note".to_string(),
                         "Choose a different title for the new note".to_string(),
                     ])
                     .to_mcp_result());
@@ -84,7 +84,7 @@ pub async fn add(
                 return Ok(guided_error(
                     ErrorCategory::DatabaseError,
                     format!("Database error: {}", e),
-                    ToolGroup::Memory,
+                    ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec!["Try again".to_string()])
                 .to_mcp_result())
@@ -109,21 +109,24 @@ pub async fn add(
                 .unwrap_or(0);
             let response_id = cuid2::create_id();
             let hint = SuccessHint::new(
-                format!("✓ Note added to memory (ID: {})\nMemory: {}/10", id, count),
+                format!(
+                    "✓ Note added to scratchpad (ID: {})\nScratchpad: {}/10",
+                    id, count
+                ),
                 vec![
-                    "Use memory__list to see all items".to_string(),
-                    "Use memory__read to view full content".to_string(),
+                    "Use scratchpad__list to see all items".to_string(),
+                    "Use scratchpad__read to view full content".to_string(),
                 ],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": response_id,
-                "memoryId": id
+                "scratchpadId": id
             }))))
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Database error: {}", e),
-            ToolGroup::Memory,
+            ToolGroup::Scratchpad,
         )
         .with_guidance(vec!["Try again".to_string()])
         .to_mcp_result()),
@@ -145,11 +148,11 @@ pub async fn update(
 
     let id_val = match id {
         Some(i) => i,
-        None => return Ok(missing_param_error("id", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("id", ToolGroup::Scratchpad)),
     };
     let note_val = match note {
         Some(n) => n,
-        None => return Ok(missing_param_error("content", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("content", ToolGroup::Scratchpad)),
     };
 
     let new_title = args
@@ -172,26 +175,26 @@ pub async fn update(
         Ok(found) => {
             if found {
                 let hint = SuccessHint::new(
-                    format!("✓ Memory note (ID: {}) updated", id_val),
+                    format!("✓ Scratchpad note (ID: {}) updated", id_val),
                     vec![
-                        "Use memory__read or memory__list to verify".to_string(),
-                        "Use memory__list to see all items".to_string(),
+                        "Use scratchpad__read or scratchpad__list to verify".to_string(),
+                        "Use scratchpad__list to see all items".to_string(),
                     ],
                 );
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "id": cuid2::create_id(),
                     "success": true,
-                    "memoryId": id_val,
+                    "scratchpadId": id_val,
                     "note": note_val
                 }))))
             } else {
                 Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
-                    format!("Memory note with ID {} not found", id_val),
-                    ToolGroup::Memory,
+                    format!("Scratchpad note with ID {} not found", id_val),
+                    ToolGroup::Scratchpad,
                 )
                 .with_guidance(vec![
-                    "Use memory__list to see available notes".to_string(),
+                    "Use scratchpad__list to see available notes".to_string(),
                     "Verify the ID is correct".to_string(),
                 ])
                 .to_mcp_result())
@@ -200,7 +203,7 @@ pub async fn update(
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Database error: {}", e),
-            ToolGroup::Memory,
+            ToolGroup::Scratchpad,
         )
         .with_guidance(vec!["Try again".to_string()])
         .to_mcp_result()),
@@ -216,12 +219,15 @@ pub async fn list(
     let page_size = args.get("pageSize").and_then(|v| v.as_i64()).unwrap_or(10);
 
     if page < 1 {
-        return Ok(invalid_input_error("page must be >= 1", ToolGroup::Memory));
+        return Ok(invalid_input_error(
+            "page must be >= 1",
+            ToolGroup::Scratchpad,
+        ));
     }
     if page_size < 1 {
         return Ok(invalid_input_error(
             "pageSize must be >= 1",
-            ToolGroup::Memory,
+            ToolGroup::Scratchpad,
         ));
     }
 
@@ -237,8 +243,8 @@ pub async fn list(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
-                format!("Failed to list memory: {}", e),
-                ToolGroup::Memory,
+                format!("Failed to list scratchpad: {}", e),
+                ToolGroup::Scratchpad,
             )
             .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
@@ -285,11 +291,11 @@ pub async fn list(
                 page, total_items
             ));
         } else {
-            text_output.push_str("No memory notes found.");
+            text_output.push_str("No scratchpad notes found.");
         }
     } else {
         text_output.push_str(&format!(
-            "Memory Notes (Page {}/{}):\n",
+            "Scratchpad Notes (Page {}/{}):\n",
             page,
             (total_items as f64 / page_size as f64).ceil() as u64
         ));
@@ -341,11 +347,11 @@ pub async fn list(
         .collect();
 
     let guidance = if total_items == 0 {
-        vec!["Use memory__add to create new notes".to_string()]
+        vec!["Use scratchpad__add to create new notes".to_string()]
     } else {
         vec![
-            "Use memory__read(ids) to read full content of specific items".to_string(),
-            "Use memory__add to create new notes".to_string(),
+            "Use scratchpad__read(ids) to read full content of specific items".to_string(),
+            "Use scratchpad__add to create new notes".to_string(),
         ]
     };
 
@@ -367,7 +373,7 @@ pub async fn read(
 ) -> Result<MCPResult, String> {
     let ids_array = match args.get("ids").and_then(|v| v.as_array()) {
         Some(arr) => arr,
-        None => return Ok(missing_param_error("ids", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("ids", ToolGroup::Scratchpad)),
     };
 
     let mut target_ids = Vec::new();
@@ -376,7 +382,7 @@ pub async fn read(
             if id < 0 {
                 return Ok(invalid_input_error(
                     &format!("Invalid id '{}'. Must be >= 0", id),
-                    ToolGroup::Memory,
+                    ToolGroup::Scratchpad,
                 ));
             }
             target_ids.push(id);
@@ -390,7 +396,7 @@ pub async fn read(
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
                 format!("Failed to read items: {}", e),
-                ToolGroup::Memory,
+                ToolGroup::Scratchpad,
             )
             .with_guidance(vec!["Try again".to_string()])
             .to_mcp_result())
@@ -415,7 +421,7 @@ pub async fn read(
     if items.is_empty() {
         text_output.push_str("No items found for the provided IDs.");
     } else {
-        text_output.push_str("Memory Notes:\n");
+        text_output.push_str("Scratchpad Notes:\n");
         for item in &items {
             let title = item
                 .get("title")
@@ -429,13 +435,13 @@ pub async fn read(
 
     let guidance = if items.is_empty() {
         vec![
-            "Use memory__list to see all available items and their IDs".to_string(),
+            "Use scratchpad__list to see all available items and their IDs".to_string(),
             "Verify the IDs you provided are correct".to_string(),
         ]
     } else {
         vec![
-            "Use memory__update to modify these items".to_string(),
-            "Use memory__clear to remove them".to_string(),
+            "Use scratchpad__update to modify these items".to_string(),
+            "Use scratchpad__clear to remove them".to_string(),
         ]
     };
 
@@ -450,11 +456,14 @@ pub async fn clear(
 ) -> Result<MCPResult, String> {
     let target_id = match args.get("id").and_then(|v| v.as_i64()) {
         Some(i) => i,
-        None => return Ok(missing_param_error("id", ToolGroup::Memory)),
+        None => return Ok(missing_param_error("id", ToolGroup::Scratchpad)),
     };
 
     if target_id < 0 {
-        return Ok(invalid_input_error("id must be >= 0", ToolGroup::Memory));
+        return Ok(invalid_input_error(
+            "id must be >= 0",
+            ToolGroup::Scratchpad,
+        ));
     }
 
     let repo = get_planning_repository();
@@ -463,35 +472,37 @@ pub async fn clear(
         Ok(found) => {
             if found {
                 let hint = SuccessHint::new(
-                    format!("✓ Memory note {} removed", target_id),
+                    format!("✓ Scratchpad note {} removed", target_id),
                     vec![
-                        "Use memory__add to add new items".to_string(),
-                        "Use memory__list to see remaining items".to_string(),
+                        "Use scratchpad__add to add new items".to_string(),
+                        "Use scratchpad__list to see remaining items".to_string(),
                     ],
                 );
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "id": cuid2::create_id(),
                     "success": true,
-                    "memoryId": target_id
+                    "scratchpadId": target_id
                 }))))
             } else {
                 Ok(guided_error(
                     ErrorCategory::ResourceNotFound,
-                    format!("Memory note {} not found in this session", target_id),
-                    ToolGroup::Memory,
+                    format!("Scratchpad note {} not found in this session", target_id),
+                    ToolGroup::Scratchpad,
                 )
-                .with_guidance(vec!["Use memory__list to verify item exists".to_string()])
+                .with_guidance(vec![
+                    "Use scratchpad__list to verify item exists".to_string()
+                ])
                 .to_mcp_result())
             }
         }
         Err(e) => Ok(guided_error(
             ErrorCategory::DatabaseError,
             format!("Failed to remove item: {}", e),
-            ToolGroup::Memory,
+            ToolGroup::Scratchpad,
         )
         .with_guidance(vec![
             "Try again".to_string(),
-            "Use memory__list to verify item exists".to_string(),
+            "Use scratchpad__list to verify item exists".to_string(),
         ])
         .to_mcp_result()),
     }

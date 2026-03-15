@@ -23,15 +23,11 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
         optional: false,
     },
     BuiltinServiceEntry {
-        canonical: "memory",
+        canonical: "scratchpad",
         optional: false,
     },
     BuiltinServiceEntry {
         canonical: "workspace",
-        optional: false,
-    },
-    BuiltinServiceEntry {
-        canonical: "knowledge",
         optional: false,
     },
     BuiltinServiceEntry {
@@ -78,11 +74,10 @@ pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
 
 // ─── Derived helpers ────────────────────────────────────────────────────────────────────
 
-pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 11] = [
+pub const CORE_BUILTIN_SERVICE_ALIASES: [&str; 10] = [
     "planning",
-    "memory",
+    "scratchpad",
     "workspace",
-    "knowledge",
     "assistant",
     "skills",
     "playbook",

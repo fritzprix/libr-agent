@@ -46,8 +46,8 @@ pub(crate) async fn create_builtin_server(
         BuiltinServiceId::Planning => Ok(Some(Box::new(
             crate::mcp::builtin::planning::PlanningServer::new(_session_id, _db).await?,
         ))),
-        BuiltinServiceId::Memory => Ok(Some(Box::new(
-            crate::mcp::builtin::memory::MemoryServer::new(_session_id, _db).await?,
+        BuiltinServiceId::Scratchpad => Ok(Some(Box::new(
+            crate::mcp::builtin::scratchpad::ScratchpadServer::new(_session_id, _db).await?,
         ))),
         BuiltinServiceId::Playbook => Ok(Some(Box::new(
             crate::mcp::builtin::playbook::PlaybookServer::new(_session_id, _db).await?,

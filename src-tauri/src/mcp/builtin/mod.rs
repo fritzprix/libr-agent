@@ -15,9 +15,9 @@ pub mod error_guidance;
 pub mod knowledge;
 pub mod mcp_manager;
 pub mod media;
-pub mod memory;
 pub mod planning;
 pub mod playbook;
+pub mod scratchpad;
 pub mod service_id;
 pub mod session_api;
 pub mod skills;
@@ -356,7 +356,7 @@ impl BuiltinServerRegistry {
     /// using the provided `SessionManager`.
     ///
     /// Note: Only registers stateless servers. Stateful servers (knowledge, planning, playbook,
-    /// assistant, browser) are instantiated per-session in MCPServiceProxy.
+    /// assistant, browser, scratchpad) are instantiated per-session in MCPServiceProxy.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
@@ -381,7 +381,7 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
         registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
-        // Session-specific servers (knowledge, planning, playbook, assistant, browser) are
+        // Session-specific servers (knowledge, planning, playbook, assistant, browser, scratchpad) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
 
         registry

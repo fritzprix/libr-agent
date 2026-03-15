@@ -15,7 +15,7 @@
 //!
 //! - `from_alias()` centralises all string → ID resolution (including legacy names).
 //! - Exhaustive `match` in `factory.rs` / `server/tools.rs` means the compiler
-//!   catches every missing arm if a new variant is added.
+//!   catch every missing arm if a new variant is added.
 //! - `name()` returns the *current* public name.  **Important**: `name()` currently
 //!   returns the same values as the serde representation, so both must stay in sync.
 //!   To decouple them in the future, add explicit `#[serde(rename = "...")]`
@@ -41,7 +41,8 @@ use std::fmt;
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinServiceId {
     Planning,
-    Memory,
+    #[serde(alias = "memory")]
+    Scratchpad,
     Workspace,
     Knowledge,
     Assistant,
@@ -77,8 +78,7 @@ impl BuiltinServiceId {
     pub fn from_alias(alias: &str) -> Option<Self> {
         match alias.trim().to_lowercase().as_str() {
             "planning" => Some(Self::Planning),
-            // "scratchpad" is the legacy alias for memory — keep for backward compat.
-            "memory" | "scratchpad" => Some(Self::Memory),
+            "scratchpad" | "memory" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
             "assistant" | "assistant_manager" => Some(Self::Assistant),
@@ -108,7 +108,7 @@ impl BuiltinServiceId {
     pub fn name(self) -> &'static str {
         match self {
             Self::Planning => "planning",
-            Self::Memory => "memory",
+            Self::Scratchpad => "scratchpad",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
             Self::Assistant => "assistant",
@@ -141,7 +141,8 @@ mod tests {
     fn from_alias_canonical_names_resolve() {
         let cases = [
             ("planning", BuiltinServiceId::Planning),
-            ("memory", BuiltinServiceId::Memory),
+            ("scratchpad", BuiltinServiceId::Scratchpad),
+            ("memory", BuiltinServiceId::Scratchpad),
             ("workspace", BuiltinServiceId::Workspace),
             ("knowledge", BuiltinServiceId::Knowledge),
             ("assistant", BuiltinServiceId::Assistant),
@@ -230,7 +231,7 @@ mod tests {
     fn serde_roundtrip_all_variants() {
         let variants = [
             BuiltinServiceId::Planning,
-            BuiltinServiceId::Memory,
+            BuiltinServiceId::Scratchpad,
             BuiltinServiceId::Workspace,
             BuiltinServiceId::Knowledge,
             BuiltinServiceId::Assistant,
@@ -258,7 +259,7 @@ mod tests {
     fn name_resolves_back_via_from_alias() {
         let variants = [
             BuiltinServiceId::Planning,
-            BuiltinServiceId::Memory,
+            BuiltinServiceId::Scratchpad,
             BuiltinServiceId::Workspace,
             BuiltinServiceId::Knowledge,
             BuiltinServiceId::Assistant,
