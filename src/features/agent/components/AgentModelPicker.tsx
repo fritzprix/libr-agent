@@ -130,7 +130,7 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
         <button
           onClick={() => refreshModels()}
           disabled={disabled || isRefreshing}
-          className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors"
+          className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title={t('agent.modelPicker.refreshModels')}
         >
           <RefreshCw

@@ -338,7 +338,7 @@ export function SessionHistoryPanel({
             <button
               type="button"
               onClick={() => onSearchQueryChange('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-sm"
               aria-label={t('sessionHistory.clearSearchAria', 'Clear search')}
             >
               <X className="h-4 w-4" />
