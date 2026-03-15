@@ -253,9 +253,9 @@ export function useLLMExecution({
         let enrichedMessages: Message[];
 
         // Process the pre-sliced messages provided by the Rust backend.
-        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+        const safeMessages = MessageNormalizer.sanitizeMessagesForService(
           messages.map(sanitizeMessage),
-          provider as AIServiceProvider,
+          service,
         );
         logger.info('✅ Messages sanitized for provider compatibility', {
           sessionId,

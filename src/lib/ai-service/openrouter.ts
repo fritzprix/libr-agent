@@ -4,6 +4,7 @@ import { OpenAIService } from './openai';
 import { fetchOpenRouterModels } from './openrouter-metadata';
 import type { ModelInfo } from '../llm-config-manager';
 import { getLogger } from '../logger';
+import { Message } from '@/models/chat';
 
 const logger = getLogger('OpenRouterService');
 
@@ -40,6 +41,48 @@ export class OpenRouterService extends OpenAIService {
    */
   getProvider(): AIServiceProvider {
     return AIServiceProvider.OpenRouter;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // OpenRouter is a proxy, but we should strip thinking fields unless it's a known provider that supports it.
+    // However, the proxy might handle it. For now, we strip to be safe as per base service pattern.
+    if (message.thinking) {
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    void modelName;
+    return true;
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    void modelName;
+    return 128000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return OpenRouterService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return OpenRouterService.estimateContextWindowForModel(modelName);
   }
 
   /**

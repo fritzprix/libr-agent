@@ -1,6 +1,7 @@
 use serde_json::json;
 use tauri_mcp_agent_lib::mcp::builtin::error_guidance::{
-    guided_error, missing_param_error, not_found_error, ErrorCategory, ToolGroup,
+    guided_error, missing_agent_config_error, missing_agent_session_error, missing_param_error,
+    not_found_error, ErrorCategory, ToolGroup,
 };
 use tauri_mcp_agent_lib::mcp::builtin::session_api::utils::handle_wait_timeout_result;
 use tauri_mcp_agent_lib::mcp::builtin::ui::UiServer;
@@ -67,14 +68,38 @@ fn guided_error_includes_next_steps_section() {
 }
 
 #[test]
-fn not_found_error_mentions_the_missing_resource() {
-    let r = not_found_error("Assistant", "asst_123", ToolGroup::Assistant);
+fn not_found_error_is_informational() {
+    let r = not_found_error("Assistant", "asst_123", ToolGroup::Agent);
     let text = extract_text(&r);
 
-    assert_eq!(r.is_error, Some(true));
-    assert_eq!(extract_text_error_flag(&r), Some(true));
+    assert_eq!(r.is_error, Some(false));
+    assert_eq!(extract_text_error_flag(&r), None);
+    assert!(text.contains("Notice:"));
     assert!(text.contains("asst_123"));
     assert!(text.contains("Next Steps") || text.contains("Recovery"));
+}
+
+#[test]
+fn missing_agent_config_error_suggests_listing_configs() {
+    let r = missing_agent_config_error("exa");
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(false));
+    assert_eq!(extract_text_error_flag(&r), None);
+    assert!(text.contains("Agent configuration 'exa' not found"));
+    assert!(text.contains("list(type=\"configs\")"));
+    assert!(text.contains("Retry startSession with a valid agentId"));
+}
+
+#[test]
+fn missing_agent_session_error_suggests_listing_sessions() {
+    let r = missing_agent_session_error("sess_123");
+    let text = extract_text(&r);
+
+    assert_eq!(r.is_error, Some(false));
+    assert_eq!(extract_text_error_flag(&r), None);
+    assert!(text.contains("Agent session 'sess_123' not found"));
+    assert!(text.contains("list(type=\"sessions\")"));
 }
 
 #[test]
@@ -122,7 +147,8 @@ fn session_wait_timeout_is_converted_to_success_result() {
     assert_eq!(result.is_error, Some(false));
     assert_eq!(extract_text_error_flag(&result), Some(false));
     assert!(text.contains("timed out after 15s"));
-    assert!(text.contains("awaitAgent"));
+    assert!(text.contains("checkSession(sessionId=\"sess_123\", wait=true)"));
+    assert!(text.contains("list(type=\"sessions\")"));
 }
 
 #[tokio::test]

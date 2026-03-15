@@ -1,7 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { MessageNormalizer } from '../message-normalizer';
-import { AIServiceProvider } from '../types';
+import { AnthropicService } from '../anthropic';
+import { CerebrasService } from '../cerebras';
+import { FireworksService } from '../fireworks';
+import { GroqService } from '../groq';
+import { OpenAIService } from '../openai';
+import type { IAIService } from '../types';
 import type { Message } from '@/models/chat';
+
+const openAIService = new OpenAIService('sk-test-key');
+const anthropicService = new AnthropicService('sk-test-key');
+const groqService = new GroqService('sk-test-key');
+const cerebrasService = new CerebrasService('sk-test-key');
+const fireworksService = new FireworksService('sk-test-key');
+
+function sanitizeWithService(service: IAIService, messages: Message[]): Message[] {
+  return MessageNormalizer.sanitizeMessagesForService(messages, service);
+}
 
 describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
   it('should preserve valid tool-call/tool-response pairs', () => {
@@ -32,10 +47,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(2);
     expect(result[0].tool_calls).toHaveLength(1);
@@ -63,10 +75,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe('assistant');
@@ -106,10 +115,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       // call_2 has no tool response
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result[0].tool_calls).toHaveLength(1);
     expect(result[0].tool_calls![0].id).toBe('call_1');
@@ -136,10 +142,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       // No tool response
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(1);
     expect(result[0].tool_calls).toBeUndefined();
@@ -176,10 +179,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(3);
     expect(result[0].role).toBe('user');
@@ -208,10 +208,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result[0].role).toBe('user');
     expect(result).toHaveLength(1);
@@ -236,10 +233,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.Anthropic,
-    );
+    const result = sanitizeWithService(anthropicService, messages);
 
     // Anthropic's fixAnthropicToolCallChain logic should apply
     expect(result).toBeDefined();
@@ -260,10 +254,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.Groq,
-    );
+    const result = sanitizeWithService(groqService, messages);
 
     expect(result).toHaveLength(0); // Orphan removed
   });
@@ -296,10 +287,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.Cerebras,
-    );
+    const result = sanitizeWithService(cerebrasService, messages);
 
     expect(result).toHaveLength(2);
     expect(result[0].tool_calls).toHaveLength(1);
@@ -333,10 +321,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.Fireworks,
-    );
+    const result = sanitizeWithService(fireworksService, messages);
 
     expect(result).toHaveLength(2);
     expect(result[0].tool_calls).toHaveLength(1);
@@ -345,10 +330,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
   it('should handle empty message arrays', () => {
     const messages: Message[] = [];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(0);
   });
@@ -373,10 +355,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toEqual(messages);
   });
@@ -433,10 +412,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(4);
     expect(result[0].tool_calls).toHaveLength(1);
@@ -473,10 +449,7 @@ describe('MessageNormalizer - OpenAI Tool Call Pairing', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     // The orphaned tool message should be removed
     // The assistant's tool_call should also be removed since no matching response
@@ -504,10 +477,7 @@ describe('MessageNormalizer - Consecutive User Message Merging', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(1);
     expect(result[0].role).toBe('user');
@@ -551,10 +521,7 @@ describe('MessageNormalizer - Consecutive User Message Merging', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     // user / assistant / tool must remain separate — no merging across roles
     expect(result).toHaveLength(3);
@@ -607,10 +574,7 @@ describe('MessageNormalizer - Consecutive User Message Merging', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(1);
     expect(result[0].attachments).toHaveLength(2);
@@ -652,10 +616,7 @@ describe('MessageNormalizer - Consecutive User Message Merging', () => {
       },
     ];
 
-    const result = MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      AIServiceProvider.OpenAI,
-    );
+    const result = sanitizeWithService(openAIService, messages);
 
     expect(result).toHaveLength(1);
     expect(result[0].attachments).toHaveLength(1);

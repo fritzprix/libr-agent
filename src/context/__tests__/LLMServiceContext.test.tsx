@@ -88,6 +88,7 @@ describe('LLMServiceContext', () => {
       streamChat: mockStreamChat,
       listModels: mockListModels,
       dispose: mockDispose,
+      sanitizeMessages: vi.fn((messages: Message[]) => messages),
       // Default implementation: pass-through (mirrors BaseAIService default)
       prepareContextInjection: vi.fn((systemPrompt, _sessionContext, messages) => ({
         systemPrompt,
@@ -551,6 +552,7 @@ describe('LLMServiceContext', () => {
         streamChat: mockStreamChat,
         listModels: mockListModels,
         dispose: mockDispose,
+        sanitizeMessages: vi.fn((messages: Message[]) => messages),
         prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
           systemPrompt: 'x'.repeat(30000),
           messages,
@@ -624,6 +626,7 @@ describe('LLMServiceContext', () => {
         streamChat: mockStreamChat,
         listModels: mockListModels,
         dispose: mockDispose,
+        sanitizeMessages: vi.fn((messages: Message[]) => messages),
         prepareContextInjection: vi.fn((_systemPrompt, _sessionContext, messages) => ({
           systemPrompt: 'x'.repeat(30000),
           messages,

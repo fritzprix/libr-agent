@@ -130,15 +130,7 @@ impl WorkspaceServer {
                         mode,
                         content_display
                     ),
-                    vec![
-                        "Use waitForProcess(processId, 0) to check running status".to_string(),
-                        format!(
-                            "Try mode=\"{}\" to read the {} of output instead",
-                            if mode == "head" { "tail" } else { "head" },
-                            if mode == "head" { "end" } else { "beginning" }
-                        ),
-                        "Increase lines parameter to get more output (max 100)".to_string(),
-                    ],
+                    SuccessHint::for_tool("readProcessOutput", ToolGroup::Workspace),
                 );
 
                 Ok(hint.to_mcp_result_with_data(Some(response)))

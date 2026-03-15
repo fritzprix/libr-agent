@@ -16,6 +16,7 @@ impl WorkspaceServer {
     pub(crate) async fn execute_shell_persistent(
         &self,
         command: &str,
+        tool_name: &str,
         timeout_secs: u64,
         session_id: &str,
     ) -> Result<MCPResult, String> {
@@ -120,7 +121,7 @@ impl WorkspaceServer {
 
                     let hint = SuccessHint::new(
                         text_message,
-                        SuccessHint::for_tool(PERSISTENT_SHELL_TOOL, ToolGroup::Workspace),
+                        SuccessHint::for_tool(tool_name, ToolGroup::Workspace),
                     );
                     Ok(hint.to_mcp_result_with_data(Some(structured_data)))
                 } else {
@@ -160,6 +161,7 @@ impl WorkspaceServer {
                 let isolation_level = utils::get_shell_isolation_level().await;
                 self.execute_shell_with_isolation(
                     command,
+                    tool_name,
                     isolation_level,
                     timeout_secs,
                     &session_id,

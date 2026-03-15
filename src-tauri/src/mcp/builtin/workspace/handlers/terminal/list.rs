@@ -1,4 +1,4 @@
-use crate::mcp::builtin::error_guidance::SuccessHint;
+use crate::mcp::builtin::error_guidance::{SuccessHint, ToolGroup};
 use crate::mcp::builtin::workspace::terminal_manager;
 use crate::mcp::builtin::workspace::WorkspaceServer;
 use crate::mcp::types::MCPResult;
@@ -178,7 +178,10 @@ impl WorkspaceServer {
             total, running, finished, process_list, guidance_lines
         );
 
-        let hint = SuccessHint::new(summary, vec![]); // Guidance is in summary
+        let hint = SuccessHint::new(
+            summary,
+            SuccessHint::for_tool("listProcesses", ToolGroup::Workspace),
+        );
 
         Ok(hint.to_mcp_result_with_data(Some(response)))
     }
