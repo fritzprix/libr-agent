@@ -93,21 +93,26 @@ pub async fn list_agents_or_sessions(
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
-                let tools = config
+                let builtins = config
                     .get("allowedBuiltInServiceAliases")
+                    .cloned()
+                    .unwrap_or(json!([]));
+                let externals = config
+                    .get("mcpServerIds")
                     .cloned()
                     .unwrap_or(json!([]));
 
                 text_summary.push_str(&format!(
-                    "- **{}** (ID: `{}`)\n  Description: {}\n  Capabilities: {:?}\n\n",
-                    agent.name, agent.id, desc, tools
+                    "- **{}** (ID: `{}`)\n  Description: {}\n  Builtin Capabilities: {:?}\n  External MCP Servers: {:?}\n\n",
+                    agent.name, agent.id, desc, builtins, externals
                 ));
 
                 results.push(json!({
                     "id": agent.id,
                     "name": agent.name,
                     "description": desc,
-                    "capabilities": tools
+                    "builtinCapabilities": builtins,
+                    "externalMcpServers": externals
                 }));
             }
 

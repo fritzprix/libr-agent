@@ -140,9 +140,20 @@ impl BuiltinMCPServer for AgentServer {
                     .get("description")
                     .and_then(|v| v.as_str())
                     .unwrap_or("No description");
+                let builtins = config
+                    .get("allowedBuiltInServiceAliases")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                let externals = config
+                    .get("mcpServerIds")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+
                 context_prompt.push_str(&format!(
-                    "- **{}** (ID: `{}`): {}\n",
-                    agent.name, agent.id, desc
+                    "- **{}** (ID: `{}`): {} [{} builtins, {} external MCPs]\n",
+                    agent.name, agent.id, desc, builtins, externals
                 ));
             }
             if total_agents > 5 {
