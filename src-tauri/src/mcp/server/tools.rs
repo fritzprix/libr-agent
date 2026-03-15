@@ -598,15 +598,13 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
         BuiltinServiceId::Attachments => {
             crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
         }
-        BuiltinServiceId::Assistant => {
-            crate::mcp::builtin::assistant::AssistantServer::tools_static()
-        }
+        BuiltinServiceId::Assistant => Vec::new(),
         BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),
         BuiltinServiceId::Bootstrap => crate::mcp::builtin::bootstrap::tools::all_tools(),
         BuiltinServiceId::Ui => crate::mcp::builtin::ui::tools::all_tools(),
         BuiltinServiceId::McpManager => crate::mcp::builtin::mcp_manager::tools::all_tools(),
-        BuiltinServiceId::Swarm => crate::mcp::builtin::session_api::tools::all_tools(),
+        BuiltinServiceId::Swarm => Vec::new(),
         // Skills tools are session-bound; no static definition available.
         BuiltinServiceId::Skills => Vec::new(),
         BuiltinServiceId::Media => crate::mcp::builtin::media::MediaServer::tools_static(),
