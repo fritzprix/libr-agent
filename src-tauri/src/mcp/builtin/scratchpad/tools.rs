@@ -1,7 +1,7 @@
 use crate::mcp::utils::schema_builder::*;
 use crate::mcp::MCPTool;
 
-/// Get all memory tools
+/// Get all scratchpad tools
 pub fn all_tools() -> Vec<MCPTool> {
     vec![
         add_tool(),
@@ -16,10 +16,10 @@ pub fn all_tools() -> Vec<MCPTool> {
 fn add_tool() -> MCPTool {
     MCPTool {
         name: "add".to_string(),
-        title: Some("Add Memory".to_string()),
-        description: r#"Add a note to Working Memory. Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.
+        title: Some("Add Scratchpad Note".to_string()),
+        description: r#"Add a note to the Working Scratchpad. Content here is ALWAYS visible in your context. Use this for keeping track of important findings, file paths, IDs, or intermediate analysis results that you need to reference frequently during the task.
 
-NOTE: Memory has a strict limit of 10 items. If you reach this limit, use update to modify existing items or clear to remove old ones before adding more.
+NOTE: Scratchpad has a strict limit of 10 items. If you reach this limit, use update to modify existing items or clear to remove old ones before adding more.
 "#
         .to_string(),
         input_schema: object_prop(
@@ -27,7 +27,7 @@ NOTE: Memory has a strict limit of 10 items. If you reach this limit, use update
                 (
                     "content".to_string(),
                     string_prop_required(
-                        r#"The content to add to memory (e.g., "User requested feature X", "File path: src/main.ts")."#,
+                        r#"The content to add to scratchpad (e.g., "User requested feature X", "File path: src/main.ts")."#,
                     ),
                 ),
                 (
@@ -65,8 +65,8 @@ NOTE: Memory has a strict limit of 10 items. If you reach this limit, use update
 fn update_tool() -> MCPTool {
     MCPTool {
         name: "update".to_string(),
-        title: Some("Update Memory".to_string()),
-        description: "Update an existing memory note. Use the ID shown in the memory context or from list to identify which note to update.".to_string(),
+        title: Some("Update Scratchpad Note".to_string()),
+        description: "Update an existing scratchpad note. Use the ID shown in the scratchpad context or from list to identify which note to update.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -74,7 +74,7 @@ fn update_tool() -> MCPTool {
                     integer_prop(
                         None,
                         None,
-                        Some("The ID of the memory note to update (get from list or context)."),
+                        Some("The ID of the scratchpad note to update (get from list or context)."),
                     ),
                 ),
                 (
@@ -97,8 +97,8 @@ fn update_tool() -> MCPTool {
 fn list_tool() -> MCPTool {
     MCPTool {
         name: "list".to_string(),
-        title: Some("List Memory".to_string()),
-        description: "List memory notes with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
+        title: Some("List Scratchpad Notes".to_string()),
+        description: "List scratchpad notes with metadata (ID, title, tags) and content preview. Use this to find the IDs of items you want to read fully. Supports pagination and tag filtering.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -128,14 +128,14 @@ fn list_tool() -> MCPTool {
 fn read_tool() -> MCPTool {
     MCPTool {
         name: "read".to_string(),
-        title: Some("Read Memory".to_string()),
-        description: "Read the FULL content of specific memory notes by their IDs. Use list first to find IDs.".to_string(),
+        title: Some("Read Scratchpad Note".to_string()),
+        description: "Read the FULL content of specific scratchpad notes by their IDs. Use list first to find IDs.".to_string(),
         input_schema: object_prop(
             vec![(
                 "ids".to_string(),
                 array_schema(
                     integer_prop(None, Some(0), None),
-                    Some("List of memory note IDs to read (Required)."),
+                    Some("List of scratchpad note IDs to read (Required)."),
                 ),
             )],
             vec!["ids".to_string()],
@@ -149,12 +149,12 @@ fn read_tool() -> MCPTool {
 fn clear_tool() -> MCPTool {
     MCPTool {
         name: "clear".to_string(),
-        title: Some("Clear Memory".to_string()),
-        description: "Remove a note from Working Memory. Use this to clear information that is no longer relevant to free up context window space.".to_string(),
+        title: Some("Clear Scratchpad Note".to_string()),
+        description: "Remove a note from the Working Scratchpad. Use this to clear information that is no longer relevant to free up context window space.".to_string(),
         input_schema: object_prop(
             vec![(
                 "id".to_string(),
-                integer_prop(None, Some(0), Some("The ID of the memory note to remove.")),
+                integer_prop(None, Some(0), Some("The ID of the scratchpad note to remove.")),
             )],
             vec!["id".to_string()],
             None,

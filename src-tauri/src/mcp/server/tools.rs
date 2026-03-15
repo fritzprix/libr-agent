@@ -437,9 +437,9 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
             tool_count: planning::PlanningServer::tools_static().len(),
         },
         BuiltinServerInfo {
-            name: "memory".to_string(),
-            metadata: memory::MemoryServer::metadata_static(),
-            tool_count: memory::MemoryServer::tools_static().len(),
+            name: "scratchpad".to_string(),
+            metadata: scratchpad::ScratchpadServer::metadata_static(),
+            tool_count: scratchpad::ScratchpadServer::tools_static().len(),
         },
         BuiltinServerInfo {
             name: "playbook".to_string(),
@@ -594,7 +594,7 @@ pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
 
     // All servers use static tool definitions - no instantiation needed
     tools.extend(crate::mcp::builtin::planning::PlanningServer::tools_static());
-    tools.extend(crate::mcp::builtin::memory::MemoryServer::tools_static());
+    tools.extend(crate::mcp::builtin::scratchpad::ScratchpadServer::tools_static());
     tools.extend(crate::mcp::builtin::knowledge::KnowledgeServer::tools_static());
     tools.extend(crate::mcp::builtin::browser::BrowserServer::tools_static());
     tools.extend(crate::mcp::builtin::workspace::WorkspaceServer::tools_static());
@@ -628,7 +628,9 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
 
     match service_id {
         BuiltinServiceId::Planning => crate::mcp::builtin::planning::PlanningServer::tools_static(),
-        BuiltinServiceId::Memory => crate::mcp::builtin::memory::MemoryServer::tools_static(),
+        BuiltinServiceId::Scratchpad => {
+            crate::mcp::builtin::scratchpad::ScratchpadServer::tools_static()
+        }
         BuiltinServiceId::Knowledge => {
             crate::mcp::builtin::knowledge::KnowledgeServer::tools_static()
         }

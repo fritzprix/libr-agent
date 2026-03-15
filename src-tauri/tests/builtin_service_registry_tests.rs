@@ -308,7 +308,7 @@ fn assistant_manager_alias_maps_to_assistant() {
 fn builtin_service_id_serializes_to_canonical_name() {
     let cases = [
         (BuiltinServiceId::Planning, "planning"),
-        (BuiltinServiceId::Memory, "memory"),
+        (BuiltinServiceId::Scratchpad, "scratchpad"),
         (BuiltinServiceId::Workspace, "workspace"),
         (BuiltinServiceId::Knowledge, "knowledge"),
         (BuiltinServiceId::Assistant, "assistant"),
@@ -360,7 +360,7 @@ fn each_builtin_server_name_is_in_registry() {
 
     let all_names: &[&str] = &[
         builtin::planning::NAME,
-        builtin::memory::NAME,
+        builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
         builtin::assistant::NAME,
@@ -391,7 +391,7 @@ fn builtin_server_names_are_unique() {
 
     let all_names: &[&str] = &[
         builtin::planning::NAME,
-        builtin::memory::NAME,
+        builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
         builtin::assistant::NAME,
@@ -433,9 +433,8 @@ fn registry_and_server_list_are_in_sync() {
 
     let server_names: std::collections::HashSet<&str> = [
         builtin::planning::NAME,
-        builtin::memory::NAME,
+        builtin::scratchpad::NAME,
         builtin::workspace::NAME,
-        builtin::knowledge::NAME,
         builtin::assistant::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,

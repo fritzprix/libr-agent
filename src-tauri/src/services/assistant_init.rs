@@ -164,7 +164,7 @@ COMPLEX TASKS (3+ steps):
 3. Save critical findings (file paths, IDs, discoveries) for later reference
 
 CONTEXT MANAGEMENT:
-Your conversation context is limited. For complex tasks: establish persistent goals, save critical findings to working memory (limit ~10 items), and reference saved information instead of re-gathering.
+Your conversation context is limited. For complex tasks: establish persistent goals, save critical findings to scratchpad (limit ~10 items), and reference saved information instead of re-gathering.
 
 TEAM DOCTRINE:
 - When a higher-level plan exists, execute your assigned part with discipline.
@@ -224,7 +224,7 @@ COMPLEX TASKS (multi-file/refactoring):
 3. Save critical info: file paths, function names, dependencies, architectural decisions
 
 CONTEXT MANAGEMENT:
-Your context is limited. For complex tasks: establish persistent goals, save code structure info to working memory (limit ~10 items), reference saved info instead of re-analyzing.
+Your context is limited. For complex tasks: establish persistent goals, save code structure info to scratchpad (limit ~10 items), reference saved info instead of re-analyzing.
 
 CORE COMPETENCIES:
 - Analyze code structure and patterns before changes
@@ -287,7 +287,7 @@ COMPLEX TASKS (multi-step setup):
 3. Save critical info: assistant IDs/names, MCP configs (commands, paths, env vars), system requirements
 
 CONTEXT MANAGEMENT:
-Your context is limited. For complex setup: establish persistent goals, save configuration details to working memory (limit ~10 items), reference saved info instead of re-querying.
+Your context is limited. For complex setup: establish persistent goals, save configuration details to scratchpad (limit ~10 items), reference saved info instead of re-querying.
 
 CAPABILITIES:
 1. ASSISTANTS: Create, update, list, search. Write detailed system prompts following best practices.

@@ -11,18 +11,18 @@ use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-/// Memory MCP Server
+/// Scratchpad MCP Server
 ///
-/// Provides working memory (notes), thinking, and reflection tools for agent sessions.
-/// Session-scoped: each session gets dedicated memory state backed by `planning_scratchpad` table.
+/// Provides scratchpad (notes), thinking, and reflection tools for agent sessions.
+/// Session-scoped: each session gets dedicated scratchpad state backed by `planning_scratchpad` table.
 #[derive(Debug)]
-pub struct MemoryServer {
+pub struct ScratchpadServer {
     session_id: String,
     db: Arc<DatabaseConnection>,
 }
 
-impl MemoryServer {
-    /// Create a new MemoryServer for the given session.
+impl ScratchpadServer {
+    /// Create a new ScratchpadServer for the given session.
     pub async fn new(session_id: String, db: Arc<DatabaseConnection>) -> Result<Self, String> {
         Ok(Self { session_id, db })
     }
@@ -35,23 +35,23 @@ impl MemoryServer {
     /// Get metadata statically.
     pub fn metadata_static() -> BuiltinServerMetadata {
         BuiltinServerMetadata {
-            display_name: "Memory".to_string(),
-            description: "Working memory notes and thinking tools".to_string(),
+            display_name: "Scratchpad".to_string(),
+            description: "Scratchpad notes and thinking tools".to_string(),
             icon: None,
         }
     }
 }
 
-pub const NAME: &str = "memory";
+pub const NAME: &str = "scratchpad";
 
 #[async_trait]
-impl BuiltinMCPServer for MemoryServer {
+impl BuiltinMCPServer for ScratchpadServer {
     fn name(&self) -> &str {
         NAME
     }
 
     fn description(&self) -> &str {
-        "Session-scoped working memory: notes, thinking, and reflection tools"
+        "Session-scoped scratchpad: notes, thinking, and reflection tools"
     }
 
     fn tools(&self) -> Vec<MCPTool> {
@@ -66,7 +66,7 @@ impl BuiltinMCPServer for MemoryServer {
     ) -> Result<MCPResult, String> {
         let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
         log::debug!(
-            "Memory server tool called: {} for session: {}",
+            "Scratchpad server tool called: {} for session: {}",
             tool_name,
             target_session_id
         );
@@ -88,14 +88,14 @@ impl BuiltinMCPServer for MemoryServer {
             .list_scratchpad(&self.session_id)
             .await
             .unwrap_or_else(|e| {
-                log::error!("Failed to fetch memory items: {}", e);
+                log::error!("Failed to fetch scratchpad items: {}", e);
                 Vec::new()
             });
 
-        let mut parts = vec!["## Memory".to_string()];
+        let mut parts = vec!["## Scratchpad".to_string()];
 
         if items.is_empty() {
-            parts.push("\n*No memory notes.*".to_string());
+            parts.push("\n*No scratchpad notes.*".to_string());
         } else {
             parts.push(format!("\n**Notes:** {} item(s)", items.len()));
             for item in &items {

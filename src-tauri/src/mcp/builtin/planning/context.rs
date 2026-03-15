@@ -46,7 +46,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         })
         .collect();
 
-    // 3. (Scratchpad moved to MemoryServer)
+    // 3. (Scratchpad moved to ScratchpadServer)
 
     // --- Format Output ---
 

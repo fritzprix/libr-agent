@@ -42,7 +42,7 @@ pub enum ErrorCategory {
 pub enum ToolGroup {
     Browser,
     Planning,
-    Memory,
+    Scratchpad,
     Workspace,
     Assistant,
     ContentStore,
@@ -350,22 +350,22 @@ impl ErrorGuidance {
                 "Check application logs for details".to_string(),
             ],
 
-            // Memory tool errors
-            (ErrorCategory::ResourceNotFound, ToolGroup::Memory) => vec![
-                "Use memory__list to see available notes".to_string(),
+            // Scratchpad tool errors
+            (ErrorCategory::ResourceNotFound, ToolGroup::Scratchpad) => vec![
+                "Use scratchpad__list to see available notes".to_string(),
                 "Verify the ID is correct".to_string(),
             ],
-            (ErrorCategory::DuplicateResource, ToolGroup::Memory) => vec![
+            (ErrorCategory::DuplicateResource, ToolGroup::Scratchpad) => vec![
                 "Use a different title for the new note".to_string(),
-                "Use memory__update to modify the existing note".to_string(),
+                "Use scratchpad__update to modify the existing note".to_string(),
             ],
-            (ErrorCategory::InvalidInput, ToolGroup::Memory) => vec![
+            (ErrorCategory::InvalidInput, ToolGroup::Scratchpad) => vec![
                 "Ensure all required parameters are provided".to_string(),
-                "Use memory__list to see current notes for reference".to_string(),
+                "Use scratchpad__list to see current notes for reference".to_string(),
             ],
-            (ErrorCategory::InvalidState, ToolGroup::Memory) => vec![
-                "Use memory__clear to remove old items".to_string(),
-                "Use memory__update to modify existing notes".to_string(),
+            (ErrorCategory::InvalidState, ToolGroup::Scratchpad) => vec![
+                "Use scratchpad__clear to remove old items".to_string(),
+                "Use scratchpad__update to modify existing notes".to_string(),
             ],
 
             // Generic fallbacks
