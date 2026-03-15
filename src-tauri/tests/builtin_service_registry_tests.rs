@@ -14,11 +14,15 @@ use tauri_mcp_agent_lib::agent::tools::{
     ToolResultAcceptance,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::agent::tools as agent_tools;
 use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
     BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
+use tauri_mcp_agent_lib::mcp::builtin::tool::tools as tool_tools;
 use tauri_mcp_agent_lib::mcp::builtin::ui::tools as ui_tools;
+use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
+use tauri_mcp_agent_lib::mcp::service_proxy::routing::{route_tool, ToolRouting};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -551,5 +555,73 @@ fn update_assistant_tool_schema_includes_description_field() {
         "updateAssistant input_schema must include a 'description' property; \
          found keys: {:?}",
         props.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn agent_create_tool_name_is_unprefixed() {
+    let create_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.title.as_deref() == Some("Create Agent Configuration"))
+        .expect("create tool must exist");
+
+    assert_eq!(
+        create_tool.name, "create",
+        "builtin agent tool names must remain unprefixed; the proxy adds 'agent__'"
+    );
+}
+
+#[test]
+fn tool_transport_schema_allows_env_and_header_maps() {
+    let register_tool = tool_tools::register_server_tool();
+    let props = extract_object_properties(&register_tool.input_schema, "register");
+    let transport = props
+        .get("transport")
+        .expect("register input_schema must contain transport");
+    let transport_props = extract_object_properties(transport, "transport");
+
+    for key in ["env", "headers"] {
+        let field = transport_props
+            .get(key)
+            .unwrap_or_else(|| panic!("transport schema missing '{key}'"));
+
+        match &field.schema_type {
+            JSONSchemaType::Object {
+                additional_properties,
+                ..
+            } => assert_eq!(
+                *additional_properties,
+                Some(true),
+                "{key} must allow arbitrary key/value pairs"
+            ),
+            other => panic!("{key} should be an object map, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn legacy_builtin_aliases_route_to_canonical_servers() {
+    assert_eq!(
+        route_tool("assistant__createAssistant").expect("assistant alias should route"),
+        ToolRouting::Builtin {
+            server_id: "agent".to_string(),
+            tool_name: "createAssistant".to_string(),
+        }
+    );
+
+    assert_eq!(
+        route_tool("swarm__awaitAgent").expect("swarm alias should route"),
+        ToolRouting::Builtin {
+            server_id: "agent".to_string(),
+            tool_name: "awaitAgent".to_string(),
+        }
+    );
+
+    assert_eq!(
+        route_tool("mcp_manager__listTools").expect("mcp_manager alias should route"),
+        ToolRouting::Builtin {
+            server_id: "tool".to_string(),
+            tool_name: "listTools".to_string(),
+        }
     );
 }

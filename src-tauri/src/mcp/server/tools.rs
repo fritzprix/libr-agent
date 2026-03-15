@@ -553,7 +553,7 @@ pub async fn get_service_context(
 /// - Playbook (4 tools): Playbook execution
 /// - Bootstrap (2 tools): Platform and environment info
 /// - UI (2 tools): User interaction prompts
-/// - MCP Manager (8 tools): MCP server management
+/// - Tool (5 tools): MCP server management
 ///
 /// # Returns
 /// A vector containing all active builtin tool schemas

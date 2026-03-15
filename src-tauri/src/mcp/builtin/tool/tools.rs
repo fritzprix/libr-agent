@@ -21,7 +21,7 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
             ),
             (
                 "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables (stdio only)")),
+                object_map_prop(Some("Environment variables (stdio only)")),
             ),
             (
                 "url".to_string(),
@@ -37,7 +37,7 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
             ),
             (
                 "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers (http only)")),
+                object_map_prop(Some("HTTP headers (http only)")),
             ),
             (
                 "enableSSE".to_string(),

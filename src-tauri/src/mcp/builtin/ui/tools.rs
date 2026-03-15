@@ -117,7 +117,7 @@ Use this to display:
 
 Parameters:
 - `content`: The HTML or Markdown string to render (required)
-- `format`: 'html' | 'markdown' | 'auto' (default: 'auto' — detects format from content)
+ - `format`: 'html' | 'markdown' | 'auto' (default: 'auto' — treated as Markdown unless explicitly set to 'html')
 - `title`: Optional title shown above the rendered content"
             .to_string(),
         input_schema: object_prop(
@@ -131,7 +131,7 @@ Parameters:
                     enum_prop(
                         vec!["html", "markdown", "auto"],
                         "auto",
-                        Some("Content format. 'auto' detects from content (default: 'auto')"),
+                        Some("Content format. 'auto' defaults to Markdown; use 'html' for raw HTML rendering"),
                     ),
                 ),
                 (
@@ -189,7 +189,7 @@ Use this as the default UI presentation tool.
 
 Parameters:
 - `content`: The HTML or Markdown string to render (required)
-- `format`: 'html' | 'markdown' | 'auto' (default: 'auto')
+ - `format`: 'html' | 'markdown' | 'auto' (default: 'auto' — treated as Markdown unless explicitly set to 'html')
 - `title`: Optional title shown above the content
 - `interaction`: Configuration for the interactive section (prompt, type, options)"
             .to_string(),
@@ -204,7 +204,7 @@ Parameters:
                     enum_prop(
                         vec!["html", "markdown", "auto"],
                         "auto",
-                        Some("Content format. 'auto' detects from content"),
+                        Some("Content format. 'auto' defaults to Markdown; use 'html' for raw HTML rendering"),
                     ),
                 ),
                 (
