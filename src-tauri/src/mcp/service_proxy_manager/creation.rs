@@ -684,7 +684,8 @@ impl MCPServiceProxyManager {
     /// Falls back to [`CORE_BUILTIN_SERVICE_ALIASES`] if the session or its config cannot
     /// be loaded.
     async fn resolve_tool_ids_for_session(&self, session_id: &str) -> Vec<String> {
-        use crate::agent::tools::{extract_builtin_tool_ids, CORE_BUILTIN_SERVICE_ALIASES};
+        use crate::agent::tools::extract_builtin_tool_ids;
+        use crate::mcp::builtin::service_id::CORE_BUILTIN_SERVICE_ALIASES;
         use crate::repositories::session_repository::SessionRepository;
 
         let repo = crate::state::get_session_repository();
@@ -714,7 +715,7 @@ impl MCPServiceProxyManager {
         // Fallback: core non-optional builtin set
         CORE_BUILTIN_SERVICE_ALIASES
             .iter()
-            .map(|s| s.to_string())
+            .map(|s: &&str| s.to_string())
             .collect()
     }
 }

@@ -28,11 +28,11 @@
 ///    - `Some([…])` → only the specified subset is enabled.
 /// 5. `attachments` appears in the core fallback list so the lazy proxy path can always
 ///    serve `attachments__listContent` even when the DB is unavailable.
-use tauri_mcp_agent_lib::agent::tools::{
-    extract_builtin_tool_ids, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
-};
+use tauri_mcp_agent_lib::agent::tools::extract_builtin_tool_ids;
 use tauri_mcp_agent_lib::agent::AgentConfig;
-use tauri_mcp_agent_lib::mcp::builtin::service_id::BuiltinServiceId;
+use tauri_mcp_agent_lib::mcp::builtin::service_id::{
+    BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
+};
 
 // ─── helpers ────────────────────────────────────────────────────────────────────────────
 
@@ -116,7 +116,7 @@ fn tools_without_separator_are_not_builtin() {
 /// otherwise the lazy proxy would be built with unrecognised tool IDs.
 #[test]
 fn core_builtin_fallback_aliases_all_resolve() {
-    for alias in &CORE_BUILTIN_SERVICE_ALIASES {
+    for alias in CORE_BUILTIN_SERVICE_ALIASES {
         assert!(
             BuiltinServiceId::from_alias(alias).is_some(),
             "CORE_BUILTIN_SERVICE_ALIASES entry `{alias}` must resolve via BuiltinServiceId::from_alias"
@@ -131,7 +131,7 @@ fn core_builtin_fallback_aliases_all_resolve() {
 #[test]
 fn core_builtin_fallback_includes_attachments() {
     assert!(
-        CORE_BUILTIN_SERVICE_ALIASES.contains(&"attachments"),
+        CORE_BUILTIN_SERVICE_ALIASES.iter().any(|&a| a == "attachments"),
         "`attachments` must be in CORE_BUILTIN_SERVICE_ALIASES for the fallback path to work"
     );
 }
@@ -159,9 +159,10 @@ fn extract_builtin_tool_ids_default_includes_attachments() {
         "`attachments` must be in the default tool ID list; got: {tool_ids:?}"
     );
     // Sanity: non-optional builtins are all present
-    for alias in &CORE_BUILTIN_SERVICE_ALIASES {
+    for alias in CORE_BUILTIN_SERVICE_ALIASES {
+        let alias_str: &str = alias;
         assert!(
-            tool_ids.contains(&alias.to_string()),
+            tool_ids.contains(&alias_str.to_string()),
             "Core alias `{alias}` must be in default tool IDs; got: {tool_ids:?}"
         );
     }

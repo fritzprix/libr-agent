@@ -1,8 +1,8 @@
 use super::MCPServerManager;
 use crate::mcp::schema::JSONSchemaType;
 use crate::mcp::types::{
-    BuiltinServerInfo, JsonRpcId, MCPError, MCPResponse, MCPTool, SamplingRequest, ServiceContext,
-    ServiceContextOptions, TransportConfig,
+    BuiltinServerInfo, BuiltinServerMetadata, JsonRpcId, MCPError, MCPResponse, MCPTool,
+    SamplingRequest, ServiceContext, ServiceContextOptions, TransportConfig,
 };
 use anyhow::Result;
 use log::{debug, error, info, warn};
@@ -417,76 +417,45 @@ pub async fn list_builtin_servers_with_metadata(
 /// regardless of which servers are currently instantiated in the global registry.
 /// Returns static metadata for all builtin servers that can be used in Agent V2 sessions.
 pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
-    use crate::mcp::builtin::BuiltinMCPServer;
+    use crate::mcp::builtin::service_id::{BuiltinServiceId, BUILTIN_SERVICE_REGISTRY};
     use crate::mcp::builtin::*;
 
-    vec![
-        BuiltinServerInfo {
-            name: "bootstrap".to_string(),
-            metadata: bootstrap::BootstrapServer::new().metadata(),
-            tool_count: bootstrap::BootstrapServer::new().tools().len(),
-        },
-        BuiltinServerInfo {
-            name: "knowledge".to_string(),
-            metadata: knowledge::KnowledgeServer::metadata_static(),
-            tool_count: knowledge::KnowledgeServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "planning".to_string(),
-            metadata: planning::PlanningServer::metadata_static(),
-            tool_count: planning::PlanningServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "scratchpad".to_string(),
-            metadata: scratchpad::ScratchpadServer::metadata_static(),
-            tool_count: scratchpad::ScratchpadServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "playbook".to_string(),
-            metadata: playbook::PlaybookServer::metadata_static(),
-            tool_count: playbook::PlaybookServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "assistant_manager".to_string(),
-            metadata: assistant::AssistantServer::metadata_static(),
-            tool_count: assistant::AssistantServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "workspace".to_string(),
-            metadata: workspace::WorkspaceServer::metadata_static(),
-            tool_count: workspace::WorkspaceServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "attachments".to_string(),
-            metadata: content_store::ContentStoreServer::metadata_static(),
-            tool_count: content_store::ContentStoreServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "ui".to_string(),
-            metadata: ui::UiServer::new().metadata(),
-            tool_count: ui::UiServer::new().tools().len(),
-        },
-        BuiltinServerInfo {
-            name: "browser".to_string(),
-            metadata: browser::BrowserServer::metadata_static(),
-            tool_count: browser::BrowserServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "mcp_manager".to_string(),
-            metadata: mcp_manager::MCPManagerServer::new().metadata(),
-            tool_count: mcp_manager::MCPManagerServer::new().tools().len(),
-        },
-        BuiltinServerInfo {
-            name: "swarm".to_string(),
-            metadata: session_api::SessionApiServer::metadata_static(),
-            tool_count: session_api::SessionApiServer::tools_static().len(),
-        },
-        BuiltinServerInfo {
-            name: "media".to_string(),
-            metadata: media::MediaServer::metadata_static(),
-            tool_count: media::MediaServer::tools_static().len(),
-        },
-    ]
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .map(|entry| {
+            let name = entry.canonical.to_string();
+            let tool_count = get_static_tools_for_server(&name).len();
+
+            let metadata = match entry.variant {
+                BuiltinServiceId::Planning => planning::PlanningServer::metadata_static(),
+                BuiltinServiceId::Scratchpad => scratchpad::ScratchpadServer::metadata_static(),
+                BuiltinServiceId::Knowledge => knowledge::KnowledgeServer::metadata_static(),
+                BuiltinServiceId::Browser => browser::BrowserServer::metadata_static(),
+                BuiltinServiceId::Workspace => workspace::WorkspaceServer::metadata_static(),
+                BuiltinServiceId::Attachments => {
+                    content_store::ContentStoreServer::metadata_static()
+                }
+                BuiltinServiceId::Assistant => assistant::AssistantServer::metadata_static(),
+                BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
+                BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
+                BuiltinServiceId::Ui => ui::UiServer::new().metadata(),
+                BuiltinServiceId::McpManager => mcp_manager::MCPManagerServer::new().metadata(),
+                BuiltinServiceId::Swarm => session_api::SessionApiServer::metadata_static(),
+                BuiltinServiceId::Media => media::MediaServer::metadata_static(),
+                BuiltinServiceId::Skills => BuiltinServerMetadata {
+                    display_name: "Skills".to_string(),
+                    description: "Dynamic agent skills".to_string(),
+                    icon: None,
+                },
+            };
+
+            BuiltinServerInfo {
+                name,
+                metadata,
+                tool_count,
+            }
+        })
+        .collect()
 }
 
 pub async fn call_builtin_tool(
@@ -590,25 +559,12 @@ pub async fn get_service_context(
 /// # Returns
 /// A vector containing all tool schemas (88+ tools total)
 pub fn get_all_static_builtin_tools() -> Vec<MCPTool> {
-    let mut tools = Vec::new();
+    use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
 
-    // All servers use static tool definitions - no instantiation needed
-    tools.extend(crate::mcp::builtin::planning::PlanningServer::tools_static());
-    tools.extend(crate::mcp::builtin::scratchpad::ScratchpadServer::tools_static());
-    tools.extend(crate::mcp::builtin::knowledge::KnowledgeServer::tools_static());
-    tools.extend(crate::mcp::builtin::browser::BrowserServer::tools_static());
-    tools.extend(crate::mcp::builtin::workspace::WorkspaceServer::tools_static());
-    tools.extend(crate::mcp::builtin::content_store::ContentStoreServer::tools_static());
-    tools.extend(crate::mcp::builtin::assistant::AssistantServer::tools_static());
-    tools.extend(crate::mcp::builtin::playbook::PlaybookServer::tools_static());
-
-    // Stateless servers - use tools module directly
-    tools.extend(crate::mcp::builtin::bootstrap::tools::all_tools());
-    tools.extend(crate::mcp::builtin::ui::tools::all_tools());
-    tools.extend(crate::mcp::builtin::mcp_manager::tools::all_tools());
-    tools.extend(crate::mcp::builtin::session_api::tools::all_tools());
-
-    tools
+    BUILTIN_SERVICE_REGISTRY
+        .iter()
+        .flat_map(|entry| get_static_tools_for_server(entry.canonical))
+        .collect()
 }
 
 /// Get static tool definitions for a specific builtin server.

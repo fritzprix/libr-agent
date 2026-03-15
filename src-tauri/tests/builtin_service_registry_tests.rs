@@ -11,11 +11,13 @@ use tauri_mcp_agent_lib::agent::state::PendingToolExecution;
 use tauri_mcp_agent_lib::agent::tools::{
     canonicalize_builtin_service_alias, classify_tool_result, create_error_tool_result,
     create_tool_result_message, create_tool_result_message_with_content, extract_builtin_tool_ids,
-    ToolResultAcceptance, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
+    ToolResultAcceptance,
+};
+use tauri_mcp_agent_lib::mcp::builtin::service_id::{
+    BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
 use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
-use tauri_mcp_agent_lib::mcp::builtin::service_id::BuiltinServiceId;
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -209,8 +211,9 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
     let tool_ids = extract_builtin_tool_ids(&config);
 
     for alias in CORE_BUILTIN_SERVICE_ALIASES {
+        let alias_str: &str = alias;
         assert!(
-            tool_ids.contains(&alias.to_string()),
+            tool_ids.contains(&alias_str.to_string()),
             "core alias {alias:?} must always be present"
         );
     }
@@ -431,38 +434,27 @@ fn registry_has_no_duplicate_canonicals() {
 fn registry_and_server_list_are_in_sync() {
     use tauri_mcp_agent_lib::mcp::builtin;
 
-    let server_names: std::collections::HashSet<&str> = [
-        builtin::planning::NAME,
-        builtin::scratchpad::NAME,
-        builtin::workspace::NAME,
-        builtin::assistant::NAME,
-        builtin::skills::NAME,
-        builtin::playbook::NAME,
-        builtin::content_store::NAME,
-        builtin::session_api::NAME,
-        builtin::ui::NAME,
-        builtin::browser::NAME,
-        builtin::bootstrap::NAME,
-        builtin::media::NAME,
-        builtin::mcp_manager::NAME,
-    ]
-    .iter()
-    .copied()
-    .collect();
-
-    assert_eq!(
-        server_names.len(),
-        BUILTIN_SERVICE_REGISTRY.len(),
-        "server list ({}) and registry ({}) diverged – update both together",
-        server_names.len(),
-        BUILTIN_SERVICE_REGISTRY.len(),
-    );
-
     for entry in BUILTIN_SERVICE_REGISTRY {
-        assert!(
-            server_names.contains(entry.canonical),
-            "registry canonical {:?} has no server NAME",
-            entry.canonical,
+        let name = match entry.variant {
+            BuiltinServiceId::Planning => builtin::planning::NAME,
+            BuiltinServiceId::Scratchpad => builtin::scratchpad::NAME,
+            BuiltinServiceId::Workspace => builtin::workspace::NAME,
+            BuiltinServiceId::Knowledge => builtin::knowledge::NAME,
+            BuiltinServiceId::Assistant => builtin::assistant::NAME,
+            BuiltinServiceId::Skills => builtin::skills::NAME,
+            BuiltinServiceId::Playbook => builtin::playbook::NAME,
+            BuiltinServiceId::Attachments => builtin::content_store::NAME,
+            BuiltinServiceId::Swarm => builtin::session_api::NAME,
+            BuiltinServiceId::Ui => builtin::ui::NAME,
+            BuiltinServiceId::Browser => builtin::browser::NAME,
+            BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
+            BuiltinServiceId::McpManager => builtin::mcp_manager::NAME,
+            BuiltinServiceId::Media => builtin::media::NAME,
+        };
+        assert_eq!(
+            name, entry.canonical,
+            "Server NAME constant for {:?} must match registry canonical",
+            entry.variant
         );
     }
 }
