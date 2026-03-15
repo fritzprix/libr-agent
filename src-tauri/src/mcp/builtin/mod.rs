@@ -380,7 +380,6 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         // Session-specific servers (knowledge, planning, playbook, assistant, browser, scratchpad) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
@@ -426,7 +425,6 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
@@ -469,7 +467,6 @@ impl BuiltinServerRegistry {
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
         registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
 
         registry
     }
