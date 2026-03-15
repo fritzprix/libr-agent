@@ -453,7 +453,7 @@ mod tests {
     /// result, returning 0.
     #[test]
     fn circuit_breaker_does_not_trigger_after_success_following_different_tool_failures() {
-        let health_check = "swarm__healthCheck";
+        let health_check = "agent__list";
         let read_file = "workspace__readFile";
         let empty_args = "{}";
 

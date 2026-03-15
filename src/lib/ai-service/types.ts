@@ -199,6 +199,18 @@ export interface IAIService {
   convertTools(mcpTools: MCPTool[]): unknown[];
 
   /**
+   * Checks if a model supports tool use.
+   * @param modelName The name of the model to check.
+   */
+  supportsTools(modelName: string): boolean;
+
+  /**
+   * Estimates the context window size for a model.
+   * @param modelName The name of the model.
+   */
+  estimateContextWindow(modelName: string): number;
+
+  /**
    * Cancels any in-progress streaming requests initiated by `streamChat`.
    * Implementations should abort network requests and stop yielding further
    * values from `streamChat` as soon as possible.
@@ -256,4 +268,18 @@ export interface IAIService {
    * Cleans up any resources used by the service instance.
    */
   dispose(): void;
+
+  /**
+   * Sanitizes messages for provider-specific compatibility.
+   * @param messages The messages to sanitize.
+   * @returns An array of sanitized messages.
+   */
+  sanitizeMessages(messages: Message[]): Message[];
+
+  /**
+   * Sanitizes a single message based on the provider's requirements.
+   * @param message The message to sanitize.
+   * @returns The sanitized message, or null if it should be filtered out.
+   */
+  sanitizeSingleMessage(message: Message): Message | null;
 }

@@ -20,6 +20,12 @@ pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
 #[cfg(windows)]
 pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
 
+// Platform-specific one-shot shell tool name
+#[cfg(unix)]
+pub const RUN_SHELL_TOOL: &str = "runShell";
+#[cfg(windows)]
+pub const RUN_SHELL_TOOL: &str = "runPowerShell";
+
 // Module imports
 pub mod code_execution;
 pub mod export_operations;

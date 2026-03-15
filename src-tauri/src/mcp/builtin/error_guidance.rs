@@ -37,6 +37,16 @@ pub enum ErrorCategory {
     PermissionDenied,
 }
 
+impl ErrorCategory {
+    /// Returns true when the failure is attributable to tool misuse or invalid tool input.
+    pub fn uses_error_semantics(self) -> bool {
+        matches!(
+            self,
+            Self::MissingRequiredParam | Self::InvalidInput | Self::InvalidFormat
+        )
+    }
+}
+
 /// Tool group for isolation of tool suggestions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolGroup {
@@ -44,14 +54,13 @@ pub enum ToolGroup {
     Planning,
     Scratchpad,
     Workspace,
-    Assistant,
+    Agent, // Unified Agent Domain (Assistant/Swarm)
     ContentStore,
     Knowledge,
     Playbook,
     UI,
-    McpManager,
+    Tool, // Unified Tool Domain (MCP Manager)
     Bootstrap,
-    Swarm,
 }
 
 /// Structured error with guidance
@@ -168,9 +177,20 @@ impl ErrorGuidance {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let formatted_message = format!("✗ {}\n\n💡 Next Steps:\n{}", self.message, guidance_text);
+        let formatted_message = if self.category.uses_error_semantics() {
+            format!("✗ {}\n\n💡 Next Steps:\n{}", self.message, guidance_text)
+        } else {
+            format!(
+                "Notice: {}\n\n💡 Next Steps:\n{}",
+                self.message, guidance_text
+            )
+        };
 
-        MCPResult::error(&formatted_message)
+        if self.category.uses_error_semantics() {
+            MCPResult::error(&formatted_message)
+        } else {
+            MCPResult::informational(&formatted_message)
+        }
     }
 
     /// Get default guidance for an error category within a tool group
@@ -230,21 +250,33 @@ impl ErrorGuidance {
                 "Use listDirectory to see the correct path structure".to_string(),
             ],
 
-            // Assistant tool errors
-            (ErrorCategory::ResourceNotFound, ToolGroup::Assistant) => vec![
-                "Use listAssistants to see available assistants".to_string(),
-                "Verify the assistant ID is correct".to_string(),
-                "Use listAssistants with 'search' parameter to find assistants by name".to_string(),
+            // Agent tool errors (Unified Assistant/Swarm)
+            (ErrorCategory::ResourceNotFound, ToolGroup::Agent) => vec![
+                "Verify the agentId or sessionId is correct".to_string(),
+                "Use list(type=\"configs\") to find available agent configurations".to_string(),
+                "Use list(type=\"sessions\") or checkSession to inspect active delegated sessions"
+                    .to_string(),
             ],
-            (ErrorCategory::DuplicateResource, ToolGroup::Assistant) => vec![
-                "Use a different name for the new assistant".to_string(),
-                "Use updateAssistant to modify the existing one".to_string(),
-                "Use listAssistants to see all assistants".to_string(),
+            (ErrorCategory::DuplicateResource, ToolGroup::Agent) => vec![
+                "Use a different name for the new Agent or Assistant".to_string(),
+                "Use updateAssistant to modify existing configurations".to_string(),
             ],
-            (ErrorCategory::InvalidInput, ToolGroup::Assistant) => vec![
-                "Verify all required parameters are provided".to_string(),
-                "Check that parameter values are in the correct format".to_string(),
-                "Use listAssistants or getAssistant to verify existing data".to_string(),
+            (ErrorCategory::InvalidInput, ToolGroup::Agent) => vec![
+                "Verify all required parameters (goal, inputs) are provided".to_string(),
+                "Check the tool schema for required fields and formats".to_string(),
+                "Review the system prompt and role configuration".to_string(),
+            ],
+            (ErrorCategory::NetworkError, ToolGroup::Agent) => vec![
+                "The internal Agent service may not be running".to_string(),
+                "Restart the application if connectivity issues persist".to_string(),
+            ],
+            (ErrorCategory::Timeout, ToolGroup::Agent) => vec![
+                "Increase the timeoutSeconds parameter for complex tasks".to_string(),
+                "Use awaitAgent with a longer timeout for async operations".to_string(),
+            ],
+            (ErrorCategory::OperationFailed, ToolGroup::Agent) => vec![
+                "Retry the operation — it may be a transient failure".to_string(),
+                "Check Agent status with getAgentStatus for specific errors".to_string(),
             ],
 
             // Content Store tool errors
@@ -279,17 +311,17 @@ impl ErrorGuidance {
             ],
 
             // MCP Manager tool errors
-            (ErrorCategory::ResourceNotFound, ToolGroup::McpManager) => vec![
+            (ErrorCategory::ResourceNotFound, ToolGroup::Tool) => vec![
                 "Use listTools to see available MCP servers".to_string(),
                 "Verify the server name is correct".to_string(),
                 "Use listTools with a query to search servers by name".to_string(),
             ],
-            (ErrorCategory::InvalidInput, ToolGroup::McpManager) => vec![
+            (ErrorCategory::InvalidInput, ToolGroup::Tool) => vec![
                 "Ensure server name is provided".to_string(),
                 "Verify transport configuration is valid".to_string(),
                 "Check transport type is stdio or http".to_string(),
             ],
-            (ErrorCategory::OperationFailed, ToolGroup::McpManager) => vec![
+            (ErrorCategory::OperationFailed, ToolGroup::Tool) => vec![
                 "Check server configuration is correct".to_string(),
                 "Verify the server binary/command exists".to_string(),
                 "Use listTools to see server status".to_string(),
@@ -312,42 +344,6 @@ impl ErrorGuidance {
                 "Verify tool parameter is provided".to_string(),
                 "Tool must be one of: node, python, uv, docker, git".to_string(),
                 "Platform must be: windows, linux, darwin, or auto".to_string(),
-            ],
-
-            // Swarm tool errors
-            (ErrorCategory::ResourceNotFound, ToolGroup::Swarm) => vec![
-                "Verify the ID (agent ID or assistant ID) is correct".to_string(),
-                "Use listAssistants to find available assistant configurations".to_string(),
-                "Use getChildAgents to list active sub-agents or sessions".to_string(),
-            ],
-            (ErrorCategory::InvalidInput, ToolGroup::Swarm) => vec![
-                "Check all required parameters are provided and correctly typed".to_string(),
-                "Review the tool schema for required fields and formats".to_string(),
-                "Check agent status with getAgentStatus if the session already exists".to_string(),
-            ],
-            (ErrorCategory::NetworkError, ToolGroup::Swarm) => vec![
-                "The internal swarm service may not be running — check the application state"
-                    .to_string(),
-                "Restart the application if this error persists".to_string(),
-                "Verify session connectivity with getAgentStatus".to_string(),
-            ],
-            (ErrorCategory::Timeout, ToolGroup::Swarm) => vec![
-                "Increase the timeoutSeconds parameter for slow tasks".to_string(),
-                "Use awaitAgent with a longer timeout".to_string(),
-                "Check agent status with getAgentStatus".to_string(),
-            ],
-            (ErrorCategory::PermissionDenied, ToolGroup::Swarm) => vec![
-                "Check agent nesting depth constraints (maxDepth)".to_string(),
-                "Verify you have permission to spawn agents in this context".to_string(),
-            ],
-            (ErrorCategory::OperationFailed, ToolGroup::Swarm) => vec![
-                "Retry the operation".to_string(),
-                "Use getChildAgents to see current agent state".to_string(),
-                "Check agent status with getAgentStatus".to_string(),
-            ],
-            (ErrorCategory::InternalError, ToolGroup::Swarm) => vec![
-                "Retry the operation — this is likely a transient error".to_string(),
-                "Check application logs for details".to_string(),
             ],
 
             // Scratchpad tool errors
@@ -477,74 +473,92 @@ impl SuccessHint {
             ],
 
             // Workspace tools
+            ("runShell" | "runPowerShell", ToolGroup::Workspace) => vec![
+                "Use listDirectory to verify created files".to_string(),
+                "Use readFile to verify file contents".to_string(),
+                "Use stopProcess if a long-running command needs to be terminated".to_string(),
+            ],
+            ("runInPersistentShell" | "runInPersistentPowerShell", ToolGroup::Workspace) => vec![
+                "Command state (CWD, env vars) is preserved for the next call".to_string(),
+                "Use listDirectory to verify file system changes".to_string(),
+                "Use readFile to check written output".to_string(),
+            ],
+            ("spawnProcess", ToolGroup::Workspace) => vec![
+                "Use listProcesses to see the status of the background task".to_string(),
+                "Use waitForProcess with timeout=0 to check if it's still running".to_string(),
+                "Use readProcessOutput to see standard output and error".to_string(),
+            ],
+            ("waitForProcess" | "pollProcess", ToolGroup::Workspace) => vec![
+                "Use readProcessOutput to see the final results".to_string(),
+                "Use listDirectory to check for any generated artifacts".to_string(),
+            ],
+            ("readProcessOutput", ToolGroup::Workspace) => vec![
+                "Analyze the output to verify command success".to_string(),
+                "Use stopProcess if the output indicates it's stuck".to_string(),
+            ],
+            ("listProcesses", ToolGroup::Workspace) => vec![
+                "Use waitForProcess(processId) to block until completion".to_string(),
+                "Use stopProcess(processId) to kill a stuck task".to_string(),
+            ],
             ("writeFile", ToolGroup::Workspace) => vec![
                 "Use readFile to verify the content".to_string(),
                 "Use listDirectory to see the file in context".to_string(),
             ],
             ("readFile", ToolGroup::Workspace) => vec![
                 "Use writeFile to modify the content".to_string(),
-                "Use replaceLines to make targeted edits".to_string(),
+                "Use editFile to make targeted edits".to_string(),
             ],
             ("listDirectory", ToolGroup::Workspace) => vec![
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
             ],
-            ("runInPersistentShell", ToolGroup::Workspace) => vec![
-                "Use listDirectory to verify created files".to_string(),
-                "Use readFile to verify file contents".to_string(),
+            ("editFile" | "replaceLines", ToolGroup::Workspace) => vec![
+                "Use readFile to verify your edits".to_string(),
+                "Use runShell to execute the updated code".to_string(),
+            ],
+            ("searchLines" | "searchFiles", ToolGroup::Workspace) => vec![
+                "Use readFile on interesting matches".to_string(),
+                "Use listDirectory to explore the surrounding module".to_string(),
             ],
 
-            // Assistant tools
-            ("assistant__createAssistant", ToolGroup::Assistant) => vec![
-                "Use assistant__listAssistants to see all assistants".to_string(),
-                "Use assistant__updateAssistant to modify configuration".to_string(),
+            // Agent tools (Unified)
+            ("create", ToolGroup::Agent) => vec![
+                "Use list to see all agents".to_string(),
+                "Use update to modify configuration".to_string(),
+                "Use startSession to begin work with this agent".to_string(),
             ],
-            ("assistant__updateAssistant", ToolGroup::Assistant) => {
-                vec!["Use assistant__getAssistant to verify changes".to_string()]
-            }
-
-            // UI tools
-            ("prompt_user", ToolGroup::UI) => {
-                vec!["Use getUserAnswer to receive user response".to_string()]
-            }
-            ("visualize_data", ToolGroup::UI) => {
-                vec!["Chart has been rendered and displayed to user".to_string()]
-            }
-            ("wait_for_user_resume", ToolGroup::UI) => {
-                vec!["Use resumeFromWait when user clicks continue".to_string()]
-            }
-
-            // MCP Manager tools
-            ("listTools", ToolGroup::McpManager) => vec![
-                "Use registerServer to add new external servers".to_string(),
-                "Use updateAssistant to give an assistant access to found servers".to_string(),
+            ("update", ToolGroup::Agent) => vec![
+                "Use list to verify the configuration updates".to_string(),
+                "Use startSession to apply changes in a new session".to_string(),
             ],
-            ("registerServer", ToolGroup::McpManager) => {
-                vec!["Use listTools to verify server was created".to_string()]
-            }
-            ("connectServer", ToolGroup::McpManager) => {
-                vec!["Server is now available for tool calls".to_string()]
-            }
-
-            // Playbook tools
-            ("createPlaybook", ToolGroup::Playbook) => vec![
-                "Use selectPlaybook to execute this playbook".to_string(),
-                "Use listPlaybooks to see all playbooks".to_string(),
+            ("startSession", ToolGroup::Agent) => vec![
+                "Use messageToSession to send tasks to the agent".to_string(),
+                "Use checkSession to see if work is complete".to_string(),
             ],
-            ("listPlaybooks", ToolGroup::Playbook) => vec![
-                "Use selectPlaybook with ID to execute".to_string(),
-                "Use getPlaybookPage for interactive UI".to_string(),
+            ("messageToSession" | "checkSession", ToolGroup::Agent) => vec![
+                "Continue monitoring progress with checkSession".to_string(),
+                "Use stopSession when the task is fully accomplished".to_string(),
             ],
-            ("selectPlaybook", ToolGroup::Playbook) => {
-                vec!["Review workflow steps and begin execution".to_string()]
-            }
-
-            // Swarm tools
-            ("spawnAgent", ToolGroup::Swarm) => vec![
+            ("spawnAgent", ToolGroup::Agent) => vec![
                 "Use awaitAgent with the session ID to wait for completion".to_string(),
                 "Use getChildAgents to see all active sub-agents".to_string(),
-                "Use listMessages to see progress if not awaiting".to_string(),
             ],
+
+            // Tool Management (Unified)
+            ("list", ToolGroup::Tool) => vec![
+                "Use register to add new external servers".to_string(),
+                "Use update to refresh server configuration".to_string(),
+            ],
+            ("register", ToolGroup::Tool) => vec![
+                "Use list to verify server was created".to_string(),
+                "Use verify to check server health".to_string(),
+            ],
+            ("verify", ToolGroup::Tool) => {
+                vec!["Server is ready for tool calls if verification passed".to_string()]
+            }
+            ("connectServer", ToolGroup::Tool) => {
+                vec!["Server tools are now available for use".to_string()]
+            }
 
             // Bootstrap tools
             ("detectPlatform", ToolGroup::Bootstrap) => {
@@ -623,6 +637,42 @@ pub fn operation_failed_error(
     .to_mcp_result()
 }
 
+/// Create a guided error for a missing agent configuration during `startSession`.
+pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::ResourceNotFound,
+        format!("Agent configuration '{}' not found", agent_id),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        "Use list(type=\"configs\") to see available agent configurations".to_string(),
+        format!(
+            "Verify agentId '{}' matches one of the listed IDs",
+            agent_id
+        ),
+        "Retry startSession with a valid agentId".to_string(),
+    ])
+    .to_mcp_result()
+}
+
+/// Create a guided error for a missing delegated agent session.
+pub fn missing_agent_session_error(session_id: &str) -> MCPResult {
+    guided_error(
+        ErrorCategory::ResourceNotFound,
+        format!("Agent session '{}' not found", session_id),
+        ToolGroup::Agent,
+    )
+    .with_guidance(vec![
+        "Use list(type=\"sessions\") to see active delegated sessions".to_string(),
+        format!(
+            "Verify sessionId '{}' matches one of the listed active session IDs",
+            session_id
+        ),
+        "The session may have already finished, been stopped, or expired".to_string(),
+    ])
+    .to_mcp_result()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +695,27 @@ mod tests {
                 assert!(text.contains("💡 Next Steps:"));
                 assert!(text.contains("Session 'abc123' not found"));
                 assert!(text.contains("1. "));
+            }
+        }
+    }
+
+    #[test]
+    fn test_internal_error_guidance_is_informational() {
+        let error = ErrorGuidance::new(
+            ErrorCategory::InternalError,
+            "Database connection dropped",
+            ToolGroup::Knowledge,
+        );
+
+        let result = error.to_mcp_result();
+
+        assert_eq!(result.is_error, Some(false));
+
+        if let Some(content) = result.content {
+            if let Some(crate::mcp::types::MCPContent::Text { text, is_error }) = content.first() {
+                assert_eq!(*is_error, None);
+                assert!(text.contains("Notice:"));
+                assert!(text.contains("💡 Next Steps:"));
             }
         }
     }
@@ -721,6 +792,31 @@ mod tests {
         // Default guidance for (ResourceNotFound, Browser) includes createSession.
         assert!(text.contains("createSession"));
         assert!(text.contains("✗"));
+        assert!(text.contains("💡 Next Steps:"));
+    }
+
+    #[test]
+    fn test_timeout_guided_error_builder_is_informational() {
+        let result = guided_error(
+            ErrorCategory::Timeout,
+            "Waiting for browser session timed out",
+            ToolGroup::Browser,
+        )
+        .to_mcp_result();
+
+        assert_eq!(result.is_error, Some(false));
+
+        let content = result.content.expect("Expected MCPResult.content");
+        let crate::mcp::types::MCPContent::Text { text, is_error } = content
+            .first()
+            .expect("Expected at least one content item")
+            .clone()
+        else {
+            panic!("Expected Text content");
+        };
+
+        assert_eq!(is_error, None);
+        assert!(text.contains("Notice:"));
         assert!(text.contains("💡 Next Steps:"));
     }
 

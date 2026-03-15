@@ -249,3 +249,22 @@ pub fn object_prop(
         const_value: None,
     }
 }
+
+/// Creates an object property schema that allows arbitrary string-keyed fields.
+pub fn object_map_prop(description: Option<&str>) -> JSONSchema {
+    JSONSchema {
+        schema_type: JSONSchemaType::Object {
+            properties: Some(HashMap::new()),
+            required: None,
+            additional_properties: Some(true),
+            min_properties: None,
+            max_properties: None,
+        },
+        title: None,
+        description: description.map(|s| s.to_string()),
+        default: None,
+        examples: None,
+        enum_values: None,
+        const_value: None,
+    }
+}

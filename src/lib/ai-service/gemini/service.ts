@@ -3,7 +3,10 @@ import {
   FinishReason,
   GoogleGenAI,
   Content,
+  Schema as GeminiSchema,
+  Type,
 } from '@google/genai';
+import { JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
@@ -19,7 +22,6 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
-import { convertMCPToolToGemini } from '../tool-converters';
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
@@ -74,7 +76,102 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
    * @inheritdoc
    */
   convertTools(mcpTools: MCPTool[]): FunctionDeclaration[] {
-    return mcpTools.map(convertMCPToolToGemini);
+    return mcpTools.map((mcpTool) => {
+      // Convert the entire inputSchema to Gemini format
+      const geminiParams = this.convertMCPSchemaToGeminiParameters(
+        mcpTool.inputSchema,
+      );
+
+      return {
+        name: mcpTool.name,
+        description: mcpTool.description,
+        parameters: {
+          type: Type.OBJECT,
+          description: mcpTool.inputSchema.description,
+          properties: geminiParams.properties || {},
+          required: mcpTool.inputSchema.required || [],
+        },
+      } satisfies FunctionDeclaration;
+    });
+  }
+
+  /**
+   * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
+   * This properly handles nested objects and arrays, preserving all schema information.
+   * @param schema The MCP JSONSchema to convert.
+   * @returns The schema in the format required by Google GenAI SDK.
+   * @private
+   */
+  private convertMCPSchemaToGeminiParameters(schema: JSONSchema): GeminiSchema {
+    // Base case: String type with optional enum
+    if (schema.type === 'string') {
+      const result: GeminiSchema = { type: Type.STRING };
+      if (schema.description) result.description = schema.description;
+      if ('enum' in schema && Array.isArray(schema.enum)) {
+        result.enum = schema.enum as string[];
+      }
+      return result;
+    }
+
+    // Base case: Number types
+    if (schema.type === 'number' || schema.type === 'integer') {
+      const result: GeminiSchema = { type: Type.NUMBER };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Base case: Boolean type
+    if (schema.type === 'boolean') {
+      const result: GeminiSchema = { type: Type.BOOLEAN };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Base case: Null type
+    if (schema.type === 'null') {
+      const result: GeminiSchema = { type: Type.STRING };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Recursive case: Arrays
+    if (schema.type === 'array' && 'items' in schema && schema.items) {
+      const arrayItems = Array.isArray(schema.items)
+        ? schema.items[0]
+        : schema.items;
+      const result: GeminiSchema = {
+        type: Type.ARRAY,
+        items: arrayItems
+          ? this.convertMCPSchemaToGeminiParameters(arrayItems)
+          : { type: Type.STRING },
+      };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Recursive case: Objects
+    if (
+      schema.type === 'object' &&
+      'properties' in schema &&
+      schema.properties
+    ) {
+      const geminiProperties: Record<string, GeminiSchema> = {};
+
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        geminiProperties[key] =
+          this.convertMCPSchemaToGeminiParameters(propSchema);
+      }
+
+      const result: GeminiSchema = {
+        type: Type.OBJECT,
+        properties: geminiProperties,
+      };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Fallback for unknown or incomplete types
+    return { type: Type.STRING };
   }
 
   /**
@@ -327,6 +424,52 @@ export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
     // Note: Gemini system prompt is handled via systemInstruction in config
     void systemPrompt;
     return convertToGeminiMessages(messages);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Gemini handles system messages separately
+    if (message.role === 'system') return null;
+
+    // Remove thinkingSignature if it's the dummy signature we injected
+    // (though usually we don't need to do this for the upstream API)
+    if (message.thinkingSignature === 'skip_thought_signature_validator') {
+      delete message.thinkingSignature;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('gemini-1.5-pro')) return 2000000;
+    if (lowerName.includes('gemini-1.5-flash')) return 1000000;
+    if (lowerName.includes('gemini-2.0-flash')) return 1000000;
+    return 1000000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return GeminiService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return GeminiService.estimateContextWindowForModel(modelName);
   }
 
   /**

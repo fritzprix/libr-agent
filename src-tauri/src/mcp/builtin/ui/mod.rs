@@ -16,6 +16,7 @@ const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
 const LINE_CHART_TEMPLATE: &str = include_str!("templates/line-chart.hbs");
 const PRESENT_CONTENT_TEMPLATE: &str = include_str!("templates/present-content.hbs");
+const PRESENT_INTERACTIVE_TEMPLATE: &str = include_str!("templates/present-interactive.hbs");
 const SELECT_PROMPT_TEMPLATE: &str = include_str!("templates/select-prompt.hbs");
 const TEXT_PROMPT_TEMPLATE: &str = include_str!("templates/text-prompt.hbs");
 const WAIT_TEMPLATE: &str = include_str!("templates/wait.hbs");
@@ -23,6 +24,22 @@ const WAIT_TEMPLATE: &str = include_str!("templates/wait.hbs");
 #[derive(Debug)]
 pub struct UiServer {
     handlebars: Arc<Mutex<Handlebars<'static>>>,
+}
+
+fn summarize_interactive_content(content: &str, max_chars: usize) -> Option<String> {
+    let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let excerpt: String = normalized.chars().take(max_chars).collect();
+
+    if normalized.chars().count() > max_chars {
+        Some(format!("{}...", excerpt))
+    } else {
+        Some(excerpt)
+    }
 }
 
 impl Default for UiServer {
@@ -47,6 +64,9 @@ impl UiServer {
             .unwrap();
         handlebars
             .register_template_string("present-content", PRESENT_CONTENT_TEMPLATE)
+            .unwrap();
+        handlebars
+            .register_template_string("present-interactive", PRESENT_INTERACTIVE_TEMPLATE)
             .unwrap();
         handlebars
             .register_template_string("select-prompt", SELECT_PROMPT_TEMPLATE)
@@ -214,14 +234,7 @@ impl UiServer {
             .unwrap_or(false);
 
         if cancelled {
-            return Ok(MCPResult {
-                content: Some(vec![MCPContent::Text {
-                    text: "User cancelled the prompt.".to_string(),
-                    is_error: Some(true),
-                }]),
-                structured_content: None,
-                is_error: Some(true),
-            });
+            return Ok(MCPResult::informational("User cancelled the prompt."));
         }
 
         let answer_str = if let Some(ans) = answer {
@@ -691,6 +704,214 @@ impl UiServer {
             Some(&summary),
         ))
     }
+
+    fn present_interactive(&self, args: Value) -> Result<MCPResult, String> {
+        let content = match args.get("content").and_then(|v| v.as_str()) {
+            Some(v) => v,
+            None => return Ok(missing_param_error("content", ToolGroup::UI)),
+        };
+
+        let format = args
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("auto");
+        let title = args.get("title").and_then(|v| v.as_str());
+        let interaction = args.get("interaction");
+
+        let is_markdown = !matches!(format, "html");
+        let content_json = serde_json::to_string(content)
+            .unwrap_or_else(|_| "\"\"".to_string())
+            .replace("</", "<\\/");
+
+        let message_id = uuid::Uuid::new_v4().to_string();
+
+        let mut data = json!({
+            "isMarkdown": is_markdown,
+            "contentJson": content_json,
+            "messageId": message_id,
+        });
+
+        if !is_markdown {
+            data.as_object_mut()
+                .unwrap()
+                .insert("content".to_string(), json!(content));
+        }
+
+        if let Some(t) = title {
+            data.as_object_mut()
+                .unwrap()
+                .insert("title".to_string(), json!(t));
+        }
+
+        if let Some(inter) = interaction {
+            let inter_obj = match inter.as_object() {
+                Some(_) => inter.clone(),
+                None => {
+                    return Ok(guided_error(
+                        ErrorCategory::InvalidInput,
+                        "interaction must be an object",
+                        ToolGroup::UI,
+                    )
+                    .with_guidance(vec![
+                        "Provide interaction as an object with type and prompt".to_string(),
+                        "Example: {\"interaction\": {\"type\": \"text\", \"prompt\": \"What next?\"}}".to_string(),
+                    ])
+                    .to_mcp_result());
+                }
+            };
+            let type_ = match inter.get("type").and_then(|v| v.as_str()) {
+                Some(value) => value,
+                None => return Ok(missing_param_error("interaction.type", ToolGroup::UI)),
+            };
+            let prompt = match inter.get("prompt").and_then(|v| v.as_str()) {
+                Some(value) => value,
+                None => return Ok(missing_param_error("interaction.prompt", ToolGroup::UI)),
+            };
+
+            if !["text", "select", "multiselect"].contains(&type_) {
+                return Ok(guided_error(
+                    ErrorCategory::InvalidInput,
+                    format!(
+                        "Invalid interaction type '{}'. Supported types: text, select, multiselect",
+                        type_
+                    ),
+                    ToolGroup::UI,
+                )
+                .with_guidance(vec![
+                    "Use 'text' for free-form input".to_string(),
+                    "Use 'select' for a single choice".to_string(),
+                    "Use 'multiselect' for multiple choices".to_string(),
+                ])
+                .to_mcp_result());
+            }
+
+            data.as_object_mut()
+                .unwrap()
+                .insert("optionsJson".to_string(), json!("[]"));
+
+            if type_ == "select" || type_ == "multiselect" {
+                let options = match inter.get("options") {
+                    Some(v) => v,
+                    None => return Ok(missing_param_error("interaction.options", ToolGroup::UI)),
+                };
+
+                let options_array = match options.as_array() {
+                    Some(arr) => arr,
+                    None => {
+                        return Ok(guided_error(
+                            ErrorCategory::InvalidInput,
+                            "interaction.options must be an array of strings",
+                            ToolGroup::UI,
+                        )
+                        .to_mcp_result());
+                    }
+                };
+
+                let mut options_vec = Vec::with_capacity(options_array.len());
+                for option in options_array {
+                    match option.as_str() {
+                        Some(value) => options_vec.push(value.to_string()),
+                        None => {
+                            return Ok(guided_error(
+                                ErrorCategory::InvalidInput,
+                                "interaction.options must contain only strings",
+                                ToolGroup::UI,
+                            )
+                            .with_guidance(vec![
+                                "Replace numbers or objects with display strings".to_string(),
+                                "Example: [\"Approve\", \"Reject\"]".to_string(),
+                            ])
+                            .to_mcp_result());
+                        }
+                    }
+                }
+
+                let options_json =
+                    serde_json::to_string(&options_vec).unwrap_or_else(|_| "[]".to_string());
+
+                data.as_object_mut()
+                    .unwrap()
+                    .insert("optionsJson".to_string(), json!(options_json));
+
+                let mut options_html = String::new();
+                for (i, opt) in options_vec.iter().enumerate() {
+                    let input_type = if type_ == "multiselect" {
+                        "checkbox"
+                    } else {
+                        "radio"
+                    };
+                    options_html.push_str(&format!(
+                        r#"<label class="option-item">
+                            <input type="{}" name="option" value="{}" class="option-input">
+                            <span class="option-label">{}</span>
+                           </label>"#,
+                        input_type,
+                        i,
+                        html_escape::encode_text(opt)
+                    ));
+                }
+                data.as_object_mut()
+                    .unwrap()
+                    .insert("optionsHtml".to_string(), json!(options_html));
+            }
+
+            data.as_object_mut()
+                .unwrap()
+                .insert("interaction".to_string(), inter_obj);
+            data.as_object_mut()
+                .unwrap()
+                .insert("interactionPrompt".to_string(), json!(prompt));
+            data.as_object_mut()
+                .unwrap()
+                .insert("isText".to_string(), json!(type_ == "text"));
+        }
+
+        let handlebars = self.handlebars.lock().unwrap();
+        let html = match handlebars.render("present-interactive", &data) {
+            Ok(h) => h,
+            Err(e) => {
+                return Ok(guided_error(
+                    ErrorCategory::OperationFailed,
+                    format!("Failed to render interactive content: {}", e),
+                    ToolGroup::UI,
+                )
+                .to_mcp_result());
+            }
+        };
+
+        let mut summary_lines = vec![format!(
+            "Interactive content rendered: {}",
+            title.unwrap_or("Report & Prompt")
+        )];
+
+        if let Some(excerpt) = summarize_interactive_content(content, 180) {
+            summary_lines.push(format!("Summary: {}", excerpt));
+        }
+
+        if let Some(inter) = interaction {
+            if let Some(prompt) = inter.get("prompt").and_then(|v| v.as_str()) {
+                summary_lines.push(format!("User response required: {}", prompt));
+            }
+
+            if let Some(type_) = inter.get("type").and_then(|v| v.as_str()) {
+                summary_lines.push(format!("Interaction type: {}", type_));
+            }
+
+            summary_lines
+                .push("Workflow paused until the user responds via the rendered UI.".to_string());
+        }
+
+        let summary = summary_lines.join("\n");
+
+        Ok(crate::mcp::builtin::utils::create_resource_response(
+            &format!("ui://interactive/{}", message_id),
+            "text/html",
+            &html,
+            "ui",
+            "presentInteractive",
+            Some(summary.as_str()),
+        ))
+    }
 }
 
 pub const NAME: &str = "ui";
@@ -731,6 +952,7 @@ impl BuiltinMCPServer for UiServer {
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
             "presentContent" => self.present_content(args),
+            "presentInteractive" => self.present_interactive(args),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }
     }

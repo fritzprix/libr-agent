@@ -123,7 +123,7 @@ impl WorkspaceServer {
 
                 return Ok(SuccessHint::new(
                     format!("Process {} finished with status: {:?}", process_id, status),
-                    vec!["Use readProcessOutput to see results".to_string()],
+                    SuccessHint::for_tool("waitForProcess", ToolGroup::Workspace),
                 )
                 .to_mcp_result_with_data(Some(response)));
             }
@@ -156,7 +156,7 @@ impl WorkspaceServer {
 
                 return Ok(SuccessHint::new(
                     format!("Process {} is currently {:?}", process_id, status),
-                    vec!["Process is still running".to_string()],
+                    SuccessHint::for_tool("pollProcess", ToolGroup::Workspace),
                 )
                 .to_mcp_result_with_data(Some(response)));
             }
