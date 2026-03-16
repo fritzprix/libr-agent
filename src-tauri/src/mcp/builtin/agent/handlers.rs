@@ -347,7 +347,7 @@ pub async fn check_session(
 ) -> Result<MCPResult, String> {
     let session_id = read_required_string(&args, "sessionId")?;
     let wait = args.get("wait").and_then(|v| v.as_bool()).unwrap_or(false);
-    let timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30);
+    let timeout = args.get("timeout").and_then(|v| v.as_u64()).unwrap_or(3600);
 
     if wait {
         let wait_result = {

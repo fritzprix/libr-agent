@@ -113,7 +113,7 @@ fn start_session_tool() -> MCPTool {
                 ("agentId".to_string(), string_prop_required("ID or name of the agent configuration to use.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
                 ("contextFiles".to_string(), array_schema(string_prop(None, None, None), Some("Optional: File paths from your workspace to share with the sub-agent."))),
-                ("waitForResult".to_string(), boolean_prop(Some("If true, blocks until the agent finishes and returns the final answer. Default: false."))),
+                ("waitForResult".to_string(), boolean_prop(Some("If true, blocks until the agent finishes and returns the final answer (max wait: 1 hour). Default: false."))),
             ],
             vec!["agentId".to_string(), "task".to_string()],
             None,
@@ -158,7 +158,7 @@ fn check_session_tool() -> MCPTool {
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to check.")),
                 ("wait".to_string(), boolean_prop(Some("If true, blocks until the session reaches a terminal state (finished/error)."))),
-                ("timeout".to_string(), integer_prop(Some(1), Some(300), Some("Maximum seconds to wait if 'wait' is true (default: 30)."))),
+                ("timeout".to_string(), integer_prop(Some(1), Some(3600), Some("Maximum seconds to wait if 'wait' is true (default: 3600)."))),
             ],
             vec!["sessionId".to_string()],
             None,
