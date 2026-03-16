@@ -93,3 +93,9 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Result:** `workflow.rs` and `session_manager.rs` now properly delegate to domain services, keeping the agent execution logic clean and decoupled from data storage concerns.
 
 ## 2025-03-12 - [Service Layer Dependency Inversion] **Anti-Pattern:** [God Module/Coupling/Hidden Dependencies] **Resolution:** [Applied Dependency Inversion Principle. Refactored AssistantService, McpServerService, PlaybookService, and ScheduledTaskService to accept their respective Repositories as arguments rather than instantiating them internally via global state fetchers. Tauri commands now act purely as controllers that fetch the dependency and pass it down, improving testability and separation of concerns.]
+
+## 2025-03-13 - [Architecture] **Anti-Pattern:** React God Component (The Smart UI Anti-Pattern) **Resolution:** Custom Hook Pattern (Domain Logic Extraction)
+
+- **Context:** `AgentDraftChatView.tsx` was a massive ~700-line monolithic component handling UI rendering, complex drag-and-drop file processing, backend IPC orchestration, binary file indexing, workspace directory writes, and agent session initialization all in one file.
+- **Action:** Extracted all state management, file parsing, and Tauri backend coordination into a custom hook `useAgentDraftChat` (`src/features/agent/hooks/useAgentDraftChat.ts`).
+- **Result:** The `AgentDraftChatView.tsx` component is now a pure presentation layer, adhering to Separation of Concerns and making the complex state logic testable and reusable.
