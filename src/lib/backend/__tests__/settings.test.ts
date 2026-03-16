@@ -142,7 +142,7 @@ describe('settings', () => {
         key: 'up_key',
         value: 'up_val',
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       };
       await settings.upsertSetting(obj);
       expect(safeInvoke).toHaveBeenCalledWith('set_setting', { key: 'up_key', value: 'up_val' });
