@@ -147,10 +147,7 @@ impl WorkspaceServer {
 
         let hint = SuccessHint::new(
             format!("Process {} stopped successfully", process_id),
-            vec![
-                "Use listProcesses to see remaining processes".to_string(),
-                "Use readProcessOutput to view output before termination".to_string(),
-            ],
+            SuccessHint::for_tool("stopProcess", ToolGroup::Workspace),
         );
 
         let response = serde_json::json!({

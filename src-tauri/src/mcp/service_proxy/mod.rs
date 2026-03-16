@@ -53,6 +53,41 @@ pub struct MCPServiceProxy {
 }
 
 impl MCPServiceProxy {
+    fn tool_call_response(result: super::types::MCPResult) -> MCPResponse {
+        MCPResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some(super::types::JsonRpcId::String(
+                uuid::Uuid::new_v4().to_string(),
+            )),
+            result: Some(super::types::MCPResponseResult::ToolCall(result)),
+            error: None,
+        }
+    }
+
+    fn builtin_timeout_response(
+        &self,
+        server_id: &str,
+        tool_name: &str,
+    ) -> Result<MCPResponse, String> {
+        let text = format!(
+            "Tool {}__{} timed out after {} seconds.\n\nThis reflects a backend execution timeout, not invalid tool usage.\n\nYou can retry if the action is safe to repeat, or use a tool-specific status/check command if one exists.",
+            server_id, tool_name, self.tool_timeout_seconds
+        );
+
+        Ok(Self::tool_call_response(
+            super::types::MCPResult::informational_with_data(
+                &text,
+                serde_json::json!({
+                    "timeout": true,
+                    "server": server_id,
+                    "tool": tool_name,
+                    "sessionId": self.session_id,
+                    "seconds": self.tool_timeout_seconds,
+                }),
+            ),
+        ))
+    }
+
     /// Create a new session-bound proxy using builder
     ///
     /// # Arguments
@@ -159,14 +194,7 @@ impl MCPServiceProxy {
                         let result = server
                             .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
                             .await?;
-                        Ok(MCPResponse {
-                            jsonrpc: "2.0".to_string(),
-                            id: Some(super::types::JsonRpcId::String(
-                                uuid::Uuid::new_v4().to_string(),
-                            )),
-                            result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                            error: None,
-                        })
+                        Ok(Self::tool_call_response(result))
                     }
                     None => {
                         let available = self
@@ -218,14 +246,7 @@ impl MCPServiceProxy {
                         ],
                     );
 
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                    Ok(Self::tool_call_response(result))
                 }
             };
         }
@@ -250,14 +271,7 @@ impl MCPServiceProxy {
                                 .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
                                 .await?;
                             // Convert MCPResult to MCPResponse with proper type
-                            Ok(MCPResponse {
-                                jsonrpc: "2.0".to_string(),
-                                id: Some(super::types::JsonRpcId::String(
-                                    uuid::Uuid::new_v4().to_string(),
-                                )),
-                                result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                error: None,
-                            })
+                            Ok(Self::tool_call_response(result))
                         }
                         None => {
                             let available = self
@@ -311,24 +325,22 @@ impl MCPServiceProxy {
                         ],
                     );
 
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                    Ok(Self::tool_call_response(result))
                 }
             }
         })
         .await
-        .map_err(|_| {
-            format!(
+        .unwrap_or_else(|_| match route_tool(tool_name) {
+            Ok(ToolRouting::Builtin {
+                server_id,
+                tool_name: real_tool_name,
+            }) => self.builtin_timeout_response(&server_id, &real_tool_name),
+            Ok(ToolRouting::External { .. }) => Err(format!(
                 "Tool execution timed out after {} seconds",
                 self.tool_timeout_seconds
-            )
-        })?
+            )),
+            Err(e) => Err(e),
+        })
     }
 
     /// Get the session ID this proxy is bound to

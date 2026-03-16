@@ -33,10 +33,16 @@ const AgentToolGroupBlockImpl: React.FC<AgentToolGroupBlockProps> = ({
     [groupBlock.items],
   );
 
-  const toolGroupResults = useMemo(
-    () => toolGroupCalls.map((call) => toolResultsMap?.get(call.id)),
-    [toolGroupCalls, toolResultsMap],
-  );
+  const toolGroupResults = useMemo(() => {
+    const idUsageCount = new Map<string, number>();
+    return toolGroupCalls.map((call) => {
+      const count = idUsageCount.get(call.id) || 0;
+      idUsageCount.set(call.id, count + 1);
+
+      const key = count === 0 ? call.id : `${call.id}_dup${count}`;
+      return toolResultsMap?.get(key);
+    });
+  }, [toolGroupCalls, toolResultsMap]);
 
   const toolGroup = useMemo(
     () => ({ calls: toolGroupCalls }),

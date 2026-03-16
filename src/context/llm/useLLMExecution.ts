@@ -253,9 +253,9 @@ export function useLLMExecution({
         let enrichedMessages: Message[];
 
         // Process the pre-sliced messages provided by the Rust backend.
-        const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
+        const safeMessages = MessageNormalizer.sanitizeMessagesForService(
           messages.map(sanitizeMessage),
-          provider as AIServiceProvider,
+          service,
         );
         logger.info('✅ Messages sanitized for provider compatibility', {
           sessionId,
@@ -664,20 +664,26 @@ export function useLLMExecution({
           );
         }
 
+        // 1. Update with isStreaming: false IMMEDIATELY
         setStreamingMessages((prev) => {
           const next = new Map(prev);
           next.set(sessionId, finalMessage);
           return next;
         });
 
+        // 2. Schedule cleanup with 500ms delay to allow backend event to arrive
         const timeoutId = window.setTimeout(() => {
           setStreamingMessages((prev) => {
             const next = new Map(prev);
-            next.delete(sessionId);
+            // Only delete if it's still the same message (same ID)
+            const current = next.get(sessionId);
+            if (current?.id === finalMessage.id) {
+              next.delete(sessionId);
+            }
             return next;
           });
           timeoutsRef.current.delete(sessionId);
-        }, 100);
+        }, 500);
         timeoutsRef.current.set(sessionId, timeoutId);
 
         updateSessionStatus(sessionId, 'idle');

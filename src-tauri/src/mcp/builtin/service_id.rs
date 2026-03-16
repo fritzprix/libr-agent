@@ -10,17 +10,22 @@ pub enum BuiltinServiceId {
     Scratchpad,
     Workspace,
     Knowledge,
-    Assistant,
+    #[serde(
+        alias = "assistant",
+        alias = "assistant_manager",
+        alias = "swarm",
+        alias = "session_api"
+    )]
+    Agent, // Unified Agent Domain
     Skills,
     Playbook,
     #[serde(alias = "content_store", alias = "contentstore")]
     Attachments,
-    #[serde(alias = "session_api")]
-    Swarm,
     Ui,
     Browser,
     Bootstrap,
-    McpManager,
+    #[serde(alias = "mcp_manager")]
+    Tool, // Unified Tool Domain
     Media,
 }
 
@@ -30,7 +35,6 @@ pub struct BuiltinServiceEntry {
     pub variant: BuiltinServiceId,
     pub canonical: &'static str,
     pub optional: bool,
-    pub stateful: bool,
 }
 
 impl BuiltinServiceId {
@@ -41,15 +45,16 @@ impl BuiltinServiceId {
             "scratchpad" | "memory" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
-            "assistant" | "assistant_manager" => Some(Self::Assistant),
+            "agent" | "assistant" | "assistant_manager" | "swarm" | "session_api" => {
+                Some(Self::Agent)
+            }
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
             "attachments" | "content_store" | "contentstore" => Some(Self::Attachments),
-            "swarm" | "session_api" => Some(Self::Swarm),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
-            "mcp_manager" => Some(Self::McpManager),
+            "tool" | "mcp_manager" => Some(Self::Tool),
             "media" => Some(Self::Media),
             _ => None,
         }
@@ -62,105 +67,85 @@ impl BuiltinServiceId {
             Self::Scratchpad => "scratchpad",
             Self::Workspace => "workspace",
             Self::Knowledge => "knowledge",
-            Self::Assistant => "assistant",
+            Self::Agent => "agent",
             Self::Skills => "skills",
             Self::Playbook => "playbook",
             Self::Attachments => "attachments",
-            Self::Swarm => "swarm",
             Self::Ui => "ui",
             Self::Browser => "browser",
             Self::Bootstrap => "bootstrap",
-            Self::McpManager => "mcp_manager",
+            Self::Tool => "tool",
             Self::Media => "media",
         }
     }
 }
 
-// Registry 정의 (이게 SSOT 역할을 함)
+// Registry SSOT
 pub const BUILTIN_SERVICE_REGISTRY: &[BuiltinServiceEntry] = &[
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Planning,
         canonical: "planning",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Scratchpad,
         canonical: "scratchpad",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Workspace,
         canonical: "workspace",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Knowledge,
         canonical: "knowledge",
         optional: true,
-        stateful: true,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::Assistant,
-        canonical: "assistant",
+        variant: BuiltinServiceId::Agent,
+        canonical: "agent",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Skills,
         canonical: "skills",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Playbook,
         canonical: "playbook",
         optional: false,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Attachments,
         canonical: "attachments",
         optional: false,
-        stateful: false,
-    },
-    BuiltinServiceEntry {
-        variant: BuiltinServiceId::Swarm,
-        canonical: "swarm",
-        optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Ui,
         canonical: "ui",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Browser,
         canonical: "browser",
         optional: true,
-        stateful: true,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Bootstrap,
         canonical: "bootstrap",
         optional: true,
-        stateful: false,
     },
     BuiltinServiceEntry {
-        variant: BuiltinServiceId::McpManager,
-        canonical: "mcp_manager",
+        variant: BuiltinServiceId::Tool,
+        canonical: "tool",
         optional: false,
-        stateful: false,
     },
     BuiltinServiceEntry {
         variant: BuiltinServiceId::Media,
         canonical: "media",
         optional: true,
-        stateful: false,
     },
 ];
 
@@ -168,13 +153,12 @@ pub const CORE_BUILTIN_SERVICE_ALIASES: &[&str] = &[
     "planning",
     "scratchpad",
     "workspace",
-    "assistant",
+    "agent",
     "skills",
     "playbook",
     "attachments",
-    "swarm",
     "ui",
-    "mcp_manager",
+    "tool",
 ];
 
 impl fmt::Display for BuiltinServiceId {
@@ -204,6 +188,30 @@ mod tests {
         assert_eq!(
             BuiltinServiceId::from_alias("memory"),
             Some(BuiltinServiceId::Scratchpad)
+        );
+    }
+
+    #[test]
+    fn assistant_legacy_alias_resolves_to_agent() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("assistant"),
+            Some(BuiltinServiceId::Agent)
+        );
+        assert_eq!(
+            BuiltinServiceId::from_alias("assistant_manager"),
+            Some(BuiltinServiceId::Agent)
+        );
+    }
+
+    #[test]
+    fn swarm_legacy_alias_resolves_to_agent() {
+        assert_eq!(
+            BuiltinServiceId::from_alias("swarm"),
+            Some(BuiltinServiceId::Agent)
+        );
+        assert_eq!(
+            BuiltinServiceId::from_alias("session_api"),
+            Some(BuiltinServiceId::Agent)
         );
     }
 

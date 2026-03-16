@@ -287,7 +287,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
 
           return (
             <ToolCallCompactItem
-              key={toolCall.id}
+              key={`${toolCall.id}-${index}`}
               toolCall={toolCall}
               toolResult={toolResult}
               isLast={isLastItem}
@@ -300,7 +300,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
         <ExpandToggle
           isExpanded={isExpanded}
           totalCalls={toolGroup.calls.length}
-          onToggle={() => setIsExpanded(!isExpanded)}
+          onToggle={() => setIsExpanded((prev) => !prev)}
           ariaControls={listId}
         />
       )}

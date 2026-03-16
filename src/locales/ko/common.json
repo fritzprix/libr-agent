@@ -659,6 +659,18 @@
       "model": "모델",
       "loading": "로딩 중...",
       "refreshModels": "모델 새로고침"
+    },
+    "toolsModal": {
+      "title": "사용 가능한 도구",
+      "subtitleWithCounts": "내장 도구: {{builtinCount}} • MCP 도구: {{mcpCount}}",
+      "subtitleDefault": "이 에이전트 세션에서 사용할 수 있는 도구 목록입니다.",
+      "loading": "도구 로딩 중...",
+      "errorTitle": "도구 로딩 오류",
+      "empty": "이 에이전트 세션에 사용할 수 있는 도구가 없습니다.",
+      "ariaLabel": "사용 가능한 도구 목록",
+      "badgeBuiltin": "내장",
+      "badgeMcp": "mcp",
+      "viewSchema": "입력 스키마 보기"
     }
   },
   "scheduledTasks": {

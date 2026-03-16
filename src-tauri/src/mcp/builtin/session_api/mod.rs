@@ -1,44 +1,40 @@
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::builtin::BuiltinMCPServer;
-use crate::mcp::error_normalization::{categorize_session_api_error, ExternalMcpErrorCategory};
-use crate::mcp::types::{MCPResult, MCPTool, ServiceContext};
+use crate::mcp::types::{BuiltinServerMetadata, MCPResult, MCPTool, ServiceContext};
 
-mod cache;
-mod client;
-mod formatting;
-mod handlers;
+pub mod cache;
+pub mod client;
+pub mod formatting;
+pub mod handlers;
 pub mod tools;
-mod types;
-mod utils;
+pub mod types;
+pub mod utils;
 
 #[derive(Debug, Default)]
 pub struct SessionApiServer;
 
 impl SessionApiServer {
-    const SWARM_CONTEXT_NODE_LIMIT: usize = 40;
-
     pub fn new() -> Self {
         Self
     }
 
-    pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
-        crate::mcp::types::BuiltinServerMetadata {
-            display_name: "Swarm".to_string(),
-            description: "Spawn and orchestrate child agents to delegate tasks in parallel"
-                .to_string(),
+    pub fn tools_static() -> Vec<MCPTool> {
+        // Return empty to hide from LLM
+        Vec::new()
+    }
+
+    pub fn metadata_static() -> BuiltinServerMetadata {
+        BuiltinServerMetadata {
+            display_name: "Swarm Orchestrator (Legacy)".to_string(),
+            description: "DEPRECATED: Use the 'agent' domain instead.".to_string(),
             icon: None,
         }
     }
-
-    pub fn tools_static() -> Vec<MCPTool> {
-        tools::all_tools()
-    }
 }
 
-pub const NAME: &str = "swarm";
+pub const NAME: &str = "";
 
 #[async_trait]
 impl BuiltinMCPServer for SessionApiServer {
@@ -47,88 +43,37 @@ impl BuiltinMCPServer for SessionApiServer {
     }
 
     fn description(&self) -> &str {
-        "Spawn and orchestrate child agents to delegate tasks in parallel"
+        "DEPRECATED: Use the 'agent' domain instead."
+    }
+
+    fn display_name(&self) -> String {
+        "Swarm (Legacy)".to_string()
+    }
+
+    fn metadata(&self) -> BuiltinServerMetadata {
+        Self::metadata_static()
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        tools::all_tools()
+        // Return empty to definitively hide from LLM agent
+        Vec::new()
     }
 
     async fn call_tool(
         &self,
         tool_name: &str,
-        args: Value,
-        caller_session_id: Option<String>,
+        _args: Value,
+        _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        match handlers::handle_tool_call(tool_name, args, caller_session_id).await {
-            Ok(result) => Ok(result),
-            Err(e) => {
-                // Cancellation errors must propagate as Err so the workflow loop
-                // can handle them correctly (abort, surface to user, etc.).
-                if e.contains("cancelled") || e.contains("interrupted") {
-                    return Err(e);
-                }
-
-                // Map the raw error to an error_guidance ErrorCategory
-                let (norm_category, _) = categorize_session_api_error(&e);
-                let category = match norm_category {
-                    ExternalMcpErrorCategory::NotFound
-                    | ExternalMcpErrorCategory::SessionExpired => ErrorCategory::ResourceNotFound,
-                    ExternalMcpErrorCategory::InvalidInput => ErrorCategory::InvalidInput,
-                    ExternalMcpErrorCategory::PermissionDenied => ErrorCategory::PermissionDenied,
-                    ExternalMcpErrorCategory::Timeout => ErrorCategory::Timeout,
-                    ExternalMcpErrorCategory::Transport => ErrorCategory::NetworkError,
-                    ExternalMcpErrorCategory::Protocol
-                    | ExternalMcpErrorCategory::RemoteToolError
-                    | ExternalMcpErrorCategory::Internal => ErrorCategory::InternalError,
-                };
-
-                Ok(
-                    guided_error(category, format!("[{}] {}", tool_name, e), ToolGroup::Swarm)
-                        .to_mcp_result(),
-                )
-            }
-        }
+        log::warn!("Call to deprecated swarm tool: {}", tool_name);
+        Err("The 'swarm' domain is deprecated. Please use the 'agent' domain instead (e.g. agent__startSession).".to_string())
     }
 
-    async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        let base_url = client::base_url().await;
-
-        // 1. Base prompt
-        let mut context_prompt = format!(
-            "## Swarm Capability\n\nYou can delegate tasks to specialist agents and collect their results. Use this when the task benefits from parallelism or specialist knowledge. Internal API at {}",
-            base_url
-        );
-
-        // 2. Fetch swarm snapshot if session_id is provided
-        if let Some(opts) = options {
-            if let Some(session_id) = opts.get("sessionId").and_then(|v| v.as_str()) {
-                match utils::collect_descendant_snapshot(session_id, Self::SWARM_CONTEXT_NODE_LIMIT)
-                    .await
-                {
-                    Ok((rows, truncated)) => {
-                        context_prompt.push_str("\n\n### Swarm Snapshot\n");
-                        context_prompt.push_str(&formatting::build_swarm_snapshot_text(
-                            session_id,
-                            &rows,
-                            truncated,
-                            Self::SWARM_CONTEXT_NODE_LIMIT,
-                        ));
-                        context_prompt.push_str("\n\nUse swarm tools to communicate with specific sub-agents or poll their messages.");
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to fetch child sessions for context: {}", e);
-                    }
-                }
-            }
-        }
-
+    async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+        // Return empty context to hide from system prompt
         ServiceContext {
-            context_prompt,
-            structured_state: Some(json!({
-                "base_url": base_url,
-                "server": "swarm"
-            })),
+            context_prompt: String::new(),
+            structured_state: None,
         }
     }
 }

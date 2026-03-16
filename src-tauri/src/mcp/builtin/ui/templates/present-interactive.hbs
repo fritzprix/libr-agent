@@ -1,0 +1,406 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset='utf-8' />
+    <meta name='viewport' content='width=device-width,initial-scale=1' />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: #f9fafb;
+        color: #1f2937;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      .container {
+        max-width: 720px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .content-wrapper {
+        position: relative;
+        background: white;
+        border-radius: 8px;
+        padding: 24px 28px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+      .copy-btn {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: #f3f4f6;
+        color: #4b5563;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: inherit;
+        z-index: 10;
+      }
+      .copy-btn:hover {
+        background: #e5e7eb;
+        color: #111827;
+      }
+      .content-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0 0 16px 0;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e5e7eb;
+        padding-right: 60px;
+      }
+      
+      /* Interaction Section */
+      .interaction-wrapper {
+        background: white;
+        border-radius: 8px;
+        padding: 20px 28px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        border-top: 4px solid #3b82f6;
+      }
+      .interaction-prompt {
+        font-weight: 600;
+        margin-bottom: 16px;
+        color: #1f2937;
+        font-size: 16px;
+      }
+      .options-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .option-item {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .option-item:hover {
+        background: #f9fafb;
+        border-color: #3b82f6;
+      }
+      .option-input {
+        margin-right: 12px;
+        cursor: pointer;
+      }
+      .option-label {
+        flex: 1;
+        font-size: 14px;
+        color: #374151;
+      }
+      .text-input {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 14px;
+        margin-bottom: 20px;
+        outline: none;
+      }
+      .text-input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+      }
+      .interaction-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: none;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary {
+        background: #3b82f6;
+        color: white;
+      }
+      .btn-primary:hover {
+        background: #2563eb;
+      }
+      .btn-secondary {
+        background: #e5e7eb;
+        color: #374151;
+      }
+      .btn-secondary:hover {
+        background: #d1d5db;
+      }
+
+      /* Markdown rendered styles */
+      .md h1 { font-size: 1.6em; font-weight: 700; margin: 0 0 12px; color: #111827; }
+      .md h2 { font-size: 1.3em; font-weight: 600; margin: 20px 0 8px; color: #1f2937; }
+      .md h3 { font-size: 1.1em; font-weight: 600; margin: 16px 0 6px; color: #374151; }
+      .md p  { margin: 0 0 12px; }
+      .md ul, .md ol { margin: 0 0 12px; padding-left: 24px; }
+      .md li { margin-bottom: 4px; }
+      .md code {
+        background: #f3f4f6;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-family: ui-monospace, monospace;
+        font-size: 0.88em;
+        color: #d97706;
+      }
+      .md pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        border-radius: 6px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        margin: 0 0 14px;
+      }
+      .md table { border-collapse: collapse; width: 100%; margin: 0 0 14px; font-size: 0.93em; }
+      .md th { background: #f3f4f6; font-weight: 600; }
+      .md th, .md td { border: 1px solid #d1d5db; padding: 7px 12px; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class='content-wrapper'>
+        <button type="button" id="copy-btn" class="copy-btn">Copy</button>
+        {{#if title}}
+          <div class='content-title'>{{title}}</div>
+        {{/if}}
+        
+        <script id='raw-data' type='application/json'>{{{contentJson}}}</script>
+
+        {{#if isMarkdown}}
+          <div class='md' id='md-root'></div>
+          <script>
+            (function () {
+              var raw = '';
+              try {
+                var dataEl = document.getElementById('raw-data');
+                raw = dataEl ? JSON.parse(dataEl.textContent || '""') : '';
+              } catch (e) { raw = ''; }
+
+              function escape(s) {
+                return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+              }
+
+              function parseInline(s) {
+                return s
+                  .replace(/`([^`]+)`/g, '<code>$1</code>')
+                  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                  .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+                  .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+                  .replace(/_([^_]+)_/g, '<em>$1</em>')
+                  .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, text, url) {
+                    var safe = /^(https?:|mailto:|#)/.test(url.trim()) ? url : '#';
+                    return '<a href="' + safe + '" target="_blank" rel="noopener">' + text + '</a>';
+                  });
+              }
+
+              function parseMarkdown(md) {
+                var lines = md.split('\n');
+                var html = '';
+                var i = 0;
+                var inPre = false;
+                var preLines = [];
+                var preInfo = '';
+
+                while (i < lines.length) {
+                  var line = lines[i];
+                  if (/^```/.test(line)) {
+                    if (!inPre) {
+                      inPre = true;
+                      preInfo = line.slice(3).trim();
+                      preLines = [];
+                    } else {
+                      html += '<pre><code' + (preInfo ? ' class="language-' + escape(preInfo) + '"' : '') + '>' +
+                               escape(preLines.join('\n')) + '</code></pre>\n';
+                      inPre = false;
+                      preLines = [];
+                      preInfo = '';
+                    }
+                    i++; continue;
+                  }
+                  if (inPre) { preLines.push(line); i++; continue; }
+
+                  var hm = line.match(/^(#{1,6})\s+(.+)$/);
+                  if (hm) {
+                    var lvl = hm[1].length;
+                    html += '<h' + lvl + '>' + parseInline(escape(hm[2])) + '</h' + lvl + '>\n';
+                    i++; continue;
+                  }
+
+                  if (/^---+$/.test(line.trim())) {
+                    html += '<hr />\n'; i++; continue;
+                  }
+
+                  if (/^>\s?/.test(line)) {
+                    var bqLines = [];
+                    while (i < lines.length && /^>\s?/.test(lines[i])) {
+                      bqLines.push(lines[i].replace(/^>\s?/, ''));
+                      i++;
+                    }
+                    html += '<blockquote>' + parseInline(escape(bqLines.join(' '))) + '</blockquote>\n';
+                    continue;
+                  }
+
+                  if (/\|/.test(line) && i + 1 < lines.length && /^[\|\s\-:]+$/.test(lines[i + 1])) {
+                    var headers = line.split('|').filter(function(c){ return c.trim(); });
+                    i += 2;
+                    html += '<table><thead><tr>' +
+                      headers.map(function(h){ return '<th>' + parseInline(escape(h.trim())) + '</th>'; }).join('') +
+                      '</tr></thead><tbody>';
+                    while (i < lines.length && /\|/.test(lines[i])) {
+                      var cells = lines[i].split('|').filter(function(c){ return c.trim(); });
+                      html += '<tr>' + cells.map(function(c){ return '<td>' + parseInline(escape(c.trim())) + '</td>'; }).join('') + '</tr>\n';
+                      i++;
+                    }
+                    html += '</tbody></table>\n';
+                    continue;
+                  }
+
+                  if (/^[\-\*\+]\s/.test(line)) {
+                    html += '<ul>\n';
+                    while (i < lines.length && /^[\-\*\+]\s/.test(lines[i])) {
+                      html += '<li>' + parseInline(escape(lines[i].replace(/^[\-\*\+]\s/, ''))) + '</li>\n';
+                      i++;
+                    }
+                    html += '</ul>\n';
+                    continue;
+                  }
+
+                  if (/^\d+\.\s/.test(line)) {
+                    html += '<ol>\n';
+                    while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+                      html += '<li>' + parseInline(escape(lines[i].replace(/^\d+\.\s/, ''))) + '</li>\n';
+                      i++;
+                    }
+                    html += '</ol>\n';
+                    continue;
+                  }
+
+                  if (line.trim() === '') { html += '</p><p>'; i++; continue; }
+                  html += parseInline(escape(line)) + ' ';
+                  i++;
+                }
+
+                return '<p>' + html.replace(/<\/p><p>\s*<\/p><p>/g, '</p><p>') + '</p>';
+              }
+
+              document.getElementById('md-root').innerHTML = parseMarkdown(raw);
+            })();
+          </script>
+        {{else}}
+          <div>{{{content}}}</div>
+        {{/if}}
+      </div>
+
+      {{#if interaction}}
+      <div class="interaction-wrapper">
+        <div class="interaction-prompt">{{interaction.prompt}}</div>
+        <div class="interaction-form">
+          {{#if isText}}
+            <input type="text" id="text-answer" class="text-input" placeholder="Type your answer here..." autofocus>
+          {{else}}
+            <div class='options-list'>{{{optionsHtml}}}</div>
+          {{/if}}
+          
+          <div class='interaction-actions'>
+            <button id='cancel-btn' class='btn btn-secondary'>Cancel</button>
+            <button id='submit-btn' class='btn btn-primary'>Submit</button>
+          </div>
+        </div>
+      </div>
+      {{/if}}
+    </div>
+
+    <script>
+      // Interaction logic
+      {{#if interaction}}
+      const messageId = '{{messageId}}';
+      const interactionType = '{{interaction.type}}';
+      const options = {{{optionsJson}}};
+
+      function handleSubmit() {
+        let answer;
+        if (interactionType === 'text') {
+          answer = document.getElementById('text-answer').value;
+          if (!answer.trim()) {
+            alert('Please enter an answer');
+            return;
+          }
+        } else {
+          const selected = Array.from(
+            document.querySelectorAll('input[name="option"]:checked')
+          ).map((input) => parseInt(input.value));
+
+          if (selected.length === 0) {
+            alert('Please select at least one option');
+            return;
+          }
+
+          answer = interactionType === 'multiselect'
+            ? selected.map((idx) => options[idx])
+            : options[selected[0]];
+        }
+
+        window.parent.postMessage({
+          type: 'tool',
+          payload: {
+            toolName: 'getUserAnswer',
+            params: { messageId, answer },
+          },
+        }, '*');
+      }
+
+      function handleCancel() {
+        window.parent.postMessage({
+          type: 'tool',
+          payload: {
+            toolName: 'getUserAnswer',
+            params: { messageId, answer: null, cancelled: true },
+          },
+        }, '*');
+      }
+
+      document.getElementById('submit-btn').addEventListener('click', handleSubmit);
+      document.getElementById('cancel-btn').addEventListener('click', handleCancel);
+
+      if (interactionType === 'text') {
+        document.getElementById('text-answer').addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') handleSubmit();
+        });
+      }
+      {{/if}}
+
+      // Copy logic
+      document.getElementById('copy-btn').addEventListener('click', function(e) {
+        e.preventDefault();
+        var btn = this;
+        try {
+          var raw = JSON.parse(document.getElementById('raw-data').textContent || '""');
+          navigator.clipboard.writeText(raw).then(function() {
+            btn.textContent = 'Copied!';
+            setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+          });
+        } catch(e) { btn.textContent = 'Error'; }
+      });
+    </script>
+  </body>
+</html>

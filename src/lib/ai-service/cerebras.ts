@@ -5,7 +5,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolToCerebras } from './tool-converters';
+import { ensureSchemaTypeField } from './utils';
 
 const logger = getLogger('CerebrasService');
 
@@ -83,7 +83,59 @@ export class CerebrasService extends BaseAIService<
   convertTools(
     mcpTools: MCPTool[],
   ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
-    return mcpTools.map(convertMCPToolToCerebras);
+    return mcpTools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description || '',
+        parameters: ensureSchemaTypeField(
+          tool.inputSchema as unknown as Record<string, unknown>,
+        ),
+      },
+    }));
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('llama3.1') || lowerName.includes('llama-3.1');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama3.1-70b')) return 131072;
+    if (lowerName.includes('llama3.1-8b')) return 131072;
+    return 8192;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Cerebras doesn't support special thinking fields yet
+    if (message.thinking) {
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return CerebrasService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return CerebrasService.estimateContextWindowForModel(modelName);
   }
 
   /**

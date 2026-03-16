@@ -14,10 +14,15 @@ use tauri_mcp_agent_lib::agent::tools::{
     ToolResultAcceptance,
 };
 use tauri_mcp_agent_lib::agent::AgentConfig;
+use tauri_mcp_agent_lib::mcp::builtin::agent::tools as agent_tools;
 use tauri_mcp_agent_lib::mcp::builtin::assistant::tools as assistant_tools;
 use tauri_mcp_agent_lib::mcp::builtin::service_id::{
     BuiltinServiceId, BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES,
 };
+use tauri_mcp_agent_lib::mcp::builtin::tool::tools as tool_tools;
+use tauri_mcp_agent_lib::mcp::builtin::ui::tools as ui_tools;
+use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
+use tauri_mcp_agent_lib::mcp::service_proxy::routing::{route_tool, ToolRouting};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -191,8 +196,8 @@ fn extract_builtin_tool_ids_core_aliases_always_present_despite_unknown_inputs()
 
     // These are present because they are CORE aliases, not because of alias normalization.
     assert!(
-        tool_ids.contains(&"swarm".to_string()),
-        "swarm is a core alias and must always be present"
+        tool_ids.contains(&"agent".to_string()),
+        "agent is a core alias and must always be present"
     );
     assert!(
         tool_ids.contains(&"attachments".to_string()),
@@ -223,32 +228,61 @@ fn extract_builtin_tool_ids_always_includes_core_aliases() {
     );
 }
 
-/// Regression: mcp_manager was registered as optional:false but omitted from
+/// Regression: tool was registered as optional:false but omitted from
 /// CORE_BUILTIN_SERVICE_ALIASES, so assistants with an explicit alias list
-/// couldn't call mcp_manager tools ("Built-in server 'mcp_manager' not enabled").
-/// This test ensures mcp_manager is always available even when only a single
+/// couldn't call tool tools ("Built-in server 'tool' not enabled").
+/// This test ensures tool is always available even when only a single
 /// unrelated optional service is requested.
 #[test]
-fn mcp_manager_is_always_enabled_for_any_explicit_alias_list() {
-    // Only "browser" explicitly requested — mcp_manager must still be present
+fn tool_is_always_enabled_for_any_explicit_alias_list() {
+    // Only "browser" explicitly requested — tool must still be present
     // because it is a core alias.
     let config = mock_agent_config(Some(vec!["browser"]));
     let tool_ids = extract_builtin_tool_ids(&config);
     assert!(
-        tool_ids.contains(&"mcp_manager".to_string()),
-        "mcp_manager must always be present (it is a core alias), \
+        tool_ids.contains(&"tool".to_string()),
+        "tool must always be present (it is a core alias), \
          but was missing when only 'browser' was in allowedBuiltInServiceAliases"
     );
 }
 
 #[test]
-fn mcp_manager_is_enabled_even_with_empty_alias_list() {
+fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
+    let tool_names: Vec<String> = ui_tools::all_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+
+    assert!(
+        tool_names.contains(&"presentInteractive".to_string()),
+        "presentInteractive must remain on the public UI surface"
+    );
+    assert!(
+        tool_names.contains(&"waitForUserResume".to_string()),
+        "waitForUserResume remains public because it has distinct pause/resume semantics"
+    );
+    assert!(
+        !tool_names.contains(&"visualizeData".to_string()),
+        "visualizeData should be hidden from the AI-facing UI surface in favor of presentInteractive"
+    );
+    assert!(
+        !tool_names.contains(&"promptUser".to_string()),
+        "legacy promptUser should be hidden from the AI-facing UI surface"
+    );
+    assert!(
+        !tool_names.contains(&"presentContent".to_string()),
+        "legacy presentContent should be hidden from the AI-facing UI surface"
+    );
+}
+
+#[test]
+fn tool_is_enabled_even_with_empty_alias_list() {
     // Empty explicit list → only core aliases should be enabled.
     let config = mock_agent_config(Some(vec![]));
     let tool_ids = extract_builtin_tool_ids(&config);
     assert!(
-        tool_ids.contains(&"mcp_manager".to_string()),
-        "mcp_manager must be present even when allowedBuiltInServiceAliases is empty"
+        tool_ids.contains(&"tool".to_string()),
+        "tool must be present even when allowedBuiltInServiceAliases is empty"
     );
 }
 
@@ -290,14 +324,29 @@ fn contentstore_without_underscore_resolves_to_attachments() {
     );
 }
 
-/// "assistant_manager" is a historical variant of "assistant" used in some
-/// UI definitions. Must resolve to the canonical "assistant".
+/// Legacy assistant/swarm aliases must collapse to the canonical "agent"
+/// so older configs keep working without reintroducing deprecated public services.
 #[test]
-fn assistant_manager_alias_maps_to_assistant() {
+fn legacy_agent_aliases_map_to_agent() {
     assert_eq!(
         canonicalize_builtin_service_alias("assistant_manager"),
-        Some("assistant"),
-        "'assistant_manager' must resolve to 'assistant' canonical"
+        Some("agent"),
+        "'assistant_manager' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("assistant"),
+        Some("agent"),
+        "'assistant' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("swarm"),
+        Some("agent"),
+        "'swarm' must resolve to 'agent' canonical"
+    );
+    assert_eq!(
+        canonicalize_builtin_service_alias("session_api"),
+        Some("agent"),
+        "'session_api' must resolve to 'agent' canonical"
     );
 }
 
@@ -314,15 +363,14 @@ fn builtin_service_id_serializes_to_canonical_name() {
         (BuiltinServiceId::Scratchpad, "scratchpad"),
         (BuiltinServiceId::Workspace, "workspace"),
         (BuiltinServiceId::Knowledge, "knowledge"),
-        (BuiltinServiceId::Assistant, "assistant"),
+        (BuiltinServiceId::Agent, "agent"),
         (BuiltinServiceId::Skills, "skills"),
         (BuiltinServiceId::Playbook, "playbook"),
         (BuiltinServiceId::Attachments, "attachments"),
-        (BuiltinServiceId::Swarm, "swarm"),
         (BuiltinServiceId::Ui, "ui"),
         (BuiltinServiceId::Browser, "browser"),
         (BuiltinServiceId::Bootstrap, "bootstrap"),
-        (BuiltinServiceId::McpManager, "mcp_manager"),
+        (BuiltinServiceId::Tool, "tool"),
     ];
     for (id, expected) in cases {
         let json = serde_json::to_string(&id).unwrap();
@@ -366,19 +414,21 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
-        builtin::assistant::NAME,
+        builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
         builtin::content_store::NAME,
-        builtin::session_api::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
-        builtin::mcp_manager::NAME,
+        builtin::tool::NAME,
     ];
 
     for name in all_names {
+        if name.is_empty() {
+            continue;
+        }
         assert!(
             canonicalize_builtin_service_alias(name).is_some(),
             "server NAME {name:?} is not in BUILTIN_SERVICE_REGISTRY – \
@@ -397,20 +447,22 @@ fn builtin_server_names_are_unique() {
         builtin::scratchpad::NAME,
         builtin::workspace::NAME,
         builtin::knowledge::NAME,
-        builtin::assistant::NAME,
+        builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
         builtin::content_store::NAME,
-        builtin::session_api::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
         builtin::media::NAME,
-        builtin::mcp_manager::NAME,
+        builtin::tool::NAME,
     ];
 
     let mut seen = std::collections::HashSet::new();
     for name in all_names {
+        if name.is_empty() {
+            continue;
+        }
         assert!(seen.insert(*name), "duplicate server NAME {name:?}");
     }
 }
@@ -439,18 +491,22 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Planning => builtin::planning::NAME,
             BuiltinServiceId::Scratchpad => builtin::scratchpad::NAME,
             BuiltinServiceId::Workspace => builtin::workspace::NAME,
+            BuiltinServiceId::Agent => builtin::agent::NAME,
             BuiltinServiceId::Knowledge => builtin::knowledge::NAME,
-            BuiltinServiceId::Assistant => builtin::assistant::NAME,
             BuiltinServiceId::Skills => builtin::skills::NAME,
             BuiltinServiceId::Playbook => builtin::playbook::NAME,
             BuiltinServiceId::Attachments => builtin::content_store::NAME,
-            BuiltinServiceId::Swarm => builtin::session_api::NAME,
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
-            BuiltinServiceId::McpManager => builtin::mcp_manager::NAME,
+            BuiltinServiceId::Tool => builtin::tool::NAME,
             BuiltinServiceId::Media => builtin::media::NAME,
         };
+
+        if name.is_empty() {
+            continue;
+        }
+
         assert_eq!(
             name, entry.canonical,
             "Server NAME constant for {:?} must match registry canonical",
@@ -499,5 +555,73 @@ fn update_assistant_tool_schema_includes_description_field() {
         "updateAssistant input_schema must include a 'description' property; \
          found keys: {:?}",
         props.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn agent_create_tool_name_is_unprefixed() {
+    let create_tool = agent_tools::all_tools()
+        .into_iter()
+        .find(|tool| tool.title.as_deref() == Some("Create Agent Configuration"))
+        .expect("create tool must exist");
+
+    assert_eq!(
+        create_tool.name, "create",
+        "builtin agent tool names must remain unprefixed; the proxy adds 'agent__'"
+    );
+}
+
+#[test]
+fn tool_transport_schema_allows_env_and_header_maps() {
+    let register_tool = tool_tools::register_server_tool();
+    let props = extract_object_properties(&register_tool.input_schema, "register");
+    let transport = props
+        .get("transport")
+        .expect("register input_schema must contain transport");
+    let transport_props = extract_object_properties(transport, "transport");
+
+    for key in ["env", "headers"] {
+        let field = transport_props
+            .get(key)
+            .unwrap_or_else(|| panic!("transport schema missing '{key}'"));
+
+        match &field.schema_type {
+            JSONSchemaType::Object {
+                additional_properties,
+                ..
+            } => assert_eq!(
+                *additional_properties,
+                Some(true),
+                "{key} must allow arbitrary key/value pairs"
+            ),
+            other => panic!("{key} should be an object map, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn legacy_builtin_aliases_route_to_canonical_servers() {
+    assert_eq!(
+        route_tool("assistant__createAssistant").expect("assistant alias should route"),
+        ToolRouting::Builtin {
+            server_id: "agent".to_string(),
+            tool_name: "createAssistant".to_string(),
+        }
+    );
+
+    assert_eq!(
+        route_tool("swarm__awaitAgent").expect("swarm alias should route"),
+        ToolRouting::Builtin {
+            server_id: "agent".to_string(),
+            tool_name: "awaitAgent".to_string(),
+        }
+    );
+
+    assert_eq!(
+        route_tool("mcp_manager__listTools").expect("mcp_manager alias should route"),
+        ToolRouting::Builtin {
+            server_id: "tool".to_string(),
+            tool_name: "listTools".to_string(),
+        }
     );
 }

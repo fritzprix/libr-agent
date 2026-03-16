@@ -10,6 +10,7 @@ import { OllamaService } from './ollama';
 import { OpenRouterService } from './openrouter';
 import { EmptyAIService } from './empty';
 import { LLMConfigManager } from '../llm-config-manager';
+import { registerAIServiceFactory } from './model-capabilities';
 
 const logger = getLogger('AIService');
 const configManager = new LLMConfigManager();
@@ -24,6 +25,11 @@ interface ServiceInstance {
   created: number;
 }
 
+interface CapabilityDelegate {
+  supportsTools(modelName: string): boolean;
+  estimateContextWindow(modelName: string): number;
+}
+
 /**
  * A factory class for creating and managing AI service instances.
  * It provides a centralized way to get service instances, caches them to avoid
@@ -32,6 +38,60 @@ interface ServiceInstance {
 export class AIServiceFactory {
   private static instances: Map<string, ServiceInstance> = new Map();
   private static readonly INSTANCE_TTL = 1000 * 60 * 60; // 1 hour
+
+  static getCapabilityDelegate(
+    provider: AIServiceProvider,
+  ): CapabilityDelegate {
+    switch (provider) {
+      case AIServiceProvider.Groq:
+        return {
+          supportsTools: GroqService.supportsToolsForModel,
+          estimateContextWindow: GroqService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.OpenAI:
+        return {
+          supportsTools: OpenAIService.supportsToolsForModel,
+          estimateContextWindow: OpenAIService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Anthropic:
+        return {
+          supportsTools: AnthropicService.supportsToolsForModel,
+          estimateContextWindow: AnthropicService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Gemini:
+        return {
+          supportsTools: GeminiService.supportsToolsForModel,
+          estimateContextWindow: GeminiService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Fireworks:
+        return {
+          supportsTools: FireworksService.supportsToolsForModel,
+          estimateContextWindow: FireworksService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Cerebras:
+        return {
+          supportsTools: CerebrasService.supportsToolsForModel,
+          estimateContextWindow: CerebrasService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Ollama:
+        return {
+          supportsTools: OllamaService.supportsToolsForModel,
+          estimateContextWindow: OllamaService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.OpenRouter:
+        return {
+          supportsTools: OpenRouterService.supportsToolsForModel,
+          estimateContextWindow:
+            OpenRouterService.estimateContextWindowForModel,
+        };
+      case AIServiceProvider.Empty:
+      default:
+        return {
+          supportsTools: EmptyAIService.supportsToolsForModel,
+          estimateContextWindow: EmptyAIService.estimateContextWindowForModel,
+        };
+    }
+  }
 
   /**
    * Gets an instance of an AI service for a given provider.
@@ -151,3 +211,6 @@ export class AIServiceFactory {
     }
   }
 }
+
+// Register factory for capability delegation
+registerAIServiceFactory(AIServiceFactory);

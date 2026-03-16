@@ -75,6 +75,20 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
     });
   }
 
+  static supportsToolsForModel(modelName: string): boolean {
+    return getModelToolSupport(modelName);
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama-3.1-405b')) return 128000;
+    if (lowerName.includes('llama-3.1')) return 128000;
+    if (lowerName.includes('llama-3.2')) return 128000;
+    if (lowerName.includes('mistral-nemo')) return 128000;
+    if (lowerName.includes('command-r')) return 128000;
+    return 32768;
+  }
+
   /**
    * @inheritdoc
    * @returns `AIServiceProvider.Ollama`.
@@ -162,6 +176,35 @@ export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
       );
       return [];
     }
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Ollama doesn't support thinking fields in the same way Anthropic does
+    if (message.thinking) {
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return OllamaService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return OllamaService.estimateContextWindowForModel(modelName);
   }
 
   /**

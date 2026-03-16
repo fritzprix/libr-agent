@@ -283,6 +283,18 @@ impl MCPResult {
         }
     }
 
+    /// Creates a non-error informational MCPResult.
+    #[allow(dead_code)]
+    pub fn informational(message: &str) -> Self {
+        Self::success(message)
+    }
+
+    /// Creates a non-error informational MCPResult with structured data.
+    #[allow(dead_code)]
+    pub fn informational_with_data(message: &str, data: serde_json::Value) -> Self {
+        Self::success_with_data(message, data)
+    }
+
     /// Creates an error MCPResult.
     #[allow(dead_code)]
     pub fn error(message: &str) -> Self {

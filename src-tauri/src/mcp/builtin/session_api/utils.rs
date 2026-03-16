@@ -34,7 +34,7 @@ pub fn swarm_error(
     crate::mcp::builtin::error_guidance::guided_error(
         category,
         format!("[{}] {}", operation, cause),
-        crate::mcp::builtin::error_guidance::ToolGroup::Swarm,
+        crate::mcp::builtin::error_guidance::ToolGroup::Agent,
     )
     .guidance(hints)
     .to_mcp_result()
@@ -46,8 +46,8 @@ pub fn session_not_found_error(operation: &str, session_id: &str) -> MCPResult {
         operation,
         format!("Agent session '{}' not found", session_id),
         vec![
-            "Use getChildAgents() to list active sub-agents under your command".to_string(),
-            "Verify the session ID matches one of the IDs from your swarm board".to_string(),
+            "Use list(type=\"sessions\") to list active delegated sessions".to_string(),
+            "Verify the session ID matches one of the active delegated session IDs".to_string(),
             "The session may have been terminated or expired".to_string(),
         ],
     )
@@ -213,13 +213,13 @@ pub fn handle_wait_timeout_result(
             ) {
                 let text = if is_spawn {
                     format!(
-                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use awaitAgent(\"{}\") later to fetch the final result.",
+                        "Child session created (ID: {}) but waiting for completion timed out after {}s.\n\nThe agent is likely still working. Use checkSession(sessionId=\"{}\", wait=true) later to fetch the final result.",
                         session_id, timeout_seconds, session_id
                     )
                 } else {
                     format!(
-                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call awaitAgent again to continue waiting, or use getAgentLog to check progress.",
-                        session_id, timeout_seconds
+                        "Waiting for session {} timed out after {}s. The agent is likely still working.\n\nYou can call checkSession(sessionId=\"{}\", wait=true) again to continue waiting, or use list(type=\"sessions\") to confirm it is still active.",
+                        session_id, timeout_seconds, session_id
                     )
                 };
 

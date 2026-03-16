@@ -91,6 +91,17 @@ pub async fn handle_llm_response(
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
     }
 
+    // [Message ID Matching] Use pre-generated ID if available
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let mut expected_id = session.expected_response_id.write().await;
+            if let Some(id) = expected_id.take() {
+                assistant_message.id = id;
+            }
+        }
+    }
+
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
     let mut forced_circuit_break_message: Option<crate::mcp::types::MCPContent> = None;
     if let Some(tool_calls) = &mut assistant_message.tool_calls {

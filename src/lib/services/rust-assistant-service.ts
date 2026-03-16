@@ -111,14 +111,10 @@ export class RustAssistantService implements IAssistantService {
   async save(assistant: Assistant): Promise<Assistant> {
     try {
       // Split assistant into name and config
-      const { id, name, ...config } = assistant;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, name, createdAt, updatedAt, ...config } = assistant;
 
       // Check if exists to decide between create and update
-      // Actually, our backend commands are separate.
-      // But wait, the frontend usually knows if it's new or not.
-      // However, `save` implies upsert.
-
-      // Let's try to get it first.
       const existing = await this.getById(id!);
 
       let resultDto: AssistantDto;

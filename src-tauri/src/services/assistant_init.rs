@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 
 fn mastermind_system_prompt() -> &'static str {
     r#"You are Master Mind: the command orchestrator for complex, high-impact missions.
-You coordinate strategy, delegate execution to specialist assistants, and keep shared knowledge coherent under pressure.
+You coordinate strategy, delegate execution to specialist agents, and keep shared knowledge coherent under pressure.
 
 PRIME DIRECTIVE:
 Deliver reliable outcomes by combining planning discipline, evidence-based execution, and continuous situational awareness.
@@ -34,9 +34,9 @@ KNOWLEDGE LOOP:
 - Prefer reusable knowledge over repeating expensive investigation.
 
 SPECIALIST COORDINATION MODEL:
-- Libr Assistant: general field operations and cross-domain execution.
+- Libr Agent: general field operations and cross-domain execution.
 - Coding Expert: implementation/refactor/debug execution.
-- App Wizard: environment, MCP, assistant configuration execution.
+- App Wizard: environment, MCP, agent configuration execution.
 - Master Mind: strategy, delegation, quality gates, conflict resolution.
 
 OPERATING STYLE:
@@ -150,7 +150,7 @@ pub async fn ensure_default_assistants() -> Result<(), String> {
 
     if !libr_exists {
         println!("Creating default 'Libr Assistant'...");
-        let system_prompt = r#"You are the Libr Assistant: a field operations specialist in the Master Mind command structure.
+        let system_prompt = r#"You are the Libr Agent: a field operations specialist in the Master Mind command structure.
 Your primary directive is to provide ACCURATE, VERIFIED assistance by combining knowledge with action.
 
 CORE PROTOCOLS:
@@ -182,7 +182,6 @@ ATTENTION ECONOMY:
             "deletionProtected": true,
             "localServices": [],
             "allowedBuiltInServiceAliases": [
-                "knowledge",
                 "attachments",
                 "workspace",
                 "browser",
@@ -249,7 +248,6 @@ ATTENTION ECONOMY:
             "allowedBuiltInServiceAliases": [
                 "workspace",
                 "planning",
-                "knowledge",
                 "attachments",
                 "playbook"
             ]
@@ -266,7 +264,7 @@ ATTENTION ECONOMY:
     // 3. App Wizard (Setup Assistant)
     let wizard_name = "App Wizard";
     let wizard_description =
-        "Environment and configuration specialist for MCP setup, assistant management, and system readiness.";
+        "Environment and configuration specialist for MCP setup, agent management, and system readiness.";
     let wizard_exists = repo
         .check_assistant_exists(wizard_name)
         .await
@@ -275,7 +273,7 @@ ATTENTION ECONOMY:
     if !wizard_exists {
         println!("Creating default 'App Wizard'...");
         let system_prompt = r#"You are the App Wizard: an environment and systems setup specialist under Master Mind command.
-Your role is to help users configure the application, manage assistants, and set up MCP servers.
+Your role is to help users configure the application, manage agents, and set up MCP servers.
 
 CORE PRINCIPLES:
 1. CONFIGURATION FOCUS: Configure settings only, not runtime behavior.
@@ -284,13 +282,13 @@ CORE PRINCIPLES:
 COMPLEX TASKS (multi-step setup):
 1. Define setup objective clearly
 2. Break into configuration steps, track progress, verify each change
-3. Save critical info: assistant IDs/names, MCP configs (commands, paths, env vars), system requirements
+3. Save critical info: agent IDs/names, MCP configs (commands, paths, env vars), system requirements
 
 CONTEXT MANAGEMENT:
 Your context is limited. For complex setup: establish persistent goals, save configuration details to scratchpad (limit ~10 items), reference saved info instead of re-querying.
 
 CAPABILITIES:
-1. ASSISTANTS: Create, update, list, search. Write detailed system prompts following best practices.
+1. AGENTS: Create, update, list, search. Write detailed system prompts following best practices.
 2. MCP SERVERS: Register, configure (args, paths, env vars), explain requirements.
 3. ENVIRONMENT: Detect OS, verify dependencies, guide installation, validate readiness.
 
@@ -310,11 +308,10 @@ ATTENTION ECONOMY:
             "localServices": [],
             "allowedBuiltInServiceAliases": [
                 "bootstrap",
-                "mcp_manager",
-                "assistant",
+                "tool",
+                "agent",
                 "workspace",
                 "planning",
-                "knowledge",
                 "attachments"
             ]
         });
@@ -348,11 +345,9 @@ ATTENTION ECONOMY:
             "localServices": [],
             "allowedBuiltInServiceAliases": [
                 "planning",
-                "knowledge",
                 "attachments",
                 "playbook",
-                "assistant",
-                "swarm"
+                "agent"
             ]
         });
 

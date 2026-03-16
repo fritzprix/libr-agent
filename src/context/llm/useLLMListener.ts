@@ -132,6 +132,7 @@ export function useLLMListener({
         async (event) => {
           const {
             sessionId,
+            responseMessageId,
             messages: rawMessages,
             model,
             provider,
@@ -153,6 +154,7 @@ export function useLLMListener({
 
           logger.info('📥 Received LLM completion request from Rust', {
             sessionId,
+            responseMessageId,
             messageCount: messages.length,
             toolCount: availableTools?.length ?? 0,
             provider,
@@ -180,7 +182,7 @@ export function useLLMListener({
           setStreamingMessages((prev) => {
             const next = new Map(prev);
             next.set(sessionId, {
-              id: `msg_${Date.now()}`,
+              id: responseMessageId || `msg_${Date.now()}`,
               sessionId,
               threadId: sessionId,
               role: 'assistant',
@@ -221,7 +223,7 @@ export function useLLMListener({
                   setStreamingMessages((prev) => {
                     const next = new Map(prev);
                     next.set(sessionId, {
-                      id: `msg_${Date.now()}`,
+                      id: responseMessageId || `msg_${Date.now()}`,
                       sessionId,
                       threadId: sessionId,
                       role: 'assistant',
@@ -297,7 +299,7 @@ export function useLLMListener({
                 setStreamingMessages((prev) => {
                   const next = new Map(prev);
                   next.set(sessionId, {
-                    id: `msg_${Date.now()}`,
+                    id: responseMessageId || `msg_${Date.now()}`,
                     sessionId,
                     threadId: sessionId,
                     role: 'assistant',

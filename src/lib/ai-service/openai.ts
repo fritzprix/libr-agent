@@ -12,7 +12,7 @@ import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { llmConfigManager, ModelInfo } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
-import { convertMCPToolToOpenAI } from './tool-converters';
+import { ensureSchemaTypeField } from './utils';
 const logger = getLogger('OpenAIService');
 
 /** Shape of usage data returned by OpenAI/compatible streaming chunks. */
@@ -116,6 +116,24 @@ export class OpenAIService extends BaseAIService<
     });
   }
 
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    const isReasoningModel = /^o(?:1|3|4)(?:$|[-.])/.test(lowerName);
+    return (
+      lowerName.includes('gpt-4') ||
+      lowerName.includes('gpt-3.5-turbo') ||
+      isReasoningModel
+    );
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('gpt-4.1')) return 1000000;
+    if (lowerName.includes('gpt-4o')) return 128000;
+    if (/^o(?:3|4)(?:$|[-.])/.test(lowerName)) return 200000;
+    return 8192;
+  }
+
   /**
    * @inheritdoc
    * @returns `AIServiceProvider.OpenAI`.
@@ -128,7 +146,26 @@ export class OpenAIService extends BaseAIService<
    * @inheritdoc
    */
   convertTools(mcpTools: MCPTool[]): OpenAIChatCompletionTool[] {
-    return mcpTools.map(convertMCPToolToOpenAI);
+    return mcpTools.map((mcpTool) => {
+      const properties = mcpTool.inputSchema.properties || {};
+      const required = mcpTool.inputSchema.required || [];
+
+      const parameters = ensureSchemaTypeField({
+        type: 'object' as const,
+        properties: properties,
+        required: required,
+      });
+
+      return {
+        type: 'function',
+        function: {
+          name: mcpTool.name,
+          description: mcpTool.description,
+          parameters:
+            parameters as OpenAI.Chat.ChatCompletionTool['function']['parameters'],
+        },
+      };
+    });
   }
 
   /**
@@ -425,6 +462,57 @@ export class OpenAIService extends BaseAIService<
     } catch (error) {
       this.handleStreamingError(error, { messages, options, config });
     }
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Remove thinking-related fields that OpenAI family doesn't support
+    if (message.thinking) {
+      logger.debug('Removing thinking field for OpenAI family', {
+        messageId: message.id,
+      });
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+
+    // Convert tool_use to tool_calls for OpenAI family
+    if (message.tool_use && !message.tool_calls) {
+      message.tool_calls = [
+        {
+          id: message.tool_use.id,
+          type: 'function',
+          function: {
+            name: message.tool_use.name,
+            arguments: JSON.stringify(message.tool_use.input),
+          },
+        },
+      ];
+      logger.debug('Converted tool_use to tool_calls for OpenAI family', {
+        messageId: message.id,
+        toolName: message.tool_use.name,
+      });
+      delete message.tool_use;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return OpenAIService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return OpenAIService.estimateContextWindowForModel(modelName);
   }
 
   /**

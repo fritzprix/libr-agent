@@ -72,13 +72,13 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
                     args.push(flag.to_string());
                     args.push(path_str.clone());
                 } else if needs_cd_hack {
-                    // xterm -e sh -c "cd 'path' && exec $SHELL"
+                    // xterm -e sh -c "cd 'path' && exec ${SHELL:-/bin/sh}"
                     args.push("-e".to_string());
                     args.push("sh".to_string());
                     args.push("-c".to_string());
                     // Escape single quotes for shell
                     let path_quoted = format!("'{}'", path_str.replace('\'', "'\\''"));
-                    args.push(format!("cd {} && exec $SHELL", path_quoted));
+                    args.push(format!("cd {} && exec ${{SHELL:-/bin/sh}}", path_quoted));
                 }
 
                 return Ok((term.to_string(), args));
@@ -110,9 +110,10 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
 pub fn open_in_terminal(path: &Path) -> Result<(), String> {
     let (program, args) = get_terminal_command(path)?;
 
-    Command::new(&program)
-        .args(&args)
-        .spawn()
+    let mut cmd = Command::new(&program);
+    cmd.args(&args);
+    crate::utils::env::apply_isolated_env(&mut cmd);
+    cmd.spawn()
         .map_err(|e| format!("Failed to spawn terminal '{}': {}", program, e))?;
 
     Ok(())

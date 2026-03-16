@@ -114,6 +114,7 @@ pub async fn resume_session(
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
         );
@@ -228,6 +229,9 @@ pub async fn update_session_status(
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(session_id) {
         session.metadata.status = status.clone();
+        // SP3: Update is_running based on status.
+        // Busy means the workflow is active/running.
+        session.is_running = status == SessionStatus::Busy;
     }
     drop(active); // Release write lock before waking waiters.
 
