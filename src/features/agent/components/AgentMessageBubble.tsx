@@ -150,11 +150,11 @@ const arePropsEqual = (
   // Collect all tool call IDs that this bubble may actually render results for:
   // - Direct tool calls passed via groupedToolCalls
   // - Tool calls embedded in groupedMessages (used when groupedMessages is the source of truth)
-  const relevantIds = new Set<string>();
+  const relevantIds: string[] = [];
 
   if (next.groupedToolCalls) {
     for (const call of next.groupedToolCalls) {
-      relevantIds.add(call.id);
+      relevantIds.push(call.id);
     }
   }
 
@@ -162,7 +162,7 @@ const arePropsEqual = (
     for (const message of next.groupedMessages) {
       if (message.tool_calls) {
         for (const call of message.tool_calls) {
-          relevantIds.add(call.id);
+          relevantIds.push(call.id);
         }
       }
     }
@@ -170,13 +170,19 @@ const arePropsEqual = (
 
   // If this bubble has no tool calls at all, it does not depend on toolResultsMap.
   // Skip the re-render (e.g. tool_error_group bubbles that receive no toolResultsMap).
-  if (relevantIds.size === 0) {
+  if (relevantIds.length === 0) {
     return true;
   }
 
   // Re-render only if a result that THIS bubble renders has actually changed.
+  const idUsageCount = new Map<string, number>();
   for (const id of relevantIds) {
-    if (prev.toolResultsMap?.get(id) !== next.toolResultsMap?.get(id)) {
+    const count = idUsageCount.get(id) || 0;
+    idUsageCount.set(id, count + 1);
+    
+    const key = count === 0 ? id : `${id}_dup${count}`;
+    
+    if (prev.toolResultsMap?.get(key) !== next.toolResultsMap?.get(key)) {
       return false;
     }
   }

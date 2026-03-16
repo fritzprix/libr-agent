@@ -287,7 +287,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
 
           return (
             <ToolCallCompactItem
-              key={toolCall.id}
+              key={`${toolCall.id}-${index}`}
               toolCall={toolCall}
               toolResult={toolResult}
               isLast={isLastItem}

@@ -174,13 +174,23 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
     }
 
     // Helper to capture tool results with copy-on-write logic
+    // Uses a composite key to handle LLM hallucinations where multiple tool calls share the same ID
     const captureToolResult = (msg: Message, index: number) => {
       if (msg.role === 'tool' && msg.tool_call_id) {
         if (!isMapCloned) {
           toolResultsMap = new Map(toolResultsMap);
           isMapCloned = true;
         }
-        toolResultsMap.set(msg.tool_call_id, msg);
+        
+        // Handle potential duplicate IDs by appending a sequence number if the key already exists
+        let key = msg.tool_call_id;
+        let seq = 1;
+        while (toolResultsMap.has(key)) {
+          key = `${msg.tool_call_id}_dup${seq}`;
+          seq++;
+        }
+        
+        toolResultsMap.set(key, msg);
         newLastToolResultIndex = Math.max(newLastToolResultIndex, index);
       }
     };
@@ -284,11 +294,16 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
         // Group if there are any tool calls
         if (allToolCalls.length > 0) {
           // Pre-calculate results array to avoid O(K) mapping in render loop
-          // Note: captureToolResult is called for each tool result message during the scan,
-          // so toolResultsMap is populated before we access it here.
-          const results = allToolCalls.map((call) =>
-            toolResultsMap.get(call.id),
-          );
+          // Handle duplicate IDs by tracking usage count
+          const idUsageCount = new Map<string, number>();
+          
+          const results = allToolCalls.map((call) => {
+            const count = idUsageCount.get(call.id) || 0;
+            idUsageCount.set(call.id, count + 1);
+            
+            const key = count === 0 ? call.id : `${call.id}_dup${count}`;
+            return toolResultsMap.get(key);
+          });
 
           groupedMessages.push({
             type: 'tool_group',
