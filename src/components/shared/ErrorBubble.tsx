@@ -1,4 +1,5 @@
 import React, { memo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Message } from '@/models/chat';
 import { BaseBubble } from '@/components/ui/BaseBubble';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ interface ErrorBubbleProps {
 
 export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
   ({ error, onRetry }) => {
+    const { t } = useTranslation('common');
     const [retrying, setRetrying] = useState(false);
 
     const handleRetry = async () => {
@@ -91,7 +93,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
     logger.info('error : ', { error });
     return (
       <BaseBubble
-        title="Error"
+        title={t('errorBubble.title', 'Error')}
         defaultExpanded={true}
         icon={getErrorIcon(error?.type || 'UNKNOWN_ERROR')}
         badge={
@@ -105,7 +107,7 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
       >
         <div className="space-y-3">
           <p className="text-muted-foreground break-words whitespace-pre-wrap">
-            {error?.displayMessage || 'An unknown error occurred.'}
+            {error?.displayMessage || t('errorBubble.unknownError', 'An unknown error occurred.')}
           </p>
 
           {error?.recoverable && (
@@ -119,12 +121,12 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
               {retrying ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Retrying...
+                  {t('errorBubble.retrying', 'Retrying...')}
                 </>
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4" />
-                  Try Again
+                  {t('errorBubble.tryAgain', 'Try Again')}
                 </>
               )}
             </Button>
