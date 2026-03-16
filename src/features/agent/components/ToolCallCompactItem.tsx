@@ -163,7 +163,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
       {/* Collapsed header line */}
       <button
         type="button"
-        className="w-full text-left"
+        className="w-full text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
         aria-expanded={isExpanded}
         aria-controls={detailsId}
         onClick={() => setIsExpanded(!isExpanded)}
