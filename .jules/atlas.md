@@ -41,3 +41,5 @@ This log tracks platform-specific fixes, assumptions resolved, and cross-platfor
 ## 2026-03-03 - [Export Operations & File Export Service] **Simplification:** [Code cleanup for ZIP archive path construction] **Resolved:** [Replaced multi-step component decomposition with `to_string_lossy().replace('\\', "/")` for standard path normalization while strictly enforcing ZIP specification separators across all OSes]
 
 ## 2026-03-10 - [Database] **Platform Bug:** [Hardcoded sqlite:// formatting strings failed to connect on Windows due to unescaped backslashes in path_lossy results] **Resolved:** [Created `format_sqlite_url` to safely convert all backslashes to forward slashes before SQLite connection generation]
+
+## 2026-04-18 - [src-tauri/src/mcp/builtin/workspace] **Platform Bug:** [Hardcoded backslashes from path.to_string_lossy() causing Windows bugs] **Resolved:** [Implemented OS-conditional string replacement `#[cfg(target_os = "windows")] let p = p.replace('\\', "/");` to force forward slashes on Windows without corrupting valid Unix filenames that contain backslashes]

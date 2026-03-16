@@ -469,7 +469,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         }
 
         let workspace_dir_path = self.get_workspace_dir(&session_id);
-        let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
+        let workspace_dir = {
+            let path_str = workspace_dir_path.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let path_str = path_str.replace('\\', "/");
+            path_str
+        };
 
         // Platform information
         let os = std::env::consts::OS;

@@ -191,8 +191,15 @@ impl WorkspaceServer {
                     .metadata()
                     .map_err(|e| format!("Metadata error: {e}"))?;
 
+                let path_str = {
+                    let p = relative_path.to_string_lossy().to_string();
+                    #[cfg(target_os = "windows")]
+                    let p = p.replace('\\', "/");
+                    p
+                };
+
                 results.push(json!({
-                    "path": relative_path.to_string_lossy(),
+                    "path": path_str,
                     "name": file_name.unwrap_or(""),
                     "type": if is_dir { "directory" } else { "file" },
                     "size": if is_file { Some(metadata.len()) } else { None }
