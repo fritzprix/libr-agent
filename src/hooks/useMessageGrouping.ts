@@ -181,7 +181,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           toolResultsMap = new Map(toolResultsMap);
           isMapCloned = true;
         }
-        
+
         // Handle potential duplicate IDs by appending a sequence number if the key already exists
         let key = msg.tool_call_id;
         let seq = 1;
@@ -189,7 +189,7 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           key = `${msg.tool_call_id}_dup${seq}`;
           seq++;
         }
-        
+
         toolResultsMap.set(key, msg);
         newLastToolResultIndex = Math.max(newLastToolResultIndex, index);
       }
@@ -296,11 +296,11 @@ export function useMessageGrouping(messages: Message[]): MessageGroupingResult {
           // Pre-calculate results array to avoid O(K) mapping in render loop
           // Handle duplicate IDs by tracking usage count
           const idUsageCount = new Map<string, number>();
-          
+
           const results = allToolCalls.map((call) => {
             const count = idUsageCount.get(call.id) || 0;
             idUsageCount.set(call.id, count + 1);
-            
+
             const key = count === 0 ? call.id : `${call.id}_dup${count}`;
             return toolResultsMap.get(key);
           });

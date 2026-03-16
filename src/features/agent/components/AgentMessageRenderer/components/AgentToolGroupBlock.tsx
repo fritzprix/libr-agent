@@ -38,7 +38,7 @@ const AgentToolGroupBlockImpl: React.FC<AgentToolGroupBlockProps> = ({
     return toolGroupCalls.map((call) => {
       const count = idUsageCount.get(call.id) || 0;
       idUsageCount.set(call.id, count + 1);
-      
+
       const key = count === 0 ? call.id : `${call.id}_dup${count}`;
       return toolResultsMap?.get(key);
     });

@@ -179,9 +179,9 @@ const arePropsEqual = (
   for (const id of relevantIds) {
     const count = idUsageCount.get(id) || 0;
     idUsageCount.set(id, count + 1);
-    
+
     const key = count === 0 ? id : `${id}_dup${count}`;
-    
+
     if (prev.toolResultsMap?.get(key) !== next.toolResultsMap?.get(key)) {
       return false;
     }

@@ -57,7 +57,10 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground mt-1 text-left font-normal">
             {builtinCount > 0
-              ? t('agent.toolsModal.subtitleWithCounts', { builtinCount, mcpCount })
+              ? t('agent.toolsModal.subtitleWithCounts', {
+                  builtinCount,
+                  mcpCount,
+                })
               : t('agent.toolsModal.subtitleDefault')}
           </DialogDescription>
         </DialogHeader>
@@ -73,7 +76,9 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
         {/* Error State */}
         {error && (
           <div className="text-center py-8 text-destructive flex flex-col items-center gap-2">
-            <span className="font-semibold">{t('agent.toolsModal.errorTitle')}</span>
+            <span className="font-semibold">
+              {t('agent.toolsModal.errorTitle')}
+            </span>
             <span className="text-sm opacity-90">{error}</span>
           </div>
         )}
@@ -86,7 +91,10 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                 {t('agent.toolsModal.empty')}
               </div>
             ) : (
-              <ul className="space-y-3" aria-label={t('agent.toolsModal.ariaLabel')}>
+              <ul
+                className="space-y-3"
+                aria-label={t('agent.toolsModal.ariaLabel')}
+              >
                 {availableTools.map((tool) => (
                   <li
                     key={tool.name}
@@ -112,7 +120,9 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                           }
                           aria-hidden
                         >
-                          {isBuiltinTool(tool.name) ? t('agent.toolsModal.badgeBuiltin') : t('agent.toolsModal.badgeMcp')}
+                          {isBuiltinTool(tool.name)
+                            ? t('agent.toolsModal.badgeBuiltin')
+                            : t('agent.toolsModal.badgeMcp')}
                         </span>
                       </div>
                     </div>
