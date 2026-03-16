@@ -24,6 +24,7 @@ export function isAbortError(error: unknown): boolean {
  */
 export interface CompletionRequest {
   sessionId: string;
+  responseMessageId: string;
   messages: Message[];
   model: string;
   provider: string;
