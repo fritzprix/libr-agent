@@ -815,5 +815,11 @@
         "6": "Saturday"
       }
     }
+  },
+  "errorBubble": {
+    "title": "Error",
+    "unknownError": "An unknown error occurred.",
+    "retrying": "Retrying...",
+    "tryAgain": "Try Again"
   }
 }
