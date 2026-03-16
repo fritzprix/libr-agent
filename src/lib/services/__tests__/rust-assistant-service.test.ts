@@ -69,7 +69,7 @@ describe('RustAssistantService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     service = new RustAssistantService();
-    mockLoggerError = vi.mocked(getLogger)().error as Mock;
+    mockLoggerError = vi.mocked(getLogger)('RustAssistantService').error as Mock;
     mockLoggerError.mockClear();
   });
 
@@ -211,7 +211,8 @@ describe('RustAssistantService', () => {
 
       const result = await service.save(mockAssistant);
 
-      const { id, name, ...config } = mockAssistant;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, name, createdAt, updatedAt, ...config } = mockAssistant;
       expect(safeInvoke).toHaveBeenCalledWith('update_assistant', { id, name, config });
       expect(callback).toHaveBeenCalledWith({
         entity: 'assistants',
@@ -231,7 +232,8 @@ describe('RustAssistantService', () => {
 
       const result = await service.save(mockAssistant);
 
-      const { id, name, ...config } = mockAssistant;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, name, createdAt, updatedAt, ...config } = mockAssistant;
       expect(safeInvoke).toHaveBeenCalledWith('create_assistant', { id, name, config });
       expect(callback).toHaveBeenCalledWith({
         entity: 'assistants',
