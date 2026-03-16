@@ -110,8 +110,10 @@ fn get_terminal_command(path: &Path) -> Result<(String, Vec<String>), String> {
 pub fn open_in_terminal(path: &Path) -> Result<(), String> {
     let (program, args) = get_terminal_command(path)?;
 
-    Command::new(&program)
-        .args(&args)
+    let mut cmd = Command::new(&program);
+    crate::utils::env::apply_isolated_env(&mut cmd);
+
+    cmd.args(&args)
         .spawn()
         .map_err(|e| format!("Failed to spawn terminal '{}': {}", program, e))?;
 
