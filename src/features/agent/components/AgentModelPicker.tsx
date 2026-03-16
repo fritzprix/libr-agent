@@ -128,10 +128,12 @@ const AgentModelPickerComponent: FC<AgentModelPickerProps> = ({
       {/* Refresh Button — available for all providers */}
       {currentProvider && (
         <button
+          type="button"
           onClick={() => refreshModels()}
           disabled={disabled || isRefreshing}
           className="p-1 hover:bg-primary/10 rounded text-muted-foreground hover:text-primary transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           title={t('agent.modelPicker.refreshModels')}
+          aria-label={t('agent.modelPicker.refreshModels')}
         >
           <RefreshCw
             className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`}
