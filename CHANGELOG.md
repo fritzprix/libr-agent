@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.36] - 2026-03-17
+
+### 🚀 Features
+
+- **Unified Agent Domain (SP22-2)**: Implemented a robust unified agent domain using Rust-to-TS SSOT (Single Source of Truth) codegen. This centralizes built-in service definitions, ensuring perfect type safety and consistency between the backend registry and frontend clients.
+- **Enhanced Agent Discovery**: Improved specialist agent discovery with human-readable capability summaries. Agents can now discover and reason about available capabilities including external MCP servers directly within their context.
+- **System Capability Catalog**: Added a comprehensive capability catalog to the agent context, providing models with a clear map of available system tools and platform features for better task planning.
+- **Extended MCP Timeouts**: Increased the default timeout for sub-agent sessions to 1 hour, supporting complex multi-agent workflows that require extended execution windows.
+- **i18n & Localization Expansion**: Significantly expanded English and Korean localization across the `AgentToolsModal`, `AgentModelPicker`, `AgentDraftChatView`, and Settings panels.
+- **Accessibility & UX**: Added keyboard focus states to all native buttons (Palette) and enhanced the responsiveness and accessibility attributes of the `ScheduledTasksPage`.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Environment Variable Leakage**: Resolved multiple security vulnerabilities (Sentinel) where sensitive host environment variables could leak into terminal launcher and system utility processes.
+- **Duplicate Tool Call IDs**: Fixed an issue where certain LLMs would hallucinate duplicate tool call IDs, causing React key collisions and preventing tool results from being correctly associated with messages.
+- **UI Flickering & Stability**: Resolved text bubble flickering by synchronizing message IDs and implemented functional state updates to fix intermittent tool expansion failures.
+- **Windows Path Normalization**: Fixed shell execution errors on Windows by normalizing backslashes and ensuring consistent CWD handling across platforms.
+- **Message Transition**: Ensured smoother message transitions and more accurate tool status displays during active streaming.
+
+### 🔧 Internal
+
+- **Architectural Decoupling (Nexus/Fractal)**: Continued the modularization effort by decomposing `AgentDraftChatView`, `agent/workflow`, and `agent/llm/completion` into focused sub-modules to improve maintainability and build times.
+- **Dependency Inversion**: Completed dependency inversion for core domain services, enabling better isolation and more reliable unit testing.
+- **Expanded Test Coverage**: Added comprehensive test suites for `RustAssistantService`, `AIServiceFactory`, `Settings` backend, and `Message` service, reaching higher reliability across the IPC boundary.
+- **CI/CD Maintenance**: Upgraded the CI environment to Node.js v20 and synchronized lockfiles for improved dependency stability.
+
 ## [0.5.35] - 2026-03-14
 
 ### 🚀 Features
