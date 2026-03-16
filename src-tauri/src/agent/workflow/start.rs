@@ -146,7 +146,8 @@ pub async fn start_workflow(
     );
 
     // Ensure Proxy Exists (Critical for System Prompt)
-    crate::agent::workflow::start::ensure_proxy_exists(proxy_manager, app_handle, &session_id).await?;
+    crate::agent::workflow::start::ensure_proxy_exists(proxy_manager, app_handle, &session_id)
+        .await?;
 
     // Request LLM completion with cached messages (no DB query)
     crate::agent::llm::request_llm_completion(

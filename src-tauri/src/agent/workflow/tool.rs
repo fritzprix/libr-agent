@@ -1,5 +1,7 @@
-use crate::agent::workflow::cancel::{discard_pending_events, should_consume_cancel_at_message_boundary};
 use crate::agent::state::AgentSession;
+use crate::agent::workflow::cancel::{
+    discard_pending_events, should_consume_cancel_at_message_boundary,
+};
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::SessionStatus;
