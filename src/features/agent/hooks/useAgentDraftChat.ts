@@ -20,7 +20,11 @@ import {
 } from '@/lib/backend';
 import { generateWorkspacePath } from '@/lib/workspace-sync-service';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
-import { useDnDContext, type DragAndDropEvent, type DragAndDropPayload } from '@/context/DnDContext';
+import {
+  useDnDContext,
+  type DragAndDropEvent,
+  type DragAndDropPayload,
+} from '@/context/DnDContext';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
 import type { ContentStoreItem } from '@/models/content-store';
@@ -66,17 +70,27 @@ export function useAgentDraftChat() {
 
   // Override state for model/provider selection
   const [overrideModel, setOverrideModel] = useState<string | undefined>();
-  const [overrideProvider, setOverrideProvider] = useState<string | undefined>();
+  const [overrideProvider, setOverrideProvider] = useState<
+    string | undefined
+  >();
 
   // Metadata state
-  const [builtinServices, setBuiltinServices] = useState<BuiltinServerInfo[]>([]);
+  const [builtinServices, setBuiltinServices] = useState<BuiltinServerInfo[]>(
+    [],
+  );
   const [mcpServers, setMcpServers] = useState<MCPServerDto[]>([]);
 
   // Pre-session file attachments
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(null);
-  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>('none');
-  const [profileDragState, setProfileDragState] = useState<'none' | 'valid' | 'invalid'>('none');
+  const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
+    null,
+  );
+  const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
+    'none',
+  );
+  const [profileDragState, setProfileDragState] = useState<
+    'none' | 'valid' | 'invalid'
+  >('none');
   const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,7 +134,10 @@ export function useAgentDraftChat() {
 
   // Drag-and-drop: read dropped paths via Rust backend, build File objects
   useEffect(() => {
-    const processDroppedPaths = (paths: string[], target: 'profile' | 'form') => {
+    const processDroppedPaths = (
+      paths: string[],
+      target: 'profile' | 'form',
+    ) => {
       const run = async () => {
         setIsAttachmentLoading(true);
         try {
@@ -152,9 +169,15 @@ export function useAgentDraftChat() {
                 }
                 const fileData = await rustBackend.readDroppedFile(filePath);
                 const filename =
-                  filePath.split('/').pop() ?? filePath.split('\\').pop() ?? 'unknown';
+                  filePath.split('/').pop() ??
+                  filePath.split('\\').pop() ??
+                  'unknown';
                 const mimeType = getMimeType(filename);
-                files.push(new File([new Uint8Array(fileData)], filename, { type: mimeType }));
+                files.push(
+                  new File([new Uint8Array(fileData)], filename, {
+                    type: mimeType,
+                  }),
+                );
               }
             } catch (err) {
               logger.error('Failed to process dropped path', { filePath, err });
@@ -175,9 +198,14 @@ export function useAgentDraftChat() {
       void run();
     };
 
-    const formHandler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+    const formHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
       if (event === 'drag-over') {
-        setDragState(payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid');
+        setDragState(
+          payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
+        );
       } else if (event === 'leave') {
         setDragState('none');
       } else if (event === 'drop') {
@@ -188,9 +216,14 @@ export function useAgentDraftChat() {
       }
     };
 
-    const profileHandler = (event: DragAndDropEvent, payload: DragAndDropPayload) => {
+    const profileHandler = (
+      event: DragAndDropEvent,
+      payload: DragAndDropPayload,
+    ) => {
       if (event === 'drag-over') {
-        setProfileDragState(payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid');
+        setProfileDragState(
+          payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
+        );
       } else if (event === 'leave') {
         setProfileDragState('none');
       } else if (event === 'drop') {
@@ -201,12 +234,20 @@ export function useAgentDraftChat() {
       }
     };
 
-    const unsubForm = subscribe(formRef as React.RefObject<HTMLElement>, formHandler, {
-      priority: 5,
-    });
-    const unsubProfile = subscribe(profileAreaRef as React.RefObject<HTMLElement>, profileHandler, {
-      priority: 5,
-    });
+    const unsubForm = subscribe(
+      formRef as React.RefObject<HTMLElement>,
+      formHandler,
+      {
+        priority: 5,
+      },
+    );
+    const unsubProfile = subscribe(
+      profileAreaRef as React.RefObject<HTMLElement>,
+      profileHandler,
+      {
+        priority: 5,
+      },
+    );
 
     return () => {
       unsubForm();
@@ -218,7 +259,9 @@ export function useAgentDraftChat() {
     const loadMetadata = async () => {
       try {
         const [services, servers] = await Promise.all([
-          safeInvoke<BuiltinServerInfo[]>('list_available_builtin_server_definitions'),
+          safeInvoke<BuiltinServerInfo[]>(
+            'list_available_builtin_server_definitions',
+          ),
           safeInvoke<MCPServerDto[]>('list_mcp_server_configs'),
         ]);
         setBuiltinServices(services);
@@ -261,7 +304,12 @@ export function useAgentDraftChat() {
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if ((!input.trim() && pendingFiles.length === 0) || !assistant || isSubmitting) return;
+      if (
+        (!input.trim() && pendingFiles.length === 0) ||
+        !assistant ||
+        isSubmitting
+      )
+        return;
 
       setIsSubmitting(true);
       const newSessionId = createId();
@@ -271,11 +319,16 @@ export function useAgentDraftChat() {
 
       const resolvedInput = input.trim();
       const shortName =
-        input.trim().length > 50 ? input.trim().substring(0, 47) + '...' : input.trim();
+        input.trim().length > 50
+          ? input.trim().substring(0, 47) + '...'
+          : input.trim();
 
       try {
         unlisten = await listen<AgentEventPayload>('agent:event', (event) => {
-          if (event.payload.type === 'initializationStep' && event.payload.sessionId === newSessionId) {
+          if (
+            event.payload.type === 'initializationStep' &&
+            event.payload.sessionId === newSessionId
+          ) {
             const step = event.payload.step;
             if (toastId) {
               toast.loading(step, { id: toastId });
@@ -283,6 +336,48 @@ export function useAgentDraftChat() {
               toastId = toast.loading(step);
             }
           }
+        });
+
+        if (!toastId) toastId = toast.loading(t('agent.draft.creatingSession'));
+
+        const baseSystemPrompt =
+          assistant.systemPrompt || 'You are a helpful assistant.';
+
+        const agentConfig = {
+          id: assistant.id,
+          name: assistant.name,
+          description: assistant.description,
+          systemPrompt: baseSystemPrompt,
+          mcpServerIds: assistant.mcpServerIds || [],
+          localServices: assistant.localServices || [],
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            assistant.allowedBuiltInServiceAliases,
+          ),
+          maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
+          ...(settings?.advanced?.defaultSessionMaxDepth &&
+          settings.advanced.defaultSessionMaxDepth > 0
+            ? { maxDepth: settings.advanced.defaultSessionMaxDepth }
+            : {}),
+          ...(settings?.advanced?.defaultSessionMaxFanout &&
+          settings.advanced.defaultSessionMaxFanout > 0
+            ? { maxFanout: settings.advanced.defaultSessionMaxFanout }
+            : {}),
+        };
+
+        // Create session FIRST so workspace/overrides are registered before writing files
+        await safeInvoke<AgentSessionMetadata>('agent_create_session', {
+          request: {
+            sessionId: newSessionId,
+            name: shortName,
+            model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
+            provider:
+              overrideProvider ||
+              settings?.preferredModel?.provider ||
+              'openai',
+            agentConfig,
+            isEphemeral: false,
+            workspacePath: workspaceOverride || undefined,
+          },
         });
 
         const attachments: AttachmentReference[] = [];
@@ -305,18 +400,32 @@ export function useAgentDraftChat() {
               }
             }
             const actualMimeType =
-              file.type && file.type !== 'application/octet-stream' ? file.type : getMimeType(file.name);
+              file.type && file.type !== 'application/octet-stream'
+                ? file.type
+                : getMimeType(file.name);
 
-            const isInlineType = actualMimeType.startsWith('image/') || actualMimeType.startsWith('audio/');
+            const isInlineType =
+              actualMimeType.startsWith('image/') ||
+              actualMimeType.startsWith('audio/');
 
             if (isInlineType) {
-              const byteArray = new Uint8Array(arrayBuffer);
-              let binary = '';
-              for (let bi = 0; bi < byteArray.length; bi++) {
-                binary += String.fromCharCode(byteArray[bi]);
-              }
-              const base64Data = btoa(binary);
-              const inlineType = actualMimeType.startsWith('image/') ? ('image' as const) : ('audio' as const);
+              // Optimized Base64 encoding using FileReader
+              const base64Data = await new Promise<string>(
+                (resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = reader.result as string;
+                    // Remove prefix like "data:image/png;base64,"
+                    resolve(result.split(',')[1]);
+                  };
+                  reader.onerror = reject;
+                  reader.readAsDataURL(file);
+                },
+              );
+
+              const inlineType = actualMimeType.startsWith('image/')
+                ? ('image' as const)
+                : ('audio' as const);
               attachments.push({
                 sessionId: newSessionId,
                 filename: file.name,
@@ -369,39 +478,6 @@ export function useAgentDraftChat() {
           updatedAt: now.getTime(),
         };
 
-        const baseSystemPrompt = assistant.systemPrompt || 'You are a helpful assistant.';
-
-        const agentConfig = {
-          id: assistant.id,
-          name: assistant.name,
-          description: assistant.description,
-          systemPrompt: baseSystemPrompt,
-          mcpServerIds: assistant.mcpServerIds || [],
-          localServices: assistant.localServices || [],
-          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(assistant.allowedBuiltInServiceAliases),
-          maxTokens: settings?.advanced?.defaultMaxOutputTokens ?? 8192,
-          ...(settings?.advanced?.defaultSessionMaxDepth && settings.advanced.defaultSessionMaxDepth > 0
-            ? { maxDepth: settings.advanced.defaultSessionMaxDepth }
-            : {}),
-          ...(settings?.advanced?.defaultSessionMaxFanout && settings.advanced.defaultSessionMaxFanout > 0
-            ? { maxFanout: settings.advanced.defaultSessionMaxFanout }
-            : {}),
-        };
-
-        if (!toastId) toastId = toast.loading(t('agent.draft.creatingSession'));
-
-        await safeInvoke<AgentSessionMetadata>('agent_create_session', {
-          request: {
-            sessionId: newSessionId,
-            name: shortName,
-            model: overrideModel || settings?.preferredModel?.model || 'gpt-4',
-            provider: overrideProvider || settings?.preferredModel?.provider || 'openai',
-            agentConfig,
-            isEphemeral: false,
-            workspacePath: workspaceOverride || undefined,
-          },
-        });
-
         let workspaceDirCache: string | null = null;
         const getWorkspaceDirCached = async (): Promise<string> => {
           if (workspaceDirCache === null) {
@@ -412,8 +488,11 @@ export function useAgentDraftChat() {
 
         for (let i = 0; i < pendingFiles.length; i++) {
           const file = pendingFiles[i];
-          const isTextFile = TEXT_EXTENSIONS_DRAFT.test(file.name) || /^text\//.test(file.type);
-          const isBinaryIndexable = BINARY_INDEXABLE_EXTENSIONS_DRAFT.test(file.name);
+          const isTextFile =
+            TEXT_EXTENSIONS_DRAFT.test(file.name) || /^text\//.test(file.type);
+          const isBinaryIndexable = BINARY_INDEXABLE_EXTENSIONS_DRAFT.test(
+            file.name,
+          );
 
           if (isTextFile) {
             try {
@@ -427,7 +506,13 @@ export function useAgentDraftChat() {
                   filename: file.name,
                 },
               })) as ContentStoreItem;
-              if (result?.contentId) {
+
+              // Runtime validation for contentId existence
+              if (
+                result &&
+                typeof result === 'object' &&
+                'contentId' in result
+              ) {
                 attachments[i] = {
                   ...attachments[i],
                   status: 'committed',
@@ -436,14 +521,20 @@ export function useAgentDraftChat() {
                 };
               }
             } catch (commitErr) {
-              logger.warn('Failed to commit file to Content Store, keeping workspace-only', { filename: file.name, error: commitErr });
+              logger.warn(
+                'Failed to commit file to Content Store, keeping workspace-only',
+                { filename: file.name, error: commitErr },
+              );
             }
           } else if (isBinaryIndexable) {
             try {
               const workspaceDir = await getWorkspaceDirCached();
               const workspacePath = attachments[i].workspacePath;
               if (!workspacePath) {
-                logger.warn('Binary file missing workspacePath, skipping index', { filename: file.name });
+                logger.warn(
+                  'Binary file missing workspacePath, skipping index',
+                  { filename: file.name },
+                );
                 continue;
               }
               const normalizedDir = workspaceDir.replace(/\\/g, '/');
@@ -458,7 +549,13 @@ export function useAgentDraftChat() {
                   filename: file.name,
                 },
               })) as ContentStoreItem;
-              if (result?.contentId) {
+
+              // Runtime validation for contentId existence
+              if (
+                result &&
+                typeof result === 'object' &&
+                'contentId' in result
+              ) {
                 attachments[i] = {
                   ...attachments[i],
                   status: 'committed',
@@ -467,7 +564,10 @@ export function useAgentDraftChat() {
                 };
               }
             } catch (commitErr) {
-              logger.warn('Failed to commit binary file to Content Store, keeping workspace-only', { filename: file.name, error: commitErr });
+              logger.warn(
+                'Failed to commit binary file to Content Store, keeping workspace-only',
+                { filename: file.name, error: commitErr },
+              );
             }
           }
         }
