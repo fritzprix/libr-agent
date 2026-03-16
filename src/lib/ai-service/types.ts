@@ -147,6 +147,7 @@ export interface IAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to disable tool use.
    * @returns An async generator that yields chunks of the response as strings.
    */
   streamChat(
@@ -229,6 +230,9 @@ export interface IAIService {
    * @param options Optional model name and service configuration overrides.
    * @param options.modelName The name of the model.
    * @param options.config Optional configuration for the service.
+   * @param options.systemPrompt The system prompt.
+   * @param options.sessionContext The session context.
+   * @param options.availableTools Optional array of tools available to the model.
    * @returns A promise that resolves to the summary text.
    */
   compact(

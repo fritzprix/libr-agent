@@ -265,6 +265,11 @@ export class LLMConfigManager {
    * It filters the available models and sorts them based on the specified criteria.
    *
    * @param requirements The requirements for the model, such as tool support, cost, and speed.
+   * @param requirements.needsTools Whether the model needs tool use.
+   * @param requirements.needsReasoning Whether the model needs reasoning capabilities.
+   * @param requirements.maxCost The maximum cost for the model.
+   * @param requirements.preferSpeed Whether to prefer speed over other capabilities.
+   * @param requirements.contextWindow The context window of the model.
    * @returns The recommended model and its provider, or null if no suitable model is found.
    */
   recommendModel(requirements: {

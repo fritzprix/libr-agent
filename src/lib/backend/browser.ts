@@ -11,6 +11,8 @@ import type { BrowserSession } from './types';
 /**
  * Creates a new browser session controlled by the backend.
  * @param params The parameters for the new session, including the initial URL.
+ * @param params.url The URL of the page.
+ * @param params.title The title of the page.
  * @returns A promise that resolves to the unique ID of the new session.
  */
 export async function createBrowserSession(params: {
