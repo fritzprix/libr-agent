@@ -12,6 +12,7 @@ import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { Button } from '@/components/ui/button';
 import { parseToolName, isBuiltinTool } from '@/lib/tool-call-utils';
+import { useTranslation } from 'react-i18next';
 
 interface AgentToolsModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
 
   const { availableTools, isLoading, error } = useAgentTools(session?.id);
@@ -46,7 +48,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            Available Tools{' '}
+            {t('agent.toolsModal.title')}{' '}
             {totalCount > 0 && (
               <span className="text-muted-foreground font-normal text-sm ml-1">
                 ({totalCount})
@@ -55,8 +57,8 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground mt-1 text-left font-normal">
             {builtinCount > 0
-              ? `Built-in tools: ${builtinCount} • MCP tools: ${mcpCount}`
-              : 'List of tools available to this agent session.'}
+              ? t('agent.toolsModal.subtitleWithCounts', { builtinCount, mcpCount })
+              : t('agent.toolsModal.subtitleDefault')}
           </DialogDescription>
         </DialogHeader>
 
@@ -64,14 +66,14 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
             <LoadingSpinner />
-            <span>Loading tools...</span>
+            <span>{t('agent.toolsModal.loading')}</span>
           </div>
         )}
 
         {/* Error State */}
         {error && (
           <div className="text-center py-8 text-destructive flex flex-col items-center gap-2">
-            <span className="font-semibold">Error loading tools</span>
+            <span className="font-semibold">{t('agent.toolsModal.errorTitle')}</span>
             <span className="text-sm opacity-90">{error}</span>
           </div>
         )}
@@ -81,10 +83,10 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
           <div className="overflow-y-auto flex-1 min-h-0 pr-2">
             {totalCount === 0 ? (
               <div className="text-foreground text-center py-8">
-                No tools available for this agent session.
+                {t('agent.toolsModal.empty')}
               </div>
             ) : (
-              <ul className="space-y-3" aria-label="Available tools list">
+              <ul className="space-y-3" aria-label={t('agent.toolsModal.ariaLabel')}>
                 {availableTools.map((tool) => (
                   <li
                     key={tool.name}
@@ -110,7 +112,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                           }
                           aria-hidden
                         >
-                          {isBuiltinTool(tool.name) ? 'builtin' : 'mcp'}
+                          {isBuiltinTool(tool.name) ? t('agent.toolsModal.badgeBuiltin') : t('agent.toolsModal.badgeMcp')}
                         </span>
                       </div>
                     </div>
@@ -122,7 +124,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
                     {tool.inputSchema && (
                       <details className="group">
                         <summary className="text-xs text-primary cursor-pointer hover:underline focus-visible:ring-2 rounded px-1 -ml-1 inline-flex items-center select-none">
-                          View Input Schema
+                          {t('agent.toolsModal.viewSchema')}
                         </summary>
                         <pre className="text-xs text-foreground mt-2 bg-background p-3 rounded border border-border overflow-x-auto">
                           {JSON.stringify(tool.inputSchema, null, 2)}
@@ -138,7 +140,7 @@ export const AgentToolsModal: React.FC<AgentToolsModalProps> = ({
 
         <div className="mt-4 pt-4 border-t border-border flex justify-end">
           <Button variant="secondary" onClick={onClose}>
-            Close
+            {t('common.close')}
           </Button>
         </div>
       </DialogContent>

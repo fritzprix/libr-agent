@@ -733,6 +733,18 @@
       "model": "Model",
       "loading": "Loading...",
       "refreshModels": "Refresh models"
+    },
+    "toolsModal": {
+      "title": "Available Tools",
+      "subtitleWithCounts": "Built-in tools: {{builtinCount}} • MCP tools: {{mcpCount}}",
+      "subtitleDefault": "List of tools available to this agent session.",
+      "loading": "Loading tools...",
+      "errorTitle": "Error loading tools",
+      "empty": "No tools available for this agent session.",
+      "ariaLabel": "Available tools list",
+      "badgeBuiltin": "builtin",
+      "badgeMcp": "mcp",
+      "viewSchema": "View Input Schema"
     }
   },
   "scheduledTasks": {
