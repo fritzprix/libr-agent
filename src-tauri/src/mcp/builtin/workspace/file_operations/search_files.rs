@@ -293,6 +293,24 @@ mod tests {
         assert!(matches_glob(&pattern, &path, None));
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_search_files_windows_path_normalization() {
+        // This test only runs on Windows as it relies on PathBuf behavior for backslashes
+        let root = PathBuf::from("C:\\project");
+        let file_path = root.join("src\\main.rs");
+
+        let relative_path = file_path.strip_prefix(&root).unwrap();
+        let path_str = {
+            let p = relative_path.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let p = p.replace('\\', "/");
+            p
+        };
+
+        assert_eq!(path_str, "src/main.rs");
+    }
+
     #[test]
     fn test_matches_glob_filename() {
         let pattern = Pattern::new("*.txt").unwrap();

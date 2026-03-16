@@ -483,6 +483,12 @@ impl BuiltinMCPServer for WorkspaceServer {
 
         // Get current shell CWD
         let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
+            let cwd = {
+                #[cfg(target_os = "windows")]
+                let cwd = cwd.replace('\\', "/");
+                cwd
+            };
+
             // Convert to relative path if within workspace for better readability
             if cwd.starts_with(&workspace_dir) {
                 cwd.replacen(&workspace_dir, ".", 1)
