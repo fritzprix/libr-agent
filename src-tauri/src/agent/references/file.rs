@@ -94,7 +94,10 @@ pub async fn list_workspace_relative_paths(
     let mut paths: Vec<String> = Vec::new();
     for entry in walker {
         if let Ok(rel) = entry.path().strip_prefix(&workspace) {
+            #[cfg(target_os = "windows")]
             paths.push(rel.to_string_lossy().replace('\\', "/"));
+            #[cfg(not(target_os = "windows"))]
+            paths.push(rel.to_string_lossy().to_string());
         }
     }
 

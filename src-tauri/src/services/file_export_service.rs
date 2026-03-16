@@ -131,7 +131,11 @@ impl FileExportService {
                     Err(_) => continue,
                 };
 
+                #[cfg(target_os = "windows")]
                 let archive_path = rel_path.to_string_lossy().replace('\\', "/");
+                #[cfg(not(target_os = "windows"))]
+                let archive_path = rel_path.to_string_lossy().to_string();
+
                 if !added_archive_paths.insert(archive_path.clone()) {
                     continue;
                 }

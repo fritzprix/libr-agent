@@ -173,12 +173,13 @@ fn test_select_messages_within_context() {
 
 #[test]
 fn test_select_messages_regression_large_message() {
-    let mut msgs = vec![];
-    msgs.push(make_message(
-        "big_msg",
-        "user",
-        &"Very long content ".repeat(100),
-    ));
+    let msgs = vec![
+        make_message(
+            "big_msg",
+            "user",
+            &"Very long content ".repeat(100),
+        )
+    ];
 
     let selected = select_messages_within_context(&msgs, "gemini", Some(10), None, None);
     assert!(selected.is_empty());

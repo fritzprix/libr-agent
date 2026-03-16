@@ -131,9 +131,7 @@ fn core_builtin_fallback_aliases_all_resolve() {
 #[test]
 fn core_builtin_fallback_includes_attachments() {
     assert!(
-        CORE_BUILTIN_SERVICE_ALIASES
-            .iter()
-            .any(|&a| a == "attachments"),
+        CORE_BUILTIN_SERVICE_ALIASES.contains(&"attachments"),
         "`attachments` must be in CORE_BUILTIN_SERVICE_ALIASES for the fallback path to work"
     );
 }
