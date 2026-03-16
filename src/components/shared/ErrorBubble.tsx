@@ -107,7 +107,8 @@ export const ErrorBubble: React.FC<ErrorBubbleProps> = memo(
       >
         <div className="space-y-3">
           <p className="text-muted-foreground break-words whitespace-pre-wrap">
-            {error?.displayMessage || t('errorBubble.unknownError', 'An unknown error occurred.')}
+            {error?.displayMessage ||
+              t('errorBubble.unknownError', 'An unknown error occurred.')}
           </p>
 
           {error?.recoverable && (

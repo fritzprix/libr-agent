@@ -220,33 +220,41 @@
 **Reality:** Restored `@param options.config` to accurately reflect the actual method signature.
 
 ## 2025-02-23 - [src/lib/ai-service/anthropic.ts]
+
 **Drift:** Missing `@param options.disableToolUse`
 **Reality:** Added missing `@param options.disableToolUse` to match strict type.
 
 ## 2025-02-23 - [src/lib/ai-service/base-service.ts]
+
 **Drift:** Missing `@param context.options.disableToolUse`, `@param options.disableToolUse`, `@param options.systemPrompt`, `@param options.sessionContext`, `@param options.availableTools`
 **Reality:** Added missing `@param` options to match strict type.
 
 ## 2025-02-23 - [src/lib/ai-service/gemini/service.ts]
+
 **Drift:** Missing `@param options.disableToolUse`
 **Reality:** Added missing `@param options.disableToolUse` to match strict type.
 
 ## 2025-02-23 - [src/lib/ai-service/openai.ts]
+
 **Drift:** Missing `@param options.disableToolUse`
 **Reality:** Added missing `@param options.disableToolUse` to match strict type.
 
 ## 2025-02-23 - [src/lib/ai-service/types.ts]
+
 **Drift:** Missing `@param options.disableToolUse`, `@param options.systemPrompt`, `@param options.sessionContext`, `@param options.availableTools`
 **Reality:** Added missing `@param` options to match strict type.
 
 ## 2025-02-23 - [src/lib/backend/browser.ts]
+
 **Drift:** Missing `@param params.url`, `@param params.title`
 **Reality:** Added missing `@param` params to match strict type.
 
 ## 2025-02-23 - [src/lib/llm-config-manager.ts]
+
 **Drift:** Missing `@param requirements.*` (needsTools, needsReasoning, maxCost, preferSpeed, contextWindow)
 **Reality:** Added missing `@param` requirements to match strict type.
 
 ## 2025-02-23 - [src/lib/mcp/schema/builders.ts]
+
 **Drift:** Missing `@param options.*` constraints on schema builder functions (createStringSchema, createNumberSchema, createIntegerSchema, createBooleanSchema, createArraySchema, createObjectSchema, createEnumSchema)
 **Reality:** Added missing `@param` options to match strict type.
