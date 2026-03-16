@@ -475,7 +475,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         }
 
         let workspace_dir_path = self.get_workspace_dir(&session_id);
-        let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
+        let workspace_dir = {
+            let path_str = workspace_dir_path.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let path_str = path_str.replace('\\', "/");
+            path_str
+        };
 
         // Platform information
         let os = std::env::consts::OS;
@@ -484,6 +489,12 @@ impl BuiltinMCPServer for WorkspaceServer {
 
         // Get current shell CWD
         let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
+            let cwd = {
+                #[cfg(target_os = "windows")]
+                let cwd = cwd.replace('\\', "/");
+                cwd
+            };
+
             // Convert to relative path if within workspace for better readability
             if cwd.starts_with(&workspace_dir) {
                 cwd.replacen(&workspace_dir, ".", 1)
