@@ -57,3 +57,42 @@ pub fn apply_isolated_env(cmd: &mut Command) {
         cmd.env(k, v);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_apply_isolated_env_clears_secrets() {
+        // Set a dummy secret in the current process
+        env::set_var("OPENAI_API_KEY", "secret-value");
+        env::set_var("MY_PRIVATE_VAR", "private-value");
+
+        let mut cmd = Command::new("ls");
+        apply_isolated_env(&mut cmd);
+
+        // We can't directly inspect cmd.get_envs() easily in std::process::Command
+        // so we check if get_isolated_env() contains our secrets
+        let isolated = get_isolated_env();
+        assert!(isolated.iter().all(|(k, _)| k != "OPENAI_API_KEY"));
+        assert!(isolated.iter().all(|(k, _)| k != "MY_PRIVATE_VAR"));
+
+        // Verify some essential vars are kept if they exist in the host
+        if env::var("PATH").is_ok() {
+            assert!(isolated.iter().any(|(k, _)| k == "PATH"));
+        }
+    }
+
+    #[test]
+    fn test_get_isolated_env_includes_whitelisted_prefixes() {
+        env::set_var("LC_ALL", "en_US.UTF-8");
+        env::set_var("XDG_CONFIG_HOME", "/tmp/config");
+        env::set_var("XDG_RUNTIME_DIR", "/run/user/1000"); // Should be excluded
+
+        let isolated = get_isolated_env();
+        assert!(isolated.iter().any(|(k, _)| k == "LC_ALL"));
+        assert!(isolated.iter().any(|(k, _)| k == "XDG_CONFIG_HOME"));
+        assert!(isolated.iter().all(|(k, _)| k != "XDG_RUNTIME_DIR"));
+    }
+}
