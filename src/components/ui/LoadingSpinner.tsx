@@ -19,7 +19,7 @@ export default function LoadingSpinner({
     lg: 'w-8 h-8',
   };
 
-  const displayLabel = label || t('loading', 'Loading...');
+  const displayLabel = label || t('common.loading', 'Loading...');
 
   return (
     <div

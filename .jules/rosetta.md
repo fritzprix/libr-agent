@@ -89,4 +89,9 @@
 **Extracted:** 9
 **Languages updated:** [EN, KO]
 **Notes:** Localized "Danger Zone" title and performance input placeholders across settings components. Synced missing reset-related strings in Korean.
-## 2026-03-16 - [ErrorBubble/LoadingSpinner] **Extracted:** 5 **Languages updated:** [EN, KO]
+
+## 2026-03-16 - [ErrorBubble/LoadingSpinner]
+
+**Extracted:** 5
+**Languages updated:** [EN, KO]
+**Notes:** Localized `ErrorBubble` and `LoadingSpinner` components and added new `errorBubble` namespace to EN/KO.
