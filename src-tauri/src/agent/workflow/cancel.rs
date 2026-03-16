@@ -2,7 +2,7 @@ use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
 use crate::repositories::{MessageRepository, SessionStatus};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -69,7 +69,6 @@ pub async fn terminate_session(
     if session_active {
         let mut active = active_sessions.write().await;
         if let Some(session) = active.get_mut(&session_id) {
-            session.is_running = false;
             // Reset cancellation token for potential future workflows
             session.cancellation_token = CancellationToken::new();
         }
@@ -146,7 +145,6 @@ pub async fn cancel_workflow(
 
     let mut active = active_sessions.write().await;
     if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = false;
         session.cancel_pending.store(false, Ordering::SeqCst);
         // Cancel the token (do NOT replace with a fresh one yet).
         // The cancelled state persists until start_workflow explicitly resets it.
@@ -183,8 +181,10 @@ pub(crate) async fn discard_pending_events(
 
             if !messages_to_delete.is_empty() {
                 let mut messages = session.messages.write().await;
+                // SP2: Convert to HashSet for O(1) lookups during retain (was O(n*m))
+                let delete_set: HashSet<String> = messages_to_delete.iter().cloned().collect();
                 // Remove these messages from the cache
-                messages.retain(|m| !messages_to_delete.contains(&m.id));
+                messages.retain(|m| !delete_set.contains(&m.id));
 
                 log::info!(
                     "Cleared {} pending events from queue and cache for session {}",

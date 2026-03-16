@@ -23,11 +23,6 @@ pub async fn pause_workflow(
     )
     .await?;
 
-    let mut active = active_sessions.write().await;
-    if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = false;
-    }
-
     log::info!("Paused workflow for session: {}", session_id);
     Ok(())
 }
@@ -58,12 +53,6 @@ pub async fn resume_workflow(
         SessionStatus::Busy,
     )
     .await?;
-
-    let mut active = active_sessions.write().await;
-    if let Some(session) = active.get_mut(&session_id) {
-        session.is_running = true;
-    }
-    drop(active); // Drop lock before async call
 
     log::info!("Resumed workflow status for session: {}", session_id);
 

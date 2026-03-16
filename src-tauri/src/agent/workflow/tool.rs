@@ -1,3 +1,4 @@
+use crate::agent::workflow::cancel::{discard_pending_events, should_consume_cancel_at_message_boundary};
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::session_repository::SessionRepository;
@@ -66,7 +67,7 @@ pub async fn continue_workflow_after_tool(
                     .unwrap_or(false)
             };
 
-            if crate::agent::workflow::cancel::should_consume_cancel_at_message_boundary(should_stop_after_message) {
+            if should_consume_cancel_at_message_boundary(should_stop_after_message) {
                 log::info!(
                     "Consumed pending cancel at message boundary for session {}",
                     session_id
@@ -76,12 +77,11 @@ pub async fn continue_workflow_after_tool(
                     let mut sessions = active_sessions.write().await;
                     if let Some(session) = sessions.get_mut(&session_id) {
                         session.cancel_pending.store(false, Ordering::SeqCst);
-                        session.is_running = false;
                         session.cancellation_token = CancellationToken::new();
                     }
                 }
 
-                crate::agent::workflow::cancel::discard_pending_events(active_sessions, &session_id).await;
+                discard_pending_events(active_sessions, &session_id).await;
 
                 let _ = crate::agent::lifecycle::update_session_status(
                     session_repo,

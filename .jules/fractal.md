@@ -105,5 +105,5 @@
 
 ## 2026-03-15 - src-tauri/src/agent/workflow
 
-**Split:** start.rs, pause_resume.rs, cancel.rs, tool.rs
+**Split:** `start.rs`, `pause_resume.rs`, `cancel.rs`, `tool.rs`
 **Improvement:** Decoupled workflow actions into separate modules to reduce file size.
