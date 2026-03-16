@@ -677,7 +677,7 @@ export function useLLMExecution({
             return next;
           });
           timeoutsRef.current.delete(sessionId);
-        }, 100);
+        }, 500); // Increased from 100ms to 500ms to cover event processing delay
         timeoutsRef.current.set(sessionId, timeoutId);
 
         updateSessionStatus(sessionId, 'idle');

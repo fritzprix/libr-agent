@@ -114,6 +114,7 @@ pub async fn resume_session(
                 compact_in_flight: Arc::new(AtomicBool::new(false)),
                 last_compacted_tail_id: Arc::new(RwLock::new(None)),
                 awaiting_compact_completion: Arc::new(AtomicBool::new(false)),
+                expected_response_id: Arc::new(RwLock::new(None)),
                 cached_stable_prompt: Arc::new(RwLock::new(None)),
             },
         );

@@ -290,10 +290,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     }
 
     // If there's a streaming message that's not yet in persisted messages
-    if (
-      isValidMessage(currentStreamingMessage) &&
-      currentStreamingMessage.isStreaming !== false
-    ) {
+    if (isValidMessage(currentStreamingMessage)) {
       const existsInMessages = displayed.some(
         (m) => m.id === currentStreamingMessage.id,
       );

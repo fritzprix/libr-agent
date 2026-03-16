@@ -107,6 +107,7 @@ impl From<AgentRuntimeError> for String {
 #[serde(rename_all = "camelCase")]
 pub struct CompletionRequest {
     pub session_id: String,
+    pub response_message_id: String,
     pub messages: Vec<Message>,
     pub model: String,
     pub provider: String,

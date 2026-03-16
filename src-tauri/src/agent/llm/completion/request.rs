@@ -523,8 +523,19 @@ pub async fn request_llm_completion(
         );
     }
 
+    // 4. Generate response message ID and store in session for matching
+    let response_message_id = cuid2::create_id();
+    {
+        let active = active_sessions.read().await;
+        if let Some(session) = active.get(&session_id) {
+            let mut expected_id = session.expected_response_id.write().await;
+            *expected_id = Some(response_message_id.clone());
+        }
+    }
+
     let request = CompletionRequest {
         session_id: session_id.clone(),
+        response_message_id,
         messages: final_messages,
         model,
         provider,
