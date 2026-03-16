@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
@@ -120,8 +121,19 @@ export function ScheduledTasksPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground">
-        {t('common.loading')}
+      <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-7 w-48 mb-1" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-9 w-24" />
+        </div>
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+        </div>
       </div>
     );
   }
