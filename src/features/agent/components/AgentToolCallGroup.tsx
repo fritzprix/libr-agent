@@ -300,7 +300,7 @@ const AgentToolCallGroupImpl: React.FC<AgentToolCallGroupProps> = ({
         <ExpandToggle
           isExpanded={isExpanded}
           totalCalls={toolGroup.calls.length}
-          onToggle={() => setIsExpanded(!isExpanded)}
+          onToggle={() => setIsExpanded((prev) => !prev)}
           ariaControls={listId}
         />
       )}
