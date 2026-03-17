@@ -459,10 +459,15 @@ async fn save_raw_html_to_file(
 
     let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%S").to_string();
     let file_name = format!("extracted-{}-{}.html", session_id, timestamp);
-    let relative_path = std::path::PathBuf::from("extracted-content")
-        .join(&file_name)
-        .to_string_lossy()
-        .replace('\\', "/");
+    let relative_path = {
+        let p = std::path::PathBuf::from("extracted-content")
+            .join(&file_name)
+            .to_string_lossy()
+            .to_string();
+        #[cfg(target_os = "windows")]
+        let p = p.replace('\\', "/");
+        p
+    };
 
     file_manager
         .write_file_string(&relative_path, raw_html)

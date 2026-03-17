@@ -231,6 +231,7 @@ fn matches_glob(pattern: &glob::Pattern, path: &std::path::Path, file_name: Opti
     // 3. Try matching normalized path (Windows compatibility)
     // If the path contains backslashes, normalize to forward slashes because
     // glob patterns standardly use forward slashes.
+    #[cfg(target_os = "windows")]
     if path_str.contains('\\') {
         let normalized = path_str.replace('\\', "/");
         if pattern.matches(&normalized) {
@@ -274,6 +275,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_matches_glob_windows() {
         let pattern = Pattern::new("src/**/*.rs").unwrap();
 

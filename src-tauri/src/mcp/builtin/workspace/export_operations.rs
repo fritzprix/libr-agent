@@ -219,7 +219,12 @@ impl WorkspaceServer {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
-                    let archive_path = rel_path.to_string_lossy().replace('\\', "/");
+                    let archive_path = {
+                        let p = rel_path.to_string_lossy().to_string();
+                        #[cfg(target_os = "windows")]
+                        let p = p.replace('\\', "/");
+                        p
+                    };
 
                     if !added_archive_paths.insert(archive_path.clone()) {
                         continue;
