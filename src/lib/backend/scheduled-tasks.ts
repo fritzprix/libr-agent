@@ -31,6 +31,7 @@ export interface CreateScheduledTaskRequest {
 export interface UpdateScheduledTaskRequest {
   name?: string;
   cronExpression?: string;
+  assistantId?: string;
   message?: string;
   yoloMode?: boolean;
   enabled?: boolean;

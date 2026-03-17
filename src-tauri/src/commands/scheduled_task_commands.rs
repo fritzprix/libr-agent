@@ -1,6 +1,7 @@
 //! Tauri commands for managing scheduled tasks.
 
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
+use crate::repositories::UpdateScheduledTaskParams;
 use crate::services::ScheduledTaskService;
 use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
@@ -62,6 +63,7 @@ pub struct CreateScheduledTaskRequest {
 pub struct UpdateScheduledTaskRequest {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
+    pub assistant_id: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
     pub enabled: Option<bool>,
@@ -114,11 +116,15 @@ pub async fn update_scheduled_task(
     ScheduledTaskService::update_scheduled_task(
         get_scheduled_task_repository(),
         &id,
-        request.name,
-        request.cron_expression,
-        request.message,
-        request.yolo_mode,
-        request.enabled,
+        UpdateScheduledTaskParams {
+            name: request.name,
+            cron_expression: request.cron_expression,
+            assistant_id: request.assistant_id,
+            message: request.message,
+            yolo_mode: request.yolo_mode,
+            enabled: request.enabled,
+            next_run_at: None,
+        },
     )
     .await
     .map(ScheduledTaskDto::from)
