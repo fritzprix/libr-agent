@@ -37,3 +37,7 @@
 ## 2026-03-15 - [src/lib/services/rust-assistant-service.ts] **Coverage Expanded:** [RustAssistantService] **Assertions:** [Verified mapping logic, error handling, pagination, event emission, and mock isolation for all Tauri IPC boundary methods]
 
 ## 2026-03-16 - [src/lib/backend/settings.ts] **Coverage Expanded:** [All backend setting API wrappers] **Assertions:** [Verified safeInvoke parameters and correct deserialization of timestamps]
+## 2026-03-17 - src/lib/backend/core.ts **Coverage Expanded:** safeInvoke **Assertions:** Verified command invocation and error logging.
+## 2026-03-17 - src/lib/backend/browser.ts **Coverage Expanded:** Browser Session commands **Assertions:** Verified backend calls with correct arguments.
+## 2026-03-17 - src/lib/backend/builtin-tools.ts **Coverage Expanded:** Builtin Tools commands **Assertions:** Verified backend calls with correct arguments.
+## 2026-03-17 - src/lib/backend/sessions.ts **Coverage Expanded:** Sessions commands **Assertions:** Verified backend calls with correct arguments.
