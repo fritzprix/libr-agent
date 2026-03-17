@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.38] - 2026-03-17
+
+### 🚀 Features
+
+- **Planning Panel Localization**: Localized the Agent Planning panel in both English and Korean, covering the active goal, task list, and priority labels for a more consistent multilingual agent experience.
+- **Scheduled Task Editing UX**: Improved the scheduled tasks workflow so task edits now handle assistant selection more reliably and behave more predictably under rapid user interaction.
+
+### 🐛 Fixes
+
+- **Scheduled Task Reliability**: Fixed follow-up issues in the scheduled tasks flow by persisting assistant changes correctly, tightening duplicate action guards, and surfacing clearer errors during toggle/delete operations.
+- **MCP Dialog Loading UX**: Fixed MCP server dialogs so the close button is hidden while loading or saving, preventing misleading clicks on controls that cannot safely close yet.
+- **Cross-platform Path Safety**: Restricted path separator normalization to Windows-only code paths, preventing valid Unix filenames containing backslashes from being corrupted.
+- **Agent Status Bar Stability**: Removed a render-phase state reset in the agent status bar to avoid React concurrency and StrictMode issues when switching sessions.
+
+### 🔧 Internal
+
+- **Assistant Model Cleanup**: Removed duplicated assistant config definitions and continued decoupling assistant DTOs from Tauri command handlers to keep the backend model layer cleaner.
+- **Backend Wrapper Test Coverage**: Added focused tests for core backend wrapper modules and refreshed release-adjacent formatting and review follow-ups to keep CI stable.
+
 ## [0.5.37] - 2026-03-17
 
 ### 🚀 Features
