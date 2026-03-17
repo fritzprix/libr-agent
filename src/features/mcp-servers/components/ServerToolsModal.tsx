@@ -31,7 +31,7 @@ export const ServerToolsModal: React.FC<ServerToolsModalProps> = ({
   const { tools, isLoading, error } = useServerTools(serverId, isOpen);
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isLoading && onClose()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
