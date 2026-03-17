@@ -12,6 +12,8 @@ pub async fn is_command_available(command: &str) -> bool {
         AsyncCommand::new("which")
     };
 
+    crate::utils::env::apply_isolated_env_async(&mut cmd);
+
     cmd.arg(command);
 
     match cmd.output().await {
