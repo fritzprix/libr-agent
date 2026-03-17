@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { Circle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAgentChat, ServiceContext } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
@@ -11,6 +12,7 @@ import type { PlanningState } from '@/models/planning';
 const logger = getLogger('AgentPlanningPanel');
 
 export function AgentPlanningPanel() {
+  const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { serviceContexts, updateServiceContexts } = useAgentChat();
 
@@ -47,24 +49,24 @@ export function AgentPlanningPanel() {
     <Card className="w-80 h-full flex flex-col bg-background/95 backdrop-blur border-border/50">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">AI Planning</CardTitle>
+          <CardTitle className="text-lg">{t('agent.planning.title')}</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Goal Section */}
         <div>
           <h4 className="font-medium text-sm text-muted-foreground mb-2">
-            Current Goal
+            {t('agent.planning.currentGoal')}
           </h4>
           <div className="text-sm p-3 bg-muted rounded-md">
-            {planningState?.goal || 'No active goal'}
+            {planningState?.goal || t('agent.planning.noGoal')}
           </div>
         </div>
 
         {/* Todos Section */}
         <div>
           <h4 className="font-medium text-sm text-muted-foreground mb-2">
-            Tasks
+            {t('agent.planning.tasks')}
           </h4>
           <div className="max-h-48 overflow-y-auto space-y-2">
             {planningState?.todos && planningState.todos.length > 0 ? (
@@ -108,10 +110,10 @@ export function AgentPlanningPanel() {
                               }`}
                             />
                             {todo.priority === 'high'
-                              ? 'High'
+                              ? t('agent.planning.priorityHigh')
                               : todo.priority === 'medium'
-                                ? 'Medium'
-                                : 'Low'}
+                                ? t('agent.planning.priorityMedium')
+                                : t('agent.planning.priorityLow')}
                           </Badge>
                         )}
                       </div>
@@ -120,7 +122,7 @@ export function AgentPlanningPanel() {
                 </div>
               ))
             ) : (
-              <div className="text-sm text-muted-foreground">No tasks</div>
+              <div className="text-sm text-muted-foreground">{t('agent.planning.noTasks')}</div>
             )}
           </div>
         </div>

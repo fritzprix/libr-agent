@@ -671,6 +671,16 @@
       "badgeBuiltin": "내장",
       "badgeMcp": "mcp",
       "viewSchema": "입력 스키마 보기"
+    },
+    "planning": {
+      "title": "AI 계획",
+      "currentGoal": "현재 목표",
+      "noGoal": "활성화된 목표 없음",
+      "tasks": "작업",
+      "noTasks": "작업 없음",
+      "priorityHigh": "높음",
+      "priorityMedium": "보통",
+      "priorityLow": "낮음"
     }
   },
   "scheduledTasks": {
