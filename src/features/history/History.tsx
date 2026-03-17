@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -15,14 +15,10 @@ export default function History() {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { loadSessions, deleteSession, deleteSessionOnly, toggleBookmark } =
+  const { deleteSession, deleteSessionOnly, toggleBookmark } =
     useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
 
   const handleResumeSession = useCallback(
     (sessionId: string) => {
@@ -60,6 +56,8 @@ export default function History() {
     },
     [deleteSessionOnly, t],
   );
+
+  const { loadSessions } = useAgentSessionListActions();
 
   const handleRefreshSessions = useCallback(() => {
     loadSessions();

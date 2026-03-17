@@ -4,6 +4,42 @@ import { render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { ScheduledTasksPage } from '@/features/scheduled-tasks/ScheduledTasksPage';
 
+// Mock the hook we created
+vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
+  useScheduledTasks: () => ({
+    tasks: [
+      {
+        id: 'task-1',
+        name: 'Test Task 1',
+        cronExpression: '* * * * *',
+        assistantId: 'ast-1',
+        message: 'Hello World',
+        enabled: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        nextRunAt: Date.now() + 60000
+      }
+    ],
+    loading: false,
+    togglingIds: new Set(),
+    deletingIds: new Set(),
+    createTask: vi.fn(),
+    updateTask: vi.fn(),
+    toggleTask: vi.fn(),
+    deleteTask: vi.fn(),
+  })
+}));
+
+// Mock the assistants hook
+vi.mock('@/features/assistant/hooks/useAssistantsList', () => ({
+  useAssistantsList: () => ({
+    assistants: [
+      { id: 'ast-1', name: 'Test Assistant' }
+    ],
+    loading: false,
+  })
+}));
+
 // Mock translation
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -12,24 +48,7 @@ vi.mock('react-i18next', () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>
 }));
 
-// Mock the backend
-vi.mock('@/lib/backend/scheduled-tasks', () => ({
-  listScheduledTasks: vi.fn().mockResolvedValue([
-    {
-      id: 'task-1',
-      name: 'Test Task 1',
-      cronExpression: '* * * * *',
-      assistantId: 'ast-1',
-      message: 'Hello World',
-      enabled: true,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      nextRunAt: Date.now() + 60000
-    }
-  ]),
-  toggleScheduledTask: vi.fn(),
-  deleteScheduledTask: vi.fn()
-}));
+// No longer need to mock the backend directly since useScheduledTasks is mocked
 
 // Mock logger
 vi.mock('@/lib/logger', () => ({

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Bot,
@@ -27,7 +27,6 @@ import {
 } from '../ui/sidebar';
 import {
   useAgentSessionListState,
-  useAgentSessionListActions,
 } from '@/context/AgentSessionListContext';
 import { useUpdateContext } from '@/context/UpdateContext';
 
@@ -68,11 +67,6 @@ export default function AppSidebar() {
   const hasUpdate = updateStatus === 'available';
 
   const { sessions } = useAgentSessionListState();
-  const { loadSessions } = useAgentSessionListActions();
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
 
   /** Show up to 5 sessions: busy first, then by most recent */
   const recentSessions = useMemo(() => {

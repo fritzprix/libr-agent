@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import {
   Dialog,
@@ -22,7 +22,6 @@ import { Switch } from '@/components/ui/switch';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
 import { ScheduleBuilder } from './ScheduleBuilder';
-import { listAssistants } from '@/lib/backend/assistants';
 import type { Assistant } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 
@@ -31,6 +30,7 @@ const logger = getLogger('ScheduledTaskModal');
 interface ScheduledTaskModalProps {
   open: boolean;
   task?: ScheduledTask | null;
+  assistants: Assistant[];
   onClose: () => void;
   onSave: (data: {
     name: string;
@@ -44,18 +44,11 @@ interface ScheduledTaskModalProps {
 export function ScheduledTaskModal({
   open,
   task,
+  assistants,
   onClose,
   onSave,
 }: ScheduledTaskModalProps) {
   const { t } = useTranslation();
-  const [assistants, setAssistants] = useState<Assistant[]>([]);
-
-  // Load assistants once
-  useEffect(() => {
-    listAssistants()
-      .then(setAssistants)
-      .catch((e: unknown) => logger.error('Failed to load assistants', e));
-  }, []);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -106,27 +99,20 @@ function ScheduledTaskForm({
   const [cronExpression, setCronExpression] = useState(
     task?.cronExpression ?? '0 9 * * *',
   );
-  const [assistantId, setAssistantId] = useState(
-    task?.assistantId ?? assistants[0]?.id ?? '',
-  );
+
+  const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<string | null>(null);
+
+  // Derive the effective assistant ID directly during render
+  const effectiveAssistantId = userSelectedAssistantId ?? task?.assistantId ?? (assistants.length > 0 ? assistants[0].id : '');
   const [message, setMessage] = useState(task?.message ?? '');
   const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
   const [saving, setSaving] = useState(false);
-  const [prevAssistants, setPrevAssistants] = useState(assistants);
-
-  // Set default assistantId for new tasks if assistants finish loading after the form mounts
-  if (assistants !== prevAssistants) {
-    setPrevAssistants(assistants);
-    if (!task && !assistantId && assistants.length > 0) {
-      setAssistantId(assistants[0].id);
-    }
-  }
 
   const handleSave = async () => {
     if (
       !name.trim() ||
       !cronExpression.trim() ||
-      !assistantId ||
+      !effectiveAssistantId ||
       !message.trim()
     )
       return;
@@ -135,7 +121,7 @@ function ScheduledTaskForm({
       await onSave({
         name: name.trim(),
         cronExpression: cronExpression.trim(),
-        assistantId,
+        assistantId: effectiveAssistantId,
         message: message.trim(),
         yoloMode,
       });
@@ -148,7 +134,7 @@ function ScheduledTaskForm({
   };
 
   const isValid = Boolean(
-    name.trim() && cronExpression.trim() && assistantId && message.trim(),
+    name.trim() && cronExpression.trim() && effectiveAssistantId && message.trim(),
   );
 
   return (
@@ -170,7 +156,7 @@ function ScheduledTaskForm({
         {/* Assistant */}
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
-          <Select value={assistantId} onValueChange={setAssistantId}>
+          <Select value={effectiveAssistantId} onValueChange={setUserSelectedAssistantId}>
             <SelectTrigger>
               <SelectValue
                 placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
@@ -207,7 +193,7 @@ function ScheduledTaskForm({
           <MentionTextarea
             value={message}
             onChange={setMessage}
-            assistantId={assistantId}
+            assistantId={effectiveAssistantId}
             rows={3}
           />
         </div>

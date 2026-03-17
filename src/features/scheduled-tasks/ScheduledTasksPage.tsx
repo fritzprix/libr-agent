@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -10,43 +10,30 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Plus, Pencil, Trash2, Clock, Zap } from 'lucide-react';
-import {
-  listScheduledTasks,
-  createScheduledTask,
-  updateScheduledTask,
-  toggleScheduledTask,
-  deleteScheduledTask,
-  type ScheduledTask,
-} from '@/lib/backend/scheduled-tasks';
+import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
 import { describeCron } from './components/ScheduleBuilder';
-import { getLogger } from '@/lib/logger';
-
-const logger = getLogger('ScheduledTasksPage');
+import { useScheduledTasks } from './hooks/useScheduledTasks';
+import { useAssistantsList } from '@/features/assistant/hooks/useAssistantsList';
 
 export function ScheduledTasksPage() {
   const { t } = useTranslation();
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const {
+    tasks,
+    loading,
+    togglingIds,
+    deletingIds,
+    createTask,
+    updateTask,
+    toggleTask,
+    deleteTask,
+  } = useScheduledTasks();
+
+  const { assistants } = useAssistantsList();
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
-  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
-  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-
-  const load = useCallback(async () => {
-    try {
-      const result = await listScheduledTasks();
-      setTasks(result);
-    } catch (e: unknown) {
-      logger.error('Failed to load scheduled tasks', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const handleCreate = async (data: {
     name: string;
@@ -55,8 +42,7 @@ export function ScheduledTasksPage() {
     message: string;
     yoloMode: boolean;
   }) => {
-    const task = await createScheduledTask(data);
-    setTasks((prev) => [...prev, task]);
+    await createTask(data);
   };
 
   const handleUpdate = async (data: {
@@ -67,42 +53,15 @@ export function ScheduledTasksPage() {
     yoloMode: boolean;
   }) => {
     if (!editingTask) return;
-    const updated = await updateScheduledTask(editingTask.id, data);
-    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    await updateTask(editingTask.id, data);
   };
 
   const handleToggle = async (task: ScheduledTask) => {
-    if (togglingIds.has(task.id) || deletingIds.has(task.id)) return;
-    setTogglingIds((prev) => new Set(prev).add(task.id));
-    try {
-      const updated = await toggleScheduledTask(task.id, !task.enabled);
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    } catch (e: unknown) {
-      logger.error('Failed to toggle task', e);
-    } finally {
-      setTogglingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(task.id);
-        return next;
-      });
-    }
+    await toggleTask(task);
   };
 
   const handleDelete = async (id: string) => {
-    if (deletingIds.has(id) || togglingIds.has(id)) return;
-    setDeletingIds((prev) => new Set(prev).add(id));
-    try {
-      await deleteScheduledTask(id);
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (e: unknown) {
-      logger.error('Failed to delete task', e);
-    } finally {
-      setDeletingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
+    await deleteTask(id);
   };
 
   const openCreate = () => {
@@ -264,6 +223,7 @@ export function ScheduledTasksPage() {
       <ScheduledTaskModal
         open={modalOpen}
         task={editingTask}
+        assistants={assistants}
         onClose={() => setModalOpen(false)}
         onSave={editingTask ? handleUpdate : handleCreate}
       />
