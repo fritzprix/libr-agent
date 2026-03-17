@@ -5,7 +5,14 @@ import { safeInvoke } from './core';
 // ========================================
 
 /**
- * Checks if a dropped path is a file or a directory and consumes it from the allowlist.
+ * Checks if a dropped path is a file or a directory.
+ *
+ * For **directories**: the path is consumed from the allowlist immediately.
+ * For **files**: the path is only verified to exist in the allowlist; it is NOT
+ * consumed here — consumption happens later when {@link readDroppedFile} is called.
+ *
+ * Callers must not assume a file path is unusable after this check.
+ *
  * @param path The path of the dropped item.
  * @returns A promise that resolves to 'file' or 'directory'.
  */

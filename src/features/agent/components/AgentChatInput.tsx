@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useAgentChat } from '@/context/AgentChatContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
+import { useLLMService } from '@/context/LLMServiceContext';
 import {
   Button,
   FileAttachment,
@@ -49,6 +50,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const { t } = useTranslation();
   const { session } = useAgentSessionState();
   const { submit, isSessionLoading, workflowStatus, cancel } = useAgentChat();
+  const { isCompacting } = useLLMService();
   const [pendingCancel, setPendingCancel] = useState(false);
   const [dragState, setDragState] = useState<'none' | 'valid' | 'invalid'>(
     'none',
@@ -116,9 +118,16 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       isSessionLoading ||
       isSubmitting ||
       workflowStatus === 'busy' ||
-      workflowStatus === 'paused'
+      workflowStatus === 'paused' ||
+      (session?.id ? isCompacting(session.id) : false)
     );
-  }, [isSessionLoading, isSubmitting, workflowStatus]);
+  }, [
+    isSessionLoading,
+    isSubmitting,
+    workflowStatus,
+    session?.id,
+    isCompacting,
+  ]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {

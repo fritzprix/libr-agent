@@ -8,8 +8,7 @@ pub fn all_tools() -> Vec<MCPTool> {
         update_goal_tool(),
         clear_goal_tool(),
         add_todo_tool(),
-        check_todo_tool(),
-        cancel_todo_tool(),
+        update_todo_tool(),
         clear_session_tool(),
         get_current_state_tool(),
         reflect_tool(),
@@ -96,11 +95,19 @@ fn add_todo_tool() -> MCPTool {
     }
 }
 
-fn check_todo_tool() -> MCPTool {
+fn update_todo_tool() -> MCPTool {
     MCPTool {
-        name: "checkTodo".to_string(),
-        title: Some("Check Todo".to_string()),
-        description: "Mark a todo as done or undone using its position. Get positions from getCurrentState. Checked todos remain in the list for progress tracking.".to_string(),
+        name: "updateTodo".to_string(),
+        title: Some("Update Todo".to_string()),
+        description: r#"Mark a todo as done/undone or cancel (remove) it, identified by its 0-based position.
+
+action:
+  'done'   — Mark as completed (stays in list for progress tracking). Supply checked=false to reopen.
+  'cancel' — Permanently remove the todo. Use only when the task should never have existed.
+
+Prefer 'done' over 'cancel' — completed todos preserve history.
+Get positions from getCurrentState."#
+            .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -108,46 +115,29 @@ fn check_todo_tool() -> MCPTool {
                     integer_prop(
                         None,
                         Some(0),
-                        Some("The 0-based position of the todo in the list (e.g., 0 for first todo, 1 for second)"),
+                        Some("The 0-based position of the todo. Use getCurrentState to see current positions."),
+                    ),
+                ),
+                (
+                    "action".to_string(),
+                    enum_prop(
+                        vec!["done", "cancel"],
+                        "done",
+                        Some("'done' to mark complete (reversible), 'cancel' to permanently remove."),
                     ),
                 ),
                 (
                     "checked".to_string(),
-                    boolean_prop(Some("Whether to mark as done (true) or undone (false). Defaults to true.")),
+                    boolean_prop(Some(
+                        "Only for action='done'. Mark as done (true, default) or reopen (false).",
+                    )),
                 ),
                 (
                     "summary".to_string(),
-                    string_prop(None, None, Some("Optional completion summary (e.g., 'Fixed with PR #42', 'Resolved in commit abc123').")),
-                ),
-            ],
-            vec!["index".to_string()],
-            None,
-        ),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-fn cancel_todo_tool() -> MCPTool {
-    MCPTool {
-        name: "cancelTodo".to_string(),
-        title: Some("Cancel Todo".to_string()),
-        description: r#"Remove a single todo by its position. Use this tool when:
-• Task was created incorrectly
-• Requirements changed and task is no longer needed
-• Task duplicates another todo
-
-⚠️ IMPORTANT: This operation is irreversible
-❌ DO NOT use for completed tasks - use checkTodo instead to preserve completion history
-✓ Use cancelTodo only for tasks that should not exist"#.to_string(),
-        input_schema: object_prop(
-            vec![
-                (
-                    "index".to_string(),
-                    integer_prop(
+                    string_prop(
                         None,
-                        Some(0),
-                        Some("The 0-based position of the todo to remove (e.g., 0 for first todo, 1 for second)"),
+                        None,
+                        Some("Only for action='done'. Optional completion note (e.g., 'Fixed in PR #42')."),
                     ),
                 ),
             ],

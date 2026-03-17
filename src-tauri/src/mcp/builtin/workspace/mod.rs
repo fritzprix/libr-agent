@@ -20,6 +20,12 @@ pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentShell";
 #[cfg(windows)]
 pub const PERSISTENT_SHELL_TOOL: &str = "runInPersistentPowerShell";
 
+// Platform-specific one-shot shell tool name
+#[cfg(unix)]
+pub const RUN_SHELL_TOOL: &str = "runShell";
+#[cfg(windows)]
+pub const RUN_SHELL_TOOL: &str = "runPowerShell";
+
 // Module imports
 pub mod code_execution;
 pub mod export_operations;
@@ -261,19 +267,22 @@ impl WorkspaceServer {
                         {
                             // Unix: send SIGTERM
                             use std::process::Command;
-                            let _ = Command::new("kill")
-                                .arg("-TERM")
-                                .arg(pid.to_string())
-                                .output();
+                            let mut cmd = Command::new("kill");
+                            cmd.arg("-TERM").arg(pid.to_string());
+                            crate::utils::env::apply_isolated_env(&mut cmd);
+                            let _ = cmd.output();
                         }
 
                         #[cfg(windows)]
                         {
                             // Windows: use taskkill
+                            use std::os::windows::process::CommandExt;
                             use std::process::Command;
-                            let _ = Command::new("taskkill")
-                                .args(["/PID", &pid.to_string(), "/F"])
-                                .output();
+                            let mut cmd = Command::new("taskkill");
+                            cmd.args(["/PID", &pid.to_string(), "/F"]);
+                            crate::utils::env::apply_isolated_env(&mut cmd);
+                            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                            let _ = cmd.output();
                         }
                     }
                 }
@@ -466,7 +475,12 @@ impl BuiltinMCPServer for WorkspaceServer {
         }
 
         let workspace_dir_path = self.get_workspace_dir(&session_id);
-        let workspace_dir = workspace_dir_path.to_string_lossy().to_string();
+        let workspace_dir = {
+            let path_str = workspace_dir_path.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let path_str = path_str.replace('\\', "/");
+            path_str
+        };
 
         // Platform information
         let os = std::env::consts::OS;
@@ -475,6 +489,12 @@ impl BuiltinMCPServer for WorkspaceServer {
 
         // Get current shell CWD
         let shell_cwd = if let Some(cwd) = self.shell_manager.get_shell_cwd(&session_id).await {
+            let cwd = {
+                #[cfg(target_os = "windows")]
+                let cwd = cwd.replace('\\', "/");
+                cwd
+            };
+
             // Convert to relative path if within workspace for better readability
             if cwd.starts_with(&workspace_dir) {
                 cwd.replacen(&workspace_dir, ".", 1)

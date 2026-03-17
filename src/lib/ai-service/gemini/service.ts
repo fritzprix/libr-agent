@@ -1,4 +1,12 @@
-import { FunctionDeclaration, FinishReason, GoogleGenAI } from '@google/genai';
+import {
+  FunctionDeclaration,
+  FinishReason,
+  GoogleGenAI,
+  Content,
+  Schema as GeminiSchema,
+  Type,
+} from '@google/genai';
+import { JSONSchema } from '@/lib/mcp';
 import { getLogger } from '../../logger';
 import { Message } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
@@ -6,7 +14,7 @@ import { AIServiceProvider, AIServiceConfig } from '../types';
 import { BaseAIService } from '../base-service';
 import type { ModelInfo } from '../../llm-config-manager';
 import { GeminiServiceConfig } from './types';
-import { convertToGeminiMessages, convertSingleMessage } from './mapper';
+import { convertToGeminiMessages } from './mapper';
 import {
   mapReasoningEffortToBudget,
   checkThinkingSupport,
@@ -14,12 +22,11 @@ import {
 } from './config';
 import { fetchGeminiModels, getDefaultModel } from './models';
 import { processGeminiStream } from './stream';
-import { convertMCPToolToGemini } from '../tool-converters';
 
 /**
  * An AI service implementation for interacting with Google's Gemini models.
  */
-export class GeminiService extends BaseAIService {
+export class GeminiService extends BaseAIService<Content, FunctionDeclaration> {
   private genAI: GoogleGenAI;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -69,7 +76,102 @@ export class GeminiService extends BaseAIService {
    * @inheritdoc
    */
   convertTools(mcpTools: MCPTool[]): FunctionDeclaration[] {
-    return mcpTools.map(convertMCPToolToGemini);
+    return mcpTools.map((mcpTool) => {
+      // Convert the entire inputSchema to Gemini format
+      const geminiParams = this.convertMCPSchemaToGeminiParameters(
+        mcpTool.inputSchema,
+      );
+
+      return {
+        name: mcpTool.name,
+        description: mcpTool.description,
+        parameters: {
+          type: Type.OBJECT,
+          description: mcpTool.inputSchema.description,
+          properties: geminiParams.properties || {},
+          required: mcpTool.inputSchema.required || [],
+        },
+      } satisfies FunctionDeclaration;
+    });
+  }
+
+  /**
+   * Recursively converts an MCPTool's JSONSchema into the Google GenAI FunctionDeclaration format.
+   * This properly handles nested objects and arrays, preserving all schema information.
+   * @param schema The MCP JSONSchema to convert.
+   * @returns The schema in the format required by Google GenAI SDK.
+   * @private
+   */
+  private convertMCPSchemaToGeminiParameters(schema: JSONSchema): GeminiSchema {
+    // Base case: String type with optional enum
+    if (schema.type === 'string') {
+      const result: GeminiSchema = { type: Type.STRING };
+      if (schema.description) result.description = schema.description;
+      if ('enum' in schema && Array.isArray(schema.enum)) {
+        result.enum = schema.enum as string[];
+      }
+      return result;
+    }
+
+    // Base case: Number types
+    if (schema.type === 'number' || schema.type === 'integer') {
+      const result: GeminiSchema = { type: Type.NUMBER };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Base case: Boolean type
+    if (schema.type === 'boolean') {
+      const result: GeminiSchema = { type: Type.BOOLEAN };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Base case: Null type
+    if (schema.type === 'null') {
+      const result: GeminiSchema = { type: Type.STRING };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Recursive case: Arrays
+    if (schema.type === 'array' && 'items' in schema && schema.items) {
+      const arrayItems = Array.isArray(schema.items)
+        ? schema.items[0]
+        : schema.items;
+      const result: GeminiSchema = {
+        type: Type.ARRAY,
+        items: arrayItems
+          ? this.convertMCPSchemaToGeminiParameters(arrayItems)
+          : { type: Type.STRING },
+      };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Recursive case: Objects
+    if (
+      schema.type === 'object' &&
+      'properties' in schema &&
+      schema.properties
+    ) {
+      const geminiProperties: Record<string, GeminiSchema> = {};
+
+      for (const [key, propSchema] of Object.entries(schema.properties)) {
+        geminiProperties[key] =
+          this.convertMCPSchemaToGeminiParameters(propSchema);
+      }
+
+      const result: GeminiSchema = {
+        type: Type.OBJECT,
+        properties: geminiProperties,
+      };
+      if (schema.description) result.description = schema.description;
+      return result;
+    }
+
+    // Fallback for unknown or incomplete types
+    return { type: Type.STRING };
   }
 
   /**
@@ -115,6 +217,7 @@ export class GeminiService extends BaseAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @yields A JSON string for each chunk of the response, containing content and/or tool calls.
    */
   protected async *doStreamChat(
@@ -125,12 +228,19 @@ export class GeminiService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const geminiMessages = convertToGeminiMessages(messages);
+      const geminiMessages = this.convertMessages(
+        sanitizedMessages,
+        options.systemPrompt,
+      );
       if (geminiMessages.length === 0) {
         throw new Error(
           'No valid messages to send to Gemini (must start with user/tool role)',
@@ -219,7 +329,9 @@ export class GeminiService extends BaseAIService {
       } else {
         if (geminiTools) {
           geminiConfig.tools = geminiTools;
-          if (options.forceToolUse) {
+          if (options.disableToolUse) {
+            geminiConfig.functionCallingConfig = { mode: 'none' };
+          } else if (options.forceToolUse) {
             geminiConfig.functionCallingConfig = { mode: 'any' };
           }
         }
@@ -306,25 +418,59 @@ export class GeminiService extends BaseAIService {
     }
   }
 
-  /**
-   * @inheritdoc
-   * @description For Gemini, system instructions are handled as a separate parameter,
-   * so this method returns null.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    // Gemini handles system instructions separately, not as messages
+  protected convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): Content[] {
+    // Note: Gemini system prompt is handled via systemInstruction in config
     void systemPrompt;
-    return null;
+    return convertToGeminiMessages(messages);
   }
 
   /**
    * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Gemini API.
-   * @protected
    */
-  protected convertSingleMessage(message: Message): unknown {
-    return convertSingleMessage(message);
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Gemini handles system messages separately
+    if (message.role === 'system') return null;
+
+    // Remove thinkingSignature if it's the dummy signature we injected
+    // (though usually we don't need to do this for the upstream API)
+    if (message.thinkingSignature === 'skip_thought_signature_validator') {
+      delete message.thinkingSignature;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('gemini-1.5') || lowerName.includes('gemini-2');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('gemini-1.5-pro')) return 2000000;
+    if (lowerName.includes('gemini-1.5-flash')) return 1000000;
+    if (lowerName.includes('gemini-2.0-flash')) return 1000000;
+    return 1000000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return GeminiService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return GeminiService.estimateContextWindowForModel(modelName);
   }
 
   /**
@@ -349,6 +495,12 @@ export class GeminiService extends BaseAIService {
 
   /**
    * Performs a non-streaming text generation request using the Gemini API.
+   * @param prompt The prompt to send to the model.
+   * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
+   * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(
     prompt: string,

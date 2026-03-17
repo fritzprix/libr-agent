@@ -92,3 +92,18 @@
 
 **Split:** `interactive_shell.rs`, `execute_pending.rs`, `cancel_pending.rs`
 **Improvement:** Decoupled `handle_interactive_shell`, `handle_execute_pending_shell`, and `handle_cancel_pending_execution` into distinct modules based on functionality. Reduced the monolithic file size of ~769 lines into manageable components, significantly improving readability and maintainability.
+
+## 2026-03-11 - src-tauri/src/mcp/builtin/workspace/handlers/terminal.rs
+
+**Split:** `read_output.rs`, `list.rs`, `stop.rs`, `wait.rs`, `mod.rs`
+**Improvement:** Decoupled `WorkspaceServer` terminal process handler logic (read output, list processes, stop process, wait for process) into distinct modules. Reduced the 749 line `terminal.rs` monolith into manageable components, significantly improving readability and maintainability of the workspace tools.
+
+## 2026-03-14 - src-tauri/src/agent/llm/completion/
+
+**Split:** `context.rs`, `compaction.rs`, `request.rs`, `mod.rs`
+**Improvement:** Decoupled LLM completion request orchestration, context management settings, and background compaction into focused submodules. Reduced completion.rs from >1000 lines into multiple manageable components, improving readability and separation of concerns.
+
+## 2026-03-15 - src-tauri/src/agent/workflow
+
+**Split:** `start.rs`, `pause_resume.rs`, `cancel.rs`, `tool.rs`
+**Improvement:** Decoupled workflow actions into separate modules to reduce file size.

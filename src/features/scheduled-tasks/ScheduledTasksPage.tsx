@@ -1,60 +1,52 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Plus, Pencil, Trash2, Clock } from 'lucide-react';
-import {
-  listScheduledTasks,
-  createScheduledTask,
-  updateScheduledTask,
-  toggleScheduledTask,
-  deleteScheduledTask,
-  type ScheduledTask,
-} from '@/lib/backend/scheduled-tasks';
+import { Plus, Pencil, Trash2, Clock, Zap } from 'lucide-react';
+import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
 import { describeCron } from './components/ScheduleBuilder';
+import { useScheduledTasks } from './hooks/useScheduledTasks';
 import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
+import { useAssistantContext } from '@/context/AssistantContext';
 
 const logger = getLogger('ScheduledTasksPage');
 
 export function ScheduledTasksPage() {
   const { t } = useTranslation();
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const {
+    tasks,
+    loading,
+    togglingIds,
+    deletingIds,
+    createTask,
+    updateTask,
+    toggleTask,
+    deleteTask,
+  } = useScheduledTasks();
+
+  const { assistants } = useAssistantContext();
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
-  const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set());
-  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-
-  const load = useCallback(async () => {
-    try {
-      const result = await listScheduledTasks();
-      setTasks(result);
-    } catch (e: unknown) {
-      logger.error('Failed to load scheduled tasks', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const handleCreate = async (data: {
     name: string;
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => {
-    const task = await createScheduledTask(data);
-    setTasks((prev) => [...prev, task]);
+    await createTask(data);
   };
 
   const handleUpdate = async (data: {
@@ -62,43 +54,31 @@ export function ScheduledTasksPage() {
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => {
     if (!editingTask) return;
-    const updated = await updateScheduledTask(editingTask.id, data);
-    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    await updateTask(editingTask.id, data);
   };
 
   const handleToggle = async (task: ScheduledTask) => {
-    if (togglingIds.has(task.id) || deletingIds.has(task.id)) return;
-    setTogglingIds((prev) => new Set(prev).add(task.id));
     try {
-      const updated = await toggleScheduledTask(task.id, !task.enabled);
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    } catch (e: unknown) {
-      logger.error('Failed to toggle task', e);
-    } finally {
-      setTogglingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(task.id);
-        return next;
-      });
+      await toggleTask(task);
+    } catch (error) {
+      logger.error('Failed to toggle scheduled task', error);
+      toast.error(
+        t('scheduledTasks.toggleFailed', 'Failed to update scheduled task'),
+      );
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (deletingIds.has(id) || togglingIds.has(id)) return;
-    setDeletingIds((prev) => new Set(prev).add(id));
     try {
-      await deleteScheduledTask(id);
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-    } catch (e: unknown) {
-      logger.error('Failed to delete task', e);
-    } finally {
-      setDeletingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      await deleteTask(id);
+    } catch (error) {
+      logger.error('Failed to delete scheduled task', error);
+      toast.error(
+        t('scheduledTasks.deleteFailed', 'Failed to delete scheduled task'),
+      );
     }
   };
 
@@ -120,8 +100,24 @@ export function ScheduledTasksPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground">
-        {t('common.loading')}
+      <div
+        className="flex flex-col gap-6 p-6 max-w-3xl mx-auto"
+        role="status"
+        aria-busy="true"
+      >
+        <span className="sr-only">{t('common.loading')}</span>
+        <div className="flex items-center justify-between" aria-hidden="true">
+          <div>
+            <Skeleton className="h-7 w-48 mb-1" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-9 w-24" />
+        </div>
+        <div className="flex flex-col gap-3" aria-hidden="true">
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+        </div>
       </div>
     );
   }
@@ -168,6 +164,15 @@ export function ScheduledTasksPage() {
                   <Badge variant="secondary" className="text-xs shrink-0">
                     {describeCron(task.cronExpression, t)}
                   </Badge>
+                  {task.yoloMode && (
+                    <Badge
+                      variant="default"
+                      className="text-xs shrink-0 bg-primary/80 hover:bg-primary/80"
+                    >
+                      <Zap size={10} className="mr-1 fill-current" />
+                      YOLO
+                    </Badge>
+                  )}
                   {!task.enabled && (
                     <Badge variant="outline" className="text-xs shrink-0">
                       {t('scheduledTasks.disabled')}
@@ -236,6 +241,7 @@ export function ScheduledTasksPage() {
       <ScheduledTaskModal
         open={modalOpen}
         task={editingTask}
+        assistants={assistants}
         onClose={() => setModalOpen(false)}
         onSave={editingTask ? handleUpdate : handleCreate}
       />

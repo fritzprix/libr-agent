@@ -85,8 +85,7 @@ impl BuiltinMCPServer for PlanningServer {
             "updateGoal" => goals::update_goal(self.db.as_ref(), &target_session_id, args).await,
             "clearGoal" => goals::clear_goal(self.db.as_ref(), &target_session_id, args).await,
             "addTodo" => todos::add_todo(self.db.as_ref(), &target_session_id, args).await,
-            "checkTodo" => todos::check_todo(self.db.as_ref(), &target_session_id, args).await,
-            "cancelTodo" => todos::cancel_todo(self.db.as_ref(), &target_session_id, args).await,
+            "updateTodo" => todos::update_todo(self.db.as_ref(), &target_session_id, args).await,
             "clearSession" => {
                 let repo = crate::state::get_planning_repository();
                 match repo.clear_session(&target_session_id).await {

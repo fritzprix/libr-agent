@@ -16,7 +16,6 @@ import { supportsThinking, getContextWindow } from './model-capabilities';
 import {
   convertMCPToolsToOllamaTools,
   convertToOllamaMessages,
-  convertMessage,
   processChunk,
   getModelToolSupport,
   determineThinkParam,
@@ -51,7 +50,7 @@ interface StreamChatOptions {
 /**
  * An AI service implementation for interacting with a local Ollama server.
  */
-export class OllamaService extends BaseAIService {
+export class OllamaService extends BaseAIService<SimpleOllamaMessage, Tool> {
   private host: string;
   private ollamaClient: Ollama;
 
@@ -74,6 +73,20 @@ export class OllamaService extends BaseAIService {
     logger.info('Ollama service initialized', {
       host: this.host,
     });
+  }
+
+  static supportsToolsForModel(modelName: string): boolean {
+    return getModelToolSupport(modelName);
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama-3.1-405b')) return 128000;
+    if (lowerName.includes('llama-3.1')) return 128000;
+    if (lowerName.includes('llama-3.2')) return 128000;
+    if (lowerName.includes('mistral-nemo')) return 128000;
+    if (lowerName.includes('command-r')) return 128000;
+    return 32768;
   }
 
   /**
@@ -166,6 +179,35 @@ export class OllamaService extends BaseAIService {
   }
 
   /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Ollama doesn't support thinking fields in the same way Anthropic does
+    if (message.thinking) {
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return OllamaService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return OllamaService.estimateContextWindowForModel(modelName);
+  }
+
+  /**
    * Initiates a streaming chat session with the Ollama API.
    * @param messages The array of messages for the conversation.
    * @param options Optional parameters for the chat.
@@ -175,10 +217,11 @@ export class OllamaService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools: ollamaTools } = this.prepareStreamChat(
-      messages,
-      options,
-    );
+    const {
+      config,
+      tools: ollamaTools,
+      sanitizedMessages,
+    } = this.prepareStreamChat(messages, options);
 
     logger.info('🔵 Ollama doStreamChat called', {
       inputMessageCount: messages.length,
@@ -188,14 +231,14 @@ export class OllamaService extends BaseAIService {
     });
 
     try {
-      const ollamaMessages = this.convertToOllamaMessages(
-        messages,
+      const ollamaMessages = this.convertMessages(
+        sanitizedMessages,
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
 
       logger.info('📨 Converted messages for Ollama', {
-        originalCount: messages.length,
+        originalCount: sanitizedMessages.length,
         convertedCount: ollamaMessages.length,
         model,
         toolCount: (ollamaTools ?? []).length,
@@ -234,7 +277,7 @@ export class OllamaService extends BaseAIService {
         messages: ollamaMessages as OllamaMessage[],
         stream: true,
         ...(thinkParam !== undefined && { think: thinkParam }), // Conditional inclusion
-        tools: ollamaTools as Tool[] | undefined,
+        tools: ollamaTools,
         keep_alive: '5m',
         options: {
           temperature: config.temperature || 0.7,
@@ -346,21 +389,11 @@ export class OllamaService extends BaseAIService {
    * @returns An array of `SimpleOllamaMessage` objects.
    * @private
    */
-  private convertToOllamaMessages(
+  protected convertMessages(
     messages: Message[],
     systemPrompt?: string,
   ): SimpleOllamaMessage[] {
     return convertToOllamaMessages(messages, systemPrompt, coreLogger);
-  }
-
-  /**
-   * Converts a single `Message` object to the corresponding `SimpleOllamaMessage` format.
-   * @param message The message to convert.
-   * @returns A `SimpleOllamaMessage` object, or null if the message is invalid.
-   * @private
-   */
-  private convertMessage(message: Message): SimpleOllamaMessage | null {
-    return convertMessage(message, coreLogger);
   }
 
   /**
@@ -374,28 +407,13 @@ export class OllamaService extends BaseAIService {
   }
 
   /**
-   * @inheritdoc
-   * @description Creates an Ollama-compatible system message object.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    return {
-      role: 'system',
-      content: systemPrompt.trim(),
-    };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Ollama API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    return this.convertMessage(message);
-  }
-
-  /**
    * Performs a non-streaming text generation request using the Ollama API.
+   * @param prompt The prompt to send to the model.
+   * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
+   * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(
     prompt: string,

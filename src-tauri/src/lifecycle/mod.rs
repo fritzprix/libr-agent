@@ -3,6 +3,7 @@ pub mod app_setup;
 pub mod database;
 pub mod database_backup;
 pub mod database_error;
+pub mod frontend_ready;
 pub mod migration_verifier;
 pub mod repositories;
 pub mod retry_utils;

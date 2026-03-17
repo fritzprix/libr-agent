@@ -27,7 +27,8 @@ export type BuiltinServiceId =
   | 'ui'
   | 'browser'
   | 'bootstrap'
-  | 'mcp_manager';
+  | 'mcp_manager'
+  | 'media';
 
 interface BuiltinServiceEntry {
   readonly canonical: BuiltinServiceId;
@@ -47,6 +48,7 @@ const BUILTIN_SERVICE_REGISTRY: readonly BuiltinServiceEntry[] = [
   { canonical: 'browser', category: 'optional' },
   { canonical: 'bootstrap', category: 'optional' },
   { canonical: 'mcp_manager', category: 'core' },
+  { canonical: 'media', category: 'optional' },
 ];
 
 // ─── Derived constants (do not edit directly) ──────────────────────────────────

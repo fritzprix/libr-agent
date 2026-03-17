@@ -2,6 +2,8 @@ import type { ModelInfo } from '../llm-config-manager';
 import type { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import type { Message } from '@/models/chat';
 
+export type { ModelInfo, SamplingOptions, SamplingResponse };
+
 export interface SafetySetting {
   category: string;
   threshold: string;
@@ -37,6 +39,8 @@ export interface TokenUsage {
     cacheReadInputTokens?: number;
     /** Cached content token count (Gemini) */
     cachedContentTokenCount?: number;
+    /** Thinking/reasoning token count (Gemini reasoning models) */
+    thoughtsTokenCount?: number;
     /** Prompt cache hit tokens (Groq/DeepSeek) */
     prompt_cache_hit_tokens?: number;
     /** Time to first token (ms) - Client-side measurement for providers without native metrics */
@@ -143,6 +147,7 @@ export interface IAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An async generator that yields chunks of the response as strings.
    */
   streamChat(
@@ -153,6 +158,12 @@ export interface IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      /**
+       * Disable tool use entirely for this stream, overriding `availableTools`.
+       * Useful when preserving the prompt cache prefix but strictly preventing the
+       * model from using tools (e.g. during compaction summarization).
+       */
+      disableToolUse?: boolean;
     },
   ): AsyncGenerator<string, void, void>;
 
@@ -189,6 +200,18 @@ export interface IAIService {
   convertTools(mcpTools: MCPTool[]): unknown[];
 
   /**
+   * Checks if a model supports tool use.
+   * @param modelName The name of the model to check.
+   */
+  supportsTools(modelName: string): boolean;
+
+  /**
+   * Estimates the context window size for a model.
+   * @param modelName The name of the model.
+   */
+  estimateContextWindow(modelName: string): number;
+
+  /**
    * Cancels any in-progress streaming requests initiated by `streamChat`.
    * Implementations should abort network requests and stop yielding further
    * values from `streamChat` as soon as possible.
@@ -205,6 +228,11 @@ export interface IAIService {
    * providers may override for cost or caching optimisations.
    * @param messages The messages to compress.
    * @param options Optional model name and service configuration overrides.
+   * @param options.modelName The name of the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.systemPrompt The system prompt.
+   * @param options.sessionContext The session context.
+   * @param options.availableTools Optional array of tools available to the model.
    * @returns A promise that resolves to the summary text.
    */
   compact(
@@ -212,11 +240,50 @@ export interface IAIService {
     options?: {
       modelName?: string;
       config?: AIServiceConfig;
+      systemPrompt?: string;
+      sessionContext?: string;
+      availableTools?: MCPTool[];
     },
   ): Promise<string>;
+
+  /**
+   * Merges the stable system prompt and volatile session context into the
+   * provider's preferred injection channel before each LLM request.
+   *
+   * The default implementation (in `BaseAIService`) concatenates both parts
+   * into a single system prompt string — safe for all providers. Individual
+   * providers may override to inject `sessionContext` as an ephemeral tail
+   * message instead, which keeps the system prompt fully static and maximises
+   * automatic prefix-cache hit rates.
+   *
+   * @param systemPrompt - Stable system prompt (sections 1–3). Cacheable.
+   * @param sessionContext - Volatile context (sections 4–5). Rebuilt per turn.
+   * @param messages - Current conversation message stack, after context trimming.
+   * @returns The effective system prompt and (possibly augmented) message list to
+   *          pass to `streamChat`.
+   */
+  prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): { systemPrompt: string | undefined; messages: Message[] };
 
   /**
    * Cleans up any resources used by the service instance.
    */
   dispose(): void;
+
+  /**
+   * Sanitizes messages for provider-specific compatibility.
+   * @param messages The messages to sanitize.
+   * @returns An array of sanitized messages.
+   */
+  sanitizeMessages(messages: Message[]): Message[];
+
+  /**
+   * Sanitizes a single message based on the provider's requirements.
+   * @param message The message to sanitize.
+   * @returns The sanitized message, or null if it should be filtered out.
+   */
+  sanitizeSingleMessage(message: Message): Message | null;
 }

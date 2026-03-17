@@ -157,10 +157,10 @@ impl SecurityValidator {
 
     /// Validate a path for write/create operations.
     ///
-    /// Same as [`validate_path`] but additionally blocks Windows reserved filenames
+    /// Same as [`Self::validate_path`] but additionally blocks Windows reserved filenames
     /// (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`).  These names
     /// must be forbidden on creation because once written they become undeletable on
-    /// Windows.  Deletion uses plain [`validate_path`] so that pre-existing
+    /// Windows.  Deletion uses plain [`Self::validate_path`] so that pre-existing
     /// reserved-name files can still be cleaned up.
     pub fn validate_path_for_write(&self, user_path: &str) -> Result<PathBuf, SecurityError> {
         static RESERVED: &[&str] = &[

@@ -39,7 +39,7 @@ export function DangerZoneSettings({
   return (
     <div className="border-t pt-8 mt-4">
       <h3 className="text-lg font-medium text-destructive mb-4 flex items-center gap-2">
-        ⚠️ Danger Zone
+        {t('settings.dangerZone.title', '⚠️ Danger Zone')}
       </h3>
       <div className="space-y-6">
         {/* Delete All Sessions Card */}

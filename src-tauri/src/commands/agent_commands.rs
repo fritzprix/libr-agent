@@ -4,7 +4,7 @@ use crate::repositories::{CompactContextRecord, SessionMetadata, SessionReposito
 use crate::state::get_session_repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::{command, State};
+use tauri::{command, AppHandle, Emitter, State};
 
 use crate::models::chat::Message;
 use crate::services::AgentService;
@@ -345,7 +345,7 @@ pub async fn agent_respond_tool_approval(
 pub async fn agent_handle_llm_error(
     manager: State<'_, AgentSessionManager>,
     session_id: String,
-    error: String,
+    error: crate::agent::llm::types::AgentRuntimeError,
 ) -> Result<AgentResponse, String> {
     manager.handle_llm_error(session_id.clone(), error).await?;
 
@@ -497,6 +497,70 @@ pub async fn agent_save_compact_context(
     Ok(AgentResponse {
         success: true,
         message: format!("Compact context saved for session: {}", session_id),
+        data: None,
+    })
+}
+
+/// Handle a successful compact response from the frontend LLM call.
+/// Stores the summary in-memory + DB and clears the in-flight flag.
+#[command]
+pub async fn agent_handle_compact_response(
+    app_handle: AppHandle,
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+    from_id: String,
+    to_id: String,
+    summary: String,
+) -> Result<AgentResponse, String> {
+    manager
+        .handle_compact_response(&session_id, from_id, to_id, summary)
+        .await?;
+    let session_name = manager.get_session_display_name(&session_id).await;
+
+    let state_event = crate::agent::llm::types::CompactStateEvent {
+        session_id: session_id.clone(),
+        session_name,
+        compacting: false,
+        phase: crate::agent::llm::types::CompactStatePhase::Succeeded,
+    };
+    if let Err(e) = app_handle.emit("llm:compact-state", state_event) {
+        log::error!("Failed to emit llm:compact-state (done): {}", e);
+    }
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compact response handled for session: {}", session_id),
+        data: None,
+    })
+}
+
+/// Handle a failed compact LLM call — clears the in-flight flag so future turns can retry.
+#[command]
+pub async fn agent_handle_compact_error(
+    app_handle: AppHandle,
+    manager: State<'_, AgentSessionManager>,
+    session_id: String,
+) -> Result<AgentResponse, String> {
+    manager.clear_compact_in_flight(&session_id).await;
+    let session_name = manager.get_session_display_name(&session_id).await;
+    log::warn!(
+        "⚠️ Compact error received for session {}, flag cleared",
+        session_id
+    );
+
+    let state_event = crate::agent::llm::types::CompactStateEvent {
+        session_id: session_id.clone(),
+        session_name,
+        compacting: false,
+        phase: crate::agent::llm::types::CompactStatePhase::Failed,
+    };
+    if let Err(e) = app_handle.emit("llm:compact-state", state_event) {
+        log::error!("Failed to emit llm:compact-state (error): {}", e);
+    }
+
+    Ok(AgentResponse {
+        success: true,
+        message: format!("Compact error cleared for session: {}", session_id),
         data: None,
     })
 }

@@ -191,8 +191,15 @@ impl WorkspaceServer {
                     .metadata()
                     .map_err(|e| format!("Metadata error: {e}"))?;
 
+                let path_str = {
+                    let p = relative_path.to_string_lossy().to_string();
+                    #[cfg(target_os = "windows")]
+                    let p = p.replace('\\', "/");
+                    p
+                };
+
                 results.push(json!({
-                    "path": relative_path.to_string_lossy(),
+                    "path": path_str,
                     "name": file_name.unwrap_or(""),
                     "type": if is_dir { "directory" } else { "file" },
                     "size": if is_file { Some(metadata.len()) } else { None }
@@ -224,6 +231,7 @@ fn matches_glob(pattern: &glob::Pattern, path: &std::path::Path, file_name: Opti
     // 3. Try matching normalized path (Windows compatibility)
     // If the path contains backslashes, normalize to forward slashes because
     // glob patterns standardly use forward slashes.
+    #[cfg(target_os = "windows")]
     if path_str.contains('\\') {
         let normalized = path_str.replace('\\', "/");
         if pattern.matches(&normalized) {
@@ -267,6 +275,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_matches_glob_windows() {
         let pattern = Pattern::new("src/**/*.rs").unwrap();
 
@@ -284,6 +293,24 @@ mod tests {
         let path_str = "src\\subdir\\test.rs";
         let path = PathBuf::from(path_str);
         assert!(matches_glob(&pattern, &path, None));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_search_files_windows_path_normalization() {
+        // This test only runs on Windows as it relies on PathBuf behavior for backslashes
+        let root = PathBuf::from("C:\\project");
+        let file_path = root.join("src\\main.rs");
+
+        let relative_path = file_path.strip_prefix(&root).unwrap();
+        let path_str = {
+            let p = relative_path.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            let p = p.replace('\\', "/");
+            p
+        };
+
+        assert_eq!(path_str, "src/main.rs");
     }
 
     #[test]

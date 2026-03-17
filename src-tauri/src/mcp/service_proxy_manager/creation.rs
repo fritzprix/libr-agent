@@ -582,4 +582,140 @@ impl MCPServiceProxyManager {
 
         Ok(proxy_arc)
     }
+
+    /// Lazily initialise a builtin-only proxy for a session that has no active proxy.
+    ///
+    /// Called by [`crate::mcp::service_proxy_manager::MCPServiceProxyManager::call_tool`] when a builtin tool is requested for a session whose proxy
+    /// was never initialised (e.g., a session that exists in the DB but has not yet run
+    /// a workflow in this app session). This prevents spurious "Session context not found"
+    /// errors when UI components poll builtin tools (e.g., content store listing) for
+    /// idle sessions.
+    ///
+    /// Only builtins are wired up — no external stdio/HTTP servers are started.
+    /// If the session's agent config cannot be loaded, falls back to
+    /// `CORE_BUILTIN_SERVICE_ALIASES` (the full non-optional builtin set).
+    ///
+    /// # Arguments
+    /// * `session_id` - The session to ensure a proxy for
+    ///
+    /// # Returns
+    /// * `Ok(Arc<MCPServiceProxy>)` - Newly created (or pre-existing) proxy
+    /// * `Err(String)` - If proxy creation fails
+    pub async fn ensure_builtin_proxy(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<MCPServiceProxy>, String> {
+        // Fast path: proxy already exists
+        if let Some(existing) = self.get_proxy(session_id).await {
+            return Ok(existing);
+        }
+
+        // Serialise concurrent callers for the same session_id (singleflight)
+        let session_guard = {
+            let mut guards = self.creation_guards.lock().await;
+            guards
+                .entry(session_id.to_string())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _lock = session_guard.lock().await;
+
+        // Re-check after acquiring lock in case another caller just created it
+        if let Some(existing) = self.get_proxy(session_id).await {
+            return Ok(existing);
+        }
+
+        log::debug!(
+            "Lazily initialising builtin-only proxy for idle session: {}",
+            session_id
+        );
+
+        // Resolve tool_ids from the session's agent_config (fallback to core builtins)
+        let tool_ids = self.resolve_tool_ids_for_session(session_id).await;
+
+        // Create lightweight empty external managers (no stdio/HTTP servers started)
+        let workspace_dir = self
+            .session_manager
+            .get_session_workspace_dir_by_id(session_id);
+        let empty_stdio = SessionMCPManager::new(
+            session_id.to_string(),
+            HashMap::new(),
+            SessionIsolationConfig::default(),
+            workspace_dir,
+        );
+        let empty_http = HttpSessionManager::new(session_id.to_string(), HashMap::new());
+
+        let proxy = MCPServiceProxy::builder(
+            session_id.to_string(),
+            self.db.clone(),
+            self.session_manager.clone(),
+            Arc::new(empty_http.clone()),
+            Arc::new(empty_stdio.clone()),
+        )
+        .with_tool_ids(tool_ids.clone())
+        .build()
+        .await?;
+
+        let proxy_arc = Arc::new(proxy);
+        self.proxies
+            .write()
+            .await
+            .insert(session_id.to_string(), proxy_arc.clone());
+        self.session_stdio_managers
+            .write()
+            .await
+            .insert(session_id.to_string(), empty_stdio);
+        self.session_http_managers
+            .write()
+            .await
+            .insert(session_id.to_string(), empty_http);
+
+        log::info!(
+            "Lazily initialised builtin-only proxy for idle session {} with tools: {:?}",
+            session_id,
+            tool_ids
+        );
+
+        Ok(proxy_arc)
+    }
+
+    /// Resolve the builtin tool IDs for a session by reading its `agent_config` from the DB.
+    ///
+    /// Falls back to [`CORE_BUILTIN_SERVICE_ALIASES`] if the session or its config cannot
+    /// be loaded.
+    async fn resolve_tool_ids_for_session(&self, session_id: &str) -> Vec<String> {
+        use crate::agent::tools::extract_builtin_tool_ids;
+        use crate::mcp::builtin::service_id::CORE_BUILTIN_SERVICE_ALIASES;
+        use crate::repositories::session_repository::SessionRepository;
+
+        let repo = crate::state::get_session_repository();
+        match repo.get_session(session_id).await {
+            Ok(Some(session)) => {
+                if let Some(config_str) = &session.agent_config {
+                    if let Ok(agent_config) = crate::agent::AgentConfig::from_json(config_str) {
+                        return extract_builtin_tool_ids(&agent_config);
+                    }
+                }
+            }
+            Ok(None) => {
+                log::warn!(
+                    "Session {} not found in DB during lazy proxy init; using core builtins",
+                    session_id
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "DB error loading session {} for lazy proxy init: {}; using core builtins",
+                    session_id,
+                    e
+                );
+            }
+        }
+
+        // Fallback: core non-optional builtin set
+        CORE_BUILTIN_SERVICE_ALIASES
+            .iter()
+            .map(|s: &&str| s.to_string())
+            .collect()
+    }
 }

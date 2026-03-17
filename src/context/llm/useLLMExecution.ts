@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type {
   IAIService,
@@ -7,26 +7,17 @@ import type {
   TokenUsage,
 } from '@/lib/ai-service/types';
 import { getLogger } from '@/lib/logger';
-import {
-  calculateGroundedTotalTokens,
-  estimateTextTokens,
-  estimateTokensBPE,
-  selectMessagesWithinContext,
-} from '@/lib/token-utils';
 import { llmConfigManager, ModelInfo } from '@/lib/llm-config-manager';
 import { MessageNormalizer } from '@/lib/ai-service/message-normalizer';
 import { sanitizeMessage } from '@/lib/ai-service/sanitizer';
-import { prepareMessagesForLLM } from '@/lib/message-preprocessor';
+import {
+  calculateContextSafetyMargin,
+  estimatePayloadTokens,
+  prepareMessagesForLLM,
+} from '@/lib/message-preprocessor';
 import type { SessionStatus } from './types';
 import { isAbortError } from './types';
-import { compactContextService } from '@/lib/compact-context-service';
-import {
-  calculateCompactThreshold,
-  calculateEffectiveContextLimit,
-  findCompactionSplitIndex,
-  stripCompactSummaryPrefix,
-} from '@/lib/compact-utils';
-import type { Message, ToolCall } from '@/models/chat';
+import type { Message, MessageError, ToolCall } from '@/models/chat';
 import type {
   MCPTool,
   MCPContent,
@@ -37,6 +28,24 @@ import type {
 import type { Settings } from '@/lib/services/settings-service';
 
 const logger = getLogger('useLLMExecution');
+
+function createExecutionError(
+  type: MessageError['type'],
+  displayMessage: string,
+  originalError: unknown,
+  context?: Record<string, unknown>,
+): MessageError {
+  return {
+    type,
+    displayMessage,
+    recoverable: true,
+    details: {
+      originalError,
+      timestamp: new Date().toISOString(),
+      context,
+    },
+  };
+}
 
 interface UseLLMExecutionProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -62,24 +71,6 @@ export function useLLMExecution({
   // Track last streaming UI update time per session (throttle to ~20fps)
   const lastStreamingUpdateRef = useRef<Map<string, number>>(new Map());
 
-  // SP17: Compact strategy state
-  const compactCacheRef = useRef<
-    Map<string, { fromId: string; toId: string; summary: string }>
-  >(new Map());
-  // Resolvers receive `true` on successful compaction, `false` on failure.
-  // Waiters use this to decide whether to rebuild the candidate stack.
-  const compactResolversRef = useRef<
-    Map<string, ((success: boolean) => void)[]>
-  >(new Map());
-  // Guard flag: set to true on unmount so background compaction IIFEs avoid
-  // calling state setters on the unmounted component.
-  const unmountedRef = useRef(false);
-
-  const [compactingSet, setCompactingSet] = useState<Set<string>>(new Set());
-  const [awaitingSet, setAwaitingSet] = useState<Set<string>>(new Set());
-  const [compactedRangeMap, setCompactedRangeMap] = useState<
-    ReadonlyMap<string, { fromId: string; toId: string }>
-  >(new Map());
   // Context window usage per session for gauge display
   const [contextUsageMap, setContextUsageMap] = useState<
     ReadonlyMap<
@@ -88,12 +79,65 @@ export function useLLMExecution({
     >
   >(new Map());
 
+  // Tracks which sessions have an async compaction in-flight
+  const [compactingMap, setCompactingMap] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
+  const [compactedRangeMap, setCompactedRangeMap] = useState<
+    ReadonlyMap<string, { fromId: string; toId: string }>
+  >(new Map());
+  const [awaitingCompactMap, setAwaitingCompactMap] = useState<
+    ReadonlyMap<string, boolean>
+  >(new Map());
+
+  const setCompacting = useCallback((sessionId: string, value: boolean) => {
+    setCompactingMap((prev) => {
+      const next = new Map(prev);
+      if (value) {
+        next.set(sessionId, true);
+      } else {
+        next.delete(sessionId);
+      }
+      return next;
+    });
+  }, []);
+
+  const setCompactedRange = useCallback(
+    (
+      sessionId: string,
+      range: { fromId: string; toId: string } | undefined,
+    ) => {
+      setCompactedRangeMap((prev) => {
+        const next = new Map(prev);
+        if (range) {
+          next.set(sessionId, range);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const setAwaitingCompact = useCallback(
+    (sessionId: string, value: boolean) => {
+      setAwaitingCompactMap((prev) => {
+        const next = new Map(prev);
+        if (value) {
+          next.set(sessionId, true);
+        } else {
+          next.delete(sessionId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   // Clean up on unmount
   useEffect(() => {
-    unmountedRef.current = false;
     return () => {
-      unmountedRef.current = true;
-
       abortControllersRef.current.forEach((controller) => controller.abort());
       abortControllersRef.current.clear();
 
@@ -104,14 +148,6 @@ export function useLLMExecution({
 
       activeServicesRef.current.forEach((svc) => svc.dispose());
       activeServicesRef.current.clear();
-
-      // Resolve all pending compaction waiters with `false` so they don't
-      // block indefinitely after unmount, then clear both refs.
-      compactResolversRef.current.forEach((resolvers) =>
-        resolvers.forEach((r) => r(false)),
-      );
-      compactResolversRef.current.clear();
-      compactCacheRef.current.clear();
     };
   }, []);
 
@@ -123,9 +159,15 @@ export function useLLMExecution({
       provider: string,
       apiKey?: string,
       systemPrompt?: string,
+      sessionContext?: string,
       temperature?: number,
       maxTokens?: number,
       availableTools?: MCPTool[],
+      contextUsage?: {
+        totalTokens: number;
+        contextWindow: number;
+        modelMaxContext?: number;
+      },
     ): Promise<Message> => {
       logger.info('🚀 Executing completion request', {
         sessionId,
@@ -207,422 +249,32 @@ export function useLLMExecution({
           modelInfo,
         });
 
-        const { effectiveLimit: safeInputTokenLimit, modelMaxLimit } =
-          calculateEffectiveContextLimit(
-            modelInfo,
-            settingsRef.current.advanced?.defaultMaxOutputTokens || 8192,
-            settingsRef.current.maxInputContext,
-          );
-
-        const { windowSize, contextStrategy, toolCallGroupVisibleCount } =
-          settingsRef.current;
-        const finalSystemPrompt = systemPrompt;
-
-        logger.info('🎯 Applying context management strategy', {
-          sessionId,
-          inputMessageCount: messages.length,
-          contextStrategy: contextStrategy ?? 'window',
-          windowSize,
-          provider,
-          model,
-          safeInputTokenLimit,
-          modelMaxLimit,
-        });
-
         // ── Prepare context messages based on selected strategy ─────────────
         let enrichedMessages: Message[];
 
-        if ((contextStrategy ?? 'window') === 'compact') {
-          // ── Compact strategy (SP17) ─────────────────────────────────────────
+        // Process the pre-sliced messages provided by the Rust backend.
+        const safeMessages = MessageNormalizer.sanitizeMessagesForService(
+          messages.map(sanitizeMessage),
+          service,
+        );
+        logger.info('✅ Messages sanitized for provider compatibility', {
+          sessionId,
+          safeCount: safeMessages.length,
+        });
 
-          // 1. Initial Load from DB if not in cache (Session Resume)
-          if (!compactCacheRef.current.has(sessionId)) {
-            const persisted =
-              await compactContextService.getCompactContext(sessionId);
-            if (persisted) {
-              compactCacheRef.current.set(sessionId, {
-                fromId: persisted.fromId,
-                toId: persisted.toId,
-                summary: persisted.summary,
-              });
-              setCompactedRangeMap((prev) => {
-                if (prev.has(sessionId)) return prev;
-                const next = new Map(prev);
-                next.set(sessionId, {
-                  fromId: persisted.fromId,
-                  toId: persisted.toId,
-                });
-                return next;
-              });
-            }
-          }
+        enrichedMessages = await prepareMessagesForLLM(safeMessages);
 
-          // Helper to build candidate stack from current cache
-          const buildCandidateStack = (
-            msgs: Message[],
-          ): { messages: Message[]; summary?: string } => {
-            const cached = compactCacheRef.current.get(sessionId);
-            if (!cached) return { messages: msgs };
-
-            const toIdIndex = msgs.findIndex((m) => m.id === cached.toId);
-            if (toIdIndex >= 0) {
-              const remainingMessages = msgs.slice(toIdIndex + 1);
-              return {
-                messages: remainingMessages,
-                summary: `### Previous Conversation Summary\n${cached.summary}`,
-              };
-            } else {
-              logger.warn(
-                'Stale compact cache: toId not found. Invalidating.',
-                {
-                  sessionId,
-                  toId: cached.toId,
-                },
-              );
-              compactCacheRef.current.delete(sessionId);
-              return { messages: msgs };
-            }
-          };
-
-          let { messages: candidateMessages, summary: conversationSummary } =
-            buildCandidateStack(messages);
-
-          // 2. Token threshold check
-          const baseSystemPrompt = systemPrompt || '';
-          let finalSystemPrompt = conversationSummary
-            ? `${baseSystemPrompt}\n\n${conversationSummary}`.trim()
-            : baseSystemPrompt;
-
-          const systemPromptTokens = finalSystemPrompt
-            ? estimateTextTokens(finalSystemPrompt)
-            : 0;
-          const toolsJson = availableTools?.length
-            ? JSON.stringify(availableTools)
-            : undefined;
-          const toolsTokens = toolsJson ? estimateTextTokens(toolsJson) : 0;
-
-          // Guard: if reserved tokens alone already exceed the limit there is
-          // nothing compaction can do — the system prompt / tool set is simply
-          // too large for this model. Log a clear warning so the user / dev can
-          // diagnose it and proceed (selectMessagesWithinContext will keep at
-          // least the most-recent turn via its own safety floor).
-          const reservedTokens = systemPromptTokens + toolsTokens;
-          if (reservedTokens >= safeInputTokenLimit) {
-            logger.warn(
-              '⚠️ Reserved tokens (system prompt + tools) already exceed the context limit. ' +
-                'No messages can be safely included. Consider reducing the system prompt, ' +
-                'using fewer tools, or switching to a model with a larger context window.',
-              {
-                sessionId,
-                reservedTokens,
-                safeInputTokenLimit,
-                systemPromptTokens,
-                toolsTokens,
-              },
-            );
-            // Notify the user — use a stable ID so repeated sends update the
-            // same toast rather than stacking new ones.
-            toast.warning('Context window too small', {
-              id: `ctx-overflow-${sessionId}`,
-              description:
-                `System prompt + tools use ~${Math.round(reservedTokens / 1000)}k tokens, ` +
-                `which exceeds this model's limit (~${Math.round(safeInputTokenLimit / 1000)}k). ` +
-                'Try reducing active tools or switching to a model with a larger context window.',
-              duration: 8000,
-            });
-          }
-
-          let totalTokens = calculateGroundedTotalTokens(
-            candidateMessages,
-            systemPromptTokens,
-            toolsTokens,
-          );
-          const threshold = calculateCompactThreshold(safeInputTokenLimit);
-          let overflow = totalTokens >= safeInputTokenLimit;
-
-          // 3. Wait for pending compaction if overflow (100%+)
-          if (overflow && compactResolversRef.current.has(sessionId)) {
-            logger.info(
-              '⏳ Context overflow: waiting for pending compaction...',
-              {
-                sessionId,
-              },
-            );
-            setAwaitingSet((prev) => new Set([...prev, sessionId]));
-            try {
-              const compactionSucceeded = await new Promise<boolean>(
-                (resolve) => {
-                  const list = compactResolversRef.current.get(sessionId) ?? [];
-                  list.push(resolve);
-                  compactResolversRef.current.set(sessionId, list);
-                },
-              );
-              if (compactionSucceeded) {
-                // Compaction wrote a new summary — rebuild the stack from fresh cache.
-                const { messages: newMessages, summary: newSummary } =
-                  buildCandidateStack(messages);
-                candidateMessages = newMessages;
-
-                const currentBaseSystemPrompt = systemPrompt || '';
-                const updatedSystemPrompt = newSummary
-                  ? `${currentBaseSystemPrompt}\n\n${newSummary}`.trim()
-                  : currentBaseSystemPrompt;
-
-                // Update finalSystemPrompt so selectMessagesWithinContext
-                // uses the correct token budget after compaction.
-                finalSystemPrompt = updatedSystemPrompt;
-
-                const updatedSystemPromptTokens = updatedSystemPrompt
-                  ? estimateTextTokens(updatedSystemPrompt)
-                  : 0;
-
-                totalTokens = calculateGroundedTotalTokens(
-                  candidateMessages,
-                  updatedSystemPromptTokens,
-                  toolsTokens,
-                );
-                overflow = totalTokens >= safeInputTokenLimit;
-                logger.info('⏳ Resuming after successful compaction', {
-                  sessionId,
-                  newTotalTokens: totalTokens,
-                });
-              } else {
-                // Compaction failed — cache is unchanged. Proceed with the current
-                // (oversized) stack; selectMessagesWithinContext will hard-trim it.
-                logger.warn(
-                  '⏳ Resuming after failed compaction — context still large, will trim',
-                  { sessionId, totalTokens },
-                );
-              }
-            } finally {
-              setAwaitingSet((prev) => {
-                const next = new Set(prev);
-                next.delete(sessionId);
-                return next;
-              });
-            }
-          }
-
-          // Update gauge with the latest (possibly post-wait) status
+        // 3. Set telemetries
+        if (contextUsage) {
           setContextUsageMap((prev) => {
             const next = new Map(prev);
             next.set(sessionId, {
-              totalTokens,
-              contextWindow: safeInputTokenLimit,
-              modelMaxContext: modelMaxLimit,
+              totalTokens: contextUsage.totalTokens,
+              contextWindow: contextUsage.contextWindow,
+              modelMaxContext: contextUsage.modelMaxContext,
             });
             return next;
           });
-
-          // 4. Trigger async compaction if threshold (90%+) exceeded
-          if (
-            totalTokens >= threshold &&
-            !compactResolversRef.current.has(sessionId)
-          ) {
-            const splitIdx = findCompactionSplitIndex(
-              candidateMessages,
-              estimateTokensBPE,
-              threshold,
-              systemPromptTokens,
-              toolsTokens,
-            );
-            const oldMessages = candidateMessages.slice(0, splitIdx);
-
-            if (
-              oldMessages.length >= 5 ||
-              (compactCacheRef.current.has(sessionId) && oldMessages.length > 1)
-            ) {
-              compactResolversRef.current.set(sessionId, []);
-              setCompactingSet((prev) => new Set([...prev, sessionId]));
-
-              // Create a dedicated service instance for compaction so it is NOT
-              // tracked in activeServicesRef and cannot be disposed by a subsequent
-              // request for the same session while compaction is still in-flight.
-              const compactionService = AIServiceFactory.getService(
-                provider as AIServiceProvider,
-                apiKey ?? '',
-                settingsRef.current.serviceConfigs?.[
-                  provider as AIServiceProvider
-                ] || {},
-              );
-
-              (async () => {
-                let compactionSucceeded = false;
-                try {
-                  logger.info('🚀 Triggering async compaction', {
-                    sessionId,
-                    oldCount: oldMessages.length,
-                  });
-                  const summary = await compactionService.compact(oldMessages, {
-                    modelName: model,
-                  });
-
-                  // Abort post-compaction state updates if the component unmounted.
-                  if (unmountedRef.current) return;
-
-                  // Use stable IDs; strip compact-summary- prefix to avoid nesting.
-                  const firstMsg = oldMessages[0];
-                  const fromId = stripCompactSummaryPrefix(firstMsg.id);
-                  const toId = oldMessages[oldMessages.length - 1].id;
-
-                  compactCacheRef.current.set(sessionId, {
-                    fromId,
-                    toId,
-                    summary,
-                  });
-                  await compactContextService.saveCompactContext(sessionId, {
-                    id: `cc_${Date.now()}`,
-                    sessionId,
-                    fromId,
-                    toId,
-                    summary,
-                    createdAt: Date.now(),
-                  });
-
-                  if (unmountedRef.current) return;
-
-                  setCompactedRangeMap((prev) => {
-                    const next = new Map(prev);
-                    next.set(sessionId, { fromId, toId });
-                    return next;
-                  });
-                  compactionSucceeded = true;
-                  logger.info('✅ Async compaction completed', {
-                    sessionId,
-                    fromId,
-                    toId,
-                  });
-                } catch (err) {
-                  logger.error('❌ Async compaction failed', {
-                    sessionId,
-                    error: err,
-                  });
-                } finally {
-                  compactionService.dispose();
-                  if (!unmountedRef.current) {
-                    const resolvers =
-                      compactResolversRef.current.get(sessionId) ?? [];
-                    resolvers.forEach((r) => r(compactionSucceeded));
-                    compactResolversRef.current.delete(sessionId);
-                    setCompactingSet((prev) => {
-                      const next = new Set(prev);
-                      next.delete(sessionId);
-                      return next;
-                    });
-                  }
-                }
-              })();
-            }
-          }
-
-          // 5. Final Selection
-          const contextMessages = selectMessagesWithinContext(
-            candidateMessages,
-            provider,
-            model,
-            safeInputTokenLimit,
-            {
-              systemPrompt: finalSystemPrompt,
-              toolsJson,
-              maxToolCallsPerMessage:
-                provider === AIServiceProvider.Gemini
-                  ? 100
-                  : toolCallGroupVisibleCount || 4,
-            },
-          );
-
-          const safeCompactMessages =
-            MessageNormalizer.sanitizeMessagesForProvider(
-              contextMessages.map(sanitizeMessage),
-              provider as AIServiceProvider,
-            );
-          enrichedMessages = await prepareMessagesForLLM(safeCompactMessages);
-        } else {
-          // ── Window strategy (default) ──────────────────────────────────────
-          const toolsJson = availableTools?.length
-            ? JSON.stringify(availableTools)
-            : undefined;
-
-          const contextMessages = selectMessagesWithinContext(
-            messages,
-            provider,
-            model,
-            safeInputTokenLimit,
-            {
-              systemPrompt: finalSystemPrompt,
-              toolsJson,
-              maxMessages: windowSize,
-              maxToolCallsPerMessage:
-                provider === AIServiceProvider.Gemini
-                  ? 100
-                  : toolCallGroupVisibleCount || 4,
-            },
-          );
-
-          const safeMessages = MessageNormalizer.sanitizeMessagesForProvider(
-            contextMessages.map(sanitizeMessage),
-            provider as AIServiceProvider,
-          );
-          logger.info('✅ Messages sanitized for provider compatibility', {
-            sessionId,
-            originalCount: contextMessages.length,
-            safeCount: safeMessages.length,
-          });
-
-          const windowEnrichedMessages =
-            await prepareMessagesForLLM(safeMessages);
-
-          const attachmentCount = windowEnrichedMessages.reduce(
-            (total, msg) => total + (msg.attachments?.length || 0),
-            0,
-          );
-          if (attachmentCount > 0) {
-            logger.info('📎 Messages enriched with attachment metadata', {
-              sessionId,
-              attachmentCount,
-              messagesWithAttachments: windowEnrichedMessages.filter(
-                (m) => m.attachments && m.attachments.length > 0,
-              ).length,
-            });
-          }
-
-          const systemPromptTokens = finalSystemPrompt
-            ? estimateTextTokens(finalSystemPrompt)
-            : 0;
-          const toolsTokens = toolsJson ? estimateTextTokens(toolsJson) : 0;
-          const totalEstimatedTokens = calculateGroundedTotalTokens(
-            windowEnrichedMessages,
-            systemPromptTokens,
-            toolsTokens,
-          );
-
-          if (safeMessages.length < messages.length) {
-            logger.info(
-              'Messages truncated/sanitized to fit context/window size',
-              {
-                originalCount: messages.length,
-                newCount: safeMessages.length,
-                windowSize,
-                provider,
-                model,
-                safeInputTokenLimit,
-                estimatedPromptTokens: totalEstimatedTokens,
-              },
-            );
-          }
-
-          // Update context usage for gauge display
-          setContextUsageMap((prev) => {
-            const next = new Map(prev);
-            next.set(sessionId, {
-              totalTokens: totalEstimatedTokens,
-              contextWindow: safeInputTokenLimit,
-              modelMaxContext: modelMaxLimit,
-            });
-            return next;
-          });
-
-          enrichedMessages = windowEnrichedMessages;
         }
 
         // ── Execute Stream ───────────────────────────────────────────────────
@@ -650,9 +302,48 @@ export function useLLMExecution({
 
         const startTime = performance.now();
 
-        const streamGenerator = service.streamChat(enrichedMessages, {
+        // Let the provider choose how to deliver sessionContext (stable system
+        // prompt concat vs. ephemeral tail message injection for prefix caching).
+        const {
+          systemPrompt: effectiveSystemPrompt,
+          messages: effectiveMessages,
+        } = service.prepareContextInjection(
+          systemPrompt,
+          sessionContext,
+          enrichedMessages,
+        );
+
+        if (settingsRef.current.contextStrategy === 'compact') {
+          const effectiveContextLimit =
+            contextUsage?.contextWindow ??
+            modelInfo.contextWindow ??
+            128 * 1024;
+          const projectedPayloadTokens = estimatePayloadTokens(
+            effectiveSystemPrompt,
+            effectiveMessages,
+            availableTools,
+          );
+          const safetyMargin = calculateContextSafetyMargin(
+            effectiveContextLimit,
+          );
+
+          if (projectedPayloadTokens + safetyMargin > effectiveContextLimit) {
+            throw createExecutionError(
+              'CONTEXT_LIMIT_ERROR',
+              `Prepared payload exceeds the effective context limit (${projectedPayloadTokens + safetyMargin} > ${effectiveContextLimit}). Reduce the newest input or attachment payload and retry.`,
+              'prepared_payload_too_large',
+              {
+                projectedPayloadTokens,
+                safetyMargin,
+                effectiveContextLimit,
+              },
+            );
+          }
+        }
+
+        const streamGenerator = service.streamChat(effectiveMessages, {
           modelName: model,
-          systemPrompt: finalSystemPrompt,
+          systemPrompt: effectiveSystemPrompt,
           availableTools: availableTools || [],
           config,
           forceToolUse: false,
@@ -779,7 +470,7 @@ export function useLLMExecution({
                 totalTokens:
                   incomingUsage.totalTokens || finalUsage.totalTokens,
                 cachedPromptTokens:
-                  incomingUsage.cachedPromptTokens ||
+                  incomingUsage.cachedPromptTokens ??
                   finalUsage.cachedPromptTokens,
                 details: {
                   ...finalUsage.details,
@@ -957,7 +648,12 @@ export function useLLMExecution({
             hasContent,
             hasUsage,
           });
-          throw new Error('Received empty response from LLM provider');
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received empty response from LLM provider',
+            'empty_response_from_provider',
+            { sessionId },
+          );
         } else if (!hasContent && hasUsage) {
           logger.warn(
             '⚠️ Response has usage but no content - allowing to proceed',
@@ -968,20 +664,26 @@ export function useLLMExecution({
           );
         }
 
+        // 1. Update with isStreaming: false IMMEDIATELY
         setStreamingMessages((prev) => {
           const next = new Map(prev);
           next.set(sessionId, finalMessage);
           return next;
         });
 
+        // 2. Schedule cleanup with 500ms delay to allow backend event to arrive
         const timeoutId = window.setTimeout(() => {
           setStreamingMessages((prev) => {
             const next = new Map(prev);
-            next.delete(sessionId);
+            // Only delete if it's still the same message (same ID)
+            const current = next.get(sessionId);
+            if (current?.id === finalMessage.id) {
+              next.delete(sessionId);
+            }
             return next;
           });
           timeoutsRef.current.delete(sessionId);
-        }, 100);
+        }, 500);
         timeoutsRef.current.set(sessionId, timeoutId);
 
         updateSessionStatus(sessionId, 'idle');
@@ -1041,28 +743,22 @@ export function useLLMExecution({
   }, []);
 
   const clearSessionState = useCallback((sessionId: string) => {
-    compactCacheRef.current.delete(sessionId);
-    compactResolversRef.current.delete(sessionId);
-    setCompactingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
-    setAwaitingSet((prev) => {
-      if (!prev.has(sessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
     setContextUsageMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setCompactingMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
     });
     setCompactedRangeMap((prev) => {
-      if (!prev.has(sessionId)) return prev;
+      const next = new Map(prev);
+      next.delete(sessionId);
+      return next;
+    });
+    setAwaitingCompactMap((prev) => {
       const next = new Map(prev);
       next.delete(sessionId);
       return next;
@@ -1070,17 +766,29 @@ export function useLLMExecution({
   }, []);
 
   /**
-   * Clears in-memory compact state for ALL sessions.
-   * Called when the global context strategy changes so stale caches,
-   * pending resolvers, and UI state don't leak across modes.
+   * Clears in-memory context usage state for ALL sessions.
+   * Called when the global context strategy changes.
    */
   const clearAllCompactState = useCallback(() => {
-    compactCacheRef.current.clear();
-    compactResolversRef.current.clear();
-    setCompactingSet(new Set());
-    setAwaitingSet(new Set());
     setContextUsageMap(new Map());
+    setCompactingMap(new Map());
     setCompactedRangeMap(new Map());
+    setAwaitingCompactMap(new Map());
+  }, []);
+
+  /**
+   * Resets the token count for a session to 0 after compaction completes.
+   * Keeps contextWindow/modelMaxContext so the gauge still renders correctly
+   * (showing 0%) until the next LLM call provides the real post-compact estimate.
+   */
+  const resetContextUsageForSession = useCallback((sessionId: string) => {
+    setContextUsageMap((prev) => {
+      const existing = prev.get(sessionId);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(sessionId, { ...existing, totalTokens: 0 });
+      return next;
+    });
   }, []);
 
   return {
@@ -1088,8 +796,13 @@ export function useLLMExecution({
     cancelCompletionRequest,
     clearSessionState,
     clearAllCompactState,
-    isCompacting: (sessionId: string) => compactingSet.has(sessionId),
-    isAwaitingCompact: (sessionId: string) => awaitingSet.has(sessionId),
+    resetContextUsageForSession,
+    setCompacting,
+    setCompactedRange,
+    setAwaitingCompact,
+    isCompacting: (sessionId: string) => compactingMap.get(sessionId) === true,
+    isAwaitingCompact: (sessionId: string) =>
+      awaitingCompactMap.get(sessionId) === true,
     getContextUsage: (
       sessionId: string,
     ):

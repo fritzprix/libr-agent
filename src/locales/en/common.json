@@ -373,7 +373,17 @@
       "activeSessionRetention": "Keep Active Sessions For (Hours)",
       "activeSessionRetentionDescription": "How long to keep session data in fast memory.",
       "networkRestartFailed": "Failed to restart the app. Please restart manually.",
-      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app."
+      "networkRestartNotice": "Changes to HTTP server network settings are applied after restarting the app.",
+      "placeholders": {
+        "maxFileUploadSize": "e.g., 50",
+        "workspaceCapacity": "e.g., 10",
+        "searchIndexFrequency": "e.g., 5",
+        "webActionTimeout": "e.g., 30",
+        "mcpServerStartupTimeout": "e.g., 60",
+        "mcpToolTimeout": "0 (disabled)",
+        "activeSessionRetention": "e.g., 24",
+        "httpServerPort": "e.g., 3030"
+      }
     },
     "about": {
       "title": "About",
@@ -387,7 +397,7 @@
       "checkForUpdates": "Check for Updates"
     },
     "dangerZone": {
-      "title": "Danger Zone"
+      "title": "⚠️ Danger Zone"
     },
     "factoryReset": {
       "title": "Factory Reset",
@@ -588,6 +598,24 @@
     }
   },
   "agent": {
+    "draft": {
+      "failedToRegisterDroppedFiles": "Failed to register dropped files",
+      "dropFilesInChatInput": "Drop files in the chat input to attach them.",
+      "failedToProcessFile": "Failed to process: {{file}}",
+      "noAssistantSpecified": "No assistant specified",
+      "failedToLoadAssistant": "Failed to load assistant",
+      "failedToAttach": "Failed to attach: {{file}}",
+      "creatingSession": "Creating session...",
+      "failedToStartSession": "Failed to start session",
+      "newSession": "New Session",
+      "workspaceOverrideActive": "Workspace Override Active",
+      "workspaceOverrideDescription": "The agent will use this directory as its primary workspace for this session.",
+      "basicTools": "Basic Tools",
+      "basicToolsDescription": "Includes core capabilities like reading files, managing tasks, and executing code. Always available to help you!",
+      "addTools": "+ Add tools",
+      "addMoreCapabilities": "Add more capabilities in the settings",
+      "localContext": "Local Context"
+    },
     "header": {
       "copySuccess": "Conversation copied to clipboard",
       "copyError": "Failed to copy conversation",
@@ -633,7 +661,9 @@
       "noFilesFound": "No files found",
       "uploadAria": "Upload files to workspace",
       "uploading": "Uploading...",
-      "dropFiles": "Drop files here or click to upload"
+      "dropFiles": "Drop files here or click to upload",
+      "dropFolderHint": "Drop a folder here to set as workspace",
+      "dropDirToastError": "Drop directories in the central area to set workspace override."
     },
     "statusBar": {
       "retryError": "Failed to retry message",
@@ -697,6 +727,34 @@
     "compactDivider": {
       "label": "Context compressed above",
       "ariaLabel": "Context compressed at this point"
+    },
+    "modelPicker": {
+      "provider": "Provider",
+      "model": "Model",
+      "loading": "Loading...",
+      "refreshModels": "Refresh models"
+    },
+    "toolsModal": {
+      "title": "Available Tools",
+      "subtitleWithCounts": "Built-in tools: {{builtinCount}} • MCP tools: {{mcpCount}}",
+      "subtitleDefault": "List of tools available to this agent session.",
+      "loading": "Loading tools...",
+      "errorTitle": "Error loading tools",
+      "empty": "No tools available for this agent session.",
+      "ariaLabel": "Available tools list",
+      "badgeBuiltin": "builtin",
+      "badgeMcp": "mcp",
+      "viewSchema": "View Input Schema"
+    },
+    "planning": {
+      "title": "AI Planning",
+      "currentGoal": "Current Goal",
+      "noGoal": "No active goal",
+      "tasks": "Tasks",
+      "noTasks": "No tasks",
+      "priorityHigh": "High",
+      "priorityMedium": "Medium",
+      "priorityLow": "Low"
     }
   },
   "scheduledTasks": {
@@ -767,5 +825,11 @@
         "6": "Saturday"
       }
     }
+  },
+  "errorBubble": {
+    "title": "Error",
+    "unknownError": "An unknown error occurred.",
+    "retrying": "Retrying...",
+    "tryAgain": "Try Again"
   }
 }

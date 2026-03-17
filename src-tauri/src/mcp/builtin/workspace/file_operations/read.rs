@@ -144,7 +144,7 @@ impl WorkspaceServer {
             .to_mcp_result());
         }
 
-        let file_manager = self.get_file_manager(session_id);
+        // Use the file_manager initialized earlier
 
         // Security check: validate file size before reading
         if let Err(e) = file_manager

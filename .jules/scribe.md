@@ -203,3 +203,58 @@
 
 **Drift:** JSDoc `@param callback` and `@param delay` did not accurately reflect the TypeScript generic signature `T` and missing parameter types in comments.
 **Reality:** Updated `@param` to include `{T}` and `{number}` and documented `@template T`.
+
+## 2026-03-08 - src-tauri/src/[mcp/builtin/utils.rs, mcp/service_proxy_manager/creation.rs, repositories/in_memory_session_repository.rs, utils/json.rs]
+
+**Drift:** Rust documentation generated warnings due to unresolved links (`[validate_path]`, `[call_tool]`) and unclosed HTML tags (`Arc<RwLock>`, `Option<String>`, `Option<T>`).
+**Reality:** Fixed the links to correctly resolve to their respective struct methods and wrapped the HTML-like types in backticks (e.g., `Arc<RwLock>`) to eliminate rustdoc warnings.
+
+## 2026-03-12 - src/lib/ai-service/anthropic.ts
+
+**Drift:** JSDoc for `convertMessages` was missing the `@param systemPrompt`.
+**Reality:** Added missing `@param systemPrompt`.
+
+## 2026-03-12 - src/lib/ai-service/base-service.ts
+
+**Drift:** JSDoc for `mergeConfig` incorrectly suggested that `options.config` was not part of the `options` object.
+**Reality:** Restored `@param options.config` to accurately reflect the actual method signature.
+
+## 2025-02-23 - [src/lib/ai-service/anthropic.ts]
+
+**Drift:** Missing `@param options.disableToolUse`
+**Reality:** Added missing `@param options.disableToolUse` to match strict type.
+
+## 2025-02-23 - [src/lib/ai-service/base-service.ts]
+
+**Drift:** Missing `@param context.options.disableToolUse`, `@param options.disableToolUse`, `@param options.systemPrompt`, `@param options.sessionContext`, `@param options.availableTools`
+**Reality:** Added missing `@param` options to match strict type.
+
+## 2025-02-23 - [src/lib/ai-service/gemini/service.ts]
+
+**Drift:** Missing `@param options.disableToolUse`
+**Reality:** Added missing `@param options.disableToolUse` to match strict type.
+
+## 2025-02-23 - [src/lib/ai-service/openai.ts]
+
+**Drift:** Missing `@param options.disableToolUse`
+**Reality:** Added missing `@param options.disableToolUse` to match strict type.
+
+## 2025-02-23 - [src/lib/ai-service/types.ts]
+
+**Drift:** Missing `@param options.disableToolUse`, `@param options.systemPrompt`, `@param options.sessionContext`, `@param options.availableTools`
+**Reality:** Added missing `@param` options to match strict type.
+
+## 2025-02-23 - [src/lib/backend/browser.ts]
+
+**Drift:** Missing `@param params.url`, `@param params.title`
+**Reality:** Added missing `@param` params to match strict type.
+
+## 2025-02-23 - [src/lib/llm-config-manager.ts]
+
+**Drift:** Missing `@param requirements.*` (needsTools, needsReasoning, maxCost, preferSpeed, contextWindow)
+**Reality:** Added missing `@param` requirements to match strict type.
+
+## 2025-02-23 - [src/lib/mcp/schema/builders.ts]
+
+**Drift:** Missing `@param options.*` constraints on schema builder functions (createStringSchema, createNumberSchema, createIntegerSchema, createBooleanSchema, createArraySchema, createObjectSchema, createEnumSchema)
+**Reality:** Added missing `@param` options to match strict type.

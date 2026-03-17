@@ -1,4 +1,5 @@
 use crate::services::McpServerService;
+use crate::state::get_mcp_server_repository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::command;
@@ -29,7 +30,8 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
 
 #[command]
 pub async fn create_mcp_server_config(name: String, config: Value) -> Result<MCPServerDto, String> {
-    let model = McpServerService::create_server_config(name, config).await?;
+    let model =
+        McpServerService::create_server_config(get_mcp_server_repository(), name, config).await?;
     Ok(model.into())
 }
 
@@ -39,18 +41,20 @@ pub async fn update_mcp_server_config(
     name: Option<String>,
     config: Option<Value>,
 ) -> Result<MCPServerDto, String> {
-    let updated = McpServerService::update_server_config(id, name, config).await?;
+    let updated =
+        McpServerService::update_server_config(get_mcp_server_repository(), id, name, config)
+            .await?;
     Ok(updated.into())
 }
 
 #[command]
 pub async fn delete_mcp_server_config(id: String) -> Result<(), String> {
-    McpServerService::delete_server_config(&id).await
+    McpServerService::delete_server_config(get_mcp_server_repository(), &id).await
 }
 
 #[command]
 pub async fn list_mcp_server_configs() -> Result<Vec<MCPServerDto>, String> {
-    let models = McpServerService::list_server_configs().await?;
+    let models = McpServerService::list_server_configs(get_mcp_server_repository()).await?;
     Ok(models.into_iter().map(|s| s.into()).collect())
 }
 

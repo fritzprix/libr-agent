@@ -53,6 +53,41 @@ pub struct MCPServiceProxy {
 }
 
 impl MCPServiceProxy {
+    fn tool_call_response(result: super::types::MCPResult) -> MCPResponse {
+        MCPResponse {
+            jsonrpc: "2.0".to_string(),
+            id: Some(super::types::JsonRpcId::String(
+                uuid::Uuid::new_v4().to_string(),
+            )),
+            result: Some(super::types::MCPResponseResult::ToolCall(result)),
+            error: None,
+        }
+    }
+
+    fn builtin_timeout_response(
+        &self,
+        server_id: &str,
+        tool_name: &str,
+    ) -> Result<MCPResponse, String> {
+        let text = format!(
+            "Tool {}__{} timed out after {} seconds.\n\nThis reflects a backend execution timeout, not invalid tool usage.\n\nYou can retry if the action is safe to repeat, or use a tool-specific status/check command if one exists.",
+            server_id, tool_name, self.tool_timeout_seconds
+        );
+
+        Ok(Self::tool_call_response(
+            super::types::MCPResult::informational_with_data(
+                &text,
+                serde_json::json!({
+                    "timeout": true,
+                    "server": server_id,
+                    "tool": tool_name,
+                    "sessionId": self.session_id,
+                    "seconds": self.tool_timeout_seconds,
+                }),
+            ),
+        ))
+    }
+
     /// Create a new session-bound proxy using builder
     ///
     /// # Arguments
@@ -159,14 +194,7 @@ impl MCPServiceProxy {
                         let result = server
                             .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
                             .await?;
-                        Ok(MCPResponse {
-                            jsonrpc: "2.0".to_string(),
-                            id: Some(super::types::JsonRpcId::String(
-                                uuid::Uuid::new_v4().to_string(),
-                            )),
-                            result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                            error: None,
-                        })
+                        Ok(Self::tool_call_response(result))
                     }
                     None => {
                         let available = self
@@ -218,14 +246,7 @@ impl MCPServiceProxy {
                         ],
                     );
 
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                    Ok(Self::tool_call_response(result))
                 }
             };
         }
@@ -250,14 +271,7 @@ impl MCPServiceProxy {
                                 .call_tool(&real_tool_name, args, Some(self.session_id.clone()))
                                 .await?;
                             // Convert MCPResult to MCPResponse with proper type
-                            Ok(MCPResponse {
-                                jsonrpc: "2.0".to_string(),
-                                id: Some(super::types::JsonRpcId::String(
-                                    uuid::Uuid::new_v4().to_string(),
-                                )),
-                                result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                                error: None,
-                            })
+                            Ok(Self::tool_call_response(result))
                         }
                         None => {
                             let available = self
@@ -311,24 +325,22 @@ impl MCPServiceProxy {
                         ],
                     );
 
-                    Ok(MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: Some(super::types::JsonRpcId::String(
-                            uuid::Uuid::new_v4().to_string(),
-                        )),
-                        result: Some(super::types::MCPResponseResult::ToolCall(result)),
-                        error: None,
-                    })
+                    Ok(Self::tool_call_response(result))
                 }
             }
         })
         .await
-        .map_err(|_| {
-            format!(
+        .unwrap_or_else(|_| match route_tool(tool_name) {
+            Ok(ToolRouting::Builtin {
+                server_id,
+                tool_name: real_tool_name,
+            }) => self.builtin_timeout_response(&server_id, &real_tool_name),
+            Ok(ToolRouting::External { .. }) => Err(format!(
                 "Tool execution timed out after {} seconds",
                 self.tool_timeout_seconds
-            )
-        })?
+            )),
+            Err(e) => Err(e),
+        })
     }
 
     /// Get the session ID this proxy is bound to
@@ -512,24 +524,36 @@ impl MCPServiceProxy {
 
     /// Collect service contexts from all builtin servers
     ///
-    /// Iterates through all registered builtin servers and collects their
-    /// current service context information. This is used to enrich the system
-    /// prompt with real-time session state information.
+    /// Queries all registered builtin servers in parallel. Servers that report
+    /// no active state via `has_active_state()` are skipped to avoid
+    /// unnecessary DB round-trips when context would be empty.
     ///
     /// # Returns
     /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
     pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
-        let mut contexts = HashMap::new();
+        let futures: Vec<_> = self
+            .builtin_servers
+            .iter()
+            .map(|(tool_id, server)| {
+                let tool_id = tool_id.clone();
+                async move {
+                    if !server.has_active_state().await {
+                        return None;
+                    }
+                    let context = server.get_service_context(None).await;
+                    Some((tool_id, context))
+                }
+            })
+            .collect();
 
-        for (tool_id, server) in &self.builtin_servers {
-            let context = server.get_service_context(None).await;
-
-            // Always include the context, even if empty, as structured state might be present
-            contexts.insert(tool_id.clone(), context);
-        }
+        let contexts: HashMap<String, ServiceContext> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
 
         log::debug!(
-            "Collected {} service contexts for session '{}'",
+            "Collected {} service contexts for session '{}' (parallel)",
             contexts.len(),
             self.session_id
         );

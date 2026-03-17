@@ -5,7 +5,7 @@ import { Message, ToolCall } from '@/models/chat';
 import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig } from './types';
 import { BaseAIService } from './base-service';
-import { convertMCPToolToCerebras } from './tool-converters';
+import { ensureSchemaTypeField } from './utils';
 
 const logger = getLogger('CerebrasService');
 
@@ -49,7 +49,10 @@ type CerebrasMessage =
 /**
  * An AI service implementation for interacting with Cerebras language models.
  */
-export class CerebrasService extends BaseAIService {
+export class CerebrasService extends BaseAIService<
+  CerebrasMessage,
+  Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool
+> {
   private cerebras: Cerebras | null;
 
   /**
@@ -80,7 +83,59 @@ export class CerebrasService extends BaseAIService {
   convertTools(
     mcpTools: MCPTool[],
   ): Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[] {
-    return mcpTools.map(convertMCPToolToCerebras);
+    return mcpTools.map((tool) => ({
+      type: 'function',
+      function: {
+        name: tool.name,
+        description: tool.description || '',
+        parameters: ensureSchemaTypeField(
+          tool.inputSchema as unknown as Record<string, unknown>,
+        ),
+      },
+    }));
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('llama3.1') || lowerName.includes('llama-3.1');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('llama3.1-70b')) return 131072;
+    if (lowerName.includes('llama3.1-8b')) return 131072;
+    return 8192;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Cerebras doesn't support special thinking fields yet
+    if (message.thinking) {
+      delete message.thinking;
+    }
+    if (message.thinkingSignature) {
+      delete message.thinkingSignature;
+    }
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return CerebrasService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return CerebrasService.estimateContextWindowForModel(modelName);
   }
 
   /**
@@ -93,11 +148,14 @@ export class CerebrasService extends BaseAIService {
     messages: Message[],
     options: StreamChatOptions = {},
   ): AsyncGenerator<string, void, void> {
-    const { config, tools } = this.prepareStreamChat(messages, options);
+    const { config, tools, sanitizedMessages } = this.prepareStreamChat(
+      messages,
+      options,
+    );
 
     try {
-      const cerebrasMessages = this.convertToCerebrasMessages(
-        messages,
+      const cerebrasMessages = this.convertMessages(
+        sanitizedMessages,
         options.systemPrompt,
       );
       const model = options.modelName || config.defaultModel || DEFAULT_MODEL;
@@ -113,9 +171,7 @@ export class CerebrasService extends BaseAIService {
               messages: cerebrasMessages,
               model,
               stream: true,
-              tools: tools as
-                | Cerebras.Chat.Completions.ChatCompletionCreateParams.Tool[]
-                | undefined,
+              tools: tools,
               tool_choice: tools ? 'auto' : undefined,
             },
             { signal: this.getAbortSignal() },
@@ -250,7 +306,7 @@ export class CerebrasService extends BaseAIService {
    * @returns An array of `CerebrasMessage` objects.
    * @private
    */
-  private convertToCerebrasMessages(
+  protected convertMessages(
     messages: Message[],
     systemPrompt?: string,
   ): CerebrasMessage[] {
@@ -404,28 +460,13 @@ export class CerebrasService extends BaseAIService {
   }
 
   /**
-   * @inheritdoc
-   * @description Creates a Cerebras-compatible system message object.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    return {
-      role: 'system',
-      content: systemPrompt.trim(),
-    };
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Cerebras API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    return this.convertMessage(message);
-  }
-
-  /**
    * Performs a non-streaming text generation request using the Cerebras API.
+   * @param prompt The prompt to send to the model.
+   * @param options Optional parameters for the sampling request.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
+   * @returns A promise that resolves to a `SamplingResponse`.
    */
   async sampleText(
     prompt: string,

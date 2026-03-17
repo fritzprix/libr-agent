@@ -1,6 +1,5 @@
 use crate::entity::assistant::Model as AssistantModel;
 use crate::repositories::AssistantRepository;
-use crate::state::get_assistant_repository;
 use serde_json::Value;
 
 pub struct AssistantUpsertPayload {
@@ -13,11 +12,11 @@ pub struct AssistantService;
 
 impl AssistantService {
     pub async fn create_assistant(
+        repo: &dyn AssistantRepository,
         id: String,
         name: String,
         config: Value,
     ) -> Result<AssistantModel, String> {
-        let repo = get_assistant_repository();
         let config_str = config.to_string();
 
         repo.create_assistant(id, name, config_str)
@@ -26,11 +25,11 @@ impl AssistantService {
     }
 
     pub async fn update_assistant(
+        repo: &dyn AssistantRepository,
         id: &str,
         name: Option<String>,
         config: Option<Value>,
     ) -> Result<AssistantModel, String> {
-        let repo = get_assistant_repository();
         let config_str = config.map(|c| c.to_string());
 
         repo.update_assistant(id, name, config_str)
@@ -38,31 +37,33 @@ impl AssistantService {
             .map_err(|e| format!("Failed to update assistant: {}", e))
     }
 
-    pub async fn delete_assistant(id: &str) -> Result<(), String> {
-        let repo = get_assistant_repository();
+    pub async fn delete_assistant(repo: &dyn AssistantRepository, id: &str) -> Result<(), String> {
         repo.delete_assistant(id)
             .await
             .map_err(|e| format!("Failed to delete assistant: {}", e))
     }
 
-    pub async fn list_assistants() -> Result<Vec<AssistantModel>, String> {
-        let repo = get_assistant_repository();
+    pub async fn list_assistants(
+        repo: &dyn AssistantRepository,
+    ) -> Result<Vec<AssistantModel>, String> {
         repo.list_assistants()
             .await
             .map_err(|e| format!("Failed to list assistants: {}", e))
     }
 
-    pub async fn get_assistant(id: &str) -> Result<Option<AssistantModel>, String> {
-        let repo = get_assistant_repository();
+    pub async fn get_assistant(
+        repo: &dyn AssistantRepository,
+        id: &str,
+    ) -> Result<Option<AssistantModel>, String> {
         repo.get_assistant(id)
             .await
             .map_err(|e| format!("Failed to get assistant: {}", e))
     }
 
     pub async fn batch_upsert_assistants(
+        repo: &dyn AssistantRepository,
         assistants: Vec<AssistantUpsertPayload>,
     ) -> Result<Vec<AssistantModel>, String> {
-        let repo = get_assistant_repository();
         let mut results = Vec::new();
 
         for payload in assistants {

@@ -1,7 +1,6 @@
 use crate::mcp::builtin::service_id::BuiltinServiceId;
 use crate::mcp::{MCPServerManager, MCPTool};
 use crate::repositories::mcp_server_repository::MCPServerRepository;
-use crate::state::get_mcp_server_repository;
 use serde_json::Value;
 
 pub struct McpServerService;
@@ -49,11 +48,11 @@ impl McpServerService {
     }
 
     /// Probe a single MCP server by ID: connect, list tools, disconnect.
-    pub async fn probe_server(server_id: &str) -> Result<Vec<MCPTool>, String> {
-        use crate::repositories::mcp_server_repository::MCPServerRepository;
-
+    pub async fn probe_server(
+        repo: &dyn MCPServerRepository,
+        server_id: &str,
+    ) -> Result<Vec<MCPTool>, String> {
         // 1. Load server record from DB
-        let repo = crate::state::get_mcp_server_repository();
         let model = repo
             .get(server_id)
             .await
@@ -96,6 +95,7 @@ impl McpServerService {
     }
 
     pub async fn create_server_config(
+        repo: &dyn MCPServerRepository,
         name: String,
         config: Value,
     ) -> Result<crate::entity::mcp_server::Model, String> {
@@ -119,7 +119,6 @@ impl McpServerService {
         let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
 
         // 3. Save to database
-        let repo = get_mcp_server_repository();
         let model = repo
             .create(&name, config)
             .await
@@ -141,6 +140,7 @@ impl McpServerService {
     }
 
     pub async fn update_server_config(
+        repo: &dyn MCPServerRepository,
         id: String,
         name: Option<String>,
         config: Option<Value>,
@@ -153,8 +153,6 @@ impl McpServerService {
                 ));
             }
         }
-
-        let repo = get_mcp_server_repository();
 
         // 1. Get the current configuration and merge with updates
         let existing = repo
@@ -203,16 +201,19 @@ impl McpServerService {
         Ok(updated)
     }
 
-    pub async fn delete_server_config(id: &str) -> Result<(), String> {
-        let repo = get_mcp_server_repository();
+    pub async fn delete_server_config(
+        repo: &dyn MCPServerRepository,
+        id: &str,
+    ) -> Result<(), String> {
         repo.delete(id)
             .await
             .map_err(|e| format!("Failed to delete MCP server config: {}", e))?;
         Ok(())
     }
 
-    pub async fn list_server_configs() -> Result<Vec<crate::entity::mcp_server::Model>, String> {
-        let repo = get_mcp_server_repository();
+    pub async fn list_server_configs(
+        repo: &dyn MCPServerRepository,
+    ) -> Result<Vec<crate::entity::mcp_server::Model>, String> {
         repo.list()
             .await
             .map_err(|e| format!("Failed to list MCP server configs: {}", e))

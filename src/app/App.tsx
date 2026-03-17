@@ -1,5 +1,6 @@
 import { Route, Routes, Navigate } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+import { emit } from '@tauri-apps/api/event';
 import { Toaster } from 'sonner';
 import AppSidebar from '../components/layout/AppSidebar';
 import { ThemeToggle } from '../components/common/ThemeToggle';
@@ -37,6 +38,13 @@ const ScheduledTasksPage = lazy(() =>
   })),
 );
 function App() {
+  useEffect(() => {
+    // Signal to backend that frontend is ready to receive events
+    emit('frontend-ready').catch((e) => {
+      console.error('Failed to emit frontend-ready event', e);
+    });
+  }, []);
+
   return (
     <div className="h-screen w-full">
       <UpdateProvider>

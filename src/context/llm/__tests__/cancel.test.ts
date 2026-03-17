@@ -125,19 +125,19 @@ describe('cancel status transition: abort → idle, real error → error', () =>
 // Rust invoke NOT called on abort (guards the race condition in useLLMListener)
 // ---------------------------------------------------------------------------
 
-describe('useLLMListener: agent_handle_llm_error must NOT be called on abort', () => {
+describe('useLLMListener: handleLLMError must NOT be called on abort', () => {
   /**
    * Regression guard for the race condition:
    *   cancelCompletionRequest() → AbortError thrown
-   *   → useLLMListener catch → invoke('agent_handle_llm_error')  ← BUG
+   *   → useLLMListener catch → handleLLMError(sessionId, String(error))  ← BUG
    *   → Rust: Idle (from cancel) then Error (stale abort) — wrong order
    *
    * The correct behaviour: if isAbortError, return early and never invoke Rust.
    */
-  const mockInvoke = vi.fn();
+  const mockHandleLLMError = vi.fn();
 
   beforeEach(() => {
-    mockInvoke.mockClear();
+    mockHandleLLMError.mockClear();
   });
 
   // Simulates the guard added to useLLMListener's catch block
@@ -146,30 +146,28 @@ describe('useLLMListener: agent_handle_llm_error must NOT be called on abort', (
     sessionId: string,
   ) => {
     if (isAbortError(error)) {
-      return; // ← correct: do NOT call invoke
+      return; // ← correct: do NOT call handleLLMError / report to Rust
     }
-    await mockInvoke('agent_handle_llm_error', { sessionId, error: String(error) });
+    await mockHandleLLMError(sessionId, String(error));
   };
 
-  it('does NOT invoke agent_handle_llm_error when aborted', async () => {
+  it('does NOT call handleLLMError when aborted', async () => {
     const err = new DOMException('aborted', 'AbortError');
     await handleCatchInListener(err, 'session-1');
-    expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 
-  it('does NOT invoke agent_handle_llm_error for "Request aborted"', async () => {
+  it('does NOT call handleLLMError for "Request aborted" (regression)', async () => {
+    // Some fetch implementations throw a generic error with this message on abort
     const err = new Error('Request aborted');
-    await handleCatchInListener(err, 'session-1');
-    expect(mockInvoke).not.toHaveBeenCalled();
+    await handleCatchInListener(err, 'session-2');
+    expect(mockHandleLLMError).not.toHaveBeenCalled();
   });
 
-  it('DOES invoke agent_handle_llm_error for real errors', async () => {
+  it('DOES call handleLLMError for other errors', async () => {
     const err = new Error('API quota exceeded');
     await handleCatchInListener(err, 'session-1');
-    expect(mockInvoke).toHaveBeenCalledWith('agent_handle_llm_error', {
-      sessionId: 'session-1',
-      error: 'Error: API quota exceeded',
-    });
+    expect(mockHandleLLMError).toHaveBeenCalledWith('session-1', 'Error: API quota exceeded');
   });
 });
 

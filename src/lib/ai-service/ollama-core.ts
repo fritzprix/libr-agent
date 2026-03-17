@@ -291,11 +291,23 @@ export function convertMessage(
         contentLength: toolContent.length,
         contentPreview: toolContent.substring(0, 100),
       });
-      return {
+      const result: SimpleOllamaMessage = {
         role: 'tool',
         content: toolContent,
         tool_call_id: message.tool_call_id,
       };
+      // Extract base64 images from tool result for vision-capable Ollama models
+      const multimodal = processMultiModalContent(message.content);
+      const images = multimodal
+        .filter((p) => p.type === 'image')
+        .map((p) => p.image)
+        .filter(
+          (img): img is string => typeof img === 'string' && img.length > 0,
+        );
+      if (images.length > 0) {
+        result.images = images;
+      }
+      return result;
     }
 
     default:

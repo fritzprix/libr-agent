@@ -36,7 +36,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 50"
+              placeholder={t(
+                'settings.system.placeholders.maxFileUploadSize',
+                'e.g., 50',
+              )}
               min={1}
               value={localSystemSettings.maxFileUploadSizeMB}
               onChange={(e) =>
@@ -65,7 +68,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 10"
+              placeholder={t(
+                'settings.system.placeholders.workspaceCapacity',
+                'e.g., 10',
+              )}
               min={1}
               value={localSystemSettings.workspaceCapacityMB}
               onChange={(e) =>
@@ -100,7 +106,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 5"
+              placeholder={t(
+                'settings.system.placeholders.searchIndexFrequency',
+                'e.g., 5',
+              )}
               min={1}
               value={localSystemSettings.searchIndexFrequencyMinutes}
               onChange={(e) =>
@@ -129,7 +138,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 30"
+              placeholder={t(
+                'settings.system.placeholders.webActionTimeout',
+                'e.g., 30',
+              )}
               min={5}
               value={localSystemSettings.webActionTimeoutSeconds}
               onChange={(e) =>
@@ -158,7 +170,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 60"
+              placeholder={t(
+                'settings.system.placeholders.mcpServerStartupTimeout',
+                'e.g., 60',
+              )}
               min={10}
               max={120}
               value={localSystemSettings.mcpServerStartupTimeoutSeconds}
@@ -195,7 +210,10 @@ export function SystemPerformanceSettings({
             </div>
             <Input
               type="number"
-              placeholder="0 (disabled)"
+              placeholder={t(
+                'settings.system.placeholders.mcpToolTimeout',
+                '0 (disabled)',
+              )}
               min={0}
               value={localSystemSettings.mcpToolTimeoutSeconds ?? 0}
               onChange={(e) =>
@@ -224,7 +242,10 @@ export function SystemPerformanceSettings({
             </label>
             <Input
               type="number"
-              placeholder="e.g., 24"
+              placeholder={t(
+                'settings.system.placeholders.activeSessionRetention',
+                'e.g., 24',
+              )}
               min={1}
               value={localSystemSettings.activeSessionRetentionHours}
               onChange={(e) =>
@@ -264,7 +285,10 @@ export function SystemPerformanceSettings({
           </label>
           <Input
             type="number"
-            placeholder="e.g., 3030"
+            placeholder={t(
+              'settings.system.placeholders.httpServerPort',
+              'e.g., 3030',
+            )}
             min={1}
             max={65535}
             value={localSystemSettings.httpServerPort ?? 3030}

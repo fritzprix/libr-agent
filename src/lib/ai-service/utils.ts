@@ -116,7 +116,7 @@ export function formatUsageMetrics(usage: TokenUsage): {
     usage.cachedPromptTokens ?? usage.details?.cacheReadInputTokens;
   const cacheHitPercent =
     cached !== undefined && usage.promptTokens > 0
-      ? ((cached / usage.promptTokens) * 100).toFixed(0)
+      ? Math.min((cached / usage.promptTokens) * 100, 100).toFixed(0)
       : undefined;
 
   return {
@@ -190,4 +190,85 @@ export function processMultiModalContent(content: MCPContent[]): Array<{
         return { type: 'text', text: `[${item.type}]` };
     }
   });
+}
+
+/**
+ * Extracts image and audio items from a MCPContent array.
+ * Used by provider conversion loops to identify media that requires special handling
+ * since tool result messages can only carry text in the standard API format.
+ * @param content The full content array from a tool result message.
+ * @returns Only the image and audio MCPContent items.
+ */
+export function extractMediaContent(content: MCPContent[]): MCPContent[] {
+  return content.filter((c) => c.type === 'image' || c.type === 'audio');
+}
+
+/**
+ * Recursively ensures that all nodes in a JSON schema have a 'type' field.
+ * This is required by many AI providers (OpenAI, Anthropic, Gemini, etc.)
+ * to prevent validation errors when the MCP server provides an incomplete schema.
+ * @param schema The JSON schema part to fix.
+ * @returns A new schema object with 'type' fields added where missing.
+ */
+export function ensureSchemaTypeField(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') {
+    return { type: 'object', properties: {} };
+  }
+
+  const result = { ...schema };
+
+  // Ensure root schema has type field
+  if (!result.type) {
+    // Infer type from structure
+    if (result.properties && typeof result.properties === 'object') {
+      result.type = 'object';
+    } else if (result.items) {
+      result.type = 'array';
+    } else {
+      result.type = 'object'; // default fallback
+    }
+  }
+
+  // Handle array-type type fields (convert to single type)
+  if (Array.isArray(result.type)) {
+    // Prioritize the first non-null type
+    const nonNullType = (result.type as string[]).find((t) => t !== 'null');
+    result.type = nonNullType || 'string';
+  }
+
+  // Recursively ensure properties have type fields
+  if (result.properties && typeof result.properties === 'object') {
+    const properties = result.properties as Record<string, unknown>;
+    const fixedProperties: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (typeof value === 'object' && value !== null) {
+        fixedProperties[key] = ensureSchemaTypeField(
+          value as Record<string, unknown>,
+        );
+      } else {
+        fixedProperties[key] = value;
+      }
+    }
+    result.properties = fixedProperties;
+  }
+
+  // Recursively ensure array items have type fields
+  if (result.items) {
+    if (Array.isArray(result.items)) {
+      result.items = result.items.map((item) =>
+        typeof item === 'object' && item !== null
+          ? ensureSchemaTypeField(item as Record<string, unknown>)
+          : item,
+      );
+    } else if (typeof result.items === 'object' && result.items !== null) {
+      result.items = ensureSchemaTypeField(
+        result.items as Record<string, unknown>,
+      );
+    }
+  }
+
+  return result;
 }

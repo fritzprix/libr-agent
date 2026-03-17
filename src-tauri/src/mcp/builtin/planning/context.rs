@@ -46,7 +46,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
         })
         .collect();
 
-    // 3. (Scratchpad moved to MemoryServer)
+    // 3. (Scratchpad moved to ScratchpadServer)
 
     // --- Format Output ---
 
@@ -135,7 +135,7 @@ pub async fn get_service_context(_db: &DatabaseConnection, session_id: &str) -> 
             }
         }
 
-        parts.push("\n*Use 'index' when calling checkTodo or cancelTodo.*".to_string());
+        parts.push("\n*Use 'index' when calling updateTodo.*".to_string());
     } else {
         parts.push("\n**Tasks:** None".to_string());
         parts.push("*Use 'addTodo' to create your first task.*".to_string());

@@ -1,28 +1,32 @@
-import { Message } from '@/models/chat';
+import { extractMediaContent } from '@/lib/ai-service/utils';
+import { getLogger } from '@/lib/logger';
+import { llmConfigManager } from '@/lib/llm-config-manager';
+import type { MCPContent, MCPTool } from '@/lib/mcp';
 import {
-  MCPTool,
-  MCPContent,
-  SamplingOptions,
-  SamplingResponse,
-  SamplingResult,
-} from '@/lib/mcp';
+  filterSystemErrors,
+  validateToolCallPairing,
+} from '@/lib/ai-service/message-normalizer';
 import {
-  AIServiceConfig,
-  AIServiceProvider,
+  type AIServiceConfig,
+  type AIServiceProvider,
   AIServiceError,
-  IAIService,
+  type IAIService,
+  type ModelInfo,
+  type SamplingOptions,
+  type SamplingResponse,
 } from './types';
-import { ModelInfo, llmConfigManager } from '../llm-config-manager';
-import { withRetry, withTimeout } from '../retry-utils';
-import { MessageNormalizer } from './message-normalizer';
-import { getLogger } from '../logger';
+import type { Message } from '@/models/chat';
 
 /**
  * An abstract base class that provides common functionality for all AI services.
  * It implements the `IAIService` interface and handles API key validation,
  * message validation, retry logic, and configuration merging.
+ * @template TProviderMessage The type of message objects used by the provider's API.
+ * @template TProviderTool The type of tool objects used by the provider's API.
  */
-export abstract class BaseAIService implements IAIService {
+export abstract class BaseAIService<TProviderMessage, TProviderTool>
+  implements IAIService
+{
   /**
    * The default configuration for the service.
    * @protected
@@ -38,9 +42,9 @@ export abstract class BaseAIService implements IAIService {
    * A logger instance for the base service.
    * @protected
    */
-  protected logger = getLogger('BaseAIService');
+  protected logger = getLogger(this.getProvider());
 
-  // NEW: Instance-level AbortController for stream cancellation
+  // Instance-level AbortController for stream cancellation
   protected abortController: AbortController = new AbortController();
 
   /**
@@ -56,19 +60,33 @@ export abstract class BaseAIService implements IAIService {
     this.defaultConfig = { ...this.defaultConfig, ...config };
   }
 
-  // NEW: Get current abort signal
-  protected getAbortSignal(): AbortSignal {
-    return this.abortController.signal;
+  /**
+   * Sets the default configuration for the service.
+   * @param config The new default configuration.
+   */
+  setDefaultConfig(config: AIServiceConfig): void {
+    this.defaultConfig = { ...this.defaultConfig, ...config };
   }
 
-  // NEW: Cancel current stream
-  public cancel(): void {
+  /**
+   * Cancels any ongoing streaming request.
+   */
+  cancel(): void {
     if (!this.abortController.signal.aborted) {
       this.logger.info('Cancelling active stream');
       this.abortController.abort();
-    } else {
-      this.logger.debug('cancel() called but no active stream');
     }
+    // Re-create the AbortController for the next request
+    this.abortController = new AbortController();
+  }
+
+  /**
+   * Returns the `AbortSignal` for the current request.
+   * @returns The `AbortSignal`.
+   * @protected
+   */
+  protected getAbortSignal(): AbortSignal {
+    return this.abortController.signal;
   }
 
   /**
@@ -84,15 +102,15 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * Validates an array of messages to ensure they conform to the required structure.
-   * @param messages The array of messages to validate.
-   * @throws `AIServiceError` or `Error` if the messages are invalid.
+   * Common validation logic for messages.
+   * @param messages The messages to validate.
+   * @throws `AIServiceError` if validation fails.
    * @protected
    */
   protected validateMessages(messages: Message[]): void {
-    if (!Array.isArray(messages) || messages.length === 0) {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
       throw new AIServiceError(
-        'Messages array cannot be empty',
+        'Messages array is empty or undefined',
         this.getProvider(),
       );
     }
@@ -114,48 +132,102 @@ export abstract class BaseAIService implements IAIService {
   }
 
   /**
-   * A wrapper around the `withRetry` utility that automatically uses the service's
-   * default retry configuration and wraps errors in `AIServiceError`.
-   * @template T The type of the result of the operation.
-   * @param operation The asynchronous operation to execute.
-   * @param maxRetries The maximum number of retries, overriding the default.
-   * @returns A promise that resolves with the result of the successful operation.
+   * Validates the basic structure of an `MCPTool`.
+   * @param tool The tool to validate.
+   * @throws An error if the tool is missing required fields.
    * @protected
    */
-  protected async withRetry<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = this.defaultConfig.maxRetries!,
-  ): Promise<T> {
-    try {
-      return await withRetry(operation, {
-        maxRetries,
-        baseDelay: this.defaultConfig.retryDelay!,
-        timeout: this.defaultConfig.timeout!,
-        exponentialBackoff: true,
-      });
-    } catch (error) {
-      throw new AIServiceError(
-        (error as Error).message,
-        this.getProvider(),
-        undefined,
-        error as Error,
+  protected validateTool(tool: MCPTool): void {
+    if (!tool.name || typeof tool.name !== 'string') {
+      throw new Error(
+        `Tool must have a valid name (provider: ${this.getProvider()})`,
+      );
+    }
+    if (!tool.description || typeof tool.description !== 'string') {
+      throw new Error(
+        `Tool must have a valid description (tool: ${tool.name})`,
+      );
+    }
+    if (!tool.inputSchema || typeof tool.inputSchema !== 'object') {
+      throw new Error(
+        `Tool must have a valid inputSchema (tool: ${tool.name})`,
+      );
+    }
+    if (tool.inputSchema.type !== 'object') {
+      throw new Error(
+        `Tool inputSchema must be of type "object" (tool: ${tool.name})`,
       );
     }
   }
 
   /**
-   * A simple wrapper around the `withTimeout` utility.
-   * @template T The type of the result of the promise.
-   * @param promise The promise to execute with a timeout.
-   * @param timeoutMs The timeout in milliseconds.
-   * @returns A promise that resolves with the result or rejects on timeout.
+   * Executes a function with retry logic.
+   * @template T The type of the result of the operation.
+   * @param fn The function to execute.
+   * @returns A promise that resolves to the result of the function.
    * @protected
    */
-  protected async withTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-  ): Promise<T> {
-    return withTimeout(promise, timeoutMs);
+  protected async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const maxRetries = this.defaultConfig.maxRetries ?? 3;
+    let lastError: unknown;
+
+    for (let i = 0; i <= maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error: unknown) {
+        lastError = error;
+
+        // Don't retry on cancellation
+        if (this.abortController.signal.aborted) {
+          throw error;
+        }
+
+        // Only retry on certain errors (e.g., rate limits, network issues)
+        if (this.shouldRetry(error)) {
+          const delay =
+            Math.pow(2, i) * (this.defaultConfig.retryDelay ?? 1000);
+          this.logger.warn(
+            `Retrying request (${i + 1}/${maxRetries}) after ${delay}ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (lastError instanceof Error) {
+      throw new AIServiceError(
+        lastError.message,
+        this.getProvider(),
+        undefined,
+        lastError,
+      );
+    }
+    throw new AIServiceError(
+      String(lastError),
+      this.getProvider(),
+      undefined,
+      undefined,
+    );
+  }
+
+  /**
+   * Determines whether an error should trigger a retry.
+   * @param error The error to check.
+   * @returns `true` if the request should be retried, `false` otherwise.
+   * @protected
+   */
+  protected shouldRetry(error: unknown): boolean {
+    // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
+    const status = (error as { status?: number })?.status;
+    if (
+      status !== undefined &&
+      (status === 429 || (status >= 500 && status <= 599))
+    ) {
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -236,6 +308,7 @@ export abstract class BaseAIService implements IAIService {
    * @param context.options.systemPrompt The system prompt.
    * @param context.options.availableTools Tools available.
    * @param context.options.config The service configuration.
+   * @param context.options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @param context.config The current AI configuration.
    * @throws `AIServiceError`
    * @protected
@@ -249,6 +322,7 @@ export abstract class BaseAIService implements IAIService {
         systemPrompt?: string;
         availableTools?: MCPTool[];
         config?: AIServiceConfig;
+        disableToolUse?: boolean;
       };
       config: AIServiceConfig;
     },
@@ -319,6 +393,7 @@ export abstract class BaseAIService implements IAIService {
    * @param options.systemPrompt The system prompt.
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An object containing the final configuration, converted tools, and sanitized messages.
    * @protected
    */
@@ -329,15 +404,17 @@ export abstract class BaseAIService implements IAIService {
       systemPrompt?: string;
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
+      disableToolUse?: boolean;
     } = {},
   ): {
     config: AIServiceConfig;
-    tools?: unknown[];
+    tools?: TProviderTool[];
     sanitizedMessages: Message[];
   } {
     this.validateMessages(messages);
     const config = this.mergeConfig(options);
 
+    // Re-initialize AbortController for this call
     this.abortController = new AbortController();
 
     const tools = options.availableTools
@@ -352,49 +429,29 @@ export abstract class BaseAIService implements IAIService {
 
   /**
    * Sanitizes messages for provider-specific compatibility.
-   * The base implementation uses the `MessageNormalizer`, but services can override this
-   * for custom sanitization logic.
+   * The base implementation calls sanitizeSingleMessage for each message.
    * @param messages The messages to sanitize.
    * @returns An array of sanitized messages.
-   * @protected
    */
-  protected sanitizeMessages(messages: Message[]): Message[] {
-    return MessageNormalizer.sanitizeMessagesForProvider(
-      messages,
-      this.getProvider(),
-    );
+  sanitizeMessages(messages: Message[]): Message[] {
+    const validMessages = filterSystemErrors(messages);
+    const processedMessages = validateToolCallPairing(validMessages);
+
+    return processedMessages
+      .map((msg) => this.sanitizeSingleMessage(msg))
+      .filter((msg): msg is Message => msg !== null);
   }
 
   /**
-   * A template method for converting an array of `Message` objects into a format
-   * suitable for a specific provider's API. It handles the system prompt and
-   * iterates through messages, calling the abstract `convertSingleMessage` for each.
-   * @param messages The array of messages to convert.
-   * @param systemPrompt An optional system prompt to prepend.
-   * @returns An array of provider-specific message objects.
+   * Extracts image and audio items from a MCPContent array.
+   * Used by provider conversion loops to identify media that needs special handling
+   * since tool result messages can only carry text in the standard API format.
+   * @param content The full content array from a tool result message.
+   * @returns Only the image and audio MCPContent items.
    * @protected
    */
-  protected convertMessagesTemplate(
-    messages: Message[],
-    systemPrompt?: string,
-  ): unknown[] {
-    const result: unknown[] = [];
-
-    if (systemPrompt) {
-      const systemMessage = this.createSystemMessage(systemPrompt);
-      if (systemMessage) {
-        result.push(systemMessage);
-      }
-    }
-
-    for (const message of messages) {
-      const converted = this.convertSingleMessage(message);
-      if (converted) {
-        result.push(converted);
-      }
-    }
-
-    return result;
+  protected extractMediaContent(content: MCPContent[]): MCPContent[] {
+    return extractMediaContent(content);
   }
 
   /**
@@ -418,22 +475,17 @@ export abstract class BaseAIService implements IAIService {
   // --- Abstract Methods for Subclasses ---
 
   /**
-   * Creates a provider-specific system message object.
-   * @param systemPrompt The text of the system prompt.
-   * @returns A provider-specific representation of a system message.
+   * Converts an array of `Message` objects into a format suitable for a specific provider's API.
+   * @param messages The array of messages to convert.
+   * @param systemPrompt An optional system prompt to prepend or include.
+   * @returns An array of provider-specific message objects.
    * @protected
    * @abstract
    */
-  protected abstract createSystemMessage(systemPrompt: string): unknown;
-
-  /**
-   * Converts a single `Message` object into a provider-specific format.
-   * @param message The message to convert.
-   * @returns A provider-specific representation of the message.
-   * @protected
-   * @abstract
-   */
-  protected abstract convertSingleMessage(message: Message): unknown;
+  protected abstract convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): TProviderMessage[];
 
   /**
    * Initiates a streaming chat session with the AI service.
@@ -445,6 +497,7 @@ export abstract class BaseAIService implements IAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An async generator that yields chunks of the response as strings.
    */
   async *streamChat(
@@ -455,6 +508,7 @@ export abstract class BaseAIService implements IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const provider = this.getProvider();
@@ -548,6 +602,7 @@ export abstract class BaseAIService implements IAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @returns An async generator that yields chunks of the response as strings.
    * @protected
    * @abstract
@@ -560,6 +615,7 @@ export abstract class BaseAIService implements IAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     },
   ): AsyncGenerator<string, void, void>;
 
@@ -605,97 +661,35 @@ export abstract class BaseAIService implements IAIService {
    * @returns An array of tools in the provider-specific format.
    * @abstract
    */
-  abstract convertTools(mcpTools: MCPTool[]): unknown[];
+  abstract convertTools(mcpTools: MCPTool[]): TProviderTool[];
 
   /**
-   * Extracts a plain-text representation of a message's content, including
-   * tool call names/arguments and thinking content that `processMessageContent`
-   * would otherwise skip.
+   * @inheritdoc
    */
-  private extractMessageText(msg: Message): string {
-    const parts: string[] = [];
-
-    if (Array.isArray(msg.content)) {
-      for (const c of msg.content) {
-        if (c.type === 'text') {
-          parts.push(c.text);
-        } else if (c.type === 'tool_call') {
-          parts.push(`[tool: ${c.name}(${c.arguments})]`);
-        } else if (c.type === 'thinking') {
-          // Omit thinking from summarisation — it's ephemeral reasoning, not facts.
-        }
-      }
-    } else if (typeof msg.content === 'string' && msg.content) {
-      parts.push(msg.content);
-    }
-
-    // OpenAI-style tool_calls stored outside content
-    if (msg.tool_calls?.length) {
-      for (const tc of msg.tool_calls) {
-        parts.push(`[tool: ${tc.function.name}(${tc.function.arguments})]`);
-      }
-    }
-
-    return parts.join('\n').trim();
-  }
+  abstract sanitizeSingleMessage(message: Message): Message | null;
 
   /**
-   * Builds a plain-text summarisation prompt from a slice of conversation messages.
-   * Used by the default {@link compact} implementation.
-   *
-   * If the first message is a prior compact summary (id starts with
-   * `compact-summary-`), it is rendered as a `[PREVIOUS SUMMARY]` block rather
-   * than a regular user turn so the model treats it as accumulated context, not
-   * new user input.
-   *
-   * @param messages The messages to include in the summary prompt.
-   * @returns A string prompt asking the model to summarise the conversation.
-   * @private
+   * @inheritdoc
    */
-  private buildCompactPrompt(messages: Message[]): string {
-    const lines: string[] = [
-      'Summarise the following conversation history concisely, preserving key decisions, context, tool results, and any information needed to continue the conversation.\n',
-    ];
-
-    // If the first message is a prior compact summary, render it as a distinct
-    // "previous context" block so the model absorbs it correctly.
-    let startIndex = 0;
-    const firstMsg = messages[0];
-    if (firstMsg?.id.startsWith('compact-summary-')) {
-      const prevSummaryText = this.extractMessageText(firstMsg);
-      lines.push('[PREVIOUS SUMMARY]');
-      lines.push(prevSummaryText);
-      lines.push('[END PREVIOUS SUMMARY]\n');
-      startIndex = 1;
-    }
-
-    lines.push('--- CONVERSATION HISTORY ---\n');
-
-    for (let i = startIndex; i < messages.length; i++) {
-      const msg = messages[i];
-      const text = this.extractMessageText(msg);
-
-      if (msg.role === 'user') {
-        lines.push(`User: ${text}`);
-      } else if (msg.role === 'assistant') {
-        lines.push(`Assistant: ${text}`);
-      } else if (msg.role === 'tool') {
-        lines.push(`Tool result: ${text}`);
-      }
-    }
-
-    lines.push(
-      '\n--- END CONVERSATION HISTORY ---\n\nProvide a concise summary:',
-    );
-    return lines.join('\n');
-  }
+  abstract supportsTools(modelName: string): boolean;
 
   /**
-   * Compresses a slice of conversation messages into a single summary by
-   * calling {@link sampleText} with a summarisation prompt. Providers may
-   * override this for cost or caching optimisations.
+   * @inheritdoc
+   */
+  abstract estimateContextWindow(modelName: string): number;
+
+  /**
+   * Compresses a slice of conversation messages into a single summary string
+   * by calling `sampleText()` internally. The default implementation in
+   * `BaseAIService` builds a plain-text summarisation prompt; individual
+   * providers may override for cost or caching optimisations.
    * @param messages The messages to compress.
-   * @param options Optional model name and service configuration overrides.
+   * @param options Optional model name, config, system prompt, context, and tools.
+   * @param options.modelName The name of the model.
+   * @param options.config Optional configuration for the service.
+   * @param options.systemPrompt The system prompt.
+   * @param options.sessionContext The session context.
+   * @param options.availableTools Optional array of tools available to the model.
    * @returns A promise that resolves to the summary text.
    */
   async compact(
@@ -703,28 +697,120 @@ export abstract class BaseAIService implements IAIService {
     options?: {
       modelName?: string;
       config?: AIServiceConfig;
+      systemPrompt?: string;
+      sessionContext?: string;
+      availableTools?: MCPTool[];
     },
   ): Promise<string> {
-    const prompt = this.buildCompactPrompt(messages);
-    const response = await this.sampleText(prompt, {
+    const compactMessages = [...messages];
+
+    let instruction =
+      'Summarise the previous conversation history concisely using structured Markdown.\n\n' +
+      'Organize the summary into clear sections (e.g., "Key Decisions", "Context", "Tool Results", "Pending Actions") ' +
+      'to preserve all information needed to continue the conversation effectively.\n\n' +
+      'IMPORTANT: Do NOT attempt to use tools in this response. Just output plain text.';
+
+    // Residual connection principle: when a prior compact-summary is present, the new
+    // summary MUST be informationally equivalent to (old_summary ⊕ new_messages).
+    // Every piece of information from the previous summary must carry forward unchanged —
+    // treat it as an immutable residual, not a target for further compression.
+    const firstMsg = compactMessages[0];
+    if (firstMsg?.id.startsWith('compact-summary-')) {
+      instruction =
+        'The first message is a previously accumulated compact summary that represents ALL earlier conversation history.\n\n' +
+        'CRITICAL RESIDUAL RULE: Every fact, decision, action, and context item recorded in that prior summary ' +
+        'MUST be preserved verbatim or re-stated with equivalent fidelity in your new summary. ' +
+        'Do NOT compress, omit, or paraphrase the prior summary — treat it as an immutable residual that carries forward in full. ' +
+        'Your new summary = (prior summary, preserved completely) + (new messages, summarised).\n\n' +
+        instruction;
+    }
+
+    const instructionMessage: Message = {
+      id: `compaction_instruction_${Date.now()}`,
+      sessionId: 'internal',
+      threadId: 'internal',
+      role: 'user', // "user" role is critical here so it follows valid standard tool sequences
+      content: [{ type: 'text', text: instruction }],
+      createdAt: new Date(),
+    };
+    compactMessages.push(instructionMessage);
+
+    const { systemPrompt: effectiveSystemPrompt, messages: effectiveMessages } =
+      this.prepareContextInjection(
+        options?.systemPrompt,
+        options?.sessionContext,
+        compactMessages,
+      );
+
+    const streamGenerator = this.streamChat(effectiveMessages, {
       modelName: options?.modelName,
+      systemPrompt: effectiveSystemPrompt,
+      availableTools: options?.availableTools,
       config: options?.config,
+      forceToolUse: false,
+      disableToolUse: true, // Key command to underlying providers
     });
 
-    const samplingResult = response.result as SamplingResult | undefined;
-    const textBlock = samplingResult?.content?.find((c) => c.type === 'text');
-    if (!textBlock || !('text' in textBlock)) {
+    let summaryText = '';
+    for await (const chunk of streamGenerator) {
+      if (this.getAbortSignal().aborted) {
+        throw new Error('Compaction request aborted');
+      }
+
+      let parsedChunk: Record<string, unknown>;
+      try {
+        parsedChunk = JSON.parse(chunk);
+      } catch {
+        parsedChunk = { content: chunk };
+      }
+
+      if (parsedChunk.content && typeof parsedChunk.content === 'string') {
+        summaryText += parsedChunk.content;
+      }
+    }
+
+    if (!summaryText.trim()) {
       throw new AIServiceError(
-        'compact() received an empty response from sampleText',
+        'compact() received an empty response from streamChat',
         this.getProvider(),
       );
     }
-    return (textBlock as { text: string }).text;
+
+    return summaryText.trim();
+  }
+
+  /**
+   * Merges the stable system prompt and volatile session context into the
+   * provider's preferred injection channel before each LLM request.
+   *
+   * The default implementation (in `BaseAIService`) concatenates both parts
+   * into a single system prompt string — safe for all providers. Individual
+   * providers may override to inject `sessionContext` as an ephemeral tail
+   * message instead, which keeps the system prompt fully static and maximises
+   * automatic prefix-cache hit rates.
+   *
+   * @param systemPrompt - Stable system prompt (sections 1–3). Cacheable.
+   * @param sessionContext - Volatile context (sections 4–5). Rebuilt per turn.
+   * @param messages - Current conversation message stack, after context trimming.
+   * @returns The effective system prompt and (possibly augmented) message list to
+   *          pass to `streamChat`.
+   */
+  prepareContextInjection(
+    systemPrompt: string | undefined,
+    sessionContext: string | undefined,
+    messages: Message[],
+  ): { systemPrompt: string | undefined; messages: Message[] } {
+    if (!sessionContext) {
+      return { systemPrompt, messages };
+    }
+    const combined = [systemPrompt, sessionContext]
+      .filter(Boolean)
+      .join('\n\n');
+    return { systemPrompt: combined, messages };
   }
 
   /**
    * Cleans up any resources used by the service instance.
-   * @abstract
    */
   abstract dispose(): void;
 }

@@ -11,8 +11,9 @@ use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use super::circuit_breaker;
-use super::completion::request_llm_completion;
+use super::completion::{maybe_trigger_post_idle_compaction, request_llm_completion};
 use super::tool_execution;
+use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType};
 
 /// Handle an LLM response from the frontend
 pub async fn handle_llm_response(
@@ -88,6 +89,17 @@ pub async fn handle_llm_response(
         };
         crate::agent::events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit WorkflowStarted event: {}", e))?;
+    }
+
+    // [Message ID Matching] Use pre-generated ID if available
+    {
+        let sessions = active_sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            let mut expected_id = session.expected_response_id.write().await;
+            if let Some(id) = expected_id.take() {
+                assistant_message.id = id;
+            }
+        }
     }
 
     // [Circuit Breaker] Pre-process: Check for loops and inject circuit breaker if needed
@@ -251,7 +263,11 @@ pub async fn handle_llm_response(
             // Emit workflow error event with specific message
             let error_event = crate::agent::events::AgentEvent::WorkflowError {
                 session_id: session_id.clone(),
-                error: "EMPTY_LLM_RESPONSE: The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.".to_string(),
+                error: AgentRuntimeError::new(
+                    AgentRuntimeErrorType::AiServiceError,
+                    "The AI model returned an empty response with no content, tool calls, or thinking. This may indicate a model inference issue, context overflow, or generation failure. Please try again.",
+                )
+                .with_code("EMPTY_LLM_RESPONSE"),
             };
             crate::agent::events::emit_agent_event(app_handle, error_event)
                 .map_err(|e| format!("Failed to emit WorkflowError event: {}", e))?;
@@ -328,7 +344,8 @@ pub async fn handle_llm_response(
                 app_handle,
                 session_id,
             )
-            .await;
+            .await
+            .map_err(String::from);
         }
 
         // ✅ Content present: reset thinking_only_count
@@ -362,8 +379,23 @@ pub async fn handle_llm_response(
                 app_handle,
                 session_id,
             )
-            .await;
+            .await
+            .map_err(String::from);
         }
+
+        let post_idle_compact_candidate = assistant_message
+            .usage
+            .as_ref()
+            .and_then(|usage| usage.get("totalTokens"))
+            .and_then(|value| value.as_u64().map(|n| n as usize))
+            .or_else(|| {
+                assistant_message
+                    .usage
+                    .as_ref()
+                    .and_then(|usage| usage.get("totalTokens"))
+                    .and_then(|value| value.as_f64().map(|n| n as usize))
+            })
+            .map(|usage_total_tokens| (usage_total_tokens, assistant_message.id.clone()));
 
         // No pending messages, finish workflow
         crate::agent::lifecycle::update_session_status(
@@ -382,6 +414,46 @@ pub async fn handle_llm_response(
             .map_err(|e| format!("Failed to emit event: {}", e))?;
 
         log::info!("Completed workflow for session: {}", session_id);
+
+        if let Some((usage_total_tokens, assistant_message_id)) = post_idle_compact_candidate {
+            let (message_snapshot, session_name) = {
+                let active = active_sessions.read().await;
+                if let Some(session) = active.get(&session_id) {
+                    let session_name = session
+                        .metadata
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| session_id[..8.min(session_id.len())].to_string());
+                    let message_snapshot = session.messages.read().await.clone();
+                    (message_snapshot, session_name)
+                } else {
+                    (
+                        Vec::new(),
+                        session_id[..8.min(session_id.len())].to_string(),
+                    )
+                }
+            };
+
+            if !message_snapshot.is_empty() {
+                if let Err(error) = maybe_trigger_post_idle_compaction(
+                    active_sessions,
+                    app_handle,
+                    &session_id,
+                    &session_name,
+                    &message_snapshot,
+                    usage_total_tokens,
+                )
+                .await
+                {
+                    log::warn!(
+                        "⚠️ Failed to evaluate post-idle compaction for session {} after assistant message {}: {}",
+                        session_id,
+                        assistant_message_id,
+                        error
+                    );
+                }
+            }
+        }
     } else {
         // Tools found! Initiate execution
         log::info!(
@@ -460,9 +532,60 @@ pub async fn handle_llm_error(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     app_handle: &AppHandle,
     session_id: String,
-    error: String,
+    error: AgentRuntimeError,
 ) -> Result<(), String> {
-    log::error!("LLM error for session {}: {}", session_id, error);
+    log::error!(
+        "LLM error for session {}: {}",
+        session_id,
+        error.display_message
+    );
+
+    let context_settings = crate::agent::llm::completion::load_context_management_settings().await;
+    let context_strategy = context_settings.context_strategy().to_string();
+
+    if matches!(
+        error.error_type,
+        crate::agent::llm::types::AgentRuntimeErrorType::ContextLimitError
+    ) && crate::agent::llm::completion::uses_compaction_strategy(&context_strategy)
+    {
+        match crate::agent::llm::trigger_preflight_compaction_for_session(
+            active_sessions,
+            app_handle,
+            &session_id,
+        )
+        .await
+        {
+            Ok(true) => {
+                log::info!(
+                    "Recovered context-limit error by arming compaction recovery for session {}",
+                    session_id
+                );
+                return Ok(());
+            }
+            Ok(false) => {
+                log::warn!(
+                    "Context-limit error could not trigger compaction recovery for session {}",
+                    session_id
+                );
+            }
+            Err(compaction_error) => {
+                log::error!(
+                    "Failed to trigger compaction recovery after context-limit error for session {}: {}",
+                    session_id,
+                    compaction_error
+                );
+            }
+        }
+    } else if matches!(
+        error.error_type,
+        crate::agent::llm::types::AgentRuntimeErrorType::ContextLimitError
+    ) {
+        log::warn!(
+            "Context-limit error will not trigger compaction recovery because strategy={} for session {}",
+            context_strategy,
+            session_id
+        );
+    }
 
     crate::agent::lifecycle::update_session_status(
         session_repo,

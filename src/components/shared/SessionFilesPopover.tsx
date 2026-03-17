@@ -138,7 +138,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
       <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
         <DropdownMenuTrigger asChild>
           <button
-            className="text-xs hover:text-primary transition-colors flex items-center gap-1"
+            className="text-xs hover:text-primary transition-colors flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-sm"
             title={t('sessionFiles.viewFiles', 'View session files')}
           >
             <Folder className="w-3 h-3" />
@@ -161,9 +161,14 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
             </div>
           ) : (
             <div className="max-h-64 overflow-y-auto">
-              {currentSessionFiles.map((file, index) => (
+              {currentSessionFiles.map((file) => (
                 <DropdownMenuItem
-                  key={index}
+                  key={
+                    file.contentId ??
+                    file.pendingId ??
+                    file.workspacePath ??
+                    `${file.filename}-${file.uploadedAt}`
+                  }
                   className="px-3 py-2 cursor-pointer border-b last:border-b-0 block"
                   onClick={() => handleFileClick(file)}
                 >

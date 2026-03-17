@@ -2,6 +2,105 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.37] - 2026-03-17
+
+### 🚀 Features
+
+- **Autonomous Scheduled Tasks**: Introduced **YOLO Mode** for scheduled tasks, allowing agents to execute sensitive tools automatically without manual approval.
+- **YOLO Status Indicators**: Added high-visibility YOLO badges to the scheduled tasks list and a dedicated toggle in the task configuration modal for easier autonomous workflow management.
+
+### 🐛 Fixes
+
+- **Startup Race Condition**: Resolved a critical issue where scheduled tasks triggered during application startup would fail to reach the frontend. Implemented a robust **Frontend-Ready Handshake** that ensures the UI is fully initialized before the backend fires automation events.
+- **LLM Request Stability**: Enhanced session state validation to prevent redundant or stale LLM completion requests during rapid state transitions.
+
+### 🔧 Internal
+
+- **Parameter Object Refactoring**: Applied the Parameter Object pattern to `ScheduledTaskRepository` and service layers, improving code maintainability and ensuring compliance with strict Rust linting rules.
+- **Repository Abstraction**: Refined the repository interfaces to better handle complex multi-argument operations without sacrificing type safety or readability.
+
+## [0.5.36] - 2026-03-17
+
+### 🚀 Features
+
+- **Unified Agent Domain (SP22-2)**: Implemented a robust unified agent domain using Rust-to-TS SSOT (Single Source of Truth) codegen. This centralizes built-in service definitions, ensuring perfect type safety and consistency between the backend registry and frontend clients.
+- **Enhanced Agent Discovery**: Improved specialist agent discovery with human-readable capability summaries. Agents can now discover and reason about available capabilities including external MCP servers directly within their context.
+- **System Capability Catalog**: Added a comprehensive capability catalog to the agent context, providing models with a clear map of available system tools and platform features for better task planning.
+- **Extended MCP Timeouts**: Increased the default timeout for sub-agent sessions to 1 hour, supporting complex multi-agent workflows that require extended execution windows.
+- **i18n & Localization Expansion**: Significantly expanded English and Korean localization across the `AgentToolsModal`, `AgentModelPicker`, `AgentDraftChatView`, and Settings panels.
+- **Accessibility & UX**: Added keyboard focus states to all native buttons (Palette) and enhanced the responsiveness and accessibility attributes of the `ScheduledTasksPage`.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Environment Variable Leakage**: Resolved multiple security vulnerabilities (Sentinel) where sensitive host environment variables could leak into terminal launcher and system utility processes.
+- **Duplicate Tool Call IDs**: Fixed an issue where certain LLMs would hallucinate duplicate tool call IDs, causing React key collisions and preventing tool results from being correctly associated with messages.
+- **UI Flickering & Stability**: Resolved text bubble flickering by synchronizing message IDs and implemented functional state updates to fix intermittent tool expansion failures.
+- **Windows Path Normalization**: Fixed shell execution errors on Windows by normalizing backslashes and ensuring consistent CWD handling across platforms.
+- **Message Transition**: Ensured smoother message transitions and more accurate tool status displays during active streaming.
+
+### 🔧 Internal
+
+- **Architectural Decoupling (Nexus/Fractal)**: Continued the modularization effort by decomposing `AgentDraftChatView`, `agent/workflow`, and `agent/llm/completion` into focused sub-modules to improve maintainability and build times.
+- **Dependency Inversion**: Completed dependency inversion for core domain services, enabling better isolation and more reliable unit testing.
+- **Expanded Test Coverage**: Added comprehensive test suites for `RustAssistantService`, `AIServiceFactory`, `Settings` backend, and `Message` service, reaching higher reliability across the IPC boundary.
+- **CI/CD Maintenance**: Upgraded the CI environment to Node.js v20 and synchronized lockfiles for improved dependency stability.
+
+## [0.5.35] - 2026-03-14
+
+### 🚀 Features
+
+- **Context Compaction Optimization**: Re-engineered context management to use a Rust-owned compacting state, significantly improving conversation length stability. Added Sonner toast notifications for compaction events and structured markdown summaries for better transparency.
+- **Media Tools Expansion (SP21)**: Introduced the `MediaServer` builtin MCP tool, enabling agents to "see" and "listen" to multimedia content. Media results are now intelligently injected into the LLM context across supported providers.
+- **UI Resource UX Improvements**: Optimized the UI Resource presentation with enhanced copy-to-clipboard functionality and support for "simple mode" to reduce visual clutter.
+- **Assistant Management Refactor**: Migrated the Assistant List and Skills Editor to a custom hook pattern with SWR integration, ensuring declarative data fetching and eliminating search UI flashing.
+
+### 🐛 Fixes
+
+- **[CRITICAL] Environment Variable Leakage**: Fixed multiple security vulnerabilities where host environment variables could leak into spawned processes during bootstrap platform detection and `command_exists` checks.
+- **Compaction Stability**: Resolved a migration bug in the compaction logic and added token calibration to ensure precise context window management.
+- **Session History Performance**: Enhanced accessibility and data integrity in the `SessionHistoryPanel` by implementing deferred rendering and fixing SWR mutation leaks.
+- **Race Conditions**: Resolved several race conditions in assistant hooks and strengthened IPC boundary reliability during rapid tool-call aborts.
+
+### 🔧 Internal
+
+- **Architecture Decoupling**: Refactored the monolithic Workspace terminal handler and Assistant module into focused sub-modules, improving maintainability.
+- **AI Service Generics**: Applied a generic pattern to `BaseAIService` for type-safe message and tool conversions across all providers.
+- **Built-in Tool Consolidation**: Unified internal tool routing and consolidated legacy built-in tool definitions.
+- **Test Coverage (Sonar/Hermes)**: Expanded the regression test suite covering compaction flows, date-utils coverage, and IPC boundary error handling.
+
+## [0.5.34] - 2026-03-10
+
+### 🐛 Fixes
+
+- **Keyboard Focus on Copy Button**: The copy button in markdown message blocks was invisible to keyboard users due to `opacity-0` with no `focus-visible` override. Added `focus-visible:opacity-100` and standard focus ring styles so the button is visually apparent when tabbed to.
+
+### ⚡ Performance
+
+- **Anthropic Prompt Cache Hit Rate**: Service context sections are now appended to the system prompt in deterministic (sorted) order, eliminating cache misses caused by random HashMap iteration order across requests. The tools list is also now marked with Anthropic's `cache_control: {type: 'ephemeral'}` to activate the second cache breakpoint, reducing cost and latency for tool-heavy agents.
+
+## [0.5.33] - 2026-03-10
+
+### 🚀 Features
+
+- **Workspace Override Persistence**: Agent sessions now remember their custom workspace path across restarts. The override is persisted to the database and automatically restored when a session resumes.
+
+### 🐛 Fixes
+
+- **Windows SQLite Paths**: Fixed hardcoded `sqlite://` URL bindings that silently failed on Windows due to backslash path separators. A dedicated `format_sqlite_url()` helper now handles cross-platform path formatting correctly.
+- **Message Token History**: Fixed `deserializeMessage` silently dropping historical token usage data — usage information is now correctly preserved when loading past messages.
+- **Type Safety (OpenAI/Gemini)**: Replaced an unsafe double-cast on `chunk.usage` in the OpenAI streaming path with a proper runtime type guard; added the missing `thoughtsTokenCount` field to `TokenUsage.details` to eliminate cast workarounds in the Gemini path.
+- **i18n Agent Drop Hints**: Workspace drag-and-drop hint text and toast error messages in the Agent Draft view are now fully localized (Korean + English).
+- **Message Role Cast**: Role values with unexpected raw types are now safely cast to `Message['role']` instead of being widened to `string`.
+- **Release Script Safety**: The release script now aborts immediately when `TAURI_SIGNING_PRIVATE_KEY` is not set, preventing silent signing failures during production builds.
+
+### 🔧 Internal
+
+- **Code Quality (PR #797)**: Applied all reviewer feedback — removed redundant `<TooltipProvider>` wrapper (already internal to `Tooltip`), fixed inline `import()` type annotations, updated docstrings for allowlist behavior accuracy, and ensured `deserializeMessage` maps all fields.
+- **Message / Workflow Decoupling**: Extracted message queuing, DB persistence, and event emission out of the workflow orchestration loop into a dedicated `MessageService`.
+- **UI Hook Refactoring**: Refactored `ServerToolsModal`, `EnvVarsForm`, and `HttpForm` to use custom hooks and a callback-ref pattern, reducing component complexity.
+- **Interactive Handler Sub-modules**: Reorganized interactive code-execution handlers into focused sub-modules with cleaner visibility boundaries.
+- **Test Coverage**: Added unit tests for backend wrappers, `parseAssistant`, `isValidMessage`, `useBuiltinTools`, and `useServerTools` hooks; Rust `format_sqlite_url` covered by integration tests.
+
 ## [0.5.32] - 2026-03-10
 
 ### 🚀 Features

@@ -142,16 +142,30 @@ impl MCPServiceProxyManager {
             let proxy = match self.get_proxy(session_id).await {
                 Some(proxy) => proxy,
                 None => {
-                    let active_sessions = self.list_sessions().await;
-                    log::error!(
-                        "No proxy found for session: {}. Active sessions: {:?}",
-                        session_id,
-                        active_sessions
-                    );
-                    return Err(format!(
-                        "Session context not found or expired (ID: {})",
+                    // No proxy exists yet — lazily initialise a builtin-only proxy so that
+                    // idle sessions (exist in DB but have not run a workflow in this app
+                    // session) can still serve builtin tool calls such as content-store
+                    // listing from AgentResourceAttachmentContext.
+                    log::debug!(
+                        "No proxy for session {}, attempting lazy builtin proxy init",
                         session_id
-                    ));
+                    );
+                    match self.ensure_builtin_proxy(session_id).await {
+                        Ok(proxy) => proxy,
+                        Err(e) => {
+                            let active_sessions = self.list_sessions().await;
+                            log::error!(
+                                "Failed to lazily init proxy for session {}: {}. Active sessions: {:?}",
+                                session_id,
+                                e,
+                                active_sessions
+                            );
+                            return Err(format!(
+                                "Session context not found or expired (ID: {})",
+                                session_id
+                            ));
+                        }
+                    }
                 }
             };
             return proxy.call_tool(tool_name, args).await;

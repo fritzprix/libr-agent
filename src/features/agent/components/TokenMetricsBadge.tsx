@@ -2,6 +2,7 @@ import type { TokenUsage } from '@/lib/ai-service/types';
 import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
+import { calculateCacheHitPercent } from './token-metrics';
 
 interface ContextUsage {
   totalTokens: number;
@@ -100,10 +101,9 @@ export function TokenMetricsBadge({
     usage.details?.prompt_cache_hit_tokens !== undefined;
 
   const hasCacheHit = cachedTokens > 0 || isCacheActive;
-  const cacheHitPercent =
-    hasCacheHit && usage.promptTokens > 0
-      ? Math.round((cachedTokens / usage.promptTokens) * 100)
-      : 0;
+  const cacheHitPercent = hasCacheHit
+    ? calculateCacheHitPercent(cachedTokens, usage.promptTokens)
+    : 0;
 
   // Calculate prefill tokens per second if both TTFT and prompt tokens are available
   const prefillTPS =

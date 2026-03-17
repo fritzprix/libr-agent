@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-03-20 - [AgentPlanningPanel]
+
+**Extracted:** 8
+**Languages updated:** [EN, KO]
+**Notes:** Localized AgentPlanningPanel strings like "AI Planning", "Current Goal", "Tasks", and priority badges. Added new `agent.planning` namespace to `common.json`.
+
 ## 2026-03-04 - [Sidebar Navigation]
 
 **Extracted:** 3
@@ -71,3 +77,27 @@
 **Extracted:** 10
 **Languages updated:** [EN, KO]
 **Notes:** Localized `SettingsPage` provider card labels, descriptions, and actions, and synced EN/KO entries in `common.json`.
+
+## 2026-03-09 - [Agent Draft Chat View]
+
+**Extracted:** 16
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AgentDraftChatView`. Created new nested namespace `agent.draft` in `common.json`. Handled toasts, errors, and static descriptive text strings.
+
+## 2026-03-13 - [AgentModelPicker]
+
+**Extracted:** 4
+**Languages updated:** [EN, KO]
+**Notes:** Localized `AgentModelPicker` provider and model select placeholders, loading state, and refresh button tooltip.
+
+## 2026-03-14 - [Settings]
+
+**Extracted:** 9
+**Languages updated:** [EN, KO]
+**Notes:** Localized "Danger Zone" title and performance input placeholders across settings components. Synced missing reset-related strings in Korean.
+
+## 2026-03-16 - [ErrorBubble/LoadingSpinner]
+
+**Extracted:** 5
+**Languages updated:** [EN, KO]
+**Notes:** Localized `ErrorBubble` and `LoadingSpinner` components and added new `errorBubble` namespace to EN/KO.

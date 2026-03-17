@@ -15,6 +15,7 @@ impl WorkspaceServer {
     pub(crate) async fn execute_shell_with_isolation(
         &self,
         command: &str,
+        tool_name: &str,
         isolation_level: IsolationLevel,
         timeout_secs: u64,
         session_id: &str,
@@ -42,7 +43,7 @@ impl WorkspaceServer {
 
         if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
             return Ok(guided_error(
-                ErrorCategory::InvalidState,
+                ErrorCategory::InternalError,
                 "Create temp directory failed".to_string(),
                 ToolGroup::Workspace,
             )
@@ -80,7 +81,7 @@ impl WorkspaceServer {
             Ok(cmd) => cmd,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::PermissionDenied,
+                    ErrorCategory::InternalError,
                     "Create isolated shell command failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -312,7 +313,7 @@ impl WorkspaceServer {
 
                 let hint = SuccessHint::new(
                     text_message,
-                    SuccessHint::for_tool(PERSISTENT_SHELL_TOOL, ToolGroup::Workspace),
+                    SuccessHint::for_tool(tool_name, ToolGroup::Workspace),
                 );
                 Ok(hint.to_mcp_result_with_data(Some(response)))
             }

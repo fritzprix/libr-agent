@@ -94,7 +94,7 @@ impl WorkspaceServer {
                 Ok(s) => s,
                 Err(e) => {
                     return Ok(guided_error(
-                        ErrorCategory::InvalidState,
+                        ErrorCategory::InternalError,
                         "De-obfuscate user input failed".to_string(),
                         ToolGroup::Workspace,
                     )
@@ -209,7 +209,7 @@ impl WorkspaceServer {
                     if exit_code == 0 {
                         return Ok(MCPResult::success(&result_text));
                     } else {
-                        return Ok(MCPResult::error(&result_text));
+                        return Ok(MCPResult::informational(&result_text));
                     }
                 }
                 Ok(Err(e)) => {
@@ -221,7 +221,7 @@ impl WorkspaceServer {
                 }
                 Err(_) => {
                     // Timeout
-                    return Ok(MCPResult::error(&format!(
+                    return Ok(MCPResult::informational(&format!(
                         "Command execution timeout after {} seconds",
                         pending.timeout
                     )));
@@ -254,7 +254,7 @@ impl WorkspaceServer {
             Ok(cmd) => cmd,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::PermissionDenied,
+                    ErrorCategory::InternalError,
                     "Create isolated command failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -278,7 +278,7 @@ impl WorkspaceServer {
             Ok(c) => c,
             Err(e) => {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     "Spawn process failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -297,7 +297,7 @@ impl WorkspaceServer {
             // CRITICAL: Write password and close stdin
             if let Err(e) = stdin.write_all(user_input.as_bytes()).await {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     "Write to stdin failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -311,7 +311,7 @@ impl WorkspaceServer {
             }
             if let Err(e) = stdin.write_all(b"\n").await {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::OperationFailed,
                     "Write newline to stdin failed".to_string(),
                     ToolGroup::Workspace,
                 )
@@ -340,7 +340,7 @@ impl WorkspaceServer {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
                     return Ok(guided_error(
-                        ErrorCategory::InvalidState,
+                        ErrorCategory::OperationFailed,
                         "Execute command with user input failed".to_string(),
                         ToolGroup::Workspace,
                     )
@@ -411,7 +411,7 @@ impl WorkspaceServer {
 
             if let Err(e) = tokio::fs::create_dir_all(&process_tmp_dir).await {
                 return Ok(guided_error(
-                    ErrorCategory::InvalidState,
+                    ErrorCategory::InternalError,
                     "Create process directory failed".to_string(),
                     ToolGroup::Workspace,
                 )

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import AgentTerminalHeader from './AgentTerminalHeader';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
 import { useAgentPlanning } from '@/context/AgentPlanningContext';
@@ -11,9 +11,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { PanelRight, FolderOpen, Copy } from 'lucide-react';
+import { PanelRight, FolderOpen, Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { useClipboard } from '@/hooks/useClipboard';
 
 interface AgentChatHeaderProps {
   children?: React.ReactNode;
@@ -29,6 +30,8 @@ export function AgentChatHeader({
   const { showPlanningPanel, togglePlanningPanel } = useAgentPlanning();
   const { showWorkspacePanel, toggleWorkspacePanel } = useAgentWorkspace();
   const { messages } = useAgentChat();
+  const [isCopying, setIsCopying] = useState(false);
+  const { copyToClipboard } = useClipboard();
 
   // Planning toggle comes from AgentPlanningContext to keep state in sync
   const handleTogglePlanning = () => {
@@ -48,12 +51,16 @@ export function AgentChatHeader({
   };
 
   const handleCopyMessages = async () => {
+    if (isCopying) return;
+    setIsCopying(true);
     try {
       const json = JSON.stringify(messages, null, 2);
-      await navigator.clipboard.writeText(json);
+      await copyToClipboard(json);
       toast.success(t('agent.header.copySuccess'));
     } catch {
       toast.error(t('agent.header.copyError'));
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -75,10 +82,15 @@ export function AgentChatHeader({
                 variant="ghost"
                 size="sm"
                 onClick={handleCopyMessages}
+                disabled={isCopying}
                 aria-label={t('agent.header.copyAria')}
                 className="h-6 px-2"
               >
-                <Copy className="h-4 w-4" />
+                {isCopying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t('agent.header.copyTooltip')}</TooltipContent>

@@ -11,6 +11,7 @@ export interface ScheduledTask {
   assistantId: string;
   /** Supports @playbook:name and @skill:name mention syntax */
   message: string;
+  yoloMode: boolean;
   sessionId: string | null;
   enabled: boolean;
   lastRunAt: number | null;
@@ -24,12 +25,15 @@ export interface CreateScheduledTaskRequest {
   cronExpression: string;
   assistantId: string;
   message: string;
+  yoloMode: boolean;
 }
 
 export interface UpdateScheduledTaskRequest {
   name?: string;
   cronExpression?: string;
+  assistantId?: string;
   message?: string;
+  yoloMode?: boolean;
   enabled?: boolean;
 }
 

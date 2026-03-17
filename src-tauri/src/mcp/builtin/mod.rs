@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tracing::info;
 
+pub mod agent;
 pub mod assistant;
 pub mod bootstrap;
 pub mod browser;
@@ -13,13 +14,14 @@ pub mod browser_content_store;
 pub mod content_store;
 pub mod error_guidance;
 pub mod knowledge;
-pub mod mcp_manager;
-pub mod memory;
+pub mod media;
 pub mod planning;
 pub mod playbook;
+pub mod scratchpad;
 pub mod service_id;
 pub mod session_api;
 pub mod skills;
+pub mod tool;
 pub mod ui;
 pub mod utils;
 pub mod workspace;
@@ -99,6 +101,15 @@ pub trait BuiltinMCPServer: Send + Sync + std::fmt::Debug {
             ),
             structured_state: None,
         }
+    }
+
+    /// Returns `true` when the server has meaningful state worth including in the
+    /// system prompt. Returning `false` causes `get_service_contexts()` to skip
+    /// this server entirely, avoiding unnecessary DB round-trips.
+    ///
+    /// Default: `true` (always included). Override in servers that can be empty.
+    async fn has_active_state(&self) -> bool {
+        true
     }
 }
 
@@ -346,7 +357,7 @@ impl BuiltinServerRegistry {
     /// using the provided `SessionManager`.
     ///
     /// Note: Only registers stateless servers. Stateful servers (knowledge, planning, playbook,
-    /// assistant, browser) are instantiated per-session in MCPServiceProxy.
+    /// agent, browser, scratchpad) are instantiated per-session in MCPServiceProxy.
     pub fn new_with_session_manager(session_manager: std::sync::Arc<SessionManager>) -> Self {
         let mut registry = Self {
             servers: std::collections::HashMap::new(),
@@ -368,10 +379,9 @@ impl BuiltinServerRegistry {
         ));
 
         registry.register_server(Box::new(ui::UiServer::new()));
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
 
-        // Session-specific servers (knowledge, planning, playbook, assistant, browser) are
+        // Session-specific servers (knowledge, planning, playbook, agent, browser, scratchpad) are
         // instantiated per-session in MCPServiceProxy::create_builtin_server()
 
         registry
@@ -393,7 +403,7 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
-        // knowledge, planning, playbook, assistant require session_id + db - can't instantiate globally
+        // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
@@ -414,8 +424,7 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
 
         registry
     }
@@ -436,7 +445,7 @@ impl BuiltinServerRegistry {
         // V1 LEGACY: Only register servers that don't need session-specific parameters
         // Agent V2 uses MCPServiceProxy per-session instead
         registry.register_server(Box::new(bootstrap::BootstrapServer::new()));
-        // knowledge, planning, playbook, assistant require session_id + db - can't instantiate globally
+        // knowledge, planning, playbook, agent require session_id + db - can't instantiate globally
         // browser requires AppHandle + session_id - can't instantiate globally
 
         registry.register_server(Box::new(workspace::WorkspaceServer::new(
@@ -457,8 +466,7 @@ impl BuiltinServerRegistry {
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
-        registry.register_server(Box::new(mcp_manager::MCPManagerServer::new()));
-        registry.register_server(Box::new(session_api::SessionApiServer::new()));
+        registry.register_server(Box::new(tool::ToolServer::new()));
 
         registry
     }

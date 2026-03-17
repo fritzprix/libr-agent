@@ -84,8 +84,16 @@ async fn execute_task(
     };
 
     let (session_id, is_new_session) = if session_exists {
-        // Reuse the live session
-        (task.session_id.clone().unwrap(), false)
+        let sid = task.session_id.clone().unwrap();
+        // Ensure YOLO mode is synced even for reused sessions
+        if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
+            log::warn!(
+                "⏰ Failed to sync YOLO mode for existing session {}: {}",
+                sid,
+                e
+            );
+        }
+        (sid, false)
     } else {
         // First run OR session was lost — create a fresh one
         let new_id = Uuid::new_v4().to_string();
@@ -99,6 +107,17 @@ async fn execute_task(
                 agent_config.clone(),
             )
             .await?;
+
+        // Apply YOLO mode from task to the new session
+        if task.yolo_mode {
+            if let Err(e) = manager.set_yolo_mode(&new_id, true).await {
+                log::warn!(
+                    "⏰ Failed to set YOLO mode for new session {}: {}",
+                    new_id,
+                    e
+                );
+            }
+        }
         (new_id, true)
     };
 

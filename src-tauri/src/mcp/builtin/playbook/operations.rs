@@ -207,17 +207,9 @@ pub async fn list_playbooks(
             total_items,
             page_size as i64,
         )?;
-        let tool_name = if args.get("tool").and_then(|v| v.as_str()) == Some("getPlaybookPage") {
-            "getPlaybookPage"
-        } else {
-            "showPlaybooks"
-        };
+        let tool_name = "getPlaybookPage";
 
-        let action_text = if tool_name == "getPlaybookPage" {
-            format!("Navigated to page {}", page)
-        } else {
-            format!("Displaying {} playbook(s) in interactive UI", total_items)
-        };
+        let action_text = format!("Navigated to page {}", page);
 
         let text_response = format!(
             "[{}] {}.\nCurrent page: {} of {}\n\nPlaybooks on this page:\n{}\n\nStatus: Agent paused for user interaction (Select/Delete/Navigate buttons available).",

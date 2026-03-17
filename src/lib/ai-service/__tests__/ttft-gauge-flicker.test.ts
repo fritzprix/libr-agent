@@ -88,8 +88,12 @@ vi.mock('../../llm-config-manager', () => ({
 }));
 
 vi.mock('../message-normalizer', () => ({
+  filterSystemErrors: vi.fn().mockImplementation((msgs: Message[]) => msgs),
+  validateToolCallPairing: vi.fn().mockImplementation((msgs: Message[]) => msgs),
   MessageNormalizer: {
     sanitizeMessagesForProvider: vi.fn().mockImplementation((msgs: Message[]) => msgs),
+    filterSystemErrors: vi.fn().mockImplementation((msgs: Message[]) => msgs),
+    validateToolCallPairing: vi.fn().mockImplementation((msgs: Message[]) => msgs),
   },
 }));
 

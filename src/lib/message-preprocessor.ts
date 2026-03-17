@@ -2,8 +2,114 @@ import { Message } from '@/models/chat';
 import type { MCPContent } from '@/lib/mcp/protocol/content';
 import { getLogger } from './logger';
 import { stringToMCPContentArray } from './utils';
+import type { AttachmentReference } from '@/models/chat';
 
 const logger = getLogger('message-preprocessor');
+const ATTACHMENT_PREVIEW_CHAR_LIMIT = 500;
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength)}…`;
+}
+
+function createAttachmentHintPayload(
+  attachment: AttachmentReference,
+): AttachmentReference {
+  if (
+    typeof attachment.preview === 'string' &&
+    attachment.preview.length > ATTACHMENT_PREVIEW_CHAR_LIMIT
+  ) {
+    return {
+      ...attachment,
+      preview: truncateText(attachment.preview, ATTACHMENT_PREVIEW_CHAR_LIMIT),
+    };
+  }
+
+  return attachment;
+}
+
+function estimateTextTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+export function calculateContextSafetyMargin(effectiveLimit: number): number {
+  const fivePercent = Math.ceil(effectiveLimit * 0.05);
+  return Math.min(Math.max(fivePercent, 1024), 8192);
+}
+
+export function estimateMCPContentTokens(content: MCPContent[]): number {
+  return content.reduce((total, item) => {
+    switch (item.type) {
+      case 'text':
+        return total + estimateTextTokens(item.text);
+      case 'resource':
+        return (
+          total +
+          estimateTextTokens(
+            typeof item.resource?.text === 'string' ? item.resource.text : '',
+          )
+        );
+      case 'tool_call':
+        return (
+          total +
+          estimateTextTokens(`${item.name ?? ''} ${item.arguments ?? ''}`)
+        );
+      case 'thinking':
+        return total + estimateTextTokens(item.thinking ?? '');
+      case 'image':
+      case 'audio':
+        return total + 1000;
+      default:
+        return total;
+    }
+  }, 0);
+}
+
+export function estimateMessageTokens(message: Message): number {
+  let total = estimateTextTokens(message.role);
+  total += estimateMCPContentTokens(message.content);
+
+  if (message.tool_calls) {
+    total += message.tool_calls.reduce(
+      (sum, toolCall) =>
+        sum +
+        estimateTextTokens(
+          `${toolCall.function?.name ?? ''} ${toolCall.function?.arguments ?? ''}`,
+        ),
+      0,
+    );
+  }
+
+  if (message.tool_use) {
+    total += estimateTextTokens(JSON.stringify(message.tool_use));
+  }
+
+  if (message.thinking) {
+    total += estimateTextTokens(message.thinking);
+  }
+
+  return total;
+}
+
+export function estimatePayloadTokens(
+  systemPrompt: string | undefined,
+  messages: Message[],
+  availableTools: unknown[] | undefined,
+): number {
+  const promptTokens = systemPrompt ? estimateTextTokens(systemPrompt) : 0;
+  const messageTokens = messages.reduce(
+    (sum, message) => sum + estimateMessageTokens(message),
+    0,
+  );
+  const toolTokens = availableTools
+    ? estimateTextTokens(JSON.stringify(availableTools))
+    : 0;
+
+  return promptTokens + messageTokens + toolTokens;
+}
 
 /**
  * Prepares a single message for consumption by an LLM.
@@ -61,6 +167,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
 
     // Build text hint blocks for workspace/committed attachments
     const attachmentHintBlocks = textAttachments.map((attachment, i) => {
+      const safeAttachment = createAttachmentHintPayload(attachment);
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:
 - readContent(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
@@ -74,7 +181,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
           : `File metadata only — use listContent(sessionId: "${attachment.sessionId}") to find available files`;
 
       return `<attachment_${i}>
-${JSON.stringify(attachment, null, 2)}
+${JSON.stringify(safeAttachment, null, 2)}
 <!--
 ${accessHints}
 -->

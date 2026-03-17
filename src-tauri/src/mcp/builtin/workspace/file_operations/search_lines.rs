@@ -310,11 +310,16 @@ impl WorkspaceServer {
             };
             files_searched += 1;
 
-            let rel_path = path
-                .strip_prefix(&dir)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .replace('\\', "/");
+            let rel_path = {
+                let p = path
+                    .strip_prefix(&dir)
+                    .unwrap_or(path)
+                    .to_string_lossy()
+                    .to_string();
+                #[cfg(target_os = "windows")]
+                let p = p.replace('\\', "/");
+                p
+            };
 
             let mut hits: Vec<Value> = Vec::new();
             for (idx, line) in content.lines().enumerate() {

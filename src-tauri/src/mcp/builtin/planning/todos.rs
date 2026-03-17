@@ -7,6 +7,30 @@ use crate::state::get_planning_repository;
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
 
+/// Unified todo update — dispatches to check_todo or cancel_todo based on action.
+pub async fn update_todo(
+    db: &DatabaseConnection,
+    session_id: &str,
+    args: Value,
+) -> Result<MCPResult, String> {
+    let action = args
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("done");
+
+    match action {
+        "done" => check_todo(db, session_id, args).await,
+        "cancel" => cancel_todo(db, session_id, args).await,
+        other => Ok(invalid_input_error(
+            &format!(
+                "Unknown action '{}'. Use 'done' to mark complete or 'cancel' to remove.",
+                other
+            ),
+            ToolGroup::Planning,
+        )),
+    }
+}
+
 /// Add a new todo - simplified version
 ///
 /// HALLUCINATION FIREWALL: Strictly derives title from description and
@@ -79,7 +103,10 @@ pub async fn add_todo(
                     "Added todo #{} (index {}): {}{}",
                     id, index, title, summary_text
                 ),
-                vec![format!("Use checkTodo(index={}) to mark as done", index)],
+                vec![format!(
+                    "Use updateTodo(index={}, action='done') to mark as done",
+                    index
+                )],
             );
             Ok(hint.to_mcp_result_with_data(Some(json!({
                 "id": cuid2::create_id(),
@@ -102,8 +129,7 @@ pub async fn add_todo(
     }
 }
 
-/// Check/Uncheck todo (Legacy: checkTodo)
-/// Check/Uncheck todo (Legacy: checkTodo)
+/// Check/Uncheck todo (also called by updateTodo action='done')
 ///
 /// HALLUCINATION FIREWALL: Lists all todos to resolve the index-based position
 /// before database access. Prevents agents from targeting non-existent todos via indices.
@@ -208,7 +234,7 @@ pub async fn check_todo(
             vec![]
         }
     } else {
-        vec!["Use checkTodo to mark as done when completed".to_string()]
+        vec!["Use updateTodo(index=N, action='done') to mark as done when completed".to_string()]
     };
 
     let hint = SuccessHint::new(

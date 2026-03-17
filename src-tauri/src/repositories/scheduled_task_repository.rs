@@ -9,18 +9,35 @@ use sea_orm::{
     QueryFilter, QueryOrder, Set,
 };
 
+/// Parameters for creating a scheduled task
+pub struct CreateScheduledTaskParams {
+    pub id: String,
+    pub name: String,
+    pub cron_expression: String,
+    pub assistant_id: String,
+    pub message: String,
+    pub yolo_mode: bool,
+    pub next_run_at: Option<i64>,
+}
+
+/// Parameters for updating a scheduled task
+pub struct UpdateScheduledTaskParams {
+    pub name: Option<String>,
+    pub cron_expression: Option<String>,
+    pub assistant_id: Option<String>,
+    pub message: Option<String>,
+    pub yolo_mode: Option<bool>,
+    pub enabled: Option<bool>,
+    pub next_run_at: Option<Option<i64>>,
+}
+
 /// Scheduled task repository trait for abstraction and testability
 #[async_trait::async_trait]
 pub trait ScheduledTaskRepository: Send + Sync {
     /// Create a new scheduled task
     async fn create_scheduled_task(
         &self,
-        id: String,
-        name: String,
-        cron_expression: String,
-        assistant_id: String,
-        message: String,
-        next_run_at: Option<i64>,
+        params: CreateScheduledTaskParams,
     ) -> Result<scheduled_task::Model, DbErr>;
 
     /// Get a scheduled task by ID
@@ -39,11 +56,7 @@ pub trait ScheduledTaskRepository: Send + Sync {
     async fn update_scheduled_task(
         &self,
         id: &str,
-        name: Option<String>,
-        cron_expression: Option<String>,
-        message: Option<String>,
-        enabled: Option<bool>,
-        next_run_at: Option<Option<i64>>,
+        params: UpdateScheduledTaskParams,
     ) -> Result<scheduled_task::Model, DbErr>;
 
     /// Record that a task has just run: update session_id, last_run_at, next_run_at
@@ -84,24 +97,20 @@ impl SqliteScheduledTaskRepository {
 impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
     async fn create_scheduled_task(
         &self,
-        id: String,
-        name: String,
-        cron_expression: String,
-        assistant_id: String,
-        message: String,
-        next_run_at: Option<i64>,
+        params: CreateScheduledTaskParams,
     ) -> Result<scheduled_task::Model, DbErr> {
         let now = chrono::Utc::now().timestamp_millis();
         let model = scheduled_task::ActiveModel {
-            id: Set(id),
-            name: Set(name),
-            cron_expression: Set(cron_expression),
-            assistant_id: Set(assistant_id),
-            message: Set(message),
+            id: Set(params.id),
+            name: Set(params.name),
+            cron_expression: Set(params.cron_expression),
+            assistant_id: Set(params.assistant_id),
+            message: Set(params.message),
+            yolo_mode: Set(params.yolo_mode),
             session_id: Set(None),
             enabled: Set(true),
             last_run_at: Set(None),
-            next_run_at: Set(next_run_at),
+            next_run_at: Set(params.next_run_at),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -140,28 +149,30 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
     async fn update_scheduled_task(
         &self,
         id: &str,
-        name: Option<String>,
-        cron_expression: Option<String>,
-        message: Option<String>,
-        enabled: Option<bool>,
-        next_run_at: Option<Option<i64>>,
+        params: UpdateScheduledTaskParams,
     ) -> Result<scheduled_task::Model, DbErr> {
         let mut active = self.fetch_task(id).await?;
         let now = chrono::Utc::now().timestamp_millis();
 
-        if let Some(v) = name {
+        if let Some(v) = params.name {
             active.name = Set(v);
         }
-        if let Some(v) = cron_expression {
+        if let Some(v) = params.cron_expression {
             active.cron_expression = Set(v);
         }
-        if let Some(v) = message {
+        if let Some(v) = params.assistant_id {
+            active.assistant_id = Set(v);
+        }
+        if let Some(v) = params.message {
             active.message = Set(v);
         }
-        if let Some(v) = enabled {
+        if let Some(v) = params.yolo_mode {
+            active.yolo_mode = Set(v);
+        }
+        if let Some(v) = params.enabled {
             active.enabled = Set(v);
         }
-        if let Some(v) = next_run_at {
+        if let Some(v) = params.next_run_at {
             active.next_run_at = Set(v);
         }
         active.updated_at = Set(now);

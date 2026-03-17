@@ -67,3 +67,39 @@
 - **HttpForm & EnvVarsForm:** Removed the `useEffect` block that monitored `.length` changes on `customHeaders` and `envVars` to imperatively focus the newly added input via a `prevLengthRef`.
 - **Woven:** Applied the React **Callback Ref** pattern conditionally governed by an `isAddingRef` flag set within the `onClick` handler. When a new input mounts after clicking "Add", its `ref` callback directly calls `.focus()`.
 - **Renders Saved:** Eliminated a redundant reactive cycle (the action-effect chain), bypassing the extra reconciliation required by `useEffect`-driven focus synchronization.
+
+## 2026-03-11 - [EditorContext] **Eradicated:** [Effect State Sync (useEffect setting state based on props)] **Woven:** [Render-Phase Mutation Pattern]
+
+- Removed the `useEffect` that mirrored incoming editor configuration/props into local state.
+- Now derives editor state directly during the render phase, mutating refs and local variables instead of bouncing through an effect-based sync path.
+- **Renders Saved:** Avoids the extra render caused by effect-driven state syncing and eliminates transient "double-apply" flashes.
+
+## 2026-03-11 - [FileAttachment] **Eradicated:** [Array index as key in dynamic lists] **Woven:** [Unique Composite Key Pattern]
+
+- Replaced index-based keys for attachment rows with a stable composite key built from intrinsic file identity (e.g., name/size/lastModified or a generated ID).
+- Ensures list item identity remains stable across insertions, deletions, and reordering, preventing focus loss and flicker in the attachment UI.
+- **Benefits:** More predictable reconciliation semantics and safer future refactors around drag-and-drop and progressive uploads.
+
+## 2026-03-11 - [AgentChatStatusBar] **Eradicated:** [Effect State Sync (useEffect resetting state on prop change)] **Woven:** [Render-Phase Mutation Pattern]
+
+- Removed the `useEffect` that listened for prop changes and imperatively reset internal status bar state.
+- Adopted a render-phase mutation pattern where derived values are computed from props and refs inline, reserving state updates solely for genuine user-driven transitions.
+- **Renders Saved:** Eliminates redundant effect-triggered renders and keeps status bar updates tightly coupled to actual interaction, not prop-mirroring.
+
+## 2026-03-12 - [AssistantList / SkillsEditor] **Eradicated:** [God useEffect blocks, mixed business logic and presentation, derived state] **Woven:** [Custom Hook Pattern (useAssistantsList, useAssistantSkills)]
+
+## 2026-03-13 - [useIsMobile hook] **Eradicated:** [Event-Driven State using useState & useEffect] **Woven:** [useSyncExternalStore Pattern]
+
+- Replaced `useState` and `useEffect` with `React.useSyncExternalStore` in the `useIsMobile` hook.
+- **Benefits:** Adheres to React 18+ conventions for subscribing to external stores/events natively, improving performance and reducing reliance on cascading effects for state management.
+
+## 2026-03-14 - [AppSidebar / History] **Eradicated:** [Effect State Sync / Derived State] **Woven:** [Context Initialization Pattern]
+
+- Removed the `useEffect` blocks that called `loadSessions()` on mount in both `AppSidebar` and `History` components.
+- **Benefits:** The `AgentSessionListProvider` already initializes and handles `loadSessions`. Removing redundant loads from children components prevents unnecessary API calls and extra renders.
+
+## 2026-03-14 - [ScheduledTasksPage / ScheduledTaskModal] **Eradicated:** [God Component / Action-Effect Chains / Derived State] **Woven:** [Custom Hook Pattern / Component Composition / Adjusting State During Render]
+
+- **ScheduledTasksPage:** Extracted all data fetching, state management, and mutation logic into a new custom hook `useScheduledTasks`. Eradicated "God Component" behavior.
+- **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by deriving the effective assistant selection directly during rendering.
+- **Benefits:** Clean separation of concerns, complete eradication of prop copying and effect-based state syncing loops.

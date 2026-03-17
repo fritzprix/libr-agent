@@ -1,0 +1,98 @@
+use std::process::Command;
+
+/// Returns a list of environment variables that are safe to pass to external processes
+/// (whitelisted essential system variables), preventing the leakage of host secrets.
+pub fn get_isolated_env() -> Vec<(String, String)> {
+    let preserved_vars = [
+        "PATH",
+        "SystemRoot",              // Windows
+        "COMSPEC",                 // Windows
+        "PATHEXT",                 // Windows
+        "WINDIR",                  // Windows
+        "APPDATA",                 // Windows
+        "LOCALAPPDATA",            // Windows
+        "ProgramData",             // Windows
+        "ProgramFiles",            // Windows
+        "ProgramFiles(x86)",       // Windows
+        "CommonProgramFiles",      // Windows
+        "CommonProgramFiles(x86)", // Windows
+        "HOME",
+        "USERPROFILE", // Windows
+        "HOMEDRIVE",   // Windows
+        "HOMEPATH",    // Windows
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "TERM",
+        "LANG",
+        "DISPLAY",                  // GUI session (Unix)
+        "WAYLAND_DISPLAY",          // GUI session (Unix)
+        "DBUS_SESSION_BUS_ADDRESS", // GUI session (Unix)
+    ];
+
+    let mut envs = Vec::new();
+    for (key, value) in std::env::vars() {
+        #[cfg(windows)]
+        let is_preserved = preserved_vars.iter().any(|&p| p.eq_ignore_ascii_case(&key));
+        #[cfg(not(windows))]
+        let is_preserved = preserved_vars.contains(&key.as_str());
+
+        // XDG_RUNTIME_DIR exposes live D-Bus / Wayland sockets under /run/user/<uid>;
+        // isolated processes have no business accessing them.
+        if is_preserved
+            || key.starts_with("LC_")
+            || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
+        {
+            envs.push((key, value));
+        }
+    }
+
+    envs
+}
+
+/// Scrubs the environment of the given command and applies the safe, isolated whitelist.
+pub fn apply_isolated_env(cmd: &mut Command) {
+    cmd.env_clear();
+    for (k, v) in get_isolated_env() {
+        cmd.env(k, v);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_apply_isolated_env_clears_secrets() {
+        // Set a dummy secret in the current process
+        env::set_var("OPENAI_API_KEY", "secret-value");
+        env::set_var("MY_PRIVATE_VAR", "private-value");
+
+        let mut cmd = Command::new("ls");
+        apply_isolated_env(&mut cmd);
+
+        // We can't directly inspect cmd.get_envs() easily in std::process::Command
+        // so we check if get_isolated_env() contains our secrets
+        let isolated = get_isolated_env();
+        assert!(isolated.iter().all(|(k, _)| k != "OPENAI_API_KEY"));
+        assert!(isolated.iter().all(|(k, _)| k != "MY_PRIVATE_VAR"));
+
+        // Verify some essential vars are kept if they exist in the host
+        if env::var("PATH").is_ok() {
+            assert!(isolated.iter().any(|(k, _)| k == "PATH"));
+        }
+    }
+
+    #[test]
+    fn test_get_isolated_env_includes_whitelisted_prefixes() {
+        env::set_var("LC_ALL", "en_US.UTF-8");
+        env::set_var("XDG_CONFIG_HOME", "/tmp/config");
+        env::set_var("XDG_RUNTIME_DIR", "/run/user/1000"); // Should be excluded
+
+        let isolated = get_isolated_env();
+        assert!(isolated.iter().any(|(k, _)| k == "LC_ALL"));
+        assert!(isolated.iter().any(|(k, _)| k == "XDG_CONFIG_HOME"));
+        assert!(isolated.iter().all(|(k, _)| k != "XDG_RUNTIME_DIR"));
+    }
+}

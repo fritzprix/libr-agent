@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -24,4 +24,27 @@ pub struct MessageSummaryOptions {
 #[serde(rename_all = "camelCase")]
 pub struct SystemSettings {
     pub http_server_port: Option<u16>,
+}
+
+// --- AI/UI Optimized Models (Rule 3) ---
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionResponse {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub assistant_id: String,
+    pub turn_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_result: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwarmOperationResponse {
+    pub operation: String,
+    pub session: AgentSessionResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub messages_count: Option<usize>,
 }

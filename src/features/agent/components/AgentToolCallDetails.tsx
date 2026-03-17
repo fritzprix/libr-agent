@@ -14,6 +14,8 @@ interface AgentToolCallDetailsProps {
   showDetails?: boolean;
   /** Pre-parsed arguments to avoid redundant JSON.parse calls */
   parsedArgs?: Record<string, unknown>;
+  /** When true, hides the parameters section. Useful for UI resources in simple mode. */
+  hideParameters?: boolean;
 }
 
 /**
@@ -30,6 +32,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
   isLoading = false,
   showDetails = true,
   parsedArgs,
+  hideParameters = false,
 }) => {
   const { t } = useTranslation('common');
   const params = useMemo(
@@ -39,7 +42,7 @@ export const AgentToolCallDetails: React.FC<AgentToolCallDetailsProps> = ({
 
   if (!showDetails) return null;
 
-  const hasParams = Object.keys(params).length > 0;
+  const hasParams = !hideParameters && Object.keys(params).length > 0;
 
   return (
     <div className="space-y-3 w-full max-w-full">

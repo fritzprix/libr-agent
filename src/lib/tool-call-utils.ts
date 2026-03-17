@@ -2,6 +2,7 @@ import type { Message } from '@/models/chat';
 import { isMCPErrorContent } from '@/lib/mcp/protocol/content';
 import { z } from 'zod';
 import { getLogger } from '@/lib/logger';
+import { ALL_BUILTIN_SERVICE_ALIASES } from './generated/builtin-services';
 
 const logger = getLogger('tool-call-utils');
 
@@ -65,25 +66,10 @@ export function hasUIResource(toolResult?: Message): boolean {
  * This set must mirror BuiltinServiceId::from_alias() in Rust (service_id.rs).
  */
 
-/** Canonical builtin service aliases — must mirror BuiltinServiceId::from_alias() in Rust. */
-export const BUILTIN_SERVICE_NAMES = new Set([
-  'planning',
-  'memory',
-  'workspace',
-  'knowledge',
-  'assistant',
-  'skills',
-  'playbook',
-  'attachments',
-  'content_store',
-  'contentstore',
-  'swarm',
-  'session_api',
-  'ui',
-  'browser',
-  'bootstrap',
-  'mcp_manager',
-]);
+/** All recognized builtin service aliases (including legacy names) — synced from Rust SSOT. */
+export const BUILTIN_SERVICE_NAMES = new Set<string>(
+  ALL_BUILTIN_SERVICE_ALIASES,
+);
 
 /** Returns true if the raw tool name belongs to a builtin service.
  * Requires the `server__tool` delimiter — bare service names (e.g. `'planning'`)
@@ -193,8 +179,13 @@ export function formatToolArgumentsSummary(
 
   const summary = Object.entries(args)
     .map(([key, value]) => {
-      const valueStr =
-        typeof value === 'object' ? JSON.stringify(value) : String(value);
+      let valueStr = '';
+      try {
+        valueStr =
+          typeof value === 'object' ? JSON.stringify(value) : String(value);
+      } catch {
+        valueStr = String(value);
+      }
       return `${key}: ${valueStr}`;
     })
     .join(', ');

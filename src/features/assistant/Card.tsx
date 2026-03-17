@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Assistant } from '../../models/chat';
 import { Badge, Button } from '@/components/ui';
 import { EditorProvider } from '@/context/EditorContext';
+import { toast } from 'sonner';
 import AssistantEditor from './AssistantEditor';
 import { useTranslation } from 'react-i18next';
 import {
@@ -54,7 +55,7 @@ export default function AssistantCard({
 
   const handleDeleteClick = useCallback(() => {
     if (assistant.deletionProtected === true) {
-      alert(t('assistant.card.deleteBlocked'));
+      toast.error(t('assistant.card.deleteBlocked'));
       return;
     }
     setShowDeleteConfirm(true);

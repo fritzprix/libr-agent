@@ -3,6 +3,7 @@ import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
   TextBlockParam,
+  ImageBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
@@ -17,10 +18,38 @@ import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
-import { convertMCPToolToAnthropic } from './tool-converters';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
+type AnthropicImageMediaType =
+  | 'image/jpeg'
+  | 'image/png'
+  | 'image/gif'
+  | 'image/webp';
+
+function normalizeAnthropicImageMediaType(
+  rawMimeType: string | undefined,
+): AnthropicImageMediaType | null {
+  if (!rawMimeType) {
+    return null;
+  }
+
+  const mimeType = rawMimeType.toLowerCase();
+  if (mimeType === 'image/jpg') {
+    return 'image/jpeg';
+  }
+
+  if (
+    mimeType === 'image/jpeg' ||
+    mimeType === 'image/png' ||
+    mimeType === 'image/gif' ||
+    mimeType === 'image/webp'
+  ) {
+    return mimeType;
+  }
+
+  return null;
+}
 
 /**
  * Marker injected by TimeLocationContextProvider (priority 1000, always last).
@@ -112,7 +141,10 @@ interface ToolCallAccumulator {
  * It handles the specifics of the Anthropic API, including message formatting,
  * tool use, and streaming.
  */
-export class AnthropicService extends BaseAIService {
+export class AnthropicService extends BaseAIService<
+  AnthropicMessageParam,
+  AnthropicTool
+> {
   private anthropic: Anthropic;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
@@ -143,9 +175,37 @@ export class AnthropicService extends BaseAIService {
 
   /**
    * @inheritdoc
+   *
+   * Marks the last tool with `cache_control: { type: 'ephemeral' }` so that
+   * Anthropic caches the entire tool list as a second cache breakpoint.
    */
   convertTools(mcpTools: MCPTool[]): AnthropicTool[] {
-    return mcpTools.map(convertMCPToolToAnthropic);
+    const tools = mcpTools.map((mcpTool) => {
+      const properties = mcpTool.inputSchema.properties || {};
+      const required = mcpTool.inputSchema.required || [];
+
+      // Anthropic requires 'type' in schema
+      const input_schema = {
+        type: 'object' as const,
+        properties: properties,
+        required: required,
+      };
+
+      return {
+        name: mcpTool.name,
+        description: mcpTool.description,
+        input_schema: input_schema as AnthropicTool['input_schema'],
+      } as AnthropicTool;
+    });
+
+    if (tools.length > 0) {
+      (
+        tools[tools.length - 1] as AnthropicTool & {
+          cache_control?: { type: 'ephemeral' };
+        }
+      ).cache_control = { type: 'ephemeral' };
+    }
+    return tools;
   }
 
   /**
@@ -288,6 +348,7 @@ export class AnthropicService extends BaseAIService {
    * @param options.availableTools Optional array of tools available to the model.
    * @param options.config Optional configuration for the service.
    * @param options.forceToolUse Whether to force the model to use tools.
+   * @param options.disableToolUse Whether to explicitly disable tool usage for this request.
    * @yields A JSON string for each chunk of the response. The format can be `{ content: string }`
    *         for text, `{ thinking: object }` for thinking state, or `{ tool_calls: [...] }` for tool calls.
    */
@@ -299,6 +360,7 @@ export class AnthropicService extends BaseAIService {
       availableTools?: MCPTool[];
       config?: AIServiceConfig;
       forceToolUse?: boolean;
+      disableToolUse?: boolean;
     } = {},
   ): AsyncGenerator<string, void, void> {
     const { config, tools, sanitizedMessages } = this.prepareStreamChat(
@@ -307,8 +369,10 @@ export class AnthropicService extends BaseAIService {
     );
 
     try {
-      const anthropicMessages =
-        this.convertToAnthropicMessages(sanitizedMessages);
+      const anthropicMessages = this.convertMessages(
+        sanitizedMessages,
+        options.systemPrompt,
+      );
 
       // Check if model supports extended thinking via dynamic capability detection
       const model = options.modelName || this.getDefaultModel();
@@ -332,7 +396,7 @@ export class AnthropicService extends BaseAIService {
           messages: anthropicMessages,
           ...(systemBlocks && { system: systemBlocks }),
           ...(extendedThinking && { extended_thinking: extendedThinking }),
-          tools: tools as AnthropicTool[],
+          tools: tools,
           ...(options.forceToolUse &&
             options.availableTools?.length && { tool_choice: { type: 'any' } }),
         },
@@ -606,6 +670,48 @@ export class AnthropicService extends BaseAIService {
       this.handleStreamingError(error, { messages, options, config });
     }
   }
+  /**
+   * @inheritdoc
+   */
+  sanitizeSingleMessage(message: Message): Message | null {
+    // Filter out tool messages without tool_call_id
+    if (message.role === 'tool' && !message.tool_call_id) {
+      logger.debug('Filtering out tool message without tool_call_id', {
+        messageId: message.id,
+      });
+      return null;
+    }
+
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    const lowerName = modelName.toLowerCase();
+    return lowerName.includes('claude-3') || lowerName.includes('claude-opus');
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    const lowerName = modelName.toLowerCase();
+    if (lowerName.includes('claude-3')) return 200000;
+    return 100000;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return AnthropicService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return AnthropicService.estimateContextWindowForModel(modelName);
+  }
 
   /**
    * Converts an array of standard `Message` objects into the format required
@@ -614,13 +720,16 @@ export class AnthropicService extends BaseAIService {
    * if any inconsistencies are found.
    *
    * @param messages The array of messages to convert.
+   * @param systemPrompt The system prompt.
    * @returns An array of `AnthropicMessageParam` objects.
    * @throws An error if an incomplete tool chain is detected.
-   * @private
    */
-  private convertToAnthropicMessages(
+  protected convertMessages(
     messages: Message[],
+    systemPrompt?: string,
   ): AnthropicMessageParam[] {
+    // Note: Anthropic system prompt is passed separately in doStreamChat
+    void systemPrompt;
     const anthropicMessages: AnthropicMessageParam[] = [];
     const toolUseIds = new Set<string>();
     const toolResultIds = new Set<string>();
@@ -746,16 +855,93 @@ export class AnthropicService extends BaseAIService {
           });
           continue;
         }
-        anthropicMessages.push({
-          role: 'user',
-          content: [
-            {
-              type: 'tool_result' as const,
-              tool_use_id: m.tool_call_id,
-              content: this.processMessageContent(m.content),
-            },
-          ],
-        });
+        // Anthropic tool_result.content supports image blocks natively.
+        const textContent = this.processMessageContent(m.content);
+        const images = (m.content as MCPContent[]).filter(
+          (c) => c.type === 'image',
+        ) as Array<{
+          type: 'image';
+          data?: string;
+          mimeType?: string;
+          source?: { data?: string; mimeType?: string };
+        }>;
+        if (images.length > 0) {
+          const imageBlocks = images
+            .map((img): ImageBlockParam | null => {
+              const data = img.data ?? img.source?.data;
+              const mediaType = normalizeAnthropicImageMediaType(
+                img.mimeType ?? img.source?.mimeType,
+              );
+
+              if (!data || !mediaType) {
+                logger.warn(
+                  'Skipping Anthropic tool-result image with missing data or unsupported MIME type',
+                  {
+                    messageId: m.id,
+                    toolCallId: m.tool_call_id,
+                    hasData: Boolean(data),
+                    mimeType: img.mimeType ?? img.source?.mimeType,
+                  },
+                );
+                return null;
+              }
+
+              return {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data,
+                },
+              };
+            })
+            .filter((block): block is ImageBlockParam => block !== null);
+
+          if (imageBlocks.length > 0) {
+            const blocks: (TextBlockParam | ImageBlockParam)[] = [];
+            if (textContent) {
+              blocks.push({ type: 'text', text: textContent });
+            }
+            blocks.push(...imageBlocks);
+
+            anthropicMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result' as const,
+                  tool_use_id: m.tool_call_id,
+                  content: blocks,
+                },
+              ],
+            });
+          } else {
+            const placeholderText = textContent
+              ? `${textContent}\n\n[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]`
+              : '[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]';
+            anthropicMessages.push({
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result' as const,
+                  tool_use_id: m.tool_call_id,
+                  content: placeholderText,
+                },
+              ],
+            });
+          }
+        } else {
+          // Text-only fast path
+          anthropicMessages.push({
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result' as const,
+                tool_use_id: m.tool_call_id,
+                content: textContent,
+              },
+            ],
+          });
+        }
       } else {
         logger.warn(`Unsupported message role for Anthropic: ${m.role}`);
       }
@@ -796,113 +982,13 @@ export class AnthropicService extends BaseAIService {
   }
 
   /**
-   * @inheritdoc
-   * @description For Anthropic, system messages are handled as a separate parameter
-   * in the API call, so this method returns null.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
-    // Anthropic handles system messages separately as a parameter, not as a message
-    void systemPrompt;
-    return null;
-  }
-
-  /**
-   * @inheritdoc
-   * @description Converts a single `Message` into the format expected by the Anthropic API.
-   * @protected
-   */
-  protected convertSingleMessage(message: Message): unknown {
-    if (message.role === 'system') {
-      // System messages are handled separately in the API call
-      return null;
-    }
-
-    if (message.role === 'user') {
-      return {
-        role: 'user',
-        content: this.formatAnthropicContent(message.content),
-      };
-    } else if (message.role === 'assistant') {
-      // Build content array with thinking block first if present
-      const content = [];
-
-      // Add thinking block as first element if exists
-      if (message.thinking) {
-        content.push({
-          type: 'thinking' as const,
-          thinking: message.thinking,
-          signature: message.thinkingSignature || '',
-        });
-      }
-
-      // Add tool_use content
-      if (message.tool_calls) {
-        content.push(
-          ...message.tool_calls.map((tc) => ({
-            type: 'tool_use' as const,
-            id: tc.id,
-            name: tc.function.name,
-            input: this.parseToolInput(tc.function.arguments, {
-              messageId: message.id,
-              toolId: tc.id,
-              toolName: tc.function.name,
-            }),
-          })),
-        );
-      } else if (message.tool_use) {
-        content.push({
-          type: 'tool_use' as const,
-          id: message.tool_use.id,
-          name: message.tool_use.name,
-          input: this.ensureObjectInput(message.tool_use.input, {
-            messageId: message.id,
-            toolId: message.tool_use.id,
-            toolName: message.tool_use.name,
-          }),
-        });
-      }
-
-      // Always add text content if it exists
-      if (message.content) {
-        const processedContent = this.processMessageContent(message.content);
-        if (processedContent && processedContent.length > 0) {
-          content.push({ type: 'text' as const, text: processedContent });
-        }
-      }
-
-      return {
-        role: 'assistant',
-        content,
-      };
-    } else if (message.role === 'tool') {
-      if (!message.tool_call_id) {
-        logger.warn('Tool message missing tool_call_id, skipping', {
-          messageId: message.id,
-        });
-        return null;
-      }
-      return {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result' as const,
-            tool_use_id: message.tool_call_id,
-            content: this.processMessageContent(message.content),
-          },
-        ],
-      };
-    } else {
-      logger.warn(`Unsupported message role for Anthropic: ${message.role}`);
-      return null;
-    }
-  }
-
-  /**
    * Performs a non-streaming text generation request using the Anthropic API.
    * Used by the base-class `compact()` for context summarisation.
    * @param prompt The user prompt to send.
    * @param options Optional model name, sampling parameters, and service config.
+   * @param options.modelName The name of the model.
+   * @param options.samplingOptions The options used for text generation sampling.
+   * @param options.config Optional configuration for the service.
    * @returns A resolved `SamplingResponse` with the generated text.
    */
   async sampleText(

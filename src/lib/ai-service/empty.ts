@@ -7,7 +7,7 @@ import { BaseAIService } from './base-service';
  * A placeholder AI service that does nothing. It can be used for testing
  * or as a default when no other service is available.
  */
-export class EmptyAIService extends BaseAIService {
+export class EmptyAIService extends BaseAIService<unknown, never> {
   /**
    * Initializes a new instance of the `EmptyAIService`.
    */
@@ -58,24 +58,47 @@ export class EmptyAIService extends BaseAIService {
     // Yield nothing, this is an empty service
   }
 
-  /**
-   * @inheritdoc
-   * @description Returns null as there is no message conversion.
-   * @protected
-   */
-  protected createSystemMessage(systemPrompt: string): unknown {
+  protected convertMessages(
+    messages: Message[],
+    systemPrompt?: string,
+  ): unknown[] {
+    void messages;
     void systemPrompt;
-    return null;
+    return [];
   }
 
   /**
    * @inheritdoc
-   * @description Returns null as there is no message conversion.
-   * @protected
    */
-  protected convertSingleMessage(message: unknown): unknown {
-    void message;
-    return null;
+  sanitizeSingleMessage(message: Message): Message | null {
+    return message;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  static supportsToolsForModel(modelName: string): boolean {
+    void modelName;
+    return false;
+  }
+
+  static estimateContextWindowForModel(modelName: string): number {
+    void modelName;
+    return 0;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  supportsTools(modelName: string): boolean {
+    return EmptyAIService.supportsToolsForModel(modelName);
+  }
+
+  /**
+   * @inheritdoc
+   */
+  estimateContextWindow(modelName: string): number {
+    return EmptyAIService.estimateContextWindowForModel(modelName);
   }
 
   /**

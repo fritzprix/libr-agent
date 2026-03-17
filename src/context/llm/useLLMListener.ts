@@ -1,12 +1,23 @@
-import { safeInvoke } from '@/lib/backend/core';
+import {
+  handleLLMError,
+  handleLLMResponse,
+  handleCompactResponse,
+  handleCompactError,
+} from '@/lib/backend/agent-commands';
 import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 
-import { messageToRustMessage, type Message } from '@/models/chat';
-import type { AgentResponse } from '@/models/agent-ipc';
+import {
+  messageToRustMessage,
+  type Message,
+  type MessageError,
+} from '@/models/chat';
+import type { AgentRuntimeError } from '@/models/agent-ipc';
 import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
-import { AIServiceProvider } from '@/lib/ai-service/types';
+import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
+import type { AIServiceConfig } from '@/lib/ai-service/types';
 import { normalizeRustMessage } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
@@ -14,6 +25,46 @@ import type { CompletionRequest } from './types';
 import { isAbortError } from './types';
 
 const logger = getLogger('useLLMListener');
+
+function isMessageError(error: unknown): error is MessageError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'displayMessage' in error &&
+    typeof error.displayMessage === 'string' &&
+    'type' in error &&
+    typeof error.type === 'string' &&
+    'recoverable' in error &&
+    typeof error.recoverable === 'boolean'
+  );
+}
+
+function toAgentRuntimeError(error: unknown): AgentRuntimeError {
+  if (isMessageError(error)) {
+    return error;
+  }
+
+  const displayMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error);
+
+  return {
+    type: 'AI_SERVICE_ERROR',
+    displayMessage,
+    recoverable: true,
+    details: {
+      originalError: error instanceof Error ? error.message : error,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function shouldBypassRetryAndFallback(error: unknown): boolean {
+  return toAgentRuntimeError(error).type === 'CONTEXT_LIMIT_ERROR';
+}
 
 interface UseLLMListenerProps {
   settingsRef: React.MutableRefObject<Settings>;
@@ -24,19 +75,36 @@ interface UseLLMListenerProps {
     provider: string,
     apiKey?: string,
     systemPrompt?: string,
+    sessionContext?: string,
     temperature?: number,
     maxTokens?: number,
     availableTools?: MCPTool[],
+    contextUsage?: {
+      totalTokens: number;
+      contextWindow: number;
+      modelMaxContext?: number;
+    },
   ) => Promise<Message>;
   setStreamingMessages: React.Dispatch<
     React.SetStateAction<Map<string, Partial<Message>>>
   >;
+  resetContextUsageForSession: (sessionId: string) => void;
+  setCompactingFromEvent: (sessionId: string, value: boolean) => void;
+  setCompactedRangeForSession: (
+    sessionId: string,
+    range: { fromId: string; toId: string } | undefined,
+  ) => void;
+  setAwaitingCompactForSession: (sessionId: string, value: boolean) => void;
 }
 
 export function useLLMListener({
   settingsRef,
   executeCompletionRequest,
   setStreamingMessages,
+  resetContextUsageForSession,
+  setCompactingFromEvent,
+  setCompactedRangeForSession,
+  setAwaitingCompactForSession,
 }: UseLLMListenerProps) {
   // Track listener setup to prevent duplicate registration in React Strict Mode
   const listenerSetupRef = useRef(false);
@@ -64,13 +132,16 @@ export function useLLMListener({
         async (event) => {
           const {
             sessionId,
+            responseMessageId,
             messages: rawMessages,
             model,
             provider,
             systemPrompt,
+            sessionContext,
             temperature,
             maxTokens,
             availableTools,
+            contextUsage,
           } = event.payload;
 
           // Normalize messages from Rust (camelCase -> snake_case)
@@ -83,6 +154,7 @@ export function useLLMListener({
 
           logger.info('📥 Received LLM completion request from Rust', {
             sessionId,
+            responseMessageId,
             messageCount: messages.length,
             toolCount: availableTools?.length ?? 0,
             provider,
@@ -110,7 +182,7 @@ export function useLLMListener({
           setStreamingMessages((prev) => {
             const next = new Map(prev);
             next.set(sessionId, {
-              id: `msg_${Date.now()}`,
+              id: responseMessageId || `msg_${Date.now()}`,
               sessionId,
               threadId: sessionId,
               role: 'assistant',
@@ -151,7 +223,7 @@ export function useLLMListener({
                   setStreamingMessages((prev) => {
                     const next = new Map(prev);
                     next.set(sessionId, {
-                      id: `msg_${Date.now()}`,
+                      id: responseMessageId || `msg_${Date.now()}`,
                       sessionId,
                       threadId: sessionId,
                       role: 'assistant',
@@ -171,13 +243,18 @@ export function useLLMListener({
                     targetProvider,
                     targetApiKey,
                     systemPrompt,
+                    sessionContext,
                     temperature,
                     maxTokens,
                     availableTools,
+                    contextUsage,
                   );
                 } catch (attemptError) {
                   // Abort errors must never be retried — propagate immediately
                   if (isAbortError(attemptError)) {
+                    throw attemptError;
+                  }
+                  if (shouldBypassRetryAndFallback(attemptError)) {
                     throw attemptError;
                   }
                   if (attempt === SP4_MAX_RETRIES) {
@@ -201,6 +278,9 @@ export function useLLMListener({
               if (isAbortError(primaryError)) {
                 throw primaryError; // Let the outer catch handle abort
               }
+              if (shouldBypassRetryAndFallback(primaryError)) {
+                throw primaryError;
+              }
 
               // Primary model exhausted — try configured fallback model
               const fallbackModel = settingsRef.current.fallbackModel;
@@ -219,7 +299,7 @@ export function useLLMListener({
                 setStreamingMessages((prev) => {
                   const next = new Map(prev);
                   next.set(sessionId, {
-                    id: `msg_${Date.now()}`,
+                    id: responseMessageId || `msg_${Date.now()}`,
                     sessionId,
                     threadId: sessionId,
                     role: 'assistant',
@@ -238,9 +318,11 @@ export function useLLMListener({
                   fallbackModel.provider,
                   fallbackApiKey,
                   systemPrompt,
+                  sessionContext,
                   temperature,
                   maxTokens,
                   availableTools,
+                  contextUsage,
                 );
               } else {
                 throw primaryError; // No fallback, propagate to outer catch
@@ -266,10 +348,7 @@ export function useLLMListener({
               fullMessage: messageForRust,
             });
 
-            await safeInvoke<AgentResponse>('agent_handle_llm_response', {
-              sessionId,
-              assistantMessage: messageForRust,
-            });
+            await handleLLMResponse(sessionId, messageForRust);
 
             logger.info('LLM response sent back to Rust', { sessionId });
           } catch (error) {
@@ -290,10 +369,7 @@ export function useLLMListener({
             logger.error('Failed to execute LLM completion', error);
 
             // Report error to Rust
-            await safeInvoke<AgentResponse>('agent_handle_llm_error', {
-              sessionId,
-              error: error instanceof Error ? error.message : String(error),
-            });
+            await handleLLMError(sessionId, toAgentRuntimeError(error));
           }
         },
       );
@@ -311,11 +387,135 @@ export function useLLMListener({
 
     setupListener();
 
+    // --- Compact request listener ---
+    let unlistenCompact: (() => void) | undefined;
+
+    const setupCompactListener = async () => {
+      const unlistenFn = await listen<{
+        sessionId: string;
+        sessionName: string;
+        messages: Message[];
+        fromId: string;
+        toId: string;
+        resumeCompletionAfterCompact: boolean;
+      }>('llm:compact-request', async (event) => {
+        const {
+          sessionId,
+          messages,
+          fromId,
+          toId,
+          resumeCompletionAfterCompact,
+        } = event.payload;
+        logger.info(
+          `📦 Compact request received: session=${sessionId}, fromId=${fromId}, toId=${toId}`,
+        );
+        setAwaitingCompactForSession(sessionId, resumeCompletionAfterCompact);
+
+        const settings = settingsRef.current;
+        if (!settings) {
+          logger.error('No settings available for compact request');
+          setAwaitingCompactForSession(sessionId, false);
+          await handleCompactError(sessionId);
+          return;
+        }
+
+        const provider = settings.preferredModel.provider as AIServiceProvider;
+        const apiKey = settings.serviceConfigs?.[provider]?.apiKey ?? '';
+        const model = settings.preferredModel.model;
+        const providerConfig: AIServiceConfig =
+          settings.serviceConfigs?.[provider] ?? {};
+
+        try {
+          const service = AIServiceFactory.getService(
+            provider,
+            apiKey,
+            providerConfig,
+          );
+          const summary = await service.compact(messages, { modelName: model });
+          await handleCompactResponse(sessionId, fromId, toId, summary);
+          setCompactedRangeForSession(sessionId, { fromId, toId });
+          resetContextUsageForSession(sessionId);
+          logger.info(`✅ Compact summary stored: session=${sessionId}`);
+        } catch (error) {
+          logger.error(`Compact LLM call failed: session=${sessionId}`, error);
+          setAwaitingCompactForSession(sessionId, false);
+          await handleCompactError(sessionId);
+        }
+      });
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCompact = unlistenFn;
+        logger.info('LLM compact request listener registered');
+      }
+    };
+
+    setupCompactListener();
+
+    // --- Compact state listener (Rust-owned: compacting = true/false) ---
+    let unlistenCompactState: (() => void) | undefined;
+
+    const setupCompactStateListener = async () => {
+      const unlistenFn = await listen<{
+        sessionId: string;
+        sessionName?: string;
+        compacting: boolean;
+        phase: 'STARTED' | 'SUCCEEDED' | 'FAILED';
+      }>('llm:compact-state', (event) => {
+        const { sessionId, sessionName, compacting, phase } = event.payload;
+        const toastId = `compact-${sessionId}`;
+        const description = sessionName ?? sessionId.slice(0, 8);
+
+        setCompactingFromEvent(sessionId, compacting);
+        if (phase === 'STARTED') {
+          toast.loading(`Compacting context…`, {
+            id: toastId,
+            description,
+            duration: Infinity,
+          });
+        } else if (phase === 'SUCCEEDED') {
+          toast.success(`Context compacted`, {
+            id: toastId,
+            description,
+            duration: 3000,
+          });
+        } else if (phase === 'FAILED') {
+          toast.error(`Compaction failed`, {
+            id: toastId,
+            description,
+            duration: 4000,
+          });
+        }
+
+        if (!compacting) {
+          setAwaitingCompactForSession(sessionId, false);
+        }
+      });
+
+      if (!isMounted) {
+        unlistenFn();
+      } else {
+        unlistenCompactState = unlistenFn;
+        logger.info('LLM compact state listener registered');
+      }
+    };
+
+    setupCompactStateListener();
+
     return () => {
       isMounted = false;
       if (unlisten) {
         unlisten();
         logger.info('LLM completion request listener cleaned up');
+      }
+      if (unlistenCompact) {
+        unlistenCompact();
+        logger.info('LLM compact request listener cleaned up');
+      }
+      if (unlistenCompactState) {
+        unlistenCompactState();
+        logger.info('LLM compact state listener cleaned up');
       }
       // Reset listener setup ref on unmount
       listenerSetupRef.current = false;
