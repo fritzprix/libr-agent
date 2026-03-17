@@ -30,6 +30,9 @@ impl SchedulerWorker {
 }
 
 async fn worker_loop(app_handle: AppHandle, check_interval: Duration) {
+    // Wait until frontend is ready to receive events (prevents lost startup events)
+    crate::lifecycle::frontend_ready::wait_until_ready().await;
+
     log::info!(
         "⏰ Scheduled task worker started (interval: {:?})",
         check_interval

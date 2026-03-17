@@ -26,7 +26,10 @@ pub use mcp_server_repository::{MCPServerRepository, SqliteMCPServerRepository};
 pub use message_repository::{MessageRepository, SqliteMessageRepository};
 pub use planning_repository::{PlanningRepository, SqlitePlanningRepository};
 pub use playbook_repository::{PlaybookRepository, SqlitePlaybookRepository};
-pub use scheduled_task_repository::{ScheduledTaskRepository, SqliteScheduledTaskRepository};
+pub use scheduled_task_repository::{
+    CreateScheduledTaskParams, ScheduledTaskRepository, SqliteScheduledTaskRepository,
+    UpdateScheduledTaskParams,
+};
 pub use session_repository::{
     SessionMetadata, SessionRepository, SessionStatus, SqliteSessionRepository,
 };

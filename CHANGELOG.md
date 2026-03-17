@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.37] - 2026-03-17
+
+### 🚀 Features
+
+- **Autonomous Scheduled Tasks**: Introduced **YOLO Mode** for scheduled tasks, allowing agents to execute sensitive tools automatically without manual approval.
+- **YOLO Status Indicators**: Added high-visibility YOLO badges to the scheduled tasks list and a dedicated toggle in the task configuration modal for easier autonomous workflow management.
+
+### 🐛 Fixes
+
+- **Startup Race Condition**: Resolved a critical issue where scheduled tasks triggered during application startup would fail to reach the frontend. Implemented a robust **Frontend-Ready Handshake** that ensures the UI is fully initialized before the backend fires automation events.
+- **LLM Request Stability**: Enhanced session state validation to prevent redundant or stale LLM completion requests during rapid state transitions.
+
+### 🔧 Internal
+
+- **Parameter Object Refactoring**: Applied the Parameter Object pattern to `ScheduledTaskRepository` and service layers, improving code maintainability and ensuring compliance with strict Rust linting rules.
+- **Repository Abstraction**: Refined the repository interfaces to better handle complex multi-argument operations without sacrificing type safety or readability.
+
 ## [0.5.36] - 2026-03-17
 
 ### 🚀 Features
