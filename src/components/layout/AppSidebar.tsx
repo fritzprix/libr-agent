@@ -25,9 +25,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '../ui/sidebar';
-import {
-  useAgentSessionListState,
-} from '@/context/AgentSessionListContext';
+import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import { useUpdateContext } from '@/context/UpdateContext';
 
 /** Maps session status to a semantically meaningful dot */
