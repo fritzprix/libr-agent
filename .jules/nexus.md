@@ -99,3 +99,9 @@ Format: `## YYYY-MM-DD - [Architecture] **Anti-Pattern:** [Spaghetti/Coupling] *
 - **Context:** `AgentDraftChatView.tsx` was a massive ~700-line monolithic component handling UI rendering, complex drag-and-drop file processing, backend IPC orchestration, binary file indexing, workspace directory writes, and agent session initialization all in one file.
 - **Action:** Extracted all state management, file parsing, and Tauri backend coordination into a custom hook `useAgentDraftChat` (`src/features/agent/hooks/useAgentDraftChat.ts`).
 - **Result:** The `AgentDraftChatView.tsx` component is now a pure presentation layer, adhering to Separation of Concerns and making the complex state logic testable and reusable.
+
+## 2025-03-13 - [Architecture] **Anti-Pattern:** Infrastructure Leakage **Resolution:** Model Extraction (Dependency Inversion)
+
+- **Context:** The `assistant_crud_commands.rs` file tightly coupled the `AssistantDto` and its `From<AssistantModel>` implementation with the Tauri command handlers.
+- **Action:** Extracted `AssistantDto` into a new dedicated module `src-tauri/src/models/assistant.rs` alongside other DTOs.
+- **Result:** The Tauri command module now simply imports the data structures, separating the framework boundary logic from the data shape definition and strictly adhering to Separation of Concerns.
