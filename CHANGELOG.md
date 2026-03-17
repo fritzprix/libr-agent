@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-03-17
+
+### 🚀 Features
+
+- **Scheduled Task Workspace Control**: Scheduled tasks can now target a specific workspace folder. You can browse for a directory or drag and drop one directly in the task modal, and the configured workspace is shown in the task list for easier review.
+- **Persistent Scheduled Session Continuity**: Scheduled tasks now resume their pinned agent session reliably instead of silently drifting to a fresh session after restart or lazy unload. If the old session is truly gone, the task recreates it using the same pinned ID.
+
+### 🐛 Fixes
+
+- **Async Command Environment Isolation**: Closed environment leakage gaps in async command execution and fixed the related Windows regression so isolated processes keep the right minimal environment without inheriting sensitive host state.
+- **MCP Server Card Actions**: Refined the server card action layout so management controls behave more predictably and remain usable in tighter UI states.
+
+### 🔧 Internal
+
+- **Scheduled Task Data Model**: Extended the scheduled task persistence layer, migration set, and backend wrappers to carry workspace overrides end to end while keeping validation and release checks green.
+
 ## [0.5.38] - 2026-03-17
 
 ### 🚀 Features
