@@ -185,34 +185,36 @@ export const ServerCard = React.memo(
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2">
-            {server.toolCount !== undefined &&
-              server.toolCount !== null &&
-              server.toolCount > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsToolsOpen(true)}
-                  aria-label={t('mcpServer.browseTools', {
-                    name: serverName,
-                    defaultValue: 'Browse tools for {{name}}',
-                  })}
-                >
-                  <Wrench className="h-3 w-3 mr-1" />
-                  {t('mcpServer.tools', 'Tools')}
-                </Button>
-              )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onEdit(server)}
-              aria-label={t('mcpServer.editServer', {
-                name: serverName,
-                defaultValue: 'Edit {{name}}',
-              })}
-            >
-              {t('mcpServer.edit', 'Edit')}
-            </Button>
+          <div className="flex justify-between items-center w-full">
+            <div className="flex gap-2">
+              {server.toolCount !== undefined &&
+                server.toolCount !== null &&
+                server.toolCount > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsToolsOpen(true)}
+                    aria-label={t('mcpServer.browseTools', {
+                      name: serverName,
+                      defaultValue: 'Browse tools for {{name}}',
+                    })}
+                  >
+                    <Wrench className="h-3 w-3 mr-1" />
+                    {t('mcpServer.tools', 'Tools')}
+                  </Button>
+                )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onEdit(server)}
+                aria-label={t('mcpServer.editServer', {
+                  name: serverName,
+                  defaultValue: 'Edit {{name}}',
+                })}
+              >
+                {t('mcpServer.edit', 'Edit')}
+              </Button>
+            </div>
             <Button
               variant="destructive"
               size="sm"
