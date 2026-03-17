@@ -27,3 +27,5 @@
 ## 2026-03-13 - [AgentChatHeader] **Bottleneck:** [Naked await / missing feedback on copy] **Flow Restored:** [Added isCopying state and disabled button during clipboard write]
 
 ## 2026-03-16 - [ScheduledTasksPage] **Bottleneck:** [Missing feedback during initial load] **Flow Restored:** [Applied Skeleton loader for smooth transition]
+
+## 2026-03-24 - [MCPServerDialog, ServerToolsModal] **Bottleneck:** [Premature dialog closures allowed when user clicks outside modal while saving or loading is in progress] **Flow Restored:** [Added isSaving and isLoading state checks inside onOpenChange handlers to prevent closure until actions complete]
