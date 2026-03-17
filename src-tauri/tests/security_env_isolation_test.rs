@@ -104,7 +104,7 @@ async fn test_env_isolation_prevents_leakage() {
         let version_check = std::process::Command::new(&python_cmd)
             .arg("--version")
             .output();
-        
+
         match version_check {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
