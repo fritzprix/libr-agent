@@ -2,23 +2,6 @@ use crate::entity::assistant::Model as AssistantModel;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AssistantConfig {
-    pub description: Option<String>,
-    pub avatar: Option<String>,
-    pub system_prompt: String,
-    pub mcp_server_ids: Option<Vec<String>>,
-    pub local_services: Option<Vec<String>>,
-    pub allowed_built_in_service_aliases: Option<Vec<String>>,
-    pub deletion_protected: bool,
-    pub model: Option<String>,
-    pub provider: Option<String>,
-    pub temperature: Option<f64>,
-    pub disabled_skills: Option<Vec<String>>,
-    pub max_tokens: Option<i32>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantDto {
