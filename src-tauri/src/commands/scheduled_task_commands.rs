@@ -19,6 +19,7 @@ pub struct ScheduledTaskDto {
     pub message: String,
     pub yolo_mode: bool,
     pub session_id: Option<String>,
+    pub workspace_override: Option<String>,
     pub enabled: bool,
     pub last_run_at: Option<i64>,
     pub next_run_at: Option<i64>,
@@ -36,6 +37,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             message: m.message,
             yolo_mode: m.yolo_mode,
             session_id: m.session_id,
+            workspace_override: m.workspace_override,
             enabled: m.enabled,
             last_run_at: m.last_run_at,
             next_run_at: m.next_run_at,
@@ -55,6 +57,7 @@ pub struct CreateScheduledTaskRequest {
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
     pub yolo_mode: bool,
+    pub workspace_override: Option<String>,
 }
 
 /// Request to update a scheduled task
@@ -66,6 +69,7 @@ pub struct UpdateScheduledTaskRequest {
     pub assistant_id: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
+    pub workspace_override: Option<Option<String>>,
     pub enabled: Option<bool>,
 }
 
@@ -81,6 +85,7 @@ pub async fn create_scheduled_task(
         request.assistant_id,
         request.message,
         request.yolo_mode,
+        request.workspace_override,
     )
     .await
     .map(ScheduledTaskDto::from)
@@ -122,6 +127,7 @@ pub async fn update_scheduled_task(
             assistant_id: request.assistant_id,
             message: request.message,
             yolo_mode: request.yolo_mode,
+            workspace_override: request.workspace_override,
             enabled: request.enabled,
             next_run_at: None,
         },

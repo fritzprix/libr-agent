@@ -18,6 +18,7 @@ use crate::agent::{AgentConfig, AgentSessionManager};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::{AssistantRepository, ScheduledTaskRepository, SessionRepository};
+use crate::services::WorkspaceService;
 use crate::state::{
     get_active_sessions, get_assistant_repository, get_scheduled_task_repository,
     get_session_repository,
@@ -63,6 +64,17 @@ pub async fn resolve_task_session_resolution(
     }
 
     Ok(TaskSessionResolution::Create(session_id.to_string()))
+}
+
+async fn sync_task_workspace_override(
+    session_id: &str,
+    workspace_override: Option<&str>,
+) -> Result<(), String> {
+    if let Some(path) = workspace_override {
+        WorkspaceService::set_override(session_id, path.to_string()).await
+    } else {
+        WorkspaceService::cancel_override(session_id).await
+    }
 }
 
 /// Execute all tasks whose `next_run_at <= now_ms`.
@@ -200,7 +212,10 @@ async fn execute_task(
         }
     }
 
-    // ── 4. Inject message and trigger workflow ────────────────────────────────
+    // ── 4. Synchronize workspace override before injecting the task message ───
+    sync_task_workspace_override(&session_id, task.workspace_override.as_deref()).await?;
+
+    // ── 5. Inject message and trigger workflow ────────────────────────────────
     let now_ts = chrono::Utc::now().timestamp_millis();
     let user_message = Message {
         id: Uuid::new_v4().to_string(),
@@ -230,7 +245,7 @@ async fn execute_task(
         .inject_messages(session_id.clone(), vec![user_message], true)
         .await?;
 
-    // ── 5. Record the run and schedule the next fire time ─────────────────────
+    // ── 6. Record the run and schedule the next fire time ─────────────────────
     let next_run_at = compute_next_run(&task.cron_expression, now_ms);
     let repo = get_scheduled_task_repository();
     let new_session_id = is_new_session.then_some(session_id);

@@ -36,6 +36,7 @@ describe('scheduled-tasks backend wrapper', () => {
     message: 'Hello',
     yoloMode: false,
     sessionId: null,
+    workspaceOverride: null,
     enabled: true,
     lastRunAt: null,
     nextRunAt: null,
@@ -52,6 +53,7 @@ describe('scheduled-tasks backend wrapper', () => {
       assistantId: 'assistant-1',
       message: 'Hello',
       yoloMode: false,
+      workspaceOverride: '/tmp/project',
     };
 
     const result = await createScheduledTask(request);
@@ -98,7 +100,7 @@ describe('scheduled-tasks backend wrapper', () => {
   it('updateScheduledTask calls safeInvoke with correct arguments', async () => {
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockTask);
 
-    const request = { name: 'Updated Task' };
+    const request = { name: 'Updated Task', workspaceOverride: '/tmp/updated' };
     const result = await updateScheduledTask('task-1', request);
 
     expect(safeInvoke).toHaveBeenCalledWith('update_scheduled_task', {

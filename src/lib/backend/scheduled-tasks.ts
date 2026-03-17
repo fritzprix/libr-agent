@@ -13,6 +13,7 @@ export interface ScheduledTask {
   message: string;
   yoloMode: boolean;
   sessionId: string | null;
+  workspaceOverride: string | null;
   enabled: boolean;
   lastRunAt: number | null;
   nextRunAt: number | null;
@@ -26,6 +27,7 @@ export interface CreateScheduledTaskRequest {
   assistantId: string;
   message: string;
   yoloMode: boolean;
+  workspaceOverride?: string | null;
 }
 
 export interface UpdateScheduledTaskRequest {
@@ -34,6 +36,7 @@ export interface UpdateScheduledTaskRequest {
   assistantId?: string;
   message?: string;
   yoloMode?: boolean;
+  workspaceOverride?: string | null;
   enabled?: boolean;
 }
 
