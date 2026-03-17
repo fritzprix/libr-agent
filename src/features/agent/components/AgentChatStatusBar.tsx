@@ -17,7 +17,7 @@ import {
 import { AgentModelPicker } from '@/features/agent/components/AgentModelPicker';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useLLMService } from '@/context/LLMServiceContext';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { getLogger } from '@/lib/logger';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import AgentToolsModal from './AgentToolsModal';
@@ -54,16 +54,14 @@ export function AgentChatStatusBar() {
 
   // Persist last metrics to show after streaming ends
   const [lastMetrics, setLastMetrics] = useState<TokenUsage | null>(null);
+  const prevSessionIdRef = useRef<string | undefined>(session?.id);
 
-  const [prevSessionId, setPrevSessionId] = useState<string | undefined>(
-    session?.id,
-  );
-
-  // Render-phase mutation to clear metrics when session changes
-  if (session?.id !== prevSessionId) {
-    setPrevSessionId(session?.id);
-    setLastMetrics(null);
-  }
+  useEffect(() => {
+    if (session?.id !== prevSessionIdRef.current) {
+      prevSessionIdRef.current = session?.id;
+      setLastMetrics(null);
+    }
+  }, [session?.id]);
 
   useEffect(() => {
     // Update last metrics only when we have meaningful new data
