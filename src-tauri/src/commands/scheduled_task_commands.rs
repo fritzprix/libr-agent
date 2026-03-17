@@ -16,6 +16,7 @@ pub struct ScheduledTaskDto {
     pub assistant_id: String,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
+    pub yolo_mode: bool,
     pub session_id: Option<String>,
     pub enabled: bool,
     pub last_run_at: Option<i64>,
@@ -32,6 +33,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             cron_expression: m.cron_expression,
             assistant_id: m.assistant_id,
             message: m.message,
+            yolo_mode: m.yolo_mode,
             session_id: m.session_id,
             enabled: m.enabled,
             last_run_at: m.last_run_at,
@@ -51,6 +53,7 @@ pub struct CreateScheduledTaskRequest {
     pub assistant_id: String,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
+    pub yolo_mode: bool,
 }
 
 /// Request to update a scheduled task
@@ -60,6 +63,7 @@ pub struct UpdateScheduledTaskRequest {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
     pub message: Option<String>,
+    pub yolo_mode: Option<bool>,
     pub enabled: Option<bool>,
 }
 
@@ -74,6 +78,7 @@ pub async fn create_scheduled_task(
         request.cron_expression,
         request.assistant_id,
         request.message,
+        request.yolo_mode,
     )
     .await
     .map(ScheduledTaskDto::from)
@@ -112,6 +117,7 @@ pub async fn update_scheduled_task(
         request.name,
         request.cron_expression,
         request.message,
+        request.yolo_mode,
         request.enabled,
     )
     .await

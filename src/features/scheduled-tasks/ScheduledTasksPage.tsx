@@ -9,7 +9,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Plus, Pencil, Trash2, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap } from 'lucide-react';
 import {
   listScheduledTasks,
   createScheduledTask,
@@ -53,6 +53,7 @@ export function ScheduledTasksPage() {
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => {
     const task = await createScheduledTask(data);
     setTasks((prev) => [...prev, task]);
@@ -63,6 +64,7 @@ export function ScheduledTasksPage() {
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => {
     if (!editingTask) return;
     const updated = await updateScheduledTask(editingTask.id, data);
@@ -185,6 +187,15 @@ export function ScheduledTasksPage() {
                   <Badge variant="secondary" className="text-xs shrink-0">
                     {describeCron(task.cronExpression, t)}
                   </Badge>
+                  {task.yoloMode && (
+                    <Badge
+                      variant="default"
+                      className="text-xs shrink-0 bg-primary/80 hover:bg-primary/80"
+                    >
+                      <Zap size={10} className="mr-1 fill-current" />
+                      YOLO
+                    </Badge>
+                  )}
                   {!task.enabled && (
                     <Badge variant="outline" className="text-xs shrink-0">
                       {t('scheduledTasks.disabled')}

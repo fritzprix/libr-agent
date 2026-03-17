@@ -17,6 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Zap } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
 import { ScheduleBuilder } from './ScheduleBuilder';
@@ -35,6 +37,7 @@ interface ScheduledTaskModalProps {
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => Promise<void>;
 }
 
@@ -88,6 +91,7 @@ interface ScheduledTaskFormProps {
     cronExpression: string;
     assistantId: string;
     message: string;
+    yoloMode: boolean;
   }) => Promise<void>;
 }
 
@@ -106,6 +110,7 @@ function ScheduledTaskForm({
     task?.assistantId ?? assistants[0]?.id ?? '',
   );
   const [message, setMessage] = useState(task?.message ?? '');
+  const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
   const [saving, setSaving] = useState(false);
   const [prevAssistants, setPrevAssistants] = useState(assistants);
 
@@ -132,6 +137,7 @@ function ScheduledTaskForm({
         cronExpression: cronExpression.trim(),
         assistantId,
         message: message.trim(),
+        yoloMode,
       });
       onClose();
     } catch (e: unknown) {
@@ -203,6 +209,36 @@ function ScheduledTaskForm({
             onChange={setMessage}
             assistantId={assistantId}
             rows={3}
+          />
+        </div>
+
+        {/* YOLO Mode toggle */}
+        <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Zap
+                size={14}
+                className={
+                  yoloMode
+                    ? 'text-primary fill-primary'
+                    : 'text-muted-foreground'
+                }
+              />
+              <Label htmlFor="yolo-mode" className="text-sm font-medium">
+                {t('scheduledTasks.modal.yoloModeLabel', 'YOLO Mode')}
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.yoloModeHint',
+                'Execute all tools without requiring manual approval',
+              )}
+            </p>
+          </div>
+          <Switch
+            id="yolo-mode"
+            checked={yoloMode}
+            onCheckedChange={setYoloMode}
           />
         </div>
       </div>

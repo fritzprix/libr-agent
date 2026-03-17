@@ -20,6 +20,8 @@ pub struct Model {
     pub assistant_id: String,
     /// Message to inject as a user turn; supports @playbook:name, @skill:name mentions
     pub message: String,
+    /// Whether tools should execute without approval
+    pub yolo_mode: bool,
     /// Reused session ID — populated after first run, None for fresh tasks
     pub session_id: Option<String>,
     /// Whether the task is active

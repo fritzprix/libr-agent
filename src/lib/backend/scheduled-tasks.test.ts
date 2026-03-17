@@ -34,6 +34,7 @@ describe('scheduled-tasks backend wrapper', () => {
     cronExpression: '* * * * *',
     assistantId: 'assistant-1',
     message: 'Hello',
+    yoloMode: false,
     sessionId: null,
     enabled: true,
     lastRunAt: null,
@@ -50,6 +51,7 @@ describe('scheduled-tasks backend wrapper', () => {
       cronExpression: '* * * * *',
       assistantId: 'assistant-1',
       message: 'Hello',
+      yoloMode: false,
     };
 
     const result = await createScheduledTask(request);

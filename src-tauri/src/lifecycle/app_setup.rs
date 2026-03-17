@@ -314,6 +314,13 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     });
     info!("✅ OAuth deep link handler registered");
 
+    // Listen for frontend readiness
+    app.listen("frontend-ready", |_| {
+        info!("🖥️  Frontend signaled readiness");
+        crate::lifecycle::frontend_ready::mark_as_ready();
+    });
+    info!("✅ Frontend readiness listener registered");
+
     // Linux-specific checks
     #[cfg(target_os = "linux")]
     {
