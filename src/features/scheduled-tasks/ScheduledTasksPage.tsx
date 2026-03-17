@@ -14,7 +14,11 @@ import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
 import { describeCron } from './components/ScheduleBuilder';
 import { useScheduledTasks } from './hooks/useScheduledTasks';
-import { useAssistantsList } from '@/features/assistant/hooks/useAssistantsList';
+import { getLogger } from '@/lib/logger';
+import { toast } from 'sonner';
+import { useAssistantContext } from '@/context/AssistantContext';
+
+const logger = getLogger('ScheduledTasksPage');
 
 export function ScheduledTasksPage() {
   const { t } = useTranslation();
@@ -30,7 +34,7 @@ export function ScheduledTasksPage() {
     deleteTask,
   } = useScheduledTasks();
 
-  const { assistants } = useAssistantsList();
+  const { assistants } = useAssistantContext();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
@@ -57,11 +61,25 @@ export function ScheduledTasksPage() {
   };
 
   const handleToggle = async (task: ScheduledTask) => {
-    await toggleTask(task);
+    try {
+      await toggleTask(task);
+    } catch (error) {
+      logger.error('Failed to toggle scheduled task', error);
+      toast.error(
+        t('scheduledTasks.toggleFailed', 'Failed to update scheduled task'),
+      );
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await deleteTask(id);
+    try {
+      await deleteTask(id);
+    } catch (error) {
+      logger.error('Failed to delete scheduled task', error);
+      toast.error(
+        t('scheduledTasks.deleteFailed', 'Failed to delete scheduled task'),
+      );
+    }
   };
 
   const openCreate = () => {

@@ -15,7 +15,7 @@ export default function History() {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
   const { sessions, isSessionsListLoading } = useAgentSessionListState();
-  const { deleteSession, deleteSessionOnly, toggleBookmark } =
+  const { loadSessions, deleteSession, deleteSessionOnly, toggleBookmark } =
     useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,8 +56,6 @@ export default function History() {
     },
     [deleteSessionOnly, t],
   );
-
-  const { loadSessions } = useAgentSessionListActions();
 
   const handleRefreshSessions = useCallback(() => {
     loadSessions();

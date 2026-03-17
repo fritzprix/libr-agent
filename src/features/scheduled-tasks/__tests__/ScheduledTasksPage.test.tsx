@@ -14,11 +14,14 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         cronExpression: '* * * * *',
         assistantId: 'ast-1',
         message: 'Hello World',
+        yoloMode: false,
+        sessionId: null,
         enabled: true,
+        lastRunAt: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        nextRunAt: Date.now() + 60000
-      }
+        nextRunAt: Date.now() + 60000,
+      },
     ],
     loading: false,
     togglingIds: new Set(),
@@ -27,25 +30,25 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
     updateTask: vi.fn(),
     toggleTask: vi.fn(),
     deleteTask: vi.fn(),
-  })
+  }),
 }));
 
-// Mock the assistants hook
-vi.mock('@/features/assistant/hooks/useAssistantsList', () => ({
-  useAssistantsList: () => ({
+// Mock the assistant context
+vi.mock('@/context/AssistantContext', () => ({
+  useAssistantContext: () => ({
     assistants: [
-      { id: 'ast-1', name: 'Test Assistant' }
+      { id: 'ast-1', name: 'Test Assistant' },
     ],
-    loading: false,
-  })
+  }),
 }));
 
 // Mock translation
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { name?: string }) => opts?.name ? `${key} ${opts.name}` : key
+    t: (key: string, opts?: { name?: string }) =>
+      opts?.name ? `${key} ${opts.name}` : key,
   }),
-  Trans: ({ children }: { children: ReactNode }) => <>{children}</>
+  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 // No longer need to mock the backend directly since useScheduledTasks is mocked
@@ -55,17 +58,28 @@ vi.mock('@/lib/logger', () => ({
   getLogger: () => ({
     info: vi.fn(),
     error: vi.fn(),
-    debug: vi.fn()
-  })
+    debug: vi.fn(),
+  }),
 }));
 
 // Mock Tooltip components
 vi.mock('@/components/ui/tooltip', () => {
   return {
-    TooltipProvider: ({ children }: { children: ReactNode }) => <div data-testid="tooltip-provider">{children}</div>,
-    Tooltip: ({ children }: { children: ReactNode }) => <div data-testid="tooltip">{children}</div>,
-    TooltipTrigger: ({ children }: { children: ReactNode, asChild?: boolean }) => <div data-testid="tooltip-trigger">{children}</div>,
-    TooltipContent: ({ children }: { children: ReactNode }) => <div data-testid="tooltip-content">{children}</div>
+    TooltipProvider: ({ children }: { children: ReactNode }) => (
+      <div data-testid="tooltip-provider">{children}</div>
+    ),
+    Tooltip: ({ children }: { children: ReactNode }) => (
+      <div data-testid="tooltip">{children}</div>
+    ),
+    TooltipTrigger: ({
+      children,
+    }: {
+      children: ReactNode;
+      asChild?: boolean;
+    }) => <div data-testid="tooltip-trigger">{children}</div>,
+    TooltipContent: ({ children }: { children: ReactNode }) => (
+      <div data-testid="tooltip-content">{children}</div>
+    ),
   };
 });
 
@@ -93,8 +107,12 @@ test('ScheduledTasksPage renders tooltips for edit and delete buttons', async ()
   });
 
   // Find edit and delete buttons
-  const editButton = screen.getByRole('button', { name: /scheduledTasks.editTaskAria Test Task 1/i });
-  const deleteButton = screen.getByRole('button', { name: /scheduledTasks.deleteTaskAria Test Task 1/i });
+  const editButton = screen.getByRole('button', {
+    name: /scheduledTasks.editTaskAria Test Task 1/i,
+  });
+  const deleteButton = screen.getByRole('button', {
+    name: /scheduledTasks.deleteTaskAria Test Task 1/i,
+  });
 
   expect(editButton).toBeInTheDocument();
   expect(deleteButton).toBeInTheDocument();

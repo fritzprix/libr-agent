@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import {
   Dialog,
@@ -100,10 +100,22 @@ function ScheduledTaskForm({
     task?.cronExpression ?? '0 9 * * *',
   );
 
-  const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<string | null>(null);
+  const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<
+    string | undefined
+  >(undefined);
 
-  // Derive the effective assistant ID directly during render
-  const effectiveAssistantId = userSelectedAssistantId ?? task?.assistantId ?? (assistants.length > 0 ? assistants[0].id : '');
+  const hasAssistant = (
+    assistantId: string | undefined,
+  ): assistantId is string =>
+    Boolean(
+      assistantId &&
+        assistants.some((assistant) => assistant.id === assistantId),
+    );
+  const effectiveAssistantId = hasAssistant(userSelectedAssistantId)
+    ? userSelectedAssistantId
+    : hasAssistant(task?.assistantId)
+      ? task.assistantId
+      : assistants[0]?.id;
   const [message, setMessage] = useState(task?.message ?? '');
   const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
   const [saving, setSaving] = useState(false);
@@ -134,7 +146,10 @@ function ScheduledTaskForm({
   };
 
   const isValid = Boolean(
-    name.trim() && cronExpression.trim() && effectiveAssistantId && message.trim(),
+    name.trim() &&
+      cronExpression.trim() &&
+      effectiveAssistantId &&
+      message.trim(),
   );
 
   return (
@@ -156,7 +171,10 @@ function ScheduledTaskForm({
         {/* Assistant */}
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.assistantLabel')}</Label>
-          <Select value={effectiveAssistantId} onValueChange={setUserSelectedAssistantId}>
+          <Select
+            value={effectiveAssistantId}
+            onValueChange={setUserSelectedAssistantId}
+          >
             <SelectTrigger>
               <SelectValue
                 placeholder={t('scheduledTasks.modal.assistantPlaceholder')}
@@ -170,6 +188,14 @@ function ScheduledTaskForm({
               ))}
             </SelectContent>
           </Select>
+          {assistants.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.noAssistants',
+                'Create an assistant before scheduling a task.',
+              )}
+            </p>
+          )}
         </div>
 
         {/* Human-readable schedule builder */}

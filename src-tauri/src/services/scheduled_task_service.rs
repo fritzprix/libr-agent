@@ -55,14 +55,11 @@ impl ScheduledTaskService {
     pub async fn update_scheduled_task(
         repo: &dyn ScheduledTaskRepository,
         id: &str,
-        name: Option<String>,
-        cron_expression: Option<String>,
-        message: Option<String>,
-        yolo_mode: Option<bool>,
-        enabled: Option<bool>,
+        mut params: UpdateScheduledTaskParams,
     ) -> Result<ScheduledTaskModel, String> {
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let next_run_at: Option<Option<i64>> = cron_expression
+        let next_run_at: Option<Option<i64>> = params
+            .cron_expression
             .as_deref()
             .map(|expr| {
                 compute_next_run(expr, now_ms).ok_or_else(|| {
@@ -71,20 +68,11 @@ impl ScheduledTaskService {
             })
             .transpose()?
             .map(Some);
+        params.next_run_at = next_run_at;
 
-        repo.update_scheduled_task(
-            id,
-            UpdateScheduledTaskParams {
-                name,
-                cron_expression,
-                message,
-                yolo_mode,
-                enabled,
-                next_run_at,
-            },
-        )
-        .await
-        .map_err(|e| e.to_string())
+        repo.update_scheduled_task(id, params)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn toggle_scheduled_task(
@@ -97,6 +85,7 @@ impl ScheduledTaskService {
             UpdateScheduledTaskParams {
                 name: None,
                 cron_expression: None,
+                assistant_id: None,
                 message: None,
                 yolo_mode: None,
                 enabled: Some(enabled),

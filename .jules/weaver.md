@@ -101,5 +101,5 @@
 ## 2026-03-14 - [ScheduledTasksPage / ScheduledTaskModal] **Eradicated:** [God Component / Action-Effect Chains / Derived State] **Woven:** [Custom Hook Pattern / Component Composition / Adjusting State During Render]
 
 - **ScheduledTasksPage:** Extracted all data fetching, state management, and mutation logic into a new custom hook `useScheduledTasks`. Eradicated "God Component" behavior.
-- **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by using `useMemo` to initialize default values directly during rendering.
+- **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by deriving the effective assistant selection directly during rendering.
 - **Benefits:** Clean separation of concerns, complete eradication of prop copying and effect-based state syncing loops.
