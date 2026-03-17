@@ -69,7 +69,10 @@ function MCPServerDialogComponent({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !isSaving && onCancel()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        showCloseButton={!isSaving}
+      >
         <DialogHeader>
           <DialogTitle>
             {isNewServer
