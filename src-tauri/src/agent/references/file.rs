@@ -50,7 +50,12 @@ impl ReferenceResolver for FileReferenceResolver {
         // Guard: reject files that are too large to inject into context
         const MAX_INLINE_BYTES: u64 = 100 * 1024; // 100 KB
         let metadata = tokio::fs::metadata(&canonical_target).await.ok()?;
-        let rel_path = rel.replace('\\', "/");
+        let rel_path = {
+            let p = rel.to_string();
+            #[cfg(target_os = "windows")]
+            let p = p.replace('\\', "/");
+            p
+        };
         if metadata.len() > MAX_INLINE_BYTES {
             return Some(format!(
                 "# File `{}`\n\n⚠️ File is too large to inline ({} KB). Use `workspace__readFile` tool to read it.",
@@ -94,7 +99,12 @@ pub async fn list_workspace_relative_paths(
     let mut paths: Vec<String> = Vec::new();
     for entry in walker {
         if let Ok(rel) = entry.path().strip_prefix(&workspace) {
-            paths.push(rel.to_string_lossy().replace('\\', "/"));
+            paths.push({
+                let p = rel.to_string_lossy().to_string();
+                #[cfg(target_os = "windows")]
+                let p = p.replace('\\', "/");
+                p
+            });
         }
     }
 
