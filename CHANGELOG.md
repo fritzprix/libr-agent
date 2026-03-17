@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] - 2026-03-17
+
+### Added
+- Enabled macOS code signing and notarization for production builds.
+- Added Team ID and notarization settings to `tauri.conf.json`.
+- Updated GitHub Actions workflow for automatic macOS signing.
+
 ## [0.6.0] - 2026-03-17
 
 ### 🚀 Features
