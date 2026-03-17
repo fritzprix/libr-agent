@@ -93,13 +93,13 @@ impl WorkspaceService {
             let relative_path = if target_path == "." {
                 name.clone()
             } else {
-            let p = PathBuf::from(&target_path)
+                let p = PathBuf::from(&target_path)
                     .join(&name)
                     .to_string_lossy()
-                .to_string();
-            #[cfg(target_os = "windows")]
-            let p = p.replace('\\', "/");
-            p
+                    .to_string();
+                #[cfg(target_os = "windows")]
+                let p = p.replace('\\', "/");
+                p
             };
 
             items.push(WorkspaceFileItem {
