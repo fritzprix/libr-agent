@@ -1,5 +1,11 @@
 # ROSETTA'S JOURNAL - LOCALIZATION LOG
 
+## 2026-03-20 - [AgentPlanningPanel]
+
+**Extracted:** 8
+**Languages updated:** [EN, KO]
+**Notes:** Localized AgentPlanningPanel strings like "AI Planning", "Current Goal", "Tasks", and priority badges. Added new `agent.planning` namespace to `common.json`.
+
 ## 2026-03-04 - [Sidebar Navigation]
 
 **Extracted:** 3

@@ -745,6 +745,16 @@
       "badgeBuiltin": "builtin",
       "badgeMcp": "mcp",
       "viewSchema": "View Input Schema"
+    },
+    "planning": {
+      "title": "AI Planning",
+      "currentGoal": "Current Goal",
+      "noGoal": "No active goal",
+      "tasks": "Tasks",
+      "noTasks": "No tasks",
+      "priorityHigh": "High",
+      "priorityMedium": "Medium",
+      "priorityLow": "Low"
     }
   },
   "scheduledTasks": {
