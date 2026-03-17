@@ -1,4 +1,5 @@
-use std::process::Command;
+use std::process::Command as StdCommand;
+use tokio::process::Command as AsyncCommand;
 
 /// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
@@ -51,7 +52,15 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
 }
 
 /// Scrubs the environment of the given command and applies the safe, isolated whitelist.
-pub fn apply_isolated_env(cmd: &mut Command) {
+pub fn apply_isolated_env(cmd: &mut StdCommand) {
+    cmd.env_clear();
+    for (k, v) in get_isolated_env() {
+        cmd.env(k, v);
+    }
+}
+
+/// Async variant of `apply_isolated_env` for `tokio::process::Command`.
+pub fn apply_isolated_env_async(cmd: &mut AsyncCommand) {
     cmd.env_clear();
     for (k, v) in get_isolated_env() {
         cmd.env(k, v);
@@ -69,7 +78,7 @@ mod tests {
         env::set_var("OPENAI_API_KEY", "secret-value");
         env::set_var("MY_PRIVATE_VAR", "private-value");
 
-        let mut cmd = Command::new("ls");
+        let mut cmd = StdCommand::new("ls");
         apply_isolated_env(&mut cmd);
 
         // We can't directly inspect cmd.get_envs() easily in std::process::Command

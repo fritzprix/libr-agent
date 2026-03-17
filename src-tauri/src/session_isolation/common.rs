@@ -12,10 +12,7 @@ pub async fn is_command_available(command: &str) -> bool {
         AsyncCommand::new("which")
     };
 
-    cmd.env_clear();
-    for (k, v) in crate::utils::env::get_isolated_env() {
-        cmd.env(k, v);
-    }
+    crate::utils::env::apply_isolated_env_async(&mut cmd);
 
     cmd.arg(command);
 

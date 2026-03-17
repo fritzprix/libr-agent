@@ -17,10 +17,7 @@ pub async fn create_high_isolated_command(
     // container) causes us to fall back rather than silently producing empty
     // output when the real command runs.
     let mut userns_check = AsyncCommand::new("unshare");
-    userns_check.env_clear();
-    for (k, v) in crate::utils::env::get_isolated_env() {
-        userns_check.env(k, v);
-    }
+    crate::utils::env::apply_isolated_env_async(&mut userns_check);
 
     let userns_available = userns_check
         .args(["--user", "--pid", "--mount", "--fork", "--", "true"])
@@ -53,10 +50,7 @@ pub async fn create_high_isolated_command(
     cmd.current_dir(&config.workspace_path);
 
     // Apply environment isolation
-    cmd.env_clear();
-    for (k, v) in crate::utils::env::get_isolated_env() {
-        cmd.env(k, v);
-    }
+    crate::utils::env::apply_isolated_env_async(&mut cmd);
 
     // Always ensure PATH is present so basic commands work in the isolated environment.
     // Fall back to a safe, minimal default if the parent process has no PATH.
