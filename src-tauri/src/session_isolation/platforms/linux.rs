@@ -16,7 +16,13 @@ pub async fn create_high_isolated_command(
     // works without --mount but fails with it (e.g. no CAP_SYS_ADMIN in a
     // container) causes us to fall back rather than silently producing empty
     // output when the real command runs.
-    let userns_available = AsyncCommand::new("unshare")
+    let mut userns_check = AsyncCommand::new("unshare");
+    userns_check.env_clear();
+    for (k, v) in crate::utils::env::get_isolated_env() {
+        userns_check.env(k, v);
+    }
+
+    let userns_available = userns_check
         .args(["--user", "--pid", "--mount", "--fork", "--", "true"])
         .output()
         .await
