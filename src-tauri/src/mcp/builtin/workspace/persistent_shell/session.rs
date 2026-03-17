@@ -110,6 +110,7 @@ impl PersistentShell {
                 c.arg("-NoProfile");
                 c.arg("-NoLogo");
                 c.arg("-NonInteractive"); // Critical: removes prompts and echo
+                c.creation_flags(0x08000000); // CREATE_NO_WINDOW
                 debug!("Creating persistent PowerShell session for: {}", session_id);
                 c
             }
