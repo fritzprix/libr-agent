@@ -122,7 +122,9 @@ export function AgentPlanningPanel() {
                 </div>
               ))
             ) : (
-              <div className="text-sm text-muted-foreground">{t('agent.planning.noTasks')}</div>
+              <div className="text-sm text-muted-foreground">
+                {t('agent.planning.noTasks')}
+              </div>
             )}
           </div>
         </div>

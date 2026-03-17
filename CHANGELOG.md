@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2026-03-17
+
+### 🚀 Features
+
+- **Scheduled Task Workspace Control**: Scheduled tasks can now target a specific workspace folder. You can browse for a directory or drag and drop one directly in the task modal, and the configured workspace is shown in the task list for easier review.
+- **Persistent Scheduled Session Continuity**: Scheduled tasks now resume their pinned agent session reliably instead of silently drifting to a fresh session after restart or lazy unload. If the old session is truly gone, the task recreates it using the same pinned ID.
+
+### 🐛 Fixes
+
+- **Async Command Environment Isolation**: Closed environment leakage gaps in async command execution and fixed the related Windows regression so isolated processes keep the right minimal environment without inheriting sensitive host state.
+- **MCP Server Card Actions**: Refined the server card action layout so management controls behave more predictably and remain usable in tighter UI states.
+
+### 🔧 Internal
+
+- **Scheduled Task Data Model**: Extended the scheduled task persistence layer, migration set, and backend wrappers to carry workspace overrides end to end while keeping validation and release checks green.
+
+## [0.5.38] - 2026-03-17
+
+### 🚀 Features
+
+- **Planning Panel Localization**: Localized the Agent Planning panel in both English and Korean, covering the active goal, task list, and priority labels for a more consistent multilingual agent experience.
+- **Scheduled Task Editing UX**: Improved the scheduled tasks workflow so task edits now handle assistant selection more reliably and behave more predictably under rapid user interaction.
+
+### 🐛 Fixes
+
+- **Scheduled Task Reliability**: Fixed follow-up issues in the scheduled tasks flow by persisting assistant changes correctly, tightening duplicate action guards, and surfacing clearer errors during toggle/delete operations.
+- **MCP Dialog Loading UX**: Fixed MCP server dialogs so the close button is hidden while loading or saving, preventing misleading clicks on controls that cannot safely close yet.
+- **Cross-platform Path Safety**: Restricted path separator normalization to Windows-only code paths, preventing valid Unix filenames containing backslashes from being corrupted.
+- **Agent Status Bar Stability**: Removed a render-phase state reset in the agent status bar to avoid React concurrency and StrictMode issues when switching sessions.
+
+### 🔧 Internal
+
+- **Assistant Model Cleanup**: Removed duplicated assistant config definitions and continued decoupling assistant DTOs from Tauri command handlers to keep the backend model layer cleaner.
+- **Backend Wrapper Test Coverage**: Added focused tests for core backend wrapper modules and refreshed release-adjacent formatting and review follow-ups to keep CI stable.
+
 ## [0.5.37] - 2026-03-17
 
 ### 🚀 Features

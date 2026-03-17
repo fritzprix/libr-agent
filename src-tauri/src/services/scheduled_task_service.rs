@@ -15,6 +15,7 @@ impl ScheduledTaskService {
         assistant_id: String,
         message: String,
         yolo_mode: bool,
+        workspace_override: Option<String>,
     ) -> Result<ScheduledTaskModel, String> {
         let now_ms = chrono::Utc::now().timestamp_millis();
         let next_run_at = compute_next_run(&cron_expression, now_ms).ok_or_else(|| {
@@ -30,6 +31,7 @@ impl ScheduledTaskService {
             assistant_id,
             message,
             yolo_mode,
+            workspace_override,
             next_run_at: Some(next_run_at),
         })
         .await
@@ -88,6 +90,7 @@ impl ScheduledTaskService {
                 assistant_id: None,
                 message: None,
                 yolo_mode: None,
+                workspace_override: None,
                 enabled: Some(enabled),
                 next_run_at: None,
             },

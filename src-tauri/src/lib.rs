@@ -10,7 +10,7 @@ mod logger; // Custom file logger
 pub mod mcp; // Make public for integration tests
 pub mod models;
 pub mod repositories; // Make public for integration tests
-mod scheduled; // Cron-backed scheduled task background worker
+pub mod scheduled; // Cron-backed scheduled task background worker (public for integration tests)
 mod search;
 pub mod server;
 pub mod services;

@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
+import { open } from '@tauri-apps/plugin-dialog';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -17,13 +19,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Zap } from 'lucide-react';
+import { Zap, FolderOpen, Upload, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
 import { ScheduleBuilder } from './ScheduleBuilder';
 import type { Assistant } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
+import { useDnDContext } from '@/context/DnDContext';
+import {
+  checkDroppedPathType,
+  registerDroppedFiles,
+} from '@/lib/backend/file-operations';
 
 const logger = getLogger('ScheduledTaskModal');
 
@@ -38,6 +46,7 @@ interface ScheduledTaskModalProps {
     assistantId: string;
     message: string;
     yoloMode: boolean;
+    workspaceOverride: string | null;
   }) => Promise<void>;
 }
 
@@ -85,6 +94,7 @@ interface ScheduledTaskFormProps {
     assistantId: string;
     message: string;
     yoloMode: boolean;
+    workspaceOverride: string | null;
   }) => Promise<void>;
 }
 
@@ -95,6 +105,7 @@ function ScheduledTaskForm({
   onSave,
 }: ScheduledTaskFormProps) {
   const { t } = useTranslation();
+  const { subscribe } = useDnDContext();
   const [name, setName] = useState(task?.name ?? '');
   const [cronExpression, setCronExpression] = useState(
     task?.cronExpression ?? '0 9 * * *',
@@ -118,7 +129,97 @@ function ScheduledTaskForm({
       : assistants[0]?.id;
   const [message, setMessage] = useState(task?.message ?? '');
   const [yoloMode, setYoloMode] = useState(task?.yoloMode ?? false);
+  const [workspaceOverride, setWorkspaceOverride] = useState<string | null>(
+    task?.workspaceOverride ?? null,
+  );
+  const [workspaceDragState, setWorkspaceDragState] = useState<
+    'none' | 'valid' | 'invalid'
+  >('none');
+  const [browsingWorkspace, setBrowsingWorkspace] = useState(false);
   const [saving, setSaving] = useState(false);
+  const workspaceDropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const processDroppedPaths = (paths: string[]) => {
+      const run = async () => {
+        try {
+          await registerDroppedFiles(paths);
+        } catch (error: unknown) {
+          logger.error('Failed to register dropped workspace folder', error);
+          toast.error(t('scheduledTasks.modal.workspaceRegisterFailed'));
+          return;
+        }
+
+        for (const filePath of paths) {
+          try {
+            const pathType = await checkDroppedPathType(filePath);
+            if (pathType === 'directory') {
+              setWorkspaceOverride(filePath);
+              return;
+            }
+          } catch (error: unknown) {
+            logger.error('Failed to inspect dropped workspace path', {
+              filePath,
+              error,
+            });
+          }
+        }
+
+        toast.error(t('scheduledTasks.modal.workspaceDropFolderError'));
+      };
+
+      void run();
+    };
+
+    const unsubscribe = subscribe(
+      workspaceDropRef as RefObject<HTMLElement>,
+      (event, payload) => {
+        if (event === 'drag-over') {
+          setWorkspaceDragState(
+            payload.paths && payload.paths.length > 0 ? 'valid' : 'invalid',
+          );
+          return;
+        }
+
+        if (event === 'leave') {
+          setWorkspaceDragState('none');
+          return;
+        }
+
+        setWorkspaceDragState('none');
+        if (payload.paths && payload.paths.length > 0) {
+          processDroppedPaths(payload.paths);
+        }
+      },
+      { priority: 5 },
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [subscribe, t]);
+
+  const handleBrowseWorkspace = async () => {
+    if (browsingWorkspace) return;
+    setBrowsingWorkspace(true);
+
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('scheduledTasks.modal.workspaceBrowseTitle'),
+      });
+
+      if (selected && typeof selected === 'string') {
+        setWorkspaceOverride(selected);
+      }
+    } catch (error: unknown) {
+      logger.error('Failed to open workspace folder dialog', error);
+      toast.error(t('scheduledTasks.modal.workspaceBrowseError'));
+    } finally {
+      setBrowsingWorkspace(false);
+    }
+  };
 
   const handleSave = async () => {
     if (
@@ -136,6 +237,7 @@ function ScheduledTaskForm({
         assistantId: effectiveAssistantId,
         message: message.trim(),
         yoloMode,
+        workspaceOverride,
       });
       onClose();
     } catch (e: unknown) {
@@ -205,6 +307,72 @@ function ScheduledTaskForm({
             value={cronExpression}
             onChange={setCronExpression}
           />
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label>{t('scheduledTasks.modal.workspaceLabel')}</Label>
+          <div
+            ref={workspaceDropRef}
+            className={cn(
+              'rounded-lg border border-dashed p-3 transition-colors',
+              workspaceDragState === 'valid' && 'border-success bg-success/10',
+              workspaceDragState === 'invalid' &&
+                'border-destructive bg-destructive/10',
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="mt-0.5 rounded-md bg-primary/10 p-2">
+                  <FolderOpen className="h-4 w-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {workspaceOverride
+                      ? t('scheduledTasks.modal.workspaceSelected')
+                      : t('scheduledTasks.modal.workspaceOptional')}
+                  </p>
+                  <p
+                    className={cn(
+                      'mt-1 text-xs text-muted-foreground',
+                      workspaceOverride && 'truncate',
+                    )}
+                    title={workspaceOverride ?? undefined}
+                  >
+                    {workspaceOverride
+                      ? workspaceOverride
+                      : t('scheduledTasks.modal.workspaceHint')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleBrowseWorkspace()}
+                  disabled={browsingWorkspace}
+                >
+                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  {t('scheduledTasks.modal.workspaceBrowse')}
+                </Button>
+                {workspaceOverride && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setWorkspaceOverride(null)}
+                    aria-label={t('scheduledTasks.modal.workspaceClearAria')}
+                    className="h-8 w-8"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t('scheduledTasks.modal.workspaceDropHint')}
+            </p>
+          </div>
         </div>
 
         {/* Message with @mention support */}

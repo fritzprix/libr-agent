@@ -222,7 +222,11 @@ pub async fn create_high_isolated_command(
 /// Detects a valid Python installation on Windows, prioritizing non-Store versions.
 async fn detect_python_path() -> Option<PathBuf> {
     // 1. Try `where python` to find registered executables
-    if let Ok(output) = AsyncCommand::new("where").arg("python").output().await {
+    let mut cmd = AsyncCommand::new("where");
+    crate::utils::env::apply_isolated_env_async(&mut cmd);
+    cmd.arg("python");
+
+    if let Ok(output) = cmd.output().await {
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {

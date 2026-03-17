@@ -16,6 +16,7 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         message: 'Hello World',
         yoloMode: false,
         sessionId: null,
+        workspaceOverride: '/tmp/scheduled-task-workspace',
         enabled: true,
         lastRunAt: null,
         createdAt: Date.now(),
@@ -124,4 +125,5 @@ test('ScheduledTasksPage renders tooltips for edit and delete buttons', async ()
   // Verify Tooltip content matches short labels
   expect(screen.getByText('scheduledTasks.editTask')).toBeInTheDocument();
   expect(screen.getByText('scheduledTasks.deleteTask')).toBeInTheDocument();
+  expect(screen.getByText('/tmp/scheduled-task-workspace')).toBeInTheDocument();
 });

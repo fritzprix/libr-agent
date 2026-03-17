@@ -7,6 +7,7 @@
 //!  4. Inject the task message as a user turn and trigger the workflow
 //!  5. Record the run and compute the next fire time
 
+use std::collections::HashSet;
 use std::str::FromStr;
 
 use cron::Schedule;
@@ -16,9 +17,65 @@ use uuid::Uuid;
 use crate::agent::{AgentConfig, AgentSessionManager};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
-use crate::repositories::{AssistantRepository, ScheduledTaskRepository};
-use crate::state::{get_active_sessions, get_assistant_repository, get_scheduled_task_repository};
+use crate::repositories::{AssistantRepository, ScheduledTaskRepository, SessionRepository};
+use crate::services::WorkspaceService;
+use crate::state::{
+    get_active_sessions, get_assistant_repository, get_scheduled_task_repository,
+    get_session_repository,
+};
 use tauri::Manager;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskSessionResolution {
+    ReuseActive(String),
+    ResumePersisted(String),
+    Create(String),
+}
+
+/// Decide how a scheduled task should obtain its execution session.
+///
+/// Resolution order:
+/// 1. Reuse the session immediately if it is already active in memory.
+/// 2. Resume the exact pinned session if it exists in the persistent repository.
+/// 3. Otherwise create a session. When a task already has a pinned session ID,
+///    keep using that same ID so pinning remains stable.
+pub async fn resolve_task_session_resolution(
+    task_session_id: Option<&str>,
+    active_session_ids: &HashSet<String>,
+    session_repo: &dyn SessionRepository,
+) -> Result<TaskSessionResolution, String> {
+    let Some(session_id) = task_session_id else {
+        return Ok(TaskSessionResolution::Create(Uuid::new_v4().to_string()));
+    };
+
+    if active_session_ids.contains(session_id) {
+        return Ok(TaskSessionResolution::ReuseActive(session_id.to_string()));
+    }
+
+    if session_repo
+        .get_session(session_id)
+        .await
+        .map_err(|e| format!("Failed to load pinned session {session_id}: {e}"))?
+        .is_some()
+    {
+        return Ok(TaskSessionResolution::ResumePersisted(
+            session_id.to_string(),
+        ));
+    }
+
+    Ok(TaskSessionResolution::Create(session_id.to_string()))
+}
+
+async fn sync_task_workspace_override(
+    session_id: &str,
+    workspace_override: Option<&str>,
+) -> Result<(), String> {
+    if let Some(path) = workspace_override {
+        WorkspaceService::set_override(session_id, path.to_string()).await
+    } else {
+        WorkspaceService::cancel_override(session_id).await
+    }
+}
 
 /// Execute all tasks whose `next_run_at <= now_ms`.
 pub async fn execute_due_tasks(app_handle: &AppHandle, now_ms: i64) -> Result<(), String> {
@@ -77,48 +134,61 @@ async fn execute_task(
     // Check active_sessions first; recreate if missing.
     let active_sessions = get_active_sessions();
 
-    let session_exists = if let Some(ref sid) = task.session_id {
-        active_sessions.read().await.contains_key(sid.as_str())
-    } else {
-        false
+    let active_session_ids = {
+        let sessions = active_sessions.read().await;
+        sessions.keys().cloned().collect::<HashSet<_>>()
     };
+    let session_repo = get_session_repository();
+    let resolution = resolve_task_session_resolution(
+        task.session_id.as_deref(),
+        &active_session_ids,
+        session_repo,
+    )
+    .await?;
 
-    let (session_id, is_new_session) = if session_exists {
-        let sid = task.session_id.clone().unwrap();
-        // Ensure YOLO mode is synced even for reused sessions
-        if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
-            log::warn!(
-                "⏰ Failed to sync YOLO mode for existing session {}: {}",
-                sid,
-                e
-            );
-        }
-        (sid, false)
-    } else {
-        // First run OR session was lost — create a fresh one
-        let new_id = Uuid::new_v4().to_string();
-        let task_name = format!("⏰ {}", task.name);
-        manager
-            .create_session(
-                new_id.clone(),
-                Some(task_name),
-                None,
-                None,
-                agent_config.clone(),
-            )
-            .await?;
-
-        // Apply YOLO mode from task to the new session
-        if task.yolo_mode {
-            if let Err(e) = manager.set_yolo_mode(&new_id, true).await {
+    let (session_id, is_new_session) = match resolution {
+        TaskSessionResolution::ReuseActive(sid) => {
+            // Ensure YOLO mode is synced even for reused sessions
+            if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
                 log::warn!(
-                    "⏰ Failed to set YOLO mode for new session {}: {}",
-                    new_id,
+                    "⏰ Failed to sync YOLO mode for existing session {}: {}",
+                    sid,
                     e
                 );
             }
+            (sid, false)
         }
-        (new_id, true)
+        TaskSessionResolution::ResumePersisted(sid) => {
+            manager.resume_session(&sid).await?;
+            if let Err(e) = manager.set_yolo_mode(&sid, task.yolo_mode).await {
+                log::warn!(
+                    "⏰ Failed to sync YOLO mode for resumed session {}: {}",
+                    sid,
+                    e
+                );
+            }
+            (sid, false)
+        }
+        TaskSessionResolution::Create(sid) => {
+            let task_name = format!("⏰ {}", task.name);
+            manager
+                .create_session(
+                    sid.clone(),
+                    Some(task_name),
+                    None,
+                    None,
+                    agent_config.clone(),
+                )
+                .await?;
+
+            // Apply YOLO mode from task to the new session
+            if task.yolo_mode {
+                if let Err(e) = manager.set_yolo_mode(&sid, true).await {
+                    log::warn!("⏰ Failed to set YOLO mode for new session {}: {}", sid, e);
+                }
+            }
+            (sid, true)
+        }
     };
 
     // ── 3. Skip if session is currently running ───────────────────────────────
@@ -142,7 +212,10 @@ async fn execute_task(
         }
     }
 
-    // ── 4. Inject message and trigger workflow ────────────────────────────────
+    // ── 4. Synchronize workspace override before injecting the task message ───
+    sync_task_workspace_override(&session_id, task.workspace_override.as_deref()).await?;
+
+    // ── 5. Inject message and trigger workflow ────────────────────────────────
     let now_ts = chrono::Utc::now().timestamp_millis();
     let user_message = Message {
         id: Uuid::new_v4().to_string(),
@@ -172,7 +245,7 @@ async fn execute_task(
         .inject_messages(session_id.clone(), vec![user_message], true)
         .await?;
 
-    // ── 5. Record the run and schedule the next fire time ─────────────────────
+    // ── 6. Record the run and schedule the next fire time ─────────────────────
     let next_run_at = compute_next_run(&task.cron_expression, now_ms);
     let repo = get_scheduled_task_repository();
     let new_session_id = is_new_session.then_some(session_id);

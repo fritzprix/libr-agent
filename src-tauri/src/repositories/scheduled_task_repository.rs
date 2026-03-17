@@ -17,6 +17,7 @@ pub struct CreateScheduledTaskParams {
     pub assistant_id: String,
     pub message: String,
     pub yolo_mode: bool,
+    pub workspace_override: Option<String>,
     pub next_run_at: Option<i64>,
 }
 
@@ -27,6 +28,7 @@ pub struct UpdateScheduledTaskParams {
     pub assistant_id: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
+    pub workspace_override: Option<Option<String>>,
     pub enabled: Option<bool>,
     pub next_run_at: Option<Option<i64>>,
 }
@@ -108,6 +110,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             message: Set(params.message),
             yolo_mode: Set(params.yolo_mode),
             session_id: Set(None),
+            workspace_override: Set(params.workspace_override),
             enabled: Set(true),
             last_run_at: Set(None),
             next_run_at: Set(params.next_run_at),
@@ -168,6 +171,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         }
         if let Some(v) = params.yolo_mode {
             active.yolo_mode = Set(v);
+        }
+        if let Some(v) = params.workspace_override {
+            active.workspace_override = Set(v);
         }
         if let Some(v) = params.enabled {
             active.enabled = Set(v);

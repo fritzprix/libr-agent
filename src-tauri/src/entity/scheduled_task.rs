@@ -24,6 +24,8 @@ pub struct Model {
     pub yolo_mode: bool,
     /// Reused session ID — populated after first run, None for fresh tasks
     pub session_id: Option<String>,
+    /// Optional workspace override path applied to the pinned session at execution time
+    pub workspace_override: Option<String>,
     /// Whether the task is active
     pub enabled: bool,
     /// Epoch milliseconds of last successful trigger (None = never run)

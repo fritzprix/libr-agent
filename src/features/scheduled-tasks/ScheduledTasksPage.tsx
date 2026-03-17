@@ -9,7 +9,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Plus, Pencil, Trash2, Clock, Zap } from 'lucide-react';
+import { Plus, Pencil, Trash2, Clock, Zap, FolderOpen } from 'lucide-react';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
 import { describeCron } from './components/ScheduleBuilder';
@@ -45,6 +45,7 @@ export function ScheduledTasksPage() {
     assistantId: string;
     message: string;
     yoloMode: boolean;
+    workspaceOverride: string | null;
   }) => {
     await createTask(data);
   };
@@ -55,6 +56,7 @@ export function ScheduledTasksPage() {
     assistantId: string;
     message: string;
     yoloMode: boolean;
+    workspaceOverride: string | null;
   }) => {
     if (!editingTask) return;
     await updateTask(editingTask.id, data);
@@ -187,6 +189,14 @@ export function ScheduledTasksPage() {
                     time: formatNextRun(task.nextRunAt),
                   })}
                 </p>
+                {task.workspaceOverride && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate" title={task.workspaceOverride}>
+                      {task.workspaceOverride}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <Tooltip>
