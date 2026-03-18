@@ -1,4 +1,3 @@
-import { extractMediaContent } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
@@ -6,6 +5,10 @@ import {
   filterSystemErrors,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
+import {
+  extractMediaContent,
+  isSpendingCapError,
+} from '@/lib/ai-service/utils';
 import {
   type AIServiceConfig,
   type AIServiceProvider,
@@ -224,11 +227,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
     if (status !== undefined) {
       if (status === 429) {
         // Never retry billing/quota cap errors — these won't resolve on their own
-        const message = String((error as { message?: unknown })?.message ?? '');
-        if (
-          message.includes('spending cap') ||
-          message.includes('RESOURCE_EXHAUSTED')
-        ) {
+        if (isSpendingCapError(error)) {
           return false;
         }
         return true;

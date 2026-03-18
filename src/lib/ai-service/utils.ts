@@ -131,6 +131,28 @@ export function formatUsageMetrics(usage: TokenUsage): {
 }
 
 /**
+ * Detects unrecoverable billing/spending-cap quota failures.
+ * Transient rate-limit 429s may also use RESOURCE_EXHAUSTED, so we only
+ * classify them as non-retryable when the message explicitly indicates spending.
+ * @param error The error object or message returned by the provider.
+ */
+export function isSpendingCapError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' &&
+          error !== null &&
+          'message' in error &&
+          typeof error.message === 'string'
+        ? error.message
+        : String(error);
+  return (
+    message.includes('spending cap') ||
+    (message.includes('RESOURCE_EXHAUSTED') && message.includes('spending'))
+  );
+}
+
+/**
  * Processes an array of `MCPContent` parts into a single string,
  * extracting only the text content.
  * @param content The content of the message.

@@ -18,7 +18,10 @@ import type { MCPTool } from '@/lib/mcp';
 import type { Settings } from '@/context/SettingsContext';
 import { AIServiceFactory, AIServiceProvider } from '@/lib/ai-service';
 import type { AIServiceConfig } from '@/lib/ai-service/types';
-import { normalizeRustMessage } from '@/lib/ai-service/utils';
+import {
+  isSpendingCapError,
+  normalizeRustMessage,
+} from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { sleep } from '@/lib/retry-utils';
 import type { CompletionRequest } from './types';
@@ -60,14 +63,6 @@ function toAgentRuntimeError(error: unknown): AgentRuntimeError {
       timestamp: new Date().toISOString(),
     },
   };
-}
-
-function isSpendingCapError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
-  return (
-    msg.includes('spending cap') ||
-    (msg.includes('RESOURCE_EXHAUSTED') && msg.includes('spending'))
-  );
 }
 
 function shouldBypassRetryAndFallback(error: unknown): boolean {
