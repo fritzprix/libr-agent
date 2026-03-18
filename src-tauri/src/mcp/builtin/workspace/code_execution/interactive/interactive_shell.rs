@@ -64,7 +64,7 @@ impl WorkspaceServer {
         // Create UI resource JSON
         let _ui_resource = serde_json::json!({
             "uri": format!("ui://shell-input/{}", execution_id),
-            "mimeType": "text/html",
+            "mimeType": "application/json",
             "text": html,
             "_meta": {
                 "title": "Shell Command Input",
@@ -76,7 +76,7 @@ impl WorkspaceServer {
         // Return response with text and resource
         Ok(crate::mcp::builtin::utils::create_resource_response(
             &format!("ui://shell-input/{}", execution_id),
-            "text/html",
+            "application/json",
             &html,
             "workspace",
             PERSISTENT_SHELL_TOOL,

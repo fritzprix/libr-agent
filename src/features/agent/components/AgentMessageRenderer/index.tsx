@@ -26,6 +26,7 @@ import { groupContent } from './utils/contentGrouping';
 import { CodeBlock } from './components/CodeBlock';
 import { MarkdownText } from './components/MarkdownText';
 import { STATIC_MARKDOWN_COMPONENTS } from './config/markdown';
+import { InteractiveShellInput } from './components/InteractiveShellInput';
 
 const logger = getLogger('AgentMessageRenderer');
 
@@ -250,6 +251,20 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
                 item,
               });
               return null;
+            }
+
+            if (
+              resourceItem.resource.mimeType === 'application/json' &&
+              resourceItem.resource.uri.startsWith('ui://shell-input/')
+            ) {
+              return (
+                <div key={itemKey} className="my-2 w-full max-w-full overflow-x-auto">
+                  <InteractiveShellInput
+                    resource={resourceItem.resource}
+                    onUIAction={handleUIAction}
+                  />
+                </div>
+              );
             }
 
             return (

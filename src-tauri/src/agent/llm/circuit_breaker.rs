@@ -180,6 +180,7 @@ mod tests {
             source: None,
             error: None,
             metadata,
+            usage: None,
         }
     }
 
