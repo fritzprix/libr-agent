@@ -57,7 +57,6 @@ export { ScrollArea, ScrollBar } from './scroll-area';
 export { default as FileAttachment } from './FileAttachment';
 export { default as InputWithLabel } from './InputWithLabel';
 export { default as LoadingSpinner } from './LoadingSpinner';
-export { default as Modal } from './Modal';
 export { default as StatusIndicator } from './StatusIndicator';
 export { default as TextareaWithLabel } from './TextareaWithLabel';
 
