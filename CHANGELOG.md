@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-03-18
+
+### 🐛 Fixes
+
+- **Smarter Retry Handling**: Tightened LLM retry behavior so the app no longer performs a pointless final backoff after exhausting retries, and it now stops retry/fallback loops immediately when providers return spending-cap billing errors that cannot recover automatically.
+- **Windows Terminal Stability**: Preserved the `CREATE_NO_WINDOW` launch flag for the persistent shell on Windows, preventing stray terminal window flicker during background command execution.
+
+### 🔧 Internal
+
+- **macOS Release Pipeline**: Removed the redundant legacy macOS-only release workflow and upgraded the main release automation to the current Tauri action so universal macOS builds no longer rely on stale notarization behavior.
+
 ## [0.6.0] - 2026-03-17
 
 ### 🚀 Features

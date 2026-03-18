@@ -119,13 +119,10 @@ function AIModelsTabComponent({
           />
         </div>
 
-        {/* Fallback Model — SP4: used when primary model fails all retries */}
+        {/* Fallback Model — used when primary model fails all retries */}
         <div className="min-w-0">
           <label className="block text-muted-foreground mb-2 font-medium">
-            {t(
-              'settings.aiModels.fallbackModel',
-              'Fallback LLM (SP4 Recovery)',
-            )}
+            {t('settings.aiModels.fallbackModel', 'Fallback LLM')}
           </label>
           <AgentModelPicker
             currentModel={localFallbackModel?.model ?? ''}

@@ -266,7 +266,7 @@
     "aiModels": {
       "apiKeys": "공급자 API 키",
       "preferences": "모델 설정",
-      "fallbackModel": "대체 모델 (SP4 복구)",
+      "fallbackModel": "대체 모델",
       "fallbackModelDescription": "모든 재시도 후 기본 모델이 잘못된 형식이나 빈 응답을 반환할 때 마지막 수단으로 사용됩니다.",
       "agentHub": "에이전트 허브",
       "agentHubUrlLabel": "에이전트 허브 URL",

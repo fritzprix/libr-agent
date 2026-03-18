@@ -4,9 +4,12 @@ use crate::state::get_settings_repository;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::fs::{self};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+pub const SKILL_FILE_NAME: &str = "SKILL.md";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SkillMetadata {
@@ -14,7 +17,7 @@ pub struct SkillMetadata {
     pub description: String,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>, // "global" or "assistant"
+    pub source: Option<String>, // "global", "assistant", or "workspace"
 }
 
 #[derive(Debug, Deserialize)]
@@ -58,26 +61,35 @@ pub async fn get_configured_skills_directory() -> Result<String, String> {
 pub async fn resolve_skills(
     global_dir: PathBuf,
     assistant_dir: Option<PathBuf>,
+    workspace_dir: Option<PathBuf>,
 ) -> Result<Vec<SkillMetadata>, String> {
-    // 1. Check if assistant has skills
-    if let Some(dir) = assistant_dir {
-        if dir.exists() {
-            let assistant_skills =
-                scan_skills_internal(&dir, Some("assistant".to_string())).await?;
+    let mut merged_skills = Vec::new();
+    let mut seen_names = HashSet::new();
 
-            // If assistant has any skills, return ONLY those (no global skills)
-            if !assistant_skills.is_empty() {
-                let mut skills = assistant_skills;
-                skills.sort_by(|a, b| a.name.cmp(&b.name));
-                return Ok(skills);
+    let sources: Vec<(Option<PathBuf>, &str)> = vec![
+        (workspace_dir, "workspace"),
+        (assistant_dir, "assistant"),
+        (Some(global_dir), "global"),
+    ];
+
+    for (dir, source) in sources {
+        let Some(dir) = dir else {
+            continue;
+        };
+
+        let mut scanned = scan_skills_internal(&dir, Some(source.to_string())).await?;
+        scanned.sort_by_cached_key(|skill| skill.name.to_lowercase());
+
+        for skill in scanned {
+            let normalized = skill.name.to_lowercase();
+            if seen_names.insert(normalized) {
+                merged_skills.push(skill);
             }
         }
     }
 
-    // 2. Fallback: Return global skills if no assistant skills exist
-    let mut global_skills = scan_skills_internal(&global_dir, Some("global".to_string())).await?;
-    global_skills.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(global_skills)
+    merged_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
+    Ok(merged_skills)
 }
 
 /// Public entry point for scanning a directory without a source tag.
@@ -86,30 +98,115 @@ pub async fn scan_skills_directory(directory: &Path) -> Result<Vec<SkillMetadata
     scan_skills_internal(directory, None).await
 }
 
+pub fn get_assistant_skills_directory(assistant_id: &str) -> Result<PathBuf, String> {
+    let session_manager = get_session_manager()?;
+    Ok(session_manager
+        .get_base_data_dir()
+        .join("assistants")
+        .join(assistant_id)
+        .join("skills"))
+}
+
+pub fn get_workspace_skills_directory_from_path(workspace_path: &Path) -> PathBuf {
+    workspace_path.join("skills")
+}
+
+pub fn get_workspace_skills_directory_for_session(session_id: &str) -> Result<PathBuf, String> {
+    let session_manager = get_session_manager()?;
+    let workspace_dir = session_manager.get_session_workspace_dir_by_id(session_id);
+    Ok(get_workspace_skills_directory_from_path(&workspace_dir))
+}
+
+pub fn collect_allowed_skill_roots(
+    global_dir: PathBuf,
+    assistant_dir: Option<PathBuf>,
+    workspace_dir: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Some(dir) = workspace_dir {
+        roots.push(dir);
+    }
+    if let Some(dir) = assistant_dir {
+        roots.push(dir);
+    }
+    roots.push(global_dir);
+
+    roots
+}
+
+pub async fn resolve_skill_directories(
+    assistant_id: Option<&str>,
+    session_id: Option<&str>,
+    workspace_path: Option<&Path>,
+) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), String> {
+    let global_dir = PathBuf::from(get_configured_skills_directory().await?);
+    let assistant_dir = assistant_id
+        .map(get_assistant_skills_directory)
+        .transpose()?;
+    let workspace_dir = if let Some(path) = workspace_path {
+        Some(get_workspace_skills_directory_from_path(path))
+    } else if let Some(id) = session_id {
+        Some(get_workspace_skills_directory_for_session(id)?)
+    } else {
+        None
+    };
+
+    Ok((global_dir, assistant_dir, workspace_dir))
+}
+
 /// Reads the full content of a skill's SKILL.md file by skill path.
 /// The `skill_path` is the absolute path to the SKILL.md file as returned in `SkillMetadata.path`.
 ///
 /// Security: validates that the path is within the configured skills directory
 /// and points to a `SKILL.md` file before reading.
-pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
+pub async fn get_skill_content(
+    skill_path: String,
+    assistant_id: Option<String>,
+    session_id: Option<String>,
+    workspace_path: Option<String>,
+) -> Result<String, String> {
+    let (global_dir, assistant_dir, workspace_dir) = resolve_skill_directories(
+        assistant_id.as_deref(),
+        session_id.as_deref(),
+        workspace_path.as_deref().map(Path::new),
+    )
+    .await?;
+    let allowed_roots = collect_allowed_skill_roots(global_dir, assistant_dir, workspace_dir);
+    get_skill_content_from_roots(skill_path, &allowed_roots).await
+}
+
+pub async fn get_skill_content_from_roots(
+    skill_path: String,
+    allowed_roots: &[PathBuf],
+) -> Result<String, String> {
     let path = PathBuf::from(&skill_path);
 
     // Require the file to be named SKILL.md
-    if path.file_name() != Some(std::ffi::OsStr::new("SKILL.md")) {
+    if path.file_name() != Some(std::ffi::OsStr::new(SKILL_FILE_NAME)) {
         return Err("Skill path must point to a SKILL.md file".to_string());
     }
 
-    // Validate that the path is within the configured skills directory
-    let skills_dir_str = get_configured_skills_directory().await?;
-    let skills_dir = PathBuf::from(skills_dir_str);
-    let canonical_dir = skills_dir
-        .canonicalize()
-        .map_err(|e| format!("Invalid skills directory: {}", e))?;
     let canonical_path = path
         .canonicalize()
         .map_err(|e| format!("Invalid skill path: {}", e))?;
-    if !canonical_path.starts_with(&canonical_dir) {
-        return Err("Skill path is outside the configured skills directory".to_string());
+
+    let mut is_allowed = false;
+    for root in allowed_roots {
+        if !root.exists() {
+            continue;
+        }
+        let canonical_root = root
+            .canonicalize()
+            .map_err(|e| format!("Invalid skills directory: {}", e))?;
+        if canonical_path.starts_with(&canonical_root) {
+            is_allowed = true;
+            break;
+        }
+    }
+
+    if !is_allowed {
+        return Err("Skill path is outside the allowed skills directories".to_string());
     }
 
     tokio::task::spawn_blocking(move || {
@@ -140,7 +237,7 @@ pub(crate) async fn scan_skills_internal(
             .into_iter()
             .filter_map(|e| e.ok())
         {
-            if entry.file_name() == "SKILL.md" {
+            if entry.file_name() == SKILL_FILE_NAME {
                 let path = entry.path();
                 match parse_skill_metadata(path) {
                     Ok(mut metadata) => {

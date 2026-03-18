@@ -10,7 +10,8 @@ export interface SkillMetadata {
    * Source of the skill.
    * - 'global': Located in the global skills directory.
    * - 'assistant': Located in the assistant's specific skills directory.
+   * - 'workspace': Located in the workspace's local skills directory.
    * - undefined: Source is unknown or not relevant (e.g. raw directory scan).
    */
-  source?: 'global' | 'assistant';
+  source?: 'global' | 'assistant' | 'workspace';
 }

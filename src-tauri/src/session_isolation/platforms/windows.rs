@@ -190,7 +190,8 @@ pub async fn create_medium_isolated_command(
     // Apply platform-specific process group isolation
     #[cfg(target_os = "windows")]
     {
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
+        // Use bitwise OR to preserve CREATE_NO_WINDOW from create_basic_isolated_command
+        cmd.creation_flags(0x08000000 | 0x00000200); // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
     }
 
     // Windows resource limits not implemented yet
@@ -209,7 +210,8 @@ pub async fn create_high_isolated_command(
     // Apply Windows-specific isolation
     #[cfg(target_os = "windows")]
     {
-        cmd.creation_flags(0x00000200); // CREATE_NEW_PROCESS_GROUP only
+        // Use bitwise OR to preserve CREATE_NO_WINDOW
+        cmd.creation_flags(0x08000000 | 0x00000200); // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
     }
 
     info!(

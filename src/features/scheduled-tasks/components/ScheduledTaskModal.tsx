@@ -388,6 +388,7 @@ function ScheduledTaskForm({
             value={message}
             onChange={setMessage}
             assistantId={effectiveAssistantId}
+            workspacePath={workspaceOverride}
             rows={3}
           />
         </div>
