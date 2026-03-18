@@ -1,33 +1,62 @@
 import { describe, it, expect } from 'vitest';
 import { filterSessions } from '../session-utils';
-import { AgentSession } from '@/models/agent';
+import type { AgentSession } from '@/models/agent';
+
+function makeSession(
+  overrides: Partial<AgentSession> & Pick<AgentSession, 'id'>,
+): AgentSession {
+  return {
+    id: overrides.id,
+    name: 'Session Name',
+    status: 'idle',
+    model: 'gpt-5.4',
+    provider: 'openai',
+    createdAt: new Date('2026-03-18T00:00:00.000Z'),
+    updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+    assistant: {
+      id: 'assistant-default',
+      name: 'Default Assistant',
+      systemPrompt: 'You are helpful.',
+      createdAt: new Date('2026-03-18T00:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+    },
+    yoloMode: false,
+    ...overrides,
+  };
+}
 
 describe('session-utils', () => {
   describe('filterSessions', () => {
     const mockSessions: AgentSession[] = [
-      {
+      makeSession({
         id: 'session-1',
         name: 'First Session',
         assistant: {
           id: 'assistant-1',
           name: 'Helpful Bot',
           description: 'A bot that helps',
+          systemPrompt: 'You are helpful.',
+          createdAt: new Date('2026-03-18T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-18T00:00:01.000Z'),
         },
-      } as AgentSession,
-      {
+      }),
+      makeSession({
         id: 'session-2',
         name: 'Second Meeting',
         assistant: {
           id: 'assistant-2',
           name: 'Coding Assistant',
           description: 'Helps with code',
+          systemPrompt: 'You are helpful.',
+          createdAt: new Date('2026-03-18T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-18T00:00:01.000Z'),
         },
-      } as AgentSession,
-      {
+      }),
+      makeSession({
         id: 'session-3',
-        name: null as unknown as string, // Edge case: name is missing/null
-        assistant: null as unknown as AgentSession['assistant'], // Edge case: no assistant
-      } as AgentSession,
+        name: undefined,
+        assistant: undefined,
+      }),
     ];
 
     it('returns all sessions if query is empty', () => {

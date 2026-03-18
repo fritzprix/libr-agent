@@ -34,6 +34,15 @@ function makeDto(configOverrides: Record<string, unknown> = {}) {
 // ─── parseAssistant: field preservation ──────────────────────────────────────
 
 describe('parseAssistant', () => {
+  it('preserves localServices from config', () => {
+    const assistant = parseAssistant(
+      makeDto({
+        localServices: ['service_a', 'service_b'],
+      }),
+    );
+    expect(assistant.localServices).toEqual(['service_a', 'service_b']);
+  });
+
   it('preserves description from config', () => {
     const assistant = parseAssistant(makeDto());
     expect(assistant.description).toBe('Handles code review tasks.');
@@ -106,6 +115,19 @@ describe('parseAssistant', () => {
     };
     const assistant = parseAssistant(dto);
     expect(assistant.systemPrompt).toBe('You are a helpful assistant.');
+  });
+
+  it('hydrates createdAt and updatedAt from DTO timestamps', () => {
+    const createdAt = 1_700_000_000_000;
+    const updatedAt = 1_700_000_001_000;
+    const assistant = parseAssistant({
+      ...makeDto(),
+      createdAt,
+      updatedAt,
+    });
+
+    expect(assistant.createdAt.getTime()).toBe(createdAt);
+    expect(assistant.updatedAt.getTime()).toBe(updatedAt);
   });
 });
 
