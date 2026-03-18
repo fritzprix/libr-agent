@@ -45,3 +45,5 @@
 ## 2026-03-17 - src/lib/backend/builtin-tools.ts **Coverage Expanded:** Builtin Tools commands **Assertions:** Verified backend calls with correct arguments.
 
 ## 2026-03-17 - src/lib/backend/sessions.ts **Coverage Expanded:** Sessions commands **Assertions:** Verified backend calls with correct arguments.
+
+## 2026-03-18 - src/lib/mcp/schema/builders.ts, src/lib/schemas/mcp-tool.ts, src/lib/schemas/playbook.ts, src/models/validation.ts, src/models/planning.ts, src/lib/session-utils.ts **Coverage Expanded:** Added comprehensive unit tests to achieve 100% statement coverage. **Assertions:** Verified validation logic, object shape parsing, fallback handling, array filtering behaviors, builder patterns for json schemas, and computational logic.
