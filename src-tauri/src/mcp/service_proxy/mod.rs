@@ -530,17 +530,27 @@ impl MCPServiceProxy {
     ///
     /// # Returns
     /// * `HashMap<String, ServiceContext>` - Map of tool_id -> ServiceContext
-    pub async fn get_service_contexts(&self) -> HashMap<String, ServiceContext> {
+    pub async fn get_service_contexts(
+        &self,
+        assistant_id: Option<&str>,
+    ) -> HashMap<String, ServiceContext> {
+        let options = serde_json::to_value(crate::mcp::types::ServiceContextOptions {
+            session_id: Some(self.session_id.clone()),
+            assistant_id: assistant_id.map(str::to_string),
+        })
+        .ok();
+
         let futures: Vec<_> = self
             .builtin_servers
             .iter()
             .map(|(tool_id, server)| {
                 let tool_id = tool_id.clone();
+                let options = options.clone();
                 async move {
                     if !server.has_active_state().await {
                         return None;
                     }
-                    let context = server.get_service_context(None).await;
+                    let context = server.get_service_context(options.as_ref()).await;
                     Some((tool_id, context))
                 }
             })

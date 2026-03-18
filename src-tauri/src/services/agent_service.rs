@@ -165,7 +165,7 @@ impl AgentService {
             .await
             .ok_or_else(|| format!("No proxy found for session: {}", session_id))?;
 
-        Ok(proxy.get_service_contexts().await)
+        Ok(proxy.get_service_contexts(None).await)
     }
 
     /// Clear all agent sessions (used for "Clear All Sessions" feature)

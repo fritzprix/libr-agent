@@ -271,7 +271,7 @@
     "aiModels": {
       "apiKeys": "Provider API Keys",
       "preferences": "Model Preferences",
-      "fallbackModel": "Fallback LLM (SP4 Recovery)",
+      "fallbackModel": "Fallback LLM",
       "fallbackModelDescription": "Used as a last resort when the primary model returns malformed or empty responses after all retries.",
       "agentHub": "Agent Hub",
       "agentHubUrlLabel": "Agent Hub URL",

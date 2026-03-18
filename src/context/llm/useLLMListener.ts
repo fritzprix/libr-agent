@@ -205,27 +205,31 @@ export function useLLMListener({
           });
 
           try {
-            // SP4: Execute with retry (exponential backoff + jitter) and optional fallback model.
+            // Execute with retry (exponential backoff + jitter) and optional fallback model.
             // Malformed/empty responses come as errors from executeCompletionRequest,
             // despite the LLM API returning HTTP 200 — this recovers from those silently.
-            const SP4_MAX_RETRIES = 3;
-            const SP4_BASE_DELAY_MS = 500;
+            const MAX_RECOVERY_RETRIES = 3;
+            const RECOVERY_BASE_DELAY_MS = 500;
 
             const attemptCompletion = async (
               targetModel: string,
               targetProvider: string,
               targetApiKey: string,
             ): Promise<Message> => {
-              for (let attempt = 0; attempt <= SP4_MAX_RETRIES; attempt++) {
+              for (
+                let attempt = 0;
+                attempt <= MAX_RECOVERY_RETRIES;
+                attempt++
+              ) {
                 if (attempt > 0) {
                   // Exponential backoff with ±50% jitter to spread retries
                   const rawDelay = Math.min(
-                    SP4_BASE_DELAY_MS * Math.pow(2, attempt - 1),
+                    RECOVERY_BASE_DELAY_MS * Math.pow(2, attempt - 1),
                     30000,
                   );
                   const jitteredDelay = rawDelay * (0.5 + Math.random());
                   logger.warn(
-                    `SP4: Retry ${attempt}/${SP4_MAX_RETRIES} after ${Math.round(jitteredDelay)}ms`,
+                    `LLM Recovery: Retry ${attempt}/${MAX_RECOVERY_RETRIES} after ${Math.round(jitteredDelay)}ms`,
                     { sessionId, model: targetModel, provider: targetProvider },
                   );
                   await sleep(jitteredDelay);
@@ -268,17 +272,17 @@ export function useLLMListener({
                   if (shouldBypassRetryAndFallback(attemptError)) {
                     throw attemptError;
                   }
-                  if (attempt === SP4_MAX_RETRIES) {
+                  if (attempt === MAX_RECOVERY_RETRIES) {
                     throw attemptError;
                   }
                   logger.warn(
-                    `SP4: Attempt ${attempt + 1} failed, will retry`,
+                    `LLM Recovery: Attempt ${attempt + 1} failed, will retry`,
                     { sessionId, error: attemptError },
                   );
                 }
               }
               // Unreachable, but satisfies TS
-              throw new Error('SP4: retry loop exhausted');
+              throw new Error('LLM Recovery: retry loop exhausted');
             };
 
             // First try primary model with retries
@@ -302,7 +306,7 @@ export function useLLMListener({
                   ]?.apiKey ?? '';
 
                 logger.warn(
-                  `SP4: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,
+                  `LLM Recovery: Primary model failed all retries, switching to fallback ${fallbackModel.provider}/${fallbackModel.model}`,
                   { sessionId },
                 );
 

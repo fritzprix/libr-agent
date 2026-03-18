@@ -1,5 +1,4 @@
 use crate::services::skill_service::{self, SkillMetadata};
-use crate::session::get_session_manager;
 use std::path::PathBuf;
 
 #[tauri::command]
@@ -30,24 +29,30 @@ pub async fn get_configured_skills_directory() -> Result<String, String> {
 #[tauri::command]
 pub async fn get_aggregated_skills(
     assistant_id: Option<String>,
+    session_id: Option<String>,
+    workspace_path: Option<String>,
 ) -> Result<Vec<SkillMetadata>, String> {
     let global_dir_str = skill_service::get_configured_skills_directory().await?;
     let global_dir = PathBuf::from(global_dir_str);
 
-    let mut assistant_dir = None;
+    let assistant_dir = assistant_id
+        .as_deref()
+        .map(skill_service::get_assistant_skills_directory)
+        .transpose()?;
 
-    if let Some(id) = assistant_id {
-        let session_manager = get_session_manager()?;
-        assistant_dir = Some(
-            session_manager
-                .get_base_data_dir()
-                .join("assistants")
-                .join(&id)
-                .join("skills"),
-        );
-    }
+    let workspace_dir = if let Some(path) = workspace_path {
+        Some(skill_service::get_workspace_skills_directory_from_path(
+            &PathBuf::from(path),
+        ))
+    } else if let Some(id) = session_id {
+        Some(skill_service::get_workspace_skills_directory_for_session(
+            &id,
+        )?)
+    } else {
+        None
+    };
 
-    skill_service::resolve_skills(global_dir, assistant_dir).await
+    skill_service::resolve_skills(global_dir, assistant_dir, workspace_dir).await
 }
 
 #[tauri::command]

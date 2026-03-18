@@ -3,12 +3,32 @@ import type { SkillMetadata } from '@/types/skills';
 
 /**
  * Fetches the aggregated skills for a given assistant, merging global and
- * assistant-specific skills.
+ * assistant/workspace-specific skills.
  */
 export async function getAggregatedSkills(
-  assistantId: string,
+  assistantId?: string,
+  options?: {
+    sessionId?: string;
+    workspacePath?: string;
+  },
 ): Promise<SkillMetadata[]> {
-  return safeInvoke<SkillMetadata[]>('get_aggregated_skills', { assistantId });
+  const args: {
+    assistantId?: string;
+    sessionId?: string;
+    workspacePath?: string;
+  } = {};
+
+  if (assistantId) {
+    args.assistantId = assistantId;
+  }
+  if (options?.sessionId) {
+    args.sessionId = options.sessionId;
+  }
+  if (options?.workspacePath) {
+    args.workspacePath = options.workspacePath;
+  }
+
+  return safeInvoke<SkillMetadata[]>('get_aggregated_skills', args);
 }
 
 /**

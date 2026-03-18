@@ -28,8 +28,8 @@ import {
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
 import type { ContentStoreItem } from '@/models/content-store';
-import { useSkills } from '@/context/SkillsContext';
 import { useInputToken } from './useInputToken';
+import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
 
 const logger = getLogger('useAgentDraftChat');
@@ -102,7 +102,7 @@ export function useAgentDraftChat() {
   const { subscribe } = useDnDContext();
 
   // @skill: mention support
-  const { skills } = useSkills();
+  const { skills } = useScopedSkills(assistant?.id, workspaceOverride);
   const {
     stage,
     typeResults,

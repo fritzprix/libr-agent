@@ -1,8 +1,9 @@
 /// Skill Resolution Logic Integration Tests
 ///
-/// Tests the override-only skill resolution logic:
-/// - Assistant has skills → returns ONLY those (global is blocked)
-/// - Assistant has no skills → falls back to global
+/// Tests additive skill resolution with deterministic precedence:
+/// - workspace skills win over assistant/global on name collision
+/// - assistant skills win over global on name collision
+/// - non-colliding skills from all sources are preserved
 /// - No dirs exist → returns empty vec
 /// - Results are sorted by name
 use std::fs;
@@ -26,7 +27,7 @@ async fn test_resolve_skills_global_only() {
     let global = TempDir::new().unwrap();
     create_skill(global.path(), "skill-a", "Skill A", "Description A");
 
-    let result = resolve_skills(global.path().to_owned(), None)
+    let result = resolve_skills(global.path().to_owned(), None, None)
         .await
         .unwrap();
 
@@ -36,7 +37,7 @@ async fn test_resolve_skills_global_only() {
 }
 
 #[tokio::test]
-async fn test_resolve_skills_assistant_overrides_global() {
+async fn test_resolve_skills_assistant_adds_to_global() {
     let global = TempDir::new().unwrap();
     let assistant = TempDir::new().unwrap();
 
@@ -48,14 +49,19 @@ async fn test_resolve_skills_assistant_overrides_global() {
         "From assistant",
     );
 
-    let result = resolve_skills(global.path().to_owned(), Some(assistant.path().to_owned()))
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        global.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        None,
+    )
+    .await
+    .unwrap();
 
-    // Override-only: must return ONLY assistant skills, zero global skills
-    assert_eq!(result.len(), 1);
+    assert_eq!(result.len(), 2);
     assert_eq!(result[0].name, "Assistant Skill");
     assert_eq!(result[0].source.as_deref(), Some("assistant"));
+    assert_eq!(result[1].name, "Global Skill");
+    assert_eq!(result[1].source.as_deref(), Some("global"));
 }
 
 #[tokio::test]
@@ -65,9 +71,13 @@ async fn test_resolve_skills_empty_assistant_falls_back_to_global() {
 
     create_skill(global.path(), "global-skill", "Global Skill", "From global");
 
-    let result = resolve_skills(global.path().to_owned(), Some(assistant.path().to_owned()))
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        global.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Empty assistant dir → must fall back to global
     assert_eq!(result.len(), 1);
@@ -83,7 +93,7 @@ async fn test_resolve_skills_nonexistent_assistant_falls_back_to_global() {
     // Assistant dir path that doesn't exist
     let nonexistent_assistant = global.path().join("no_such_assistant_dir");
 
-    let result = resolve_skills(global.path().to_owned(), Some(nonexistent_assistant))
+    let result = resolve_skills(global.path().to_owned(), Some(nonexistent_assistant), None)
         .await
         .unwrap();
 
@@ -97,7 +107,7 @@ async fn test_resolve_skills_both_nonexistent_returns_empty() {
     let global = base.path().join("no_global");
     let assistant = base.path().join("no_assistant");
 
-    let result = resolve_skills(global, Some(assistant)).await.unwrap();
+    let result = resolve_skills(global, Some(assistant), None).await.unwrap();
 
     assert!(result.is_empty());
 }
@@ -107,7 +117,7 @@ async fn test_resolve_skills_no_assistant_dir_returns_empty_if_no_global() {
     let base = TempDir::new().unwrap();
     let global = base.path().join("nonexistent");
 
-    let result = resolve_skills(global, None).await.unwrap();
+    let result = resolve_skills(global, None, None).await.unwrap();
 
     assert!(result.is_empty());
 }
@@ -120,7 +130,7 @@ async fn test_resolve_skills_results_sorted_by_name() {
     create_skill(global.path(), "aaa", "Aaa Skill", "First alphabetically");
     create_skill(global.path(), "mmm", "Mmm Skill", "Middle alphabetically");
 
-    let result = resolve_skills(global.path().to_owned(), None)
+    let result = resolve_skills(global.path().to_owned(), None, None)
         .await
         .unwrap();
 
@@ -131,7 +141,7 @@ async fn test_resolve_skills_results_sorted_by_name() {
 }
 
 #[tokio::test]
-async fn test_resolve_skills_multiple_assistant_skills_override_all_global() {
+async fn test_resolve_skills_multiple_assistant_skills_preserve_global() {
     let global = TempDir::new().unwrap();
     let assistant = TempDir::new().unwrap();
 
@@ -142,21 +152,33 @@ async fn test_resolve_skills_multiple_assistant_skills_override_all_global() {
     create_skill(assistant.path(), "a2", "Assistant 2", "A2");
     create_skill(assistant.path(), "a3", "Assistant 3", "A3");
 
-    let result = resolve_skills(global.path().to_owned(), Some(assistant.path().to_owned()))
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        global.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        None,
+    )
+    .await
+    .unwrap();
 
-    // Should return ONLY the 3 assistant skills
-    assert_eq!(result.len(), 3);
-    assert!(result
-        .iter()
-        .all(|s| s.source.as_deref() == Some("assistant")));
+    assert_eq!(result.len(), 5);
+    assert_eq!(
+        result
+            .iter()
+            .filter(|s| s.source.as_deref() == Some("assistant"))
+            .count(),
+        3
+    );
+    assert_eq!(
+        result
+            .iter()
+            .filter(|s| s.source.as_deref() == Some("global"))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]
 async fn test_resolve_skills_same_name_collision_prefers_assistant() {
-    // When both global and assistant define a skill with identical names,
-    // the override-only semantics must surface the assistant version exclusively.
     let global = TempDir::new().unwrap();
     let assistant = TempDir::new().unwrap();
 
@@ -175,13 +197,49 @@ async fn test_resolve_skills_same_name_collision_prefers_assistant() {
         "Assistant version",
     );
 
-    let result = resolve_skills(global.path().to_owned(), Some(assistant.path().to_owned()))
-        .await
-        .unwrap();
+    let result = resolve_skills(
+        global.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        None,
+    )
+    .await
+    .unwrap();
 
-    // Override-only: only the assistant copy should appear
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].name, "Shared Skill");
     assert_eq!(result[0].description, "Assistant version");
     assert_eq!(result[0].source.as_deref(), Some("assistant"));
+}
+
+#[tokio::test]
+async fn test_resolve_skills_same_name_collision_prefers_workspace() {
+    let global = TempDir::new().unwrap();
+    let assistant = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    create_skill(global.path(), "shared-skill", "Shared Skill", "Global version");
+    create_skill(
+        assistant.path(),
+        "shared-skill",
+        "Shared Skill",
+        "Assistant version",
+    );
+    create_skill(
+        workspace.path(),
+        "shared-skill",
+        "Shared Skill",
+        "Workspace version",
+    );
+
+    let result = resolve_skills(
+        global.path().to_owned(),
+        Some(assistant.path().to_owned()),
+        Some(workspace.path().to_owned()),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].description, "Workspace version");
+    assert_eq!(result[0].source.as_deref(), Some("workspace"));
 }
