@@ -1,4 +1,5 @@
 use std::process::Command as StdCommand;
+#[cfg(target_os = "macos")]
 use std::sync::OnceLock;
 use tokio::process::Command as AsyncCommand;
 
