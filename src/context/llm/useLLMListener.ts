@@ -62,8 +62,19 @@ function toAgentRuntimeError(error: unknown): AgentRuntimeError {
   };
 }
 
+function isSpendingCapError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    msg.includes('spending cap') ||
+    (msg.includes('RESOURCE_EXHAUSTED') && msg.includes('spending'))
+  );
+}
+
 function shouldBypassRetryAndFallback(error: unknown): boolean {
-  return toAgentRuntimeError(error).type === 'CONTEXT_LIMIT_ERROR';
+  if (toAgentRuntimeError(error).type === 'CONTEXT_LIMIT_ERROR') return true;
+  // Spending cap is a billing issue — no point retrying or trying a fallback model
+  if (isSpendingCapError(error)) return true;
+  return false;
 }
 
 interface UseLLMListenerProps {
