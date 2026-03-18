@@ -1,5 +1,27 @@
 use std::process::Command as StdCommand;
+use std::sync::OnceLock;
 use tokio::process::Command as AsyncCommand;
+
+/// On macOS, GUI apps launched via Finder/.app bundle inherit a minimal PATH from launchd
+/// (typically `/usr/bin:/bin:/usr/sbin:/sbin`), stripping nvm, Homebrew, and other
+/// user-installed tool managers.  This function runs the user's login shell once to
+/// capture its full PATH and caches the result for subsequent calls.
+#[cfg(target_os = "macos")]
+fn get_macos_login_shell_path() -> &'static str {
+    static SHELL_PATH: OnceLock<String> = OnceLock::new();
+    SHELL_PATH.get_or_init(|| {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        match StdCommand::new(&shell).args(["-l", "-c", "echo $PATH"]).output() {
+            Ok(out) if out.status.success() => {
+                String::from_utf8(out.stdout)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            }
+            _ => String::new(),
+        }
+    })
+}
 
 /// Returns a list of environment variables that are safe to pass to external processes
 /// (whitelisted essential system variables), preventing the leakage of host secrets.
@@ -45,6 +67,27 @@ pub fn get_isolated_env() -> Vec<(String, String)> {
             || (key.starts_with("XDG_") && key != "XDG_RUNTIME_DIR")
         {
             envs.push((key, value));
+        }
+    }
+
+    // On macOS, the PATH inherited by a GUI app is stripped of user tool-manager entries
+    // (nvm, Homebrew, Volta, etc.).  Merge in the login-shell PATH so that commands like
+    // `npx`, `node`, or `python` resolve correctly when spawning MCP server processes.
+    #[cfg(target_os = "macos")]
+    {
+        let shell_path = get_macos_login_shell_path();
+        if !shell_path.is_empty() {
+            if let Some(entry) = envs.iter_mut().find(|(k, _)| k == "PATH") {
+                let current = entry.1.clone();
+                // shell_path wins on ordering; append any current entries not already present
+                let mut parts: Vec<&str> = shell_path.split(':').collect();
+                for part in current.split(':') {
+                    if !part.is_empty() && !parts.contains(&part) {
+                        parts.push(part);
+                    }
+                }
+                entry.1 = parts.join(":");
+            }
         }
     }
 
