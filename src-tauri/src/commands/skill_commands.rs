@@ -1,5 +1,5 @@
 use crate::services::skill_service::{self, SkillMetadata};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub async fn get_default_skills_directory() -> Result<String, String> {
@@ -32,25 +32,12 @@ pub async fn get_aggregated_skills(
     session_id: Option<String>,
     workspace_path: Option<String>,
 ) -> Result<Vec<SkillMetadata>, String> {
-    let global_dir_str = skill_service::get_configured_skills_directory().await?;
-    let global_dir = PathBuf::from(global_dir_str);
-
-    let assistant_dir = assistant_id
-        .as_deref()
-        .map(skill_service::get_assistant_skills_directory)
-        .transpose()?;
-
-    let workspace_dir = if let Some(path) = workspace_path {
-        Some(skill_service::get_workspace_skills_directory_from_path(
-            &PathBuf::from(path),
-        ))
-    } else if let Some(id) = session_id {
-        Some(skill_service::get_workspace_skills_directory_for_session(
-            &id,
-        )?)
-    } else {
-        None
-    };
+    let (global_dir, assistant_dir, workspace_dir) = skill_service::resolve_skill_directories(
+        assistant_id.as_deref(),
+        session_id.as_deref(),
+        workspace_path.as_deref().map(Path::new),
+    )
+    .await?;
 
     skill_service::resolve_skills(global_dir, assistant_dir, workspace_dir).await
 }
@@ -63,8 +50,13 @@ pub async fn scan_skills_directory(directory: String) -> Result<Vec<SkillMetadat
 /// Returns the full content of a skill's SKILL.md file.
 /// `skill_path` is the absolute path as returned in `SkillMetadata.path`.
 #[tauri::command]
-pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
-    skill_service::get_skill_content(skill_path).await
+pub async fn get_skill_content(
+    skill_path: String,
+    assistant_id: Option<String>,
+    session_id: Option<String>,
+    workspace_path: Option<String>,
+) -> Result<String, String> {
+    skill_service::get_skill_content(skill_path, assistant_id, session_id, workspace_path).await
 }
 
 #[tauri::command]

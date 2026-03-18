@@ -78,7 +78,7 @@ pub async fn resolve_skills(
         };
 
         let mut scanned = scan_skills_internal(&dir, Some(source.to_string())).await?;
-        scanned.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        scanned.sort_by_cached_key(|skill| skill.name.to_lowercase());
 
         for skill in scanned {
             let normalized = skill.name.to_lowercase();
@@ -88,7 +88,7 @@ pub async fn resolve_skills(
         }
     }
 
-    merged_skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    merged_skills.sort_by_cached_key(|skill| skill.name.to_lowercase());
     Ok(merged_skills)
 }
 
@@ -135,14 +135,44 @@ pub fn collect_allowed_skill_roots(
     roots
 }
 
+pub async fn resolve_skill_directories(
+    assistant_id: Option<&str>,
+    session_id: Option<&str>,
+    workspace_path: Option<&Path>,
+) -> Result<(PathBuf, Option<PathBuf>, Option<PathBuf>), String> {
+    let global_dir = PathBuf::from(get_configured_skills_directory().await?);
+    let assistant_dir = assistant_id
+        .map(get_assistant_skills_directory)
+        .transpose()?;
+    let workspace_dir = if let Some(path) = workspace_path {
+        Some(get_workspace_skills_directory_from_path(path))
+    } else if let Some(id) = session_id {
+        Some(get_workspace_skills_directory_for_session(id)?)
+    } else {
+        None
+    };
+
+    Ok((global_dir, assistant_dir, workspace_dir))
+}
+
 /// Reads the full content of a skill's SKILL.md file by skill path.
 /// The `skill_path` is the absolute path to the SKILL.md file as returned in `SkillMetadata.path`.
 ///
 /// Security: validates that the path is within the configured skills directory
 /// and points to a `SKILL.md` file before reading.
-pub async fn get_skill_content(skill_path: String) -> Result<String, String> {
-    let skills_dir_str = get_configured_skills_directory().await?;
-    let allowed_roots = collect_allowed_skill_roots(PathBuf::from(skills_dir_str), None, None);
+pub async fn get_skill_content(
+    skill_path: String,
+    assistant_id: Option<String>,
+    session_id: Option<String>,
+    workspace_path: Option<String>,
+) -> Result<String, String> {
+    let (global_dir, assistant_dir, workspace_dir) = resolve_skill_directories(
+        assistant_id.as_deref(),
+        session_id.as_deref(),
+        workspace_path.as_deref().map(Path::new),
+    )
+    .await?;
+    let allowed_roots = collect_allowed_skill_roots(global_dir, assistant_dir, workspace_dir);
     get_skill_content_from_roots(skill_path, &allowed_roots).await
 }
 

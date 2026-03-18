@@ -1,16 +1,18 @@
 import { safeInvoke } from './core';
 import type { SkillMetadata } from '@/types/skills';
 
+interface SkillScopeOptions {
+  sessionId?: string;
+  workspacePath?: string;
+}
+
 /**
  * Fetches the aggregated skills for a given assistant, merging global and
  * assistant/workspace-specific skills.
  */
 export async function getAggregatedSkills(
   assistantId?: string,
-  options?: {
-    sessionId?: string;
-    workspacePath?: string;
-  },
+  options?: SkillScopeOptions,
 ): Promise<SkillMetadata[]> {
   const args: {
     assistantId?: string;
@@ -83,6 +85,26 @@ export async function resetAssistantSkills(
  * Reads the full content of a skill's SKILL.md file.
  * `skillPath` is the absolute path as returned in `SkillMetadata.path`.
  */
-export async function getSkillContent(skillPath: string): Promise<string> {
-  return safeInvoke<string>('get_skill_content', { skillPath });
+export async function getSkillContent(
+  skillPath: string,
+  options?: SkillScopeOptions & { assistantId?: string },
+): Promise<string> {
+  const args: {
+    skillPath: string;
+    assistantId?: string;
+    sessionId?: string;
+    workspacePath?: string;
+  } = { skillPath };
+
+  if (options?.assistantId) {
+    args.assistantId = options.assistantId;
+  }
+  if (options?.sessionId) {
+    args.sessionId = options.sessionId;
+  }
+  if (options?.workspacePath) {
+    args.workspacePath = options.workspacePath;
+  }
+
+  return safeInvoke<string>('get_skill_content', args);
 }
