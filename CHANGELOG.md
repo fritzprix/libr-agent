@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-03-18
+
+### 🚀 Features
+
+- **Workspace Skills Integration**: Introduced integration for publishing workspace skills, allowing agents to better utilize and share specialized capabilities within a workspace environment.
+
+### 🐛 Fixes
+
+- **macOS Code Signing & Notarization**: Implemented full macOS code signing, entitlements, and notarization configuration, ensuring that universal macOS builds are properly signed and verified for distribution.
+- **Scoped Skill Loading**: Fixed skill content loading to support scoped access, ensuring that skills are resolved correctly within their intended context.
+- **CI Pipeline Stability**: Pinned the `tauri-action` version in the release workflow to prevent breaking changes from upstream actions and ensure stable production builds.
+
+### 🔧 Internal
+
+- **Weaver Modal Refactoring**: Refactored the Modal component in the Weaver feature using the Compound Components Pattern, improving code structure and making the component more extensible.
+- **Enhanced Test Coverage**: Expanded unit and integration test coverage for core schemas and models (Sonar) and optimized validation coverage by removing duplicate test cases.
+- **Documentation Polish**: Reorganized Weaver's modal journal entries and documentation to reflect recent architectural improvements and provide a clearer logical flow.
+
 ## [0.6.2] - 2026-03-18
 
 ### 🐛 Fixes
