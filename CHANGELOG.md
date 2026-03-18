@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4] - 2026-03-18
+
+### 🐛 Fixes
+
+- **macOS MCP Server Launch**: Fixed `npx`/`node` commands failing with "No such file or directory" when launching MCP servers from the macOS `.app` bundle. GUI apps inherit a minimal `launchd` PATH that strips nvm, Homebrew, and Volta — the fix queries the user's login shell once at startup to restore the full PATH for all child processes.
+- **Spending Cap Retry Loop**: Unified spending-cap error detection into a shared utility with more robust message parsing (handles plain error objects in addition to `Error` instances), ensuring no-retry behaviour is applied consistently across the retry and fallback paths.
+
+### 🔧 Internal
+
+- **`isSpendingCapError` Utility**: Extracted duplicate spending-cap detection logic from `useLLMListener` and `base-service` into a single shared function in `ai-service/utils.ts`, and added dedicated unit tests.
+
 ## [0.6.3] - 2026-03-18
 
 ### 🚀 Features
