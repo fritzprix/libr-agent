@@ -1,27 +1,38 @@
 import { describe, it, expect } from 'vitest';
 import { filterSessions } from '../session-utils';
 import type { AgentSession } from '@/models/agent';
+import type { Assistant } from '@/models/chat';
+
+function makeAssistant(overrides: Partial<Assistant> & Pick<Assistant, 'id'>): Assistant {
+  const { id, ...restOverrides } = overrides;
+
+  return {
+    id,
+    name: 'Default Assistant',
+    systemPrompt: 'You are helpful.',
+    deletionProtected: false,
+    createdAt: new Date('2026-03-18T00:00:00.000Z'),
+    updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+    ...restOverrides,
+  };
+}
 
 function makeSession(
   overrides: Partial<AgentSession> & Pick<AgentSession, 'id'>,
 ): AgentSession {
+  const { id, ...restOverrides } = overrides;
+
   return {
-    id: overrides.id,
+    id,
     name: 'Session Name',
     status: 'idle',
     model: 'gpt-5.4',
     provider: 'openai',
     createdAt: new Date('2026-03-18T00:00:00.000Z'),
     updatedAt: new Date('2026-03-18T00:00:01.000Z'),
-    assistant: {
-      id: 'assistant-default',
-      name: 'Default Assistant',
-      systemPrompt: 'You are helpful.',
-      createdAt: new Date('2026-03-18T00:00:00.000Z'),
-      updatedAt: new Date('2026-03-18T00:00:01.000Z'),
-    },
+    assistant: makeAssistant({ id: 'assistant-default' }),
     yoloMode: false,
-    ...overrides,
+    ...restOverrides,
   };
 }
 
@@ -31,26 +42,26 @@ describe('session-utils', () => {
       makeSession({
         id: 'session-1',
         name: 'First Session',
-        assistant: {
+        assistant: makeAssistant({
           id: 'assistant-1',
           name: 'Helpful Bot',
           description: 'A bot that helps',
           systemPrompt: 'You are helpful.',
           createdAt: new Date('2026-03-18T00:00:00.000Z'),
           updatedAt: new Date('2026-03-18T00:00:01.000Z'),
-        },
+        }),
       }),
       makeSession({
         id: 'session-2',
         name: 'Second Meeting',
-        assistant: {
+        assistant: makeAssistant({
           id: 'assistant-2',
           name: 'Coding Assistant',
           description: 'Helps with code',
           systemPrompt: 'You are helpful.',
           createdAt: new Date('2026-03-18T00:00:00.000Z'),
           updatedAt: new Date('2026-03-18T00:00:01.000Z'),
-        },
+        }),
       }),
       makeSession({
         id: 'session-3',
