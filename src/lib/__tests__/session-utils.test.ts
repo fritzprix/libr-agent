@@ -1,114 +1,107 @@
 import { describe, it, expect } from 'vitest';
 import { filterSessions } from '../session-utils';
-import { AgentSession } from '@/models/agent';
+import type { AgentSession } from '@/models/agent';
 
-describe('filterSessions', () => {
-  const mockSessions: AgentSession[] = [
-    {
-      id: 'session-1',
-      name: 'Project Alpha',
-      status: 'idle',
-      model: 'gpt-4',
-      provider: 'openai',
-      createdAt: new Date(),
-      assistant: {
-        id: 'asst-1',
-        name: 'Coder',
-        description: 'Helps with coding',
-        systemPrompt: '',
-        deletionProtected: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      yoloMode: false,
+function makeSession(
+  overrides: Partial<AgentSession> & Pick<AgentSession, 'id'>,
+): AgentSession {
+  return {
+    id: overrides.id,
+    name: 'Session Name',
+    status: 'idle',
+    model: 'gpt-5.4',
+    provider: 'openai',
+    createdAt: new Date('2026-03-18T00:00:00.000Z'),
+    updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+    assistant: {
+      id: 'assistant-default',
+      name: 'Default Assistant',
+      systemPrompt: 'You are helpful.',
+      createdAt: new Date('2026-03-18T00:00:00.000Z'),
+      updatedAt: new Date('2026-03-18T00:00:01.000Z'),
     },
-    {
-      id: 'session-2',
-      name: 'Project Beta',
-      status: 'busy',
-      model: 'gpt-4',
-      provider: 'openai',
-      createdAt: new Date(),
-      assistant: {
-        id: 'asst-2',
-        name: 'Writer',
-        description: 'Helps with writing',
-        systemPrompt: '',
-        deletionProtected: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      yoloMode: false,
-    },
-    {
-      id: 'uuid-123-abc',
-      name: undefined, // No name
-      status: 'idle',
-      model: 'gpt-4',
-      provider: 'openai',
-      createdAt: new Date(),
-      assistant: {
-        id: 'asst-3',
-        name: 'Planner',
-        description: 'Project management',
-        systemPrompt: '',
-        deletionProtected: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      yoloMode: false,
-    },
-  ];
+    yoloMode: false,
+    ...overrides,
+  };
+}
 
-  it('returns all sessions if query is empty', () => {
-    expect(filterSessions(mockSessions, '')).toHaveLength(3);
-    expect(filterSessions(mockSessions, '   ')).toHaveLength(3);
-  });
+describe('session-utils', () => {
+  describe('filterSessions', () => {
+    const mockSessions: AgentSession[] = [
+      makeSession({
+        id: 'session-1',
+        name: 'First Session',
+        assistant: {
+          id: 'assistant-1',
+          name: 'Helpful Bot',
+          description: 'A bot that helps',
+          systemPrompt: 'You are helpful.',
+          createdAt: new Date('2026-03-18T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+        },
+      }),
+      makeSession({
+        id: 'session-2',
+        name: 'Second Meeting',
+        assistant: {
+          id: 'assistant-2',
+          name: 'Coding Assistant',
+          description: 'Helps with code',
+          systemPrompt: 'You are helpful.',
+          createdAt: new Date('2026-03-18T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-18T00:00:01.000Z'),
+        },
+      }),
+      makeSession({
+        id: 'session-3',
+        name: undefined,
+        assistant: undefined,
+      }),
+    ];
 
-  it('filters by session name', () => {
-    expect(filterSessions(mockSessions, 'Alpha')).toHaveLength(1);
-    expect(filterSessions(mockSessions, 'Alpha')[0].id).toBe('session-1');
-  });
+    it('returns all sessions if query is empty', () => {
+      expect(filterSessions(mockSessions, '')).toEqual(mockSessions);
+      expect(filterSessions(mockSessions, '   ')).toEqual(mockSessions);
+    });
 
-  it('filters by session id', () => {
-    expect(filterSessions(mockSessions, 'uuid')).toHaveLength(1);
-    expect(filterSessions(mockSessions, 'uuid')[0].id).toBe('uuid-123-abc');
-  });
+    it('filters by session name', () => {
+      const result = filterSessions(mockSessions, 'first');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-1');
+    });
 
-  it('filters by assistant name', () => {
-    expect(filterSessions(mockSessions, 'Coder')).toHaveLength(1);
-    expect(filterSessions(mockSessions, 'Coder')[0].id).toBe('session-1');
-  });
+    it('filters by session ID', () => {
+      const result = filterSessions(mockSessions, 'session-2');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-2');
+    });
 
-  it('filters by assistant description', () => {
-    expect(filterSessions(mockSessions, 'writing')).toHaveLength(1);
-    expect(filterSessions(mockSessions, 'writing')[0].id).toBe('session-2');
-  });
+    it('filters by assistant name', () => {
+      const result = filterSessions(mockSessions, 'coding');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-2');
+    });
 
-  it('is case insensitive', () => {
-    expect(filterSessions(mockSessions, 'alpha')).toHaveLength(1);
-    expect(filterSessions(mockSessions, 'CODER')).toHaveLength(1);
-  });
+    it('filters by assistant description', () => {
+      const result = filterSessions(mockSessions, 'helps with code');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-2');
+    });
 
-  it('matches partial strings', () => {
-    expect(filterSessions(mockSessions, 'oj')).toHaveLength(3); // "Project" matches
-  });
+    it('is case insensitive', () => {
+      const result = filterSessions(mockSessions, 'FIRST');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-1');
+    });
 
-  it('returns empty array if no match found', () => {
-    expect(filterSessions(mockSessions, 'xyz123')).toHaveLength(0);
-  });
+    it('handles sessions with missing or null fields', () => {
+      const result = filterSessions(mockSessions, 'session-3');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-3');
+    });
 
-  it('handles sessions with missing assistant gracefully', () => {
-    const sessionWithoutAssistant: AgentSession = {
-      id: 'session-no-assistant',
-      status: 'idle',
-      model: 'gpt-4',
-      provider: 'openai',
-      createdAt: new Date(),
-      yoloMode: false,
-    };
-
-    expect(filterSessions([sessionWithoutAssistant], 'doesnotexist')).toHaveLength(0);
-    expect(filterSessions([sessionWithoutAssistant], 'no-assistant')).toHaveLength(1);
+    it('returns empty array when no matches found', () => {
+      expect(filterSessions(mockSessions, 'nonexistent')).toEqual([]);
+    });
   });
 });
