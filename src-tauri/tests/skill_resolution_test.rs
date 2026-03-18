@@ -217,7 +217,12 @@ async fn test_resolve_skills_same_name_collision_prefers_workspace() {
     let assistant = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
-    create_skill(global.path(), "shared-skill", "Shared Skill", "Global version");
+    create_skill(
+        global.path(),
+        "shared-skill",
+        "Shared Skill",
+        "Global version",
+    );
     create_skill(
         assistant.path(),
         "shared-skill",

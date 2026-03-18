@@ -66,10 +66,11 @@ pub async fn resolve_skills(
     let mut merged_skills = Vec::new();
     let mut seen_names = HashSet::new();
 
-    let mut sources: Vec<(Option<PathBuf>, &str)> = Vec::new();
-    sources.push((workspace_dir, "workspace"));
-    sources.push((assistant_dir, "assistant"));
-    sources.push((Some(global_dir), "global"));
+    let sources: Vec<(Option<PathBuf>, &str)> = vec![
+        (workspace_dir, "workspace"),
+        (assistant_dir, "assistant"),
+        (Some(global_dir), "global"),
+    ];
 
     for (dir, source) in sources {
         let Some(dir) = dir else {

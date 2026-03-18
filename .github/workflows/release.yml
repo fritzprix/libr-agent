@@ -111,6 +111,13 @@ jobs:
           # Then add TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD to GitHub Secrets.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS signing & notarization
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         with:
           tagName: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           releaseName: LibrAgent ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
@@ -123,7 +130,8 @@ jobs:
             Download and run `LibrAgent_x64_en-US.msi`
 
             ### macOS
-            Download `LibrAgent.app.tar.gz`, extract and copy to Applications folder
+            Download `LibrAgent_x64.dmg` (or silicon version if available), open it and drag the app to your Applications folder.
+            If you use the `.app.tar.gz`, extract it first.
 
             ### Linux (Debian/Ubuntu)
             After downloading the `.deb` package:
