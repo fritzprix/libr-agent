@@ -145,10 +145,14 @@ function GeneralTabComponent({
           value={localLanguage}
           onChange={(e) => onChange(e.target.value)}
         >
-          <option value="en">
-            {t('settings.language.english', 'English')}
-          </option>
-          <option value="ko">{t('settings.language.korean', 'Korean')}</option>
+          <option value="en">{t('settings.language.en', 'English')}</option>
+          <option value="ko">{t('settings.language.ko', '한국어')}</option>
+          <option value="zh">{t('settings.language.zh', '简体中文')}</option>
+          <option value="ja">{t('settings.language.ja', '日本語')}</option>
+          <option value="fr">{t('settings.language.fr', 'Français')}</option>
+          <option value="es">{t('settings.language.es', 'Español')}</option>
+          <option value="de">{t('settings.language.de', 'Deutsch')}</option>
+          <option value="pt">{t('settings.language.pt', 'Português')}</option>
         </select>
       </div>
 
