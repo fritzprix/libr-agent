@@ -1,4 +1,3 @@
-import { extractMediaContent } from '@/lib/ai-service/utils';
 import { getLogger } from '@/lib/logger';
 import { llmConfigManager } from '@/lib/llm-config-manager';
 import type { MCPContent, MCPTool } from '@/lib/mcp';
@@ -6,6 +5,10 @@ import {
   filterSystemErrors,
   validateToolCallPairing,
 } from '@/lib/ai-service/message-normalizer';
+import {
+  extractMediaContent,
+  isSpendingCapError,
+} from '@/lib/ai-service/utils';
 import {
   type AIServiceConfig,
   type AIServiceProvider,
@@ -183,7 +186,7 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
         }
 
         // Only retry on certain errors (e.g., rate limits, network issues)
-        if (this.shouldRetry(error)) {
+        if (this.shouldRetry(error) && i < maxRetries) {
           const delay =
             Math.pow(2, i) * (this.defaultConfig.retryDelay ?? 1000);
           this.logger.warn(
@@ -221,11 +224,17 @@ export abstract class BaseAIService<TProviderMessage, TProviderTool>
   protected shouldRetry(error: unknown): boolean {
     // Basic implementation: retry on 429 (Too Many Requests) and 5xx (Server Errors)
     const status = (error as { status?: number })?.status;
-    if (
-      status !== undefined &&
-      (status === 429 || (status >= 500 && status <= 599))
-    ) {
-      return true;
+    if (status !== undefined) {
+      if (status === 429) {
+        // Never retry billing/quota cap errors — these won't resolve on their own
+        if (isSpendingCapError(error)) {
+          return false;
+        }
+        return true;
+      }
+      if (status >= 500 && status <= 599) {
+        return true;
+      }
     }
     return false;
   }

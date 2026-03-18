@@ -231,7 +231,7 @@ async fn build_volatile_sections(
 
     // 5. Service Contexts - immediately actionable information
     if let Some(p) = proxy {
-        let contexts = p.get_service_contexts().await;
+        let contexts = p.get_service_contexts(assistant_id).await;
 
         if !contexts.is_empty() {
             parts.push("\n\n## Available Tools & Current State\n".to_string());

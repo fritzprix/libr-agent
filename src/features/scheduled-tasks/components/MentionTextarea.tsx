@@ -1,8 +1,8 @@
 import { useCallback, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSkills } from '@/context/SkillsContext';
 import { useInputToken } from '@/features/agent/hooks/useInputToken';
+import { useScopedSkills } from '@/features/agent/hooks/useScopedSkills';
 import { InputTokenDropdown } from '@/features/agent/components/InputTokenDropdown';
 import { usePlaybookSearch } from '@/features/agent/hooks/usePlaybookSearch';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ interface MentionTextareaProps {
   onChange: (value: string) => void;
   /** Assistant ID used to scope @playbook: completions */
   assistantId?: string;
+  workspacePath?: string | null;
   placeholder?: string;
   className?: string;
   rows?: number;
@@ -27,6 +28,7 @@ export function MentionTextarea({
   value,
   onChange,
   assistantId,
+  workspacePath,
   placeholder,
   className,
   rows = 3,
@@ -36,7 +38,7 @@ export function MentionTextarea({
 
   const defaultPlaceholder = t('scheduledTasks.modal.messagePlaceholder');
   const finalPlaceholder = placeholder || defaultPlaceholder;
-  const { skills } = useSkills();
+  const { skills } = useScopedSkills(assistantId, workspacePath);
 
   const {
     stage,

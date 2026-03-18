@@ -110,7 +110,10 @@ pub async fn build_default_registry(
     assistant_id: Option<&str>,
 ) -> ReferenceRegistry {
     let mut registry = ReferenceRegistry::new();
-    registry.register(Box::new(SkillReferenceResolver));
+    registry.register(Box::new(SkillReferenceResolver::new(
+        session_id,
+        assistant_id,
+    )));
     registry.register(Box::new(FileReferenceResolver::new(session_id)));
     if let Some(aid) = assistant_id {
         if !aid.is_empty() {

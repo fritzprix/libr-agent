@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.4] - 2026-03-18
+
+### 🐛 Fixes
+
+- **macOS MCP Server Launch**: Fixed `npx`/`node` commands failing with "No such file or directory" when launching MCP servers from the macOS `.app` bundle. GUI apps inherit a minimal `launchd` PATH that strips nvm, Homebrew, and Volta — the fix queries the user's login shell once at startup to restore the full PATH for all child processes.
+- **Spending Cap Retry Loop**: Unified spending-cap error detection into a shared utility with more robust message parsing (handles plain error objects in addition to `Error` instances), ensuring no-retry behaviour is applied consistently across the retry and fallback paths.
+
+### 🔧 Internal
+
+- **`isSpendingCapError` Utility**: Extracted duplicate spending-cap detection logic from `useLLMListener` and `base-service` into a single shared function in `ai-service/utils.ts`, and added dedicated unit tests.
+
+## [0.6.3] - 2026-03-18
+
+### 🚀 Features
+
+- **Workspace Skills Integration**: Introduced integration for publishing workspace skills, allowing agents to better utilize and share specialized capabilities within a workspace environment.
+
+### 🐛 Fixes
+
+- **macOS Code Signing & Notarization**: Implemented full macOS code signing, entitlements, and notarization configuration, ensuring that universal macOS builds are properly signed and verified for distribution.
+- **Scoped Skill Loading**: Fixed skill content loading to support scoped access, ensuring that skills are resolved correctly within their intended context.
+- **CI Pipeline Stability**: Pinned the `tauri-action` version in the release workflow to prevent breaking changes from upstream actions and ensure stable production builds.
+
+### 🔧 Internal
+
+- **Weaver Modal Refactoring**: Refactored the Modal component in the Weaver feature using the Compound Components Pattern, improving code structure and making the component more extensible.
+- **Enhanced Test Coverage**: Expanded unit and integration test coverage for core schemas and models (Sonar) and optimized validation coverage by removing duplicate test cases.
+- **Documentation Polish**: Reorganized Weaver's modal journal entries and documentation to reflect recent architectural improvements and provide a clearer logical flow.
+
+## [0.6.2] - 2026-03-18
+
+### 🐛 Fixes
+
+- **Smarter Retry Handling**: Tightened LLM retry behavior so the app no longer performs a pointless final backoff after exhausting retries, and it now stops retry/fallback loops immediately when providers return spending-cap billing errors that cannot recover automatically.
+- **Windows Terminal Stability**: Preserved the `CREATE_NO_WINDOW` launch flag for the persistent shell on Windows, preventing stray terminal window flicker during background command execution.
+
+### 🔧 Internal
+
+- **macOS Release Pipeline**: Removed the redundant legacy macOS-only release workflow and upgraded the main release automation to the current Tauri action so universal macOS builds no longer rely on stale notarization behavior.
+
 ## [0.6.0] - 2026-03-17
 
 ### 🚀 Features

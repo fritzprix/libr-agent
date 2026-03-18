@@ -92,25 +92,24 @@ impl BuiltinMCPServer for SkillsServer {
             }
         };
 
+        let workspace_skills_dir =
+            crate::services::skill_service::get_workspace_skills_directory_for_session(
+                &self.session_id,
+            )
+            .ok();
+
         // Determine assistant skills directory if assistant_id is provided
         let assistant_skills_dir = if let Some(opts_value) = options {
             if let Ok(opts) = serde_json::from_value::<crate::mcp::types::ServiceContextOptions>(
                 opts_value.clone(),
             ) {
                 if let Some(assistant_id) = opts.assistant_id {
-                    match crate::session::get_session_manager() {
-                        Ok(manager) => Some(
-                            manager
-                                .get_base_data_dir()
-                                .join("assistants")
-                                .join(assistant_id)
-                                .join("skills"),
-                        ),
+                    match crate::services::skill_service::get_assistant_skills_directory(
+                        &assistant_id,
+                    ) {
+                        Ok(dir) => Some(dir),
                         Err(e) => {
-                            warn!(
-                                "Failed to get session manager for assistant resolving: {}",
-                                e
-                            );
+                            warn!("Failed to resolve assistant skills directory: {}", e);
                             None
                         }
                     }
@@ -131,6 +130,7 @@ impl BuiltinMCPServer for SkillsServer {
         let mut skills = match crate::services::skill_service::resolve_skills(
             global_skills_dir,
             assistant_skills_dir,
+            workspace_skills_dir,
         )
         .await
         {

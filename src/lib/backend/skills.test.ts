@@ -87,4 +87,21 @@ describe('skills backend wrapper', () => {
     });
     expect(result).toBe('content');
   });
+
+  it('getSkillContent forwards optional scope arguments', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce('content');
+
+    await getSkillContent('/path/to/skill', {
+      assistantId: 'assistant-1',
+      sessionId: 'session-1',
+      workspacePath: '/workspace',
+    });
+
+    expect(safeInvoke).toHaveBeenCalledWith('get_skill_content', {
+      skillPath: '/path/to/skill',
+      assistantId: 'assistant-1',
+      sessionId: 'session-1',
+      workspacePath: '/workspace',
+    });
+  });
 });
