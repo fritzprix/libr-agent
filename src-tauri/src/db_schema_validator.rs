@@ -168,8 +168,14 @@ async fn get_table_columns(
     table_name: &str,
 ) -> Result<Vec<String>, DbErr> {
     // Validate table name to prevent SQL injection since PRAGMA cannot be parameterized
-    if !table_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(DbErr::Custom(format!("Invalid table name format: {}", table_name)));
+    if !table_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(DbErr::Custom(format!(
+            "Invalid table name format: {}",
+            table_name
+        )));
     }
 
     let query = format!("PRAGMA table_info({})", table_name);
@@ -250,14 +256,23 @@ mod tests {
     async fn test_validate_schema_success() {
         let db = setup_test_db().await;
         let result = validate_schema(&db).await;
-        assert!(result.is_ok(), "Schema validation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Schema validation failed: {:?}",
+            result.err()
+        );
     }
 
     #[tokio::test]
     async fn test_table_exists_invalid_name() {
         let db = setup_test_db().await;
 
-        let injection_names = vec!["table; DROP TABLE sessions", "sessions' --", "sessions\"", " "];
+        let injection_names = vec![
+            "table; DROP TABLE sessions",
+            "sessions' --",
+            "sessions\"",
+            " ",
+        ];
 
         for name in injection_names {
             let result = table_exists(&db, name).await;
@@ -273,7 +288,12 @@ mod tests {
     async fn test_get_table_columns_invalid_name() {
         let db = setup_test_db().await;
 
-        let injection_names = vec!["sessions; DROP TABLE sessions", "sessions' --", "sessions\"", " "];
+        let injection_names = vec![
+            "sessions; DROP TABLE sessions",
+            "sessions' --",
+            "sessions\"",
+            " ",
+        ];
 
         for name in injection_names {
             let result = get_table_columns(&db, name).await;

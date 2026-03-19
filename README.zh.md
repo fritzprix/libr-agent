@@ -24,33 +24,41 @@ LibrAgent 是一个优先考虑本地运行（local-first）的代理运行环�
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-*在单个有状态的工作流中实现浏览器自动化和 shell 执行。*
+_在单个有状态的工作流中实现浏览器自动化和 shell 执行。_
 
 ---
 
 ## 核心功能
 
 ### 1. 持久工作区 (Persistent Workspace)
+
 代理在长期存在的环境中运行，而不是在每一轮对话中都启动全新的进程。
+
 - **实时 Web 视图**: 使用 Tauri webviews 实现实时浏览器自动化。会话和 Cookie 在各轮对话之间持久存在。
 - **统一终端**: 持久的、沙盒化的 shell（支持 Python/Node.js），与工作区共享状态。
 
 ### 2. 多代理编排
+
 LibrAgent 允许代理将任务委托给专门的子代理。
+
 - **助手 (Assistants)**: 管理具有独特系统提示和工具配置的代理配置文件。
 - **群智 (Swarm Intelligence)**: 父代理可以生成、发送消息并等待子代理的结果，以解决复杂任务。
 
 ### 3. 可扩展性
+
 该平台设计为通过社区标准进行扩展。
+
 - **扩展 (MCP)**: 完全支持模型上下文协议（Model Context Protocol）。立即连接到任何 MCP 服务器。
 - **一键预设**: 直接在 UI 中提供 GitHub、Brave Search 等精心挑选的目录。
 - **技能与剧本 (Skills & Playbooks)**: 可重用的行为片段和结构化的工作流模板。
 
 ### 4. 自主与调度
+
 - **YOLO 模式**: 可选的自主执行敏感工具，无需人工审批。
 - **计划任务**: 基于 Cron 的自动化，在重启后可自动恢复，并支持特定工作区。
 
 ### 5. 上下文与指标
+
 - **@提及 (@mentions)**: 直接在聊天中注入文件、技能或剧本。
 - **多模态**: 处理 OpenAI、Anthropic 和 Gemini 模型的图像和音频。
 - **可观察性**: 实时 TPS 指标和提示词缓存命中率（适用于 Anthropic/Gemini）。
@@ -62,6 +70,7 @@ LibrAgent 允许代理将任务委托给专门的子代理。
 从 [发布页面](https://github.com/fritzprix/libr-agent/releases/latest) 下载适用于 Windows、macOS 或 Linux 的最新二进制文件。
 
 **从源码构建:**
+
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent

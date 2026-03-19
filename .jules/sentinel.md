@@ -53,6 +53,7 @@
 **Prevention:** Always invoke `crate::utils::env::apply_isolated_env(&mut cmd)` after creating a `Command` with `Command::new` and before spawning it, to explicitly clear the environment (`env_clear()`) and re-apply only a whitelist of required system variables.
 
 ## 2024-05-01 - [SQL Injection via String Formatting]
+
 **Vulnerability:** SQL injection vulnerabilities were found in `src-tauri/src/db_schema_validator.rs` where user-provided table names were being interpolated directly into SQL query strings using `format!`.
 **Learning:** Even internal queries like schema validation or `PRAGMA` statements can be vulnerable to SQL injection if they incorporate unsanitized variables. `sea_orm::Statement::from_string` does not parameterize variables by default.
 **Prevention:** Always use parameterized queries (e.g., `Statement::from_sql_and_values` with `?` placeholders) for variable data in SQL queries. If a statement cannot be parameterized (like `PRAGMA table_info`), perform strict input validation (e.g., ensuring characters are only alphanumeric and underscores) before using the variable in `format!`.
