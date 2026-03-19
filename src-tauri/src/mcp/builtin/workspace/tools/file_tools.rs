@@ -78,21 +78,22 @@ pub fn create_write_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "overwrite".to_string(),
-        boolean_prop(Some(
-            "Allow overwriting existing files (default: false). When true, replaces entire content and returns a diff.",
-        )),
+        "mode".to_string(),
+        enum_prop(
+            vec!["create", "overwrite", "append"],
+            "create",
+            Some("Write mode: 'create' (fails if exists), 'overwrite' (replaces entire content), or 'append' (adds to end)."),
+        ),
     );
 
     MCPTool {
         name: "writeFile".to_string(),
         title: Some("Write File".to_string()),
-        description: "Create a new file or overwrite an existing one.
+        description: "Create, overwrite, or append content to a file.
 
-- overwrite=false (default): fails if file already exists
-- overwrite=true: replaces entire content, returns a diff
-
-Use replaceLines for targeted edits instead of full overwrites."
+- mode='create' (default): fails if file already exists
+- mode='overwrite': replaces entire content, returns a diff
+- mode='append': adds content to the end of the file"
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "content".to_string()]),
         output_schema: None,

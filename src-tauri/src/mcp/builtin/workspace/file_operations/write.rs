@@ -60,11 +60,11 @@ impl WorkspaceServer {
             }
         };
 
-        // 4. Overwrite parameter (default: false)
-        let overwrite = args
-            .get("overwrite")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        // 4. Determine write mode (defaults to 'create')
+        let mode = args
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("create");
 
         // Validate path security — blocks Windows reserved filenames on creation
         let safe_path = match self.validate_path_with_error_for_write(path_str, session_id.clone())
@@ -89,23 +89,24 @@ impl WorkspaceServer {
         let mut old_content = String::new();
 
         if file_exists {
-            if !overwrite {
-                // Return error if file exists and overwrite is false
+            if mode == "create" {
+                // Return informational result if file exists and mode is create
+                // Using DuplicateResource category ensures isError: false
                 return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
+                    ErrorCategory::DuplicateResource,
                     format!(
-                        "File '{}' already exists and overwrite is set to false",
+                        "File '{}' already exists and mode is set to 'create'",
                         path_str
                     ),
                     ToolGroup::Workspace,
                 )
                 .guidance(vec![
-                    "✅ To overwrite: Set \"overwrite\": true in your request".to_string(),
+                    "✅ To overwrite: Set \"mode\": \"overwrite\" in your request".to_string(),
+                    "✅ To append: Set \"mode\": \"append\" in your request".to_string(),
                     format!(
                         "   → first: readFile(\"{}\") into memory (if needed)",
                         path_str
                     ),
-                    "   → then: writeFile(path, content, overwrite=true)".to_string(),
                     "".to_string(),
                     "⚠️ ALTERNATIVE: Use replaceLines for targeted edits (safer)".to_string(),
                     format!(
@@ -114,8 +115,8 @@ impl WorkspaceServer {
                     ),
                 ])
                 .to_mcp_result());
-            } else {
-                // File exists and overwrite is true - read old content for diff
+            } else if mode == "overwrite" {
+                // File exists and mode is overwrite - read old content for diff
                 match tokio::fs::read_to_string(&safe_path).await {
                     Ok(c) => old_content = c,
                     Err(e) => {
@@ -141,7 +142,12 @@ impl WorkspaceServer {
         }
 
         let file_manager = self.get_file_manager(session_id.clone());
-        let result = file_manager.write_file_string(path_str, content).await;
+
+        let result = if mode == "append" {
+            file_manager.append_file_string(path_str, content).await
+        } else {
+            file_manager.write_file_string(path_str, content).await
+        };
 
         match result {
             Ok(()) => {
@@ -151,63 +157,76 @@ impl WorkspaceServer {
                 let lines = content.lines().count();
                 let size_str = format_file_size(content.len() as u64);
 
-                let message_header = if file_exists {
-                    "**✅ File Overwritten Successfully**"
-                } else {
-                    "**✅ New File Created Successfully**"
+                let message_header = match (file_exists, mode) {
+                    (true, "append") => "**✅ Content Appended Successfully**",
+                    (true, "overwrite") => "**✅ File Overwritten Successfully**",
+                    _ => "**✅ New File Created Successfully**",
                 };
 
-                let mut message = format!(
-                    "{}\n\n**File:** `{}`\n**Size:** {}\n**Lines:** {}\n\n",
-                    message_header, path_str, size_str, lines
-                );
+                let mut message = format!("{}\n\n**File:** `{}`\n", message_header, path_str);
 
-                if file_exists {
-                    // Show diff then hashlines of new content for immediate editing
-                    use super::utils::format_file_diff;
-                    let diff_output = format_file_diff(&old_content, content, path_str);
-                    message.push_str(&diff_output);
+                if mode == "append" {
                     message.push_str(&format!(
-                        "\nCurrent hashlines:\n```\n{}\n```\n",
-                        format_as_hashlines(content)
+                        "**Appended:** {} bytes, {} line(s)\n\n",
+                        size_str, lines
                     ));
+                    message.push_str(
+                        "Use `readFile` to see the full content including the appended part.",
+                    );
                 } else {
-                    // New file — show hashlines so agent can immediately use replaceLines
-                    let max_display_lines = 100;
-                    let max_display_bytes = 51200; // 50KB
-                    let content_lines: Vec<&str> = content.lines().collect();
-                    let is_truncated = content_lines.len() > max_display_lines
-                        || content.len() > max_display_bytes;
+                    message.push_str(&format!(
+                        "**Total Size:** {}\n**Total Lines:** {}\n\n",
+                        size_str, lines
+                    ));
 
-                    let display_hashlines = if is_truncated {
-                        let truncated: Vec<&str> = if content.len() > max_display_bytes {
-                            let truncated_bytes = &content[..max_display_bytes.min(content.len())];
-                            truncated_bytes.lines().take(max_display_lines).collect()
-                        } else {
-                            content_lines
-                                .iter()
-                                .take(max_display_lines)
-                                .copied()
-                                .collect()
-                        };
-                        let partial = truncated.join("\n");
-                        format!(
-                            "{}\n\n... (truncated: showing first {} of {} lines)",
-                            format_as_hashlines(&partial),
-                            truncated.len(),
-                            content_lines.len(),
-                        )
+                    if file_exists && mode == "overwrite" {
+                        // Show diff then hashlines of new content for immediate editing
+                        use super::utils::format_file_diff;
+                        let diff_output = format_file_diff(&old_content, content, path_str);
+                        message.push_str(&diff_output);
+                        message.push_str(&format!(
+                            "\nCurrent hashlines:\n```\n{}\n```\n",
+                            format_as_hashlines(content)
+                        ));
                     } else {
-                        format_as_hashlines(content)
-                    };
+                        // New file — show hashlines so agent can immediately use replaceLines
+                        let max_display_lines = 100;
+                        let max_display_bytes = 51200; // 50KB
+                        let content_lines: Vec<&str> = content.lines().collect();
+                        let is_truncated = content_lines.len() > max_display_lines
+                            || content.len() > max_display_bytes;
 
-                    message.push_str(&format!("```\n{}\n```\n", display_hashlines));
+                        let display_hashlines = if is_truncated {
+                            let truncated: Vec<&str> = if content.len() > max_display_bytes {
+                                let truncated_bytes =
+                                    &content[..max_display_bytes.min(content.len())];
+                                truncated_bytes.lines().take(max_display_lines).collect()
+                            } else {
+                                content_lines
+                                    .iter()
+                                    .take(max_display_lines)
+                                    .copied()
+                                    .collect()
+                            };
+                            let partial = truncated.join("\n");
+                            format!(
+                                "{}\n\n... (truncated: showing first {} of {} lines)",
+                                format_as_hashlines(&partial),
+                                truncated.len(),
+                                content_lines.len(),
+                            )
+                        } else {
+                            format_as_hashlines(content)
+                        };
+
+                        message.push_str(&format!("```\n{}\n```\n", display_hashlines));
+                    }
                 }
 
                 // Context-aware next steps
                 let mut next_steps = Vec::new();
 
-                if file_exists {
+                if mode == "overwrite" || mode == "append" {
                     next_steps.push("Verify changes with readFile if unsure".to_string());
                 } else {
                     next_steps.push("Use readFile to see full content (if truncated)".to_string());
@@ -235,9 +254,10 @@ impl WorkspaceServer {
 
                 Ok(hint.to_mcp_result_with_data(Some(json!({
                     "path": path_str,
+                    "mode": mode,
                     "bytes_written": content.len(),
                     "lines": lines,
-                    "overwritten": file_exists
+                    "file_exists_before": file_exists
                 }))))
             }
             Err(e) => {
