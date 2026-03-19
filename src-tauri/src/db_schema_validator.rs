@@ -140,18 +140,23 @@ async fn validate_table_columns(
 
 /// Checks if a table exists in the database
 async fn table_exists(db: &DatabaseConnection, table_name: &str) -> Result<bool, DbErr> {
-    // Validate table name to prevent SQL injection
-    if !table_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(DbErr::Custom(format!("Invalid table name format: {}", table_name)));
+    // Validate table name to prevent SQL injection (defense-in-depth)
+    if !table_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(DbErr::Custom(format!(
+            "Invalid table name format: {}",
+            table_name
+        )));
     }
 
-    let query = format!(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
-        table_name
-    );
-
     let result = db
-        .query_one(Statement::from_string(db.get_database_backend(), query))
+        .query_one(Statement::from_sql_and_values(
+            db.get_database_backend(),
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            vec![table_name.into()],
+        ))
         .await?;
 
     Ok(result.is_some())
@@ -245,10 +250,39 @@ mod tests {
     async fn test_validate_schema_success() {
         let db = setup_test_db().await;
         let result = validate_schema(&db).await;
-        if let Err(e) = &result {
-            println!("Validation failed with error: {:?}", e);
+        assert!(result.is_ok(), "Schema validation failed: {:?}", result.err());
+    }
+
+    #[tokio::test]
+    async fn test_table_exists_invalid_name() {
+        let db = setup_test_db().await;
+
+        let injection_names = vec!["table; DROP TABLE sessions", "sessions' --", "sessions\"", " "];
+
+        for name in injection_names {
+            let result = table_exists(&db, name).await;
+            assert!(
+                result.is_err(),
+                "table_exists should fail for invalid name: {}",
+                name
+            );
         }
-        assert!(result.is_ok(), "Schema validation should pass");
+    }
+
+    #[tokio::test]
+    async fn test_get_table_columns_invalid_name() {
+        let db = setup_test_db().await;
+
+        let injection_names = vec!["sessions; DROP TABLE sessions", "sessions' --", "sessions\"", " "];
+
+        for name in injection_names {
+            let result = get_table_columns(&db, name).await;
+            assert!(
+                result.is_err(),
+                "get_table_columns should fail for invalid name: {}",
+                name
+            );
+        }
     }
 
     #[tokio::test]
