@@ -2,7 +2,7 @@
 
 > **A lightweight, stateful platform for autonomous AI agents.**
 
-[한국어 문서 (Korean Documentation)](./README.ko.md)
+[한국어](./README.ko.md) | [简体中文](./README.zh.md) | [日本語](./README.ja.md) | [Français](./README.fr.md) | [Español](./README.es.md) | [Deutsch](./README.de.md) | [Português](./README.pt.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Tauri](https://img.shields.io/badge/Built%20with-Tauri-24C8DB?logo=tauri)](https://tauri.app)
@@ -24,33 +24,41 @@ The goal of this project is to make autonomous agents accessible. Many existing 
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-*Browser automation and shell execution in a single, stateful workflow.*
+_Browser automation and shell execution in a single, stateful workflow._
 
 ---
 
 ## Core Features
 
 ### 1. Persistent Workspace
+
 Agents operate within a long-lived environment rather than spawning fresh processes for every turn.
+
 - **Live Webview**: Real-time browser automation using Tauri webviews. Sessions and cookies persist across turns.
 - **Unified Terminal**: A persistent, sandboxed shell (Python/Node.js supported) that shares state with the workspace.
 
 ### 2. Multi-Agent Orchestration
+
 LibrAgent allows agents to delegate tasks to specialized sub-agents.
+
 - **Assistants**: Manage agent profiles with unique system prompts and tool configurations.
 - **Swarm Intelligence**: Parent agents can spawn, message, and await results from sub-agents to solve complex tasks.
 
 ### 3. Extensibility
+
 The platform is designed to be expanded via community standards.
+
 - **Extensions (MCP)**: Full support for the Model Context Protocol. Connect to any MCP server instantly.
 - **One-Click Presets**: Curated catalog for GitHub, Brave Search, etc., available directly in the UI.
 - **Skills & Playbooks**: Reusable behavior snippets and structured workflow templates.
 
 ### 4. Autonomy & Scheduling
+
 - **YOLO Mode**: Optional autonomous execution for sensitive tools without manual approval.
 - **Scheduled Tasks**: Cron-based automation with workspace-specific targeting and automatic recovery.
 
 ### 5. Context & Metrics
+
 - **@mentions**: Direct injection of files, skills, or playbooks into chat.
 - **Multimodal**: Handles images and audio for OpenAI, Anthropic, and Gemini models.
 - **Observability**: Real-time TPS metrics and prompt caching hits (for Anthropic/Gemini).
@@ -62,6 +70,7 @@ The platform is designed to be expanded via community standards.
 Download the latest binaries for Windows, macOS, or Linux from the [Release page](https://github.com/fritzprix/libr-agent/releases/latest).
 
 **Build from source:**
+
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent

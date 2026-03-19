@@ -163,8 +163,14 @@ function DraftChatInner() {
                   type="button"
                   onClick={() => setWorkspaceOverride(null)}
                   className="bg-background/80 hover:bg-background rounded-full p-1 shadow-sm border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  title="Remove workspace override"
-                  aria-label="Remove workspace override"
+                  title={t(
+                    'agent.draft.removeWorkspaceOverride',
+                    'Remove workspace override',
+                  )}
+                  aria-label={t(
+                    'agent.draft.removeWorkspaceOverride',
+                    'Remove workspace override',
+                  )}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -175,14 +181,20 @@ function DraftChatInner() {
               <div className="flex-1 text-left min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-bold text-primary uppercase tracking-tight">
-                    {t('agent.draft.workspaceOverrideActive')}
+                    {t(
+                      'agent.draft.workspaceOverrideActive',
+                      'Workspace Override Active',
+                    )}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate font-mono bg-muted/50 px-2 py-1 rounded">
                   {workspaceOverride}
                 </p>
                 <p className="text-[10px] text-muted-foreground/70 mt-2 leading-tight">
-                  {t('agent.draft.workspaceOverrideDescription')}
+                  {t(
+                    'agent.draft.workspaceOverrideDescription',
+                    'Injecting local context from this folder.',
+                  )}
                 </p>
               </div>
             </div>
@@ -196,7 +208,10 @@ function DraftChatInner() {
                 : 'opacity-0 h-0 overflow-hidden',
             )}
           >
-            {t('agent.workspace.dropFolderHint')}
+            {t(
+              'agent.workspace.dropFolderHint',
+              'Drop folder to set workspace context',
+            )}
           </div>
         )}
         {/* Capabilities Grid */}{' '}
@@ -210,12 +225,17 @@ function DraftChatInner() {
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-normal"
                 >
                   <Square size={12} className="opacity-70" />
-                  {t('agent.draft.basicTools')}
+                  {t('agent.draft.basicTools', 'Core Abilities')}
                 </Badge>
               </div>
             </TooltipTrigger>
             <TooltipContent className="max-w-[250px] text-center mb-1 bg-popover text-popover-foreground shadow-md border">
-              <p>{t('agent.draft.basicToolsDescription')}</p>
+              <p>
+                {t(
+                  'agent.draft.basicToolsDescription',
+                  'Standard capabilities available to all agents.',
+                )}
+              </p>
             </TooltipContent>
           </Tooltip>
 
@@ -272,11 +292,16 @@ function DraftChatInner() {
                   variant="outline"
                   className="text-xs text-muted-foreground opacity-50 border-dashed font-normal cursor-pointer hover:opacity-100 hover:bg-muted transition-all"
                 >
-                  {t('agent.draft.addTools')}
+                  {t('agent.draft.addTools', 'Customize Abilities')}
                 </Badge>
               </TooltipTrigger>
               <TooltipContent className="mb-1 bg-popover text-popover-foreground border shadow-md">
-                <p>{t('agent.draft.addMoreCapabilities')}</p>
+                <p>
+                  {t(
+                    'agent.draft.addMoreCapabilities',
+                    'Manage tools and MCP servers for this agent.',
+                  )}
+                </p>
               </TooltipContent>
             </Tooltip>
           </Link>
@@ -301,10 +326,13 @@ function DraftChatInner() {
           {/* Local Context Indicator */}
           <div
             className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground/60 font-semibold"
-            title="Local Context Injection Active"
+            title={t(
+              'agent.draft.localContextInjectionActive',
+              'Local Context Injection Active',
+            )}
           >
             <Bot size={10} />
-            {t('agent.draft.localContext')}
+            {t('agent.draft.localContext', 'Local Context')}
           </div>
         </div>
       </div>
@@ -325,7 +353,9 @@ function DraftChatInner() {
                   type="button"
                   onClick={() => handleFileRemove(index)}
                   className="shrink-0 text-muted-foreground hover:text-foreground ml-0.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  aria-label={`Remove ${file.name}`}
+                  aria-label={t('agent.draft.removeFile', 'Remove {{name}}', {
+                    name: file.name,
+                  })}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -390,8 +420,8 @@ function DraftChatInner() {
               onClick={() => fileInputRef.current?.click()}
               disabled={isSubmitting || isAttachmentLoading}
               className="mb-1 h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
-              title="Attach files"
-              aria-label="Attach files"
+              title={t('agent.draft.attachFiles', 'Attach files')}
+              aria-label={t('agent.draft.attachFiles', 'Attach files')}
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -407,12 +437,14 @@ function DraftChatInner() {
               }}
               placeholder={
                 dragState === 'valid'
-                  ? 'Drop files here...'
+                  ? t('agent.draft.dropFilesHint', 'Drop files here...')
                   : dragState === 'invalid'
-                    ? 'Unsupported file!'
+                    ? t('agent.draft.unsupportedFile', 'Unsupported file!')
                     : isAttachmentLoading
-                      ? 'Uploading...'
-                      : `Message ${assistant.name}...`
+                      ? t('agent.draft.uploading', 'Uploading...')
+                      : t('agent.draft.placeholder', 'Message {{name}}...', {
+                          name: assistant.name,
+                        })
               }
               className="flex-1 bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-11 py-3 px-2"
               onKeyDown={(e) => {
@@ -432,6 +464,8 @@ function DraftChatInner() {
                 isAttachmentLoading
               }
               className="mb-1"
+              aria-label={t('agent.draft.send', 'Send message')}
+              title={t('agent.draft.send', 'Send message')}
             >
               {isSubmitting || isAttachmentLoading ? (
                 <Loader2 className="animate-spin" />

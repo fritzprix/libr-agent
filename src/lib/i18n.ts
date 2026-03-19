@@ -6,6 +6,12 @@ import { getLogger } from '@/lib/logger';
 // Static resources bundled with the app
 import enCommon from '@/locales/en/common.json';
 import koCommon from '@/locales/ko/common.json';
+import zhCommon from '@/locales/zh/common.json';
+import jaCommon from '@/locales/ja/common.json';
+import frCommon from '@/locales/fr/common.json';
+import esCommon from '@/locales/es/common.json';
+import deCommon from '@/locales/de/common.json';
+import ptCommon from '@/locales/pt/common.json';
 
 // Initialize i18next only once
 // We avoid Suspense to keep integration simple; can enable later if we switch to async backends
@@ -18,9 +24,17 @@ if (!i18n.isInitialized) {
       resources: {
         en: { common: enCommon },
         ko: { common: koCommon },
+        zh: { common: zhCommon },
+        ja: { common: jaCommon },
+        fr: { common: frCommon },
+        es: { common: esCommon },
+        de: { common: deCommon },
+        pt: { common: ptCommon },
       },
       fallbackLng: 'en',
-      supportedLngs: ['en', 'ko'],
+      supportedLngs: ['en', 'ko', 'zh', 'ja', 'fr', 'es', 'de', 'pt'],
+      nonExplicitSupportedLngs: true,
+      load: 'languageOnly',
       ns: ['common'],
       defaultNS: 'common',
       interpolation: {

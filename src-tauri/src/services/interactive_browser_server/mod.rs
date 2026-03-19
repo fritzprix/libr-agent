@@ -432,6 +432,28 @@ try {{
         Ok("Session closed successfully".to_string())
     }
 
+    /// Closes all active browser sessions.
+    /// This is typically used during application shutdown for explicit cleanup.
+    pub async fn close_all_sessions(&self) -> Result<(), String> {
+        info!("Closing all browser sessions...");
+
+        let session_ids: Vec<String> = {
+            let sessions = self
+                .sessions
+                .read()
+                .map_err(|e| format!("Failed to acquire read lock for listing sessions: {e}"))?;
+            sessions.keys().cloned().collect()
+        };
+
+        for session_id in session_ids {
+            if let Err(e) = self.close_session(&session_id).await {
+                warn!("Failed to close session {session_id} during batch cleanup: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
     /// Navigates a browser session to a new URL and waits for the page to load.
     pub async fn navigate_to_url(&self, session_id: &str, url: &str) -> Result<String, String> {
         // 1. Get session info (read lock)

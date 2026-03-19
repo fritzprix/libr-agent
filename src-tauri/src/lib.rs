@@ -1,4 +1,7 @@
-use log::{error, warn};
+use log::{error, info, warn};
+use tauri::Manager;
+
+use crate::services::InteractiveBrowserServer;
 
 pub mod agent; // pub for integration tests (cancel_logic.rs)
 pub mod commands; // Make public for integration tests
@@ -282,16 +285,31 @@ pub fn run() {
                 reset_assistant_skills,
             ])
             .setup(|app| lifecycle::app_setup::setup_app(app))
-            .run(tauri::generate_context!())
+            .build(tauri::generate_context!())
+            .expect("error while building tauri application")
+            .run(|app_handle, event| {
+                if let tauri::RunEvent::Exit = event {
+                    let app_handle_clone = app_handle.clone();
+                    tauri::async_runtime::block_on(async move {
+                        if let Some(browser_server) =
+                            app_handle_clone.try_state::<InteractiveBrowserServer>()
+                        {
+                            info!("🚀 App exit detected - initiating explicit browser session cleanup...");
+                            if let Err(e) = browser_server.close_all_sessions().await {
+                                error!("❌ Failed to cleanup browser sessions on exit: {e}");
+                            } else {
+                                info!("✅ All browser sessions cleaned up successfully");
+                            }
+                        }
+                    });
+                }
+            })
     });
 
     // Handle the result of the application run, exiting with an error code on panic
     match result {
-        Ok(app_result) => {
-            if let Err(e) = app_result {
-                error!("❌ Tauri application error: {e}");
-                std::process::exit(1);
-            }
+        Ok(_) => {
+            info!("✅ Application terminated normally");
         }
         Err(panic_payload) => {
             error!("❌ Application panicked during startup");

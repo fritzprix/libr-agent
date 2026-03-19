@@ -233,8 +233,14 @@
     "applyChanges": "변경사항 적용",
     "language": {
       "label": "언어",
-      "english": "영어",
-      "korean": "한국어"
+      "en": "English",
+      "ko": "한국어",
+      "zh": "简体中文",
+      "ja": "日本語",
+      "fr": "Français",
+      "es": "Español",
+      "de": "Deutsch",
+      "pt": "Português"
     },
     "tabs": {
       "general": "일반",
@@ -247,8 +253,13 @@
     },
     "llmPreference": "기본 LLM",
     "messageWindowSize": "메시지 윈도우 크기",
+    "messageWindowSizeDescription": "대화 기록에 유지할 메시지 수",
+    "messageWindowSizePlaceholder": "예: 50",
     "maxInputContext": "최대 입력 문맥 (토큰)",
     "maxInputContextDescription": "오래된 대화를 요약하기 전까지 허용할 최대 토큰 수입니다. 값이 클수록 더 많은 내용을 원문으로 유지하지만 비용이 증가할 수 있습니다.",
+    "toolCallGroupVisibleCount": "도구 호출 표시 수",
+    "toolCallGroupVisibleCountDescription": "접힌 그룹 보기에서 보여줄 도구 호출 수",
+    "toolCallGroupVisibleCountPlaceholder": "예: 4",
     "general": {
       "skillsDirectory": "스킬 디렉토리",
       "skillsDirectorySelectTitle": "스킬 디렉토리 선택",
@@ -286,6 +297,7 @@
     },
     "chatInterface": {
       "diffContextLines": "Diff 컨텍스트 라인",
+      "diffContextLinesPlaceholder": "예: 3",
       "diffContextLinesDescription": "파일 편집 diff에 표시할 컨텍스트 라인 수 (1-10)."
     },
     "display": {
@@ -293,15 +305,42 @@
       "metricDisplayMode": "지표 표시 방식",
       "inline": "인라인 (메시지에 표시)",
       "tooltip": "툴팁 (호버 시 표시)",
+      "metricDisplayModeDescription": "채팅 메시지에 토큰 지표가 표시되는 방식을 선택하세요",
+      "prefillDisplayFormat": "프리필 성능 형식",
+      "time": "첫 토큰까지의 시간 (예: 245ms)",
+      "tokensPerSecond": "초당 토큰 수 (예: 520 tok/s)",
+      "prefillDisplayFormatDescription": "프리필 성능 표시 방식을 선택하세요",
       "showTokenSpeed": "토큰 속도 표시",
+      "showTokenSpeedDescription": "지표에 생성 속도(초당 토큰 수)를 표시합니다",
       "compactMetrics": "지표 간략 보기",
+      "compactMetricsDescription": "토큰 지표에 대해 간략한 표시 형식을 사용합니다",
       "toolCallsTitle": "도구 호출",
-      "toolDetailLevel": "도구 상세 수준"
+      "toolDetailLevel": "도구 상세 수준",
+      "toolDetailSimple": "단순 (도구 이름만)",
+      "toolDetailDeveloper": "개발자 (매개변수, 오류, 타이밍)",
+      "toolDetailLevelDescription": "단순 모드는 도구 이름과 상태 아이콘만 표시합니다. 개발자 모드는 전체 매개변수, 오류 상세 정보 및 실행 시간을 표시합니다."
     },
     "advanced": {
       "maxRetries": "최대 재시도 횟수",
+      "maxRetriesDescription": "실패한 AI 요청에 대한 최대 재시도 횟수입니다.",
       "retryDelay": "재시도 지연 (ms)",
+      "retryDelayDescription": "재시도 시도 사이의 밀리초 단위 지연 시간입니다.",
       "circuitBreaker": "도구 루프 임계값",
+      "circuitBreakerDescription": "회로 차단기를 트리거하기 전의 반복된 오류 또는 도구 호출 횟수입니다.",
+      "maxOutputTokens": "최대 출력 토큰 (기본값)",
+      "maxOutputTokensDescription": "어시스턴트가 지정하지 않은 경우 새 세션에 대한 기본 최대 출력 토큰 수입니다.",
+      "defaultSessionMaxDepth": "세션 분기 제한 (고급)",
+      "defaultSessionMaxDepthDescription": "기본적으로 허용되는 하위 세션 레벨 수를 제어합니다. 제한 없음을 위해 0으로 설정하세요. 대부분의 사용자는 그대로 두셔도 됩니다.",
+      "defaultSessionMaxFanout": "세션 하위 제한 (고급)",
+      "defaultSessionMaxFanoutDescription": "각 부모가 기본적으로 생성할 수 있는 직접 하위 세션 수를 제어합니다. 제한 없음을 위해 0으로 설정하세요. 대부분의 사용자는 그대로 두셔도 됩니다.",
+      "maxConcurrentActiveSessions": "최대 동시 활성 에이전트 세션",
+      "maxConcurrentActiveSessionsDescription": "LLM 루프를 동시에 실행하는 에이전트 세션의 최대 수입니다. 값이 높을수록 더 많은 API 할당량과 메모리를 사용합니다.",
+      "maxSuspendedSessions": "최대 일시 중지된 에이전트 세션",
+      "maxSuspendedSessionsDescription": "하위 에이전트 완료를 기다리며 일시 중지될 수 있는 에이전트 세션의 최대 수입니다. 활성 세션 수보다 크거나 같아야 합니다.",
+      "maxConcurrentActiveProcesses": "최대 동시 활성 셸 프로세스",
+      "maxConcurrentActiveProcessesDescription": "모든 에이전트 세션에서 동시에 실행되는 셸/코드 프로세스의 최대 수입니다.",
+      "maxSuspendedProcesses": "최대 일시 중지된 셸 프로세스",
+      "maxSuspendedProcessesDescription": "pollProcess 대기 중에 일시 중지될 수 있는 프로세스의 최대 수입니다. 활성 프로세스 수보다 크거나 같아야 합니다.",
       "shellIsolation": "셸 격리 수준",
       "shellIsolationModes": {
         "basic": "기본 - 전체 PATH 접근 (보안 낮음)",
@@ -314,6 +353,7 @@
       "title": "시스템 & 성능",
       "network": "네트워크",
       "httpServerPort": "HTTP 서버 포트",
+      "httpServerPortDescription": "내부 HTTP API 서버에서 사용하는 포트입니다.",
       "httpServerExpose": "HTTP 서버 외부 노출",
       "httpServerExposeMode": {
         "local": "로컬 전용 (127.0.0.1)",
@@ -322,8 +362,22 @@
       "httpServerExposeDescription": "기본적으로 로컬 전용을 사용하세요. 노출하면 네트워크의 다른 장치에서 액세스할 수 있습니다.",
       "httpServerExposeWarning": "경고: HTTP API가 네트워크(0.0.0.0)에 노출됩니다. 신뢰할 수 있는 네트워크에서만 사용하고 액세스를 적절히 보호하세요.",
       "fileWorkspace": "파일 & 워크스페이스",
+      "maxFileUploadSize": "최대 파일 업로드 크기 (MB)",
+      "maxFileUploadSizeDescription": "단일 파일 업로드의 최대 크기입니다. 큰 문서를 자주 작업하는 경우 이 값을 늘리세요.",
+      "workspaceCapacity": "워크스페이스 용량 (MB)",
+      "workspaceCapacityDescription": "현재 워크스페이스의 텍스트 콘텐츠에 대한 총 제한입니다.",
       "backgroundTasks": "백그라운드 작업",
+      "searchIndexFrequency": "검색 인덱스 빈도 (분)",
+      "searchIndexFrequencyDescription": "AI가 메모리 검색을 업데이트하는 빈도입니다. 업데이트가 빠를수록 검색 결과가 최신 상태로 유지되지만 배터리/CPU를 더 많이 사용합니다.",
+      "webActionTimeout": "웹 작업 제한 시간 (초)",
+      "webActionTimeoutDescription": "AI가 웹 페이지 로드 또는 클릭이 완료될 때까지 기다리는 시간입니다.",
+      "mcpServerStartupTimeout": "MCP 서버 시작 제한 시간 (초)",
+      "mcpServerStartupTimeoutDescription": "MCP 도구 서버가 초기화될 때까지 기다리는 시간입니다. 서버 시작에 실패하면 이 값을 늘리세요.",
+      "mcpToolTimeout": "MCP 도구 실행 제한 시간 (초)",
       "mcpToolTimeoutDisabled": "비활성화",
+      "mcpToolTimeoutDescription": "단일 도구 호출을 취소하기 전까지 기다리는 시간입니다. 비활성화하려면 0으로 설정하세요(awaitAgent와 같은 장시간 실행되는 에이전트 도구에 권장).",
+      "activeSessionRetention": "활성 세션 유지 시간 (시간)",
+      "activeSessionRetentionDescription": "세션 데이터를 빠른 메모리에 유지하는 시간입니다.",
       "networkRestartFailed": "앱 재시작에 실패했습니다. 수동으로 재시작해 주세요.",
       "networkRestartNotice": "HTTP 서버 네트워크 설정 변경사항은 앱 재시작 후 적용됩니다.",
       "placeholders": {
@@ -348,26 +402,29 @@
       "installUpdate": "업데이트 설치",
       "checkForUpdates": "업데이트 확인"
     },
+    "dangerZone": {
+      "title": "⚠️ 위험 구역"
+    },
     "factoryReset": {
       "title": "초기화",
-      "resetting": "초기화 중...",
-      "success": "초기화가 완료되었습니다. 변경사항을 완전히 적용하려면 재시작이 필요합니다.",
-      "error": "초기화에 실패했습니다. 로그를 확인해 주세요.",
       "description": "이 작업은 완전한 공장 초기화를 수행합니다. 모든 데이터를 삭제합니다.",
       "button": "모든 데이터 및 설정 초기화",
       "confirmTitle": "공장 초기화 확인",
       "confirmDescription": "세션, 어시스턴트, MCP 서버 및 플레이북을 포함한 모든 데이터를 영구적으로 삭제합니다. 확실합니까?",
-      "confirmButton": "모두 초기화"
+      "confirmButton": "모두 초기화",
+      "resetting": "초기화 중...",
+      "success": "초기화가 완료되었습니다. 변경사항을 완전히 적용하려면 재시작이 필요합니다.",
+      "error": "초기화에 실패했습니다. 로그를 확인해 주세요."
     },
     "dataReset": {
       "title": "데이터 & 초기화",
-      "deleting": "삭제 중...",
-      "success": "모든 세션이 삭제되었습니다. 재시작을 권장합니다.",
-      "error": "세션 삭제에 실패했습니다.",
       "description": "모든 로컬 세션, 메시지 및 작업 공간 파일 저장소를 영구적으로 삭제합니다.",
       "clearAll": "모든 세션 및 작업 공간 지우기",
       "confirmTitle": "모든 세션, 메시지 및 작업 공간 삭제",
-      "confirmDescription": "이 작업은 모든 로컬 세션, 메시지 및 작업 공간 파일 저장소를 영구적으로 삭제합니다. 이 작업은 취소할 수 없습니다. 계속하시겠습니까?"
+      "confirmDescription": "이 작업은 모든 로컬 세션, 메시지 및 작업 공간 파일 저장소를 영구적으로 삭제합니다. 이 작업은 취소할 수 없습니다. 계속하시겠습니까?",
+      "deleting": "삭제 중...",
+      "success": "모든 세션이 삭제되었습니다. 재시작을 권장합니다.",
+      "error": "세션 삭제에 실패했습니다."
     },
     "skills": {
       "modalTitle": "사용 가능한 스킬 ({{count}})",
@@ -394,9 +451,6 @@
       "revert": "전역으로 되돌리기",
       "resetTitle": "스킬 재정의를 초기화하시겠습니까?",
       "resetConfirm": "이 작업은 모든 어시스턴트 전용 스킬을 제거하고 전역 기본값으로 되돌립니다. 이 작업은 되돌릴 수 없습니다."
-    },
-    "dangerZone": {
-      "title": "⚠️ 위험 구역"
     }
   },
   "mcpServer": {
@@ -423,6 +477,10 @@
     "deleteServer": "{{name}} 삭제",
     "loadMore": "더 보기",
     "loadingMore": "로딩 중...",
+    "verifying": "검증 중...",
+    "verified": "검증됨",
+    "verifiedWithCount": "{{count}}개 도구 검증됨",
+    "verificationFailed": "연결 실패",
     "deleteDialog": {
       "title": "확장 기능 삭제",
       "description": "\"{{name}}\" 확장 기능을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
@@ -503,7 +561,8 @@
     },
     "card": {
       "unknownAssistant": "알 수 없음",
-      "steps": "{{count}} 단계",
+      "steps_one": "{{count}} 단계",
+      "steps_other": "{{count}} 단계",
       "start": "시작",
       "deleteTooltip": "플레이북 삭제",
       "created": "{{date}} 생성됨",
@@ -545,6 +604,16 @@
     }
   },
   "agent": {
+    "draft": {
+      "send": "메시지 보내기",
+      "attachFiles": "파일 첨부",
+      "removeWorkspaceOverride": "워크스페이스 재정의 제거",
+      "removeFile": "{{name}} 제거",
+      "dropFilesHint": "여기에 파일 드롭...",
+      "unsupportedFile": "지원되지 않는 파일입니다!",
+      "uploading": "업로드 중...",
+      "placeholder": "{{name}}에게 메시지 보내기..."
+    },
     "draft": {
       "failedToRegisterDroppedFiles": "드롭된 파일 등록에 실패했습니다",
       "dropFilesInChatInput": "파일을 첨부하려면 채팅 입력창에 놓아주세요.",
@@ -618,6 +687,8 @@
       "loadingTools": "도구 로딩 중...",
       "toolsError": "도구 오류",
       "toolsCount": "{{totalCount}}({{mcpCount}})개 사용 가능 • 기본 제공 {{builtinCount}}개",
+      "statusCompacting": "배경에서 대화 컨텍스트를 압축하는 중...",
+      "statusAwaitingCompact": "컨텍스트 압축이 완료되기를 기다리는 중...",
       "statusError": "오류 발생: {{error}}",
       "statusIdle": "입력 대기 중. 메시지를 입력하여 시작하세요.",
       "statusBusy": "요청 처리 중... 에이전트가 생각하고 도구를 사용하고 있습니다.",
@@ -653,6 +724,25 @@
       "cancelTooltip": "취소",
       "sendAriaLabel": "메시지 보내기",
       "sendTooltip": "보내기"
+    },
+    "toolGroup": {
+      "header_one": "도구 실행 ({{count}}회 호출)",
+      "header_other": "도구 실행 ({{count}}회 호출)",
+      "hiddenCalls_one": "{{count}}개의 이전 호출 숨겨짐",
+      "hiddenCalls_other": "{{count}}개의 이전 호출 숨겨짐",
+      "showLess": "간략히 보기",
+      "showAllWithCount_one": "전체 보기 ({{count}}회 호출)",
+      "showAllWithCount_other": "전체 보기 ({{count}}회 호출)"
+    },
+    "toolDetails": {
+      "parameters": "매개변수",
+      "errorDetails": "오류 상세 정보",
+      "result": "결과",
+      "executing": "도구 실행 중..."
+    },
+    "compactDivider": {
+      "label": "컨텍스트가 위에서 압축됨",
+      "ariaLabel": "이 지점에서 컨텍스트가 압축됨"
     },
     "modelPicker": {
       "provider": "제공자",

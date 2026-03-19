@@ -166,34 +166,43 @@ impl BuiltinMCPServer for AgentServer {
             }
         }
 
-        let mut context_prompt = "# System Capability Catalog\n\n".to_string();
+        let mut context_prompt = "# System Capability Reference\n\n".to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
+        let available_builtins_count = BUILTIN_SERVICE_REGISTRY
             .iter()
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .map(|e| e.canonical.to_string())
-            .collect();
+            .count();
 
-        context_prompt.push_str("### Available Builtin Capabilities\n");
+        context_prompt.push_str(
+            "Reference only. This section describes platform-level capabilities and registered infrastructure.\n\
+             It does **not** mean every capability listed here is enabled or callable in the current session.\n\n",
+        );
+        context_prompt.push_str("### Builtin Capability Families\n");
         context_prompt.push_str(&format!(
-            "- {}\n",
-            formatting::format_capability_list(&available_builtins)
+            "- {} builtin capability families are available on this installation.\n",
+            available_builtins_count
         ));
-        context_prompt
-            .push_str("> Grant these via `agent__update(builtinCapabilities=[...])`.\n\n");
+        context_prompt.push_str(
+            "- If you need to verify what this session can actually call right now, use `tool__list`.\n\
+             - If you need to grant or inspect capabilities for a specialist agent, use `agent__list` / `agent__update`.\n\n",
+        );
 
         let mcp_repo = crate::state::get_mcp_server_repository();
-        context_prompt.push_str("### Registered External MCP Servers\n");
+        context_prompt.push_str("### External MCP Infrastructure\n");
 
         if let Ok(external_servers) = mcp_repo.list().await {
             context_prompt.push_str(&format!(
-                "{}\n",
-                formatting::format_registered_external_servers(&external_servers)
+                "- {} external MCP server registrations exist in the system.\n",
+                external_servers.len()
             ));
         }
 
-        context_prompt.push_str("\nUse `agent__startSession(agentId=\"ID\", task=\"...\")` to delegate work to specialists.");
+        context_prompt.push_str(
+            "- Registered servers are platform inventory, not proof of current-session access.\n\
+             - Use `tool__list` when you need the exact callable tool set for the current session.\n\
+             - Use `agent__startSession(agentId=\"ID\", task=\"...\")` when you want to delegate work to a specialist agent.\n",
+        );
 
         if let Ok(mut cache) = self.cache.try_write() {
             *cache = Some(ContextCache {

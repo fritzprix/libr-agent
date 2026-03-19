@@ -15,6 +15,18 @@ import { LLMServiceProvider } from '../LLMServiceContext';
 import { SettingsProvider } from '../SettingsContext';
 import type { ReactNode } from 'react';
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
@@ -205,6 +217,91 @@ describe('AgentChatContext', () => {
       });
     });
 
+    it('should render pending message before backend send resolves', async () => {
+      const deferred = createDeferred<{ success: boolean }>();
+      (safeInvoke as ReturnType<typeof vi.fn>).mockReturnValue(deferred.promise);
+
+      const { result } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
+      });
+
+      const newMessage: Message = {
+        id: 'msg-pending',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'user',
+        content: [{ type: 'text', text: 'Pending message' }],
+        createdAt: new Date(),
+      };
+
+      let submitPromise: Promise<void> | undefined;
+
+      await act(async () => {
+        submitPromise = result.current.submit(newMessage);
+      });
+
+      await waitFor(() => {
+        expect(result.current.messages).toEqual([...mockMessages, newMessage]);
+      });
+
+      deferred.resolve({ success: true });
+      await act(async () => {
+        await submitPromise;
+      });
+    });
+
+    it('should dedupe pending and persisted messages with the same id', async () => {
+      const duplicatedMessage: Message = {
+        id: 'msg-duplicate',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'user',
+        content: [{ type: 'text', text: 'Duplicate message' }],
+        createdAt: new Date(),
+      };
+
+      const deferred = createDeferred<{ success: boolean }>();
+      (safeInvoke as ReturnType<typeof vi.fn>).mockReturnValue(deferred.promise);
+
+      const { result, rerender } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
+      });
+
+      let submitPromise: Promise<void> | undefined;
+
+      await act(async () => {
+        submitPromise = result.current.submit(duplicatedMessage);
+      });
+
+      await waitFor(() => {
+        expect(
+          result.current.messages.filter((message) => message.id === duplicatedMessage.id),
+        ).toHaveLength(1);
+      });
+
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        session: { id: 'test-session', name: 'Test Session' },
+        messages: [...mockMessages, duplicatedMessage],
+        isSessionLoading: false,
+        error: null,
+        llmError: null,
+        workflowStatus: 'idle',
+      });
+
+      rerender();
+
+      await waitFor(() => {
+        expect(
+          result.current.messages.filter((message) => message.id === duplicatedMessage.id),
+        ).toHaveLength(1);
+      });
+
+      deferred.resolve({ success: true });
+      await act(async () => {
+        await submitPromise;
+      });
+    });
+
     it('should handle submit errors', async () => {
       (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Submit failed'),
@@ -228,6 +325,7 @@ describe('AgentChatContext', () => {
       });
 
       expect(mockSetError).toHaveBeenCalledWith('Submit failed');
+      expect(result.current.messages).toEqual(mockMessages);
     });
 
     it('should not submit without active session', async () => {

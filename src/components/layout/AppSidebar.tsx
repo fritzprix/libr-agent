@@ -171,6 +171,18 @@ export default function AppSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
+                  isActive={location.pathname.startsWith('/history')}
+                  tooltip={t('sidebar.history')}
+                >
+                  <Link to="/history">
+                    <History size={16} />
+                    <span>{t('sidebar.history')}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
                   isActive={location.pathname === '/scheduled-tasks'}
                   tooltip={t('sidebar.scheduledTasks')}
                 >
@@ -212,43 +224,6 @@ export default function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === '/history'}
-                    tooltip={t('sidebar.history')}
-                  >
-                    <Link
-                      to="/history"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <History size={14} />
-                      <span className="text-xs">
-                        {t('sidebar.seeAllSessions')}
-                      </span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-        {/* History icon visible when collapsed, so history is still reachable */}
-        {isCollapsed && (
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === '/history'}
-                    tooltip={t('sidebar.history')}
-                  >
-                    <Link to="/history">
-                      <History size={16} />
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
