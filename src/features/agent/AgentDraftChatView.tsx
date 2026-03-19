@@ -432,6 +432,8 @@ function DraftChatInner() {
                 isAttachmentLoading
               }
               className="mb-1"
+              aria-label={t('agent.draft.send', 'Send message')}
+              title={t('agent.draft.send', 'Send message')}
             >
               {isSubmitting || isAttachmentLoading ? (
                 <Loader2 className="animate-spin" />
