@@ -12,10 +12,10 @@ of agent automation with persistent tool state and built-in MCP support.
 2. Clone your fork: `git clone https://github.com/fritzprix/libr-agent`
 3. Change to the project directory: `cd libr-agent`
 4. Install Rust:
-   - macOS/Linux: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
-   - Windows: Download the installer from [rustup.rs](https://rustup.rs/)
+   - Follow instructions at [rustup.rs](https://rustup.rs/) (recommended for all platforms)
+   - Alternatively, on macOS/Linux: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 5. Install system dependencies (Linux only):
-   - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y libglib2.0-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`
+   - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`
 6. Install dependencies and build: `pnpm install && pnpm build`
 7. Run development mode: `pnpm tauri dev`
 
