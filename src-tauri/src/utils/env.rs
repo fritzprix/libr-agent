@@ -12,13 +12,14 @@ fn get_macos_login_shell_path() -> &'static str {
     static SHELL_PATH: OnceLock<String> = OnceLock::new();
     SHELL_PATH.get_or_init(|| {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        match StdCommand::new(&shell).args(["-l", "-c", "echo $PATH"]).output() {
-            Ok(out) if out.status.success() => {
-                String::from_utf8(out.stdout)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string()
-            }
+        match StdCommand::new(&shell)
+            .args(["-l", "-c", "echo $PATH"])
+            .output()
+        {
+            Ok(out) if out.status.success() => String::from_utf8(out.stdout)
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             _ => String::new(),
         }
     })

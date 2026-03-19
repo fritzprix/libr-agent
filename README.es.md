@@ -24,33 +24,41 @@ El objetivo de este proyecto es hacer accesibles los agentes autónomos. Muchas 
 
 ![LibrAgent Demo](assets/demo_1280_4x_optimized.gif)
 
-*Automatización del navegador y ejecución de shell en un único flujo de trabajo con estado.*
+_Automatización del navegador y ejecución de shell en un único flujo de trabajo con estado._
 
 ---
 
 ## Funciones Principales
 
 ### 1. Espacio de Trabajo Persistente
+
 Los agentes operan dentro de un entorno de larga duración en lugar de lanzar procesos nuevos en cada turno.
+
 - **Webview en Vivo**: Automatización del navegador en tiempo real mediante Tauri webviews. Las sesiones y las cookies persisten entre turnos.
 - **Terminal Unificada**: Una shell persistente y aislada (soporta Python/Node.js) que comparte el estado con el espacio de trabajo.
 
 ### 2. Orquestación Multi-Agente
+
 LibrAgent permite que los agentes deleguen tareas a sub-agentes especializados.
+
 - **Asistentes**: Gestiona perfiles de agentes con prompts de sistema y configuraciones de herramientas únicos.
 - **Inteligencia de Enjambre (Swarm)**: Los agentes padre pueden generar, enviar mensajes y esperar resultados de los sub-agentes para resolver tareas complejas.
 
 ### 3. Extensibilidad
+
 La plataforma está diseñada para ser expandida a través de estándares comunitarios.
+
 - **Extensiones (MCP)**: Soporte completo para el protocolo MCP. Conéctate a cualquier servidor MCP al instante.
 - **Presets de un Clic**: Catálogo seleccionado para GitHub, Brave Search, etc., disponible directamente en la interfaz.
 - **Skills & Playbooks**: Snippets de comportamiento reutilizables y plantillas de flujo de trabajo estructuradas.
 
 ### 4. Autonomía y Programación
+
 - **Modo YOLO**: Ejecución autónoma opcional para herramientas sensibles sin aprobación manual.
 - **Tareas Programadas**: Automatización basada en Cron con recuperación automática tras reinicios y soporte para espacios de trabajo específicos.
 
 ### 5. Contexto y Métricas
+
 - **@menciones**: Inyección directa de archivos, habilidades o playbooks en el chat.
 - **Multimodal**: Maneja imágenes y audio para modelos de OpenAI, Anthropic y Gemini.
 - **Observabilidad**: Métricas de TPS en tiempo real y aciertos de caché de prompts (para Anthropic/Gemini).
@@ -62,6 +70,7 @@ La plataforma está diseñada para ser expandida a través de estándares comuni
 Descarga los últimos binarios para Windows, macOS o Linux desde la [página de Lanzamientos](https://github.com/fritzprix/libr-agent/releases/latest).
 
 **Construir desde la fuente:**
+
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent

@@ -124,7 +124,12 @@ export function useChatSubmit({
           logger.info(
             'Refetching session files after message with attachments',
           );
-          await refetchSessionFiles();
+          refetchSessionFiles().catch((error) => {
+            logger.warn(
+              'Failed to refetch session files after message submission',
+              error,
+            );
+          });
         }
       } catch (err) {
         // Restore input on error

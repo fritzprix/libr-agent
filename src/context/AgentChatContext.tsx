@@ -120,7 +120,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     llmError,
   } = useAgentSessionState();
 
-  const { setError, addMessage, resumeSession } = useAgentSessionActions();
+  const { setError, resumeSession } = useAgentSessionActions();
 
   const { streamingMessages, cancelCompletionRequest } = useLLMService();
 
@@ -131,6 +131,28 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
+
+  const enqueuePendingMessage = useCallback((message: Message) => {
+    setPendingMessages((prev) => {
+      if (prev.some((pending) => pending.id === message.id)) {
+        return prev;
+      }
+
+      logger.info('Adding message to pending queue', {
+        messageId: message.id,
+        currentPendingCount: prev.length,
+        newPendingCount: prev.length + 1,
+      });
+
+      return [...prev, message];
+    });
+  }, []);
+
+  const removePendingMessage = useCallback((messageId: string) => {
+    setPendingMessages((prev) =>
+      prev.filter((message) => message.id !== messageId),
+    );
+  }, []);
 
   /**
    * Internal submit handler for merged messages
@@ -144,6 +166,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         sessionId: session.id,
         messageId: message.id,
       });
+
+      enqueuePendingMessage(message);
 
       try {
         const now = Date.now();
@@ -171,16 +195,15 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         };
 
         await safeInvoke<AgentResponse>('agent_send_message', { request });
-
-        addMessage(message);
       } catch (err) {
+        removePendingMessage(message.id);
         logger.error('Failed to submit merged message', err);
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(errorMessage);
         throw err;
       }
     },
-    [session?.id, addMessage, setError],
+    [session?.id, enqueuePendingMessage, removePendingMessage, setError],
   );
 
   // Fetch service contexts from backend
@@ -282,19 +305,24 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   const displayMessages = useMemo(() => {
     if (!session?.id) return [];
 
-    let displayed = [...sessionMessages];
+    const displayed = [...sessionMessages];
+    const displayedIds = new Set(displayed.map((message) => message.id));
 
     // Append pending messages (optimistic UI)
     if (pendingMessages.length > 0) {
-      displayed = [...displayed, ...pendingMessages];
+      pendingMessages.forEach((message) => {
+        if (displayedIds.has(message.id)) {
+          return;
+        }
+
+        displayed.push(message);
+        displayedIds.add(message.id);
+      });
     }
 
     // If there's a streaming message that's not yet in persisted messages
     if (isValidMessage(currentStreamingMessage)) {
-      const existsInMessages = displayed.some(
-        (m) => m.id === currentStreamingMessage.id,
-      );
-      if (!existsInMessages) {
+      if (!displayedIds.has(currentStreamingMessage.id)) {
         // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
       }
@@ -328,6 +356,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
         // Inject immediately into backend cache (no workflow trigger)
         // This makes the message available for the next LLM recursion
         // The workflow will pick this up after tool execution completes
+        enqueuePendingMessage(message);
+
         try {
           const now = Date.now();
           const messageForRust: RustMessage = {
@@ -355,18 +385,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
           };
 
           await safeInvoke<AgentResponse>('agent_inject_messages', { request });
-
-          // Keep in pending queue for UI display purposes
-          // Will be removed when backend processes and emits MessageAdded event
-          setPendingMessages((prev) => {
-            logger.info('Adding message to pending queue', {
-              messageId: message.id,
-              currentPendingCount: prev.length,
-              newPendingCount: prev.length + 1,
-            });
-            return [...prev, message];
-          });
         } catch (err) {
+          removePendingMessage(message.id);
           logger.error('Failed to inject message to backend', err);
           const errorMessage = err instanceof Error ? err.message : String(err);
           setError(errorMessage);
@@ -390,6 +410,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
       isSessionLoading,
       submitMergedMessage,
       setError,
+      enqueuePendingMessage,
+      removePendingMessage,
     ],
   );
 

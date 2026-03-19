@@ -43,28 +43,6 @@ impl ToolServer {
 
 pub const NAME: &str = "tool";
 
-fn format_capability_list(values: &[String]) -> String {
-    if values.is_empty() {
-        "None".to_string()
-    } else {
-        values.join(", ")
-    }
-}
-
-fn format_registered_external_servers(
-    server_models: &[crate::entity::mcp_server::Model],
-) -> String {
-    if server_models.is_empty() {
-        "None".to_string()
-    } else {
-        server_models
-            .iter()
-            .map(|server| format!("{} (ID: {})", server.name, server.id))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
 #[async_trait]
 impl BuiltinMCPServer for ToolServer {
     fn name(&self) -> &str {
@@ -114,7 +92,7 @@ impl BuiltinMCPServer for ToolServer {
         }
 
         let mut context_prompt =
-            "## Tool Management\n\nServer management tool for current session\nStatus: Ready\n\n### System Capability Catalog\n"
+            "## Tool Management\n\nServer management tool for current session\nStatus: Ready\n\n### System Capability Reference\n"
                 .to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
@@ -123,18 +101,25 @@ impl BuiltinMCPServer for ToolServer {
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
             .map(|e| e.canonical.to_string())
             .collect();
+        context_prompt.push_str(
+            "Reference only. The items below describe platform-level inventory and may not be enabled in this session.\n",
+        );
         context_prompt.push_str(&format!(
-            "Available Builtins: {}\n",
-            format_capability_list(&available_builtins)
+            "- Builtin capability families installed: {}\n",
+            available_builtins.len()
         ));
 
         let mcp_repo = crate::state::get_mcp_server_repository();
         if let Ok(external_servers) = mcp_repo.list().await {
             context_prompt.push_str(&format!(
-                "Available External MCPs: {}\n",
-                format_registered_external_servers(&external_servers)
+                "- External MCP server registrations: {}\n",
+                external_servers.len()
             ));
         }
+        context_prompt.push_str(
+            "- Use `tool__list` to inspect the exact tools callable in the current session.\n\
+             - Use `tool__verify` if you need to confirm a registered external server is healthy.\n",
+        );
 
         let structured_state = json!({
             "mode": "session-isolated",
