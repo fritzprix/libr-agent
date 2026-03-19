@@ -169,11 +169,10 @@ impl BuiltinMCPServer for AgentServer {
         let mut context_prompt = "# System Capability Reference\n\n".to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
+        let available_builtins_count = BUILTIN_SERVICE_REGISTRY
             .iter()
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .map(|e| e.canonical.to_string())
-            .collect();
+            .count();
 
         context_prompt.push_str(
             "Reference only. This section describes platform-level capabilities and registered infrastructure.\n\
@@ -182,7 +181,7 @@ impl BuiltinMCPServer for AgentServer {
         context_prompt.push_str("### Builtin Capability Families\n");
         context_prompt.push_str(&format!(
             "- {} builtin capability families are available on this installation.\n",
-            available_builtins.len()
+            available_builtins_count
         ));
         context_prompt.push_str(
             "- If you need to verify what this session can actually call right now, use `tool__list`.\n\

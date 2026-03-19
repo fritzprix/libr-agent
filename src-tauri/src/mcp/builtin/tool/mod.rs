@@ -96,17 +96,16 @@ impl BuiltinMCPServer for ToolServer {
                 .to_string();
 
         use crate::mcp::builtin::service_id::BUILTIN_SERVICE_REGISTRY;
-        let available_builtins: Vec<String> = BUILTIN_SERVICE_REGISTRY
+        let available_builtins_count = BUILTIN_SERVICE_REGISTRY
             .iter()
             .filter(|e| !e.canonical.is_empty() && e.canonical != "agent" && e.canonical != "tool")
-            .map(|e| e.canonical.to_string())
-            .collect();
+            .count();
         context_prompt.push_str(
             "Reference only. The items below describe platform-level inventory and may not be enabled in this session.\n",
         );
         context_prompt.push_str(&format!(
             "- Builtin capability families installed: {}\n",
-            available_builtins.len()
+            available_builtins_count
         ));
 
         let mcp_repo = crate::state::get_mcp_server_repository();

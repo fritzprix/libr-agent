@@ -365,6 +365,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
                   disabled={pendingCancel}
                   aria-label={t('agent.input.cancelAriaLabel')}
+                  title={t('agent.input.cancelAriaLabel')}
                 >
                   {pendingCancel ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -388,6 +389,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
                   size="icon"
                   className="mb-1 shrink-0"
                   aria-label={t('agent.input.sendAriaLabel')}
+                  title={t('agent.input.sendAriaLabel')}
                 >
                   <Send className="h-4 w-4" />
                 </Button>

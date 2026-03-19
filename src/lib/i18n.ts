@@ -33,6 +33,8 @@ if (!i18n.isInitialized) {
       },
       fallbackLng: 'en',
       supportedLngs: ['en', 'ko', 'zh', 'ja', 'fr', 'es', 'de', 'pt'],
+      nonExplicitSupportedLngs: true,
+      load: 'languageOnly',
       ns: ['common'],
       defaultNS: 'common',
       interpolation: {
