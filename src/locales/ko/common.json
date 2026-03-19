@@ -605,6 +605,16 @@
   },
   "agent": {
     "draft": {
+      "send": "메시지 보내기",
+      "attachFiles": "파일 첨부",
+      "removeWorkspaceOverride": "워크스페이스 재정의 제거",
+      "removeFile": "{{name}} 제거",
+      "dropFilesHint": "여기에 파일 드롭...",
+      "unsupportedFile": "지원되지 않는 파일입니다!",
+      "uploading": "업로드 중...",
+      "placeholder": "{{name}}에게 메시지 보내기..."
+    },
+    "draft": {
       "failedToRegisterDroppedFiles": "드롭된 파일 등록에 실패했습니다",
       "dropFilesInChatInput": "파일을 첨부하려면 채팅 입력창에 놓아주세요.",
       "failedToProcessFile": "처리 실패: {{file}}",

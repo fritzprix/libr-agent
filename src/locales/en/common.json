@@ -605,6 +605,16 @@
   },
   "agent": {
     "draft": {
+      "send": "Send message",
+      "attachFiles": "Attach files",
+      "removeWorkspaceOverride": "Remove workspace override",
+      "removeFile": "Remove {{name}}",
+      "dropFilesHint": "Drop files here...",
+      "unsupportedFile": "Unsupported file!",
+      "uploading": "Uploading...",
+      "placeholder": "Message {{name}}..."
+    },
+    "draft": {
       "failedToRegisterDroppedFiles": "Failed to register dropped files",
       "dropFilesInChatInput": "Drop files in the chat input to attach them.",
       "failedToProcessFile": "Failed to process: {{file}}",
