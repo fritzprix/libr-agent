@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.5] - 2026-03-19
+
+### 🚀 Features
+
+- **Multilingual Documentation**: Added comprehensive documentation in Korean, German, Spanish, French, Japanese, Portuguese, and Chinese to support a global contributor base.
+- **Workspace `writeFile` Append Mode**: Introduced a new `mode` parameter to the `writeFile` tool, allowing agents to append content to existing files without overwriting them.
+- **i18n Regional Support**: Enhanced language detection to correctly handle regional variants (e.g., `zh-CN`, `ko-KR`) by resolving them to their base language tags.
+
+### 🐛 Fixes
+
+- **[CRITICAL] SQL Injection Protection**: Replaced dynamic SQL construction with parameterized queries across the search and validation layers to prevent SQL injection vulnerabilities.
+- **Browser Process Cleanup**: Implemented explicit termination of all interactive browser webview processes upon application exit, ensuring no "zombie" processes remain alive after the main window is closed.
+- **Agent Prompt Latency**: Optimized the construction of agent service contexts and reduced message pre-processing overhead, resulting in lower chat interaction latency.
+- **macOS Build Compatibility**: Fixed platform-specific import errors on macOS by correctly gating `OnceLock` and related symbols behind target OS flags.
+
+### 🔧 Internal
+
+- **Memory Optimization**: Reduced unnecessary heap allocations in the Rust backend by replacing `.collect::<Vec<_>>().len()` patterns with O(1) `.count()` calls on iterators.
+- **Accessibility Enhancements**: Added `aria-label` and `title` attributes to chat input controls and improved focus-state visibility for assistive technologies.
+- **Community Health**: Added standardized Issue and Pull Request templates and refined the contributor setup guides to improve the developer experience.
+
 ## [0.6.4] - 2026-03-18
 
 ### 🐛 Fixes
