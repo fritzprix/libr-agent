@@ -140,6 +140,11 @@ async fn validate_table_columns(
 
 /// Checks if a table exists in the database
 async fn table_exists(db: &DatabaseConnection, table_name: &str) -> Result<bool, DbErr> {
+    // Validate table name to prevent SQL injection
+    if !table_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(DbErr::Custom(format!("Invalid table name format: {}", table_name)));
+    }
+
     let query = format!(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='{}'",
         table_name
@@ -157,6 +162,11 @@ async fn get_table_columns(
     db: &DatabaseConnection,
     table_name: &str,
 ) -> Result<Vec<String>, DbErr> {
+    // Validate table name to prevent SQL injection since PRAGMA cannot be parameterized
+    if !table_name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(DbErr::Custom(format!("Invalid table name format: {}", table_name)));
+    }
+
     let query = format!("PRAGMA table_info({})", table_name);
 
     let rows = db
@@ -188,7 +198,7 @@ mod tests {
         // Create test tables
         db.execute(Statement::from_string(
             db.get_database_backend(),
-            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT)".to_string(),
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, name TEXT, is_bookmarked INTEGER, yolo_mode INTEGER)".to_string(),
         ))
         .await
         .expect("Failed to create sessions table");
@@ -235,6 +245,9 @@ mod tests {
     async fn test_validate_schema_success() {
         let db = setup_test_db().await;
         let result = validate_schema(&db).await;
+        if let Err(e) = &result {
+            println!("Validation failed with error: {:?}", e);
+        }
         assert!(result.is_ok(), "Schema validation should pass");
     }
 
