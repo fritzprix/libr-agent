@@ -3454,6 +3454,7 @@ dependencies = [
  "log",
  "sea-orm-migration",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
