@@ -60,6 +60,17 @@ pub async fn column_exists(
     table_name: &str,
     column_name: &str,
 ) -> Result<bool, DbErr> {
+    // Validate table name to prevent SQL injection since PRAGMA cannot be parameterized
+    if !table_name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(DbErr::Custom(format!(
+            "Invalid table name format: {}",
+            table_name
+        )));
+    }
+
     let rows = manager
         .get_connection()
         .query_all(Statement::from_string(
