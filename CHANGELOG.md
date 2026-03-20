@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.6] - 2026-03-21
+
+### 🚀 Features
+
+- **Enhanced Session UX**: Implemented SP23 session UX improvements and attention notifications for better user feedback during active workflows.
+- **Accessibility Improvements**: Added `aria-label` to `ToolCallCompactItem` to improve screen reader support for tool execution summaries.
+
+### 🐛 Fixes
+
+- **[CRITICAL] SQL Injection Prevention**: Hardened `column_exists` validation by strictly validating `table_name` to prevent potential SQL injection vulnerabilities.
+- **Database Validation**: Added unit tests and improved robustness for column existence checks in the database layer.
+
+### 🔧 Internal
+
+- **Agent Status Bar Optimization**: Refactored `AgentChatStatusBar` to use "Adjusting State During Render" pattern instead of `useEffect`, reducing unnecessary re-renders and improving UI stability.
+- **Documentation Updates**: Added a comprehensive Navigation Guide for UI Routes to improve developer onboarding and codebase navigation.
+
 ## [0.6.5] - 2026-03-19
 
 ### 🚀 Features
