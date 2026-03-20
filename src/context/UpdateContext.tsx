@@ -193,6 +193,13 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
 
   // Auto-check once on mount, after a short delay.
   useEffect(() => {
+    // Disable auto-check in development to avoid unnecessary error logs
+    // when the update endpoint is not yet available or reachable.
+    if (import.meta.env.DEV) {
+      logger.debug('Skipping auto update check in development mode.');
+      return;
+    }
+
     if (autoChecked.current) return;
     autoChecked.current = true;
 
@@ -201,7 +208,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
     }, AUTO_CHECK_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [checkForUpdate]);
 
   const value = useMemo<UpdateContextValue>(
     () => ({

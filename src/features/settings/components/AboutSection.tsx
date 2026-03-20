@@ -19,6 +19,7 @@ export function AboutSection() {
     status,
     availableVersion,
     downloadProgress,
+    error,
     checkForUpdate,
     installUpdate,
   } = useUpdateContext();
@@ -58,7 +59,10 @@ export function AboutSection() {
               </span>
             )}
             {status === 'error' && (
-              <span className="flex items-center gap-1 text-xs text-destructive">
+              <span
+                className="flex items-center gap-1 text-xs text-destructive"
+                title={error || undefined}
+              >
                 <AlertCircle size={12} />
                 {t('settings.about.checkFailed', 'Check failed')}
               </span>
