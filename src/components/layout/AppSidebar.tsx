@@ -137,11 +137,11 @@ export default function AppSidebar() {
 
   return (
     <Sidebar className="backdrop-blur-sm border-r shadow-xl" collapsible="icon">
-      <SidebarHeader className="border-b shrink-0">
+      <SidebarHeader className="h-16 border-b shrink-0 p-0 flex flex-row items-center">
         <div
           className={cn(
-            'flex flex-row items-center justify-center gap-2 transition-all duration-300 ease-in-out',
-            isCollapsed ? 'p-2' : 'p-4',
+            'flex flex-row items-center justify-center gap-2 transition-all duration-300 ease-in-out w-full',
+            isCollapsed ? 'px-2' : 'px-4',
           )}
         >
           <BrainCircuit
