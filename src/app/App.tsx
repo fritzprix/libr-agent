@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import AppSidebar from '../components/layout/AppSidebar';
 import { ThemeToggle } from '../components/common/ThemeToggle';
 import { AppHeader } from '../components/layout/AppHeader';
+import { SessionNotificationsBell } from '../components/layout/SessionNotificationsBell';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { AssistantContextProvider } from '../context/AssistantContext';
 import { MCPServerProvider } from '../context/MCPServerContext';
@@ -63,6 +64,7 @@ function App() {
                               {/* Main Content Area (children of AppSidebar) */}
                               <div className="flex flex-1 flex-col min-w-0">
                                 <AppHeader>
+                                  <SessionNotificationsBell />
                                   <ThemeToggle />
                                 </AppHeader>
                                 <div className="flex-1 w-full min-h-0 overflow-y-auto">

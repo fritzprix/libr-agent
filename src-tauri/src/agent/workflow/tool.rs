@@ -3,7 +3,7 @@ use crate::agent::workflow::cancel::{
     discard_pending_events, should_consume_cancel_at_message_boundary,
 };
 use crate::mcp::MCPServiceProxyManager;
-use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::session_repository::{SessionAttentionReason, SessionRepository};
 use crate::repositories::SessionStatus;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -96,6 +96,7 @@ pub async fn continue_workflow_after_tool(
 
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
+                    reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
                 };
                 let _ = crate::agent::events::emit_agent_event(app_handle, event);
                 return Ok(());
@@ -121,8 +122,17 @@ pub async fn continue_workflow_after_tool(
                     SessionStatus::Idle,
                 )
                 .await;
+                let attention_at = chrono::Utc::now().timestamp_millis();
+                let _ = session_repo
+                    .update_attention(
+                        &session_id,
+                        attention_at,
+                        SessionAttentionReason::RecurringStop,
+                    )
+                    .await;
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
+                    reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
                 let _ = crate::agent::events::emit_agent_event(app_handle, event);
             } else {

@@ -9,6 +9,9 @@ import { safeInvoke } from '@/lib/backend/core';
 import * as messagesBackend from '@/lib/backend/messages';
 import type { Message } from '@/models/chat';
 
+const mockMarkSessionViewed = vi.fn();
+const mockClearPendingApproval = vi.fn();
+
 // Mock Tauri APIs
 vi.mock('@tauri-apps/api/event', () => ({
     listen: vi.fn(),
@@ -33,6 +36,13 @@ vi.mock('@/lib/backend/messages', () => ({
     getMessagesPageForSession: vi.fn(),
 }));
 
+vi.mock('../AgentSessionListContext', () => ({
+    useAgentSessionListActions: () => ({
+        markSessionViewed: mockMarkSessionViewed,
+        clearPendingApproval: mockClearPendingApproval,
+    }),
+}));
+
 // Mock ModelProvider
 vi.mock('../ModelProvider', () => ({
     useModelOptions: () => ({
@@ -53,6 +63,7 @@ describe('AgentSessionContext (Local)', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mockMarkSessionViewed.mockResolvedValue(undefined);
         (listen as ReturnType<typeof vi.fn>).mockResolvedValue(mockUnlisten);
         // Mock getMessagesPageForSession to return empty list by default
         (messagesBackend.getMessagesPageForSession as ReturnType<typeof vi.fn>).mockResolvedValue({

@@ -35,9 +35,10 @@ use commands::agent_commands::{
     agent_get_compact_context, agent_get_service_contexts, agent_get_session, agent_get_tools,
     agent_handle_compact_error, agent_handle_compact_response, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_inject_messages, agent_pause_workflow, agent_respond_tool_approval, agent_resume_session,
-    agent_resume_workflow, agent_save_compact_context, agent_send_message, agent_set_yolo_mode,
-    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
+    agent_inject_messages, agent_mark_session_viewed, agent_pause_workflow,
+    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow,
+    agent_save_compact_context, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
+    agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
@@ -238,6 +239,7 @@ pub fn run() {
                 agent_update_session_config,
                 agent_create_session_with_initial_message,
                 agent_toggle_session_bookmark,
+                agent_mark_session_viewed,
                 agent_set_yolo_mode,
                 agent_respond_tool_approval,
                 agent_get_compact_context,

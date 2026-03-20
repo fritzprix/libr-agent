@@ -14,6 +14,15 @@ pub enum InitializationStatus {
     Error,
 }
 
+/// Reason why a workflow completed.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkflowCompletionReason {
+    Natural,
+    RecurringStop,
+    Cancelled,
+}
+
 /// Events emitted from Rust Agent runtime to TypeScript Frontend
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -24,7 +33,10 @@ pub enum AgentEvent {
 
     /// Workflow completed successfully
     #[serde(rename_all = "camelCase")]
-    WorkflowCompleted { session_id: String },
+    WorkflowCompleted {
+        session_id: String,
+        reason: WorkflowCompletionReason,
+    },
 
     /// Workflow encountered an error
     #[serde(rename_all = "camelCase")]

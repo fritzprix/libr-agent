@@ -3,6 +3,7 @@ use crate::agent::types::{ToolCall, ToolCallFunction};
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
 use crate::repositories::message_repository::MessageRepository as MessageRepositoryTrait;
+use crate::repositories::session_repository::SessionAttentionReason;
 use crate::repositories::{SessionRepository, SessionStatus};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -310,8 +311,19 @@ pub async fn handle_llm_response(
                 )
                 .await?;
 
+                let attention_at = chrono::Utc::now().timestamp_millis();
+                session_repo
+                    .update_attention(
+                        &session_id,
+                        attention_at,
+                        SessionAttentionReason::RecurringStop,
+                    )
+                    .await
+                    .map_err(|e| format!("Failed to persist session attention: {}", e))?;
+
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
+                    reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
                 crate::agent::events::emit_agent_event(app_handle, event)
                     .map_err(|e| format!("Failed to emit event: {}", e))?;
@@ -409,6 +421,7 @@ pub async fn handle_llm_response(
 
         let event = crate::agent::events::AgentEvent::WorkflowCompleted {
             session_id: session_id.clone(),
+            reason: crate::agent::events::WorkflowCompletionReason::Natural,
         };
         crate::agent::events::emit_agent_event(app_handle, event)
             .map_err(|e| format!("Failed to emit event: {}", e))?;

@@ -20,7 +20,9 @@ import type {
   AgentSessionMetadata,
   AgentResponse,
   SendUserMessageRequest,
+  WorkflowCompletionReason,
 } from '@/models/agent-ipc';
+import { useAgentSessionListActions } from './AgentSessionListContext';
 
 const logger = getLogger('AgentSessionContext');
 
@@ -51,6 +53,7 @@ export type AgentEventPayload =
   | {
       type: 'workflowCompleted';
       sessionId: string;
+      reason: WorkflowCompletionReason;
     }
   | {
       type: 'workflowError';
@@ -180,6 +183,8 @@ export function AgentSessionProvider({
   children,
   sessionId,
 }: AgentSessionProviderProps) {
+  const { markSessionViewed, clearPendingApproval } =
+    useAgentSessionListActions();
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
@@ -369,6 +374,15 @@ export function AgentSessionProvider({
                 return [...prev, newMessage];
               });
 
+              if (!newMessage.isStreaming) {
+                void markSessionViewed(
+                  sessionId,
+                  new Date(rustMessage.createdAt),
+                ).catch((err) => {
+                  logger.error('Failed to mark active session viewed', err);
+                });
+              }
+
               // Recurring Request Logic for Think-Only Messages
               // If the assistant sends a message with ONLY thinking (no content, no tool calls),
               // we treat it as an internal thought and automatically trigger the next turn.
@@ -507,6 +521,16 @@ export function AgentSessionProvider({
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
+          lastViewedAt: response.lastViewedAt
+            ? new Date(response.lastViewedAt)
+            : undefined,
+          lastMessageAt: response.lastMessageAt
+            ? new Date(response.lastMessageAt)
+            : undefined,
+          lastAttentionAt: response.lastAttentionAt
+            ? new Date(response.lastAttentionAt)
+            : undefined,
+          lastAttentionReason: response.lastAttentionReason,
           yoloMode: response.yoloMode,
         };
 
@@ -526,6 +550,12 @@ export function AgentSessionProvider({
 
         // 4. Load messages
         await loadMessages(sessionId);
+        await markSessionViewed(sessionId).catch((err) => {
+          logger.error(
+            'Failed to mark session viewed during initialization',
+            err,
+          );
+        });
 
         // If we get here without error, we are mostly done.
         // The event listener handles the "complete" step or we can just set loading false
@@ -547,7 +577,7 @@ export function AgentSessionProvider({
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, loadMessages]);
+  }, [sessionId, loadMessages, markSessionViewed]);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => {
@@ -659,12 +689,13 @@ export function AgentSessionProvider({
         setPendingApprovals((prev) =>
           prev.filter((p) => p.toolCallId !== toolCallId),
         );
+        clearPendingApproval(session.id, toolCallId);
       } catch (err) {
         logger.error('Failed to respond to tool approval', err);
         throw err;
       }
     },
-    [session],
+    [clearPendingApproval, session],
   );
 
   const toggleYoloMode = useCallback(async () => {

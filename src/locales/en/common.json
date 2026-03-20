@@ -124,6 +124,15 @@
   "theme": {
     "toggle": "Toggle theme"
   },
+  "notifications": {
+    "open": "Open notifications",
+    "title": "Notifications",
+    "empty": "No attention-needed sessions or pending approvals.",
+    "recurringStop": "Recurring stop",
+    "pendingApprovals_one": "{{count}} approval",
+    "pendingApprovals_other": "{{count}} approvals",
+    "viewSession": "Open session {{name}}"
+  },
   "sidebar": {
     "mobileTitle": "Sidebar",
     "mobileDescription": "Displays the mobile sidebar.",
@@ -164,10 +173,15 @@
     },
     "tabs": {
       "all": "All",
+      "bookmarked": "Bookmarked",
       "busy": "Busy",
       "idle": "Idle",
       "paused": "Paused",
       "error": "Error"
+    },
+    "statusFilter": {
+      "label": "Status",
+      "all": "All statuses"
     },
     "lineageHint": {
       "child": "↳ Child of {{parentName}}",
@@ -187,10 +201,15 @@
       "child": "Child",
       "parent": "Parent",
       "root": "Root",
+      "descendants": "{{count}} descendants",
       "parentBadge": "Parent: {{id}}",
       "lineageBadge": "Lineage: {{id}}",
       "lineageFilterAria": "Filter by lineage {{id}}",
       "statusAriaLabel": "Session status: {{status}}",
+      "descendantBusy": "Busy: {{count}}",
+      "descendantIdle": "Idle: {{count}}",
+      "descendantPaused": "Paused: {{count}}",
+      "descendantError": "Error: {{count}}",
       "model": "Model:",
       "createdAt": "Created {{time}}",
       "updatedAt": "Updated {{time}}",
@@ -206,6 +225,8 @@
       "viewAria": "View session {{name}}",
       "continueAria": "Continue session {{name}}",
       "resumeAria": "Resume session {{name}}",
+      "expandChildrenAria": "Expand child sessions for {{name}}",
+      "collapseChildrenAria": "Collapse child sessions for {{name}}",
       "groupAria": "Session actions",
       "deleteTooltip": "Delete session",
       "deleteAria": "Delete session {{name}}",

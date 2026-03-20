@@ -14,12 +14,16 @@ import {
   XCircle,
   Bookmark,
   BookmarkCheck,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getLogger } from '@/lib/logger';
 import { formatRelativeTime } from '@/lib/date-utils';
 import type { AgentSession } from '@/models/agent';
+import type { SessionStatusCounts } from '@/lib/session-utils';
+import { cn } from '@/lib/utils';
 
 const logger = getLogger('SessionCard');
 
@@ -33,10 +37,18 @@ interface SessionCardProps {
   onLineageSelect?: (lineageId: string) => void;
   /** Number of descendant subagent sessions that will also be deleted (SP7). */
   descendantCount?: number;
+  /** Descendant status summary for tree-focused UI. */
+  descendantStatusCounts?: SessionStatusCounts;
   /** Delete only this session, promoting children to top-level (SP7). */
   onDeleteOnly?: (sessionId: string) => void;
   /** Toggle bookmark on this session (SP12). */
   onToggleBookmark?: (sessionId: string) => void;
+  /** Whether this row has nested children that can be expanded. */
+  hasExpandableChildren?: boolean;
+  /** Whether nested children are currently visible. */
+  isExpanded?: boolean;
+  /** Toggle child visibility. */
+  onToggleExpand?: (sessionId: string) => void;
 }
 
 /**
@@ -54,8 +66,12 @@ export function SessionCard({
   selectedLineageId = null,
   onLineageSelect,
   descendantCount = 0,
+  descendantStatusCounts,
   onDeleteOnly,
   onToggleBookmark,
+  hasExpandableChildren = false,
+  isExpanded = false,
+  onToggleExpand,
 }: SessionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -71,6 +87,9 @@ export function SessionCard({
             variant: 'outline' as const,
             className:
               'bg-warning/10 text-warning-foreground border-warning/20',
+            cardClassName:
+              'border-warning/30 bg-warning/5 shadow-sm shadow-warning/10 hover:bg-warning/10',
+            accentClassName: 'bg-warning/70',
           };
         case 'idle':
           return {
@@ -78,6 +97,9 @@ export function SessionCard({
             badge: t('sessionHistory.status.idle', 'Idle'),
             variant: 'secondary' as const,
             className: '',
+            cardClassName:
+              'border-border/80 bg-card shadow-sm shadow-black/5 hover:bg-muted/40',
+            accentClassName: 'bg-muted-foreground/30',
           };
         case 'paused':
           return {
@@ -85,6 +107,9 @@ export function SessionCard({
             badge: t('sessionHistory.status.paused', 'Paused'),
             variant: 'secondary' as const,
             className: 'opacity-75',
+            cardClassName:
+              'border-muted-foreground/20 bg-muted/35 shadow-sm shadow-black/5 hover:bg-muted/50',
+            accentClassName: 'bg-muted-foreground/45',
           };
         case 'error':
           return {
@@ -93,6 +118,9 @@ export function SessionCard({
             variant: 'destructive' as const,
             className:
               'bg-destructive/10 text-destructive border-destructive/20',
+            cardClassName:
+              'border-destructive/30 bg-destructive/5 shadow-sm shadow-destructive/10 hover:bg-destructive/10',
+            accentClassName: 'bg-destructive/75',
           };
         default:
           return {
@@ -100,6 +128,9 @@ export function SessionCard({
             badge: t('sessionHistory.status.unknown', 'Unknown'),
             variant: 'outline' as const,
             className: 'text-muted-foreground',
+            cardClassName:
+              'border-border/80 bg-card shadow-sm shadow-black/5 hover:bg-muted/40',
+            accentClassName: 'bg-muted-foreground/30',
           };
       }
     },
@@ -166,15 +197,55 @@ export function SessionCard({
 
   return (
     <article
-      className="border rounded-xl p-4 hover:bg-muted/50 transition-colors"
+      className={cn(
+        'relative overflow-hidden rounded-xl border p-4 transition-colors transition-shadow',
+        statusConfig.cardClassName,
+      )}
       style={{ marginLeft: `${nestingLevel * 16}px` }}
       aria-label={t('sessionHistory.card.ariaLabel', 'Session: {{name}}', {
         name: sessionNameFallback,
       })}
     >
+      <div
+        className={cn(
+          'absolute inset-y-0 left-0 w-1 rounded-l-xl',
+          statusConfig.accentClassName,
+        )}
+        aria-hidden="true"
+      />
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
+            {hasExpandableChildren ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 shrink-0"
+                onClick={() => onToggleExpand?.(session.id)}
+                aria-label={
+                  isExpanded
+                    ? t(
+                        'sessionHistory.actions.collapseChildrenAria',
+                        'Collapse child sessions for {{name}}',
+                        { name: sessionNameFallback },
+                      )
+                    : t(
+                        'sessionHistory.actions.expandChildrenAria',
+                        'Expand child sessions for {{name}}',
+                        { name: sessionNameFallback },
+                      )
+                }
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                )}
+              </Button>
+            ) : (
+              <span className="w-7 shrink-0" aria-hidden="true" />
+            )}
             <h3 className="font-semibold truncate">{sessionNameFallback}</h3>
             <Badge
               variant={statusConfig.variant}
@@ -213,6 +284,13 @@ export function SessionCard({
           <div className="flex flex-wrap items-center gap-1">
             <Badge variant="secondary">{relationBadge}</Badge>
             {depthLabel && <Badge variant="outline">{depthLabel}</Badge>}
+            {descendantCount > 0 && (
+              <Badge variant="outline">
+                {t('sessionHistory.card.descendants', '{{count}} descendants', {
+                  count: descendantCount,
+                })}
+              </Badge>
+            )}
             {shortParentId && (
               <Badge variant="outline">
                 {t('sessionHistory.card.parentBadge', 'Parent: {{id}}', {
@@ -237,6 +315,42 @@ export function SessionCard({
                   id: shortLineageId,
                 })}
               </Button>
+            )}
+          </div>
+        )}
+        {descendantStatusCounts && descendantCount > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            {descendantStatusCounts.busy > 0 && (
+              <Badge variant="outline">
+                {t('sessionHistory.card.descendantBusy', 'Busy: {{count}}', {
+                  count: descendantStatusCounts.busy,
+                })}
+              </Badge>
+            )}
+            {descendantStatusCounts.idle > 0 && (
+              <Badge variant="outline">
+                {t('sessionHistory.card.descendantIdle', 'Idle: {{count}}', {
+                  count: descendantStatusCounts.idle,
+                })}
+              </Badge>
+            )}
+            {descendantStatusCounts.paused > 0 && (
+              <Badge variant="outline">
+                {t(
+                  'sessionHistory.card.descendantPaused',
+                  'Paused: {{count}}',
+                  {
+                    count: descendantStatusCounts.paused,
+                  },
+                )}
+              </Badge>
+            )}
+            {descendantStatusCounts.error > 0 && (
+              <Badge variant="outline">
+                {t('sessionHistory.card.descendantError', 'Error: {{count}}', {
+                  count: descendantStatusCounts.error,
+                })}
+              </Badge>
             )}
           </div>
         )}

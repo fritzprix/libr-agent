@@ -27,6 +27,8 @@ import {
 } from '../ui/sidebar';
 import { useAgentSessionListState } from '@/context/AgentSessionListContext';
 import { useUpdateContext } from '@/context/UpdateContext';
+import { buildChildrenMap } from '@/lib/session-utils';
+import { cn } from '@/lib/utils';
 
 /** Maps session status to a semantically meaningful dot */
 function StatusDot({ status }: { status: string }) {
@@ -66,7 +68,7 @@ export default function AppSidebar() {
 
   const { sessions } = useAgentSessionListState();
 
-  /** Show up to 5 sessions: busy first, then by most recent */
+  /** Show up to 5 recent sessions with lightweight hierarchy cues. */
   const recentSessions = useMemo(() => {
     const statusPriority: Record<string, number> = {
       busy: 1,
@@ -74,17 +76,63 @@ export default function AppSidebar() {
       paused: 3,
       error: 4,
     };
-    return [...sessions]
-      .sort((a, b) => {
-        const statusDiff =
-          (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9);
-        if (statusDiff !== 0) return statusDiff;
-        return (
-          (b.updatedAt ?? b.createdAt).getTime() -
-          (a.updatedAt ?? a.createdAt).getTime()
-        );
-      })
-      .slice(0, 5);
+    const sortByPriority = (
+      a: (typeof sessions)[number],
+      b: (typeof sessions)[number],
+    ) => {
+      const statusDiff =
+        (statusPriority[a.status] ?? 9) - (statusPriority[b.status] ?? 9);
+      if (statusDiff !== 0) return statusDiff;
+      return (
+        (b.updatedAt ?? b.createdAt).getTime() -
+        (a.updatedAt ?? a.createdAt).getTime()
+      );
+    };
+
+    const sortedSessions = [...sessions].sort(sortByPriority);
+    const sessionById = new Map(
+      sortedSessions.map((session) => [session.id, session]),
+    );
+    const childrenByParent = buildChildrenMap(sortedSessions);
+    const rows: Array<{
+      session: (typeof sessions)[number];
+      nestingLevel: number;
+    }> = [];
+    const visited = new Set<string>();
+
+    const pushSession = (
+      session: (typeof sessions)[number],
+      nestingLevel: number,
+    ) => {
+      if (visited.has(session.id) || rows.length >= 5) {
+        return;
+      }
+
+      visited.add(session.id);
+      rows.push({ session, nestingLevel });
+
+      const children = (childrenByParent.get(session.id) || []).sort(
+        sortByPriority,
+      );
+      children.forEach((child) => {
+        pushSession(child, Math.min(nestingLevel + 1, 2));
+      });
+    };
+
+    sortedSessions
+      .filter(
+        (session) =>
+          !session.parentSessionId || !sessionById.has(session.parentSessionId),
+      )
+      .forEach((root) => {
+        pushSession(root, 0);
+      });
+
+    sortedSessions.forEach((session) => {
+      pushSession(session, session.parentSessionId ? 1 : 0);
+    });
+
+    return rows;
   }, [sessions]);
 
   return (
@@ -204,7 +252,7 @@ export default function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {recentSessions.map((session) => (
+                {recentSessions.map(({ session, nestingLevel }) => (
                   <SidebarMenuItem key={session.id}>
                     <SidebarMenuButton
                       asChild
@@ -214,8 +262,20 @@ export default function AppSidebar() {
                         `${t('sidebar.session')} ${session.id.slice(0, 8)}`
                       }
                     >
-                      <Link to={`/agent/${session.id}`} className="gap-2">
+                      <Link
+                        to={`/agent/${session.id}`}
+                        className={cn(
+                          'gap-2',
+                          nestingLevel > 0 && 'text-muted-foreground',
+                        )}
+                        style={{ paddingLeft: `${nestingLevel * 12}px` }}
+                      >
                         <StatusDot status={session.status} />
+                        {nestingLevel > 0 && (
+                          <span className="text-[10px]" aria-hidden="true">
+                            ↳
+                          </span>
+                        )}
                         <span className="truncate text-xs">
                           {session.name ||
                             `${t('sidebar.session')} ${session.id.slice(0, 8)}`}
