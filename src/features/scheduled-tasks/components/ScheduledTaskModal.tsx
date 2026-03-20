@@ -120,7 +120,7 @@ function ScheduledTaskForm({
   ): assistantId is string =>
     Boolean(
       assistantId &&
-        assistants.some((assistant) => assistant.id === assistantId),
+      assistants.some((assistant) => assistant.id === assistantId),
     );
   const effectiveAssistantId = hasAssistant(userSelectedAssistantId)
     ? userSelectedAssistantId
@@ -249,9 +249,9 @@ function ScheduledTaskForm({
 
   const isValid = Boolean(
     name.trim() &&
-      cronExpression.trim() &&
-      effectiveAssistantId &&
-      message.trim(),
+    cronExpression.trim() &&
+    effectiveAssistantId &&
+    message.trim(),
   );
 
   return (

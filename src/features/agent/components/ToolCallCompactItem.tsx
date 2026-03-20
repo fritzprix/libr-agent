@@ -166,6 +166,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
         className="w-full text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
         aria-expanded={isExpanded}
         aria-controls={detailsId}
+        aria-label={`Toggle ${toolName} details`}
         onClick={() => setIsExpanded((prev) => !prev)}
       >
         <div className="flex items-center gap-2">
