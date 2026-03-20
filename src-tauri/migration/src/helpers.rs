@@ -112,12 +112,18 @@ mod tests {
         // Invalid name (SQL injection attempt)
         let result = column_exists(&manager, "table; DROP TABLE users", "col").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid table name format"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid table name format"));
 
         // Empty name
         let result = column_exists(&manager, "", "col").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid table name format"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid table name format"));
 
         // Debug formatting check
         let result = column_exists(&manager, "invalid space", "col").await;
