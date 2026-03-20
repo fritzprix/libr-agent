@@ -163,8 +163,8 @@ export default function AppSidebar() {
                   isActive={location.pathname.startsWith('/agent')}
                   tooltip={t('sidebar.chat')}
                 >
-                  <Link to="/agent">
-                    <Bot size={16} />
+                  <Link to="/agent" className="flex w-full items-center gap-2">
+                    <Bot size={16} className="shrink-0" />
                     <span>{t('sidebar.chat')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -186,8 +186,11 @@ export default function AppSidebar() {
                   isActive={location.pathname === '/assistants'}
                   tooltip={t('sidebar.assistants')}
                 >
-                  <Link to="/assistants">
-                    <Users size={16} />
+                  <Link
+                    to="/assistants"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <Users size={16} className="shrink-0" />
                     <span>{t('sidebar.assistants')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -198,8 +201,11 @@ export default function AppSidebar() {
                   isActive={location.pathname === '/playbooks'}
                   tooltip={t('sidebar.playbooks')}
                 >
-                  <Link to="/playbooks">
-                    <BookOpen size={16} />
+                  <Link
+                    to="/playbooks"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <BookOpen size={16} className="shrink-0" />
                     <span>{t('sidebar.playbooks')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -210,8 +216,11 @@ export default function AppSidebar() {
                   isActive={location.pathname === '/mcp-servers'}
                   tooltip={t('sidebar.extensions')}
                 >
-                  <Link to="/mcp-servers">
-                    <Blocks size={16} />
+                  <Link
+                    to="/mcp-servers"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <Blocks size={16} className="shrink-0" />
                     <span>{t('sidebar.extensions')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -222,8 +231,8 @@ export default function AppSidebar() {
                   isActive={location.pathname.startsWith('/history')}
                   tooltip={t('sidebar.history')}
                 >
-                  <Link to="/history">
-                    <History size={16} />
+                  <Link to="/history" className="flex w-full items-center gap-2">
+                    <History size={16} className="shrink-0" />
                     <span>{t('sidebar.history')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -234,8 +243,11 @@ export default function AppSidebar() {
                   isActive={location.pathname === '/scheduled-tasks'}
                   tooltip={t('sidebar.scheduledTasks')}
                 >
-                  <Link to="/scheduled-tasks">
-                    <Clock size={16} />
+                  <Link
+                    to="/scheduled-tasks"
+                    className="flex w-full items-center gap-2"
+                  >
+                    <Clock size={16} className="shrink-0" />
                     <span>{t('sidebar.scheduledTasks')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -265,14 +277,17 @@ export default function AppSidebar() {
                       <Link
                         to={`/agent/${session.id}`}
                         className={cn(
-                          'gap-2',
+                          'flex w-full items-center gap-2',
                           nestingLevel > 0 && 'text-muted-foreground',
                         )}
                         style={{ paddingLeft: `${nestingLevel * 12}px` }}
                       >
                         <StatusDot status={session.status} />
                         {nestingLevel > 0 && (
-                          <span className="text-[10px]" aria-hidden="true">
+                          <span
+                            className="text-[10px] shrink-0"
+                            aria-hidden="true"
+                          >
                             ↳
                           </span>
                         )}
@@ -299,10 +314,10 @@ export default function AppSidebar() {
               className={`transition-all duration-200`}
               isActive={location.pathname === '/settings'}
             >
-              <Link to="/settings" className="relative">
-                <Settings size={16} />
+              <Link to="/settings" className="flex w-full items-center gap-2">
+                <Settings size={16} className="shrink-0" />
                 {hasUpdate && (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-destructive" />
+                  <span className="absolute left-4 top-2 w-2 h-2 rounded-full bg-destructive" />
                 )}
                 {!isCollapsed && <span>{t('sidebar.settings')}</span>}
               </Link>
