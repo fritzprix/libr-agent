@@ -137,15 +137,24 @@ export default function AppSidebar() {
 
   return (
     <Sidebar className="backdrop-blur-sm border-r shadow-xl" collapsible="icon">
-      <SidebarHeader className="border-b">
-        <div className="flex flex-row items-center justify-center gap-2 p-4">
-          <BrainCircuit size={32} className="flex-shrink-0" />
+      <SidebarHeader className="border-b shrink-0">
+        <div
+          className={cn(
+            'flex flex-row items-center justify-center gap-2 transition-all duration-300 ease-in-out',
+            isCollapsed ? 'p-2' : 'p-4',
+          )}
+        >
+          <BrainCircuit
+            size={isCollapsed ? 24 : 32}
+            className="flex-shrink-0 text-primary"
+          />
           <span
-            className={`font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out ${
+            className={cn(
+              'font-medium text-2xl whitespace-nowrap transition-all duration-300 ease-in-out',
               isCollapsed
                 ? 'opacity-0 w-0 overflow-hidden'
-                : 'opacity-100 w-auto'
-            }`}
+                : 'opacity-100 w-auto',
+            )}
           >
             LibrAgent
           </span>
@@ -164,7 +173,7 @@ export default function AppSidebar() {
                   tooltip={t('sidebar.chat')}
                 >
                   <Link to="/agent" className="flex w-full items-center gap-2">
-                    <Bot size={16} className="shrink-0" />
+                    <Bot className="shrink-0" />
                     <span>{t('sidebar.chat')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -190,7 +199,7 @@ export default function AppSidebar() {
                     to="/assistants"
                     className="flex w-full items-center gap-2"
                   >
-                    <Users size={16} className="shrink-0" />
+                    <Users className="shrink-0" />
                     <span>{t('sidebar.assistants')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -205,7 +214,7 @@ export default function AppSidebar() {
                     to="/playbooks"
                     className="flex w-full items-center gap-2"
                   >
-                    <BookOpen size={16} className="shrink-0" />
+                    <BookOpen className="shrink-0" />
                     <span>{t('sidebar.playbooks')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -220,7 +229,7 @@ export default function AppSidebar() {
                     to="/mcp-servers"
                     className="flex w-full items-center gap-2"
                   >
-                    <Blocks size={16} className="shrink-0" />
+                    <Blocks className="shrink-0" />
                     <span>{t('sidebar.extensions')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -232,7 +241,7 @@ export default function AppSidebar() {
                   tooltip={t('sidebar.history')}
                 >
                   <Link to="/history" className="flex w-full items-center gap-2">
-                    <History size={16} className="shrink-0" />
+                    <History className="shrink-0" />
                     <span>{t('sidebar.history')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -247,7 +256,7 @@ export default function AppSidebar() {
                     to="/scheduled-tasks"
                     className="flex w-full items-center gap-2"
                   >
-                    <Clock size={16} className="shrink-0" />
+                    <Clock className="shrink-0" />
                     <span>{t('sidebar.scheduledTasks')}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -315,7 +324,7 @@ export default function AppSidebar() {
               isActive={location.pathname === '/settings'}
             >
               <Link to="/settings" className="flex w-full items-center gap-2">
-                <Settings size={16} className="shrink-0" />
+                <Settings className="shrink-0" />
                 {hasUpdate && (
                   <span className="absolute left-4 top-2 w-2 h-2 rounded-full bg-destructive" />
                 )}
