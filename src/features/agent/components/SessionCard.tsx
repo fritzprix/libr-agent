@@ -198,7 +198,7 @@ export function SessionCard({
   return (
     <article
       className={cn(
-        'relative overflow-hidden rounded-xl border p-4 transition-colors transition-shadow',
+        'relative overflow-hidden rounded-xl border p-4 transition',
         statusConfig.cardClassName,
       )}
       style={{ marginLeft: `${nestingLevel * 16}px` }}

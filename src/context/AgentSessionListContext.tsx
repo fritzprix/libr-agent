@@ -539,14 +539,10 @@ export function AgentSessionListProvider({
     }
 
     const viewedAt = new Date();
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === activeSessionId
-          ? { ...session, lastViewedAt: viewedAt }
-          : session,
-      ),
-    );
-  }, [activeSessionId]);
+    void markSessionViewed(activeSessionId, viewedAt).catch((err) => {
+      logger.error('Failed to persist viewed state for active session', err);
+    });
+  }, [activeSessionId, markSessionViewed]);
 
   // Subscribe to lightweight agent events to keep session metadata fresh in place.
   useEffect(() => {

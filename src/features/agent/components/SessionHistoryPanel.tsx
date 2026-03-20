@@ -322,7 +322,7 @@ export function SessionHistoryPanel({
 
   const statusCounts = useMemo(() => {
     const counts = {
-      all: segmentedSessions.length,
+      all: baseSessions.length,
       busy: 0,
       idle: 0,
       paused: 0,
