@@ -19,8 +19,8 @@ export function AgentChatAttachedFiles() {
   if (attachedFiles.length === 0) return null;
 
   return (
-    <div className="px-4 py-2 border-t">
-      <div className="text-xs mb-2 flex items-center gap-1">
+    <div className="px-4 py-2 bg-background/60 backdrop-blur-md rounded-t-xl border-x border-t border-border/50">
+      <div className="text-xs mb-2 flex items-center gap-1 font-medium text-muted-foreground font-sans uppercase tracking-tight">
         <Paperclip className="w-4 h-4" />
         <span>Attached Files:</span>
       </div>
