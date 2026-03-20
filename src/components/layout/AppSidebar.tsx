@@ -314,30 +314,44 @@ export default function AppSidebar() {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t">
+      <SidebarFooter className="border-t p-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
               tooltip={t('sidebar.settings')}
-              className={`transition-all duration-200`}
+              className="transition-all duration-200"
               isActive={location.pathname === '/settings'}
             >
-              <Link to="/settings" className="flex w-full items-center gap-2">
-                <Settings className="shrink-0" />
-                {hasUpdate && (
-                  <span className="absolute left-4 top-2 w-2 h-2 rounded-full bg-destructive" />
+              <Link
+                to="/settings"
+                className="flex w-full items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Settings className="shrink-0" />
+                  {!isCollapsed && (
+                    <span className="truncate">{t('sidebar.settings')}</span>
+                  )}
+                </div>
+
+                {hasUpdate && isCollapsed && (
+                  <span className="absolute left-4 top-2 h-2 w-2 rounded-full bg-destructive" />
                 )}
-                {!isCollapsed && <span>{t('sidebar.settings')}</span>}
+
+                {!isCollapsed && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {hasUpdate && (
+                      <span className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
+                    )}
+                    <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md border border-border/50">
+                      v{__APP_VERSION__}
+                    </span>
+                  </div>
+                )}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        {!isCollapsed && (
-          <div className="px-4 py-2 text-xs text-muted-foreground text-center">
-            v{__APP_VERSION__}
-          </div>
-        )}
       </SidebarFooter>
     </Sidebar>
   );
