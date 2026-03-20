@@ -61,12 +61,13 @@ pub async fn column_exists(
     column_name: &str,
 ) -> Result<bool, DbErr> {
     // Validate table name to prevent SQL injection since PRAGMA cannot be parameterized
-    if !table_name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    if table_name.is_empty()
+        || !table_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
     {
         return Err(DbErr::Custom(format!(
-            "Invalid table name format: {}",
+            "Invalid table name format: {:?}",
             table_name
         )));
     }
@@ -89,4 +90,38 @@ pub async fn column_exists(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm_migration::sea_orm::Database;
+
+    #[tokio::test]
+    async fn test_column_exists_validation() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        let manager = SchemaManager::new(&db);
+
+        // Valid name
+        let result = column_exists(&manager, "valid_table", "col").await;
+        // Should not fail validation (but will fail because table doesn't exist, which is fine)
+        if let Err(e) = result {
+            assert!(!e.to_string().contains("Invalid table name format"));
+        }
+
+        // Invalid name (SQL injection attempt)
+        let result = column_exists(&manager, "table; DROP TABLE users", "col").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid table name format"));
+
+        // Empty name
+        let result = column_exists(&manager, "", "col").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid table name format"));
+
+        // Debug formatting check
+        let result = column_exists(&manager, "invalid space", "col").await;
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("\"invalid space\"")); // Check for debug quotes
+    }
 }
