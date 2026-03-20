@@ -451,6 +451,43 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
     });
 
+    it('clears recurring-stop notifications when the session is marked viewed', async () => {
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'recurringStop',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(1);
+        });
+
+        await act(async () => {
+            await result.current.actions.markSessionViewed(
+                'session-child',
+                new Date(Date.now() + 1000),
+            );
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(0);
+            expect(result.current.state.notificationSessions).toHaveLength(0);
+        });
+    });
+
     it('ignores natural workflow completion for notifications', async () => {
         const { result } = renderHook(() => useAgentSessionListState(), {
             wrapper: TestWrapperWithEvent,

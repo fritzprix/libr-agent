@@ -215,6 +215,13 @@ export function AgentSessionProvider({
     yoloModeRef.current = yoloModeEnabled;
   }, [yoloModeEnabled]);
 
+  const acknowledgeSessionAttention = useCallback(
+    async (viewedAt = new Date()) => {
+      await markSessionViewed(sessionId, viewedAt);
+    },
+    [markSessionViewed, sessionId],
+  );
+
   /**
    * Load messages for the current session
    */
@@ -635,12 +642,13 @@ export function AgentSessionProvider({
         };
 
         await safeInvoke<AgentResponse>('agent_send_message', { request });
+        await acknowledgeSessionAttention(now);
       } catch (err) {
         logger.error('Failed to send message', err);
         throw err;
       }
     },
-    [session],
+    [acknowledgeSessionAttention, session],
   );
 
   /**
@@ -668,12 +676,13 @@ export function AgentSessionProvider({
       await safeInvoke<AgentResponse>('agent_resume_workflow', {
         sessionId: session.id,
       });
+      await acknowledgeSessionAttention();
       // Status update will come via event
     } catch (err) {
       logger.error('Failed to resume session', err);
       throw err;
     }
-  }, [session]);
+  }, [acknowledgeSessionAttention, session]);
 
   const respondToToolApproval = useCallback(
     async (toolCallId: string, approved: boolean) => {
@@ -690,12 +699,13 @@ export function AgentSessionProvider({
           prev.filter((p) => p.toolCallId !== toolCallId),
         );
         clearPendingApproval(session.id, toolCallId);
+        await acknowledgeSessionAttention();
       } catch (err) {
         logger.error('Failed to respond to tool approval', err);
         throw err;
       }
     },
-    [clearPendingApproval, session],
+    [acknowledgeSessionAttention, clearPendingApproval, session],
   );
 
   const toggleYoloMode = useCallback(async () => {
@@ -714,22 +724,31 @@ export function AgentSessionProvider({
         logger.info('Auto-approving pending tools due to YOLO toggle', {
           count: pendingApprovals.length,
         });
-        pendingApprovals.forEach((p) => {
-          safeInvoke<AgentResponse>('agent_respond_tool_approval', {
+        const approvalsToClear = [...pendingApprovals];
+        approvalsToClear.forEach((p) => {
+          void safeInvoke<AgentResponse>('agent_respond_tool_approval', {
             sessionId,
             toolCallId: p.toolCallId,
             approved: true,
           }).catch((err) => {
             logger.error('Failed to auto-approve tool upon YOLO toggle', err);
           });
+          clearPendingApproval(sessionId, p.toolCallId);
         });
         setPendingApprovals([]);
         setWorkflowPhase('using_tools');
+        await acknowledgeSessionAttention();
       }
     } catch (err) {
       logger.error('Failed to toggle YOLO mode on backend', err);
     }
-  }, [yoloModeEnabled, pendingApprovals, sessionId]);
+  }, [
+    acknowledgeSessionAttention,
+    clearPendingApproval,
+    pendingApprovals,
+    sessionId,
+    yoloModeEnabled,
+  ]);
 
   const updateSessionConfig = useCallback((model: string, provider: string) => {
     setSession((prev) => (prev ? { ...prev, model, provider } : null));

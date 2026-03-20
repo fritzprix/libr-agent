@@ -2,6 +2,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     AgentSessionProvider,
+    useAgentSessionActions,
     useAgentSessionState,
 } from '../AgentSessionContext';
 import { listen } from '@tauri-apps/api/event';
@@ -281,6 +282,121 @@ describe('AgentSessionContext (Local)', () => {
                     }),
                 );
             });
+        });
+    });
+
+    describe('Notification acknowledgement', () => {
+        it('marks the session viewed after resuming the workflow', async () => {
+            const { result } = renderHook(
+                () => useAgentSessionActions(),
+                { wrapper: TestWrapper }
+            );
+
+            await waitFor(() => {
+                expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+            });
+
+            mockMarkSessionViewed.mockClear();
+
+            await act(async () => {
+                await result.current.resumeSession();
+            });
+
+            expect(safeInvoke).toHaveBeenCalledWith('agent_resume_workflow', {
+                sessionId: TEST_SESSION_ID,
+            });
+            expect(mockMarkSessionViewed).toHaveBeenCalledTimes(1);
+            expect(mockMarkSessionViewed).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                expect.any(Date),
+            );
+        });
+
+        it('clears global approval counts and marks the session viewed when YOLO auto-approves pending tools', async () => {
+            let eventHandler: ((event: unknown) => void) | undefined;
+            (listen as ReturnType<typeof vi.fn>).mockImplementation(
+                async (eventName, handler) => {
+                    if (eventName === 'agent:event') {
+                        eventHandler = handler as (event: unknown) => void;
+                    }
+                    return mockUnlisten;
+                }
+            );
+
+            const { result } = renderHook(
+                () => ({
+                    state: useAgentSessionState(),
+                    actions: useAgentSessionActions(),
+                }),
+                { wrapper: TestWrapper }
+            );
+
+            await waitFor(() => {
+                expect(eventHandler).toBeDefined();
+                expect(result.current.state.isSessionLoading).toBe(false);
+            });
+
+            act(() => {
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-1',
+                        toolName: 'shell',
+                        arguments: '{}',
+                    },
+                });
+                eventHandler?.({
+                    payload: {
+                        type: 'toolExecutionRequiresApproval',
+                        sessionId: TEST_SESSION_ID,
+                        toolCallId: 'call-2',
+                        toolName: 'shell',
+                        arguments: '{}',
+                    },
+                });
+            });
+
+            await waitFor(() => {
+                expect(result.current.state.pendingApprovals).toHaveLength(2);
+            });
+
+            mockMarkSessionViewed.mockClear();
+            mockClearPendingApproval.mockClear();
+
+            await act(async () => {
+                await result.current.actions.toggleYoloMode();
+            });
+
+            expect(safeInvoke).toHaveBeenCalledWith('agent_set_yolo_mode', {
+                sessionId: TEST_SESSION_ID,
+                enabled: true,
+            });
+            expect(safeInvoke).toHaveBeenCalledWith('agent_respond_tool_approval', {
+                sessionId: TEST_SESSION_ID,
+                toolCallId: 'call-1',
+                approved: true,
+            });
+            expect(safeInvoke).toHaveBeenCalledWith('agent_respond_tool_approval', {
+                sessionId: TEST_SESSION_ID,
+                toolCallId: 'call-2',
+                approved: true,
+            });
+            expect(mockClearPendingApproval).toHaveBeenCalledTimes(2);
+            expect(mockClearPendingApproval).toHaveBeenNthCalledWith(
+                1,
+                TEST_SESSION_ID,
+                'call-1',
+            );
+            expect(mockClearPendingApproval).toHaveBeenNthCalledWith(
+                2,
+                TEST_SESSION_ID,
+                'call-2',
+            );
+            expect(mockMarkSessionViewed).toHaveBeenCalledWith(
+                TEST_SESSION_ID,
+                expect.any(Date),
+            );
         });
     });
 });

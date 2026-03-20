@@ -11,7 +11,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { useAgentSessionListState } from '@/context/AgentSessionListContext';
+import {
+  useAgentSessionListActions,
+  useAgentSessionListState,
+} from '@/context/AgentSessionListContext';
 
 function formatSessionName(
   sessionName: string | undefined,
@@ -23,6 +26,7 @@ function formatSessionName(
 export function SessionNotificationsBell() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { markSessionViewed } = useAgentSessionListActions();
   const { notificationSessions, unreadNotificationCount } =
     useAgentSessionListState();
 
@@ -68,7 +72,10 @@ export function SessionNotificationsBell() {
               <DropdownMenuItem
                 key={session.id}
                 className="items-start py-2"
-                onSelect={() => navigate(`/agent/${session.id}`)}
+                onSelect={() => {
+                  void markSessionViewed(session.id).catch(() => undefined);
+                  navigate(`/agent/${session.id}`);
+                }}
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="truncate font-medium">{name}</div>
