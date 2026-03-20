@@ -108,5 +108,5 @@
 
 ## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render Pattern]
 
-- **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an inline render-phase adjustment that compares `session?.id` to a `prevSessionId` state tracker, preventing an unnecessary extra re-render lifecycle.
+- **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an **Adjusting State During Render** pattern that compares `session?.id` to a `prevSessionId` state tracker, ensuring state is synchronized before the next paint and preventing an extra post-commit re-render lifecycle.
 - **Renders Saved:** Eliminated redundant effect-triggered renders that act purely as local state clears in response to prop/dependency changes.
