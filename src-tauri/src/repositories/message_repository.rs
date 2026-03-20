@@ -3,12 +3,12 @@ use crate::models::chat::Message;
 use crate::utils::pagination::Page;
 use async_trait::async_trait;
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    sea_query::Expr, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
 use crate::entity::prelude::{Message as MessageEntity, MessageIndexMeta};
-use crate::entity::{message, message_index_meta};
+use crate::entity::{message, message_index_meta, session};
 use crate::utils::json::{from_json_option, from_json_or_default, to_json_option};
 
 /// Message repository trait for abstraction and testability
@@ -202,6 +202,26 @@ impl SqliteMessageRepository {
             ])
             .to_owned()
     }
+
+    async fn update_session_last_message_at<C>(
+        db: &C,
+        session_id: &str,
+        last_message_at: i64,
+    ) -> Result<(), DbError>
+    where
+        C: ConnectionTrait,
+    {
+        session::Entity::update_many()
+            .col_expr(
+                session::Column::LastMessageAt,
+                Expr::cust_with_values("MAX(COALESCE(last_message_at, 0), ?)", [last_message_at]),
+            )
+            .filter(session::Column::Id.eq(session_id))
+            .exec(db)
+            .await?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -247,13 +267,18 @@ impl MessageRepository for SqliteMessageRepository {
             .exec(&self.db)
             .await?;
 
+        Self::update_session_last_message_at(&self.db, &message.session_id, message.created_at)
+            .await?;
+
         Ok(())
     }
 
     async fn insert_many(&self, messages: Vec<Message>) -> Result<(), DbError> {
         use sea_orm::TransactionTrait;
+        use std::collections::HashMap;
 
         let txn = self.db.begin().await?;
+        let mut latest_by_session: HashMap<String, i64> = HashMap::new();
 
         for message in messages {
             let model = Self::message_to_active_model(&message)?;
@@ -262,6 +287,15 @@ impl MessageRepository for SqliteMessageRepository {
                 .on_conflict(Self::get_upsert_on_conflict())
                 .exec(&txn)
                 .await?;
+
+            latest_by_session
+                .entry(message.session_id.clone())
+                .and_modify(|current| *current = (*current).max(message.created_at))
+                .or_insert(message.created_at);
+        }
+
+        for (session_id, last_message_at) in latest_by_session {
+            Self::update_session_last_message_at(&txn, &session_id, last_message_at).await?;
         }
 
         txn.commit()

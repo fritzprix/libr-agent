@@ -3,7 +3,7 @@ use crate::agent::workflow::cancel::{
     discard_pending_events, should_consume_cancel_at_message_boundary,
 };
 use crate::mcp::MCPServiceProxyManager;
-use crate::repositories::session_repository::SessionRepository;
+use crate::repositories::session_repository::{SessionAttentionReason, SessionRepository};
 use crate::repositories::SessionStatus;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -96,6 +96,7 @@ pub async fn continue_workflow_after_tool(
 
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
+                    reason: crate::agent::events::WorkflowCompletionReason::Cancelled,
                 };
                 let _ = crate::agent::events::emit_agent_event(app_handle, event);
                 return Ok(());
@@ -113,18 +114,47 @@ pub async fn continue_workflow_after_tool(
                     "UI interaction detected for session {}. Stopping loop.",
                     session_id
                 );
-                let _ = crate::agent::lifecycle::update_session_status(
+                if let Err(error) = crate::agent::lifecycle::update_session_status(
                     session_repo,
                     active_sessions,
                     app_handle,
                     &session_id,
                     SessionStatus::Idle,
                 )
-                .await;
+                .await
+                {
+                    log::error!(
+                        "Failed to persist idle status after UI interaction stop for session {}: {}",
+                        session_id,
+                        error
+                    );
+                }
+                let attention_at = chrono::Utc::now().timestamp_millis();
+                if let Err(error) = session_repo
+                    .update_attention(
+                        &session_id,
+                        attention_at,
+                        SessionAttentionReason::RecurringStop,
+                    )
+                    .await
+                {
+                    log::error!(
+                        "Failed to persist recurring-stop attention for session {}: {}",
+                        session_id,
+                        error
+                    );
+                }
                 let event = crate::agent::events::AgentEvent::WorkflowCompleted {
                     session_id: session_id.clone(),
+                    reason: crate::agent::events::WorkflowCompletionReason::RecurringStop,
                 };
-                let _ = crate::agent::events::emit_agent_event(app_handle, event);
+                if let Err(error) = crate::agent::events::emit_agent_event(app_handle, event) {
+                    log::error!(
+                        "Failed to emit recurring-stop completion event for session {}: {}",
+                        session_id,
+                        error
+                    );
+                }
             } else {
                 // Check status before requesting LLM completion (Defense in depth against race condition)
                 {

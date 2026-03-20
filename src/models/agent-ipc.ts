@@ -108,6 +108,13 @@ export interface AgentResponse<T = unknown> {
 
 export type AgentRuntimeError = MessageError;
 
+export type SessionAttentionReason = 'recurringStop';
+
+export type WorkflowCompletionReason =
+  | 'natural'
+  | 'recurringStop'
+  | 'cancelled';
+
 /**
  * Tool execution result from frontend.
  * Mirrors `ToolExecutionResult` in `src-tauri/src/commands/agent_commands.rs`.
@@ -139,6 +146,10 @@ export interface AgentSessionMetadata {
   maxFanout?: number;
   createdAt: number;
   updatedAt?: number;
+  lastViewedAt?: number;
+  lastMessageAt?: number;
+  lastAttentionAt?: number;
+  lastAttentionReason?: SessionAttentionReason;
   isBookmarked?: boolean;
   yoloMode: boolean;
 }

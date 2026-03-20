@@ -8,6 +8,7 @@ import {
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
 import { SessionHistoryPanel } from '@/features/agent/components/SessionHistoryPanel';
+import type { SessionStatus } from '@/lib/session-utils';
 
 const logger = getLogger('History');
 
@@ -18,6 +19,9 @@ export default function History() {
   const { loadSessions, deleteSession, deleteSessionOnly, toggleBookmark } =
     useAgentSessionListActions();
   const [activeTab, setActiveTab] = useState('all');
+  const [activeStatusFilter, setActiveStatusFilter] = useState<
+    'all' | SessionStatus
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleResumeSession = useCallback(
@@ -67,8 +71,10 @@ export default function History() {
         sessions={sessions}
         isLoading={isSessionsListLoading}
         activeTab={activeTab}
+        activeStatusFilter={activeStatusFilter}
         searchQuery={searchQuery}
         onActiveTabChange={setActiveTab}
+        onActiveStatusFilterChange={setActiveStatusFilter}
         onSearchQueryChange={setSearchQuery}
         onRefresh={handleRefreshSessions}
         onResume={handleResumeSession}

@@ -45,6 +45,35 @@ impl FromStr for SessionStatus {
     }
 }
 
+/// Session attention reason used for notification-style unread state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionAttentionReason {
+    RecurringStop,
+}
+
+impl SessionAttentionReason {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SessionAttentionReason::RecurringStop => "recurringStop",
+        }
+    }
+}
+
+impl FromStr for SessionAttentionReason {
+    type Err = DbError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "recurringStop" => Ok(SessionAttentionReason::RecurringStop),
+            _ => Err(DbError::InvalidInput(format!(
+                "Invalid session attention reason: {}",
+                s
+            ))),
+        }
+    }
+}
+
 /// Session metadata stored in SQLite
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +91,10 @@ pub struct SessionMetadata {
     pub max_fanout: Option<u32>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub last_viewed_at: Option<i64>,
+    pub last_message_at: Option<i64>,
+    pub last_attention_at: Option<i64>,
+    pub last_attention_reason: Option<SessionAttentionReason>,
     pub is_bookmarked: bool,
     pub yolo_mode: bool,
     pub workspace_override: Option<String>,
@@ -85,6 +118,14 @@ impl TryFrom<session::Model> for SessionMetadata {
             max_fanout: model.max_fanout.and_then(|v| u32::try_from(v).ok()),
             created_at: model.created_at,
             updated_at: model.updated_at,
+            last_viewed_at: model.last_viewed_at,
+            last_message_at: model.last_message_at,
+            last_attention_at: model.last_attention_at,
+            last_attention_reason: model
+                .last_attention_reason
+                .as_deref()
+                .map(SessionAttentionReason::from_str)
+                .transpose()?,
             is_bookmarked: model.is_bookmarked,
             yolo_mode: model.yolo_mode,
             workspace_override: model.workspace_override,
@@ -137,6 +178,21 @@ pub trait SessionRepository: Send + Sync {
         session_id: &str,
         override_path: Option<String>,
     ) -> Result<(), DbError>;
+
+    /// Persist the timestamp when the session was last viewed by the user.
+    async fn update_last_viewed_at(
+        &self,
+        session_id: &str,
+        last_viewed_at: i64,
+    ) -> Result<(), DbError>;
+
+    /// Persist an attention-worthy event for the session.
+    async fn update_attention(
+        &self,
+        session_id: &str,
+        last_attention_at: i64,
+        reason: SessionAttentionReason,
+    ) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of SessionRepository using SeaORM
@@ -171,6 +227,14 @@ impl SessionRepository for SqliteSessionRepository {
             max_fanout: Set(session.max_fanout.and_then(|v| i32::try_from(v).ok())),
             created_at: Set(session.created_at),
             updated_at: Set(session.updated_at),
+            last_viewed_at: Set(session.last_viewed_at),
+            last_message_at: Set(session.last_message_at),
+            last_attention_at: Set(session.last_attention_at),
+            last_attention_reason: Set(session
+                .last_attention_reason
+                .as_ref()
+                .map(SessionAttentionReason::as_str)
+                .map(str::to_string)),
             is_bookmarked: Set(session.is_bookmarked),
             yolo_mode: Set(session.yolo_mode),
             workspace_override: Set(session.workspace_override.clone()),
@@ -191,6 +255,10 @@ impl SessionRepository for SqliteSessionRepository {
                         session::Column::MaxDepth,
                         session::Column::MaxFanout,
                         session::Column::UpdatedAt,
+                        session::Column::LastViewedAt,
+                        session::Column::LastMessageAt,
+                        session::Column::LastAttentionAt,
+                        session::Column::LastAttentionReason,
                         session::Column::YoloMode,
                         session::Column::WorkspaceOverride,
                     ])
@@ -342,6 +410,40 @@ impl SessionRepository for SqliteSessionRepository {
 
         Ok(())
     }
+
+    async fn update_last_viewed_at(
+        &self,
+        session_id: &str,
+        last_viewed_at: i64,
+    ) -> Result<(), DbError> {
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            last_viewed_at: Set(Some(last_viewed_at)),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
+
+    async fn update_attention(
+        &self,
+        session_id: &str,
+        last_attention_at: i64,
+        reason: SessionAttentionReason,
+    ) -> Result<(), DbError> {
+        session::ActiveModel {
+            id: Set(session_id.to_string()),
+            last_attention_at: Set(Some(last_attention_at)),
+            last_attention_reason: Set(Some(reason.as_str().to_string())),
+            ..Default::default()
+        }
+        .update(&self.db)
+        .await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -381,6 +483,10 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             workspace_override: None,
@@ -422,6 +528,10 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             workspace_override: None,
@@ -470,6 +580,10 @@ mod tests {
                 max_fanout: None,
                 created_at: now,
                 updated_at: now + i,
+                last_viewed_at: None,
+                last_message_at: None,
+                last_attention_at: None,
+                last_attention_reason: None,
                 is_bookmarked: false,
                 yolo_mode: false,
                 workspace_override: None,
@@ -539,6 +653,10 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             workspace_override: None,
@@ -558,6 +676,10 @@ mod tests {
             agent_config: Some(r#"{"updated": true}"#.to_string()),
             created_at: now,
             updated_at: now + 1000,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             parent_session_id: None,
@@ -601,6 +723,10 @@ mod tests {
             agent_config: None,
             created_at: now,
             updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             parent_session_id: None,
@@ -648,6 +774,10 @@ mod tests {
             max_fanout: None,
             created_at: now,
             updated_at: now,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             is_bookmarked: false,
             yolo_mode: false,
             workspace_override: None,

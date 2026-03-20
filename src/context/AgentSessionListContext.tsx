@@ -5,10 +5,12 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
 import { listen } from '@tauri-apps/api/event';
+import { matchPath, useLocation } from 'react-router-dom';
 import { getLogger } from '../lib/logger';
 import { useModelOptions } from './ModelProvider';
 import { useBackendResource } from './GlobalEventContext';
@@ -23,6 +25,7 @@ import type {
   CreateAgentSessionRequest,
   AgentResponse,
   AgentConfig,
+  WorkflowCompletionReason,
 } from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionListContext');
@@ -30,6 +33,8 @@ const logger = getLogger('AgentSessionListContext');
 // --- STATE CONTEXT ---
 interface AgentSessionListStateContextValue {
   sessions: AgentSession[];
+  notificationSessions: AgentSession[];
+  unreadNotificationCount: number;
   isSessionsListLoading: boolean;
 }
 
@@ -63,6 +68,16 @@ interface AgentSessionListActionsContextValue {
    * Toggle the bookmark flag on a session
    */
   toggleBookmark: (sessionId: string) => Promise<void>;
+
+  /**
+   * Persist that the user viewed a session and clear unread state locally.
+   */
+  markSessionViewed: (sessionId: string, viewedAt?: Date) => Promise<void>;
+
+  /**
+   * Remove one pending approval from the session after a response.
+   */
+  clearPendingApproval: (sessionId: string, toolCallId: string) => void;
 }
 
 const AgentSessionListActionsContext = createContext<
@@ -81,6 +96,7 @@ interface AgentSessionListProviderProps {
 export function AgentSessionListProvider({
   children,
 }: AgentSessionListProviderProps) {
+  const location = useLocation();
   const { modelId, provider } = useModelOptions();
   const {
     value: { advanced },
@@ -88,6 +104,23 @@ export function AgentSessionListProvider({
   const { clearSessionState } = useLLMService();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
+  const pendingApprovalKeysRef = useRef(new Set<string>());
+  const activeSessionId = useMemo(
+    () => matchPath('/agent/:sessionId', location.pathname)?.params.sessionId,
+    [location.pathname],
+  );
+
+  const hasUnreadAttention = useCallback((session: AgentSession): boolean => {
+    if (!session.lastAttentionAt || !session.lastAttentionReason) {
+      return false;
+    }
+
+    if (!session.lastViewedAt) {
+      return true;
+    }
+
+    return session.lastAttentionAt.getTime() > session.lastViewedAt.getTime();
+  }, []);
 
   /**
    * Load all agent sessions
@@ -172,8 +205,17 @@ export function AgentSessionListProvider({
           depth,
           createdAt: new Date(s.createdAt),
           updatedAt: s.updatedAt ? new Date(s.updatedAt) : undefined,
+          lastViewedAt: s.lastViewedAt ? new Date(s.lastViewedAt) : undefined,
+          lastMessageAt: s.lastMessageAt
+            ? new Date(s.lastMessageAt)
+            : undefined,
+          lastAttentionAt: s.lastAttentionAt
+            ? new Date(s.lastAttentionAt)
+            : undefined,
+          lastAttentionReason: s.lastAttentionReason,
           isBookmarked: s.isBookmarked ?? false,
           yoloMode: s.yoloMode ?? false,
+          pendingApprovalCount: 0,
         };
       });
       // Sort by updated at desc (or created at desc)
@@ -183,7 +225,19 @@ export function AgentSessionListProvider({
         return timeB - timeA;
       });
 
-      setSessions(sessionList);
+      setSessions((prev) => {
+        const pendingApprovalCounts = new Map(
+          prev.map((session) => [
+            session.id,
+            session.pendingApprovalCount ?? 0,
+          ]),
+        );
+
+        return sessionList.map((session) => ({
+          ...session,
+          pendingApprovalCount: pendingApprovalCounts.get(session.id) ?? 0,
+        }));
+      });
       logger.info('Loaded sessions', { count: sessionList.length });
     } catch (err) {
       logger.error('Failed to load sessions', err);
@@ -283,7 +337,18 @@ export function AgentSessionListProvider({
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
+          lastViewedAt: response.lastViewedAt
+            ? new Date(response.lastViewedAt)
+            : undefined,
+          lastMessageAt: response.lastMessageAt
+            ? new Date(response.lastMessageAt)
+            : undefined,
+          lastAttentionAt: response.lastAttentionAt
+            ? new Date(response.lastAttentionAt)
+            : undefined,
+          lastAttentionReason: response.lastAttentionReason,
           yoloMode: response.yoloMode ?? false,
+          pendingApprovalCount: 0,
         };
 
         // Add to list
@@ -423,6 +488,40 @@ export function AgentSessionListProvider({
     [sessions],
   );
 
+  const markSessionViewed = useCallback(
+    async (sessionId: string, viewedAt = new Date()) => {
+      await safeInvoke<void>('agent_mark_session_viewed', { sessionId });
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? { ...session, lastViewedAt: viewedAt }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
+
+  const clearPendingApproval = useCallback(
+    (sessionId: string, toolCallId: string) => {
+      pendingApprovalKeysRef.current.delete(`${sessionId}:${toolCallId}`);
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                pendingApprovalCount: Math.max(
+                  0,
+                  (session.pendingApprovalCount ?? 0) - 1,
+                ),
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
+
   // Initial load
   useEffect(() => {
     loadSessions();
@@ -434,8 +533,18 @@ export function AgentSessionListProvider({
     loadSessions();
   });
 
-  // Subscribe to statusChanged events to update session status in-place
-  // (avoids full reload on every status transition during normal workflow)
+  useEffect(() => {
+    if (!activeSessionId) {
+      return;
+    }
+
+    const viewedAt = new Date();
+    void markSessionViewed(activeSessionId, viewedAt).catch((err) => {
+      logger.error('Failed to persist viewed state for active session', err);
+    });
+  }, [activeSessionId, markSessionViewed]);
+
+  // Subscribe to lightweight agent events to keep session metadata fresh in place.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -444,6 +553,12 @@ export function AgentSessionListProvider({
         type: string;
         sessionId?: string;
         status?: 'idle' | 'busy' | 'paused' | 'error';
+        message?: {
+          role: 'user' | 'assistant' | 'system' | 'tool';
+          createdAt: number;
+        };
+        toolCallId?: string;
+        reason?: WorkflowCompletionReason;
       }>('agent:event', (event) => {
         const payload = event.payload;
         if (
@@ -458,6 +573,91 @@ export function AgentSessionListProvider({
                 : s,
             ),
           );
+          return;
+        }
+
+        if (
+          payload.type === 'messageAdded' &&
+          payload.sessionId &&
+          payload.message
+        ) {
+          const messageAt = new Date(payload.message.createdAt);
+          const shouldMarkViewed = payload.sessionId === activeSessionId;
+
+          setSessions((prev) =>
+            prev.map((session) =>
+              session.id === payload.sessionId
+                ? {
+                    ...session,
+                    lastMessageAt: messageAt,
+                    lastViewedAt: shouldMarkViewed
+                      ? messageAt
+                      : session.lastViewedAt,
+                  }
+                : session,
+            ),
+          );
+          return;
+        }
+
+        if (
+          payload.type === 'workflowCompleted' &&
+          payload.sessionId &&
+          payload.reason === 'recurringStop'
+        ) {
+          const attentionAt = new Date();
+          const shouldMarkViewed = payload.sessionId === activeSessionId;
+
+          setSessions((prev) =>
+            prev.map((session) =>
+              session.id === payload.sessionId
+                ? {
+                    ...session,
+                    lastAttentionAt: attentionAt,
+                    lastAttentionReason: 'recurringStop',
+                    lastViewedAt: shouldMarkViewed
+                      ? attentionAt
+                      : session.lastViewedAt,
+                  }
+                : session,
+            ),
+          );
+
+          if (shouldMarkViewed) {
+            void markSessionViewed(payload.sessionId, attentionAt).catch(
+              (err) => {
+                logger.error(
+                  'Failed to mark active session viewed after recurring stop',
+                  err,
+                );
+              },
+            );
+          }
+          return;
+        }
+
+        if (
+          payload.type === 'toolExecutionRequiresApproval' &&
+          payload.sessionId &&
+          payload.toolCallId
+        ) {
+          const pendingApprovalKey = `${payload.sessionId}:${payload.toolCallId}`;
+          if (pendingApprovalKeysRef.current.has(pendingApprovalKey)) {
+            return;
+          }
+
+          pendingApprovalKeysRef.current.add(pendingApprovalKey);
+          setSessions((prev) =>
+            prev.map((session) =>
+              session.id === payload.sessionId
+                ? {
+                    ...session,
+                    pendingApprovalCount:
+                      (session.pendingApprovalCount ?? 0) + 1,
+                  }
+                : session,
+            ),
+          );
         }
       });
     };
@@ -466,14 +666,48 @@ export function AgentSessionListProvider({
     return () => {
       if (unlisten) unlisten();
     };
-  }, []);
+  }, [activeSessionId, markSessionViewed]);
+
+  const notificationSessions = useMemo(
+    () =>
+      sessions
+        .filter(
+          (session) =>
+            hasUnreadAttention(session) ||
+            (session.pendingApprovalCount ?? 0) > 0,
+        )
+        .slice()
+        .sort((left, right) => {
+          const leftPending = left.pendingApprovalCount ?? 0;
+          const rightPending = right.pendingApprovalCount ?? 0;
+          if (leftPending !== rightPending) {
+            return rightPending - leftPending;
+          }
+
+          const leftTime =
+            left.lastAttentionAt?.getTime() ??
+            left.lastMessageAt?.getTime() ??
+            left.updatedAt?.getTime() ??
+            left.createdAt.getTime();
+          const rightTime =
+            right.lastAttentionAt?.getTime() ??
+            right.lastMessageAt?.getTime() ??
+            right.updatedAt?.getTime() ??
+            right.createdAt.getTime();
+
+          return rightTime - leftTime;
+        }),
+    [hasUnreadAttention, sessions],
+  );
 
   const stateValue = useMemo(
     () => ({
       sessions,
+      notificationSessions,
+      unreadNotificationCount: notificationSessions.length,
       isSessionsListLoading,
     }),
-    [sessions, isSessionsListLoading],
+    [sessions, notificationSessions, isSessionsListLoading],
   );
 
   const actionsValue = useMemo(
@@ -483,6 +717,8 @@ export function AgentSessionListProvider({
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
+      markSessionViewed,
+      clearPendingApproval,
     }),
     [
       createSession,
@@ -490,6 +726,8 @@ export function AgentSessionListProvider({
       deleteSession,
       deleteSessionOnly,
       toggleBookmark,
+      markSessionViewed,
+      clearPendingApproval,
     ],
   );
 

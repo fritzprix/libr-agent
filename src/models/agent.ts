@@ -1,4 +1,5 @@
 import { Assistant } from './chat';
+import type { SessionAttentionReason } from './agent-ipc';
 
 /**
  * Runtime agent configuration (includes session-specific settings)
@@ -17,12 +18,17 @@ export interface AgentSession {
   provider: string;
   createdAt: Date;
   updatedAt?: Date;
+  lastViewedAt?: Date;
+  lastMessageAt?: Date;
+  lastAttentionAt?: Date;
+  lastAttentionReason?: SessionAttentionReason;
   assistant?: Assistant; // Runtime config, not persistent Assistant
   parentSessionId?: string;
   lineageId?: string;
   depth?: number;
   isBookmarked?: boolean;
   yoloMode: boolean;
+  pendingApprovalCount?: number;
 }
 /**
  * Agent configuration for creating a new session

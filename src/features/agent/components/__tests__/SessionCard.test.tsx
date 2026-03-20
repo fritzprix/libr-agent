@@ -38,6 +38,24 @@ const mockSession: AgentSession = {
 };
 
 describe('SessionCard', () => {
+  it('applies stronger card-level styling for error sessions', () => {
+    const onResume = vi.fn();
+    const onDelete = vi.fn();
+
+    render(
+      <SessionCard
+        session={{ ...mockSession, status: 'error' }}
+        onResume={onResume}
+        onDelete={onDelete}
+      />,
+    );
+
+    const card = screen.getByText('Test Session').closest('article');
+    expect(card).not.toBeNull();
+    expect(card).toHaveClass('bg-destructive/5');
+    expect(card).toHaveClass('border-destructive/30');
+  });
+
   it('displays tooltip on delete button hover', async () => {
     const onResume = vi.fn();
     const onDelete = vi.fn();

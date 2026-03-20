@@ -151,6 +151,10 @@ pub async fn create_session(params: CreateSessionParams) -> Result<SessionMetada
         is_bookmarked: false,
         created_at: now,
         updated_at: now,
+        last_viewed_at: None,
+        last_message_at: None,
+        last_attention_at: None,
+        last_attention_reason: None,
         yolo_mode: false,
         workspace_override,
     };
