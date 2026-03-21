@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.10] - 2026-03-21
+
+### 🐛 Fixes
+
+- **Linux OTA Update Safety**: In-app update installs are now blocked for non-AppImage Linux installs that cannot safely overwrite the current executable. LibrAgent now shows clearer permission guidance and keeps the update toast concise with a changelog link instead of dumping long release text into the notification.
+- **Session Viewed-State Efficiency**: Active agent sessions now update unread/viewed state locally during conversations and only persist viewed timestamps at meaningful moments like session entry and app refocus, reducing unnecessary backend writes while keeping the UI responsive.
+
 ## [0.6.9] - 2026-03-21
 
 ### 🐛 Fixes
