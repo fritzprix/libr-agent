@@ -2,9 +2,9 @@ name: 🚀 LibrAgent CI/CD
 
 on:
   push:
-    branches: [main, master, ref/chat, dev/0.6.x]
+    branches: [main, master, dev/0.6.x]
   pull_request:
-    branches: [main, master, ref/chat, dev/0.6.x]
+    branches: [main, master, dev/0.6.x]
 
 jobs:
   test:
