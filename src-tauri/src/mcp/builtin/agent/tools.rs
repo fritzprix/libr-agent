@@ -110,7 +110,7 @@ fn start_session_tool() -> MCPTool {
         description: "Spawn a new sub-agent session to delegate a specific task. Returns immediately with session info. Use checkSession to wait for the result.".to_string(),
         input_schema: object_prop(
             vec![
-                ("agentId".to_string(), string_prop_required("ID or name of the agent configuration to use.")),
+                ("agentId".to_string(), string_prop_required("The exact ID (UUID) or exact name of the agent configuration to use. If you encounter an 'Assistant not found' error, use the tool `list` with type='configs' to find available agent IDs and names.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
                 ("contextFiles".to_string(), array_schema(string_prop(None, None, None), Some("Optional: File paths from your workspace to share with the sub-agent."))),
                 ("waitForResult".to_string(), boolean_prop(Some("If true, blocks until the agent finishes and returns the final answer (max wait: 1 hour). Default: false."))),
@@ -128,7 +128,7 @@ fn message_to_session_tool() -> MCPTool {
         name: "messageToSession".to_string(),
         title: Some("Message Agent Session".to_string()),
         description:
-            "Send a follow-up message or additional instructions to an active sub-agent session."
+            "Send a follow-up message or additional instructions to an existing sub-agent session to continue the conversation. You can send messages to sessions that have finished their previous tasks."
                 .to_string(),
         input_schema: object_prop(
             vec![
@@ -172,7 +172,7 @@ fn stop_session_tool() -> MCPTool {
     MCPTool {
         name: "stopSession".to_string(),
         title: Some("Stop Agent Session".to_string()),
-        description: "Forcefully stop an active sub-agent session. Equivalent to a user clicking the cancel button.".to_string(),
+        description: "Forcefully terminate an active sub-agent session. Use this when a delegated task is no longer needed or if the sub-agent appears stuck. This immediately halts execution.".to_string(),
         input_schema: object_prop(
             vec![
                 ("sessionId".to_string(), string_prop_required("ID of the session to stop.")),

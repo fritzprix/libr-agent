@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.11] - 2026-03-21
+
+### 🚀 Features
+
+- **Unified Workspace Search**: Replaced the split workspace search flow with a single search tool that can combine file-name filtering and in-file text matching, making agent search requests simpler and more predictable.
+- **Clearer Agent Session Feedback**: Session messaging and status checks now expose richer progress details such as message IDs and turn counts, making delegated agent work easier to track.
+- **Explicit Todo Actions**: Planning todos now use clearer action-based updates so agents can mark items done, reopen them, or cancel them without relying on ambiguous boolean toggles.
+
+### 🐛 Fixes
+
+- **Tool Surface Cleanup**: Removed obsolete UI tool paths and dead templates so `presentInteractive` remains the single public UI entry point while internal callbacks stay intact.
+- **Sharper MCP Server Guidance**: Simplified external MCP server registration and discovery text so tool descriptions focus on intent, while transport-specific details stay in the schema fields where they belong.
+- **Agent Error Guidance Consistency**: Tightened agent/session guidance text and validation messaging so missing configuration errors now point more clearly to valid `agentId` usage and recovery steps.
+
+### 🔧 Internal
+
+- **Workspace File Operation Consolidation**: Merged older workspace search implementations into a cleaner shared path and removed dead file-operation modules.
+- **Builtin Registry Wording Cleanup**: Corrected misleading builtin tool registry comments and refreshed success hints around external server attachment flows.
+
 ## [0.6.10] - 2026-03-21
 
 ### 🐛 Fixes

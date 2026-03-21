@@ -19,11 +19,12 @@ pub async fn update_todo(
         .unwrap_or("done");
 
     match action {
-        "done" => check_todo(db, session_id, args).await,
+        "done" => check_todo(db, session_id, args, true).await,
+        "pending" => check_todo(db, session_id, args, false).await,
         "cancel" => cancel_todo(db, session_id, args).await,
         other => Ok(invalid_input_error(
             &format!(
-                "Unknown action '{}'. Use 'done' to mark complete or 'cancel' to remove.",
+                "Unknown action '{}'. Use 'done', 'pending', or 'cancel'.",
                 other
             ),
             ToolGroup::Planning,
@@ -137,17 +138,13 @@ pub async fn check_todo(
     _db: &DatabaseConnection,
     session_id: &str,
     args: Value,
+    checked: bool,
 ) -> Result<MCPResult, String> {
     // 1. Extract required parameters (index only)
     let index = match args.get("index").and_then(|v| v.as_i64()) {
         Some(i) => i,
         None => return Ok(missing_param_error("index", ToolGroup::Planning)),
     };
-
-    let checked = args
-        .get("checked")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
 
     let summary = args
         .get("summary")

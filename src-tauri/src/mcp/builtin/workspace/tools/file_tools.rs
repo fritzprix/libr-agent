@@ -32,12 +32,6 @@ pub fn create_read_file_tool() -> MCPTool {
         ),
     );
     props.insert(
-        "showLineNumbers".to_string(),
-        boolean_prop(Some(
-            "Show decorated line numbers in output (e.g. '  42 | code'). Use showLineHashes instead for replaceLines workflows.",
-        )),
-    );
-    props.insert(
         "showLineHashes".to_string(),
         boolean_prop(Some(
             "Optional: include a 2-char hash for each line (e.g. '42:a3|...'). Use this when you plan to edit specific lines with high precision using replaceLines.",
@@ -171,30 +165,30 @@ pub fn create_import_files_tool() -> MCPTool {
     }
 }
 
-pub fn create_search_lines_tool() -> MCPTool {
+pub fn create_search_tool() -> MCPTool {
     let mut props = HashMap::new();
     props.insert(
         "path".to_string(),
         string_prop(
             Some(1),
             Some(1000),
-            Some("Relative path to the file to search (from workspace root)"),
+            Some("Relative path to the file or directory to search (from workspace root)"),
         ),
     );
     props.insert(
-        "pattern".to_string(),
+        "query".to_string(),
         string_prop(
             Some(1),
             Some(1000),
-            Some("Search pattern (regex or exact string, depending on mode)"),
+            Some("Regular expression pattern to search for text inside files. If omitted, only searches for file names."),
         ),
     );
     props.insert(
-        "mode".to_string(),
+        "filePattern".to_string(),
         string_prop(
-            None,
-            None,
-            Some("Search mode: 'regex' (default) or 'exact'"),
+            Some(1),
+            Some(1000),
+            Some("Glob pattern to filter files by name (e.g. '*.rs', 'src/**/*.ts')."),
         ),
     );
     props.insert(
@@ -202,19 +196,23 @@ pub fn create_search_lines_tool() -> MCPTool {
         boolean_prop(Some("Case-insensitive search (default: false)")),
     );
     props.insert(
-        "lineNumbers".to_string(),
-        boolean_prop(Some("Include line numbers in results (default: true)")),
+        "showLineHashes".to_string(),
+        boolean_prop(Some(
+            "Include line hashes in results for use with replaceLines (default: false)",
+        )),
     );
 
     MCPTool {
-        name: "searchLines".to_string(),
-        title: Some("Search Lines in File".to_string()),
-        description: "Search for text patterns within a file. Returns matching line numbers and surrounding context.
+        name: "search".to_string(),
+        title: Some("Search Workspace".to_string()),
+        description: "Search for files by name, or search inside files for text patterns.
 
-Modes: `regex` (default) or `exact`. Set `ignoreCase=true` for case-insensitive.
+- To find files: search({path: '.', filePattern: '*.rs'})
+- To search text inside a specific file: search({path: 'src/main.rs', query: 'fn main'})
+- To search text inside files matching a pattern: search({path: '.', query: 'TODO', filePattern: '*.ts'})
 
-Use the returned line numbers directly in editFile. For finding files by name, use searchFiles instead.".to_string(),
-        input_schema: object_schema(props, vec!["path".to_string(), "pattern".to_string()]),
+Use the returned line hashes directly in replaceLines.".to_string(),
+        input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
     }
@@ -306,30 +304,6 @@ SAFETY:
 Example (Insert at top):
   { path: 'main.rs', edits: [{ line: 0, action: 'INSERT_AFTER', new_value: '// Copyright 2026\n' }] }"#.to_string(),
         input_schema: object_schema(props, vec!["path".to_string(), "edits".to_string()]),
-        output_schema: None,
-        annotations: None,
-    }
-}
-
-pub fn create_delete_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
-        "path".to_string(),
-        string_prop(
-            Some(1),
-            Some(1000),
-            Some("Relative path to the file to delete (from workspace root)"),
-        ),
-    );
-
-    MCPTool {
-        name: "deleteFile".to_string(),
-        title: Some("Delete File".to_string()),
-        description: "Permanently delete a file from the workspace. Irreversible.
-
-For partial content changes, use editFile instead."
-            .to_string(),
-        input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
     }

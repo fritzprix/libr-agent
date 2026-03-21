@@ -325,8 +325,12 @@ pub async fn message_to_session(
         Err(err) => return Err(err),
     };
 
+    let msg_id = data.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
     let hint = SuccessHint::new(
-        format!("Message sent to session {}.", session_id),
+        format!(
+            "Message sent to session {} (Message ID: {}).",
+            session_id, msg_id
+        ),
         vec![format!(
             "Use checkSession(\"{}\", wait=true) to see the response.",
             session_id
@@ -426,7 +430,10 @@ pub async fn check_session(
     let turn_count = count_session_turns(&session_id).await;
 
     let hint = SuccessHint::new(
-        format!("Session {} is currently {}.", session_id, status),
+        format!(
+            "Session {} is currently {} (Turns elapsed: {}).",
+            session_id, status, turn_count
+        ),
         if status != "finished" && status != "error" {
             vec![format!(
                 "Use checkSession(\"{}\", wait=true) to wait for completion.",

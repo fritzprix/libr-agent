@@ -499,7 +499,7 @@ impl BuiltinServerRegistry {
 
         for server in self.servers.values() {
             let tools = server.tools();
-            // Prefix tool names with server name for uniqueness
+            // Each server returns its own tool names; higher-level routing layers qualify them.
             all_tools.extend(tools);
         }
 

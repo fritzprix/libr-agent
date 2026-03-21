@@ -15,11 +15,7 @@ pub mod tools;
 const BAR_CHART_TEMPLATE: &str = include_str!("templates/bar-chart.hbs");
 const CIRCUIT_BREAK_TEMPLATE: &str = include_str!("templates/circuit-break.hbs");
 const LINE_CHART_TEMPLATE: &str = include_str!("templates/line-chart.hbs");
-const PRESENT_CONTENT_TEMPLATE: &str = include_str!("templates/present-content.hbs");
 const PRESENT_INTERACTIVE_TEMPLATE: &str = include_str!("templates/present-interactive.hbs");
-const SELECT_PROMPT_TEMPLATE: &str = include_str!("templates/select-prompt.hbs");
-const TEXT_PROMPT_TEMPLATE: &str = include_str!("templates/text-prompt.hbs");
-const WAIT_TEMPLATE: &str = include_str!("templates/wait.hbs");
 
 #[derive(Debug)]
 pub struct UiServer {
@@ -63,162 +59,12 @@ impl UiServer {
             .register_template_string("line-chart", LINE_CHART_TEMPLATE)
             .unwrap();
         handlebars
-            .register_template_string("present-content", PRESENT_CONTENT_TEMPLATE)
-            .unwrap();
-        handlebars
             .register_template_string("present-interactive", PRESENT_INTERACTIVE_TEMPLATE)
-            .unwrap();
-        handlebars
-            .register_template_string("select-prompt", SELECT_PROMPT_TEMPLATE)
-            .unwrap();
-        handlebars
-            .register_template_string("text-prompt", TEXT_PROMPT_TEMPLATE)
-            .unwrap();
-        handlebars
-            .register_template_string("wait", WAIT_TEMPLATE)
             .unwrap();
 
         Self {
             handlebars: Arc::new(Mutex::new(handlebars)),
         }
-    }
-
-    fn prompt_user(&self, args: Value) -> Result<MCPResult, String> {
-        let prompt = match args.get("prompt").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("prompt", ToolGroup::UI)),
-        };
-        let type_ = match args.get("type").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("type", ToolGroup::UI)),
-        };
-
-        // Validate type
-        if !["text", "select", "multiselect"].contains(&type_) {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!(
-                    "Invalid prompt type '{}'. Supported types: text, select, multiselect",
-                    type_
-                ),
-                ToolGroup::UI,
-            )
-            .with_guidance(vec![
-                "Use 'text' for free-form user input".to_string(),
-                "Use 'select' for single-choice from options".to_string(),
-                "Use 'multiselect' for multiple-choice from options".to_string(),
-            ])
-            .to_mcp_result());
-        }
-
-        let message_id = uuid::Uuid::new_v4().to_string();
-
-        let mut data = json!({
-            "prompt": prompt,
-            "messageId": message_id,
-        });
-
-        let template_name = match type_ {
-            "text" => "text-prompt",
-            "select" | "multiselect" => {
-                let options = match args.get("options") {
-                    Some(v) => v,
-                    None => {
-                        return Ok(missing_param_error("options", ToolGroup::UI));
-                    }
-                };
-
-                let options_array = match options.as_array() {
-                    Some(arr) => arr,
-                    None => {
-                        return Ok(guided_error(
-                            ErrorCategory::InvalidInput,
-                            "options must be an array of strings",
-                            ToolGroup::UI,
-                        )
-                        .to_mcp_result());
-                    }
-                };
-
-                // Convert options array to Vec<String> for JSON
-                let options: Vec<String> = options_array
-                    .iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect();
-
-                // Serialize to JSON string for JavaScript consumption
-                let options_json =
-                    serde_json::to_string(&options).unwrap_or_else(|_| "[]".to_string());
-
-                // Insert as string so Handlebars renders it as valid JavaScript array literal
-                data.as_object_mut()
-                    .unwrap()
-                    .insert("optionsJson".to_string(), json!(options_json));
-
-                // We also need optionsHtml for the template
-                let mut options_html = String::new();
-                for (i, opt) in options_array.iter().enumerate() {
-                    let opt_str = opt.as_str().unwrap_or_default();
-                    let input_type = if type_ == "multiselect" {
-                        "checkbox"
-                    } else {
-                        "radio"
-                    };
-                    options_html.push_str(&format!(
-                        r#"<label class="option-item">
-                            <input type="{}" name="option" value="{}" class="option-input">
-                            <span class="option-label">{}</span>
-                           </label>"#,
-                        input_type,
-                        i,
-                        html_escape::encode_text(opt_str)
-                    ));
-                }
-                data.as_object_mut()
-                    .unwrap()
-                    .insert("optionsHtml".to_string(), json!(options_html));
-                data.as_object_mut()
-                    .unwrap()
-                    .insert("multiselect".to_string(), json!(type_ == "multiselect"));
-
-                "select-prompt"
-            }
-            _ => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    format!("Unsupported prompt type: {}", type_),
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec!["Choose from: text, select, multiselect".to_string()])
-                .to_mcp_result())
-            }
-        };
-
-        let handlebars = self.handlebars.lock().unwrap();
-        let html = match handlebars.render(template_name, &data) {
-            Ok(h) => h,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    format!("Failed to render UI prompt: {}", e),
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec![
-                    "Verify template data format is correct".to_string(),
-                    "Check that all required template variables are provided".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            &format!("ui://prompt/{}", message_id),
-            "text/html",
-            &html,
-            "ui",
-            "promptUser",
-            None,
-        ))
     }
 
     fn get_user_answer(&self, args: Value) -> Result<MCPResult, String> {
@@ -250,70 +96,6 @@ impl UiServer {
         Ok(MCPResult {
             content: Some(vec![MCPContent::Text {
                 text: format!("User replied: {}", answer_str),
-                is_error: None,
-            }]),
-            structured_content: None,
-            is_error: Some(false),
-        })
-    }
-
-    fn wait_for_user_resume(&self, args: Value) -> Result<MCPResult, String> {
-        let message = match args.get("message").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("message", ToolGroup::UI)),
-        };
-        let resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
-        };
-
-        let context_json = json!({
-            "resumeInstruction": resume_instruction,
-            "startedAt": chrono::Utc::now().timestamp_millis(),
-        });
-
-        let data = json!({
-            "message": message,
-            "contextJson": context_json.to_string(),
-            "contextHtml": html_escape::encode_text(&context_json.to_string()),
-        });
-
-        let handlebars = self.handlebars.lock().unwrap();
-        let html = match handlebars.render("wait", &data) {
-            Ok(h) => h,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    format!("Failed to render wait screen: {}", e),
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec![
-                    "Verify message and resumeInstruction are valid strings".to_string(),
-                    "Try again with shorter message if possible".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            &format!("ui://wait/{}", chrono::Utc::now().timestamp_millis()),
-            "text/html",
-            &html,
-            "ui",
-            "waitForUserResume",
-            None,
-        ))
-    }
-
-    fn resume_from_wait(&self, args: Value) -> Result<MCPResult, String> {
-        let _resume_instruction = match args.get("resumeInstruction").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("resumeInstruction", ToolGroup::UI)),
-        };
-
-        Ok(MCPResult {
-            content: Some(vec![MCPContent::Text {
-                text: "User resumed execution.".to_string(),
                 is_error: None,
             }]),
             structured_content: None,
@@ -625,86 +407,6 @@ impl UiServer {
         })
     }
 
-    fn present_content(&self, args: Value) -> Result<MCPResult, String> {
-        let content = match args.get("content").and_then(|v| v.as_str()) {
-            Some(v) => v,
-            None => return Ok(missing_param_error("content", ToolGroup::UI)),
-        };
-
-        let format = args
-            .get("format")
-            .and_then(|v| v.as_str())
-            .unwrap_or("auto");
-
-        let title = args.get("title").and_then(|v| v.as_str());
-
-        // Determine whether to treat as markdown or pass HTML directly.
-        // Default to markdown; HTML rendering requires an explicit format='html' opt-in
-        // to prevent arbitrary script injection via auto-detected HTML content.
-        let is_markdown = !matches!(format, "html");
-
-        // Serialize content to a JSON string for safe HTML embedding.
-        // Escape '</' as '<\/' to prevent </script> sequences from breaking out of
-        // the enclosing <script> block (serde_json does not escape these by default).
-        let content_json = serde_json::to_string(content)
-            .unwrap_or_else(|_| "\"\"".to_string())
-            .replace("</", "<\\/");
-
-        let mut data = json!({
-            "isMarkdown": is_markdown,
-            "contentJson": content_json,
-        });
-
-        if !is_markdown {
-            // For HTML pass-through we inject the raw content directly via triple-brace.
-            data.as_object_mut()
-                .unwrap()
-                .insert("content".to_string(), json!(content));
-        }
-
-        if let Some(t) = title {
-            data.as_object_mut()
-                .unwrap()
-                .insert("title".to_string(), json!(t));
-        }
-
-        let handlebars = self.handlebars.lock().unwrap();
-        let html = match handlebars.render("present-content", &data) {
-            Ok(h) => h,
-            Err(e) => {
-                return Ok(guided_error(
-                    ErrorCategory::OperationFailed,
-                    format!("Failed to render content: {}", e),
-                    ToolGroup::UI,
-                )
-                .with_guidance(vec![
-                    "Verify the content string is valid HTML or Markdown".to_string(),
-                    "If using HTML, ensure it is well-formed".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        let summary = if let Some(t) = title {
-            format!("Content rendered: {}", t)
-        } else {
-            format!(
-                "Content rendered ({}, {} chars)",
-                if is_markdown { "markdown" } else { "html" },
-                content.len()
-            )
-        };
-
-        Ok(crate::mcp::builtin::utils::create_resource_response(
-            &format!("ui://content/{}", uuid::Uuid::new_v4()),
-            "text/html",
-            &html,
-            "ui",
-            "presentContent",
-            Some(&summary),
-        ))
-    }
-
     fn present_interactive(&self, args: Value) -> Result<MCPResult, String> {
         let content = match args.get("content").and_then(|v| v.as_str()) {
             Some(v) => v,
@@ -944,14 +646,10 @@ impl BuiltinMCPServer for UiServer {
         _session_id: Option<String>,
     ) -> Result<MCPResult, String> {
         match tool_name {
-            "promptUser" => self.prompt_user(args),
             "getUserAnswer" => self.get_user_answer(args),
             "visualizeData" => self.visualize_data(args),
-            "waitForUserResume" => self.wait_for_user_resume(args),
-            "resumeFromWait" => self.resume_from_wait(args),
             "circuitBreak" => self.circuit_break(args),
             "resumeCircuitBreak" => self.resume_circuit_break(args),
-            "presentContent" => self.present_content(args),
             "presentInteractive" => self.present_interactive(args),
             _ => Err(format!("Unknown tool: {}", tool_name)),
         }

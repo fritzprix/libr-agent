@@ -99,11 +99,12 @@ fn update_todo_tool() -> MCPTool {
     MCPTool {
         name: "updateTodo".to_string(),
         title: Some("Update Todo".to_string()),
-        description: r#"Mark a todo as done/undone or cancel (remove) it, identified by its 0-based position.
+        description: r#"Update a todo's status or cancel (remove) it, identified by its 0-based position.
 
 action:
-  'done'   — Mark as completed (stays in list for progress tracking). Supply checked=false to reopen.
-  'cancel' — Permanently remove the todo. Use only when the task should never have existed.
+  'done'    — Mark as completed (stays in list for progress tracking).
+  'pending' — Mark as incomplete (reopen a previously completed todo).
+  'cancel'  — Permanently remove the todo. Use only when the task should never have existed.
 
 Prefer 'done' over 'cancel' — completed todos preserve history.
 Get positions from getCurrentState."#
@@ -121,16 +122,10 @@ Get positions from getCurrentState."#
                 (
                     "action".to_string(),
                     enum_prop(
-                        vec!["done", "cancel"],
+                        vec!["done", "pending", "cancel"],
                         "done",
-                        Some("'done' to mark complete (reversible), 'cancel' to permanently remove."),
+                        Some("The action to perform on the todo: 'done', 'pending', or 'cancel'."),
                     ),
-                ),
-                (
-                    "checked".to_string(),
-                    boolean_prop(Some(
-                        "Only for action='done'. Mark as done (true, default) or reopen (false).",
-                    )),
                 ),
                 (
                     "summary".to_string(),
