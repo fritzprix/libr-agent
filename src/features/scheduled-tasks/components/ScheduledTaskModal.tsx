@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
-import { ScheduleBuilder } from './ScheduleBuilder';
+import { getDisplayCron, ScheduleBuilder } from './ScheduleBuilder';
 import type { Assistant } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { useDnDContext } from '@/context/DnDContext';
@@ -43,6 +43,7 @@ interface ScheduledTaskModalProps {
   onSave: (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -91,6 +92,7 @@ interface ScheduledTaskFormProps {
   onSave: (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -107,9 +109,15 @@ function ScheduledTaskForm({
   const { t } = useTranslation();
   const { subscribe } = useDnDContext();
   const [name, setName] = useState(task?.name ?? '');
-  const [cronExpression, setCronExpression] = useState(
-    task?.cronExpression ?? '0 9 * * *',
-  );
+  const initialCronExpression =
+    task !== undefined && task !== null
+      ? getDisplayCron(
+          task.cronExpression,
+          task.scheduleTimezone,
+          task.nextRunAt,
+        )
+      : '0 9 * * *';
+  const [cronExpression, setCronExpression] = useState(initialCronExpression);
 
   const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<
     string | undefined
@@ -234,6 +242,7 @@ function ScheduledTaskForm({
       await onSave({
         name: name.trim(),
         cronExpression: cronExpression.trim(),
+        scheduleTimezone: 'local',
         assistantId: effectiveAssistantId,
         message: message.trim(),
         yoloMode,
@@ -303,6 +312,14 @@ function ScheduledTaskForm({
         {/* Human-readable schedule builder */}
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
+          {task?.scheduleTimezone === 'utc' && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.utcLegacyNotice',
+                'This existing task uses UTC scheduling. Saving it will convert the schedule to local time.',
+              )}
+            </p>
+          )}
           <ScheduleBuilder
             value={cronExpression}
             onChange={setCronExpression}

@@ -27,7 +27,9 @@ pub use log_service::LogService;
 pub use mcp_server_service::McpServerService;
 pub use message_service::MessageService;
 pub use playbook_service::PlaybookService;
-pub use scheduled_task_service::ScheduledTaskService;
+pub use scheduled_task_service::{
+    default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService,
+};
 pub use secure_file_manager::SecureFileManager;
 pub use session_cleanup_service::SessionCleanupService;
 pub use session_directory_service::SessionDirectoryService;

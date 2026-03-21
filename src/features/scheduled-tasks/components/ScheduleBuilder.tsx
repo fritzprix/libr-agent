@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { ScheduledTaskTimezone } from '@/lib/backend/scheduled-tasks';
 
 type RepeatMode = 'minutes' | 'hours' | 'daily' | 'weekly' | 'monthly';
 
@@ -121,6 +122,35 @@ export function describeCron(cron: string, t: TFunction): string {
         day: s.monthDay,
         time: timeStr,
       });
+  }
+}
+
+export function getDisplayCron(
+  cron: string,
+  scheduleTimezone: ScheduledTaskTimezone,
+  nextRunAt: number | null,
+): string {
+  if (scheduleTimezone === 'local' || nextRunAt === null) {
+    return cron;
+  }
+
+  const state = fromCron(cron);
+  if (state.mode === 'minutes' || state.mode === 'hours') {
+    return cron;
+  }
+
+  const nextRun = new Date(nextRunAt);
+  if (Number.isNaN(nextRun.getTime())) {
+    return cron;
+  }
+
+  switch (state.mode) {
+    case 'daily':
+      return `${nextRun.getMinutes()} ${nextRun.getHours()} * * *`;
+    case 'weekly':
+      return `${nextRun.getMinutes()} ${nextRun.getHours()} * * ${nextRun.getDay()}`;
+    case 'monthly':
+      return `${nextRun.getMinutes()} ${nextRun.getHours()} ${nextRun.getDate()} * *`;
   }
 }
 

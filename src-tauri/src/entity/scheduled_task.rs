@@ -14,8 +14,10 @@ pub struct Model {
     pub id: String,
     /// User-defined label for the task
     pub name: String,
-    /// Standard cron expression (5 or 6 fields, UTC)
+    /// Standard cron expression (5 or 6 fields); interpretation depends on `schedule_timezone`
     pub cron_expression: String,
+    /// Schedule interpretation mode: "utc" for legacy tasks, "local" for new UI-created tasks
+    pub schedule_timezone: String,
     /// Assistant (agent) that owns and executes this task
     pub assistant_id: String,
     /// Message to inject as a user turn; supports @playbook:name, @skill:name mentions

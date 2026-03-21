@@ -14,6 +14,7 @@ pub struct CreateScheduledTaskParams {
     pub id: String,
     pub name: String,
     pub cron_expression: String,
+    pub schedule_timezone: String,
     pub assistant_id: String,
     pub message: String,
     pub yolo_mode: bool,
@@ -25,6 +26,7 @@ pub struct CreateScheduledTaskParams {
 pub struct UpdateScheduledTaskParams {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
+    pub schedule_timezone: Option<String>,
     pub assistant_id: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
@@ -106,6 +108,7 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
             id: Set(params.id),
             name: Set(params.name),
             cron_expression: Set(params.cron_expression),
+            schedule_timezone: Set(params.schedule_timezone),
             assistant_id: Set(params.assistant_id),
             message: Set(params.message),
             yolo_mode: Set(params.yolo_mode),
@@ -162,6 +165,9 @@ impl ScheduledTaskRepository for SqliteScheduledTaskRepository {
         }
         if let Some(v) = params.cron_expression {
             active.cron_expression = Set(v);
+        }
+        if let Some(v) = params.schedule_timezone {
+            active.schedule_timezone = Set(v);
         }
         if let Some(v) = params.assistant_id {
             active.assistant_id = Set(v);

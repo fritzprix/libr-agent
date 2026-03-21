@@ -32,6 +32,7 @@ describe('scheduled-tasks backend wrapper', () => {
     id: 'task-1',
     name: 'Test Task',
     cronExpression: '* * * * *',
+    scheduleTimezone: 'local',
     assistantId: 'assistant-1',
     message: 'Hello',
     yoloMode: false,
