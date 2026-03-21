@@ -65,6 +65,15 @@ The platform is designed to be expanded via community standards.
 
 ---
 
+## 📖 Documentation & Guides
+
+LibrAgent is a powerful platform, and we provide detailed documentation to help you get the most out of it.
+
+- **[Navigation Guide](docs/guides/navigation-guide.md)**: A map of the application's structure, explaining how to use routes like `/assistants` (Assistant Profiles) and `/playbooks` (Workflow Templates) to manage your agents.
+- **[Architecture Guide](docs/guides/architecture-documentation-guide.md)**: Detailed overview of how LibrAgent works under the hood.
+
+---
+
 ## 📦 Installation
 
 Download the latest binaries for Windows, macOS, or Linux from the [Release page](https://github.com/fritzprix/libr-agent/releases/latest).
