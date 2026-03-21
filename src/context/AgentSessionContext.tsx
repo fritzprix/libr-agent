@@ -215,11 +215,34 @@ export function AgentSessionProvider({
     yoloModeRef.current = yoloModeEnabled;
   }, [yoloModeEnabled]);
 
-  const acknowledgeSessionAttention = useCallback(
+  const applyLocalViewedAt = useCallback((viewedAt: Date) => {
+    setSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            lastViewedAt:
+              !prev.lastViewedAt ||
+              viewedAt.getTime() > prev.lastViewedAt.getTime()
+                ? viewedAt
+                : prev.lastViewedAt,
+          }
+        : prev,
+    );
+  }, []);
+
+  const persistViewedAt = useCallback(
     async (viewedAt = new Date()) => {
+      applyLocalViewedAt(viewedAt);
       await markSessionViewed(sessionId, viewedAt);
     },
-    [markSessionViewed, sessionId],
+    [applyLocalViewedAt, markSessionViewed, sessionId],
+  );
+
+  const acknowledgeSessionAttention = useCallback(
+    async (viewedAt = new Date()) => {
+      await persistViewedAt(viewedAt);
+    },
+    [persistViewedAt],
   );
 
   /**
@@ -382,12 +405,7 @@ export function AgentSessionProvider({
               });
 
               if (!newMessage.isStreaming) {
-                void markSessionViewed(
-                  sessionId,
-                  new Date(rustMessage.createdAt),
-                ).catch((err) => {
-                  logger.error('Failed to mark active session viewed', err);
-                });
+                applyLocalViewedAt(new Date(rustMessage.createdAt));
               }
 
               // Recurring Request Logic for Think-Only Messages
@@ -557,7 +575,7 @@ export function AgentSessionProvider({
 
         // 4. Load messages
         await loadMessages(sessionId);
-        void markSessionViewed(sessionId).catch((err) => {
+        void persistViewedAt().catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',
             err,
@@ -584,7 +602,27 @@ export function AgentSessionProvider({
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, loadMessages, markSessionViewed]);
+  }, [sessionId, loadMessages, persistViewedAt]);
+
+  useEffect(() => {
+    const markViewedOnReturn = () => {
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
+
+      void persistViewedAt().catch((err) => {
+        logger.error('Failed to persist viewed state after focus change', err);
+      });
+    };
+
+    window.addEventListener('focus', markViewedOnReturn);
+    document.addEventListener('visibilitychange', markViewedOnReturn);
+
+    return () => {
+      window.removeEventListener('focus', markViewedOnReturn);
+      document.removeEventListener('visibilitychange', markViewedOnReturn);
+    };
+  }, [persistViewedAt]);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => {

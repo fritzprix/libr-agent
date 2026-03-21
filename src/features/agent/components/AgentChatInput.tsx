@@ -285,7 +285,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       'bg-destructive/5 border-destructive/50 shadow-destructive/10',
   );
 
-  const hasContent = input.trim() || attachedFiles.length > 0;
+  const hasContent = input.trim().length > 0 || attachedFiles.length > 0;
 
   return (
     <div className="relative">
