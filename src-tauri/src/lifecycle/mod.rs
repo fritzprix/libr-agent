@@ -13,7 +13,17 @@ pub mod settings;
 use crate::search;
 use crate::session::get_session_manager;
 use crate::state::set_sqlite_db_url;
+use database_error::DatabaseError;
 use log::info;
+
+pub fn should_quarantine_on_init_failure(error: &DatabaseError) -> bool {
+    matches!(
+        error,
+        DatabaseError::MigrationFailed { .. }
+            | DatabaseError::MigrationModified { .. }
+            | DatabaseError::CorruptedDatabase { .. }
+    )
+}
 
 /// A synchronous wrapper to initialize and run the application with SQLite support.
 pub fn run_with_sqlite_sync(db_url: String) {
@@ -25,6 +35,13 @@ pub fn run_with_sqlite_sync(db_url: String) {
     tauri::async_runtime::block_on(async {
         let session_manager = get_session_manager().expect("SessionManager not initialized");
 
+        if let Err(err) = database::maybe_restore_quarantined_database(&db_url).await {
+            log::warn!(
+                "⚠️ Failed to inspect quarantined DB recovery candidates: {}",
+                err
+            );
+        }
+
         // Initialize Database (now returns Result).
         // Strategy: if migration fails on an existing DB (e.g. schema mismatch from
         // an untracked legacy DB), rename it aside and retry with a fresh DB so the
@@ -33,6 +50,14 @@ pub fn run_with_sqlite_sync(db_url: String) {
             Ok(connection) => connection,
             Err(first_err) => {
                 log::error!("❌ Database init failed (attempt 1): {}", first_err);
+
+                if !should_quarantine_on_init_failure(&first_err) {
+                    eprintln!("❌ Database init failed: {}", first_err);
+                    eprintln!(
+                        "💡 Refusing to quarantine the existing database for a non-migration failure."
+                    );
+                    std::process::exit(1);
+                }
 
                 // Extract the file path from the URL and try to quarantine the bad DB.
                 // Re-use the same helper as init_database so there is no duplicated
