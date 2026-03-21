@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.9] - 2026-03-21
+
+### 🐛 Fixes
+
+- **Persistent State Recovery**: Fixed a critical regression in `0.6.8` where some upgrades or fresh installs could appear to wipe existing sessions, messages, planning data, settings, and MCP server entries by booting against a fresh empty database. The app now restores preserved user data automatically when a quarantined database is available.
+- **Safer Database Startup**: Tightened database startup recovery so LibrAgent no longer quarantines an existing database for generic initialization failures like transient locks or non-structural startup issues, reducing the risk of false "data loss" scenarios.
+
+### 🔧 Internal
+
+- **Windows CI Build Quoting**: Fixed the Tauri build step in GitHub Actions so Windows release jobs pass valid JSON config overrides during CI builds.
+
 ## [0.6.8] - 2026-03-21
 
 ### 🚀 Features
