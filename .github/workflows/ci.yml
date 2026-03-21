@@ -147,6 +147,7 @@ jobs:
       - name: 🏗️ Build Tauri app
         run: >-
           pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        shell: bash
         env:
           # Use dummy value for CI if needed, but --config override is preferred
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
