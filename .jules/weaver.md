@@ -110,3 +110,8 @@
 
 - **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an **Adjusting State During Render** pattern that compares `session?.id` to a `prevSessionId` state tracker, ensuring state is synchronized before the next paint and preventing an extra post-commit re-render lifecycle.
 - **Renders Saved:** Eliminated redundant effect-triggered renders that act purely as local state clears in response to prop/dependency changes.
+
+## 2026-03-14 - [GeneralTab / useSkillsDirectory] **Eradicated:** [God Component / Logic in Render] **Woven:** [Custom Hook Pattern]
+
+- **GeneralTab:** Extracted the directory verification logic (`scan_skills_directory` and fallback to default dir) into a new `useSkillsDirectory` hook.
+- **Benefits:** Decoupled business logic (verification of skills folder) from the presentation, removing the monolithic `useEffect` hook block inside `GeneralTabComponent`.
