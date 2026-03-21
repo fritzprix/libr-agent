@@ -1,7 +1,7 @@
 import { safeInvoke } from '@/lib/backend/core';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { getLogger } from '@/lib/logger';
-import { SkillMetadata } from '@/types/skills';
+import type { SkillMetadata } from '@/types/skills';
 
 const logger = getLogger('useSkillsDirectory');
 
@@ -16,6 +16,8 @@ export function useSkillsDirectory(
   const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
+    let isActive = true;
+
     async function verifySkills() {
       if (!skillsDirectory) {
         try {
@@ -23,6 +25,7 @@ export function useSkillsDirectory(
           const defaultDir = await safeInvoke<string>(
             'get_default_skills_directory',
           );
+          if (!isActive) return;
           onSkillsDirectoryChange(defaultDir);
           return; // The change will trigger the effect again
         } catch (error) {
@@ -34,12 +37,16 @@ export function useSkillsDirectory(
       const dirToVerify = skillsDirectory || '';
 
       if (!dirToVerify) {
+        if (!isActive) return;
         setVerificationStatus('idle');
+        setErrorMessage('');
         setSkills([]);
         return;
       }
 
+      if (!isActive) return;
       setVerificationStatus('loading');
+      setErrorMessage('');
       try {
         const result = await safeInvoke<SkillMetadata[]>(
           'scan_skills_directory',
@@ -47,9 +54,12 @@ export function useSkillsDirectory(
             directory: dirToVerify,
           },
         );
+        if (!isActive) return;
         setSkills(result);
         setVerificationStatus('success');
+        setErrorMessage('');
       } catch (error) {
+        if (!isActive) return;
         logger.error('Failed to verify skills directory', error);
         setVerificationStatus('error');
         setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -57,7 +67,11 @@ export function useSkillsDirectory(
       }
     }
 
-    verifySkills();
+    void verifySkills();
+
+    return () => {
+      isActive = false;
+    };
   }, [skillsDirectory, onSkillsDirectoryChange]);
 
   return {
