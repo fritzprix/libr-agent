@@ -1,199 +1,147 @@
 use super::super::WorkspaceServer;
-use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, SuccessHint, ToolGroup};
+use crate::mcp::builtin::error_guidance::{guided_error, ErrorCategory, ToolGroup};
 use crate::mcp::types::MCPResult;
 use serde_json::Value;
 use tokio::fs;
-use tracing::{error, info};
+use tracing::info;
 
 impl WorkspaceServer {
-    pub async fn handle_import_file(
+    pub async fn handle_import_files(
         &self,
         args: Value,
         session_id: Option<String>,
     ) -> Result<MCPResult, String> {
-        // ✅ ENHANCED: Replace legacy MCPResult::error() with guided_error for better context
+        // ✅ ENHANCED: Batch file import handling with individual results tracking
 
-        // Parameter validation 1: srcAbsPath
-        let src_path_str = match args
-            .get("srcAbsPath")
-            .or_else(|| args.get("src_abs_path"))
-            .and_then(|v| v.as_str())
-        {
-            Some(path) => path,
+        let files = match args.get("files").and_then(|v| v.as_array()) {
+            Some(f) => f,
             None => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    "Missing required parameter: srcAbsPath",
+                    "Missing required parameter: files (array)",
                     ToolGroup::Workspace,
                 )
-                .guidance(vec![
-                    "Provide the absolute path to the file you want to import".to_string(),
-                    "Example: {\"srcAbsPath\": \"/home/user/file.txt\", \"destRelPath\": \"imports/file.txt\"}".to_string(),
-                ])
                 .to_mcp_result());
             }
         };
 
-        // Parameter validation 2: destRelPath
-        let dest_rel_path = match args
-            .get("destRelPath")
-            .or_else(|| args.get("dest_rel_path"))
-            .and_then(|v| v.as_str())
-        {
-            Some(path) => path,
-            None => {
-                return Ok(guided_error(
-                    ErrorCategory::InvalidInput,
-                    "Missing required parameter: destRelPath",
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Provide the destination path relative to workspace root".to_string(),
-                    "Example: \"imports/filename.ext\" or \"src/data/file.txt\"".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        // Log import attempt for debugging
-        info!(
-            "importFile called: src='{}', dest='{}'",
-            src_path_str, dest_rel_path
-        );
-
-        // Validate source path exists and is readable
-        let src_path = match std::path::Path::new(src_path_str).canonicalize() {
-            Ok(path) => path,
-            Err(e) => {
-                error!(
-                    "Failed to canonicalize source path '{}': {}",
-                    src_path_str, e
-                );
-                return Ok(guided_error(
-                    ErrorCategory::ResourceNotFound,
-                    format!("Source file not found or cannot be accessed: {}", src_path_str),
-                    ToolGroup::Workspace,
-                )
-                .guidance(vec![
-                    "Verify the file path is correct and the file exists".to_string(),
-                    "Check file permissions and ensure you have read access".to_string(),
-                    format!("On Windows, use absolute paths like 'C:\\Users\\...', on Unix like '/home/user/...'"),
-                    "Use an absolute path, not a relative path".to_string(),
-                ])
-                .to_mcp_result());
-            }
-        };
-
-        // Ensure source is a file, not a directory
-        if !src_path.is_file() {
-            return Ok(guided_error(
-                ErrorCategory::InvalidInput,
-                format!("Source path is a directory, not a file: {}", src_path_str),
-                ToolGroup::Workspace,
-            )
-            .guidance(vec![
-                "Provide the path to a specific file, not a directory".to_string(),
-                "To import multiple files, call importFile multiple times".to_string(),
-                "To import directory contents, use shell commands (e.g., runShell('cp -r src dest'))".to_string(),
-            ])
-            .to_mcp_result());
+        if files.is_empty() {
+            return Ok(MCPResult::success("No files provided for import."));
         }
 
-        // Use file manager to handle destination path validation and copying
-        let file_manager = self.get_file_manager(session_id);
-        match file_manager
-            .copy_file_from_external(&src_path, dest_rel_path)
-            .await
-        {
-            Ok(dest_path) => {
-                info!(
-                    "Successfully imported file from {} to {}",
-                    src_path.display(),
-                    dest_path.display()
-                );
+        let mut success_messages = Vec::new();
+        let mut error_messages = Vec::new();
 
-                // Get file size for reporting
-                let file_size = match fs::metadata(&dest_path).await {
-                    Ok(metadata) => metadata.len(),
-                    Err(_) => 0,
-                };
+        let target_session_id = session_id.unwrap_or_else(|| self.session_id.clone());
 
-                let hint = SuccessHint::new(
-                    format!(
-                        "✅ Successfully imported {} ({} bytes) to {}",
-                        src_path.display(),
-                        file_size,
-                        dest_rel_path
-                    ),
-                    vec![
-                        format!(
-                            "Use readFile(\"{}\") to view imported content",
-                            dest_rel_path
-                        ),
-                        "Use writeFile to modify the imported file".to_string(),
-                    ],
-                );
+        for file_val in files {
+            // Extract srcAbsPath and destRelPath for each file
+            let src_path_str = match file_val
+                .get("srcAbsPath")
+                .or_else(|| file_val.get("src_abs_path"))
+                .and_then(|v| v.as_str())
+            {
+                Some(path) => path,
+                None => {
+                    error_messages.push("Missing srcAbsPath for a file item".to_string());
+                    continue;
+                }
+            };
 
-                Ok(hint.to_mcp_result())
+            let dest_rel_path = match file_val
+                .get("destRelPath")
+                .or_else(|| file_val.get("dest_rel_path"))
+                .and_then(|v| v.as_str())
+            {
+                Some(path) => path,
+                None => {
+                    error_messages.push(format!("Missing destRelPath for file: {}", src_path_str));
+                    continue;
+                }
+            };
+
+            // Resolve and validate destination path
+            let dest_abs_path = match self
+                .validate_path_with_error_for_write(dest_rel_path, Some(target_session_id.clone()))
+            {
+                Ok(path) => path,
+                Err(e) => {
+                    error_messages.push(format!(
+                        "Invalid destination path '{}': {}",
+                        dest_rel_path, e
+                    ));
+                    continue;
+                }
+            };
+
+            // Ensure parent directory exists
+            if let Some(parent) = dest_abs_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent).await {
+                    error_messages.push(format!(
+                        "Failed to create directory '{}' for file '{}': {}",
+                        parent.display(),
+                        src_path_str,
+                        e
+                    ));
+                    continue;
+                }
             }
-            Err(e) => {
-                error!(
-                    "Failed to import file from {} to {}: {}",
-                    src_path.display(),
-                    dest_rel_path,
-                    e
-                );
 
-                // Provide context-specific error guidance
-                let (category, guidance) = if e.contains("already exists")
-                    || e.contains("duplicate")
-                {
-                    (
-                        ErrorCategory::InvalidInput,
-                        vec![
-                            format!("File already exists at: {}", dest_rel_path),
-                            "Use writeFile to overwrite the existing file".to_string(),
-                            "Or specify a different destination path with a unique name"
-                                .to_string(),
-                        ],
-                    )
-                } else if e.contains("permission") || e.contains("denied") {
-                    (
-                        ErrorCategory::PermissionDenied,
-                        vec![
-                            "Insufficient permissions to write to destination".to_string(),
-                            "Check workspace permissions and destination directory access"
-                                .to_string(),
-                            "Ensure you have write access to the destination directory".to_string(),
-                        ],
-                    )
-                } else if e.contains("space") {
-                    (
-                        ErrorCategory::InvalidInput,
-                        vec![
-                            "Insufficient disk space to import file".to_string(),
-                            "Free up disk space and try again".to_string(),
-                        ],
-                    )
-                } else {
-                    (
-                        ErrorCategory::InvalidInput,
-                        vec![
-                            "Verify source file is accessible and destination path is valid"
-                                .to_string(),
-                            "Check workspace configuration and file manager settings".to_string(),
-                        ],
-                    )
-                };
-
-                Ok(guided_error(
-                    category,
-                    format!("Failed to import file: {}", e),
-                    ToolGroup::Workspace,
-                )
-                .guidance(guidance)
-                .to_mcp_result())
+            // Perform copy
+            info!(
+                "Importing file: src='{}', dest='{}'",
+                src_path_str,
+                dest_abs_path.display()
+            );
+            match fs::copy(src_path_str, &dest_abs_path).await {
+                Ok(_) => {
+                    success_messages
+                        .push(format!("Imported: {} -> {}", src_path_str, dest_rel_path));
+                }
+                Err(e) => {
+                    error_messages.push(format!("Failed to import '{}': {}", src_path_str, e));
+                }
             }
+        }
+
+        // Store flags before moving vectors
+        let has_errors = !error_messages.is_empty();
+        let has_success = !success_messages.is_empty();
+
+        // Combine results
+        let mut final_text = Vec::new();
+        if has_success {
+            final_text.push(format!(
+                "Successfully imported {} file(s):",
+                success_messages.len()
+            ));
+            final_text.extend(success_messages.into_iter().map(|s| format!("- {}", s)));
+        }
+
+        if has_errors {
+            if !final_text.is_empty() {
+                final_text.push("".to_string());
+            }
+            final_text.push(format!(
+                "Failed to import {} file(s):",
+                error_messages.len()
+            ));
+            final_text.extend(error_messages.into_iter().map(|e| format!("- {}", e)));
+        }
+
+        let result_text = final_text.join("\n");
+
+        if has_errors && !has_success {
+            // Entirely failed
+            Ok(guided_error(
+                ErrorCategory::InternalError,
+                &result_text,
+                ToolGroup::Workspace,
+            )
+            .to_mcp_result())
+        } else {
+            // Partially or fully successful
+            Ok(MCPResult::success(&result_text))
         }
     }
 }

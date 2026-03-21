@@ -1,8 +1,8 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpServerService } from '@/lib/services/mcp-server-service';
-import { Button } from '@/components/ui';
+import { Button, Separator } from '@/components/ui';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,36 +49,46 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
   } = useMCPServerManagement(service);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-xl font-bold tracking-tight">
           {t('mcpServer.title', 'Extensions')}
         </h2>
-        <Button onClick={handleCreateNew}>
+        <Button onClick={handleCreateNew} className="rounded-xl shadow-md">
           <Plus className="w-4 h-4 mr-2" />
           {t('mcpServer.addServer', 'Add Extension')}
         </Button>
       </div>
 
-      {/* Recommended Servers Section */}
-      <RecommendedPresets
-        presets={presets}
-        servers={servers}
-        onSetupPreset={handleSetupPreset}
-      />
-
-      {/* Existing Servers List */}
+      {/* Installed Servers Section (Moved to Top) */}
       <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Package className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground font-sans">
+            {t('mcpServer.installedExtensions', 'Installed Extensions')}
+          </h3>
+          <div className="h-px bg-border/50 flex-1 ml-2" />
+        </div>
+
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            {t('mcpServer.loading', 'Loading extensions...')}
+          <div className="text-center py-12 text-muted-foreground flex flex-col items-center gap-3">
+            <LoadingSpinner size="lg" />
+            <p className="text-sm font-sans">
+              {t('mcpServer.loading', 'Loading extensions...')}
+            </p>
           </div>
         ) : servers.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
-            {t(
-              'mcpServer.noServers',
-              'No extensions installed. Add one or choose a recommended extension above.',
-            )}
+          <div className="text-center py-12 text-muted-foreground border border-dashed rounded-[1.5rem] bg-muted/5 flex flex-col items-center gap-2">
+            <Package className="w-8 h-8 opacity-20 mb-2" />
+            <p className="text-sm font-sans font-medium">
+              {t('mcpServer.noServersShort', 'No extensions installed yet.')}
+            </p>
+            <p className="text-xs font-sans opacity-60">
+              {t(
+                'mcpServer.installHint',
+                'Choose a recommended extension below to get started.',
+              )}
+            </p>
           </div>
         ) : (
           <>
@@ -98,27 +108,40 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
 
             {isValidating && servers.length > 0 && (
               <div className="flex justify-center py-2">
-                <span className="text-xs text-muted-foreground">
-                  {t('mcpServer.updating', 'Updating...')}
+                <span className="text-xs text-muted-foreground animate-pulse font-sans">
+                  {t('mcpServer.updating', 'Updating status...')}
                 </span>
               </div>
             )}
 
             {hasNextPage && (
-              <div className="flex justify-center pt-2">
+              <div className="flex justify-center pt-4">
                 <Button
                   variant="outline"
+                  size="sm"
                   disabled={isValidating}
                   onClick={() => setSize((s) => s + 1)}
+                  className="rounded-lg font-sans"
                 >
                   {isValidating
                     ? t('mcpServer.loadingMore', 'Loading...')
-                    : t('mcpServer.loadMore', 'Load more')}
+                    : t('mcpServer.loadMore', 'Load more extensions')}
                 </Button>
               </div>
             )}
           </>
         )}
+      </div>
+
+      <Separator className="opacity-50" />
+
+      {/* Recommended Servers Section (Moved to Bottom) */}
+      <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <RecommendedPresets
+          presets={presets}
+          servers={servers}
+          onSetupPreset={handleSetupPreset}
+        />
       </div>
 
       {editingServer && (

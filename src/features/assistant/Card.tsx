@@ -11,8 +11,18 @@ import {
   OPTIONAL_BUILTIN_SERVICE_ALIASES,
 } from '@/lib/assistant/runtime-builtins';
 
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronUp,
+  Bot,
+  Trash2,
+  Edit,
+  Calendar,
+  Puzzle,
+  Square,
+} from 'lucide-react';
 import { getLogger } from '@/lib/logger';
+import { cn } from '@/lib/utils';
 
 interface AssistantCardProps {
   assistant: Assistant;
@@ -36,15 +46,6 @@ export default function AssistantCard({
   const [edit, setEdit] = useState<boolean>(false);
   const { t } = useTranslation('common');
   const logger = getLogger('AssistantCard');
-
-  // Debug: Log MCP server mapping
-  logger.debug('🎴 Card rendered', {
-    assistantId: assistant.id,
-    assistantName: assistant.name,
-    mcpServerIds: assistant.mcpServerIds,
-    mcpServersMap,
-    builtinToolsMap,
-  });
 
   const handleEditComplete = useCallback(
     async (assistant: Assistant) => {
@@ -97,116 +98,154 @@ export default function AssistantCard({
 
   return (
     <EditorProvider initialValue={assistant} onFinalize={handleEditComplete}>
-      <div className="border rounded p-3 transition-colors border-muted hover:border-accent">
-        <div className="flex justify-between items-start mb-2">
-          <div className="flex items-center gap-2 flex-1">
-            <h3 className="text-primary font-medium">{assistant.name}</h3>
-            {assistant.deletionProtected === true && (
-              <Badge variant="destructive">
-                {t('assistant.card.protected')}
-              </Badge>
-            )}
+      <div
+        className={cn(
+          'group border rounded-[1.5rem] p-5 transition-all duration-300 relative overflow-hidden bg-background/50 backdrop-blur-sm',
+          isExpanded
+            ? 'ring-1 ring-primary/20 bg-background/80 shadow-xl'
+            : 'hover:border-primary/40 hover:shadow-lg hover:bg-background border-border/50',
+        )}
+      >
+        {/* Identity Row */}
+        <div className="flex justify-between items-start mb-4 relative z-10">
+          <div className="flex items-center gap-4 flex-1">
+            <div
+              className={cn(
+                'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300',
+                isExpanded
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-primary/10 text-primary group-hover:scale-110',
+              )}
+            >
+              <Bot size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h3 className="text-lg font-bold tracking-tight">
+                  {assistant.name}
+                </h3>
+                {assistant.deletionProtected === true && (
+                  <Badge
+                    variant="destructive"
+                    className="text-[9px] uppercase font-bold tracking-widest h-4 px-1.5 font-sans"
+                  >
+                    {t('assistant.card.protected')}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground/70 font-sans line-clamp-1 italic">
+                {isExpanded
+                  ? 'Full Configuration'
+                  : assistant.description || assistant.systemPrompt}
+              </p>
+            </div>
           </div>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0"
+            size="icon"
+            className="h-8 w-8 rounded-full hover:bg-primary/5 transition-colors"
             onClick={onToggle}
           >
             {isExpanded ? (
               <ChevronUp className="h-4 w-4" />
             ) : (
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             )}
           </Button>
         </div>
 
-        {isExpanded ? (
-          <div className="space-y-4 mb-3">
-            <div>
-              <p className="text-sm font-medium mb-1">
+        {/* Detailed Content */}
+        {isExpanded && (
+          <div className="space-y-6 mb-6 relative z-10 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 font-sans flex items-center gap-1.5">
+                <Square size={10} />
                 {t('assistant.systemPromptLabel')}
-              </p>
-              <p className="text-muted-foreground text-sm whitespace-pre-wrap">
+              </div>
+              <div className="bg-muted/30 border border-border/50 rounded-xl p-4 font-mono text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
                 {assistant.systemPrompt}
-              </p>
+              </div>
             </div>
 
             {assistant.description && (
-              <div>
-                <p className="text-sm font-medium mb-1">
+              <div className="space-y-2">
+                <div className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 font-sans flex items-center gap-1.5">
+                  <Square size={10} />
                   {t('assistant.card.description')}
-                </p>
-                <p className="text-muted-foreground text-sm">
+                </div>
+                <p className="text-sm text-muted-foreground font-sans leading-relaxed px-1">
                   {assistant.description}
                 </p>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <div>
-                <span className="font-medium">
-                  {t('assistant.card.created')}:
-                </span>{' '}
-                {new Date(assistant.createdAt).toLocaleDateString()}
+            <div className="flex items-center gap-6 pt-2 border-t border-border/40">
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
+                <Calendar size={12} />
+                <span>
+                  {t('assistant.card.created')}:{' '}
+                  {new Date(assistant.createdAt).toLocaleDateString()}
+                </span>
               </div>
-              <div>
-                <span className="font-medium">
-                  {t('assistant.card.updated')}:
-                </span>{' '}
-                {new Date(assistant.updatedAt).toLocaleDateString()}
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
+                <Edit size={12} />
+                <span>
+                  {t('assistant.card.updated')}:{' '}
+                  {new Date(assistant.updatedAt).toLocaleDateString()}
+                </span>
               </div>
             </div>
           </div>
-        ) : (
-          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
-            {assistant.systemPrompt}
-          </p>
         )}
 
-        <div className="flex flex-wrap gap-1 mb-2">
-          {/* External MCP Servers - Blue Badges */}
+        {/* Tools Section */}
+        <div className="flex flex-wrap gap-1.5 mb-5 relative z-10">
+          {/* External MCP Servers - Blue/Primary Badges */}
           {assistant.mcpServerIds?.map((serverId) => {
             const serverName = mcpServersMap?.[serverId] ?? serverId;
-            logger.debug('🏷️ Rendering MCP server badge', {
-              serverId,
-              serverName,
-              foundInMap: !!mcpServersMap?.[serverId],
-            });
             return (
               <Badge
                 key={serverId}
                 variant="outline"
-                className="bg-primary/10 text-primary border-primary/20"
+                className="bg-primary/5 text-primary/80 border-primary/20 text-[10px] font-medium font-sans flex items-center gap-1 py-0.5"
               >
+                <Puzzle size={10} />
                 {serverName}
               </Badge>
             );
           })}
 
-          {/* Built-in Tools - Green Badges */}
-          <Badge variant="secondary" className="bg-success/10 text-success">
+          {/* Built-in Tools - Green/Success Badges */}
+          <Badge
+            variant="secondary"
+            className="bg-success/10 text-success/80 border-transparent text-[10px] font-medium font-sans flex items-center gap-1 py-0.5"
+          >
+            <Square size={10} />
             {t('assistant.card.coreBuiltin')}
           </Badge>
           {enabledOptionalAliases.map((alias) => (
             <Badge
               key={alias}
               variant="secondary"
-              className="bg-success/10 text-success"
+              className="bg-success/10 text-success/80 border-transparent text-[10px] font-medium font-sans flex items-center gap-1 py-0.5"
             >
+              <Square size={10} />
               {builtinToolsMap?.[alias] || alias}
             </Badge>
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-2 relative z-10">
           {!showDeleteConfirm ? (
             <>
               <Button
                 size="sm"
                 variant="secondary"
                 onClick={() => setEdit(true)}
+                className="rounded-lg px-4 font-bold font-sans text-xs bg-muted/50 hover:bg-muted"
               >
+                <Edit size={14} className="mr-1.5 opacity-70" />
                 {t('assistant.card.edit')}
               </Button>
 
@@ -215,23 +254,25 @@ export default function AssistantCard({
                 variant="ghost"
                 onClick={handleDeleteClick}
                 disabled={isDeleting}
+                className="rounded-lg px-4 font-bold font-sans text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 title={
                   assistant.deletionProtected === true
                     ? t('assistant.card.deleteBlocked')
                     : t('assistant.card.delete')
                 }
               >
+                <Trash2 size={14} className="mr-1.5 opacity-70" />
                 {t('assistant.card.delete')}
               </Button>
             </>
           ) : (
-            <>
+            <div className="flex gap-2 w-full animate-in zoom-in-95 duration-200">
               <Button
                 size="sm"
                 variant="destructive"
                 onClick={handleDeleteConfirm}
                 disabled={isDeleting}
-                className="flex-1"
+                className="flex-1 rounded-lg font-bold font-sans"
               >
                 {isDeleting
                   ? t('assistant.card.deleting')
@@ -242,10 +283,11 @@ export default function AssistantCard({
                 variant="outline"
                 onClick={handleDeleteCancel}
                 disabled={isDeleting}
+                className="rounded-lg font-bold font-sans"
               >
                 {t('assistant.card.cancel')}
               </Button>
-            </>
+            </div>
           )}
         </div>
       </div>

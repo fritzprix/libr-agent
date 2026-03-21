@@ -240,7 +240,10 @@ export default function AppSidebar() {
                   isActive={location.pathname.startsWith('/history')}
                   tooltip={t('sidebar.history')}
                 >
-                  <Link to="/history" className="flex w-full items-center gap-2">
+                  <Link
+                    to="/history"
+                    className="flex w-full items-center gap-2"
+                  >
                     <History className="shrink-0" />
                     <span>{t('sidebar.history')}</span>
                   </Link>

@@ -281,7 +281,8 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     'flex items-end gap-2 bg-background/60 backdrop-blur-md p-3 border border-border/50 shadow-2xl focus-within:ring-1 focus-within:ring-primary/20 transition-all',
     hasAttachedFiles ? 'rounded-b-xl border-t-0' : 'rounded-xl',
     dragState === 'valid' && 'bg-success/5 border-success/50 shadow-success/10',
-    dragState === 'invalid' && 'bg-destructive/5 border-destructive/50 shadow-destructive/10',
+    dragState === 'invalid' &&
+      'bg-destructive/5 border-destructive/50 shadow-destructive/10',
   );
 
   const hasContent = input.trim() || attachedFiles.length > 0;

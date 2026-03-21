@@ -128,9 +128,9 @@ Returns names and types (file/directory). Use searchFiles for glob-based filteri
     }
 }
 
-pub fn create_import_file_tool() -> MCPTool {
-    let mut props = HashMap::new();
-    props.insert(
+pub fn create_import_files_tool() -> MCPTool {
+    let mut file_item_props = HashMap::new();
+    file_item_props.insert(
         "srcAbsPath".to_string(),
         string_prop(
             Some(1),
@@ -138,7 +138,7 @@ pub fn create_import_file_tool() -> MCPTool {
             Some("Absolute path of source file to import"),
         ),
     );
-    props.insert(
+    file_item_props.insert(
         "destRelPath".to_string(),
         string_prop(
             Some(1),
@@ -147,14 +147,25 @@ pub fn create_import_file_tool() -> MCPTool {
         ),
     );
 
-    MCPTool {
-        name: "importFile".to_string(),
-        title: Some("Import File".to_string()),
-        description: "Import an external file into the workspace".to_string(),
-        input_schema: object_schema(
-            props,
-            vec!["srcAbsPath".to_string(), "destRelPath".to_string()],
+    let mut props = HashMap::new();
+    props.insert(
+        "files".to_string(),
+        array_schema(
+            object_schema(
+                file_item_props,
+                vec!["srcAbsPath".to_string(), "destRelPath".to_string()],
+            ),
+            Some("List of files to import into the workspace"),
         ),
+    );
+
+    MCPTool {
+        name: "importFiles".to_string(),
+        title: Some("Import Files".to_string()),
+        description:
+            "Import multiple external files into the workspace in a single batch operation."
+                .to_string(),
+        input_schema: object_schema(props, vec!["files".to_string()]),
         output_schema: None,
         annotations: None,
     }

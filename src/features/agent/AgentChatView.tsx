@@ -137,7 +137,7 @@ function AgentChatInner() {
           <AgentChatHeader />
           <AgentChatStatusBar />
           <AgentChatMessages />
-          
+
           {/* Floating Input Container */}
           <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
             <div className="h-24 bg-gradient-to-t from-background/90 via-background/40 to-transparent w-full" />
