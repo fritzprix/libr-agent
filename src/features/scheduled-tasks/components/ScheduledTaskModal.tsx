@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { useTranslation, Trans } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import {
@@ -337,12 +337,12 @@ function ScheduledTaskForm({
                 'border-destructive bg-destructive/10',
             )}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
                 <div className="mt-0.5 rounded-md bg-primary/10 p-2">
                   <FolderOpen className="h-4 w-4 text-primary" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
                     {workspaceOverride
                       ? t('scheduledTasks.modal.workspaceSelected')
@@ -351,7 +351,8 @@ function ScheduledTaskForm({
                   <p
                     className={cn(
                       'mt-1 text-xs text-muted-foreground',
-                      workspaceOverride && 'truncate',
+                      workspaceOverride &&
+                        'overflow-hidden whitespace-normal break-all',
                     )}
                     title={workspaceOverride ?? undefined}
                   >
@@ -361,7 +362,7 @@ function ScheduledTaskForm({
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
                 <Button
                   type="button"
                   variant="outline"
@@ -396,11 +397,19 @@ function ScheduledTaskForm({
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
           <p className="text-xs text-muted-foreground">
-            <Trans i18nKey="scheduledTasks.modal.messageHint">
-              Use <code className="font-mono">@playbook:</code> or{' '}
-              <code className="font-mono">@skill:</code> for autocomplete
-            </Trans>
+            {t(
+              'scheduledTasks.modal.messageHint',
+              'Use @playbook:, @skill:, or @file: for autocomplete.',
+            )}
           </p>
+          {workspaceOverride && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.workspaceAutocompleteHint',
+                'Workspace override enables @skill: and @file: autocomplete.',
+              )}
+            </p>
+          )}
           <MentionTextarea
             value={message}
             onChange={setMessage}

@@ -3,6 +3,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useInputToken } from '@/features/agent/hooks/useInputToken';
 import { useScopedSkills } from '@/features/agent/hooks/useScopedSkills';
+import { useWorkspaceFiles } from '@/features/agent/hooks/useWorkspaceFiles';
 import { InputTokenDropdown } from '@/features/agent/components/InputTokenDropdown';
 import { usePlaybookSearch } from '@/features/agent/hooks/usePlaybookSearch';
 import { Textarea } from '@/components/ui/textarea';
@@ -44,11 +45,22 @@ export function MentionTextarea({
     stage,
     typeResults,
     skillResults,
+    fileResults,
     onInputChange: onTokenInputChange,
     onTypeSelect,
     onArgSelect,
     onDismiss,
   } = useInputToken(skills, []);
+
+  const fileQuery =
+    stage.kind === 'typing-arg' && stage.typeName === 'file'
+      ? stage.query
+      : null;
+  const workspaceFileResults = useWorkspaceFiles(
+    undefined,
+    fileQuery,
+    workspacePath,
+  );
 
   const playbookQuery =
     stage.kind === 'typing-arg' && stage.typeName === 'playbook'
@@ -60,16 +72,20 @@ export function MentionTextarea({
     stage.kind !== 'idle' &&
     (typeResults.length > 0 ||
       skillResults.length > 0 ||
+      fileResults.length > 0 ||
+      workspaceFileResults.length > 0 ||
       playbookResults.length > 0);
 
   const dropdownMode =
     stage.kind === 'typing-type'
       ? { kind: 'types' as const, items: typeResults }
-      : stage.kind === 'typing-arg' && stage.typeName === 'playbook'
-        ? { kind: 'playbooks' as const, items: playbookResults }
-        : stage.kind === 'typing-arg'
-          ? { kind: 'skills' as const, items: skillResults }
-          : null;
+      : stage.kind === 'typing-arg' && stage.typeName === 'file'
+        ? { kind: 'files' as const, items: workspaceFileResults }
+        : stage.kind === 'typing-arg' && stage.typeName === 'playbook'
+          ? { kind: 'playbooks' as const, items: playbookResults }
+          : stage.kind === 'typing-arg'
+            ? { kind: 'skills' as const, items: skillResults }
+            : null;
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLTextAreaElement>) => {

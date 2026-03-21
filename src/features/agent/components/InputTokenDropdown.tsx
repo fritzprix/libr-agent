@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { TokenType } from '../hooks/useInputToken';
 import type { SkillMetadata } from '@/types/skills';
@@ -28,10 +29,24 @@ export function InputTokenDropdown({
   onSelectArg,
   onDismiss,
 }: InputTokenDropdownProps) {
+  const { t } = useTranslation();
   const count = mode.items.length;
   const [activeIndex, setActiveIndex] = useState(0);
   const [prevMode, setPrevMode] = useState(mode);
   const listRef = useRef<HTMLUListElement>(null);
+
+  const getSkillSourceLabel = (source?: SkillMetadata['source']) => {
+    switch (source) {
+      case 'workspace':
+        return t('mentions.skillSourceWorkspace', 'workspace');
+      case 'assistant':
+        return t('mentions.skillSourceAssistant', 'assistant');
+      case 'global':
+        return t('mentions.skillSourceGlobal', 'global');
+      default:
+        return null;
+    }
+  };
 
   if (mode !== prevMode) {
     setPrevMode(mode);
@@ -186,31 +201,44 @@ export function InputTokenDropdown({
                     )}
                   </li>
                 ))
-              : mode.items.map((skill, i) => (
-                  <li
-                    key={skill.name}
-                    role="option"
-                    aria-selected={i === activeIndex}
-                    className={cn(
-                      'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
-                      i === activeIndex
-                        ? 'bg-accent text-accent-foreground'
-                        : 'hover:bg-accent/50',
-                    )}
-                    onMouseEnter={() => setActiveIndex(i)}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      onSelectArg(skill.name);
-                    }}
-                  >
-                    <span className="font-medium">@skill:{skill.name}</span>
-                    {skill.description && (
-                      <span className="text-xs text-muted-foreground line-clamp-1">
-                        {skill.description}
+              : mode.items.map((skill, i) => {
+                  const sourceLabel = getSkillSourceLabel(skill.source);
+
+                  return (
+                    <li
+                      key={skill.name}
+                      role="option"
+                      aria-selected={i === activeIndex}
+                      className={cn(
+                        'flex flex-col gap-0.5 px-3 py-2 cursor-pointer select-none',
+                        i === activeIndex
+                          ? 'bg-accent text-accent-foreground'
+                          : 'hover:bg-accent/50',
+                      )}
+                      onMouseEnter={() => setActiveIndex(i)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onSelectArg(skill.name);
+                      }}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate font-medium">
+                          @skill:{skill.name}
+                        </span>
+                        {sourceLabel && (
+                          <span className="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {sourceLabel}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </li>
-                ))}
+                      {skill.description && (
+                        <span className="text-xs text-muted-foreground line-clamp-1">
+                          {skill.description}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
     </ul>
   );
 }

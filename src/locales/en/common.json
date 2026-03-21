@@ -828,8 +828,9 @@
       "workspaceRegisterFailed": "Failed to register dropped folder paths",
       "workspaceClearAria": "Clear workspace override",
       "messageLabel": "Message",
-      "messageHint": "Use <1>@playbook:</1> or <3>@skill:</3> for autocomplete",
-      "messagePlaceholder": "Type a message… use @playbook: or @skill: for autocomplete",
+      "messageHint": "Use @playbook:, @skill:, or @file: for autocomplete.",
+      "workspaceAutocompleteHint": "Workspace override enables @skill: and @file: autocomplete.",
+      "messagePlaceholder": "Type a message… use @playbook:, @skill:, or @file: for autocomplete",
       "cancel": "Cancel",
       "saveChanges": "Save changes",
       "createTask": "Create task",
@@ -874,6 +875,11 @@
         "6": "Saturday"
       }
     }
+  },
+  "mentions": {
+    "skillSourceWorkspace": "workspace",
+    "skillSourceAssistant": "assistant",
+    "skillSourceGlobal": "global"
   },
   "errorBubble": {
     "title": "Error",

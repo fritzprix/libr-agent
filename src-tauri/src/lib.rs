@@ -82,7 +82,8 @@ use commands::settings_commands::{
 };
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, get_skill_content,
-    list_workspace_file_paths, open_skills_directory_in_explorer, scan_skills_directory,
+    list_workspace_file_paths, list_workspace_file_paths_for_path,
+    open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
     copy_global_to_assistant, delete_assistant_skill, import_assistant_skills,
@@ -281,6 +282,7 @@ pub fn run() {
                 get_aggregated_skills,
                 get_skill_content,
                 list_workspace_file_paths,
+                list_workspace_file_paths_for_path,
                 copy_global_to_assistant,
                 delete_assistant_skill,
                 import_assistant_skills,

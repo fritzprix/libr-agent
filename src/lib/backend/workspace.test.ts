@@ -10,6 +10,7 @@ import {
   cancelWorkspaceOverride,
   getWorkspaceDir,
   listWorkspaceFilePaths,
+  listWorkspaceFilePathsForPath,
 } from './workspace';
 import { safeInvoke } from './core';
 import type { WorkspaceFileItem } from './types';
@@ -165,6 +166,21 @@ describe('workspace backend wrapper', () => {
       sessionId: 'session-1',
       maxDepth: 2,
     });
+    expect(result).toEqual(['file1.txt', 'dir1/file2.txt']);
+  });
+
+  it('listWorkspaceFilePathsForPath calls safeInvoke with correct arguments', async () => {
+    vi.mocked(safeInvoke).mockResolvedValueOnce(['file1.txt', 'dir1/file2.txt']);
+
+    const result = await listWorkspaceFilePathsForPath('/tmp/workspace', 3);
+
+    expect(safeInvoke).toHaveBeenCalledWith(
+      'list_workspace_file_paths_for_path',
+      {
+        workspacePath: '/tmp/workspace',
+        maxDepth: 3,
+      },
+    );
     expect(result).toEqual(['file1.txt', 'dir1/file2.txt']);
   });
 });

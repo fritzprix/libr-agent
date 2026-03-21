@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { listWorkspaceFilePaths } from '@/lib/backend/workspace';
+import {
+  listWorkspaceFilePaths,
+  listWorkspaceFilePathsForPath,
+} from '@/lib/backend/workspace';
 import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('useWorkspaceFiles');
@@ -22,15 +25,16 @@ const MAX_RESULTS = 10;
 export function useWorkspaceFiles(
   sessionId: string | undefined,
   query: string | null,
+  workspacePath?: string | null,
 ): string[] {
   const [allPaths, setAllPaths] = useState<string[]>([]);
   const lastDepthRef = useRef<number>(0);
 
-  // Reset cache when session changes.
+  // Reset cache when workspace source changes.
   useEffect(() => {
     lastDepthRef.current = 0;
     setAllPaths([]);
-  }, [sessionId]);
+  }, [sessionId, workspacePath]);
 
   // Reset depth when query becomes null so the next open refetches.
   useEffect(() => {
@@ -40,15 +44,19 @@ export function useWorkspaceFiles(
   }, [query]);
 
   useEffect(() => {
-    if (!sessionId || query === null) return;
+    if ((!sessionId && !workspacePath) || query === null) return;
     const depth = depthForQuery(query);
     if (depth <= lastDepthRef.current) return;
 
     lastDepthRef.current = depth;
-    listWorkspaceFilePaths(sessionId, depth)
+    const loadPaths = workspacePath
+      ? listWorkspaceFilePathsForPath(workspacePath, depth)
+      : listWorkspaceFilePaths(sessionId!, depth);
+
+    loadPaths
       .then((paths) => setAllPaths(paths))
       .catch((e: unknown) => logger.warn('Failed to list workspace files', e));
-  }, [sessionId, query]);
+  }, [sessionId, query, workspacePath]);
 
   if (query === null) return [];
 

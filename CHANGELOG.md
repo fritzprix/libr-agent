@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.8] - 2026-03-21
+
+### 🚀 Features
+
+- **Scheduled Task Mention Autocomplete**: Scheduled task prompts now support workspace-scoped `@skill:` and `@file:` completion when a workspace override is set, making it easier to reuse local skills and files without leaving the modal.
+
+### 🐛 Fixes
+
+- **Scheduled Task Workspace UX**: Fixed workspace directory drag-and-drop handling and reduced modal copy so long workspace paths no longer break the scheduled task UI.
+- **Scheduled Task Timezone Safety**: Preserved local-time scheduling behavior while keeping legacy UTC tasks compatible, so daily/weekly/monthly schedules render and run consistently.
+
+### 🔧 Internal
+
+- **Workspace Reference Plumbing**: Extended the reference and autocomplete pipeline to support workspace-root file lookup for scheduled task prompts alongside the existing session workspace path flow.
+
 ## [0.6.7] - 2026-03-21
 
 ### 🚀 Features

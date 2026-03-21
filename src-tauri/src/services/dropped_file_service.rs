@@ -1,5 +1,6 @@
+use std::borrow::Cow;
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
@@ -12,12 +13,21 @@ use tokio::io::AsyncReadExt;
 /// - Prevents access to hidden files and symlinks.
 pub struct DroppedFileService {
     allowlist: Mutex<HashSet<String>>,
+    trusted_hidden_roots: Vec<PathBuf>,
 }
 
 impl DroppedFileService {
     pub fn new() -> Self {
         Self {
             allowlist: Mutex::new(HashSet::new()),
+            trusted_hidden_roots: Vec::new(),
+        }
+    }
+
+    pub fn new_with_trusted_hidden_root(trusted_hidden_root: PathBuf) -> Self {
+        Self {
+            allowlist: Mutex::new(HashSet::new()),
+            trusted_hidden_roots: vec![trusted_hidden_root],
         }
     }
 
@@ -236,15 +246,26 @@ impl DroppedFileService {
     }
 
     fn has_hidden_or_relative_component(&self, path: &Path) -> bool {
-        path.components()
+        self.path_for_hidden_check(path)
+            .components()
             .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
     }
 
     fn has_hidden_component(&self, path: &Path) -> bool {
-        path.components().any(|c| {
+        self.path_for_hidden_check(path).components().any(|c| {
             let component = c.as_os_str().to_string_lossy();
             !component.is_empty() && component.starts_with('.')
         })
+    }
+
+    fn path_for_hidden_check<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
+        for trusted_root in &self.trusted_hidden_roots {
+            if let Ok(stripped) = path.strip_prefix(trusted_root) {
+                return Cow::Borrowed(stripped);
+            }
+        }
+
+        Cow::Borrowed(path)
     }
 }
 
@@ -510,5 +531,37 @@ mod tests {
             .read_dropped_file(normal_file.to_string_lossy().to_string())
             .await;
         assert!(read_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_trusted_hidden_root_allows_app_data_workspace_paths() {
+        let (_dir, test_root) = setup_test_dir();
+        let hidden_app_data_root = test_root.join(".appdata");
+        let workspace_dir = hidden_app_data_root.join("workspaces").join("session-a");
+        let workspace_file = workspace_dir.join("notes.txt");
+
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        std::fs::write(&workspace_file, "ok").unwrap();
+
+        let service = DroppedFileService::new_with_trusted_hidden_root(hidden_app_data_root);
+
+        register_for_test(&service, &workspace_dir).await;
+        let dir_result = service
+            .check_dropped_path_type(workspace_dir.to_string_lossy().to_string())
+            .await;
+        assert!(
+            dir_result.is_ok(),
+            "Workspace directory under trusted hidden root should be accepted"
+        );
+        assert_eq!(dir_result.unwrap(), "directory");
+
+        register_for_test(&service, &workspace_file).await;
+        let file_result = service
+            .read_dropped_file(workspace_file.to_string_lossy().to_string())
+            .await;
+        assert!(
+            file_result.is_ok(),
+            "Workspace file under trusted hidden root should be readable"
+        );
     }
 }
