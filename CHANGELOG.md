@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.7] - 2026-03-21
+
+### 🚀 Features
+
+- **Modern Design System Unification**: Comprehensive UI overhaul across all agent and extension views to provide a consistent "Modern Terminal" experience.
+  - **Draft Chat View**: Redesigned pre-session interface with a floating translucent input area, three-column layout (matching active chat), and enhanced profile cards.
+  - **Assistant Hub & Cards**: Standardized typography (`font-sans` for readability) and icon styles. Assistant selection cards now feature glassmorphism effects and refined hover animations.
+  - **Extension Management**: Reordered MCP server view to prioritize installed extensions and added clear visual separation from recommended presets.
+- **Session Attention & Notifications**: Improved user feedback with session attention acknowledgement and automatic unread state clearing for a smoother multi-session workflow.
+
+### 🐛 Fixes
+
+- **Batch File Import**: Refactored `importFile` tool to `importFiles`, allowing multiple files to be imported in a single efficient operation with individual result tracking.
+- **Sidebar UX & Navigation**: Fixed clickability issues and hit areas for the collapsed sidebar. Aligned header split lines across the sidebar and main view for pixel-perfect layout.
+- **Tauri v2 Updater**: Re-enabled artifact generation for the Tauri v2 updater and updated GitHub Actions for reliable production releases.
+- **Translation Stability**: Fixed a runtime error in `AgentChatStartView` caused by a missing translation variable.
+
+### 🔧 Internal
+
+- **Sidebar Consolidation**: Optimized vertical space by consolidating settings and version display into a single row.
+
 ## [0.6.6] - 2026-03-21
 
 ### 🚀 Features
