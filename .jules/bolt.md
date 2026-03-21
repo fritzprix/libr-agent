@@ -67,3 +67,8 @@
 
 **Learning:** `SessionHistoryPanel` was calculating descendant counts using a recursive function that filtered the entire `sessions` array at each step, resulting in O(N^2) complexity. This caused potential lag as the session history grew.
 **Action:** When processing tree structures from flat lists, always build an O(N) adjacency map (parent -> children) first, then use that map for O(1) lookups during traversal, reducing overall complexity to O(N).
+
+## 2026-10-25 - Redundant Recursion in Array Sorting
+
+**Learning:** In `SessionHistoryPanel`, the recursive function `orderForSession` was called unmemoized from within a sort comparator. Since array sort methods invoke their comparator multiple times per item (O(K log K)), this caused the full recursive traversal of descendants to execute redundantly thousands of times, generating lag.
+**Action:** Always memoize the results of recursive operations or heavy derivations if they are called inside loops or `.sort()` comparators. Utilizing a local Map cache (`orderForSessionCache`) changes the complexity from O(K log K * M) down to O(K log K).
