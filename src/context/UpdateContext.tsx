@@ -16,11 +16,16 @@ import {
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { safeInvoke } from '@/lib/backend/core';
+import {
+  getUpdateInstallCapability,
+  openExternalUrl,
+} from '@/lib/backend/utils';
 
 const logger = getLogger('UpdateContext');
 
 // Delay before the first auto-check so the app can finish initializing.
 const AUTO_CHECK_DELAY_MS = 5_000;
+const RELEASES_URL = 'https://github.com/fritzprix/libr-agent/releases';
 
 export type UpdateStatus =
   | 'idle'
@@ -39,6 +44,10 @@ interface UpdateState {
   downloadProgress: number;
   /** Error message when status === 'error'. */
   error: string | null;
+  /** Whether this installation can install updates in-app. */
+  canInstallUpdate: boolean;
+  /** Guidance for installations that cannot self-update in-app. */
+  installHint: string | null;
 }
 
 interface UpdateContextValue extends UpdateState {
@@ -67,10 +76,116 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
   const [availableVersion, setAvailableVersion] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [canInstallUpdate, setCanInstallUpdate] = useState(true);
+  const [installHint, setInstallHint] = useState<string | null>(null);
 
   // Keep a ref to the pending Update object so installUpdate can access it
   const pendingUpdate = useRef<Update | null>(null);
   const autoChecked = useRef(false);
+
+  const openReleaseNotes = useCallback(async (version: string) => {
+    const tagUrl = `${RELEASES_URL}/tag/v${encodeURIComponent(version)}`;
+    await openExternalUrl(tagUrl);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void (async () => {
+      try {
+        const capability = await getUpdateInstallCapability();
+        if (!isMounted) return;
+
+        setCanInstallUpdate(capability.supported);
+        setInstallHint(capability.reason);
+      } catch (err: unknown) {
+        logger.warn('Failed to resolve update install capability:', err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const doInstall = useCallback(
+    async (update: Update) => {
+      if (!canInstallUpdate) {
+        const message =
+          installHint ??
+          'This installation cannot apply updates in-app. Please install the latest release manually.';
+        logger.warn('Blocked in-app update install:', message);
+        setStatus('error');
+        setError(message);
+        toast.error(message, { duration: 6000 });
+        return;
+      }
+
+      setStatus('downloading');
+      setDownloadProgress(0);
+
+      const toastId = toast.loading(
+        `Downloading LibrAgent ${update.version}…`,
+        {
+          duration: Infinity,
+        },
+      );
+
+      try {
+        let downloaded = 0;
+        let total: number | undefined;
+
+        await update.downloadAndInstall((event: DownloadEvent) => {
+          switch (event.event) {
+            case 'Started':
+              total = event.data.contentLength ?? undefined;
+              logger.info(
+                `Download started, size: ${total?.toString() ?? 'unknown'} bytes`,
+              );
+              break;
+            case 'Progress': {
+              downloaded += event.data.chunkLength;
+              if (total) {
+                const pct = Math.round((downloaded / total) * 100);
+                setDownloadProgress(pct);
+                toast.loading(`Downloading… ${pct.toString()}%`, {
+                  id: toastId,
+                  duration: Infinity,
+                });
+              }
+              break;
+            }
+            case 'Finished':
+              logger.info('Download finished, installing...');
+              setStatus('installing');
+              break;
+          }
+        });
+
+        toast.success('Update installed! Restarting…', {
+          id: toastId,
+          duration: 2000,
+        });
+        await safeInvoke<void>('restart_app');
+      } catch (err: unknown) {
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        const msg =
+          rawMessage.includes('os error 13') ||
+          rawMessage.includes('Permission denied')
+            ? (installHint ??
+              'Update install failed because this Linux installation is not writable. If you installed LibrAgent via .deb/.rpm, update it with your package manager. For in-app updates, run the AppImage from a writable folder in your home directory.')
+            : rawMessage;
+        logger.error('Update installation failed:', err);
+        setStatus('error');
+        setError(msg);
+        toast.error(msg, {
+          id: toastId,
+          duration: 7000,
+        });
+      }
+    },
+    [canInstallUpdate, installHint],
+  );
 
   const checkForUpdate = useCallback(async () => {
     if (
@@ -99,23 +214,36 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       setAvailableVersion(update.version);
       setStatus('available');
 
-      // Show a non-blocking toast so the user can act from anywhere in the app
-      const releaseNotes = update.body
-        ? `${update.body.slice(0, 300)}${update.body.length > 300 ? '…' : ''}`
-        : undefined;
+      const description = canInstallUpdate
+        ? 'A new version is ready to install.'
+        : 'A new version is available. Install it from the release page.';
 
       toast.info(`LibrAgent ${update.version} is available`, {
-        description: releaseNotes ?? 'A new version is ready to install.',
+        description,
         duration: Infinity,
-        action: {
-          label: 'Install',
-          onClick: () => {
-            void doInstall(update);
-          },
-        },
+        action: canInstallUpdate
+          ? {
+              label: 'Install',
+              onClick: () => {
+                void doInstall(update);
+              },
+            }
+          : {
+              label: 'View changelog',
+              onClick: () => {
+                void openReleaseNotes(update.version);
+              },
+            },
         cancel: {
-          label: 'Later',
-          onClick: () => logger.info('User deferred update via toast.'),
+          label: canInstallUpdate ? 'View changelog' : 'Later',
+          onClick: () => {
+            if (canInstallUpdate) {
+              void openReleaseNotes(update.version);
+              return;
+            }
+
+            logger.info('User deferred update via toast.');
+          },
         },
       });
     } catch (err: unknown) {
@@ -124,63 +252,7 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       setStatus('error');
       setError(msg);
     }
-  }, [status]);
-
-  const doInstall = useCallback(async (update: Update) => {
-    setStatus('downloading');
-    setDownloadProgress(0);
-
-    const toastId = toast.loading(`Downloading LibrAgent ${update.version}…`, {
-      duration: Infinity,
-    });
-
-    try {
-      let downloaded = 0;
-      let total: number | undefined;
-
-      await update.downloadAndInstall((event: DownloadEvent) => {
-        switch (event.event) {
-          case 'Started':
-            total = event.data.contentLength ?? undefined;
-            logger.info(
-              `Download started, size: ${total?.toString() ?? 'unknown'} bytes`,
-            );
-            break;
-          case 'Progress': {
-            downloaded += event.data.chunkLength;
-            if (total) {
-              const pct = Math.round((downloaded / total) * 100);
-              setDownloadProgress(pct);
-              toast.loading(`Downloading… ${pct.toString()}%`, {
-                id: toastId,
-                duration: Infinity,
-              });
-            }
-            break;
-          }
-          case 'Finished':
-            logger.info('Download finished, installing...');
-            setStatus('installing');
-            break;
-        }
-      });
-
-      toast.success('Update installed! Restarting…', {
-        id: toastId,
-        duration: 2000,
-      });
-      await safeInvoke<void>('restart_app');
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error('Update installation failed:', err);
-      setStatus('error');
-      setError(msg);
-      toast.error('Update failed. Please restart and try again.', {
-        id: toastId,
-        duration: 5000,
-      });
-    }
-  }, []);
+  }, [canInstallUpdate, doInstall, openReleaseNotes, status]);
 
   const installUpdate = useCallback(async () => {
     const update = pendingUpdate.current;
@@ -216,6 +288,8 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       availableVersion,
       downloadProgress,
       error,
+      canInstallUpdate,
+      installHint,
       checkForUpdate,
       installUpdate,
     }),
@@ -224,6 +298,8 @@ export function UpdateProvider({ children }: UpdateProviderProps) {
       availableVersion,
       downloadProgress,
       error,
+      canInstallUpdate,
+      installHint,
       checkForUpdate,
       installUpdate,
     ],

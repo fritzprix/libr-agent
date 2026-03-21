@@ -4,6 +4,7 @@
 /// including file listing, data directories, and log directories.
 use crate::services::{WorkspaceFileItem, WorkspaceService};
 use crate::session::get_session_manager;
+use serde::Serialize;
 
 /// A simple command to test the frontend-backend connection.
 #[tauri::command]
@@ -45,6 +46,61 @@ pub async fn get_app_data_dir() -> Result<String, String> {
 pub async fn get_app_logs_dir() -> Result<String, String> {
     let path = get_session_manager()?.get_logs_dir();
     Ok(path.to_string_lossy().to_string())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInstallCapability {
+    pub supported: bool,
+    pub current_executable: String,
+    pub package_type: String,
+    pub reason: Option<String>,
+}
+
+/// Returns whether this installation can perform an in-app update install.
+///
+/// On Linux, Tauri's updater is only practical for writable AppImage installs.
+/// System package installs (`.deb`/`.rpm`) typically live under root-owned paths
+/// and cannot be replaced by an unprivileged desktop process.
+#[tauri::command]
+pub async fn get_update_install_capability() -> Result<UpdateInstallCapability, String> {
+    let current_executable = std::env::current_exe()
+        .map_err(|err| format!("Failed to resolve current executable: {err}"))?;
+    let current_executable = current_executable.to_string_lossy().to_string();
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(appimage_path) = std::env::var("APPIMAGE") {
+            if !appimage_path.trim().is_empty() {
+                return Ok(UpdateInstallCapability {
+                    supported: true,
+                    current_executable,
+                    package_type: "appimage".to_string(),
+                    reason: None,
+                });
+            }
+        }
+
+        Ok(UpdateInstallCapability {
+            supported: false,
+            current_executable: current_executable.clone(),
+            package_type: "system-package".to_string(),
+            reason: Some(format!(
+                "This Linux installation appears to be a system package at `{}`. In-app updates are only supported for AppImage installs; please update with your package manager or download the latest release manually.",
+                current_executable
+            )),
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(UpdateInstallCapability {
+            supported: true,
+            current_executable,
+            package_type: std::env::consts::OS.to_string(),
+            reason: None,
+        })
+    }
 }
 
 /// Opens a workspace file with the system's default application.

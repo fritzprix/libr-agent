@@ -91,9 +91,10 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_dir,
-    get_workspace_override, greet, list_workspace_files, open_workspace_file_with_default_app,
-    open_workspace_in_explorer, open_workspace_in_terminal, restart_app, set_workspace_override,
+    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_update_install_capability,
+    get_workspace_dir, get_workspace_override, greet, list_workspace_files,
+    open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
+    restart_app, set_workspace_override,
 };
 
 // Re-export state management functions
@@ -171,6 +172,7 @@ pub fn run() {
                 delete_content_store,
                 get_app_data_dir,
                 get_app_logs_dir,
+                get_update_install_capability,
                 backup_current_log,
                 clear_current_log,
                 list_log_files,

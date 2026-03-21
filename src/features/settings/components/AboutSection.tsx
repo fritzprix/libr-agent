@@ -20,6 +20,8 @@ export function AboutSection() {
     availableVersion,
     downloadProgress,
     error,
+    canInstallUpdate,
+    installHint,
     checkForUpdate,
     installUpdate,
   } = useUpdateContext();
@@ -41,6 +43,11 @@ export function AboutSection() {
             <p className="text-xs text-muted-foreground">
               {t('settings.about.version', 'Version')} {__APP_VERSION__}
             </p>
+            {!canInstallUpdate && installHint && (
+              <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+                {installHint}
+              </p>
+            )}
           </div>
 
           {/* Status indicator */}
@@ -86,8 +93,9 @@ export function AboutSection() {
             <Button
               size="sm"
               onClick={() => void installUpdate()}
-              disabled={isDownloading}
+              disabled={isDownloading || !canInstallUpdate}
               className="gap-1.5"
+              title={!canInstallUpdate ? installHint || undefined : undefined}
             >
               <Download size={14} />
               {t('settings.about.installUpdate', 'Install Update')}
