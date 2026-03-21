@@ -169,13 +169,13 @@ pub async fn register_server(server: &ToolServer, args: Value) -> Result<MCPResu
 
     let hint = SuccessHint::new(
         format!(
-            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Configured (ready to use)\n\nExternal servers are managed per-session through MCPServiceProxyManager.",
+            "✓ Server configuration saved\n\n• Server Name: {}\n• Server ID: {}\n\nStatus: Saved\n\nExternal servers are attached per assistant or session when their server IDs are included in configuration.",
             name, id
         ),
         vec![
-            "Use listTools to view all registered servers".to_string(),
-            format!("Use connectServer('{}') to start this server in a session", name),
-            "The Server ID is required when configuring an assistant's mcpServerIds".to_string(),
+            "Use listTools to review builtin tools and saved external servers.".to_string(),
+            "Use the Server ID in updateAssistant(..., mcpServerIds: [...]) to attach this server to an assistant.".to_string(),
+            "Session-level attachment should also reference this Server ID, not the server name.".to_string(),
         ],
     );
     Ok(hint.to_mcp_result_with_data(Some(json!({ "name": name, "id": id }))))

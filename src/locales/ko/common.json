@@ -735,6 +735,7 @@
       "showAllWithCount_other": "전체 보기 ({{count}}회 호출)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "{{toolName}} 세부 정보 전환",
       "parameters": "매개변수",
       "errorDetails": "오류 상세 정보",
       "result": "결과",
@@ -806,8 +807,9 @@
       "workspaceRegisterFailed": "드롭된 폴더 경로를 등록하지 못했습니다",
       "workspaceClearAria": "워크스페이스 오버라이드 지우기",
       "messageLabel": "메시지",
-      "messageHint": "자동 완성을 위해 <1>@playbook:</1> 또는 <3>@skill:</3>을 사용하세요",
-      "messagePlaceholder": "메시지를 입력하세요… 자동 완성을 위해 @playbook: 또는 @skill:을 사용하세요",
+      "messageHint": "자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요.",
+      "workspaceAutocompleteHint": "워크스페이스 오버라이드가 @skill: 및 @file: 자동 완성을 활성화합니다.",
+      "messagePlaceholder": "메시지를 입력하세요… 자동 완성을 위해 @playbook:, @skill:, 또는 @file:을 사용하세요",
       "cancel": "취소",
       "saveChanges": "변경사항 저장",
       "createTask": "작업 생성",
@@ -852,6 +854,11 @@
         "6": "토요일"
       }
     }
+  },
+  "mentions": {
+    "skillSourceWorkspace": "workspace",
+    "skillSourceAssistant": "assistant",
+    "skillSourceGlobal": "global"
   },
   "errorBubble": {
     "title": "오류",

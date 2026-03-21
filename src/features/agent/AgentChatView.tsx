@@ -133,12 +133,21 @@ function AgentChatInner() {
         {showWorkspacePanel && <AgentWorkspacePanel />}
 
         {/* Main chat area - components rendered directly inside provider scope */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
           <AgentChatHeader />
           <AgentChatStatusBar />
           <AgentChatMessages />
-          <AgentChatAttachedFiles />
-          <AgentChatInput />
+
+          {/* Floating Input Container */}
+          <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+            <div className="h-24 bg-gradient-to-t from-background/90 via-background/40 to-transparent w-full" />
+            <div className="p-4 pt-0">
+              <div className="w-full pointer-events-auto">
+                <AgentChatAttachedFiles />
+                <AgentChatInput />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Planning side panel */}

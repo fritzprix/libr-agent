@@ -127,13 +127,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 LibrAgent initializing...");
 
     // Initialize SecureFileManager and add to managed state
-    let global_file_dir = app.path().app_data_dir()?.join("global_shared");
+    let app_data_dir = app.path().app_data_dir()?;
+    let global_file_dir = app_data_dir.join("global_shared");
     let file_manager = SecureFileManager::new_with_base_dir(global_file_dir);
     app.manage(file_manager);
     info!("✅ SecureFileManager initialized");
 
     // Initialize DroppedFileService
-    let dropped_file_service = DroppedFileService::new();
+    let dropped_file_service = DroppedFileService::new_with_trusted_hidden_root(app_data_dir);
     app.manage(dropped_file_service);
     info!("✅ DroppedFileService initialized");
 

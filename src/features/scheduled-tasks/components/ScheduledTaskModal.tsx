@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { useTranslation, Trans } from 'react-i18next';
+import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { toast } from 'sonner';
 import {
@@ -24,7 +24,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { MentionTextarea } from './MentionTextarea';
-import { ScheduleBuilder } from './ScheduleBuilder';
+import { getDisplayCron, ScheduleBuilder } from './ScheduleBuilder';
 import type { Assistant } from '@/models/chat';
 import { getLogger } from '@/lib/logger';
 import { useDnDContext } from '@/context/DnDContext';
@@ -43,6 +43,7 @@ interface ScheduledTaskModalProps {
   onSave: (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -91,6 +92,7 @@ interface ScheduledTaskFormProps {
   onSave: (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -107,9 +109,15 @@ function ScheduledTaskForm({
   const { t } = useTranslation();
   const { subscribe } = useDnDContext();
   const [name, setName] = useState(task?.name ?? '');
-  const [cronExpression, setCronExpression] = useState(
-    task?.cronExpression ?? '0 9 * * *',
-  );
+  const initialCronExpression =
+    task !== undefined && task !== null
+      ? getDisplayCron(
+          task.cronExpression,
+          task.scheduleTimezone,
+          task.nextRunAt,
+        )
+      : '0 9 * * *';
+  const [cronExpression, setCronExpression] = useState(initialCronExpression);
 
   const [userSelectedAssistantId, setUserSelectedAssistantId] = useState<
     string | undefined
@@ -234,6 +242,7 @@ function ScheduledTaskForm({
       await onSave({
         name: name.trim(),
         cronExpression: cronExpression.trim(),
+        scheduleTimezone: 'local',
         assistantId: effectiveAssistantId,
         message: message.trim(),
         yoloMode,
@@ -303,6 +312,14 @@ function ScheduledTaskForm({
         {/* Human-readable schedule builder */}
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.scheduleLabel')}</Label>
+          {task?.scheduleTimezone === 'utc' && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.utcLegacyNotice',
+                'This existing task uses UTC scheduling. Saving it will convert the schedule to local time.',
+              )}
+            </p>
+          )}
           <ScheduleBuilder
             value={cronExpression}
             onChange={setCronExpression}
@@ -320,12 +337,12 @@ function ScheduledTaskForm({
                 'border-destructive bg-destructive/10',
             )}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
                 <div className="mt-0.5 rounded-md bg-primary/10 p-2">
                   <FolderOpen className="h-4 w-4 text-primary" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
                     {workspaceOverride
                       ? t('scheduledTasks.modal.workspaceSelected')
@@ -334,7 +351,8 @@ function ScheduledTaskForm({
                   <p
                     className={cn(
                       'mt-1 text-xs text-muted-foreground',
-                      workspaceOverride && 'truncate',
+                      workspaceOverride &&
+                        'overflow-hidden whitespace-normal break-all',
                     )}
                     title={workspaceOverride ?? undefined}
                   >
@@ -344,7 +362,7 @@ function ScheduledTaskForm({
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2 self-end sm:self-start">
                 <Button
                   type="button"
                   variant="outline"
@@ -379,11 +397,19 @@ function ScheduledTaskForm({
         <div className="grid gap-1.5">
           <Label>{t('scheduledTasks.modal.messageLabel')}</Label>
           <p className="text-xs text-muted-foreground">
-            <Trans i18nKey="scheduledTasks.modal.messageHint">
-              Use <code className="font-mono">@playbook:</code> or{' '}
-              <code className="font-mono">@skill:</code> for autocomplete
-            </Trans>
+            {t(
+              'scheduledTasks.modal.messageHint',
+              'Use @playbook:, @skill:, or @file: for autocomplete.',
+            )}
           </p>
+          {workspaceOverride && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'scheduledTasks.modal.workspaceAutocompleteHint',
+                'Workspace override enables @skill: and @file: autocomplete.',
+              )}
+            </p>
+          )}
           <MentionTextarea
             value={message}
             onChange={setMessage}

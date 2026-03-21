@@ -5,7 +5,7 @@ mod file;
 mod playbook;
 mod skill;
 
-pub use file::{list_workspace_relative_paths, FileReferenceResolver};
+pub use file::{list_relative_paths_in_root, list_workspace_relative_paths, FileReferenceResolver};
 pub use playbook::PlaybookReferenceResolver;
 pub use skill::SkillReferenceResolver;
 

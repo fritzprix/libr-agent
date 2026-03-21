@@ -1,6 +1,7 @@
 use super::ReferenceResolver;
 use crate::session::get_session_manager;
 use async_trait::async_trait;
+use std::path::Path;
 use tracing::warn;
 use walkdir::WalkDir;
 
@@ -79,6 +80,46 @@ impl ReferenceResolver for FileReferenceResolver {
     }
 }
 
+fn collect_relative_file_paths(root: &Path, max_depth: usize) -> Vec<String> {
+    let walker = WalkDir::new(root)
+        .max_depth(max_depth)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file());
+
+    let mut paths: Vec<String> = Vec::new();
+    for entry in walker {
+        if let Ok(rel) = entry.path().strip_prefix(root) {
+            paths.push({
+                let p = rel.to_string_lossy().to_string();
+                #[cfg(target_os = "windows")]
+                let p = p.replace('\\', "/");
+                p
+            });
+        }
+    }
+
+    paths.sort();
+    paths
+}
+
+/// Returns a flat list of relative file paths for an arbitrary workspace root.
+pub async fn list_relative_paths_in_root(
+    root: &Path,
+    max_depth: usize,
+) -> Result<Vec<String>, String> {
+    let metadata = tokio::fs::metadata(root)
+        .await
+        .map_err(|error| format!("Workspace path is not accessible: {error}"))?;
+
+    if !metadata.is_dir() {
+        return Err("Workspace path must be a directory".to_string());
+    }
+
+    Ok(collect_relative_file_paths(root, max_depth))
+}
+
 /// Returns a flat list of relative file paths in the workspace (non-recursive directories excluded).
 /// Used by the Tauri command for frontend autocomplete candidates.
 pub async fn list_workspace_relative_paths(
@@ -89,24 +130,5 @@ pub async fn list_workspace_relative_paths(
         get_session_manager().map_err(|e| format!("Session manager error: {e}"))?;
     let workspace = session_manager.get_session_workspace_dir_by_id(session_id);
 
-    let walker = WalkDir::new(&workspace)
-        .max_depth(max_depth)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file());
-
-    let mut paths: Vec<String> = Vec::new();
-    for entry in walker {
-        if let Ok(rel) = entry.path().strip_prefix(&workspace) {
-            paths.push({
-                let p = rel.to_string_lossy().to_string();
-                #[cfg(target_os = "windows")]
-                let p = p.replace('\\', "/");
-                p
-            });
-        }
-    }
-
-    Ok(paths)
+    list_relative_paths_in_root(&workspace, max_depth).await
 }

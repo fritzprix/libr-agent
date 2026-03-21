@@ -2,7 +2,8 @@
 
 use crate::entity::scheduled_task::Model as ScheduledTaskModel;
 use crate::repositories::UpdateScheduledTaskParams;
-use crate::services::ScheduledTaskService;
+use crate::scheduled::runner::compute_next_run_for_schedule_timezone;
+use crate::services::{default_schedule_timezone, CreateScheduledTaskInput, ScheduledTaskService};
 use crate::state::get_scheduled_task_repository;
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -14,6 +15,7 @@ pub struct ScheduledTaskDto {
     pub id: String,
     pub name: String,
     pub cron_expression: String,
+    pub schedule_timezone: String,
     pub assistant_id: String,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
@@ -29,10 +31,25 @@ pub struct ScheduledTaskDto {
 
 impl From<ScheduledTaskModel> for ScheduledTaskDto {
     fn from(m: ScheduledTaskModel) -> Self {
+        let next_run_at = m.next_run_at.or_else(|| {
+            if m.enabled {
+                return None;
+            }
+
+            compute_next_run_for_schedule_timezone(
+                &m.cron_expression,
+                chrono::Utc::now().timestamp_millis(),
+                &m.schedule_timezone,
+            )
+            .ok()
+            .flatten()
+        });
+
         Self {
             id: m.id,
             name: m.name,
             cron_expression: m.cron_expression,
+            schedule_timezone: m.schedule_timezone,
             assistant_id: m.assistant_id,
             message: m.message,
             yolo_mode: m.yolo_mode,
@@ -40,7 +57,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
             workspace_override: m.workspace_override,
             enabled: m.enabled,
             last_run_at: m.last_run_at,
-            next_run_at: m.next_run_at,
+            next_run_at,
             created_at: m.created_at,
             updated_at: m.updated_at,
         }
@@ -53,6 +70,7 @@ impl From<ScheduledTaskModel> for ScheduledTaskDto {
 pub struct CreateScheduledTaskRequest {
     pub name: String,
     pub cron_expression: String,
+    pub schedule_timezone: Option<String>,
     pub assistant_id: String,
     /// Message text; supports `@playbook:name` and `@skill:name` mention syntax
     pub message: String,
@@ -66,6 +84,7 @@ pub struct CreateScheduledTaskRequest {
 pub struct UpdateScheduledTaskRequest {
     pub name: Option<String>,
     pub cron_expression: Option<String>,
+    pub schedule_timezone: Option<String>,
     pub assistant_id: Option<String>,
     pub message: Option<String>,
     pub yolo_mode: Option<bool>,
@@ -80,12 +99,17 @@ pub async fn create_scheduled_task(
 ) -> Result<ScheduledTaskDto, String> {
     ScheduledTaskService::create_scheduled_task(
         get_scheduled_task_repository(),
-        request.name,
-        request.cron_expression,
-        request.assistant_id,
-        request.message,
-        request.yolo_mode,
-        request.workspace_override,
+        CreateScheduledTaskInput {
+            name: request.name,
+            cron_expression: request.cron_expression,
+            schedule_timezone: request
+                .schedule_timezone
+                .unwrap_or_else(|| default_schedule_timezone().to_string()),
+            assistant_id: request.assistant_id,
+            message: request.message,
+            yolo_mode: request.yolo_mode,
+            workspace_override: request.workspace_override,
+        },
     )
     .await
     .map(ScheduledTaskDto::from)
@@ -124,6 +148,7 @@ pub async fn update_scheduled_task(
         UpdateScheduledTaskParams {
             name: request.name,
             cron_expression: request.cron_expression,
+            schedule_timezone: request.schedule_timezone,
             assistant_id: request.assistant_id,
             message: request.message,
             yolo_mode: request.yolo_mode,

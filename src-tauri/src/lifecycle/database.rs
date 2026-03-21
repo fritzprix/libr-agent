@@ -3,9 +3,11 @@ use crate::lifecycle::schema_version;
 use crate::migration::{Migrator, MigratorTrait};
 use log::{error, info, warn};
 use sea_orm::sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
-use sea_orm::DatabaseConnection;
-use sea_orm::SqlxSqliteConnector;
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, SqlxSqliteConnector, Statement,
+};
 use sha2::{Digest, Sha256};
+use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -22,6 +24,210 @@ pub fn extract_db_file_path(db_url: &str) -> Option<&str> {
     db_url
         .strip_prefix("sqlite://")
         .and_then(|p| p.split('?').next())
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UserDataSummary {
+    pub sessions: i64,
+    pub messages: i64,
+    pub planning_goals: i64,
+    pub planning_todos: i64,
+    pub settings: i64,
+    pub mcp_servers: i64,
+    pub assistants: i64,
+}
+
+impl UserDataSummary {
+    pub fn meaningful_score(&self) -> i64 {
+        self.sessions
+            + self.messages
+            + self.planning_goals
+            + self.planning_todos
+            + self.settings
+            + self.mcp_servers
+    }
+
+    pub fn has_meaningful_user_data(&self) -> bool {
+        self.meaningful_score() > 0
+    }
+}
+
+fn validate_sqlite_identifier(identifier: &str) -> DatabaseResult<()> {
+    if identifier.is_empty()
+        || !identifier
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(DatabaseError::ConnectionFailed(format!(
+            "Invalid SQLite identifier format: {identifier:?}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn connect_existing_database(db_file_path: &str) -> DatabaseResult<DatabaseConnection> {
+    let db_url_formatted = crate::utils::sqlite::format_sqlite_url(db_file_path);
+    let sqlite_opts = SqliteConnectOptions::from_str(&db_url_formatted)
+        .map_err(|e| DatabaseError::ConnectionFailed(format!("Invalid SQLite path: {e}")))?
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(Duration::from_secs(5))
+        .create_if_missing(false);
+
+    let sqlx_pool = sea_orm::sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(sqlite_opts)
+        .await
+        .map_err(|e| DatabaseError::ConnectionFailed(e.to_string()))?;
+
+    Ok(SqlxSqliteConnector::from_sqlx_sqlite_pool(sqlx_pool))
+}
+
+async fn table_exists(db: &DatabaseConnection, table_name: &str) -> DatabaseResult<bool> {
+    validate_sqlite_identifier(table_name)?;
+
+    let result = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            [table_name.into()],
+        ))
+        .await?;
+
+    Ok(result.is_some())
+}
+
+async fn count_rows_if_table_exists(
+    db: &DatabaseConnection,
+    table_name: &str,
+) -> DatabaseResult<i64> {
+    validate_sqlite_identifier(table_name)?;
+
+    if !table_exists(db, table_name).await? {
+        return Ok(0);
+    }
+
+    let row = db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            format!("SELECT COUNT(*) as row_count FROM {table_name}"),
+        ))
+        .await?;
+
+    match row {
+        Some(row) => row
+            .try_get("", "row_count")
+            .map_err(|e| DatabaseError::ConnectionFailed(format!("Failed to read row_count: {e}"))),
+        None => Ok(0),
+    }
+}
+
+async fn integrity_check_ok(db_file_path: &str) -> DatabaseResult<bool> {
+    let db = connect_existing_database(db_file_path).await?;
+    let row = db
+        .query_one(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "PRAGMA integrity_check".to_string(),
+        ))
+        .await?;
+
+    match row {
+        Some(row) => {
+            let result: String = row.try_get("", "integrity_check").map_err(|e| {
+                DatabaseError::ConnectionFailed(format!(
+                    "Failed to read integrity_check result: {e}"
+                ))
+            })?;
+            Ok(result == "ok")
+        }
+        None => Ok(false),
+    }
+}
+
+fn remove_sqlite_sidecars(db_file_path: &str) {
+    for suffix in ["-wal", "-shm"] {
+        let sidecar_path = format!("{db_file_path}{suffix}");
+        if Path::new(&sidecar_path).exists() {
+            if let Err(err) = std::fs::remove_file(&sidecar_path) {
+                warn!(
+                    "⚠️ Failed to remove SQLite sidecar {}: {}",
+                    sidecar_path, err
+                );
+            }
+        }
+    }
+}
+
+pub async fn inspect_user_data_summary(db_file_path: &str) -> DatabaseResult<UserDataSummary> {
+    if !Path::new(db_file_path).exists() {
+        return Ok(UserDataSummary::default());
+    }
+
+    let db = connect_existing_database(db_file_path).await?;
+
+    Ok(UserDataSummary {
+        sessions: count_rows_if_table_exists(&db, "sessions").await?,
+        messages: count_rows_if_table_exists(&db, "messages").await?,
+        planning_goals: count_rows_if_table_exists(&db, "planning_goals").await?,
+        planning_todos: count_rows_if_table_exists(&db, "planning_todos").await?,
+        settings: count_rows_if_table_exists(&db, "settings").await?,
+        mcp_servers: count_rows_if_table_exists(&db, "mcp_servers").await?,
+        assistants: count_rows_if_table_exists(&db, "assistants").await?,
+    })
+}
+
+pub async fn maybe_restore_quarantined_database(db_url: &str) -> DatabaseResult<()> {
+    let db_file_path = match extract_db_file_path(db_url) {
+        Some(path) => path,
+        None => return Ok(()),
+    };
+
+    let quarantine_path = format!("{db_file_path}.incompatible");
+    if !Path::new(db_file_path).exists() || !Path::new(&quarantine_path).exists() {
+        return Ok(());
+    }
+
+    let current_summary = inspect_user_data_summary(db_file_path).await?;
+    let quarantined_summary = inspect_user_data_summary(&quarantine_path).await?;
+
+    if current_summary.has_meaningful_user_data() {
+        info!(
+            "ℹ️ Active DB already contains user data, skipping quarantined DB restore: current={:?} quarantined={:?}",
+            current_summary, quarantined_summary
+        );
+        return Ok(());
+    }
+
+    if !quarantined_summary.has_meaningful_user_data() {
+        info!(
+            "ℹ️ Quarantined DB has no recoverable user data, skipping restore: {:?}",
+            quarantined_summary
+        );
+        return Ok(());
+    }
+
+    if !integrity_check_ok(&quarantine_path).await? {
+        warn!(
+            "⚠️ Quarantined DB failed integrity_check, refusing automatic restore: {}",
+            quarantine_path
+        );
+        return Ok(());
+    }
+
+    warn!(
+        "⚠️ Restoring quarantined DB because active DB appears empty: current={:?} quarantined={:?}",
+        current_summary, quarantined_summary
+    );
+
+    remove_sqlite_sidecars(db_file_path);
+    std::fs::copy(&quarantine_path, db_file_path).map_err(DatabaseError::IoError)?;
+
+    info!(
+        "✅ Restored quarantined DB back to active path: {} <- {}",
+        db_file_path, quarantine_path
+    );
+
+    Ok(())
 }
 
 pub async fn init_database(db_url: &str) -> DatabaseResult<DatabaseConnection> {

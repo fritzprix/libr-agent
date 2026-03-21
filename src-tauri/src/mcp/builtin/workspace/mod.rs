@@ -617,11 +617,9 @@ impl BuiltinMCPServer for WorkspaceServer {
             // File operation tools
             "readFile" => self.handle_read_file(args, session_id).await,
             "writeFile" => self.handle_write_file(args, session_id).await,
-            "deleteFile" => self.handle_delete_file(args, session_id).await,
             "listDirectory" => self.handle_list_directory(args, session_id).await,
-            "importFile" => self.handle_import_file(args, session_id).await,
-            "searchLines" => self.handle_search_lines(args, session_id).await,
-            "searchFiles" => self.handle_search_files(args, session_id).await,
+            "importFiles" => self.handle_import_files(args, session_id).await,
+            "search" => self.handle_search(args, session_id).await,
             "editFile" => self.handle_edit_file(args, session_id).await,
             "replaceLines" => self.handle_edit_file(args, session_id).await,
             // Code execution tools

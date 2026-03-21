@@ -2,9 +2,9 @@ name: 🚀 LibrAgent CI/CD
 
 on:
   push:
-    branches: [main, master, ref/chat]
+    branches: [main, master, 'dev/*']
   pull_request:
-    branches: [main, master, ref/chat]
+    branches: [main, master, 'dev/*']
 
 jobs:
   test:
@@ -145,7 +145,13 @@ jobs:
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       - name: 🏗️ Build Tauri app
-        run: pnpm tauri build
+        run: >-
+          pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        shell: bash
+        env:
+          # Use dummy value for CI if needed, but --config override is preferred
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: 📦 Upload build artifacts
         uses: actions/upload-artifact@v7

@@ -20,7 +20,9 @@ import type {
   AgentSessionMetadata,
   AgentResponse,
   SendUserMessageRequest,
+  WorkflowCompletionReason,
 } from '@/models/agent-ipc';
+import { useAgentSessionListActions } from './AgentSessionListContext';
 
 const logger = getLogger('AgentSessionContext');
 
@@ -51,6 +53,7 @@ export type AgentEventPayload =
   | {
       type: 'workflowCompleted';
       sessionId: string;
+      reason: WorkflowCompletionReason;
     }
   | {
       type: 'workflowError';
@@ -180,6 +183,8 @@ export function AgentSessionProvider({
   children,
   sessionId,
 }: AgentSessionProviderProps) {
+  const { markSessionViewed, clearPendingApproval } =
+    useAgentSessionListActions();
   const [session, setSession] = useState<AgentSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
@@ -209,6 +214,36 @@ export function AgentSessionProvider({
   useEffect(() => {
     yoloModeRef.current = yoloModeEnabled;
   }, [yoloModeEnabled]);
+
+  const applyLocalViewedAt = useCallback((viewedAt: Date) => {
+    setSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            lastViewedAt:
+              !prev.lastViewedAt ||
+              viewedAt.getTime() > prev.lastViewedAt.getTime()
+                ? viewedAt
+                : prev.lastViewedAt,
+          }
+        : prev,
+    );
+  }, []);
+
+  const persistViewedAt = useCallback(
+    async (viewedAt = new Date()) => {
+      applyLocalViewedAt(viewedAt);
+      await markSessionViewed(sessionId, viewedAt);
+    },
+    [applyLocalViewedAt, markSessionViewed, sessionId],
+  );
+
+  const acknowledgeSessionAttention = useCallback(
+    async (viewedAt = new Date()) => {
+      await persistViewedAt(viewedAt);
+    },
+    [persistViewedAt],
+  );
 
   /**
    * Load messages for the current session
@@ -369,6 +404,10 @@ export function AgentSessionProvider({
                 return [...prev, newMessage];
               });
 
+              if (!newMessage.isStreaming) {
+                applyLocalViewedAt(new Date(rustMessage.createdAt));
+              }
+
               // Recurring Request Logic for Think-Only Messages
               // If the assistant sends a message with ONLY thinking (no content, no tool calls),
               // we treat it as an internal thought and automatically trigger the next turn.
@@ -507,6 +546,16 @@ export function AgentSessionProvider({
           updatedAt: response.updatedAt
             ? new Date(response.updatedAt)
             : undefined,
+          lastViewedAt: response.lastViewedAt
+            ? new Date(response.lastViewedAt)
+            : undefined,
+          lastMessageAt: response.lastMessageAt
+            ? new Date(response.lastMessageAt)
+            : undefined,
+          lastAttentionAt: response.lastAttentionAt
+            ? new Date(response.lastAttentionAt)
+            : undefined,
+          lastAttentionReason: response.lastAttentionReason,
           yoloMode: response.yoloMode,
         };
 
@@ -526,6 +575,12 @@ export function AgentSessionProvider({
 
         // 4. Load messages
         await loadMessages(sessionId);
+        void persistViewedAt().catch((err) => {
+          logger.error(
+            'Failed to mark session viewed during initialization',
+            err,
+          );
+        });
 
         // If we get here without error, we are mostly done.
         // The event listener handles the "complete" step or we can just set loading false
@@ -547,7 +602,27 @@ export function AgentSessionProvider({
       isMounted = false;
       if (unlisten) unlisten();
     };
-  }, [sessionId, loadMessages]);
+  }, [sessionId, loadMessages, persistViewedAt]);
+
+  useEffect(() => {
+    const markViewedOnReturn = () => {
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
+
+      void persistViewedAt().catch((err) => {
+        logger.error('Failed to persist viewed state after focus change', err);
+      });
+    };
+
+    window.addEventListener('focus', markViewedOnReturn);
+    document.addEventListener('visibilitychange', markViewedOnReturn);
+
+    return () => {
+      window.removeEventListener('focus', markViewedOnReturn);
+      document.removeEventListener('visibilitychange', markViewedOnReturn);
+    };
+  }, [persistViewedAt]);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prev) => {
@@ -605,12 +680,13 @@ export function AgentSessionProvider({
         };
 
         await safeInvoke<AgentResponse>('agent_send_message', { request });
+        await acknowledgeSessionAttention(now);
       } catch (err) {
         logger.error('Failed to send message', err);
         throw err;
       }
     },
-    [session],
+    [acknowledgeSessionAttention, session],
   );
 
   /**
@@ -638,12 +714,13 @@ export function AgentSessionProvider({
       await safeInvoke<AgentResponse>('agent_resume_workflow', {
         sessionId: session.id,
       });
+      await acknowledgeSessionAttention();
       // Status update will come via event
     } catch (err) {
       logger.error('Failed to resume session', err);
       throw err;
     }
-  }, [session]);
+  }, [acknowledgeSessionAttention, session]);
 
   const respondToToolApproval = useCallback(
     async (toolCallId: string, approved: boolean) => {
@@ -659,12 +736,14 @@ export function AgentSessionProvider({
         setPendingApprovals((prev) =>
           prev.filter((p) => p.toolCallId !== toolCallId),
         );
+        clearPendingApproval(session.id, toolCallId);
+        await acknowledgeSessionAttention();
       } catch (err) {
         logger.error('Failed to respond to tool approval', err);
         throw err;
       }
     },
-    [session],
+    [acknowledgeSessionAttention, clearPendingApproval, session],
   );
 
   const toggleYoloMode = useCallback(async () => {
@@ -683,22 +762,31 @@ export function AgentSessionProvider({
         logger.info('Auto-approving pending tools due to YOLO toggle', {
           count: pendingApprovals.length,
         });
-        pendingApprovals.forEach((p) => {
-          safeInvoke<AgentResponse>('agent_respond_tool_approval', {
+        const approvalsToClear = [...pendingApprovals];
+        approvalsToClear.forEach((p) => {
+          void safeInvoke<AgentResponse>('agent_respond_tool_approval', {
             sessionId,
             toolCallId: p.toolCallId,
             approved: true,
           }).catch((err) => {
             logger.error('Failed to auto-approve tool upon YOLO toggle', err);
           });
+          clearPendingApproval(sessionId, p.toolCallId);
         });
         setPendingApprovals([]);
         setWorkflowPhase('using_tools');
+        await acknowledgeSessionAttention();
       }
     } catch (err) {
       logger.error('Failed to toggle YOLO mode on backend', err);
     }
-  }, [yoloModeEnabled, pendingApprovals, sessionId]);
+  }, [
+    acknowledgeSessionAttention,
+    clearPendingApproval,
+    pendingApprovals,
+    sessionId,
+    yoloModeEnabled,
+  ]);
 
   const updateSessionConfig = useCallback((model: string, provider: string) => {
     setSession((prev) => (prev ? { ...prev, model, provider } : null));

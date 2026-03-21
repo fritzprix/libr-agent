@@ -451,6 +451,19 @@ pub async fn agent_toggle_session_bookmark(
         .map_err(|e| format!("Failed to toggle bookmark: {}", e))
 }
 
+/// Mark a session as viewed at the current time.
+#[command]
+pub async fn agent_mark_session_viewed(
+    session_id: String,
+    viewed_at: Option<i64>,
+) -> Result<(), String> {
+    let repo = get_session_repository();
+    let viewed_at = viewed_at.unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    repo.update_last_viewed_at(&session_id, viewed_at)
+        .await
+        .map_err(|e| format!("Failed to update last viewed timestamp: {}", e))
+}
+
 /// Set YOLO mode for a session
 #[command]
 pub async fn agent_set_yolo_mode(

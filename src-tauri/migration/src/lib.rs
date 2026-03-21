@@ -21,6 +21,9 @@ mod m20260309_000016_add_workspace_override_to_sessions;
 mod m20260309_000017_add_usage_to_messages;
 mod m20260317_000018_add_yolo_mode_to_scheduled_tasks;
 mod m20260317_000019_add_workspace_override_to_scheduled_tasks;
+mod m20260320_000020_add_viewed_and_message_timestamps_to_sessions;
+mod m20260320_000021_add_attention_timestamps_to_sessions;
+mod m20260321_000022_add_schedule_timezone_to_scheduled_tasks;
 
 pub struct Migrator;
 
@@ -47,6 +50,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260309_000017_add_usage_to_messages::Migration),
             Box::new(m20260317_000018_add_yolo_mode_to_scheduled_tasks::Migration),
             Box::new(m20260317_000019_add_workspace_override_to_scheduled_tasks::Migration),
+            Box::new(m20260320_000020_add_viewed_and_message_timestamps_to_sessions::Migration),
+            Box::new(m20260320_000021_add_attention_timestamps_to_sessions::Migration),
+            Box::new(m20260321_000022_add_schedule_timezone_to_scheduled_tasks::Migration),
         ]
     }
 }

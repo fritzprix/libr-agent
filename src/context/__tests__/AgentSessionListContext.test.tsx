@@ -8,6 +8,7 @@ import {
 import { safeInvoke } from '@/lib/backend/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Assistant } from '@/models/chat';
+import { MemoryRouter } from 'react-router-dom';
 
 // Mock Assistant for creating sessions
 const mockAssistant: Assistant = {
@@ -70,7 +71,19 @@ vi.mock('../LLMServiceContext', () => ({
 }));
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
-    return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
+    return (
+        <MemoryRouter>
+            <AgentSessionListProvider>{children}</AgentSessionListProvider>
+        </MemoryRouter>
+    );
+}
+
+function DraftRouteWrapper({ children }: { children: React.ReactNode }) {
+    return (
+        <MemoryRouter initialEntries={['/agent/draft']}>
+            <AgentSessionListProvider>{children}</AgentSessionListProvider>
+        </MemoryRouter>
+    );
 }
 
 describe('AgentSessionListContext', () => {
@@ -117,6 +130,23 @@ describe('AgentSessionListContext', () => {
         });
 
         expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+    });
+
+    it('does not mark the draft route as a viewed session', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+        renderHook(() => useAgentSessionListState(), {
+            wrapper: DraftRouteWrapper,
+        });
+
+        await waitFor(() => {
+            expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+        });
+
+        expect(safeInvoke).not.toHaveBeenCalledWith(
+            'agent_mark_session_viewed',
+            expect.objectContaining({ sessionId: 'draft' }),
+        );
     });
 
     it('should create a new session', async () => {
@@ -240,7 +270,11 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
     });
 
     function TestWrapperWithEvent({ children }: { children: React.ReactNode }) {
-        return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
+        return (
+            <MemoryRouter>
+                <AgentSessionListProvider>{children}</AgentSessionListProvider>
+            </MemoryRouter>
+        );
     }
 
     it('registers an agent:event listener on mount', async () => {
@@ -386,6 +420,166 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         expect(result.current.sessions[0].status).toBe('paused');
     });
 
+    it('does not create a notification for a plain messageAdded event', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+            expect(result.current.notificationSessions).toHaveLength(0);
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'messageAdded',
+                    sessionId: 'session-child',
+                    message: {
+                        role: 'assistant',
+                        createdAt: Date.now(),
+                    },
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.unreadNotificationCount).toBe(0);
+            expect(result.current.notificationSessions).toHaveLength(0);
+        });
+    });
+
+    it('tracks notifications when an inactive session hits a recurring stop condition', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+            expect(result.current.notificationSessions).toHaveLength(0);
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'recurringStop',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.unreadNotificationCount).toBe(1);
+            expect(result.current.notificationSessions[0]?.id).toBe('session-child');
+            expect(result.current.notificationSessions[0]?.lastAttentionReason).toBe('recurringStop');
+        });
+    });
+
+    it('clears recurring-stop notifications when the session is marked viewed', async () => {
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'recurringStop',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(1);
+        });
+
+        await act(async () => {
+            await result.current.actions.markSessionViewed(
+                'session-child',
+                new Date(Date.now() + 1000),
+            );
+        });
+
+        expect(safeInvoke).toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-child',
+            viewedAt: expect.any(Number),
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(0);
+            expect(result.current.state.notificationSessions).toHaveLength(0);
+        });
+    });
+
+    it('ignores natural workflow completion for notifications', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: TestWrapperWithEvent,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'workflowCompleted',
+                    sessionId: 'session-child',
+                    reason: 'natural',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.unreadNotificationCount).toBe(0);
+        });
+    });
+
+    it('deduplicates repeated approval events for the same tool call', async () => {
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(1);
+        });
+
+        act(() => {
+            result.current.actions.clearPendingApproval('session-child', 'call-1');
+        });
+
+        expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(0);
+    });
+
     it('unregisters the listener on unmount', async () => {
         const { unmount } = renderHook(() => useAgentSessionListState(), {
             wrapper: TestWrapperWithEvent,
@@ -414,7 +608,11 @@ describe('AgentSessionListContext – SP7 session delete options', () => {
     });
 
     function TestWrapper({ children }: { children: React.ReactNode }) {
-        return <AgentSessionListProvider>{children}</AgentSessionListProvider>;
+        return (
+            <MemoryRouter>
+                <AgentSessionListProvider>{children}</AgentSessionListProvider>
+            </MemoryRouter>
+        );
     }
 
     // ── deleteSession (cascade) ──────────────────────────────────────────────

@@ -35,9 +35,10 @@ use commands::agent_commands::{
     agent_get_compact_context, agent_get_service_contexts, agent_get_session, agent_get_tools,
     agent_handle_compact_error, agent_handle_compact_response, agent_handle_llm_error,
     agent_handle_llm_response, agent_handle_tool_result, agent_init_session_with_messages,
-    agent_inject_messages, agent_pause_workflow, agent_respond_tool_approval, agent_resume_session,
-    agent_resume_workflow, agent_save_compact_context, agent_send_message, agent_set_yolo_mode,
-    agent_terminate_workflow, agent_toggle_session_bookmark, agent_update_session_config,
+    agent_inject_messages, agent_mark_session_viewed, agent_pause_workflow,
+    agent_respond_tool_approval, agent_resume_session, agent_resume_workflow,
+    agent_save_compact_context, agent_send_message, agent_set_yolo_mode, agent_terminate_workflow,
+    agent_toggle_session_bookmark, agent_update_session_config,
 };
 use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
@@ -81,7 +82,8 @@ use commands::settings_commands::{
 };
 use commands::skill_commands::{
     get_aggregated_skills, get_default_skills_directory, get_skill_content,
-    list_workspace_file_paths, open_skills_directory_in_explorer, scan_skills_directory,
+    list_workspace_file_paths, list_workspace_file_paths_for_path,
+    open_skills_directory_in_explorer, scan_skills_directory,
 };
 use commands::skill_management::{
     copy_global_to_assistant, delete_assistant_skill, import_assistant_skills,
@@ -89,9 +91,10 @@ use commands::skill_management::{
 };
 use commands::url_commands::open_external_url;
 use commands::workspace_commands::{
-    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_workspace_dir,
-    get_workspace_override, greet, list_workspace_files, open_workspace_file_with_default_app,
-    open_workspace_in_explorer, open_workspace_in_terminal, restart_app, set_workspace_override,
+    cancel_workspace_override, get_app_data_dir, get_app_logs_dir, get_update_install_capability,
+    get_workspace_dir, get_workspace_override, greet, list_workspace_files,
+    open_workspace_file_with_default_app, open_workspace_in_explorer, open_workspace_in_terminal,
+    restart_app, set_workspace_override,
 };
 
 // Re-export state management functions
@@ -169,6 +172,7 @@ pub fn run() {
                 delete_content_store,
                 get_app_data_dir,
                 get_app_logs_dir,
+                get_update_install_capability,
                 backup_current_log,
                 clear_current_log,
                 list_log_files,
@@ -238,6 +242,7 @@ pub fn run() {
                 agent_update_session_config,
                 agent_create_session_with_initial_message,
                 agent_toggle_session_bookmark,
+                agent_mark_session_viewed,
                 agent_set_yolo_mode,
                 agent_respond_tool_approval,
                 agent_get_compact_context,
@@ -279,6 +284,7 @@ pub fn run() {
                 get_aggregated_skills,
                 get_skill_content,
                 list_workspace_file_paths,
+                list_workspace_file_paths_for_path,
                 copy_global_to_assistant,
                 delete_assistant_skill,
                 import_assistant_skills,

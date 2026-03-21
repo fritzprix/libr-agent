@@ -12,7 +12,7 @@ import {
 import { Plus, Pencil, Trash2, Clock, Zap, FolderOpen } from 'lucide-react';
 import type { ScheduledTask } from '@/lib/backend/scheduled-tasks';
 import { ScheduledTaskModal } from './components/ScheduledTaskModal';
-import { describeCron } from './components/ScheduleBuilder';
+import { describeCron, getDisplayCron } from './components/ScheduleBuilder';
 import { useScheduledTasks } from './hooks/useScheduledTasks';
 import { getLogger } from '@/lib/logger';
 import { toast } from 'sonner';
@@ -42,6 +42,7 @@ export function ScheduledTasksPage() {
   const handleCreate = async (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -53,6 +54,7 @@ export function ScheduledTasksPage() {
   const handleUpdate = async (data: {
     name: string;
     cronExpression: string;
+    scheduleTimezone: 'local';
     assistantId: string;
     message: string;
     yoloMode: boolean;
@@ -164,8 +166,20 @@ export function ScheduledTasksPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium truncate">{task.name}</span>
                   <Badge variant="secondary" className="text-xs shrink-0">
-                    {describeCron(task.cronExpression, t)}
+                    {describeCron(
+                      getDisplayCron(
+                        task.cronExpression,
+                        task.scheduleTimezone,
+                        task.nextRunAt,
+                      ),
+                      t,
+                    )}
                   </Badge>
+                  {task.scheduleTimezone === 'utc' && (
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {t('scheduledTasks.utcLegacy', 'UTC legacy')}
+                    </Badge>
+                  )}
                   {task.yoloMode && (
                     <Badge
                       variant="default"

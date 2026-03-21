@@ -3,7 +3,6 @@ import { Download, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerPreset } from '@/lib/backend/mcp-server-config';
 import { MCPServerEntity } from '@/models/chat';
-import { Separator } from '@/components/ui';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -25,24 +24,26 @@ export const RecommendedPresets: React.FC<RecommendedPresetsProps> = ({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium text-muted-foreground">
+        <Server className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground font-sans">
           {t('mcpServer.recommended', 'Recommended Extensions')}
         </h3>
-        <Separator className="flex-1" />
+        <div className="h-px bg-border/50 flex-1 ml-2" />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {presets.map((preset) => {
           const isInstalled = servers.some((s) => s.name === preset.name);
           return (
             <div
               key={preset.name}
-              className={`group relative flex flex-col justify-between rounded-lg border bg-card p-4 transition-all focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none ${
+              className={cn(
+                'group relative flex flex-col justify-between rounded-[1.5rem] border bg-background/50 backdrop-blur-sm p-5 transition-all duration-300 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none',
                 isInstalled
-                  ? 'opacity-60 cursor-default bg-muted/20'
-                  : 'hover:bg-accent/50 cursor-pointer'
-              }`}
+                  ? 'opacity-60 cursor-default bg-muted/20 border-border/50'
+                  : 'hover:shadow-2xl hover:bg-background hover:-translate-y-1 cursor-pointer border-border/50 hover:border-primary/40',
+              )}
               role={isInstalled ? undefined : 'button'}
               tabIndex={isInstalled ? -1 : 0}
               aria-disabled={isInstalled}

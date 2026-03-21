@@ -50,40 +50,40 @@ export default function AssistantList() {
   const showPagination = !searchResults && totalPages > 1;
 
   return (
-    <div className="p-6 h-full flex flex-col bg-background">
-      <div className="max-w-5xl mx-auto w-full flex flex-col h-full">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center justify-center p-2.5 bg-primary/10 text-primary rounded-xl">
+    <div className="p-8 h-full flex flex-col bg-background/50">
+      <div className="max-w-5xl mx-auto w-full flex flex-col h-full gap-8">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 animate-in fade-in slide-in-from-top-4 duration-700">
+          <div className="flex items-center gap-5">
+            <div className="flex items-center justify-center w-14 h-14 bg-primary/10 text-primary rounded-2xl shadow-sm ring-1 ring-primary/20">
               <Users size={28} />
             </div>
             <div>
-              <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
                 {t('assistant.list.title')}
               </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <p className="text-sm text-muted-foreground mt-1 font-sans">
                 {t('assistant.list.subtitle')}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <div className="relative flex-1 sm:w-72 group">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
               <Input
                 type="text"
                 placeholder={t('assistant.list.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => handleSearch(e.target.value)}
-                className="pl-9 pr-9 h-9"
+                className="pl-10 pr-10 h-10 bg-background/50 border-border/50 focus:border-primary/50 transition-all rounded-xl shadow-sm"
                 aria-label={t('assistant.list.searchAriaLabel')}
               />
               {searchQuery && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 text-muted-foreground hover:text-foreground"
                   onClick={handleClearSearch}
                   aria-label={t('assistant.list.clearSearchAriaLabel')}
                 >
@@ -94,21 +94,21 @@ export default function AssistantList() {
             <Button
               variant="default"
               onClick={() => setCreateNew(true)}
-              className="h-9 whitespace-nowrap"
+              className="h-10 px-5 whitespace-nowrap shadow-lg transition-all active:scale-95 rounded-xl font-bold"
             >
-              <Plus size={16} className="mr-2" />
+              <Plus size={18} className="mr-2" />
               {t('assistant.list.create')}
             </Button>
           </div>
         </div>
 
         {isSearching && (
-          <div className="text-sm text-muted-foreground mb-4">
+          <div className="text-xs font-bold uppercase tracking-widest text-primary/60 animate-pulse font-sans ml-1">
             {t('assistant.list.searching')}
           </div>
         )}
         {searchResults !== null && !isSearching && (
-          <div className="text-sm text-muted-foreground mb-4">
+          <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60 font-sans ml-1">
             {t('assistant.list.searchResults', {
               count: searchResults.length,
               query: searchQuery,
@@ -117,15 +117,18 @@ export default function AssistantList() {
         )}
 
         {/* Scrollable assistants list */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-8 no-scrollbar animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
           {displayedAssistants.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">
-              {searchResults !== null
-                ? t('assistant.list.noResults')
-                : t('assistant.list.empty')}
+            <div className="h-full flex flex-col items-center justify-center text-center p-12 border border-dashed rounded-[2rem] bg-muted/10">
+              <Users className="w-12 h-12 text-muted-foreground/20 mb-4" />
+              <p className="text-muted-foreground font-sans max-w-xs">
+                {searchResults !== null
+                  ? t('assistant.list.noResults')
+                  : t('assistant.list.empty')}
+              </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-4">
               {displayedAssistants.map((assistant) => (
                 <AssistantCard
                   key={assistant.id}

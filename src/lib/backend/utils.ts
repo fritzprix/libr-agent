@@ -16,6 +16,17 @@ export async function getAppLogsDir(): Promise<string> {
   return safeInvoke<string>('get_app_logs_dir');
 }
 
+export interface UpdateInstallCapability {
+  supported: boolean;
+  currentExecutable: string;
+  packageType: string;
+  reason: string | null;
+}
+
+export async function getUpdateInstallCapability(): Promise<UpdateInstallCapability> {
+  return safeInvoke<UpdateInstallCapability>('get_update_install_capability');
+}
+
 /**
  * Creates a backup of the current log file.
  * @returns A promise that resolves to the path of the newly created backup file.

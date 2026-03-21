@@ -59,7 +59,7 @@ export function AgentChatMessages() {
     <div className="flex-1 flex flex-col min-h-0 min-w-0">
       <div
         ref={scrollContainerRef}
-        className="flex-1 p-4 overflow-y-auto overflow-x-hidden flex flex-col gap-6"
+        className="flex-1 p-4 pb-32 overflow-y-auto overflow-x-hidden flex flex-col gap-6"
       >
         {groupedMessages.map((groupedMessage) => {
           if (groupedMessage.type === 'tool_group') {

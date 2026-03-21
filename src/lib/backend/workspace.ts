@@ -139,3 +139,20 @@ export async function listWorkspaceFilePaths(
     maxDepth,
   });
 }
+
+/**
+ * Lists all file paths within an arbitrary workspace directory up to `maxDepth` levels deep.
+ * Returns relative paths (forward-slash separated) sorted alphabetically.
+ * @param workspacePath The absolute workspace directory path to query.
+ * @param maxDepth Maximum directory traversal depth.
+ * @returns A promise that resolves to an array of relative path strings.
+ */
+export async function listWorkspaceFilePathsForPath(
+  workspacePath: string,
+  maxDepth: number,
+): Promise<string[]> {
+  return safeInvoke<string[]>('list_workspace_file_paths_for_path', {
+    workspacePath,
+    maxDepth,
+  });
+}

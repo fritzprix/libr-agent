@@ -3,11 +3,14 @@ import { getLogger } from '@/lib/logger';
 
 const logger = getLogger('ScheduledTasksBackend');
 
+export type ScheduledTaskTimezone = 'utc' | 'local';
+
 /** Matches the Rust `ScheduledTaskDto` */
 export interface ScheduledTask {
   id: string;
   name: string;
   cronExpression: string;
+  scheduleTimezone: ScheduledTaskTimezone;
   assistantId: string;
   /** Supports @playbook:name and @skill:name mention syntax */
   message: string;
@@ -24,6 +27,7 @@ export interface ScheduledTask {
 export interface CreateScheduledTaskRequest {
   name: string;
   cronExpression: string;
+  scheduleTimezone?: ScheduledTaskTimezone;
   assistantId: string;
   message: string;
   yoloMode: boolean;
@@ -33,6 +37,7 @@ export interface CreateScheduledTaskRequest {
 export interface UpdateScheduledTaskRequest {
   name?: string;
   cronExpression?: string;
+  scheduleTimezone?: ScheduledTaskTimezone;
   assistantId?: string;
   message?: string;
   yoloMode?: boolean;

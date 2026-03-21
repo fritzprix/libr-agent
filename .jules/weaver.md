@@ -105,3 +105,13 @@
 - **ScheduledTasksPage:** Extracted all data fetching, state management, and mutation logic into a new custom hook `useScheduledTasks`. Eradicated "God Component" behavior.
 - **ScheduledTaskModal:** Removed the internal `useEffect` for data fetching (`listAssistants`) and passed `assistants` as a prop directly. Eradicated the action-effect chain `if (assistants !== prevAssistants)` by deriving the effective assistant selection directly during rendering.
 - **Benefits:** Clean separation of concerns, complete eradication of prop copying and effect-based state syncing loops.
+
+## 2026-03-14 - [AgentChatStatusBar] **Eradicated:** [Derived State & Effect Syncing] **Woven:** [Adjusting State During Render Pattern]
+
+- **AgentChatStatusBar:** Removed the `useEffect` that reset `lastMetrics` to `null` when `session?.id` changed. Replaced with an **Adjusting State During Render** pattern that compares `session?.id` to a `prevSessionId` state tracker, ensuring state is synchronized before the next paint and preventing an extra post-commit re-render lifecycle.
+- **Renders Saved:** Eliminated redundant effect-triggered renders that act purely as local state clears in response to prop/dependency changes.
+
+## 2026-03-14 - [GeneralTab / useSkillsDirectory] **Eradicated:** [God Component / Logic in Render] **Woven:** [Custom Hook Pattern]
+
+- **GeneralTab:** Extracted the directory verification logic (`scan_skills_directory` and fallback to default dir) into a new `useSkillsDirectory` hook.
+- **Benefits:** Decoupled business logic (verification of skills folder) from the presentation, removing the monolithic `useEffect` hook block inside `GeneralTabComponent`.

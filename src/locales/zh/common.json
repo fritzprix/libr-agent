@@ -725,6 +725,7 @@
       "showAllWithCount_other": "显示全部 ({{count}} 次调用)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "切换 {{toolName}} 详情",
       "parameters": "参数",
       "errorDetails": "错误详情",
       "result": "结果",

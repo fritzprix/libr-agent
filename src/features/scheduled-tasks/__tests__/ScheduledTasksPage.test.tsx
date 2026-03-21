@@ -12,6 +12,7 @@ vi.mock('@/features/scheduled-tasks/hooks/useScheduledTasks', () => ({
         id: 'task-1',
         name: 'Test Task 1',
         cronExpression: '* * * * *',
+        scheduleTimezone: 'local',
         assistantId: 'ast-1',
         message: 'Hello World',
         yoloMode: false,

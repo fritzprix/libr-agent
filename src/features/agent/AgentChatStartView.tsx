@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { useAssistantContext } from '@/context/AssistantContext';
 import { useAgentSessionListActions } from '@/context/AgentSessionListContext';
@@ -22,6 +23,7 @@ const logger = getLogger('AgentChatStartView');
  *  - My Assistants        (deletionProtected === false), shown only if any exist.
  */
 export default function AgentChatStartView() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { assistants } = useAssistantContext();
   const { createSession } = useAgentSessionListActions();
@@ -128,39 +130,48 @@ export default function AgentChatStartView() {
   );
 
   return (
-    <main className="h-full w-full flex flex-col items-center overflow-y-auto bg-background">
-      <div className="w-full max-w-4xl px-6 py-16 flex flex-col gap-12">
+    <main className="h-full w-full flex flex-col items-center overflow-y-auto bg-background/50">
+      <div className="w-full max-w-5xl px-8 py-20 flex flex-col gap-16">
         {/* Hero Header */}
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-semibold tracking-tight text-foreground">
-            What would you like to do today?
+        <div className="text-center space-y-4 animate-in fade-in slide-in-from-top-4 duration-700">
+          <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            {t('agent.start.heroTitle', 'What would you like to do today?')}
           </h1>
-          <p className="text-muted-foreground text-base">
-            Select an assistant to begin a new session.
+          <p className="text-muted-foreground text-lg max-w-2xl mx-auto font-sans">
+            {t(
+              'agent.start.heroSubtitle',
+              'Select an assistant to begin a new autonomous session.',
+            )}
           </p>
         </div>
 
         {/* Built-in Assistants */}
         {builtinAssistants.length > 0 && (
-          <section aria-labelledby="builtin-heading">
+          <section
+            aria-labelledby="builtin-heading"
+            className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150"
+          >
             <h2
               id="builtin-heading"
-              className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3"
+              className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 font-sans ml-1"
             >
-              Built-in Assistants
+              {t('agent.start.builtinAssistants', 'Built-in Assistants')}
             </h2>
             {renderGrid(builtinAssistants)}
           </section>
         )}
 
-        {/* My Assistants – only rendered when user has created at least one */}
+        {/* My Assistants */}
         {customAssistants.length > 0 && (
-          <section aria-labelledby="custom-heading">
+          <section
+            aria-labelledby="custom-heading"
+            className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300"
+          >
             <h2
               id="custom-heading"
-              className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3"
+              className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60 mb-6 font-sans ml-1"
             >
-              My Assistants
+              {t('agent.start.myAssistants', 'My Assistants')}
             </h2>
             {renderGrid(customAssistants)}
           </section>

@@ -647,10 +647,10 @@ pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
     .with_guidance(vec![
         "Use list(type=\"configs\") to see available agent configurations".to_string(),
         format!(
-            "Verify agentId '{}' matches one of the listed IDs",
+            "Verify agentId '{}' exactly matches one of the listed IDs or names",
             agent_id
         ),
-        "Retry startSession with a valid agentId".to_string(),
+        "Retry startSession with a valid agentId (UUID) or exact name".to_string(),
     ])
     .to_mcp_result()
 }

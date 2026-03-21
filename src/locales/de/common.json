@@ -725,6 +725,7 @@
       "showAllWithCount_other": "Alle anzeigen ({{count}} Aufrufe)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "Details für {{toolName}} umschalten",
       "parameters": "Parameter",
       "errorDetails": "Fehlerdetails",
       "result": "Ergebnis",

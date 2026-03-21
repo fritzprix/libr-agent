@@ -10,26 +10,26 @@ fn transport_config_schema(description: Option<&str>) -> crate::mcp::schema::JSO
             ),
             (
                 "command".to_string(),
-                string_prop(None, None, Some("Command to execute (stdio only). Use 'npx' for NPM packages, 'uvx' for Python, 'docker' for containers. NEVER 'npm' or 'pip' install commands.")),
+                string_prop(None, None, Some("Executable to launch for stdio transport.")),
             ),
             (
                 "args".to_string(),
                 array_schema(
                     string_prop(None, None, None),
-                    Some("Command arguments (stdio only). For npx, start with '-y' flag: ['-y', '@modelcontextprotocol/server-*', ...args]"),
+                    Some("Arguments for the stdio executable."),
                 ),
             ),
             (
                 "env".to_string(),
-                object_prop(vec![], vec![], Some("Environment variables")),
+                object_prop(vec![], vec![], Some("Environment variables for stdio transport.")),
             ),
             (
                 "url".to_string(),
-                string_prop(None, None, Some("Server URL (http only)")),
+                string_prop(None, None, Some("Server URL for HTTP transport.")),
             ),
             (
                 "headers".to_string(),
-                object_prop(vec![], vec![], Some("HTTP headers")),
+                object_prop(vec![], vec![], Some("HTTP headers for HTTP transport.")),
             ),
         ],
         vec!["type".to_string()],
@@ -44,10 +44,9 @@ pub fn register_server_tool() -> MCPTool {
     MCPTool {
         name: "registerServer".to_string(),
         title: Some("Register Server".to_string()),
-        description: "Register a new MCP server configuration. \
-For NPM packages use 'npx' with args ['-y', '<pkg>']; for Python use 'uvx'. \
-Returns the server ID needed to assign this server to an assistant."
-        .to_string(),
+        description:
+            "Save an external MCP server configuration and return its server ID for assistant attachment."
+                .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -61,7 +60,7 @@ Returns the server ID needed to assign this server to an assistant."
                 ),
                 (
                     "description".to_string(),
-                    string_prop_required("Detailed purpose of this server to help the AI understand when to use its tools."),
+                    string_prop_required("Short purpose statement describing when this server should be used."),
                 ),
                 ("transport".to_string(), transport_schema),
             ],
@@ -80,9 +79,8 @@ pub fn update_server_tool() -> MCPTool {
     MCPTool {
         name: "updateServer".to_string(),
         title: Some("Update Server".to_string()),
-        description:
-            "Update an existing MCP server configuration. Triggers an automatic re-verification."
-                .to_string(),
+        description: "Update a saved external MCP server configuration and re-verify it."
+            .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -108,7 +106,7 @@ pub fn delete_server_tool() -> MCPTool {
     MCPTool {
         name: "deleteServer".to_string(),
         title: Some("Delete Server".to_string()),
-        description: "Delete an MCP server configuration permanently.".to_string(),
+        description: "Delete a saved external MCP server configuration.".to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -127,7 +125,8 @@ pub fn verify_server_tool() -> MCPTool {
     MCPTool {
         name: "verifyServer".to_string(),
         title: Some("Verify Server".to_string()),
-        description: "Manually test an MCP server's connection and refresh its tool cache. Useful if the external service was down or changed.".to_string(),
+        description: "Verify a saved external MCP server configuration and refresh its cached tools."
+            .to_string(),
         input_schema: object_prop(
             vec![(
                 "name".to_string(),
@@ -146,7 +145,9 @@ pub fn list_tools_tool() -> MCPTool {
     MCPTool {
         name: "listTools".to_string(),
         title: Some("Find Tools".to_string()),
-        description: "Search servers and tools across builtin and external MCP servers. Omit query to see a compact summary of all servers.".to_string(),
+        description:
+            "Browse builtin tools and saved external MCP servers. Add `query` to filter results."
+                .to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -154,7 +155,7 @@ pub fn list_tools_tool() -> MCPTool {
                     string_prop(
                         None,
                         None,
-                        Some("Search term (tool name, description, server name). Empty = list all."),
+                        Some("Optional filter over tool names, descriptions, and server names."),
                     ),
                 ),
                 (
@@ -162,12 +163,12 @@ pub fn list_tools_tool() -> MCPTool {
                     enum_prop(
                         vec!["all", "internal", "external"],
                         "all",
-                        Some("'all' (default), 'internal' (builtin only), 'external' (registered servers only)"),
+                        Some("Result scope: all, builtin only, or external only."),
                     ),
                 ),
                 (
                     "forceVerify".to_string(),
-                    boolean_prop(Some("Connect live to external servers. Default: false (uses cached).")),
+                    boolean_prop(Some("Fetch live external server metadata instead of cached data.")),
                 ),
             ],
             vec![],

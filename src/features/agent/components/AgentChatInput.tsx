@@ -275,130 +275,132 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     'flex-1 resize-none transition-colors bg-transparent outline-none border-none py-3 px-2 text-sm leading-relaxed max-h-32 min-h-[44px] overflow-y-auto',
   );
 
+  const hasAttachedFiles = attachedFiles.length > 0;
+
   const formClassName = cn(
-    'flex items-end gap-2 bg-muted/30 p-2 rounded-lg border focus-within:ring-1 focus-within:ring-primary/20 transition-colors',
-    dragState === 'valid' && 'bg-success/10 border-success',
-    dragState === 'invalid' && 'bg-destructive/10 border-destructive',
+    'flex items-end gap-2 bg-background/60 backdrop-blur-md p-3 border border-border/50 shadow-2xl focus-within:ring-1 focus-within:ring-primary/20 transition-all',
+    hasAttachedFiles ? 'rounded-b-xl border-t-0' : 'rounded-xl',
+    dragState === 'valid' && 'bg-success/5 border-success/50 shadow-success/10',
+    dragState === 'invalid' &&
+      'bg-destructive/5 border-destructive/50 shadow-destructive/10',
   );
 
-  const hasContent = input.trim() || attachedFiles.length > 0;
+  const hasContent = input.trim().length > 0 || attachedFiles.length > 0;
 
   return (
-    <div className="p-4 border-t">
-      <div className="relative">
-        {stage.kind !== 'idle' &&
-          (typeResults.length > 0 ||
-            skillResults.length > 0 ||
-            toolResults.length > 0 ||
-            fileResults.length > 0 ||
-            playbookResults.length > 0) && (
-            <InputTokenDropdown
-              mode={
-                stage.kind === 'typing-type'
-                  ? { kind: 'types', items: typeResults }
-                  : stage.typeName === 'tool'
-                    ? { kind: 'tools', items: toolResults }
-                    : stage.typeName === 'file'
-                      ? { kind: 'files', items: fileResults }
-                      : stage.typeName === 'playbook'
-                        ? { kind: 'playbooks', items: playbookResults }
-                        : { kind: 'skills', items: skillResults }
-              }
-              onSelectType={(typeName) => {
-                const cursorPos =
-                  textareaRef.current?.selectionStart ?? input.length;
-                const newValue = onTypeSelect(typeName, input, cursorPos);
-                setInput(newValue);
-                requestAnimationFrame(() => {
-                  if (textareaRef.current) {
-                    const pos = newValue.length - (input.length - cursorPos);
-                    textareaRef.current.setSelectionRange(pos, pos);
-                    textareaRef.current.focus();
-                  }
-                });
-              }}
-              onSelectArg={(arg) => {
-                const cursorPos =
-                  textareaRef.current?.selectionStart ?? input.length;
-                const newValue = onArgSelect(arg, input, cursorPos);
-                setInput(newValue);
-                requestAnimationFrame(() => {
-                  textareaRef.current?.focus();
-                });
-              }}
-              onDismiss={onDismiss}
-            />
-          )}
-        <form
-          ref={chatInputRef}
-          onSubmit={handleSubmit}
-          className={formClassName}
-        >
-          <FileAttachment
-            files={fileAttachmentFiles}
-            onRemove={handleRemoveFile}
-            onAdd={handleFileAttachment}
-            compact={true}
+    <div className="relative">
+      {stage.kind !== 'idle' &&
+        (typeResults.length > 0 ||
+          skillResults.length > 0 ||
+          toolResults.length > 0 ||
+          fileResults.length > 0 ||
+          playbookResults.length > 0) && (
+          <InputTokenDropdown
+            mode={
+              stage.kind === 'typing-type'
+                ? { kind: 'types', items: typeResults }
+                : stage.typeName === 'tool'
+                  ? { kind: 'tools', items: toolResults }
+                  : stage.typeName === 'file'
+                    ? { kind: 'files', items: fileResults }
+                    : stage.typeName === 'playbook'
+                      ? { kind: 'playbooks', items: playbookResults }
+                      : { kind: 'skills', items: skillResults }
+            }
+            onSelectType={(typeName) => {
+              const cursorPos =
+                textareaRef.current?.selectionStart ?? input.length;
+              const newValue = onTypeSelect(typeName, input, cursorPos);
+              setInput(newValue);
+              requestAnimationFrame(() => {
+                if (textareaRef.current) {
+                  const pos = newValue.length - (input.length - cursorPos);
+                  textareaRef.current.setSelectionRange(pos, pos);
+                  textareaRef.current.focus();
+                }
+              });
+            }}
+            onSelectArg={(arg) => {
+              const cursorPos =
+                textareaRef.current?.selectionStart ?? input.length;
+              const newValue = onArgSelect(arg, input, cursorPos);
+              setInput(newValue);
+              requestAnimationFrame(() => {
+                textareaRef.current?.focus();
+              });
+            }}
+            onDismiss={onDismiss}
           />
-          {children}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleAgentInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={inputPlaceholder}
-            className={inputClassName}
-            style={textareaStyle}
-            autoComplete="off"
-            spellCheck="false"
-            rows={1}
-            aria-label={t('agent.input.ariaLabel')}
-          />
-          {isBusy ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  onClick={handleCancel}
-                  variant="ghost"
-                  size="icon"
-                  className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
-                  disabled={pendingCancel}
-                  aria-label={t('agent.input.cancelAriaLabel')}
-                  title={t('agent.input.cancelAriaLabel')}
-                >
-                  {pendingCancel ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Square className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {pendingCancel
-                  ? t('agent.input.cancellingTooltip')
-                  : t('agent.input.cancelTooltip')}
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="submit"
-                  disabled={!hasContent || isAttachmentLoading}
-                  size="icon"
-                  className="mb-1 shrink-0"
-                  aria-label={t('agent.input.sendAriaLabel')}
-                  title={t('agent.input.sendAriaLabel')}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('agent.input.sendTooltip')}</TooltipContent>
-            </Tooltip>
-          )}
-        </form>
-      </div>
+        )}
+      <form
+        ref={chatInputRef}
+        onSubmit={handleSubmit}
+        className={formClassName}
+      >
+        <FileAttachment
+          files={fileAttachmentFiles}
+          onRemove={handleRemoveFile}
+          onAdd={handleFileAttachment}
+          compact={true}
+        />
+        {children}
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={handleAgentInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder={inputPlaceholder}
+          className={inputClassName}
+          style={textareaStyle}
+          autoComplete="off"
+          spellCheck="false"
+          rows={1}
+          aria-label={t('agent.input.ariaLabel')}
+        />
+        {isBusy ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                onClick={handleCancel}
+                variant="ghost"
+                size="icon"
+                className="mb-1 h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
+                disabled={pendingCancel}
+                aria-label={t('agent.input.cancelAriaLabel')}
+                title={t('agent.input.cancelAriaLabel')}
+              >
+                {pendingCancel ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {pendingCancel
+                ? t('agent.input.cancellingTooltip')
+                : t('agent.input.cancelTooltip')}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="submit"
+                disabled={!hasContent || isAttachmentLoading}
+                size="icon"
+                className="mb-1 shrink-0"
+                aria-label={t('agent.input.sendAriaLabel')}
+                title={t('agent.input.sendAriaLabel')}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('agent.input.sendTooltip')}</TooltipContent>
+          </Tooltip>
+        )}
+      </form>
     </div>
   );
 }

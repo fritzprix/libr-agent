@@ -1,11 +1,18 @@
-import { useMemo, useState, useDeferredValue } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { RefreshCw, Search, History, X, Bookmark } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { filterSessions } from '@/lib/session-utils';
+import {
+  buildChildrenMap,
+  buildDescendantCounts,
+  buildDescendantStatusCounts,
+  filterSessions,
+  type SessionStatus,
+  type SessionStatusCounts,
+} from '@/lib/session-utils';
 import type { AgentSession } from '@/models/agent';
 import { SessionCard } from './SessionCard';
 
@@ -13,8 +20,10 @@ interface SessionHistoryPanelProps {
   sessions: AgentSession[];
   isLoading: boolean;
   activeTab: string;
+  activeStatusFilter: 'all' | SessionStatus;
   searchQuery: string;
   onActiveTabChange: (value: string) => void;
+  onActiveStatusFilterChange: (value: 'all' | SessionStatus) => void;
   onSearchQueryChange: (value: string) => void;
   onRefresh: () => void;
   onResume: (sessionId: string) => void;
@@ -39,8 +48,10 @@ export function SessionHistoryPanel({
   sessions,
   isLoading,
   activeTab,
+  activeStatusFilter,
   searchQuery,
   onActiveTabChange,
+  onActiveStatusFilterChange,
   onSearchQueryChange,
   onRefresh,
   onResume,
@@ -57,7 +68,9 @@ export function SessionHistoryPanel({
   const [selectedLineageId, setSelectedLineageId] = useState<string | null>(
     null,
   );
-  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const defaultHeading =
     heading ?? t('sessionHistory.defaultHeading', 'Recent Sessions');
@@ -92,15 +105,21 @@ export function SessionHistoryPanel({
     );
   }, [deferredSessions, selectedLineageId]);
 
-  const filteredAndSortedSessions = useMemo(() => {
-    let filtered = baseSessions;
-
-    if (showBookmarkedOnly) {
-      filtered = filtered.filter((session) => session.isBookmarked === true);
+  const segmentedSessions = useMemo(() => {
+    if (activeTab === 'bookmarked') {
+      return baseSessions.filter((session) => session.isBookmarked === true);
     }
 
-    if (activeTab !== 'all') {
-      filtered = filtered.filter((session) => session.status === activeTab);
+    return baseSessions;
+  }, [activeTab, baseSessions]);
+
+  const matchedSessions = useMemo(() => {
+    let filtered = segmentedSessions;
+
+    if (activeStatusFilter !== 'all') {
+      filtered = filtered.filter(
+        (session) => session.status === activeStatusFilter,
+      );
     }
 
     filtered = filterSessions(filtered, deferredSearchQuery);
@@ -111,111 +130,172 @@ export function SessionHistoryPanel({
       if (statusDiff !== 0) return statusDiff;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
-  }, [baseSessions, deferredSearchQuery, activeTab, showBookmarkedOnly]);
+  }, [activeStatusFilter, deferredSearchQuery, segmentedSessions]);
 
-  // Eradicating Action-Effect Chain / Derived State
-  // Checking existence of selected lineage directly during render.
-  // Only update prevSessions (and check lineage) when a selection is active — avoids
-  // an extra re-render on every sessions identity change when nothing is selected.
-  const [prevSessions, setPrevSessions] = useState(sessions);
+  useEffect(() => {
+    if (!selectedLineageId) {
+      return;
+    }
 
-  if (sessions !== prevSessions && selectedLineageId) {
-    setPrevSessions(sessions);
     const stillExists = sessions.some(
       (session) => session.lineageId === selectedLineageId,
     );
     if (!stillExists) {
-      // Schedule a re-render with the cleared lineage ID
       setSelectedLineageId(null);
     }
-  }
+  }, [selectedLineageId, sessions]);
 
-  // SP7: Precompute descendant counts for all sessions so SessionCard can warn
-  //      users about cascade deletes.  Uses the full (unfiltered) sessions list
-  //      so the count stays accurate even when a lineage filter is active.
-  //      Optimized to O(N) using an adjacency map.
-  //      NOTE: We use the immediate 'sessions' prop instead of 'deferredSessions'
-  //      to ensure delete warnings are always based on the latest data.
-  const descendantCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const childrenMap = new Map<string, AgentSession[]>();
+  const descendantCounts = useMemo(
+    () => buildDescendantCounts(sessions),
+    [sessions],
+  );
 
-    // Build adjacency list - O(N)
-    for (const session of sessions) {
-      if (session.parentSessionId) {
-        const children = childrenMap.get(session.parentSessionId) || [];
-        children.push(session);
-        childrenMap.set(session.parentSessionId, children);
-      }
+  const descendantStatusCounts = useMemo(
+    () => buildDescendantStatusCounts(sessions),
+    [sessions],
+  );
+
+  const filtersActive =
+    activeTab === 'bookmarked' ||
+    activeStatusFilter !== 'all' ||
+    deferredSearchQuery.trim().length > 0;
+
+  const autoExpandedAncestorIds = useMemo(() => {
+    if (!filtersActive) {
+      return new Set<string>();
     }
 
-    const count = (sessionId: string): number => {
-      if (counts.has(sessionId)) {
-        return counts.get(sessionId)!;
-      }
-      const children = childrenMap.get(sessionId) || [];
-      const total =
-        children.length +
-        children.reduce((sum, child) => sum + count(child.id), 0);
-      counts.set(sessionId, total);
-      return total;
-    };
+    const sessionById = new Map(
+      baseSessions.map((session) => [session.id, session]),
+    );
+    const expandedIds = new Set<string>();
 
-    sessions.forEach((s) => count(s.id));
-    return counts;
-  }, [sessions]);
+    matchedSessions.forEach((session) => {
+      let current = session.parentSessionId
+        ? sessionById.get(session.parentSessionId)
+        : undefined;
+      while (current) {
+        expandedIds.add(current.id);
+        current = current.parentSessionId
+          ? sessionById.get(current.parentSessionId)
+          : undefined;
+      }
+    });
+
+    return expandedIds;
+  }, [baseSessions, filtersActive, matchedSessions]);
+
+  useEffect(() => {
+    if (autoExpandedAncestorIds.size === 0) {
+      return;
+    }
+
+    setExpandedSessionIds((prev) => {
+      const next = new Set(prev);
+      autoExpandedAncestorIds.forEach((sessionId) => next.add(sessionId));
+      return next;
+    });
+  }, [autoExpandedAncestorIds]);
 
   const displayRows = useMemo(() => {
     type SessionRow = {
       session: AgentSession;
       nestingLevel: number;
       lineageHint?: string;
+      hasExpandableChildren: boolean;
+      isExpanded: boolean;
+      descendantStatusCounts?: SessionStatusCounts;
     };
 
-    const rows: SessionRow[] = [];
-    const sortIndexById = new Map(
-      filteredAndSortedSessions.map((session, index) => [session.id, index]),
-    );
     const sessionById = new Map(
-      filteredAndSortedSessions.map((session) => [session.id, session]),
+      baseSessions.map((session) => [session.id, session]),
     );
-    const childrenByParent = new Map<string, AgentSession[]>();
-    const roots: AgentSession[] = [];
+    const childrenByParent = buildChildrenMap(baseSessions);
+    const visibleIds = new Set<string>();
 
-    for (const session of filteredAndSortedSessions) {
-      const parentId = session.parentSessionId;
-      if (parentId && sessionById.has(parentId)) {
-        const children = childrenByParent.get(parentId) || [];
-        children.push(session);
-        childrenByParent.set(parentId, children);
-      } else {
-        roots.push(session);
+    matchedSessions.forEach((session) => {
+      let current: AgentSession | undefined = session;
+      while (current) {
+        visibleIds.add(current.id);
+        current = current.parentSessionId
+          ? sessionById.get(current.parentSessionId)
+          : undefined;
       }
-    }
+    });
+
+    const sortIndexById = new Map(
+      matchedSessions.map((session, index) => [session.id, index]),
+    );
+    const orderCache = new Map<string, number>();
+    const orderForSession = (session: AgentSession): number => {
+      const cachedOrder = orderCache.get(session.id);
+      if (cachedOrder !== undefined) {
+        return cachedOrder;
+      }
+
+      let computedOrder: number;
+      if (sortIndexById.has(session.id)) {
+        computedOrder =
+          sortIndexById.get(session.id) ?? Number.MAX_SAFE_INTEGER;
+      } else {
+        const descendants = childrenByParent.get(session.id) || [];
+        const descendantOrders = descendants
+          .filter((child) => visibleIds.has(child.id))
+          .map((child) => orderForSession(child));
+
+        computedOrder =
+          descendantOrders.length > 0
+            ? Math.min(...descendantOrders)
+            : Number.MAX_SAFE_INTEGER;
+      }
+
+      orderCache.set(session.id, computedOrder);
+      return computedOrder;
+    };
 
     const sortByCurrentOrder = (a: AgentSession, b: AgentSession) => {
-      return (sortIndexById.get(a.id) ?? 0) - (sortIndexById.get(b.id) ?? 0);
+      const orderDiff = orderForSession(a) - orderForSession(b);
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+
+      const statusDiff =
+        (statusPriority[a.status] ?? 999) - (statusPriority[b.status] ?? 999);
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+
+      return b.createdAt.getTime() - a.createdAt.getTime();
     };
 
-    roots.sort(sortByCurrentOrder);
-    for (const children of childrenByParent.values()) {
-      children.sort(sortByCurrentOrder);
-    }
+    const roots = baseSessions
+      .filter((session) => {
+        if (!visibleIds.has(session.id)) {
+          return false;
+        }
 
-    const visited = new Set<string>();
+        return (
+          !session.parentSessionId || !visibleIds.has(session.parentSessionId)
+        );
+      })
+      .sort(sortByCurrentOrder);
+
+    const rows: SessionRow[] = [];
 
     const walk = (session: AgentSession, nestingLevel: number) => {
-      if (visited.has(session.id)) {
-        return;
-      }
-      visited.add(session.id);
-
+      const visibleChildren = (childrenByParent.get(session.id) || [])
+        .filter((child) => visibleIds.has(child.id))
+        .sort(sortByCurrentOrder);
       const parentName = session.parentSessionId
         ? sessionById.get(session.parentSessionId)?.name ||
           t('sessionHistory.card.fallbackName', 'Session {{id}}', {
             id: session.parentSessionId.slice(0, 8),
           })
         : undefined;
+      const hasExpandableChildren = visibleChildren.length > 0;
+      const isExpanded = hasExpandableChildren
+        ? expandedSessionIds.has(session.id)
+        : false;
 
       rows.push({
         session,
@@ -225,26 +305,32 @@ export function SessionHistoryPanel({
               parentName,
             })
           : t('sessionHistory.lineageHint.topLevel', 'Top-level session'),
+        hasExpandableChildren,
+        isExpanded,
+        descendantStatusCounts: descendantStatusCounts.get(session.id),
       });
 
-      const children = childrenByParent.get(session.id) || [];
-      for (const child of children) {
-        walk(child, nestingLevel + 1);
+      if (!isExpanded) {
+        return;
       }
+
+      visibleChildren.forEach((child) => {
+        walk(child, nestingLevel + 1);
+      });
     };
 
-    for (const root of roots) {
+    roots.forEach((root) => {
       walk(root, 0);
-    }
-
-    for (const session of filteredAndSortedSessions) {
-      if (!visited.has(session.id)) {
-        walk(session, 0);
-      }
-    }
+    });
 
     return rows;
-  }, [filteredAndSortedSessions]);
+  }, [
+    baseSessions,
+    descendantStatusCounts,
+    expandedSessionIds,
+    matchedSessions,
+    t,
+  ]);
 
   const statusCounts = useMemo(() => {
     const counts = {
@@ -255,14 +341,14 @@ export function SessionHistoryPanel({
       error: 0,
     };
 
-    baseSessions.forEach((session) => {
+    segmentedSessions.forEach((session) => {
       if (Object.prototype.hasOwnProperty.call(counts, session.status)) {
         counts[session.status as keyof typeof counts]++;
       }
     });
 
     return counts;
-  }, [baseSessions]);
+  }, [segmentedSessions]);
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
@@ -308,21 +394,59 @@ export function SessionHistoryPanel({
             <TabsTrigger value="all" className="flex-1">
               {t('sessionHistory.tabs.all', 'All')} ({statusCounts.all})
             </TabsTrigger>
-            <TabsTrigger value="busy" className="flex-1">
-              {t('sessionHistory.tabs.busy', 'Busy')} ({statusCounts.busy})
-            </TabsTrigger>
-            <TabsTrigger value="idle" className="flex-1">
-              {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
-            </TabsTrigger>
-            <TabsTrigger value="paused" className="flex-1">
-              {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused}
-              )
-            </TabsTrigger>
-            <TabsTrigger value="error" className="flex-1">
-              {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
+            <TabsTrigger value="bookmarked" className="flex-1">
+              <Bookmark className="mr-1.5 h-3.5 w-3.5" />
+              {t('sessionHistory.tabs.bookmarked', 'Bookmarked')} (
+              {baseSessions.filter((session) => session.isBookmarked).length})
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('sessionHistory.statusFilter.label', 'Status')}
+          </span>
+          <Button
+            variant={activeStatusFilter === 'all' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onActiveStatusFilterChange('all')}
+            aria-pressed={activeStatusFilter === 'all'}
+          >
+            {t('sessionHistory.statusFilter.all', 'All statuses')}
+          </Button>
+          <Button
+            variant={activeStatusFilter === 'busy' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onActiveStatusFilterChange('busy')}
+            aria-pressed={activeStatusFilter === 'busy'}
+          >
+            {t('sessionHistory.tabs.busy', 'Busy')} ({statusCounts.busy})
+          </Button>
+          <Button
+            variant={activeStatusFilter === 'idle' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onActiveStatusFilterChange('idle')}
+            aria-pressed={activeStatusFilter === 'idle'}
+          >
+            {t('sessionHistory.tabs.idle', 'Idle')} ({statusCounts.idle})
+          </Button>
+          <Button
+            variant={activeStatusFilter === 'paused' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onActiveStatusFilterChange('paused')}
+            aria-pressed={activeStatusFilter === 'paused'}
+          >
+            {t('sessionHistory.tabs.paused', 'Paused')} ({statusCounts.paused})
+          </Button>
+          <Button
+            variant={activeStatusFilter === 'error' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => onActiveStatusFilterChange('error')}
+            aria-pressed={activeStatusFilter === 'error'}
+          >
+            {t('sessionHistory.tabs.error', 'Error')} ({statusCounts.error})
+          </Button>
+        </div>
 
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -345,25 +469,6 @@ export function SessionHistoryPanel({
             </button>
           )}
         </div>
-        <Button
-          variant={showBookmarkedOnly ? 'secondary' : 'ghost'}
-          size="sm"
-          className="self-start"
-          onClick={() => setShowBookmarkedOnly((prev) => !prev)}
-          aria-pressed={showBookmarkedOnly}
-          aria-label={t(
-            'sessionHistory.bookmarkFilterAria',
-            'Show bookmarked sessions only',
-          )}
-        >
-          <Bookmark
-            className={cn(
-              'h-3.5 w-3.5 mr-1.5',
-              showBookmarkedOnly && 'fill-current text-yellow-500',
-            )}
-          />
-          {t('sessionHistory.bookmarkFilter', 'Bookmarked')}
-        </Button>
         {selectedLineageId && (
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
             <span>
@@ -459,26 +564,49 @@ export function SessionHistoryPanel({
               className="grid grid-cols-1 gap-4 max-w-2xl list-none"
               aria-labelledby="session-heading"
             >
-              {displayRows.map(({ session, nestingLevel, lineageHint }) => (
-                <li key={session.id}>
-                  <SessionCard
-                    session={session}
-                    onResume={onResume}
-                    onDelete={onDelete}
-                    onDeleteOnly={onDeleteOnly}
-                    onToggleBookmark={onToggleBookmark}
-                    nestingLevel={nestingLevel}
-                    lineageHint={lineageHint}
-                    selectedLineageId={selectedLineageId}
-                    descendantCount={descendantCounts.get(session.id) ?? 0}
-                    onLineageSelect={(lineageId) =>
-                      setSelectedLineageId((prev) =>
-                        prev === lineageId ? null : lineageId,
-                      )
-                    }
-                  />
-                </li>
-              ))}
+              {displayRows.map(
+                ({
+                  session,
+                  nestingLevel,
+                  lineageHint,
+                  hasExpandableChildren,
+                  isExpanded,
+                  descendantStatusCounts: rowDescendantStatusCounts,
+                }) => (
+                  <li key={session.id}>
+                    <SessionCard
+                      session={session}
+                      onResume={onResume}
+                      onDelete={onDelete}
+                      onDeleteOnly={onDeleteOnly}
+                      onToggleBookmark={onToggleBookmark}
+                      nestingLevel={nestingLevel}
+                      lineageHint={lineageHint}
+                      selectedLineageId={selectedLineageId}
+                      descendantCount={descendantCounts.get(session.id) ?? 0}
+                      descendantStatusCounts={rowDescendantStatusCounts}
+                      hasExpandableChildren={hasExpandableChildren}
+                      isExpanded={isExpanded}
+                      onToggleExpand={(sessionId) =>
+                        setExpandedSessionIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(sessionId)) {
+                            next.delete(sessionId);
+                          } else {
+                            next.add(sessionId);
+                          }
+                          return next;
+                        })
+                      }
+                      onLineageSelect={(lineageId) =>
+                        setSelectedLineageId((prev) =>
+                          prev === lineageId ? null : lineageId,
+                        )
+                      }
+                    />
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </div>

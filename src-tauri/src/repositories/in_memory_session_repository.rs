@@ -1,5 +1,7 @@
 use super::error::DbError;
-use super::session_repository::{SessionMetadata, SessionRepository, SessionStatus};
+use super::session_repository::{
+    SessionAttentionReason, SessionMetadata, SessionRepository, SessionStatus,
+};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -224,6 +226,32 @@ impl SessionRepository for InMemorySessionRepository {
         }
         Ok(())
     }
+
+    async fn update_last_viewed_at(
+        &self,
+        session_id: &str,
+        last_viewed_at: i64,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.last_viewed_at = Some(last_viewed_at);
+        }
+        Ok(())
+    }
+
+    async fn update_attention(
+        &self,
+        session_id: &str,
+        last_attention_at: i64,
+        reason: SessionAttentionReason,
+    ) -> Result<(), DbError> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.last_attention_at = Some(last_attention_at);
+            session.last_attention_reason = Some(reason);
+        }
+        Ok(())
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -256,6 +284,10 @@ mod tests {
             max_fanout: None,
             created_at: 1234567890,
             updated_at: 1234567890,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             yolo_mode: false,
             workspace_override: None,
         };
@@ -288,6 +320,10 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             yolo_mode: false,
             workspace_override: None,
         };
@@ -332,6 +368,10 @@ mod tests {
             max_fanout: None,
             created_at: 100,
             updated_at: 100,
+            last_viewed_at: None,
+            last_message_at: None,
+            last_attention_at: None,
+            last_attention_reason: None,
             yolo_mode: false,
             workspace_override: None,
         };
@@ -369,6 +409,10 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                last_viewed_at: None,
+                last_message_at: None,
+                last_attention_at: None,
+                last_attention_reason: None,
                 yolo_mode: false,
                 workspace_override: None,
             };
@@ -401,6 +445,10 @@ mod tests {
                 max_fanout: None,
                 created_at: 100,
                 updated_at: 100,
+                last_viewed_at: None,
+                last_message_at: None,
+                last_attention_at: None,
+                last_attention_reason: None,
                 yolo_mode: false,
                 workspace_override: None,
             };
@@ -436,6 +484,10 @@ mod tests {
                     agent_config: None,
                     created_at: 100,
                     updated_at: 100,
+                    last_viewed_at: None,
+                    last_message_at: None,
+                    last_attention_at: None,
+                    last_attention_reason: None,
                     parent_session_id: None,
                     lineage_id: None,
                     depth: None,

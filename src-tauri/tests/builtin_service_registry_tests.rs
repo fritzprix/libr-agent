@@ -258,20 +258,16 @@ fn ui_public_surface_prefers_present_interactive_over_legacy_split_tools() {
         "presentInteractive must remain on the public UI surface"
     );
     assert!(
-        tool_names.contains(&"waitForUserResume".to_string()),
-        "waitForUserResume remains public because it has distinct pause/resume semantics"
-    );
-    assert!(
         !tool_names.contains(&"visualizeData".to_string()),
         "visualizeData should be hidden from the AI-facing UI surface in favor of presentInteractive"
     );
     assert!(
         !tool_names.contains(&"promptUser".to_string()),
-        "legacy promptUser should be hidden from the AI-facing UI surface"
+        "promptUser must not be exposed on the AI-facing UI surface"
     );
     assert!(
         !tool_names.contains(&"presentContent".to_string()),
-        "legacy presentContent should be hidden from the AI-facing UI surface"
+        "presentContent must not be exposed on the AI-facing UI surface"
     );
 }
 

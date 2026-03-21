@@ -10,6 +10,7 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
+use chrono::TimeZone;
 use cron::Schedule;
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -18,6 +19,7 @@ use crate::agent::{AgentConfig, AgentSessionManager};
 use crate::mcp::types::MCPContent;
 use crate::models::chat::Message;
 use crate::repositories::{AssistantRepository, ScheduledTaskRepository, SessionRepository};
+use crate::scheduled::ScheduleTimezone;
 use crate::services::WorkspaceService;
 use crate::state::{
     get_active_sessions, get_assistant_repository, get_scheduled_task_repository,
@@ -202,7 +204,11 @@ async fn execute_task(
                     session_id
                 );
                 // Record the skip so we don't hot-loop (reschedule for next occurrence)
-                let next_run_at = compute_next_run(&task.cron_expression, now_ms);
+                let next_run_at = compute_next_run_for_schedule_timezone(
+                    &task.cron_expression,
+                    now_ms,
+                    &task.schedule_timezone,
+                )?;
                 let repo = get_scheduled_task_repository();
                 repo.record_run(&task.id, None, now_ms, next_run_at)
                     .await
@@ -246,7 +252,11 @@ async fn execute_task(
         .await?;
 
     // ── 6. Record the run and schedule the next fire time ─────────────────────
-    let next_run_at = compute_next_run(&task.cron_expression, now_ms);
+    let next_run_at = compute_next_run_for_schedule_timezone(
+        &task.cron_expression,
+        now_ms,
+        &task.schedule_timezone,
+    )?;
     let repo = get_scheduled_task_repository();
     let new_session_id = is_new_session.then_some(session_id);
     repo.record_run(&task.id, new_session_id, now_ms, next_run_at)
@@ -257,21 +267,54 @@ async fn execute_task(
     Ok(())
 }
 
-/// Compute the next UTC epoch-ms fire time from a cron expression.
+/// Compute the next epoch-ms fire time from a cron expression using the given timezone.
 /// Returns `None` if the expression is invalid or has no future occurrences.
-pub fn compute_next_run(cron_expression: &str, reference_ms: i64) -> Option<i64> {
+pub fn compute_next_run_for_timezone<Tz: TimeZone>(
+    cron_expression: &str,
+    reference_ms: i64,
+    timezone: Tz,
+) -> Option<i64> {
     let normalized = super::normalize_cron(cron_expression);
     let schedule = Schedule::from_str(&normalized).ok()?;
 
     // Use reference_ms + 1s as the baseline for the next occurrence.
     // This provides a tiny epsilon to prevent double-firing on the same tick,
     // while remaining much more accurate than the previous 60s hardcoded offset.
-    let after = chrono::DateTime::from_timestamp_millis(reference_ms + 1000)?;
+    let after = timezone
+        .timestamp_millis_opt(reference_ms + 1000)
+        .single()?;
 
     schedule
         .after(&after)
         .next()
         .map(|dt| dt.timestamp_millis())
+}
+
+/// Compute the next fire time from a cron expression using the task's schedule timezone.
+pub fn compute_next_run_for_schedule_timezone(
+    cron_expression: &str,
+    reference_ms: i64,
+    schedule_timezone: &str,
+) -> Result<Option<i64>, String> {
+    let timezone = ScheduleTimezone::parse(schedule_timezone)?;
+    let next_run = match timezone {
+        ScheduleTimezone::Utc => {
+            compute_next_run_for_timezone(cron_expression, reference_ms, chrono::Utc)
+        }
+        ScheduleTimezone::Local => {
+            compute_next_run_for_timezone(cron_expression, reference_ms, chrono::Local)
+        }
+    };
+
+    Ok(next_run)
+}
+
+/// Compute the next local-time epoch-ms fire time from a cron expression.
+///
+/// Scheduled tasks are user-facing calendar schedules, so daily/weekly/monthly
+/// rules are interpreted in the machine's local timezone instead of UTC.
+pub fn compute_next_run(cron_expression: &str, reference_ms: i64) -> Option<i64> {
+    compute_next_run_for_timezone(cron_expression, reference_ms, chrono::Local)
 }
 
 #[cfg(test)]
@@ -285,19 +328,19 @@ mod tests {
 
         // 1. Reference is exactly at boundary :00 (12:00:00)
         let ref_ms = 1740988800000; // 2025-03-03 12:00:00 UTC
-        let next = compute_next_run(cron, ref_ms).unwrap();
+        let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
         // Should be 12:01:00 (ref + 1s buffer makes it look after 12:00:01)
         assert_eq!(next, ref_ms + 60000);
 
         // 2. Reference is just before boundary :59 (11:59:59)
         let ref_ms = 1740988799000;
-        let next = compute_next_run(cron, ref_ms).unwrap();
+        let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
         // Should be 12:01:00 (ref + 1s buffer makes it 12:00:00, .after() takes us to 12:01:00)
         assert_eq!(next, 1740988860000);
 
         // 3. Reference is well before boundary (11:59:30)
         let ref_ms = 1740988770000;
-        let next = compute_next_run(cron, ref_ms).unwrap();
+        let next = compute_next_run_for_timezone(cron, ref_ms, chrono::Utc).unwrap();
         // Should be 12:00:00
         assert_eq!(next, 1740988800000);
     }

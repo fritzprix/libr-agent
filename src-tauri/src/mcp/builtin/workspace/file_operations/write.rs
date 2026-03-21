@@ -233,9 +233,8 @@ impl WorkspaceServer {
                 }
 
                 // File type specific suggestions
-                if path_str.ends_with(".md")
-                    || path_str.ends_with(".txt")
-                    || path_str.ends_with(".rs")
+                if path_str.ends_with(".rs")
+                    || path_str.ends_with(".py")
                     || path_str.ends_with(".js")
                     || path_str.ends_with(".ts")
                 {
@@ -244,11 +243,6 @@ impl WorkspaceServer {
                         path_str
                     ));
                 }
-
-                next_steps.push(format!(
-                    "Use deleteFile(\"{}\") to remove if needed",
-                    path_str
-                ));
 
                 let hint = SuccessHint::new(message, next_steps);
 

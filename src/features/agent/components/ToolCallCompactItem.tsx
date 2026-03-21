@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import type { Message, ToolCall } from '@/models/chat';
 import { ChevronDown, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import {
   hasToolCallError,
@@ -58,6 +59,7 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
   toolResult,
   isLast = false,
 }) => {
+  const { t } = useTranslation('common');
   const {
     value: { display },
   } = useSettings();
@@ -166,6 +168,11 @@ const ToolCallCompactItemImpl: React.FC<ToolCallCompactItemProps> = ({
         className="w-full text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
         aria-expanded={isExpanded}
         aria-controls={detailsId}
+        aria-label={t(
+          'agentChat.toolDetails.toggleAriaLabel',
+          'Toggle {{toolName}} details',
+          { toolName },
+        )}
         onClick={() => setIsExpanded((prev) => !prev)}
       >
         <div className="flex items-center gap-2">

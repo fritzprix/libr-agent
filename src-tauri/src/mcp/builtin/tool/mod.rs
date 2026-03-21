@@ -116,7 +116,7 @@ impl BuiltinMCPServer for ToolServer {
             ));
         }
         context_prompt.push_str(
-            "- Use `tool__list` to inspect the exact tools callable in the current session.\n\
+            "- Use `tool__list` to inspect builtin tools and saved external server inventories.\n\
              - Use `tool__verify` if you need to confirm a registered external server is healthy.\n",
         );
 

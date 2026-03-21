@@ -2,6 +2,117 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.11] - 2026-03-21
+
+### 🚀 Features
+
+- **Unified Workspace Search**: Replaced the split workspace search flow with a single search tool that can combine file-name filtering and in-file text matching, making agent search requests simpler and more predictable.
+- **Clearer Agent Session Feedback**: Session messaging and status checks now expose richer progress details such as message IDs and turn counts, making delegated agent work easier to track.
+- **Explicit Todo Actions**: Planning todos now use clearer action-based updates so agents can mark items done, reopen them, or cancel them without relying on ambiguous boolean toggles.
+
+### 🐛 Fixes
+
+- **Tool Surface Cleanup**: Removed obsolete UI tool paths and dead templates so `presentInteractive` remains the single public UI entry point while internal callbacks stay intact.
+- **Sharper MCP Server Guidance**: Simplified external MCP server registration and discovery text so tool descriptions focus on intent, while transport-specific details stay in the schema fields where they belong.
+- **Agent Error Guidance Consistency**: Tightened agent/session guidance text and validation messaging so missing configuration errors now point more clearly to valid `agentId` usage and recovery steps.
+
+### 🔧 Internal
+
+- **Workspace File Operation Consolidation**: Merged older workspace search implementations into a cleaner shared path and removed dead file-operation modules.
+- **Builtin Registry Wording Cleanup**: Corrected misleading builtin tool registry comments and refreshed success hints around external server attachment flows.
+
+## [0.6.10] - 2026-03-21
+
+### 🐛 Fixes
+
+- **Linux OTA Update Safety**: In-app update installs are now blocked for non-AppImage Linux installs that cannot safely overwrite the current executable. LibrAgent now shows clearer permission guidance and keeps the update toast concise with a changelog link instead of dumping long release text into the notification.
+- **Session Viewed-State Efficiency**: Active agent sessions now update unread/viewed state locally during conversations and only persist viewed timestamps at meaningful moments like session entry and app refocus, reducing unnecessary backend writes while keeping the UI responsive.
+
+## [0.6.9] - 2026-03-21
+
+### 🐛 Fixes
+
+- **Persistent State Recovery**: Fixed a critical regression in `0.6.8` where some upgrades or fresh installs could appear to wipe existing sessions, messages, planning data, settings, and MCP server entries by booting against a fresh empty database. The app now restores preserved user data automatically when a quarantined database is available.
+- **Safer Database Startup**: Tightened database startup recovery so LibrAgent no longer quarantines an existing database for generic initialization failures like transient locks or non-structural startup issues, reducing the risk of false "data loss" scenarios.
+
+### 🔧 Internal
+
+- **Windows CI Build Quoting**: Fixed the Tauri build step in GitHub Actions so Windows release jobs pass valid JSON config overrides during CI builds.
+
+## [0.6.8] - 2026-03-21
+
+### 🚀 Features
+
+- **Scheduled Task Mention Autocomplete**: Scheduled task prompts now support workspace-scoped `@skill:` and `@file:` completion when a workspace override is set, making it easier to reuse local skills and files without leaving the modal.
+
+### 🐛 Fixes
+
+- **Scheduled Task Workspace UX**: Fixed workspace directory drag-and-drop handling and reduced modal copy so long workspace paths no longer break the scheduled task UI.
+- **Scheduled Task Timezone Safety**: Preserved local-time scheduling behavior while keeping legacy UTC tasks compatible, so daily/weekly/monthly schedules render and run consistently.
+
+### 🔧 Internal
+
+- **Workspace Reference Plumbing**: Extended the reference and autocomplete pipeline to support workspace-root file lookup for scheduled task prompts alongside the existing session workspace path flow.
+
+## [0.6.7] - 2026-03-21
+
+### 🚀 Features
+
+- **Modern Design System Unification**: Comprehensive UI overhaul across all agent and extension views to provide a consistent "Modern Terminal" experience.
+  - **Draft Chat View**: Redesigned pre-session interface with a floating translucent input area, three-column layout (matching active chat), and enhanced profile cards.
+  - **Assistant Hub & Cards**: Standardized typography (`font-sans` for readability) and icon styles. Assistant selection cards now feature glassmorphism effects and refined hover animations.
+  - **Extension Management**: Reordered MCP server view to prioritize installed extensions and added clear visual separation from recommended presets.
+- **Session Attention & Notifications**: Improved user feedback with session attention acknowledgement and automatic unread state clearing for a smoother multi-session workflow.
+
+### 🐛 Fixes
+
+- **Batch File Import**: Refactored `importFile` tool to `importFiles`, allowing multiple files to be imported in a single efficient operation with individual result tracking.
+- **Sidebar UX & Navigation**: Fixed clickability issues and hit areas for the collapsed sidebar. Aligned header split lines across the sidebar and main view for pixel-perfect layout.
+- **Tauri v2 Updater**: Re-enabled artifact generation for the Tauri v2 updater and updated GitHub Actions for reliable production releases.
+- **Translation Stability**: Fixed a runtime error in `AgentChatStartView` caused by a missing translation variable.
+
+### 🔧 Internal
+
+- **Sidebar Consolidation**: Optimized vertical space by consolidating settings and version display into a single row.
+
+## [0.6.6] - 2026-03-21
+
+### 🚀 Features
+
+- **Enhanced Session UX**: Implemented SP23 session UX improvements and attention notifications for better user feedback during active workflows.
+- **Accessibility Improvements**: Added `aria-label` to `ToolCallCompactItem` to improve screen reader support for tool execution summaries.
+
+### 🐛 Fixes
+
+- **[CRITICAL] SQL Injection Prevention**: Hardened `column_exists` validation by strictly validating `table_name` to prevent potential SQL injection vulnerabilities.
+- **Database Validation**: Added unit tests and improved robustness for column existence checks in the database layer.
+
+### 🔧 Internal
+
+- **Agent Status Bar Optimization**: Refactored `AgentChatStatusBar` to use "Adjusting State During Render" pattern instead of `useEffect`, reducing unnecessary re-renders and improving UI stability.
+- **Documentation Updates**: Added a comprehensive Navigation Guide for UI Routes to improve developer onboarding and codebase navigation.
+
+## [0.6.5] - 2026-03-19
+
+### 🚀 Features
+
+- **Multilingual Documentation**: Added comprehensive documentation in Korean, German, Spanish, French, Japanese, Portuguese, and Chinese to support a global contributor base.
+- **Workspace `writeFile` Append Mode**: Introduced a new `mode` parameter to the `writeFile` tool, allowing agents to append content to existing files without overwriting them.
+- **i18n Regional Support**: Enhanced language detection to correctly handle regional variants (e.g., `zh-CN`, `ko-KR`) by resolving them to their base language tags.
+
+### 🐛 Fixes
+
+- **[CRITICAL] SQL Injection Protection**: Replaced dynamic SQL construction with parameterized queries across the search and validation layers to prevent SQL injection vulnerabilities.
+- **Browser Process Cleanup**: Implemented explicit termination of all interactive browser webview processes upon application exit, ensuring no "zombie" processes remain alive after the main window is closed.
+- **Agent Prompt Latency**: Optimized the construction of agent service contexts and reduced message pre-processing overhead, resulting in lower chat interaction latency.
+- **macOS Build Compatibility**: Fixed platform-specific import errors on macOS by correctly gating `OnceLock` and related symbols behind target OS flags.
+
+### 🔧 Internal
+
+- **Memory Optimization**: Reduced unnecessary heap allocations in the Rust backend by replacing `.collect::<Vec<_>>().len()` patterns with O(1) `.count()` calls on iterators.
+- **Accessibility Enhancements**: Added `aria-label` and `title` attributes to chat input controls and improved focus-state visibility for assistive technologies.
+- **Community Health**: Added standardized Issue and Pull Request templates and refined the contributor setup guides to improve the developer experience.
+
 ## [0.6.4] - 2026-03-18
 
 ### 🐛 Fixes
