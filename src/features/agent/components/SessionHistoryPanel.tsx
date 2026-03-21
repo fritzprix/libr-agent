@@ -226,19 +226,31 @@ export function SessionHistoryPanel({
     const sortIndexById = new Map(
       matchedSessions.map((session, index) => [session.id, index]),
     );
+    const orderCache = new Map<string, number>();
     const orderForSession = (session: AgentSession): number => {
-      if (sortIndexById.has(session.id)) {
-        return sortIndexById.get(session.id) ?? Number.MAX_SAFE_INTEGER;
+      const cachedOrder = orderCache.get(session.id);
+      if (cachedOrder !== undefined) {
+        return cachedOrder;
       }
 
-      const descendants = childrenByParent.get(session.id) || [];
-      const descendantOrders = descendants
-        .filter((child) => visibleIds.has(child.id))
-        .map((child) => orderForSession(child));
+      let computedOrder: number;
+      if (sortIndexById.has(session.id)) {
+        computedOrder =
+          sortIndexById.get(session.id) ?? Number.MAX_SAFE_INTEGER;
+      } else {
+        const descendants = childrenByParent.get(session.id) || [];
+        const descendantOrders = descendants
+          .filter((child) => visibleIds.has(child.id))
+          .map((child) => orderForSession(child));
 
-      return descendantOrders.length > 0
-        ? Math.min(...descendantOrders)
-        : Number.MAX_SAFE_INTEGER;
+        computedOrder =
+          descendantOrders.length > 0
+            ? Math.min(...descendantOrders)
+            : Number.MAX_SAFE_INTEGER;
+      }
+
+      orderCache.set(session.id, computedOrder);
+      return computedOrder;
     };
 
     const sortByCurrentOrder = (a: AgentSession, b: AgentSession) => {

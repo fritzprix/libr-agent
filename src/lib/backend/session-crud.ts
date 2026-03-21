@@ -129,9 +129,13 @@ export async function toggleSessionBookmark(
   });
 }
 
-export async function markSessionViewed(id: string): Promise<void> {
+export async function markSessionViewed(
+  id: string,
+  viewedAt?: Date,
+): Promise<void> {
   await safeInvoke<void>('agent_mark_session_viewed', {
     sessionId: id,
+    ...(viewedAt ? { viewedAt: viewedAt.getTime() } : {}),
   });
 }
 

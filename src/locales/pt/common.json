@@ -725,6 +725,7 @@
       "showAllWithCount_other": "Mostrar Todas ({{count}} chamadas)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "Alternar detalhes de {{toolName}}",
       "parameters": "Parâmetros",
       "errorDetails": "Detalhes do Erro",
       "result": "Resultado",

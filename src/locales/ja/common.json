@@ -725,6 +725,7 @@
       "showAllWithCount_other": "すべて表示 ({{count}} 回呼び出し)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "{{toolName}} の詳細を切り替え",
       "parameters": "パラメータ",
       "errorDetails": "エラー詳細",
       "result": "結果",

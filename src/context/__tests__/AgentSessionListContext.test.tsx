@@ -78,6 +78,14 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
     );
 }
 
+function DraftRouteWrapper({ children }: { children: React.ReactNode }) {
+    return (
+        <MemoryRouter initialEntries={['/agent/draft']}>
+            <AgentSessionListProvider>{children}</AgentSessionListProvider>
+        </MemoryRouter>
+    );
+}
+
 describe('AgentSessionListContext', () => {
     const mockUnlisten = vi.fn();
 
@@ -122,6 +130,23 @@ describe('AgentSessionListContext', () => {
         });
 
         expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+    });
+
+    it('does not mark the draft route as a viewed session', async () => {
+        (safeInvoke as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+        renderHook(() => useAgentSessionListState(), {
+            wrapper: DraftRouteWrapper,
+        });
+
+        await waitFor(() => {
+            expect(safeInvoke).toHaveBeenCalledWith('agent_get_all_sessions');
+        });
+
+        expect(safeInvoke).not.toHaveBeenCalledWith(
+            'agent_mark_session_viewed',
+            expect.objectContaining({ sessionId: 'draft' }),
+        );
     });
 
     it('should create a new session', async () => {
@@ -480,6 +505,11 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
                 'session-child',
                 new Date(Date.now() + 1000),
             );
+        });
+
+        expect(safeInvoke).toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-child',
+            viewedAt: expect.any(Number),
         });
 
         await waitFor(() => {

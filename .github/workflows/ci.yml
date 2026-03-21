@@ -145,7 +145,8 @@ jobs:
         run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       - name: 🏗️ Build Tauri app
-        run: pnpm tauri build --config '{"bundle": {"createUpdaterArtifacts": false}}'
+        run: >-
+          pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
         env:
           # Use dummy value for CI if needed, but --config override is preferred
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

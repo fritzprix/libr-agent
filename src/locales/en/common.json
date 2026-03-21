@@ -756,6 +756,7 @@
       "showAllWithCount_other": "Show All ({{count}} calls)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "Toggle {{toolName}} details",
       "parameters": "Parameters",
       "errorDetails": "Error Details",
       "result": "Result",

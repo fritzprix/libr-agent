@@ -557,7 +557,7 @@ export function AgentSessionProvider({
 
         // 4. Load messages
         await loadMessages(sessionId);
-        await markSessionViewed(sessionId).catch((err) => {
+        void markSessionViewed(sessionId).catch((err) => {
           logger.error(
             'Failed to mark session viewed during initialization',
             err,

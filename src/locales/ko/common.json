@@ -735,6 +735,7 @@
       "showAllWithCount_other": "전체 보기 ({{count}}회 호출)"
     },
     "toolDetails": {
+      "toggleAriaLabel": "{{toolName}} 세부 정보 전환",
       "parameters": "매개변수",
       "errorDetails": "오류 상세 정보",
       "result": "결과",

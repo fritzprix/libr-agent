@@ -29,6 +29,7 @@ import type {
 } from '@/models/agent-ipc';
 
 const logger = getLogger('AgentSessionListContext');
+const RESERVED_AGENT_SUBROUTES = new Set(['draft']);
 
 // --- STATE CONTEXT ---
 interface AgentSessionListStateContextValue {
@@ -105,10 +106,14 @@ export function AgentSessionListProvider({
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [isSessionsListLoading, setIsSessionsListLoading] = useState(false);
   const pendingApprovalKeysRef = useRef(new Set<string>());
-  const activeSessionId = useMemo(
-    () => matchPath('/agent/:sessionId', location.pathname)?.params.sessionId,
-    [location.pathname],
-  );
+  const activeSessionId = useMemo(() => {
+    const sessionId = matchPath('/agent/:sessionId', location.pathname)?.params
+      .sessionId;
+    if (!sessionId || RESERVED_AGENT_SUBROUTES.has(sessionId)) {
+      return undefined;
+    }
+    return sessionId;
+  }, [location.pathname]);
 
   const hasUnreadAttention = useCallback((session: AgentSession): boolean => {
     if (!session.lastAttentionAt || !session.lastAttentionReason) {
@@ -490,7 +495,10 @@ export function AgentSessionListProvider({
 
   const markSessionViewed = useCallback(
     async (sessionId: string, viewedAt = new Date()) => {
-      await safeInvoke<void>('agent_mark_session_viewed', { sessionId });
+      await safeInvoke<void>('agent_mark_session_viewed', {
+        sessionId,
+        viewedAt: viewedAt.getTime(),
+      });
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
