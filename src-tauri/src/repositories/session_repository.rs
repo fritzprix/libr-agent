@@ -419,25 +419,25 @@ impl SessionRepository for SqliteSessionRepository {
         session_id: &str,
         last_viewed_at: i64,
     ) -> Result<(), DbError> {
-        let existing = Session::find_by_id(session_id.to_string())
-            .one(&self.db)
+        session::Entity::update_many()
+            .col_expr(session::Column::LastViewedAt, Expr::value(Some(last_viewed_at)))
+            .col_expr(
+                session::Column::LastAttentionAt,
+                Expr::cust_with_values(
+                    "CASE WHEN last_attention_at IS NOT NULL AND last_attention_at <= ? THEN NULL ELSE last_attention_at END",
+                    [last_viewed_at],
+                ),
+            )
+            .col_expr(
+                session::Column::LastAttentionReason,
+                Expr::cust_with_values(
+                    "CASE WHEN last_attention_at IS NOT NULL AND last_attention_at <= ? THEN NULL ELSE last_attention_reason END",
+                    [last_viewed_at],
+                ),
+            )
+            .filter(session::Column::Id.eq(session_id.to_string()))
+            .exec(&self.db)
             .await?;
-        let should_clear_attention = existing
-            .as_ref()
-            .and_then(|session| session.last_attention_at)
-            .is_some_and(|last_attention_at| last_viewed_at >= last_attention_at);
-
-        let mut model = session::ActiveModel {
-            id: Set(session_id.to_string()),
-            last_viewed_at: Set(Some(last_viewed_at)),
-            ..Default::default()
-        };
-        if should_clear_attention {
-            model.last_attention_at = Set(None);
-            model.last_attention_reason = Set(None);
-        }
-
-        model.update(&self.db).await?;
 
         Ok(())
     }
