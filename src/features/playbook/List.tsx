@@ -1,24 +1,14 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
-  Search,
-  Plus,
-  RefreshCw,
-  Play,
-  PlayCircle as PlaybookIcon,
-} from 'lucide-react';
-import { getLogger } from '@/lib/logger';
-import { usePlaybookService } from '@/lib/services/playbook-service';
-import { Playbook } from '@/models/playbook';
+  useState,
+  useCallback,
+  useDeferredValue,
+  type MouseEvent,
+} from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,57 +19,84 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { PlaybookCard } from './Card';
+import { PlaybookGroup } from './PlaybookGroup';
+import { SortControls } from './SortControls';
 import { toast } from 'sonner';
-
-const logger = getLogger('PlaybookList');
+import { Search, RefreshCw, Loader2, Book as PlaybookIcon } from 'lucide-react';
+import { usePlaybooks } from './usePlaybooks';
+import type { PlaybookSortState, PlaybookWithMeta } from './types';
 
 export default function PlaybookList() {
   const { t } = useTranslation();
-  const { listPlaybooks, deletePlaybook, loading } = usePlaybookService();
-  const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const fetchPlaybooks = async () => {
-    try {
-      const data = await listPlaybooks();
-      setPlaybooks(data);
-    } catch (error) {
-      logger.error('Failed to fetch playbooks', error);
-      toast.error(t('playbook.toasts.loadFailed'));
+  const [sortState, setSortState] = useState<PlaybookSortState>({
+    sortMode: 'created_at',
+    sortOrder: 'desc',
+    groupMode: 'none',
+    bookmarkFirst: false,
+  });
+
+  const handleError = useCallback(() => {
+    toast.error(t('playbook.toasts.loadFailed'));
+  }, [t]);
+
+  const {
+    playbooks: processedPlaybooks,
+    originalPlaybooksLength,
+    assistants,
+    loading,
+    isDeleting,
+    groups,
+    groupKeys,
+    fetchData,
+    handleBookmarkToggle,
+    confirmDelete: _confirmDelete,
+  } = usePlaybooks(deferredSearchQuery, sortState, handleError);
+
+  const [playbookToDelete, setPlaybookToDelete] =
+    useState<PlaybookWithMeta | null>(null);
+
+  const handleDeleteClick = (id: string) => {
+    // We could find the playbook from original list or processed list.
+    const playbook = processedPlaybooks.find((p) => p.id === id);
+    if (playbook) {
+      setPlaybookToDelete(playbook);
     }
   };
 
-  useEffect(() => {
-    fetchPlaybooks();
-  }, []);
+  const handleConfirmDelete = async (e: MouseEvent) => {
+    e.preventDefault();
+    if (!playbookToDelete) return;
 
-  const onFetchDataWrapper = () => {
-    fetchPlaybooks();
-  };
-
-  const filteredPlaybooks = useMemo(() => {
-    if (!searchQuery.trim()) return playbooks;
-    const query = searchQuery.toLowerCase();
-    return playbooks.filter(
-      (p) =>
-        p.goal.toLowerCase().includes(query) ||
-        p.assistant_id?.toLowerCase().includes(query),
-    );
-  }, [playbooks, searchQuery]);
-
-  const handleDelete = async (id: string) => {
     try {
-      await deletePlaybook(id);
-      setPlaybooks((prev) => prev.filter((p) => p.id !== id));
+      await _confirmDelete(playbookToDelete);
       toast.success(t('playbook.toasts.deleted'));
-    } catch (error) {
-      logger.error('Failed to delete playbook', error);
+      setPlaybookToDelete(null);
+    } catch {
       toast.error(t('playbook.toasts.deleteFailed'));
-    } finally {
-      setDeleteConfirmId(null);
     }
   };
+
+  const onBookmarkToggleWrapper = async (
+    id: string,
+    val: boolean,
+    agentId: string,
+  ) => {
+    try {
+      await handleBookmarkToggle(id, val, agentId);
+    } catch {
+      toast.error(t('playbook.toasts.bookmarkFailed'));
+    }
+  };
+
+  const onFetchDataWrapper = async () => {
+    await fetchData();
+  };
+
+  // Render list regardless of session state
 
   return (
     <div className="p-6 h-full flex flex-col bg-background">
@@ -101,28 +118,18 @@ export default function PlaybookList() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={onFetchDataWrapper}
-                  disabled={loading}
-                  className="h-9 w-9"
-                  aria-label={t(
-                    'playbook.list.refreshAria',
-                    'Refresh playbooks',
-                  )}
-                >
-                  <RefreshCw
-                    className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('playbook.list.refreshTooltip', 'Refresh playbooks')}
-              </TooltipContent>
-            </Tooltip>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={onFetchDataWrapper}
+              disabled={loading}
+              className="h-9 w-9"
+              aria-label={t('playbook.list.refreshAria', 'Refresh playbooks')}
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+              />
+            </Button>
             <div className="relative flex-1 sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -133,132 +140,133 @@ export default function PlaybookList() {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            <SortControls sortState={sortState} setSortState={setSortState} />
           </div>
         </div>
 
         {/* Content */}
-        {loading && playbooks.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <LoadingSpinner className="h-8 w-8 text-primary" />
-              <p className="text-sm text-muted-foreground animate-pulse">
-                {t('playbook.loading')}
-              </p>
+        <div className="flex-1 min-h-0 overflow-y-auto pr-2 pb-4">
+          {loading && originalPlaybooksLength === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-muted-foreground">
+              <Loader2 className="h-10 w-10 animate-spin mb-4" />
+              <p>{t('playbook.loading')}</p>
             </div>
-          </div>
-        ) : filteredPlaybooks.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center border-2 border-dashed border-muted rounded-3xl bg-muted/5">
-            <div className="max-w-md text-center px-6">
-              <div className="mx-auto w-12 h-12 bg-muted rounded-2xl flex items-center justify-center mb-4">
-                <PlaybookIcon className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                {t('playbook.emptyState.title')}
-              </h3>
-              <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-                {t('playbook.emptyState.description')}
-              </p>
-              <div className="space-y-3 text-left bg-muted/50 p-4 rounded-2xl border border-muted/50">
-                <p className="text-xs text-muted-foreground flex gap-2">
-                  <span className="flex-shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
-                    1
-                  </span>
-                  {t('playbook.emptyState.step1')}
-                </p>
-                <p className="text-xs text-muted-foreground flex gap-2">
-                  <span className="flex-shrink-0 w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold">
-                    2
-                  </span>
-                  {t('playbook.emptyState.step2')}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-auto pr-2 -mr-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
-              {filteredPlaybooks.map((playbook) => (
-                <Card
-                  key={playbook.id}
-                  className="group relative border-muted/60 hover:border-primary/30 transition-all duration-300 bg-card/50 hover:bg-card hover:shadow-lg hover:shadow-primary/5 rounded-3xl overflow-hidden"
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="p-2 bg-primary/10 text-primary rounded-xl group-hover:bg-primary group-hover:text-white transition-colors duration-300">
-                        <Play size={18} />
-                      </div>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive rounded-lg"
-                          onClick={() => setDeleteConfirmId(playbook.id)}
-                        >
-                          <Plus className="h-4 w-4 rotate-45" />
-                        </Button>
-                      </div>
+          ) : processedPlaybooks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto">
+              <Card className="w-full bg-card/50 backdrop-blur-sm border-dashed">
+                <CardHeader>
+                  <div className="mx-auto bg-primary/10 p-4 rounded-full mb-4 w-16 h-16 flex items-center justify-center">
+                    <PlaybookIcon className="w-8 h-8 text-primary" />
+                  </div>
+                  <CardTitle className="text-2xl font-bold">
+                    {t('playbook.emptyState.title')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6 text-muted-foreground">
+                  <p>{t('playbook.emptyState.description')}</p>
+                  <div className="grid gap-4 text-left p-4 bg-muted/50 rounded-lg">
+                    <div className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                        1
+                      </span>
+                      <p className="text-sm">
+                        {t('playbook.emptyState.step1')}
+                      </p>
                     </div>
-                    <CardTitle className="text-lg font-semibold line-clamp-2 leading-tight">
-                      {playbook.goal}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-wrap gap-2">
-                        <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground bg-muted/50 px-2.5 py-1 rounded-full border border-muted/50">
-                          ID: {playbook.id.substring(0, 8)}
-                        </div>
-                        <div className="text-[10px] font-medium uppercase tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-full border border-primary/10">
-                          {playbook.steps.length} Steps
-                        </div>
-                      </div>
+                    <div className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                        2
+                      </span>
+                      <p className="text-sm">
+                        {t('playbook.emptyState.step2')}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="space-y-8 pb-8">
+              {sortState.groupMode === 'none' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {processedPlaybooks.map((playbook) => (
+                    <PlaybookCard
+                      key={playbook.id}
+                      playbook={playbook}
+                      assistantName={
+                        assistants[playbook.agentId]?.name ||
+                        t('playbook.card.unknownAssistant')
+                      }
+                      onBookmarkToggle={(id, val) =>
+                        onBookmarkToggleWrapper(id, val, playbook.agentId)
+                      }
+                      onDelete={handleDeleteClick}
+                    />
+                  ))}
+                </div>
+              ) : (
+                groupKeys.map(
+                  (key) =>
+                    groups &&
+                    groups[key] && (
+                      <PlaybookGroup
+                        key={key}
+                        title={
+                          sortState.groupMode === 'time' ||
+                          key.startsWith('playbook.')
+                            ? t(key)
+                            : key
+                        }
+                        playbooks={groups[key]}
+                        assistantMap={assistants}
+                        onBookmarkToggle={(id, val) =>
+                          onBookmarkToggleWrapper(
+                            id,
+                            val,
+                            groups[key].find((p) => p.id === id)?.agentId || '',
+                          )
+                        }
+                        onDelete={handleDeleteClick}
+                      />
+                    ),
+                )
+              )}
+            </div>
+          )}
+        </div>
 
-                      <div className="flex items-center justify-between pt-4 border-t border-muted/40">
-                        <span className="text-xs text-muted-foreground">
-                          {playbook.assistant_id || 'Global'}
-                        </span>
-                        <Button
-                          size="sm"
-                          className="rounded-xl px-4 h-8 text-xs font-medium"
-                        >
-                          {t('playbook.card.start')}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
+        <AlertDialog
+          open={!!playbookToDelete}
+          onOpenChange={(open) =>
+            !open && !isDeleting && setPlaybookToDelete(null)
+          }
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t('playbook.deleteDialog.title')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('playbook.deleteDialog.description', {
+                  goal: playbookToDelete?.goal,
+                })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>
+                {t('playbook.deleteDialog.cancel')}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting && <LoadingSpinner className="mr-2 h-4 w-4" />}
+                {t('playbook.deleteDialog.confirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      <AlertDialog
-        open={!!deleteConfirmId}
-        onOpenChange={() => setDeleteConfirmId(null)}
-      >
-        <AlertDialogContent className="rounded-3xl border-muted/60">
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('playbook.deleteDialog.title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('playbook.deleteDialog.description', {
-                goal: playbooks.find((p) => p.id === deleteConfirmId)?.goal,
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel className="rounded-xl">
-              {t('playbook.deleteDialog.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive hover:bg-destructive/90 rounded-xl"
-              onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-            >
-              {t('playbook.deleteDialog.confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

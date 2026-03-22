@@ -1,8 +1,13 @@
+#[cfg(unix)]
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
 use tauri_mcp_agent_lib::mcp::session_isolation_config::SessionIsolationConfig;
+#[cfg(unix)]
 use tauri_mcp_agent_lib::mcp::types::{MCPServerConfig, TransportConfig};
+#[cfg(unix)]
 use tauri_mcp_agent_lib::mcp::SessionMCPManager;
 
 #[cfg(unix)]

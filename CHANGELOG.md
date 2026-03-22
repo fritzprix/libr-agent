@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.15] - 2026-03-22
+
+### 🚀 Features
+
+- **Expanded Bundled Skill Library**: Added the new `playbook-creator`, `computer-diagnosis`, and `deep-research-report` bundled skills, along with updated supporting references and templates, so agents ship with stronger guided workflows for structured planning and investigation tasks.
+
+### 🐛 Fixes
+
+- **Playbook Launch Reliability**: Restored the playbook list to the working card/group flow from `0.6.14`, so starting a playbook once again routes through the expected `playbookId` launch path instead of breaking from the list view.
+- **Agent Session Attachment Stability**: Fixed the agent attachment provider wiring so active agent chats no longer crash with `useAgentSessionState must be used within AgentSessionProvider` while loading session-scoped attachments.
+- **Session Attention Acknowledgement Race**: Hardened session viewed-state persistence so acknowledging a session no longer clears newer attention events that arrive between the read and update steps.
+
+### 🔧 Internal
+
+- **Release Validation Cleanup**: Cleaned up Unix-gated session workspace cwd test imports so Windows release validation no longer emits avoidable Rust warnings during the patch pipeline.
+
 ## [0.6.14] - 2026-03-22
 
 ### 🐛 Fixes
