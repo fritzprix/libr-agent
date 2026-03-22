@@ -61,8 +61,8 @@ export function usePlaybooks(
     ],
     async ([, sortMode, sortOrder, bookmarkFirst]) => {
       return await listPlaybooks({
-        sortBy: sortMode as string,
-        sortOrder: sortOrder as string,
+        sortBy: sortMode as "assistant" | "created_at" | undefined,
+        sortOrder: sortOrder as "desc" | "asc" | undefined,
         bookmarkFirst: bookmarkFirst as boolean,
       });
     },
