@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterSessions } from '../session-utils';
+import { applyViewedAtToSession, filterSessions } from '../session-utils';
 import type { AgentSession } from '@/models/agent';
 import type { Assistant } from '@/models/chat';
 
@@ -37,6 +37,49 @@ function makeSession(
 }
 
 describe('session-utils', () => {
+  describe('applyViewedAtToSession', () => {
+    it('clears attention when the viewed timestamp catches up to the attention timestamp', () => {
+      const session = makeSession({
+        id: 'session-attention',
+        lastViewedAt: new Date('2026-03-18T00:00:00.000Z'),
+        lastAttentionAt: new Date('2026-03-18T00:01:00.000Z'),
+        lastAttentionReason: 'pendingApproval',
+      });
+
+      const result = applyViewedAtToSession(
+        session,
+        new Date('2026-03-18T00:01:00.000Z'),
+      );
+
+      expect(result.lastViewedAt?.toISOString()).toBe(
+        '2026-03-18T00:01:00.000Z',
+      );
+      expect(result.lastAttentionAt).toBeUndefined();
+      expect(result.lastAttentionReason).toBeUndefined();
+    });
+
+    it('preserves newer attention when viewedAt is older than the attention timestamp', () => {
+      const attentionAt = new Date('2026-03-18T00:02:00.000Z');
+      const session = makeSession({
+        id: 'session-still-unread',
+        lastViewedAt: new Date('2026-03-18T00:00:00.000Z'),
+        lastAttentionAt: attentionAt,
+        lastAttentionReason: 'recurringStop',
+      });
+
+      const result = applyViewedAtToSession(
+        session,
+        new Date('2026-03-18T00:01:00.000Z'),
+      );
+
+      expect(result.lastViewedAt?.toISOString()).toBe(
+        '2026-03-18T00:01:00.000Z',
+      );
+      expect(result.lastAttentionAt).toBe(attentionAt);
+      expect(result.lastAttentionReason).toBe('recurringStop');
+    });
+  });
+
   describe('filterSessions', () => {
     const mockSessions: AgentSession[] = [
       makeSession({

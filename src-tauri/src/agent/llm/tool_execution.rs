@@ -73,6 +73,7 @@ pub async fn execute_tool_calls(
 
         if requires_approval && !yolo_enabled {
             let (tx, rx) = oneshot::channel();
+            let attention_at = chrono::Utc::now().timestamp_millis();
 
             // Add tx to pending approvals
             {
@@ -88,6 +89,21 @@ pub async fn execute_tool_calls(
                         },
                     );
                 }
+            }
+
+            if let Err(e) = session_repo
+                .update_attention(
+                    &session_id,
+                    attention_at,
+                    crate::repositories::session_repository::SessionAttentionReason::PendingApproval,
+                )
+                .await
+            {
+                log::error!(
+                    "Failed to persist pending-approval attention for session {}: {}",
+                    session_id,
+                    e
+                );
             }
 
             // Emit approval event

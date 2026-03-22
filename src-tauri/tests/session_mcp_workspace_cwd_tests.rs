@@ -5,10 +5,12 @@ use tauri_mcp_agent_lib::mcp::session_isolation_config::SessionIsolationConfig;
 use tauri_mcp_agent_lib::mcp::types::{MCPServerConfig, TransportConfig};
 use tauri_mcp_agent_lib::mcp::SessionMCPManager;
 
+#[cfg(unix)]
 fn canonicalize_existing_path(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+#[cfg(unix)]
 fn create_manager(
     workspace_dir: std::path::PathBuf,
     cwd_capture_file: std::path::PathBuf,

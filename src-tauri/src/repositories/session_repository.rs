@@ -50,12 +50,14 @@ impl FromStr for SessionStatus {
 #[serde(rename_all = "camelCase")]
 pub enum SessionAttentionReason {
     RecurringStop,
+    PendingApproval,
 }
 
 impl SessionAttentionReason {
     pub fn as_str(&self) -> &str {
         match self {
             SessionAttentionReason::RecurringStop => "recurringStop",
+            SessionAttentionReason::PendingApproval => "pendingApproval",
         }
     }
 }
@@ -66,6 +68,7 @@ impl FromStr for SessionAttentionReason {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "recurringStop" => Ok(SessionAttentionReason::RecurringStop),
+            "pendingApproval" => Ok(SessionAttentionReason::PendingApproval),
             _ => Err(DbError::InvalidInput(format!(
                 "Invalid session attention reason: {}",
                 s
@@ -416,13 +419,25 @@ impl SessionRepository for SqliteSessionRepository {
         session_id: &str,
         last_viewed_at: i64,
     ) -> Result<(), DbError> {
-        session::ActiveModel {
+        let existing = Session::find_by_id(session_id.to_string())
+            .one(&self.db)
+            .await?;
+        let should_clear_attention = existing
+            .as_ref()
+            .and_then(|session| session.last_attention_at)
+            .is_some_and(|last_attention_at| last_viewed_at >= last_attention_at);
+
+        let mut model = session::ActiveModel {
             id: Set(session_id.to_string()),
             last_viewed_at: Set(Some(last_viewed_at)),
             ..Default::default()
+        };
+        if should_clear_attention {
+            model.last_attention_at = Set(None);
+            model.last_attention_reason = Set(None);
         }
-        .update(&self.db)
-        .await?;
+
+        model.update(&self.db).await?;
 
         Ok(())
     }
