@@ -1,5 +1,6 @@
 import { safeInvoke } from '@/lib/backend/core';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import useSWR from 'swr';
 import { getLogger } from '@/lib/logger';
 import type { SkillMetadata } from '@/types/skills';
 
@@ -9,74 +10,62 @@ export function useSkillsDirectory(
   skillsDirectory: string | undefined,
   onSkillsDirectoryChange: (path: string) => void,
 ) {
-  const [verificationStatus, setVerificationStatus] = useState<
-    'idle' | 'loading' | 'success' | 'error'
-  >('idle');
-  const [skills, setSkills] = useState<SkillMetadata[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string>('');
+  // Use a separate SWR for fetching the default directory to handle the "no directory set" case cleanly
+  const { data: defaultDirectory } = useSWR(
+    !skillsDirectory ? 'default-skills-directory' : null,
+    async () => {
+      try {
+        return await safeInvoke<string>('get_default_skills_directory');
+      } catch (error) {
+        logger.warn('Failed to get default skills directory', error);
+        return null;
+      }
+    },
+    { revalidateOnFocus: false },
+  );
 
   useEffect(() => {
-    let isActive = true;
-
-    async function verifySkills() {
-      if (!skillsDirectory) {
-        try {
-          // If no directory is set, try to get the default one
-          const defaultDir = await safeInvoke<string>(
-            'get_default_skills_directory',
-          );
-          if (!isActive) return;
-          onSkillsDirectoryChange(defaultDir);
-          return; // The change will trigger the effect again
-        } catch (error) {
-          logger.warn('Failed to get default skills directory', error);
-          // Fall through to empty state
-        }
-      }
-
-      const dirToVerify = skillsDirectory || '';
-
-      if (!dirToVerify) {
-        if (!isActive) return;
-        setVerificationStatus('idle');
-        setErrorMessage('');
-        setSkills([]);
-        return;
-      }
-
-      if (!isActive) return;
-      setVerificationStatus('loading');
-      setErrorMessage('');
-      try {
-        const result = await safeInvoke<SkillMetadata[]>(
-          'scan_skills_directory',
-          {
-            directory: dirToVerify,
-          },
-        );
-        if (!isActive) return;
-        setSkills(result);
-        setVerificationStatus('success');
-        setErrorMessage('');
-      } catch (error) {
-        if (!isActive) return;
-        logger.error('Failed to verify skills directory', error);
-        setVerificationStatus('error');
-        setErrorMessage(error instanceof Error ? error.message : String(error));
-        setSkills([]);
-      }
+    if (!skillsDirectory && defaultDirectory) {
+      onSkillsDirectoryChange(defaultDirectory);
     }
+  }, [skillsDirectory, defaultDirectory, onSkillsDirectoryChange]);
 
-    void verifySkills();
+  // Main SWR for verifying and scanning the skills directory
+  const { data, error, isLoading } = useSWR(
+    skillsDirectory ? ['scan-skills-directory', skillsDirectory] : null,
+    async ([, dir]) => {
+      return await safeInvoke<SkillMetadata[]>('scan_skills_directory', {
+        directory: dir,
+      });
+    },
+    {
+      revalidateOnFocus: false,
+      onError: (err) => {
+        logger.error('Failed to verify skills directory', err);
+      }
+    },
+  );
 
-    return () => {
-      isActive = false;
-    };
-  }, [skillsDirectory, onSkillsDirectoryChange]);
+  let verificationStatus: 'idle' | 'loading' | 'success' | 'error' = 'idle';
+  if (isLoading) {
+    verificationStatus = 'loading';
+  } else if (error) {
+    verificationStatus = 'error';
+  } else if (data) {
+    verificationStatus = 'success';
+  } else if (!skillsDirectory) {
+    verificationStatus = 'idle';
+  }
+
+  const errorMessage = error
+    ? error instanceof Error
+      ? error.message
+      : String(error)
+    : '';
 
   return {
     verificationStatus,
-    skills,
+    skills: data || [],
     errorMessage,
   };
 }

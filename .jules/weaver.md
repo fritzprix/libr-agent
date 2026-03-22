@@ -115,3 +115,10 @@
 
 - **GeneralTab:** Extracted the directory verification logic (`scan_skills_directory` and fallback to default dir) into a new `useSkillsDirectory` hook.
 - **Benefits:** Decoupled business logic (verification of skills folder) from the presentation, removing the monolithic `useEffect` hook block inside `GeneralTabComponent`.
+
+## 2026-03-14 - [usePlaybooks / useServerTools / useSkillsDirectory] **Eradicated:** [useEffect Data Fetching & Syncing] **Woven:** [Declarative useSWR Pattern]
+
+- **usePlaybooks:** Eradicated the manual `fetchData` function, `useEffect` initialization, and duplicate `useState` hooks for `playbooks` and `assistants`. Replaced with declarative `useSWR` fetching, allowing SWR to manage cache, loading, and error states internally.
+- **useServerTools:** Eradicated the `useEffect` that manually called `safeInvoke('probe_mcp_server')` and managed `isMounted`, `isLoading`, and `error` states. Replaced with `useSWR` tied to the `isOpen` and `serverId` keys.
+- **useSkillsDirectory:** Eradicated the monolithic `useEffect` containing `verifySkills` and complex state syncing (`verificationStatus`, `errorMessage`). Replaced with a split `useSWR` implementation (one for default directory, one for scanning) that declaratively computes status variables.
+- **Renders Saved:** Eliminated countless double-renders caused by imperative state updates (`setLoading(true)` -> `setData(...)` -> `setLoading(false)`) in favor of unified, batched SWR updates.
