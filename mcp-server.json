@@ -162,7 +162,18 @@
       "description": "Grok API access for text generation and analysis.",
       "logo": "https://grok.ai/favicon.ico",
       "command": "npx",
-      "args": ["-y", "@fre4x/grok"]
+      "args": ["-y", "@fre4x/grok"],
+      "env": {
+        "XAI_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "XAI_API_KEY": {
+          "required": true,
+          "label": "xAI API Key",
+          "description": "Get your API key from https://console.x.ai",
+          "type": "password"
+        }
+      }
     },
     "docx": {
       "description": "Work with Word documents programmatically through MCP APIs.",
