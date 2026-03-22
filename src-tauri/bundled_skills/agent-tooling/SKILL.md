@@ -1,6 +1,14 @@
 ---
 name: agent-tooling
-description: Systematically audit, analyze, and optimize tool assignments for AI agents in a dynamic environment. Use this skill when you need to: (1) Discover ALL currently available tools and agent configurations via live system calls, (2) Analyze tool capabilities vs agent role descriptions, (3) Optimize assignments based on current system inventory (which may change), (4) Map newly registered MCP servers to appropriate agents, or (5) Prune obsolete tool references. Triggers on requests like "audit agent tools", "optimize agent capabilities", "새로운 도구 자동 배치", "에이전트 도구 동적 최적화".
+description: >-
+  Systematically audit, analyze, and optimize tool assignments for AI agents in
+  a dynamic environment. Use this skill when you need to: (1) discover all
+  currently available tools and agent configurations via live system calls, (2)
+  analyze tool capabilities vs agent role descriptions, (3) optimize
+  assignments based on current system inventory, (4) map newly registered MCP
+  servers to appropriate agents, or (5) prune obsolete tool references.
+  Triggers include "audit agent tools", "optimize agent capabilities", "새로운
+  도구 자동 배치", and "에이전트 도구 동적 최적화".
 ---
 
 # Dynamic Agent Tooling Skill
