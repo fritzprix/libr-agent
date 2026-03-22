@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.13] - 2026-03-22
+
+### 🐛 Fixes
+
+- **Linux Dock Launch MCP Recovery**: Restored full executable PATH discovery for GUI-launched sessions on Linux and other Unix desktops, so `npx`/`uvx`-based MCP servers can start reliably even when LibrAgent is launched from a dock or app shortcut instead of a terminal.
+- **Session MCP Workspace Consistency**: Session-isolated stdio MCP servers now create and start inside their session workspace, keeping relative file access and startup behavior aligned with the active workspace instead of the app's inherited working directory.
+- **Grok Extension Setup Prompting**: The bundled Grok MCP preset now declares its required `XAI_API_KEY`, so extension setup no longer leaves the server underconfigured.
+
+### 🔧 Internal
+
+- **PATH and Session Spawn Regression Coverage**: Added targeted integration coverage for effective PATH recovery, persistent shell startup, and session MCP workspace cwd behavior to keep release builds honest.
+
 ## [0.6.12] - 2026-03-22
 
 ### 🚀 Features
