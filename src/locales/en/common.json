@@ -574,6 +574,10 @@
     "description": "Browse and execute automated workflows",
     "searchPlaceholder": "Search playbooks...",
     "loading": "Loading playbooks...",
+    "list": {
+      "refreshAria": "Refresh playbooks",
+      "refreshTooltip": "Refresh playbooks"
+    },
     "emptyState": {
       "title": "Start Playbook",
       "description": "A playbook is a record of complex requests that the Agent has successfully executed.",

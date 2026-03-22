@@ -12,7 +12,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
@@ -124,30 +123,28 @@ export default function PlaybookList() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={onFetchDataWrapper}
-                    disabled={loading}
-                    className="h-9 w-9"
-                    aria-label={t(
-                      'playbook.list.refreshAria',
-                      'Refresh playbooks',
-                    )}
-                  >
-                    <RefreshCw
-                      className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-                    />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('playbook.list.refreshTooltip', 'Refresh playbooks')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={onFetchDataWrapper}
+                  disabled={loading}
+                  className="h-9 w-9"
+                  aria-label={t(
+                    'playbook.list.refreshAria',
+                    'Refresh playbooks',
+                  )}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('playbook.list.refreshTooltip', 'Refresh playbooks')}
+              </TooltipContent>
+            </Tooltip>
             <div className="relative flex-1 sm:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
