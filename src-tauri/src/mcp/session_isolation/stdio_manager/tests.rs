@@ -3,7 +3,12 @@ use crate::mcp::session_isolation::error::SessionMCPError;
 use crate::mcp::session_isolation_config::SessionIsolationConfig;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+fn canonicalize_existing_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
 
 /// Helper to create a test manager with a simple echo server config
 fn create_test_manager() -> SessionMCPManager {
@@ -253,8 +258,10 @@ async fn test_spawn_uses_session_workspace_as_cwd() {
     );
 
     let captured_cwd = std::fs::read_to_string(&cwd_capture_file).unwrap();
+    let captured_cwd_path = PathBuf::from(captured_cwd.trim());
     assert!(
-        std::path::Path::new(captured_cwd.trim()) == workspace_dir.as_path(),
+        canonicalize_existing_path(&captured_cwd_path)
+            == canonicalize_existing_path(workspace_dir.as_path()),
         "Expected stdio MCP server cwd to be '{}', got '{}'",
         workspace_dir.display(),
         captured_cwd.trim()

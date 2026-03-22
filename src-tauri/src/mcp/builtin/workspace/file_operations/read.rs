@@ -421,32 +421,21 @@ mod tests {
             (11, "}".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, true, false);
+        let result = format_lines_with_numbers(&lines, false);
 
-        // Should have pipe-separated format
-        assert!(result.contains("   1 | #include <stdio.h>"));
-        assert!(result.contains("   5 | int main() {"));
-        assert!(result.contains("   8 |     printf(\"Hello\");"));
-
-        // All empty lines should be preserved (not collapsed)
-        assert!(result.contains("   2 | "));
-        assert!(result.contains("   3 | "));
-        assert!(result.contains("   4 | "));
-        assert!(result.contains("   6 | "));
-        assert!(result.contains("   7 | "));
-        assert!(result.contains("   9 | "));
+        assert_eq!(
+            result,
+            "#include <stdio.h>\n\n\n\nint main() {\n\n\n    printf(\"Hello\");\n\n    return 0;\n}"
+        );
     }
 
     #[test]
-    fn test_format_lines_includes_header_and_footer() {
+    fn test_format_lines_returns_raw_content_without_wrappers() {
         let lines = vec![(1, "int main() {}".to_string()), (2, "".to_string())];
 
-        let result = format_lines_with_numbers(&lines, true, false);
+        let result = format_lines_with_numbers(&lines, false);
 
-        assert!(result.contains("[File Content"));
-        assert!(result.contains("NOT part of the code"));
-        assert!(result.contains("   1 | int main() {}"));
-        assert!(result.contains("   2 | "));
+        assert_eq!(result, "int main() {}\n");
     }
 
     #[test]
@@ -457,7 +446,7 @@ mod tests {
             (33, "}".to_string()),
         ];
 
-        let result = format_lines_with_numbers(&lines, false, true);
+        let result = format_lines_with_numbers(&lines, true);
 
         // Each line must be {N}:{2-char-hex}|{content}
         let result_lines: Vec<&str> = result.lines().collect();
@@ -483,7 +472,7 @@ mod tests {
         assert!(result_lines[2].ends_with('}'));
 
         // Verify determinism: same content → same hash
-        let result2 = format_lines_with_numbers(&lines, false, true);
+        let result2 = format_lines_with_numbers(&lines, true);
         assert_eq!(result, result2);
     }
 }

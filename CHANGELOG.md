@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.14] - 2026-03-22
+
+### 🐛 Fixes
+
+- **Cross-Platform Validation Stability**: Fixed session workspace cwd validation so equivalent macOS temp paths like `/var/...` and `/private/var/...` no longer fail `refactor:validate`, restoring green CI behavior for macOS and the dependent Windows matrix leg.
+
+### 🔧 Internal
+
+- **Release Validation Cleanup**: Updated stale workspace file-operation tests and Unix-only PATH helper coverage so the Rust validation pipeline passes cleanly during patch releases.
+
 ## [0.6.13] - 2026-03-22
 
 ### 🐛 Fixes

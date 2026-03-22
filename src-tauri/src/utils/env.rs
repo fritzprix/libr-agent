@@ -1,4 +1,6 @@
-use std::ffi::{OsStr, OsString};
+#[cfg(unix)]
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::process::Command as StdCommand;
 #[cfg(unix)]
 use std::sync::OnceLock;
@@ -74,6 +76,7 @@ fn default_path() -> &'static str {
     }
 }
 
+#[cfg(unix)]
 fn merge_path_values(preferred: &OsStr, fallback: &OsStr) -> Option<OsString> {
     let mut merged = Vec::new();
 
@@ -228,6 +231,7 @@ mod tests {
         assert!(isolated.iter().all(|(k, _)| k != "XDG_RUNTIME_DIR"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn test_merge_path_values_deduplicates_and_preserves_order() {
         let merged = merge_path_values(
