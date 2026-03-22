@@ -305,36 +305,38 @@ impl McpServerService {
 
         log::info!("Loaded {} MCP server configs from repository", models.len());
 
-        for model in &models {
-            let cached_tool_names = model
-                .cached_tools
-                .as_deref()
-                .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
-                .map(|tools| {
-                    let names: Vec<&str> = tools
-                        .iter()
-                        .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
-                        .collect();
-                    if names.is_empty() {
-                        return "none".to_string();
-                    }
-                    let preview = names.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+        if log::log_enabled!(log::Level::Debug) {
+            for model in &models {
+                let cached_tool_names = model
+                    .cached_tools
+                    .as_deref()
+                    .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+                    .map(|tools| {
+                        let names: Vec<&str> = tools
+                            .iter()
+                            .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+                            .collect();
+                        if names.is_empty() {
+                            return "none".to_string();
+                        }
+                        let preview = names.iter().take(5).copied().collect::<Vec<_>>().join(", ");
 
-                    if names.len() > 5 {
-                        format!("{} (+{} more)", preview, names.len() - 5)
-                    } else {
-                        preview
-                    }
-                })
-                .unwrap_or_else(|| "none".to_string());
+                        if names.len() > 5 {
+                            format!("{} (+{} more)", preview, names.len() - 5)
+                        } else {
+                            preview
+                        }
+                    })
+                    .unwrap_or_else(|| "none".to_string());
 
-            log::info!(
-                "[server-list] '{}' ({}) cached tool_count={:?}, cached_tools=[{}]",
-                model.name,
-                model.id,
-                model.tool_count,
-                cached_tool_names
-            );
+                log::debug!(
+                    "[server-list] '{}' ({}) cached tool_count={:?}, cached_tools=[{}]",
+                    model.name,
+                    model.id,
+                    model.tool_count,
+                    cached_tool_names
+                );
+            }
         }
 
         Ok(models)

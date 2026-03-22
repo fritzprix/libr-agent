@@ -16,6 +16,19 @@ interface MCPServerDto {
   updatedAt: number;
 }
 
+function parseVerificationStatus(
+  verificationStatus: string | null,
+): MCPServerEntity['verificationStatus'] | undefined {
+  switch (verificationStatus) {
+    case 'pending':
+    case 'success':
+    case 'error':
+      return verificationStatus;
+    default:
+      return undefined;
+  }
+}
+
 // Convert backend DTO to frontend MCPServerEntity
 function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
   const config = dto.config as Partial<MCPServerEntity>;
@@ -28,10 +41,7 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
     authentication: (config as Record<string, unknown>).authentication,
     metadata: (config as Record<string, unknown>).metadata,
     toolCount: dto.toolCount !== null ? dto.toolCount : undefined, // Convert null to undefined
-    verificationStatus:
-      dto.verificationStatus !== null
-        ? (dto.verificationStatus as MCPServerEntity['verificationStatus'])
-        : undefined,
+    verificationStatus: parseVerificationStatus(dto.verificationStatus),
     lastVerificationError:
       dto.lastVerificationError !== null
         ? dto.lastVerificationError
