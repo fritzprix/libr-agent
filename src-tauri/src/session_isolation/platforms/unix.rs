@@ -33,7 +33,6 @@ pub async fn create_basic_isolated_command(
     // DISPLAY and XAUTHORITY are intentionally excluded to prevent GUI/X11 access
     // from within the isolated shell (screen capture, input injection, etc.)
     let preserved_vars = [
-        "PATH",
         "TERM",
         "USER",
         "LOGNAME",
@@ -51,6 +50,8 @@ pub async fn create_basic_isolated_command(
             cmd.env(key, val);
         }
     }
+
+    cmd.env("PATH", crate::utils::env::get_effective_path_os());
 
     // Preserve locale and XDG base directory variables for consistency with MCP stdio isolation.
     // This includes all LC_* variables (beyond LC_ALL/LANG) and XDG_* variables.

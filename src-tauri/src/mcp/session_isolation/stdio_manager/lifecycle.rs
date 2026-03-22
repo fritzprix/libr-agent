@@ -106,12 +106,19 @@ impl SessionMCPManager {
             cmd.arg(arg);
         }
 
-        // Do not force session workspace as child CWD.
-        // The probe/global startup path inherits the app process CWD, and some
-        // external MCP servers (for example npx-based packages) depend on that
-        // behavior during initialization.
+        if !self.workspace_dir.exists() {
+            std::fs::create_dir_all(&self.workspace_dir).map_err(|e| {
+                SessionMCPError::SpawnFailed(format!(
+                    "Failed to create session workspace '{}': {}",
+                    self.workspace_dir.display(),
+                    e
+                ))
+            })?;
+        }
+
+        cmd.current_dir(&self.workspace_dir);
         debug!(
-            "Spawning MCP server with inherited CWD (session workspace available at {:?})",
+            "Spawning MCP server with workspace CWD {:?}",
             self.workspace_dir
         );
 
