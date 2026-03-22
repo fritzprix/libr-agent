@@ -11,11 +11,10 @@ import {
   type MCPServerPreset,
 } from '@/lib/backend/mcp-server-config';
 import { useMCPServerRegistry } from '@/context/MCPServerRegistryContext';
+import { useBackendResource } from '@/context/GlobalEventContext';
 import { useSettings } from '@/hooks/use-settings';
 import { getLogger } from '@/lib/logger';
 import { sanitizePresetEnv, buildPresetMetadata } from '../utils/preset-utils';
-
-export type VerificationStatus = 'pending' | 'success' | 'error';
 
 const logger = getLogger('MCPServerManagement');
 
@@ -23,11 +22,6 @@ export function useMCPServerManagement(service?: McpServerService) {
   const { t } = useTranslation('common');
   const { saveServer, deleteServer, toggleActive } = useMCPServerRegistry();
   const { value: settings } = useSettings();
-
-  // Verification status per server id: 'pending' | 'success' | 'error'
-  const [verificationStatus, setVerificationStatus] = useState<
-    Record<string, VerificationStatus>
-  >({});
 
   // Fetch Recommended Presets
   const { data: presets } = useSWRImmutable<MCPServerPreset[]>(
@@ -78,6 +72,10 @@ export function useMCPServerManagement(service?: McpServerService) {
     {},
   );
 
+  useBackendResource('mcpServer', () => {
+    void mutateServers();
+  });
+
   const handleCreateNew = useCallback(() => {
     const newServer: MCPServerEntity = {
       id: createId(),
@@ -125,9 +123,7 @@ export function useMCPServerManagement(service?: McpServerService) {
   const handleSave = useCallback(
     async (server: MCPServerEntity) => {
       try {
-        setVerificationStatus((prev) => ({ ...prev, [server.id]: 'pending' }));
-
-        const saved = await saveServer({
+        await saveServer({
           ...server,
           createdAt: server.createdAt ?? new Date(),
           updatedAt: new Date(),
@@ -138,22 +134,7 @@ export function useMCPServerManagement(service?: McpServerService) {
         toast.success(
           t('mcpServer.toasts.saved', 'Extension saved successfully'),
         );
-
-        // Verification is now handled synchronously by the backend during saveServer.
-        // If saveServer succeeds, it means verification passed.
-        setVerificationStatus((prev) => {
-          const next: Record<string, VerificationStatus> = {
-            ...prev,
-            [saved.id]: 'success',
-          };
-          if (saved.id !== server.id) {
-            // Clean up the temporary verification status keyed by the optimistic ID.
-            delete next[server.id];
-          }
-          return next;
-        });
       } catch (error) {
-        setVerificationStatus((prev) => ({ ...prev, [server.id]: 'error' }));
         const message =
           error instanceof Error ? error.message : 'Unknown error';
         toast.error(
@@ -245,7 +226,6 @@ export function useMCPServerManagement(service?: McpServerService) {
     setServerToDelete,
     isDeleting,
     togglingStatus,
-    verificationStatus,
     handleCreateNew,
     handleSetupPreset,
     handleSave,

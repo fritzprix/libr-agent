@@ -1,9 +1,11 @@
 use super::super::service_proxy::MCPServiceProxy;
 use super::super::session_isolation::{HttpSessionManager, SessionMCPManager};
 use super::super::session_isolation_config::SessionIsolationConfig;
+use super::persist_tool_cache_for_server;
 use super::MCPServiceProxyManager;
 use crate::agent::events::InitializationStatus;
 use crate::repositories::settings_repository::SettingsRepository;
+use crate::services::mcp_server_service::summarize_tool_names;
 use crate::session::SessionManager;
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
@@ -429,24 +431,20 @@ impl MCPServiceProxyManager {
                         match mgr.list_tools(&server_name).await {
                             Ok(tools) => {
                                 log::info!(
-                                    "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}'",
+                                    "[bg] ✅ Fetched {} tools from stdio server '{}' for session '{}': raw=[{}]",
                                     tools.len(),
                                     server_name,
-                                    session_id
+                                    session_id,
+                                    summarize_tool_names(&tools)
                                 );
                                 if let Some(server_id) = id_map.get(&server_name) {
-                                    let repo = crate::state::get_mcp_server_repository();
-                                    if let Err(e) =
-                                        repo.update_tool_count(server_id, tools.len() as i32)
-                                            .await
-                                    {
-                                        log::warn!(
-                                            "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
-                                            server_name,
-                                            server_id,
-                                            e
-                                        );
-                                    }
+                                    persist_tool_cache_for_server(
+                                        &server_name,
+                                        Some(server_id.as_str()),
+                                        "stdio",
+                                        &tools,
+                                    )
+                                    .await;
                                 }
                                 let prefixed_tools: Vec<_> = tools
                                     .into_iter()
@@ -455,6 +453,12 @@ impl MCPServiceProxyManager {
                                         tool
                                     })
                                     .collect();
+                                log::info!(
+                                    "[bg] Session-visible stdio tools for '{}' in session '{}': [{}]",
+                                    server_name,
+                                    session_id,
+                                    summarize_tool_names(&prefixed_tools)
+                                );
                                 proxy
                                     .set_session_stdio_tools(server_name.clone(), prefixed_tools)
                                     .await;
@@ -514,24 +518,20 @@ impl MCPServiceProxyManager {
                         match mgr.list_tools(&server_name).await {
                             Ok(tools) => {
                                 log::info!(
-                                    "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}'",
+                                    "[bg] ✅ Fetched {} tools from HTTP server '{}' for session '{}': raw=[{}]",
                                     tools.len(),
                                     server_name,
-                                    session_id
+                                    session_id,
+                                    summarize_tool_names(&tools)
                                 );
                                 if let Some(server_id) = id_map.get(&server_name) {
-                                    let repo = crate::state::get_mcp_server_repository();
-                                    if let Err(e) =
-                                        repo.update_tool_count(server_id, tools.len() as i32)
-                                            .await
-                                    {
-                                        log::warn!(
-                                            "[bg] Failed to cache tool count for '{}' (ID: {}): {}",
-                                            server_name,
-                                            server_id,
-                                            e
-                                        );
-                                    }
+                                    persist_tool_cache_for_server(
+                                        &server_name,
+                                        Some(server_id.as_str()),
+                                        "http",
+                                        &tools,
+                                    )
+                                    .await;
                                 }
                                 let prefixed_tools: Vec<_> = tools
                                     .into_iter()
@@ -540,6 +540,12 @@ impl MCPServiceProxyManager {
                                         tool
                                     })
                                     .collect();
+                                log::info!(
+                                    "[bg] Session-visible HTTP tools for '{}' in session '{}': [{}]",
+                                    server_name,
+                                    session_id,
+                                    summarize_tool_names(&prefixed_tools)
+                                );
                                 proxy
                                     .set_session_http_tools(server_name.clone(), prefixed_tools)
                                     .await;

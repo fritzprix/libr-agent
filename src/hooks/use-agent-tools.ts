@@ -6,6 +6,20 @@ import { validateMCPTools } from '@/lib/schemas/mcp-tool';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 
 const logger = getLogger('useAgentTools');
+const TOOL_NAME_SAMPLE_SIZE = 5;
+
+function summarizeToolNames(tools: MCPTool[]): string {
+  const preview = tools
+    .slice(0, TOOL_NAME_SAMPLE_SIZE)
+    .map((tool) => tool.name)
+    .join(', ');
+
+  if (tools.length > TOOL_NAME_SAMPLE_SIZE) {
+    return `${preview} (+${tools.length - TOOL_NAME_SAMPLE_SIZE} more)`;
+  }
+
+  return preview;
+}
 
 /**
  * Hook to fetch available tools for a specific agent session
@@ -57,11 +71,15 @@ export function useAgentTools(sessionId: string | undefined) {
 
         if (isMounted) {
           setAvailableTools(tools);
+          const externalTools = tools.filter(
+            (tool) => !isBuiltinTool(tool.name),
+          );
           logger.info('Loaded agent tools', {
             sessionId,
             toolCount: tools.length,
             builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
-            externalCount: tools.filter((t) => !isBuiltinTool(t.name)).length,
+            externalCount: externalTools.length,
+            externalNamesSample: summarizeToolNames(externalTools),
           });
         }
       } catch (err) {

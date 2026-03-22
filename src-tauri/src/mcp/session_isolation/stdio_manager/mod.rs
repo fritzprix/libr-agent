@@ -41,7 +41,8 @@ pub struct SessionMCPManager {
     /// Cancellation tokens for active calls.
     pub(crate) active_call_tokens: Arc<RwLock<HashMap<String, CancellationToken>>>,
 
-    /// Workspace directory for the session (CWD for child processes)
+    /// Workspace directory for the session.
+    /// External MCP child processes no longer use this as forced CWD.
     pub(crate) workspace_dir: std::path::PathBuf,
 }
 

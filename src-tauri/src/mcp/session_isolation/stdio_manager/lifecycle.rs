@@ -101,15 +101,26 @@ impl SessionMCPManager {
 
         debug!("Final spawn command: {} {:?}", final_command, final_args);
 
-        // Determine working directory: use the session workspace directory
-        let working_dir = &self.workspace_dir;
-        debug!("Spawning MCP server with CWD: {:?}", working_dir);
-
         let mut cmd = Command::new(&final_command);
-        cmd.current_dir(working_dir);
         for arg in &final_args {
             cmd.arg(arg);
         }
+
+        if !self.workspace_dir.exists() {
+            std::fs::create_dir_all(&self.workspace_dir).map_err(|e| {
+                SessionMCPError::SpawnFailed(format!(
+                    "Failed to create session workspace '{}': {}",
+                    self.workspace_dir.display(),
+                    e
+                ))
+            })?;
+        }
+
+        cmd.current_dir(&self.workspace_dir);
+        debug!(
+            "Spawning MCP server with workspace CWD {:?}",
+            self.workspace_dir
+        );
 
         // Apply environment isolation:
         // 1. Clear all inherited environment variables to prevent secret leakage

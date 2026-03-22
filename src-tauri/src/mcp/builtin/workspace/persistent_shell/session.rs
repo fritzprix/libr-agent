@@ -140,7 +140,8 @@ impl PersistentShell {
                 let local_bin = PathBuf::from(home).join(".local").join("bin");
                 let local_bin_str = local_bin.to_string_lossy();
 
-                if let Some(path_os) = std::env::var_os("PATH") {
+                let path_os = crate::utils::env::get_effective_path_os();
+                if !path_os.is_empty() {
                     let path_lossy = path_os.to_string_lossy();
                     if !path_lossy.contains(local_bin_str.as_ref()) {
                         // Prepend to prioritize local binaries using standard path manipulation

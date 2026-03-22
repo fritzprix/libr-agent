@@ -33,6 +33,8 @@ async fn test_create_and_get_server() {
     let retrieved = repo.get(&saved.id).await.unwrap().unwrap();
     assert_eq!(retrieved.name, "test_server");
     assert_eq!(retrieved.id, saved.id);
+    assert_eq!(retrieved.verification_status.as_deref(), Some("pending"));
+    assert!(retrieved.last_verification_error.is_none());
 
     let by_name = repo.get_by_name("test_server").await.unwrap().unwrap();
     assert_eq!(by_name.id, saved.id);
@@ -91,14 +93,15 @@ async fn test_update_cached_tools() {
     let result = repo.get(&created.id).await.unwrap().unwrap();
     assert_eq!(result.tool_count, Some(1));
     assert_eq!(result.cached_tools.as_deref(), Some(tools_json.as_str()));
+    assert_eq!(result.verification_status.as_deref(), Some("success"));
+    assert!(result.last_verification_error.is_none());
 }
 
 #[tokio::test]
-async fn test_config_update_invalidates_tool_cache() {
-    // Regression: updating config must clear BOTH cached_tools AND tool_count.
+async fn test_mark_verification_pending_clears_cache_when_requested() {
     let repo = setup_repo().await;
     let created = repo
-        .create("invalidate_server", serde_json::json!({"v": 1}))
+        .create("pending_server", serde_json::json!({"v": 1}))
         .await
         .unwrap();
 
@@ -114,26 +117,27 @@ async fn test_config_update_invalidates_tool_cache() {
     let cached = repo.get(&created.id).await.unwrap().unwrap();
     assert_eq!(cached.tool_count, Some(5));
     assert!(cached.cached_tools.is_some());
+    assert_eq!(cached.verification_status.as_deref(), Some("success"));
 
-    // Update config — must invalidate both
-    repo.update(&created.id, None, Some(serde_json::json!({"v": 2})))
+    repo.mark_verification_pending(&created.id, true)
         .await
-        .expect("Failed to update config");
+        .expect("Failed to mark verification pending");
 
     let after = repo.get(&created.id).await.unwrap().unwrap();
+    assert_eq!(after.verification_status.as_deref(), Some("pending"));
+    assert!(after.last_verification_error.is_none());
     assert!(
         after.tool_count.is_none(),
-        "tool_count must be cleared when config changes"
+        "tool_count must be cleared when verification is pending with clear_cache=true"
     );
     assert!(
         after.cached_tools.is_none(),
-        "cached_tools must be cleared when config changes"
+        "cached_tools must be cleared when verification is pending with clear_cache=true"
     );
 }
 
 #[tokio::test]
-async fn test_name_only_update_preserves_tool_cache() {
-    // Regression: renaming a server must NOT invalidate the tool cache.
+async fn test_update_preserves_tool_cache_until_service_invalidates_it() {
     let repo = setup_repo().await;
     let created = repo
         .create("before_rename", serde_json::json!({}))
@@ -148,19 +152,39 @@ async fn test_name_only_update_preserves_tool_cache() {
     .await
     .unwrap();
 
-    // Rename only — no config change
-    repo.update(&created.id, Some("after_rename"), None)
-        .await
-        .expect("Failed to rename");
+    repo.update(
+        &created.id,
+        Some("after_rename"),
+        Some(serde_json::json!({"v": 2})),
+    )
+    .await
+    .expect("Failed to update");
 
     let after = repo.get(&created.id).await.unwrap().unwrap();
     assert_eq!(
         after.tool_count,
         Some(3),
-        "tool_count must be preserved on name-only update"
+        "repository update should preserve cache until service decides whether re-verification is needed"
     );
     assert!(
         after.cached_tools.is_some(),
-        "cached_tools must be preserved on name-only update"
+        "repository update should preserve cached_tools until service decides whether re-verification is needed"
     );
+}
+
+#[tokio::test]
+async fn test_set_verification_error_persists_error_message() {
+    let repo = setup_repo().await;
+    let created = repo
+        .create("error_server", serde_json::json!({}))
+        .await
+        .unwrap();
+
+    repo.set_verification_error(&created.id, "boom".to_string())
+        .await
+        .expect("Failed to persist verification error");
+
+    let after = repo.get(&created.id).await.unwrap().unwrap();
+    assert_eq!(after.verification_status.as_deref(), Some("error"));
+    assert_eq!(after.last_verification_error.as_deref(), Some("boom"));
 }

@@ -41,6 +41,12 @@ pub trait MCPServerRepository: Send + Sync {
         tool_count: i32,
         tools_json: String,
     ) -> Result<(), DbError>;
+
+    /// Mark verification as pending, optionally clearing cached verification results first.
+    async fn mark_verification_pending(&self, id: &str, clear_cache: bool) -> Result<(), DbError>;
+
+    /// Persist a verification error for the given server.
+    async fn set_verification_error(&self, id: &str, error: String) -> Result<(), DbError>;
 }
 
 /// SQLite implementation of MCPServerRepository using SeaORM
@@ -84,6 +90,8 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             config: Set(config.to_string()),
             tool_count: Set(None), // NULL initially - will be populated during verification/connection
             cached_tools: Set(None), // NULL initially - populated after verifyServer or probe
+            verification_status: Set(Some("pending".to_string())),
+            last_verification_error: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -134,9 +142,6 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             }
             if let Some(new_config) = config {
                 active.config = Set(new_config.to_string());
-                // Invalidate both cached_tools AND tool_count when config changes — they may be stale
-                active.cached_tools = Set(None);
-                active.tool_count = Set(None);
             }
             active.updated_at = Set(now);
             active.update(&self.db).await?
@@ -194,6 +199,44 @@ impl MCPServerRepository for SqliteMCPServerRepository {
             let mut active: mcp_server::ActiveModel = model.into();
             active.tool_count = Set(Some(tool_count));
             active.cached_tools = Set(Some(tools_json));
+            active.verification_status = Set(Some("success".to_string()));
+            active.last_verification_error = Set(None);
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn mark_verification_pending(&self, id: &str, clear_cache: bool) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.verification_status = Set(Some("pending".to_string()));
+            active.last_verification_error = Set(None);
+            if clear_cache {
+                active.tool_count = Set(None);
+                active.cached_tools = Set(None);
+            }
+            active.updated_at = Set(now);
+            active.update(&self.db).await?;
+            Ok(())
+        } else {
+            Err(DbError::NotFound(format!("Server '{}' not found", id)))
+        }
+    }
+
+    async fn set_verification_error(&self, id: &str, error: String) -> Result<(), DbError> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let existing = mcp_server::Entity::find_by_id(id).one(&self.db).await?;
+
+        if let Some(model) = existing {
+            let mut active: mcp_server::ActiveModel = model.into();
+            active.verification_status = Set(Some("error".to_string()));
+            active.last_verification_error = Set(Some(error));
             active.updated_at = Set(now);
             active.update(&self.db).await?;
             Ok(())

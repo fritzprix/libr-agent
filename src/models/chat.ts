@@ -278,6 +278,8 @@ export interface MCPServerEntity {
 
   // Cached tool count (from last verification/connection)
   toolCount?: number;
+  verificationStatus?: 'pending' | 'success' | 'error';
+  lastVerificationError?: string;
 }
 
 export interface Assistant {
