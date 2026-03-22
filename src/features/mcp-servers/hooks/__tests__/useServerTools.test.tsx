@@ -109,9 +109,10 @@ describe('useServerTools', () => {
     const toolsA = [{ name: 'tool_a', description: '', inputSchema: {} }];
     const toolsB = [{ name: 'tool_b', description: '', inputSchema: {} }];
 
-    vi.mocked(safeInvoke).mockImplementation(async (_cmd, args: any) => {
-      if (args.serverId === 'server-a') return toolsA;
-      if (args.serverId === 'server-b') return toolsB;
+    vi.mocked(safeInvoke).mockImplementation(async (_cmd, args: unknown) => {
+      const { serverId } = args as { serverId: string };
+      if (serverId === 'server-a') return toolsA;
+      if (serverId === 'server-b') return toolsB;
       return [];
     });
 
