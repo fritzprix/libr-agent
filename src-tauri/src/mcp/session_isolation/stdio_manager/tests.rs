@@ -76,7 +76,9 @@ fn test_config_env_vars_are_preserved() {
 }
 
 /// Helper to create a test manager that can run real processes
-fn create_integration_manager() -> SessionMCPManager {
+fn create_integration_manager_with_workspace(
+    workspace_dir: std::path::PathBuf,
+) -> SessionMCPManager {
     let mut configs = HashMap::new();
     configs.insert(
         "test-server".to_string(),
@@ -100,12 +102,11 @@ fn create_integration_manager() -> SessionMCPManager {
         http_connection_pool_size: 10,
     };
 
-    SessionMCPManager::new(
-        "test-session".to_string(),
-        configs,
-        config,
-        std::env::current_dir().unwrap(),
-    )
+    SessionMCPManager::new("test-session".to_string(), configs, config, workspace_dir)
+}
+
+fn create_integration_manager() -> SessionMCPManager {
+    create_integration_manager_with_workspace(std::env::current_dir().unwrap())
 }
 
 #[tokio::test]
@@ -189,6 +190,36 @@ async fn test_multiple_spawn_attempts_are_serialized() {
             "Should have exactly 1 process despite concurrent spawn attempts"
         );
     }
+}
+
+#[tokio::test]
+async fn test_relative_server_startup_does_not_depend_on_workspace_cwd() {
+    if std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping integration test: python3 not available");
+        return;
+    }
+
+    let missing_workspace = std::env::temp_dir().join(format!(
+        "libragent-missing-workspace-{}",
+        std::process::id()
+    ));
+
+    if missing_workspace.exists() {
+        std::fs::remove_dir_all(&missing_workspace).unwrap();
+    }
+
+    let manager = create_integration_manager_with_workspace(missing_workspace);
+    let result = manager.ensure_process_running("test-server").await;
+
+    assert!(
+        result.is_ok(),
+        "Relative stdio startup should not depend on session workspace CWD: {:?}",
+        result.err()
+    );
 }
 
 #[test]

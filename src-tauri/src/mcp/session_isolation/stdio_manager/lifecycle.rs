@@ -101,15 +101,19 @@ impl SessionMCPManager {
 
         debug!("Final spawn command: {} {:?}", final_command, final_args);
 
-        // Determine working directory: use the session workspace directory
-        let working_dir = &self.workspace_dir;
-        debug!("Spawning MCP server with CWD: {:?}", working_dir);
-
         let mut cmd = Command::new(&final_command);
-        cmd.current_dir(working_dir);
         for arg in &final_args {
             cmd.arg(arg);
         }
+
+        // Do not force session workspace as child CWD.
+        // The probe/global startup path inherits the app process CWD, and some
+        // external MCP servers (for example npx-based packages) depend on that
+        // behavior during initialization.
+        debug!(
+            "Spawning MCP server with inherited CWD (session workspace available at {:?})",
+            self.workspace_dir
+        );
 
         // Apply environment isolation:
         // 1. Clear all inherited environment variables to prevent secret leakage

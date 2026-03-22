@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.12] - 2026-03-22
+
+### 🚀 Features
+
+- **Faster MCP Server Saves**: MCP server saves now complete immediately and verify in the background, so the dialog no longer blocks on slow dry runs.
+
+### 🐛 Fixes
+
+- **Verified Server Card Feedback**: Server cards now show pending, success, and error states from persisted verification data, including the last dry-run error when a server fails validation.
+- **Fresh Tool Metadata After Verification**: Tool counts and cached tool lists now refresh after verification completes, keeping the server card and tool modal in sync with the latest server state.
+- **Gemini Session Startup Stability**: Fixed the session-isolated stdio launch path so `npx`-based Gemini servers start from the correct working directory instead of failing during initialization.
+
+### 🔧 Internal
+
+- **MCP Verification Plumbing**: Added persistence for verification state, background verification events, and supporting tests so server metadata updates stay consistent across reloads.
+
 ## [0.6.11] - 2026-03-21
 
 ### 🚀 Features

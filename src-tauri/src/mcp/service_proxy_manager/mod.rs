@@ -19,7 +19,7 @@ mod test_helpers;
 #[cfg(test)]
 mod tests;
 
-pub use caching::spawn_tool_cache_update;
+pub use caching::{persist_tool_cache_for_server, spawn_tool_cache_update};
 
 /// Manages per-session MCP service proxies for isolated tool execution
 ///

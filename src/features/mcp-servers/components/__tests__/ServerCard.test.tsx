@@ -154,4 +154,24 @@ describe('ServerCard', () => {
     fireEvent.click(screen.getByText('Delete'));
     expect(onDelete).toHaveBeenCalledWith(baseServer);
   });
+
+  it('renders verification error details on the card', () => {
+    render(
+      <ServerCard
+        server={{
+          ...baseServer,
+          verificationStatus: 'error',
+          lastVerificationError: 'Failed to connect to test server',
+        }}
+        onEdit={noop}
+        onDelete={noop}
+        onToggleActive={noop}
+      />,
+    );
+
+    expect(screen.getByText('Connection failed')).toBeInTheDocument();
+    expect(
+      screen.getByText('Failed to connect to test server'),
+    ).toBeInTheDocument();
+  });
 });

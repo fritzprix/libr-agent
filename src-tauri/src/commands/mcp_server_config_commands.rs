@@ -11,6 +11,8 @@ pub struct MCPServerDto {
     pub name: String,
     pub config: Value,           // JSON config
     pub tool_count: Option<i32>, // Cached tool count from last verification/connection
+    pub verification_status: Option<String>,
+    pub last_verification_error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -22,6 +24,8 @@ impl From<crate::entity::mcp_server::Model> for MCPServerDto {
             name: model.name,
             config: serde_json::from_str(&model.config).unwrap_or(Value::Null),
             tool_count: model.tool_count, // Include cached tool count
+            verification_status: model.verification_status,
+            last_verification_error: model.last_verification_error,
             created_at: model.created_at,
             updated_at: model.updated_at,
         }
