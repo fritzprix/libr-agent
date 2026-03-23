@@ -18,6 +18,20 @@ import { agentCallBuiltinTool } from '@/features/agent/api/agent-backend';
 
 const logger = getLogger('SessionFilesPopover');
 
+// Cache Intl formatter to prevent expensive re-instantiation on every render or function call
+let koKrDateFormatter: Intl.DateTimeFormat | null = null;
+function getKoKrDateFormatter() {
+  if (!koKrDateFormatter) {
+    koKrDateFormatter = new Intl.DateTimeFormat('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return koKrDateFormatter;
+}
+
 interface SessionFilesPopoverProps {
   sessionId: string;
 }
@@ -125,12 +139,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('ko-KR', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return getKoKrDateFormatter().format(new Date(dateString));
   };
 
   return (

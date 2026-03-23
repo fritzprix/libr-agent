@@ -3,6 +3,30 @@
  * Provides consistent date/time formatting across the application
  */
 
+// Cache formatter instances to prevent expensive re-instantiations during render loops
+let relativeTimeFormatter: Intl.RelativeTimeFormat | null = null;
+let dateFormatter: Intl.DateTimeFormat | null = null;
+
+function getRelativeTimeFormatter(): Intl.RelativeTimeFormat {
+  if (!relativeTimeFormatter) {
+    relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {
+      numeric: 'auto',
+    });
+  }
+  return relativeTimeFormatter;
+}
+
+function getDateFormatter(): Intl.DateTimeFormat {
+  if (!dateFormatter) {
+    dateFormatter = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+  return dateFormatter;
+}
+
 /**
  * Formats a date relative to a reference date using Intl.RelativeTimeFormat
  * @param target The target date to format
@@ -26,21 +50,17 @@ export function formatRelativeTime(
   ];
 
   const absSeconds = Math.abs(diffSeconds);
+  const formatter = getRelativeTimeFormatter();
 
   for (const threshold of thresholds) {
     if (absSeconds < threshold.limit) {
       const value = Math.round(diffSeconds / threshold.divisor);
-      return new Intl.RelativeTimeFormat(undefined, {
-        numeric: 'auto',
-      }).format(value, threshold.unit);
+      return formatter.format(value, threshold.unit);
     }
   }
 
   const years = Math.round(diffSeconds / 31557600);
-  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(
-    years,
-    'year',
-  );
+  return formatter.format(years, 'year');
 }
 
 /**
@@ -70,11 +90,7 @@ export function formatSessionTimestamp(dateInput: Date | string | undefined): {
     };
   }
 
-  const absolute = date.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  const absolute = getDateFormatter().format(date);
   const relative = formatRelativeTime(date, new Date());
 
   const display = relative ? `${absolute} · ${relative}` : absolute;
