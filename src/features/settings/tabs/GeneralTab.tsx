@@ -2,12 +2,8 @@ import { safeInvoke } from '@/lib/backend/core';
 import { useState, useRef } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui';
+import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { Button, Input } from '@/components/ui';
@@ -131,57 +127,65 @@ function GeneralTabComponent({
               )}
               className="bg-background border text-foreground flex-1"
             />
-            <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'inline-block',
+                    isBrowsing && 'cursor-not-allowed',
+                  )}
+                >
+                  <Button
+                    variant="outline"
+                    onClick={handleBrowseEvents}
+                    className="px-3"
+                    disabled={isBrowsing}
+                    aria-label={t(
+                      'settings.general.browseAriaLabel',
+                      'Browse skills directory',
+                    )}
+                  >
+                    {isBrowsing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <FolderOpen className="w-4 h-4" />
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('settings.general.browse', 'Browse')}
+              </TooltipContent>
+            </Tooltip>
+
+            {skillsDirectory && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="inline-block">
+                  <span
+                    className={cn(
+                      'inline-block',
+                      isOpeningDir && 'cursor-not-allowed',
+                    )}
+                  >
                     <Button
                       variant="outline"
-                      onClick={handleBrowseEvents}
+                      onClick={handleOpenDirectory}
                       className="px-3"
-                      disabled={isBrowsing}
+                      disabled={isOpeningDir}
                       aria-label={t(
-                        'settings.general.browseAriaLabel',
-                        'Browse skills directory',
+                        'settings.general.openInExplorer',
+                        'Open in Explorer',
                       )}
                     >
-                      {isBrowsing ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <FolderOpen className="w-4 h-4" />
-                      )}
+                      <FolderOutput className="w-4 h-4" />
                     </Button>
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {t('settings.general.browse', 'Browse')}
+                  {t('settings.general.openInExplorer', 'Open in Explorer')}
                 </TooltipContent>
               </Tooltip>
-
-              {skillsDirectory && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-block">
-                      <Button
-                        variant="outline"
-                        onClick={handleOpenDirectory}
-                        className="px-3"
-                        disabled={isOpeningDir}
-                        aria-label={t(
-                          'settings.general.openInExplorer',
-                          'Open in Explorer',
-                        )}
-                      >
-                        <FolderOutput className="w-4 h-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {t('settings.general.openInExplorer', 'Open in Explorer')}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </TooltipProvider>
+            )}
           </div>
 
           {/* Verification Status */}
