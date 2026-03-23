@@ -169,7 +169,7 @@ impl MCPServiceProxy {
     /// - External MCP server (stdio-based)
     ///
     /// # Arguments
-    /// * `tool_name` - Full tool name (e.g., "attachments__addContent")
+    /// * `tool_name` - Full tool name (e.g., "attachments__add")
     /// * `args` - JSON arguments for the tool
     ///
     /// # Returns
@@ -528,12 +528,12 @@ impl MCPServiceProxy {
     /// exposed as agent tools (e.g. add/delete attachment). Bypassing the agent-visible
     /// tool surface while still routing through the same session-bound server instance
     /// ensures that `recent_uploads` tracking, BM25 search index, and all other
-    /// in-memory state are kept in sync with subsequent agent reads (`listContent`,
-    /// `searchContent`).
+    /// in-memory state are kept in sync with subsequent agent reads (`list`,
+    /// `search`).
     ///
     /// # Arguments
     /// * `server_id` - Builtin server key (e.g. `"attachments"`)
-    /// * `method` - Method name dispatched to `BuiltinMCPServer::call_tool` (e.g. `"addContent"`)
+    /// * `method` - Method name dispatched to `BuiltinMCPServer::call_tool` (e.g. `"add"`)
     /// * `args`   - JSON arguments forwarded verbatim
     ///
     /// # Errors

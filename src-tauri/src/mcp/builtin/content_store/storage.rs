@@ -522,7 +522,7 @@ impl ContentStoreStorage {
             return Err(format!(
                 "Error: Requested range [{}-{}] exceeds file length.\n\
                  File has {} lines. Valid range: [1-{}].\n\
-                 Use listContent to verify file size before reading.",
+                 Use list to verify file size before reading.",
                 from_line, target_to_line, max_line, max_line
             ));
         }

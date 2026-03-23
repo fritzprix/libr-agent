@@ -199,7 +199,7 @@ Files to update:
   - `extractBuiltInServiceAlias()`: update to handle new naming scheme
 
 - [ ] `src/features/agent/api/agent-backend.ts`
-  - `'builtin_attachments__addContent'` → `'attachments__addContent'`
+  - `'builtin_attachments__add'` → `'attachments__add'`
 
 - [ ] `src/lib/message-preprocessor.ts`
   - Hint string: `builtin_workspace__readFile` → `workspace__readFile`

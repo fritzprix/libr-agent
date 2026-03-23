@@ -23,7 +23,7 @@ pub async fn list_content(
             Err(e) => {
                 return Ok(guided_error(
                     ErrorCategory::InvalidInput,
-                    format!("Invalid listContent parameters: {e}"),
+                    format!("Invalid list parameters: {e}"),
                     ToolGroup::ContentStore,
                 )
                 .with_guidance(vec!["Check the parameter schema".to_string()])
@@ -137,9 +137,9 @@ pub async fn list_content(
                 offset + limit
             )]
         } else if total > 0 {
-            vec!["Use readContent with a contentId from above to view full contents".to_string()]
+            vec!["Use read with a contentId from above to view full contents".to_string()]
         } else {
-            vec!["Use addContent to add files to the content store".to_string()]
+            vec!["Use add to add files to the content store".to_string()]
         },
     );
 
@@ -161,7 +161,7 @@ pub async fn read_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Invalid readContent parameters: {e}"),
+                format!("Invalid read parameters: {e}"),
                 ToolGroup::ContentStore,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
@@ -201,7 +201,7 @@ pub async fn read_content(
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
-            "Use listContent to see content in current session".to_string(),
+            "Use list to see content in current session".to_string(),
             "Switch to the session that owns this content".to_string(),
             "Verify the content ID is correct".to_string(),
         ])
@@ -242,7 +242,7 @@ pub async fn read_content(
             .with_guidance(vec![
                 "Verify the content ID is correct".to_string(),
                 "Check line range is valid".to_string(),
-                "Use listContent to see available content".to_string(),
+                "Use list to see available content".to_string(),
             ])
             .to_mcp_result());
         }
@@ -281,7 +281,7 @@ pub async fn read_content(
                     total_lines
                 ),
                 Some(format!(
-                    "To read more, use readContent with fromLine={}",
+                    "To read more, use read with fromLine={}",
                     to_line + 1
                 )),
             )
@@ -293,9 +293,9 @@ pub async fn read_content(
     };
 
     let mut hints = vec![
-        "Use searchContent to find specific content".to_string(),
+        "Use search to find specific content".to_string(),
         format!(
-            "Use deleteContent with contentId='{}' to remove this content",
+            "Use delete with contentId='{}' to remove this content",
             args.content_id
         ),
     ];
@@ -336,7 +336,7 @@ pub async fn keyword_similarity_search(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Invalid searchContent parameters: {e}"),
+                format!("Invalid search parameters: {e}"),
                 ToolGroup::ContentStore,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
@@ -401,7 +401,7 @@ pub async fn keyword_similarity_search(
                 .with_guidance(vec![
                     "Verify the search query is valid".to_string(),
                     "Check if content has been indexed".to_string(),
-                    "Use listContent to see available content".to_string(),
+                    "Use list to see available content".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -482,10 +482,10 @@ pub async fn keyword_similarity_search(
         if search_results.is_empty() {
             vec![
                 "Try different search keywords".to_string(),
-                "Use listContent to see all available content".to_string(),
+                "Use list to see all available content".to_string(),
             ]
         } else {
-            vec!["Use readContent with a contentId from above to view full content".to_string()]
+            vec!["Use read with a contentId from above to view full content".to_string()]
         },
     );
 

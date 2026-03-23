@@ -40,14 +40,14 @@ DB에 문자열 직렬화 박힘          DB: 문자열 그대로 (호환)      
 
 #### 🔴 Frontend — tool ID 하드코딩
 
-| 파일                                                            | 변경 내용                                                    |
-| --------------------------------------------------------------- | ------------------------------------------------------------ |
-| `src/features/agent/context/AgentResourceAttachmentContext.tsx` | `builtin_content_store__*` → `builtin_attachments__*` (3곳)  |
-| `src/components/shared/SessionFilesPopover.tsx`                 | `builtin_content_store__readContent` 변경                    |
-| `src/features/agent/api/agent-backend.ts`                       | `builtin_content_store__addContent` 변경                     |
-| `src/lib/assistant/runtime-builtins.ts`                         | `canonical: 'content_store'` → `'attachments'`               |
-| `src/lib/__tests__/utils.extractBuiltInServiceAlias.test.ts`    | 테스트 문자열 업데이트                                       |
-| `src/lib/message-preprocessor.ts`                               | 이미 `searchContent`로 변경됨 — `sessionId` 힌트 문자열 확인 |
+| 파일                                                            | 변경 내용                                                   |
+| --------------------------------------------------------------- | ----------------------------------------------------------- |
+| `src/features/agent/context/AgentResourceAttachmentContext.tsx` | `builtin_content_store__*` → `builtin_attachments__*` (3곳) |
+| `src/components/shared/SessionFilesPopover.tsx`                 | `builtin_content_store__read` 변경                          |
+| `src/features/agent/api/agent-backend.ts`                       | `builtin_content_store__add` 변경                           |
+| `src/lib/assistant/runtime-builtins.ts`                         | `canonical: 'content_store'` → `'attachments'`              |
+| `src/lib/__tests__/utils.extractBuiltInServiceAlias.test.ts`    | 테스트 문자열 업데이트                                      |
+| `src/lib/message-preprocessor.ts`                               | 이미 `search`로 변경됨 — `sessionId` 힌트 문자열 확인       |
 
 #### 🟡 DB 호환성 리스크 (핵심)
 

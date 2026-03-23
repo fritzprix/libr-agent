@@ -391,7 +391,7 @@ The `MCPServiceProxy` provides a unified interface that routes tool calls to the
 ```rust
 pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResponse, String> {
     if tool_name.starts_with("builtin_") {
-        // Extract tool ID (builtin_content_store__addContent -> content_store)
+        // Extract tool ID (attachments__add -> content_store)
         let tool_id = tool_name
             .strip_prefix("builtin_")
             .and_then(|s| s.split("__").next())?;

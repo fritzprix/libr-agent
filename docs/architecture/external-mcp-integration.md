@@ -556,7 +556,7 @@ pub async fn collect_available_tools(
 ```rust
 pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<MCPResponse> {
     if tool_name.starts_with("builtin_") {
-        // Extract: "builtin_content_store__addContent" -> "content_store"
+        // Extract: "builtin_content_store__add" -> "content_store"
         let tool_id = tool_name
             .strip_prefix("builtin_")
             .and_then(|s| s.split("__").next())?;
@@ -664,7 +664,7 @@ let result = proxy.call_tool(
 
 // Call builtin tool
 let result = proxy.call_tool(
-    "builtin_content_store__addContent",
+    "builtin_content_store__add",
     json!({
         "content": "Important data",
         "metadata": {"type": "note"}

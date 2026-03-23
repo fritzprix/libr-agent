@@ -286,15 +286,15 @@ impl ErrorGuidance {
                 "Try a different file or format".to_string(),
             ],
             (ErrorCategory::ResourceNotFound, ToolGroup::ContentStore) => vec![
-                "Use listContent to see available content".to_string(),
+                "Use list to see available content".to_string(),
                 "Verify the content ID is correct".to_string(),
-                "Use searchContent to find content by keywords".to_string(),
+                "Use search to find content by keywords".to_string(),
             ],
 
             // Knowledge tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Knowledge) => vec![
                 "Use listKnowledge to see available knowledge entries".to_string(),
-                "Use searchContent to find entries by keyword".to_string(),
+                "Use search to find entries by keyword".to_string(),
                 "Verify the knowledge ID is correct".to_string(),
             ],
 

@@ -1379,7 +1379,7 @@ All notable changes to this project will be documented in this file.
 
 - **Content Store Context Enhancement**: Improved agent visibility of uploaded files through enhanced service context
   - **Recent Uploads Tracking**: System prompt now displays last 10 uploaded files with IDs and metadata
-  - **Direct File Access**: Agents can immediately use `contentId` without calling `listContent()`
+  - **Direct File Access**: Agents can immediately use `contentId` without calling `list()`
   - **Smart Truncation Logic**: Fixed misleading truncation messages - now distinguishes between preview truncation and file-end detection
   - **Enhanced Error Messages**: Out-of-bounds errors now include actual file size and valid range suggestions
   - **Content ID Normalization**: Auto-adds `content_` prefix to IDs for flexible usage

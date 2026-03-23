@@ -27,7 +27,7 @@ We design tools for an entity that has **High Reasoning** capabilities but **Zer
 **Anti-Pattern:** Using aliases like `search` | `find` | `lookup` for the same function.
 
 - **Why:** Aliases dilute the semantic weight of the tool in the System Prompt and confuse the Agent's decision tree.
-- **Convention:** Use `camelCase` and `verbNoun` structure (e.g., `addContent`, `keywordSimilaritySearch`).
+- **Convention:** Use `camelCase` and `verbNoun` structure (e.g., `add`, `search`).
 
 #### 2.1.1 No Alias Error Hints (Simplicity Rule)
 
@@ -41,7 +41,7 @@ match tool_name {
     "createFile" => self.handle_create_file(...),
 
     // ❌ AVOID: Explicit alias handling
-    "read_file" | "readContent" => Ok(MCPResult::error(
+    "read_file" | "read" => Ok(MCPResult::error(
         "Did you mean 'readFile'?"
     )),
     "write_file" | "writeFile" => Ok(MCPResult::error(

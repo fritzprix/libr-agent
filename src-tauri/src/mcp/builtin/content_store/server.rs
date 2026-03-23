@@ -101,7 +101,7 @@ impl ContentStoreServer {
     pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "listContent".to_string(),
+                name: "list".to_string(),
                 title: Option::None,
                 description: "List content in a store with pagination".to_string(),
                 input_schema: schemas::tool_list_content_schema(),
@@ -109,7 +109,7 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "readContent".to_string(),
+                name: "read".to_string(),
                 title: Option::None,
                 description: "Read content with line range filtering".to_string(),
                 input_schema: schemas::tool_read_content_schema(),
@@ -117,7 +117,7 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "searchContent".to_string(),
+                name: "search".to_string(),
                 title: Some("Search Content".to_string()),
                 description: "Search session-scoped content using BM25 keyword ranking. Only finds content uploaded in the current session.".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
@@ -264,7 +264,7 @@ impl ContentStoreServer {
                 ));
             }
 
-            prompt_parts.push("\n*Use `readContent(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
+            prompt_parts.push("\n*Use `read(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
         } else if total_count == 0 {
             prompt_parts.push("*No files uploaded yet.*\n".to_string());
         }
