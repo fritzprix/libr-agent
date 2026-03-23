@@ -88,7 +88,9 @@ fn missing_agent_config_error_suggests_listing_configs() {
     assert_eq!(extract_text_error_flag(&r), None);
     assert!(text.contains("Agent configuration 'exa' not found"));
     assert!(text.contains("list(type=\"configs\")"));
-    assert!(text.contains("Retry startSession with a valid agentId"));
+    assert!(
+        text.contains("Retry startSession with a valid agentId copied from list(type=\"configs\")")
+    );
 }
 
 #[test]

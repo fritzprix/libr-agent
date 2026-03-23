@@ -389,7 +389,7 @@ pub async fn get_assistant(
             let hint = SuccessHint::new(
                 report,
                 vec![
-                    "Update this configuration to refine its prompt, model, or capabilities"
+                    "Update this configuration to refine its prompt, temperature, or capabilities"
                         .to_string(),
                     "List other agent configurations to compare available specialists".to_string(),
                 ],

@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.16] - 2026-03-23
+
+### 🚀 Features
+
+- **Smarter Agent Skill Bootstrapping**: Expanded the bundled skill stack around persona awakening and session attachments, making it easier for agents to discover their identity files and work with uploaded content through the newer streamlined attachment tool flow.
+
+### 🐛 Fixes
+
+- **Attachment Tool Reliability**: Restored internal attachment write routing and corrected AI-facing attachment guidance so agents use the right session-scoped file tools instead of malformed calls.
+- **Session Attention Consistency**: Fixed an edge case in viewed-state handling where attention indicators could survive even after a session had effectively already been viewed past the attention timestamp.
+- **Computer Diagnosis Skill Stability**: Repaired the bundled `computer-diagnosis` skill documentation and hardened system info collection so environments without CPU frequency reporting no longer break the diagnostic workflow.
+
+### 🔧 Internal
+
+- **UI and Platform Polish**: Replaced lingering native title tooltips with proper accessible tooltip components, cached `Intl` formatter instances for smoother rendering, and refreshed supporting dependency / workflow plumbing for the release pipeline.
+- **Documentation Reorganization**: Split and reorganized architecture documentation so the growing docs set is easier to navigate and maintain.
+
+## [0.6.15] - 2026-03-22
+
+### 🚀 Features
+
+- **Expanded Bundled Skill Library**: Added the new `playbook-creator`, `computer-diagnosis`, and `deep-research-report` bundled skills, along with updated supporting references and templates, so agents ship with stronger guided workflows for structured planning and investigation tasks.
+
+### 🐛 Fixes
+
+- **Playbook Launch Reliability**: Restored the playbook list to the working card/group flow from `0.6.14`, so starting a playbook once again routes through the expected `playbookId` launch path instead of breaking from the list view.
+- **Agent Session Attachment Stability**: Fixed the agent attachment provider wiring so active agent chats no longer crash with `useAgentSessionState must be used within AgentSessionProvider` while loading session-scoped attachments.
+- **Session Attention Acknowledgement Race**: Hardened session viewed-state persistence so acknowledging a session no longer clears newer attention events that arrive between the read and update steps.
+
+### 🔧 Internal
+
+- **Release Validation Cleanup**: Cleaned up Unix-gated session workspace cwd test imports so Windows release validation no longer emits avoidable Rust warnings during the patch pipeline.
+
 ## [0.6.14] - 2026-03-22
 
 ### 🐛 Fixes
@@ -1363,7 +1396,7 @@ All notable changes to this project will be documented in this file.
 
 - **Content Store Context Enhancement**: Improved agent visibility of uploaded files through enhanced service context
   - **Recent Uploads Tracking**: System prompt now displays last 10 uploaded files with IDs and metadata
-  - **Direct File Access**: Agents can immediately use `contentId` without calling `listContent()`
+  - **Direct File Access**: Agents can immediately use `contentId` without calling `list()`
   - **Smart Truncation Logic**: Fixed misleading truncation messages - now distinguishes between preview truncation and file-end detection
   - **Enhanced Error Messages**: Out-of-bounds errors now include actual file size and valid range suggestions
   - **Content ID Normalization**: Auto-adds `content_` prefix to IDs for flexible usage

@@ -17,14 +17,12 @@ fn create_tool() -> MCPTool {
     MCPTool {
         name: "create".to_string(),
         title: Some("Create Agent Configuration".to_string()),
-        description: "Create a new named agent configuration (assistant) with a specific system prompt, model settings, and tool capabilities.".to_string(),
+        description: "Create a new named agent configuration (assistant) with a specific system prompt, temperature, and tool capabilities. Model selection is controlled at session or global settings level, not here.".to_string(),
         input_schema: object_prop(
             vec![
                 ("name".to_string(), string_prop_required("Unique name for the agent configuration.")),
                 ("description".to_string(), string_prop(None, None, Some("Short description of what this agent does."))),
                 ("systemPrompt".to_string(), string_prop(None, None, Some("The core personality and instructions for the agent."))),
-                ("modelProvider".to_string(), string_prop(None, None, Some("LLM provider (e.g., 'openai', 'anthropic', 'ollama')."))),
-                ("modelName".to_string(), string_prop(None, None, Some("Specific model to use (e.g., 'gpt-4o', 'claude-3-5-sonnet')."))),
                 ("temperature".to_string(), number_prop(Some(0.0), Some(2.0), Some("Sampling temperature (0.0 to 2.0)."))),
                 ("builtinCapabilities".to_string(), array_schema(string_prop(None, None, None), Some("List of builtin service aliases to allow (e.g. ['workspace', 'browser', 'planning'])."))),
                 ("externalMcpServers".to_string(), array_schema(string_prop(None, None, None), Some("List of external MCP server IDs to allow (e.g. ['github', 'google-search'])."))),
@@ -61,7 +59,7 @@ fn update_tool() -> MCPTool {
     MCPTool {
         name: "update".to_string(),
         title: Some("Update Agent Configuration".to_string()),
-        description: "Update an existing agent configuration (assistant) including its system prompt and tool access.".to_string(),
+        description: "Update an existing agent configuration (assistant) including its system prompt, temperature, and tool access. Model selection is controlled elsewhere.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -79,14 +77,6 @@ fn update_tool() -> MCPTool {
                 (
                     "systemPrompt".to_string(),
                     string_prop(None, None, Some("New system instructions.")),
-                ),
-                (
-                    "modelProvider".to_string(),
-                    string_prop(None, None, Some("Change LLM provider.")),
-                ),
-                (
-                    "modelName".to_string(),
-                    string_prop(None, None, Some("Change model name.")),
                 ),
                 (
                     "temperature".to_string(),
@@ -110,9 +100,9 @@ fn start_session_tool() -> MCPTool {
         description: "Spawn a new sub-agent session to delegate a specific task. Returns immediately with session info. Use checkSession to wait for the result.".to_string(),
         input_schema: object_prop(
             vec![
-                ("agentId".to_string(), string_prop_required("The exact ID (UUID) or exact name of the agent configuration to use. If you encounter an 'Assistant not found' error, use the tool `list` with type='configs' to find available agent IDs and names.")),
+                ("agentId".to_string(), string_prop_required("Exact agent configuration ID to use. Call `list(type='configs')` first, then copy the returned ID. Do not put the agent name here.")),
                 ("task".to_string(), string_prop_required("The specific task description for the sub-agent.")),
-                ("contextFiles".to_string(), array_schema(string_prop(None, None, None), Some("Optional: File paths from your workspace to share with the sub-agent."))),
+                ("workspaceOverride".to_string(), string_prop(None, None, Some("Optional absolute workspace path for the child session. Use this when the sub-agent must operate in a specific workspace instead of its default isolated workspace."))),
                 ("waitForResult".to_string(), boolean_prop(Some("If true, blocks until the agent finishes and returns the final answer (max wait: 1 hour). Default: false."))),
             ],
             vec!["agentId".to_string(), "task".to_string()],

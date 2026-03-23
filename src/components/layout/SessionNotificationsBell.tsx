@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Bell } from 'lucide-react';
+import type { DropdownMenuItemProps } from '@radix-ui/react-dropdown-menu';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../ui/badge';
@@ -26,12 +28,31 @@ function formatSessionName(
 export function SessionNotificationsBell() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
   const { markSessionViewed } = useAgentSessionListActions();
   const { notificationSessions, unreadNotificationCount } =
     useAgentSessionListState();
 
+  const handleSessionSelect = (
+    sessionId: string,
+  ): NonNullable<DropdownMenuItemProps['onSelect']> => {
+    return (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      setOpen(false);
+      void (async () => {
+        try {
+          await markSessionViewed(sessionId);
+        } finally {
+          navigate(`/agent/${sessionId}`);
+        }
+      })();
+    };
+  };
+
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -72,10 +93,7 @@ export function SessionNotificationsBell() {
               <DropdownMenuItem
                 key={session.id}
                 className="items-start py-2"
-                onSelect={() => {
-                  void markSessionViewed(session.id).catch(() => undefined);
-                  navigate(`/agent/${session.id}`);
-                }}
+                onSelect={handleSessionSelect(session.id)}
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <div className="truncate font-medium">{name}</div>

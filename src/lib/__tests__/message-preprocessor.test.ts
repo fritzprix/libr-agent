@@ -84,8 +84,11 @@ describe('message-preprocessor', () => {
 
       expect(text).toContain('<attachment_0>');
       expect(text).toContain('"filename": "test.txt"');
-      expect(text).toContain('readContent(sessionId: "session-1", contentId: "content-1"');
-      expect(text).toContain('searchContent');
+      expect(text).toContain(
+        'read(contentId: "content-1", fromLine: 1, toLine: 200)',
+      );
+      expect(text).toContain('search(query: "your search query")');
+      expect(text).toContain('list()');
     });
 
     it('should append attachment hints for Workspace files', async () => {
@@ -111,7 +114,10 @@ describe('message-preprocessor', () => {
       const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('workspace__readFile(path: "/path/to/file.txt")');
-      expect(text).toContain('listContent(sessionId: "session-1")');
+      expect(text).toContain('list()');
+      expect(text).toContain(
+        'read(contentId: <id from list>, fromLine: 1, toLine: 200)',
+      );
     });
 
     it('should append attachment hints for metadata-only files', async () => {
@@ -136,7 +142,7 @@ describe('message-preprocessor', () => {
       const text = (processed.content[1] as MCPTextContent).text;
 
       expect(text).toContain('File metadata only');
-      expect(text).toContain('listContent(sessionId: "session-1")');
+      expect(text).toContain('list()');
     });
 
     it('should handle multiple attachments', async () => {

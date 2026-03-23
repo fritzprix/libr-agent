@@ -17,9 +17,11 @@ import { useBackendResource } from './GlobalEventContext';
 import { AgentSession, CreateSessionParams } from '@/models/agent';
 import { getAssistant } from '@/lib/backend/assistants';
 import { Assistant } from '@/models/chat';
+import { createId } from '@paralleldrive/cuid2';
 import { useSettings } from '@/context/SettingsContext';
 import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 import { useLLMService } from '@/context/LLMServiceContext';
+import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   AgentSessionMetadata,
   CreateAgentSessionRequest,
@@ -303,7 +305,6 @@ export function AgentSessionListProvider({
         };
 
         // Generate session ID
-        const { createId } = await import('@paralleldrive/cuid2');
         const sessionId = createId();
 
         const request: CreateAgentSessionRequest = {
@@ -502,7 +503,7 @@ export function AgentSessionListProvider({
       setSessions((prev) =>
         prev.map((session) =>
           session.id === sessionId
-            ? { ...session, lastViewedAt: viewedAt }
+            ? applyViewedAtToSession(session, viewedAt)
             : session,
         ),
       );
@@ -619,14 +620,20 @@ export function AgentSessionListProvider({
           setSessions((prev) =>
             prev.map((session) =>
               session.id === payload.sessionId
-                ? {
-                    ...session,
-                    lastAttentionAt: attentionAt,
-                    lastAttentionReason: 'recurringStop',
-                    lastViewedAt: shouldMarkViewed
-                      ? attentionAt
-                      : session.lastViewedAt,
-                  }
+                ? shouldMarkViewed
+                  ? applyViewedAtToSession(
+                      {
+                        ...session,
+                        lastAttentionAt: attentionAt,
+                        lastAttentionReason: 'recurringStop',
+                      },
+                      attentionAt,
+                    )
+                  : {
+                      ...session,
+                      lastAttentionAt: attentionAt,
+                      lastAttentionReason: 'recurringStop',
+                    }
                 : session,
             ),
           );
@@ -654,18 +661,44 @@ export function AgentSessionListProvider({
             return;
           }
 
+          const attentionAt = new Date();
+          const shouldMarkViewed = payload.sessionId === activeSessionId;
           pendingApprovalKeysRef.current.add(pendingApprovalKey);
           setSessions((prev) =>
             prev.map((session) =>
               session.id === payload.sessionId
-                ? {
-                    ...session,
-                    pendingApprovalCount:
-                      (session.pendingApprovalCount ?? 0) + 1,
-                  }
+                ? shouldMarkViewed
+                  ? applyViewedAtToSession(
+                      {
+                        ...session,
+                        lastAttentionAt: attentionAt,
+                        lastAttentionReason: 'pendingApproval',
+                        pendingApprovalCount:
+                          (session.pendingApprovalCount ?? 0) + 1,
+                      },
+                      attentionAt,
+                    )
+                  : {
+                      ...session,
+                      lastAttentionAt: attentionAt,
+                      lastAttentionReason: 'pendingApproval',
+                      pendingApprovalCount:
+                        (session.pendingApprovalCount ?? 0) + 1,
+                    }
                 : session,
             ),
           );
+
+          if (shouldMarkViewed) {
+            void markSessionViewed(payload.sessionId, attentionAt).catch(
+              (err) => {
+                logger.error(
+                  'Failed to mark active session viewed after approval request',
+                  err,
+                );
+              },
+            );
+          }
         }
       });
     };
@@ -679,11 +712,7 @@ export function AgentSessionListProvider({
   const notificationSessions = useMemo(
     () =>
       sessions
-        .filter(
-          (session) =>
-            hasUnreadAttention(session) ||
-            (session.pendingApprovalCount ?? 0) > 0,
-        )
+        .filter((session) => hasUnreadAttention(session))
         .slice()
         .sort((left, right) => {
           const leftPending = left.pendingApprovalCount ?? 0;

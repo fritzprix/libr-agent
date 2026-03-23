@@ -145,10 +145,10 @@ pub struct AgentSession {
     /// Shared with the frontend via CompletionRequest so streaming and persisted messages match.
     pub expected_response_id: Arc<RwLock<Option<String>>>,
 
-    /// Cached stable system prompt prefix (sections 1–3: agent identity, workspace
-    /// instructions, session context). These sections are immutable within a session
-    /// so we build them once and reuse on every LLM call to avoid redundant JSON
-    /// parsing and filesystem I/O.
+    /// Cached stable system prompt prefix (sections 1–4: agent identity, persona,
+    /// workspace instructions, session context). These sections are immutable within
+    /// a session so we build them once and reuse on every LLM call to avoid redundant
+    /// JSON parsing and filesystem I/O.
     pub cached_stable_prompt: Arc<RwLock<Option<String>>>,
 }
 

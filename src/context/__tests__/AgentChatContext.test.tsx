@@ -302,6 +302,63 @@ describe('AgentChatContext', () => {
       });
     });
 
+    it('should resume workflow when pending messages remain after returning to idle', async () => {
+      const deferred = createDeferred<{ success: boolean }>();
+      (safeInvoke as ReturnType<typeof vi.fn>).mockImplementation(
+        (command: string) => {
+          if (command === 'agent_send_message') {
+            return deferred.promise;
+          }
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      const mockResumeSession = vi.fn().mockResolvedValue(undefined);
+      (useAgentSessionActions as ReturnType<typeof vi.fn>).mockReturnValue({
+        setError: mockSetError,
+        addMessage: vi.fn(),
+        resumeSession: mockResumeSession,
+      });
+
+      const pendingMessage: Message = {
+        id: 'msg-pending-idle',
+        sessionId: 'test-session',
+        threadId: 'test-session',
+        role: 'user',
+        content: [{ type: 'text', text: 'Process me after idle' }],
+        createdAt: new Date(),
+      };
+
+      const { result, rerender } = renderHook(() => useAgentChat(), {
+        wrapper: TestWrapper,
+      });
+
+      await act(async () => {
+        void result.current.submit(pendingMessage);
+      });
+
+      await waitFor(() => {
+        expect(result.current.pendingMessages).toEqual([pendingMessage]);
+      });
+
+      (useAgentSessionState as ReturnType<typeof vi.fn>).mockReturnValue({
+        session: { id: 'test-session', name: 'Test Session' },
+        messages: mockMessages,
+        isSessionLoading: false,
+        error: null,
+        llmError: null,
+        workflowStatus: 'idle',
+      });
+
+      rerender();
+
+      await waitFor(() => {
+        expect(mockResumeSession).toHaveBeenCalledTimes(1);
+      });
+
+      deferred.resolve({ success: true });
+    });
+
     it('should handle submit errors', async () => {
       (safeInvoke as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('Submit failed'),

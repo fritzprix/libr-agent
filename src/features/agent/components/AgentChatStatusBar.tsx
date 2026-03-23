@@ -28,6 +28,8 @@ import { toast } from 'sonner';
 import { isBuiltinTool } from '@/lib/tool-call-utils';
 import { useTranslation } from 'react-i18next';
 import { mergeDisplayTokenUsage } from './token-metrics';
+import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui';
 import { useSettings } from '@/context/SettingsContext';
 
 const logger = getLogger('AgentChatStatusBar');
@@ -419,16 +421,31 @@ export function AgentChatStatusBar() {
 
           <div className="flex items-center gap-2">
             <span className="text-xs">{t('agent.statusBar.toolsLabel')}</span>
-            <button
-              onClick={() => setShowToolsModal(true)}
-              className={`text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${getToolsColor()}`}
-              title={
-                toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')
-              }
-              disabled={toolsLoading}
-            >
-              {getToolsIcon()} {getToolsDisplayText()}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'inline-block',
+                    toolsLoading && 'cursor-not-allowed',
+                  )}
+                >
+                  <button
+                    onClick={() => setShowToolsModal(true)}
+                    className={cn(
+                      'text-xs flex items-center gap-1 cursor-pointer hover:underline transition-colors rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                      getToolsColor(),
+                      toolsLoading && 'opacity-50',
+                    )}
+                    disabled={toolsLoading}
+                  >
+                    {getToolsIcon()} {getToolsDisplayText()}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {toolsError ? toolsError : t('agent.statusBar.viewToolsTitle')}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>

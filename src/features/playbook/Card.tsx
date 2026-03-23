@@ -20,6 +20,16 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
+function getPlaybookDateFormatter(locale: string): Intl.DateTimeFormat {
+  let formatter = dateFormatterCache.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale);
+    dateFormatterCache.set(locale, formatter);
+  }
+  return formatter;
+}
+
 interface PlaybookCardProps {
   playbook: Playbook & { id: string; createdAt: Date };
   assistantName: string;
@@ -90,7 +100,7 @@ export function PlaybookCard({
         </CardTitle>
         <CardDescription className="line-clamp-1 text-xs">
           {t('playbook.card.created', {
-            date: playbook.createdAt.toLocaleDateString(i18n.language),
+            date: getPlaybookDateFormatter(i18n.language).format(playbook.createdAt),
           })}
         </CardDescription>
       </CardHeader>

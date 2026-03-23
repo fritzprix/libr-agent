@@ -129,3 +129,26 @@ export function buildDescendantStatusCounts<T extends AgentSession>(
 
   return counts;
 }
+
+export function applyViewedAtToSession<T extends AgentSession>(
+  session: T,
+  viewedAt: Date,
+): T {
+  const nextLastViewedAt =
+    !session.lastViewedAt || viewedAt.getTime() > session.lastViewedAt.getTime()
+      ? viewedAt
+      : session.lastViewedAt;
+  const shouldClearAttention = Boolean(
+    session.lastAttentionAt &&
+      nextLastViewedAt.getTime() >= session.lastAttentionAt.getTime(),
+  );
+
+  return {
+    ...session,
+    lastViewedAt: nextLastViewedAt,
+    lastAttentionAt: shouldClearAttention ? undefined : session.lastAttentionAt,
+    lastAttentionReason: shouldClearAttention
+      ? undefined
+      : session.lastAttentionReason,
+  };
+}

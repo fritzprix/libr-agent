@@ -108,7 +108,7 @@ export interface AgentResponse<T = unknown> {
 
 export type AgentRuntimeError = MessageError;
 
-export type SessionAttentionReason = 'recurringStop';
+export type SessionAttentionReason = 'recurringStop' | 'pendingApproval';
 
 export type WorkflowCompletionReason =
   | 'natural'
