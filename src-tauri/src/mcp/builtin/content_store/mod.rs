@@ -63,13 +63,11 @@ impl BuiltinMCPServer for ContentStoreServer {
             // These are intentionally NOT included in `tools_static()`, so agents cannot
             // discover or call them, but session-bound internal callers (via proxy) can
             // still reuse the same server instance and keep in-memory state synchronized.
-            "addContent" => operations::add_content(self, args, &target_session_id).await,
-            "deleteContent" => operations::delete_content(self, args, &target_session_id).await,
-            "listContent" => queries::list_content(self, args, &target_session_id).await,
-            "readContent" => queries::read_content(self, args, &target_session_id).await,
-            "searchContent" => {
-                queries::keyword_similarity_search(self, args, &target_session_id).await
-            }
+            "add" => operations::add_content(self, args, &target_session_id).await,
+            "delete" => operations::delete_content(self, args, &target_session_id).await,
+            "list" => queries::list_content(self, args, &target_session_id).await,
+            "read" => queries::read_content(self, args, &target_session_id).await,
+            "search" => queries::keyword_similarity_search(self, args, &target_session_id).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

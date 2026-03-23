@@ -47,7 +47,7 @@
         "id": "call_nygbqghg",
         "type": "function",
         "function": {
-          "name": "builtin_content_store__readContent",
+          "name": "attachments__read",
           "arguments": "{\"contentId\":\"tm9tw2rhglgbh094l9901y1v\",\"fromLine\":1,\"toLine\":100}"
         }
       }
@@ -72,7 +72,7 @@
     "content": [
       {
         "type": "text",
-        "text": "✗ Content 'tm9tw2rhglgbh094l9901y1v' not found\n\n💡 Next Steps:\n1. Use listContent to see available content\n2. Verify the content ID is correct\n3. Use keywordSimilaritySearch to find content by keywords"
+        "text": "✗ Content 'tm9tw2rhglgbh094l9901y1v' not found\n\n💡 Next Steps:\n1. Use list to see available content\n2. Verify the content ID is correct\n3. Use search to find content by keywords"
       }
     ],
     "tool_calls": null,
@@ -104,7 +104,7 @@
         "id": "call_n6so44st",
         "type": "function",
         "function": {
-          "name": "builtin_content_store__listContent",
+          "name": "attachments__list",
           "arguments": "{}"
         }
       }
@@ -129,7 +129,7 @@
     "content": [
       {
         "type": "text",
-        "text": "✓ Found 1 of 1 content items\n\n[1] ID: content_tm9tw2rhglgbh094l9901y1v\n    Title: playlist.txt\n    Size: 813 bytes, 23 lines\n    Line Range: 1-23\n    Preview: [ ] Here - Young Kay (김민규)\n[ ] Gone - JUSTHIS (저스디스)\n[ ] 아퍼 - 기리보이 (Giriboy)\n[ ]...\n    Created: 2026-01-10T12:47:53.191508391+00:00\n\n💡 Next: Use readContent with a contentId from above to view full contents"
+        "text": "✓ Found 1 of 1 content items\n\n[1] ID: content_tm9tw2rhglgbh094l9901y1v\n    Title: playlist.txt\n    Size: 813 bytes, 23 lines\n    Line Range: 1-23\n    Preview: [ ] Here - Young Kay (김민규)\n[ ] Gone - JUSTHIS (저스디스)\n[ ] 아퍼 - 기리보이 (Giriboy)\n[ ]...\n    Created: 2026-01-10T12:47:53.191508391+00:00\n\n💡 Next: Use read with a contentId from above to view full contents"
       }
     ],
     "tool_calls": null,

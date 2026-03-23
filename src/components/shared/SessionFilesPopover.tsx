@@ -53,7 +53,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
 
         const result = await agentCallBuiltinTool(
           file.sessionId,
-          'attachments__readContent',
+          'attachments__read',
           {
             sessionId: file.sessionId,
             contentId: file.contentId,
@@ -87,7 +87,7 @@ export function SessionFilesPopover({ sessionId }: SessionFilesPopoverProps) {
           content = 'File content not available';
         }
 
-        // Refined logic based on expected Rust output for readContent
+        // Refined logic based on expected Rust output for read
         // The Rust `read_content` returns a TextContent block with the file data.
         // Or if it was structured, it might return a JSON string in text.
         if (

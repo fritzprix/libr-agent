@@ -1,31 +1,33 @@
 ---
 name: document-to-markdown
-description: "Extracts and converts various document formats (PDF, DOCX, PPTX, HTML) into structured, machine-readable Markdown. Use this skill when you need to extract the raw text content of a document without distortion, preserving its original structure (headings, paragraphs, slides) for analysis or RAG purposes."
+description: "Extracts and converts various document formats (PDF, DOCX, PPTX, XLSX, HTML, Images, Audio, ZIP) into structured, machine-readable Markdown using Microsoft's MarkItDown. Use this skill when you need to extract the raw text content of a document without distortion, preserving its original structure (headings, tables, lists, slides) for analysis or RAG purposes."
 ---
 
 # Document to Markdown
 
-This skill provides deterministic workflows for converting various document formats into structured Markdown text without summarizing or altering the original content.
+This skill provides a unified, deterministic workflow for converting various document formats into structured Markdown text without summarizing or altering the original content. It leverages Microsoft's **MarkItDown** library.
 
-## Supported Formats & Required Tools
+## Supported Formats
+- **Documents**: PDF (.pdf), Word (.docx), PowerPoint (.pptx), Excel (.xlsx)
+- **Data & Web**: HTML, CSV, JSON, XML
+- **Media**: Images (EXIF metadata and OCR), Audio (Speech transcription)
+- **Archives**: ZIP files
 
-Use the following tools and libraries based on the document extension:
-- **PDF (`.pdf`)**: Use `pymupdf` via provided Python scripts.
-- **Word (`.docx`)**: Use `pandoc` (CLI).
-- **PowerPoint (`.pptx`)**: Use `python-pptx` via provided Python scripts.
+## Required Tools
 
----
+Ensure the markitdown library is installed in your Python environment:
+```bash
+pip install "markitdown[all]"
+```
 
-## Conversion Workflows
+## Conversion Workflow
 
-Execute the specific conversion workflows by reading the reference files below. Do not attempt to parse binary files directly; always rely on these deterministic scripts and tools.
+Instead of format-specific scripts, use the unified markitdown CLI or Python API for all supported formats.
 
-- **PDF Conversion**: Read [references/pdf.md](references/pdf.md) and execute `scripts/pdf_to_md.py`.
-- **DOCX Conversion**: Read [references/docx.md](references/docx.md) for Pandoc commands.
-- **PPTX Conversion**: Read [references/pptx.md](references/pptx.md) and execute `scripts/pptx_to_md.py`.
+Read [references/conversion_guide.md](references/conversion_guide.md) for detailed usage instructions.
 
 ## Core Execution Principles
 
-1. **Enforce Encoding**: Always explicitly set `utf-8` encoding in scripts and commands to prevent character corruption (especially for Korean and special characters).
-2. **Preserve Original Text**: Do not allow the LLM to hallucinate, summarize, or alter the extracted text. Rely strictly on the script/parser output.
-3. **Maintain Structure & Readability**: Insert markdown horizontal rules (`---`) when transitioning between pages or slides to help LLMs and humans easily identify document segments.
+1. **Unified Tooling**: Always use markitdown for document extraction. Do not attempt to parse binary files manually or use legacy tools like Pandoc or PyMuPDF unless specifically requested.
+2. **Preserve Original Text**: Do not allow the LLM to hallucinate, summarize, or alter the extracted text. Rely strictly on the parser output.
+3. **Structure & Readability**: MarkItDown natively preserves headings, tables, and lists. Use its output directly for LLM ingestion.

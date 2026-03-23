@@ -457,7 +457,7 @@ async fn test_phase3_all_servers_integration() {
     let knowledge_result = manager
         .call_tool(
             &session_id,
-            "attachments__addContent",
+            "attachments__add",
             json!({
                 "title": "Test Knowledge",
                 "content": "Integration test content",

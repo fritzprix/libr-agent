@@ -1,8 +1,8 @@
-# Analysis: Byte-Level Truncation in Content Store `readContent`
+# Analysis: Byte-Level Truncation in Content Store `read`
 
 ## Question
 
-Why does `readContent` have byte-level truncation (2000 bytes) when the operation works with line-based units?
+Why does `read` have byte-level truncation (2000 bytes) when the operation works with line-based units?
 
 ## Answer: It's for TEXT DISPLAY, not DATA RETRIEVAL
 
@@ -86,7 +86,7 @@ Imagine reading a 5000-line file:
 
 ```typescript
 // Agent calls:
-readContent({ contentId: "xyz", fromLine: 1, toLine: 5000 })
+read({ contentId: "xyz", fromLine: 1, toLine: 5000 })
 
 // Returns:
 {
@@ -119,7 +119,7 @@ The report is **correct** that the truncation logic is problematic, but for a di
 
 ```rust
 // Agent requests lines 1-86 of an 86-line file
-readContent({ fromLine: 1, toLine: 86 })
+read({ fromLine: 1, toLine: 86 })
 
 // File content: 86 lines = 4441 bytes
 // Agent receives ALL 86 lines in structured_content.content

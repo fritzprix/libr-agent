@@ -96,10 +96,10 @@ export function AgentResourceAttachmentProvider({
       );
 
       try {
-        // Use Agent V2 session-specific proxy to call listContent
+        // Use Agent V2 session-specific proxy to call list
         const response = await agentCallBuiltinTool<{
           contents: ContentStoreItem[];
-        }>(sessionId, 'attachments__listContent', {
+        }>(sessionId, 'attachments__list', {
           sessionId,
         });
 
@@ -170,7 +170,7 @@ export function AgentResourceAttachmentProvider({
   );
 
   // Track session ID for caching store IDs
-  // NOTE: Content stores are auto-created on first use (addContent/listContent)
+  // NOTE: Content stores are auto-created on first use (add/list)
   // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
 
@@ -275,7 +275,7 @@ export function AgentResourceAttachmentProvider({
         throw new Error('Session not available');
       }
 
-      // Store will be auto-created on first addContent call
+      // Store will be auto-created on first add call
       const storeId = sessionId;
 
       let fileUrl: string;
@@ -441,7 +441,7 @@ export function AgentResourceAttachmentProvider({
       }
 
       try {
-        // Use session-specific saveAgentFile instead of global server.addContent
+        // Use session-specific saveAgentFile instead of global server.add
         // This ensures the file is associated with the correct agent session
         const result = (await saveAgentFile(storeId, actualFilename, {
           content: undefined, // Content is handled via fileUrl or direct upload

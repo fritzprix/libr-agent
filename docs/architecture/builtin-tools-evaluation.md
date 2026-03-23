@@ -182,7 +182,7 @@ This evaluation assesses all LibrAgent built-in tools against the comprehensive 
 
 ### 5. Content Store Tools (`content_store/`) - 5 tools
 
-**Tools:** addContent, listContent, readContent, keywordSimilaritySearch, deleteContent
+**Tools:** add, list, read, search, delete
 
 #### ✅ Strengths
 
@@ -204,8 +204,8 @@ This evaluation assesses all LibrAgent built-in tools against the comprehensive 
    - No duplicate content detection
 
 3. **Tool chaining unclear**
-   - addContent doesn't suggest keywordSimilaritySearch
-   - Search results don't suggest readContent
+   - add doesn't suggest search
+   - Search results don't suggest read
    - No workflow for bulk operations
 
 #### 📊 Compliance Metrics

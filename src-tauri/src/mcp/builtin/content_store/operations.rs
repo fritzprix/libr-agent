@@ -18,7 +18,7 @@ pub async fn add_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Invalid addContent parameters: {e}"),
+                format!("Invalid add parameters: {e}"),
                 ToolGroup::ContentStore,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
@@ -247,8 +247,8 @@ pub async fn add_content(
             }
         ),
         vec![
-            format!("Use readContent with contentId='{}' to view the full content", content_item.id),
-            "Use searchContent to find content by keywords".to_string(),
+            format!("Use read with contentId='{}' to view the full content", content_item.id),
+            "Use search to find content by keywords".to_string(),
         ],
     );
 
@@ -275,7 +275,7 @@ pub async fn delete_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
-                format!("Invalid deleteContent parameters: {e}"),
+                format!("Invalid delete parameters: {e}"),
                 ToolGroup::ContentStore,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
@@ -310,7 +310,7 @@ pub async fn delete_content(
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
-            "Use listContent to see content in current session".to_string(),
+            "Use list to see content in current session".to_string(),
             "Switch to the session that owns this content".to_string(),
             "Verify the content ID is correct".to_string(),
         ])
@@ -328,7 +328,7 @@ pub async fn delete_content(
         .with_guidance(vec![
             "Check database connectivity".to_string(),
             "Verify the content ID is correct".to_string(),
-            "Use listContent to see available content".to_string(),
+            "Use list to see available content".to_string(),
         ])
         .to_mcp_result());
     }
@@ -349,7 +349,7 @@ pub async fn delete_content(
 
     let hint = SuccessHint::new(
         format!("Content '{}' deleted successfully", args.content_id),
-        vec!["Use listContent to see remaining content".to_string()],
+        vec!["Use list to see remaining content".to_string()],
     );
 
     Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({
