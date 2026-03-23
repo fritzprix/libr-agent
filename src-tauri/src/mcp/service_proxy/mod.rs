@@ -522,6 +522,47 @@ impl MCPServiceProxy {
         &self.session_managers.stdio
     }
 
+    /// Call a builtin server method directly through the session-bound proxy instance.
+    ///
+    /// This is the **internal UI-only write path** for operations that must not be
+    /// exposed as agent tools (e.g. add/delete attachment). Bypassing the agent-visible
+    /// tool surface while still routing through the same session-bound server instance
+    /// ensures that `recent_uploads` tracking, BM25 search index, and all other
+    /// in-memory state are kept in sync with subsequent agent reads (`listContent`,
+    /// `searchContent`).
+    ///
+    /// # Arguments
+    /// * `server_id` - Builtin server key (e.g. `"attachments"`)
+    /// * `method` - Method name dispatched to `BuiltinMCPServer::call_tool` (e.g. `"addContent"`)
+    /// * `args`   - JSON arguments forwarded verbatim
+    ///
+    /// # Errors
+    /// Returns `Err` if the server is not registered for this session, or if the
+    /// underlying `call_tool` returns an error.
+    pub async fn call_builtin_internal(
+        &self,
+        server_id: &str,
+        method: &str,
+        args: Value,
+    ) -> Result<super::types::MCPResult, String> {
+        let server = self.builtin_servers.get(server_id).ok_or_else(|| {
+            let available = self
+                .builtin_servers
+                .keys()
+                .map(|k| format!("'{}'", k))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Built-in server '{}' not enabled in this session (available: [{}])",
+                server_id, available
+            )
+        })?;
+
+        server
+            .call_tool(method, args, Some(self.session_id.clone()))
+            .await
+    }
+
     /// Collect service contexts from all builtin servers
     ///
     /// Queries all registered builtin servers in parallel. Servers that report

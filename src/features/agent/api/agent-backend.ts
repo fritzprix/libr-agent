@@ -33,19 +33,16 @@ export async function saveAgentFile(
     metadata?: AddContentMetadata;
   },
 ): Promise<unknown> {
-  // Note: The tool name must be namespaced for the proxy: {server_name}__{tool_name}
-  // Server ID is 'attachments' in extract_builtin_tool_ids (tools.rs)
-  const response = await agentCallBuiltinTool(
+  const response = await safeInvoke<MCPResult>('agent_add_attachment', {
     sessionId,
-    'attachments__addContent',
-    {
+    args: {
       ...args,
       metadata: {
         ...args.metadata,
-        filename: fileName, // Ensure filename is passed in metadata
+        filename: fileName,
       },
     },
-  );
+  });
 
   // Unwrap structuredContent if present (std MCPResult format)
   if (
@@ -57,4 +54,16 @@ export async function saveAgentFile(
   }
 
   return response;
+}
+
+export async function deleteAgentFile(
+  sessionId: string,
+  contentId: string,
+): Promise<MCPResult> {
+  return safeInvoke<MCPResult>('agent_delete_attachment', {
+    sessionId,
+    args: {
+      contentId,
+    },
+  });
 }

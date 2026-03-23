@@ -152,6 +152,94 @@ impl AgentService {
         }
     }
 
+    /// Save an attachment to the session-scoped attachment store through an internal UI-only API.
+    ///
+    /// Routes through the session-bound `MCPServiceProxy` so that the same
+    /// `ContentStoreServer` instance used by the agent is updated — keeping
+    /// `recent_uploads` tracking and the BM25 search index in sync.
+    pub async fn add_attachment(
+        session_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        use crate::state::get_mcp_service_proxy_manager;
+
+        let proxy_manager = get_mcp_service_proxy_manager();
+
+        // Attempt to route through the live session proxy (normal case).
+        if let Some(proxy) = proxy_manager.get_proxy(&session_id).await {
+            let result = proxy
+                .call_builtin_internal("attachments", "addContent", args)
+                .await?;
+            return serde_json::to_value(result)
+                .map_err(|e| format!("Failed to serialize MCPResult: {}", e));
+        }
+
+        // Fallback: session proxy not yet created (e.g. file attached before first
+        // message sends). Create a temporary ContentStoreServer backed by the
+        // global DB connection so the data is persisted correctly.
+        log::debug!(
+            "No proxy for session '{}'; falling back to direct ContentStoreServer for add_attachment",
+            session_id
+        );
+        use crate::mcp::builtin::content_store::ContentStoreServer;
+        use crate::state::get_database_connection;
+        use std::sync::Arc;
+
+        let session_manager =
+            get_session_manager().map_err(|e| format!("SessionManager not initialized: {}", e))?;
+        let db = get_database_connection();
+        let server = ContentStoreServer::new_with_db(
+            session_id.clone(),
+            Arc::new(session_manager.clone()),
+            db.clone(),
+        )
+        .await?;
+        let result = server.add_attachment_internal(args, &session_id).await?;
+        serde_json::to_value(result).map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+    }
+
+    /// Delete an attachment from the session-scoped attachment store through an internal UI-only API.
+    ///
+    /// Routes through the session-bound `MCPServiceProxy` so that the same
+    /// `ContentStoreServer` instance used by the agent is updated — keeping all
+    /// in-memory state consistent.
+    pub async fn delete_attachment(
+        session_id: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        use crate::state::get_mcp_service_proxy_manager;
+
+        let proxy_manager = get_mcp_service_proxy_manager();
+
+        if let Some(proxy) = proxy_manager.get_proxy(&session_id).await {
+            let result = proxy
+                .call_builtin_internal("attachments", "deleteContent", args)
+                .await?;
+            return serde_json::to_value(result)
+                .map_err(|e| format!("Failed to serialize MCPResult: {}", e));
+        }
+
+        log::debug!(
+            "No proxy for session '{}'; falling back to direct ContentStoreServer for delete_attachment",
+            session_id
+        );
+        use crate::mcp::builtin::content_store::ContentStoreServer;
+        use crate::state::get_database_connection;
+        use std::sync::Arc;
+
+        let session_manager =
+            get_session_manager().map_err(|e| format!("SessionManager not initialized: {}", e))?;
+        let db = get_database_connection();
+        let server = ContentStoreServer::new_with_db(
+            session_id.clone(),
+            Arc::new(session_manager.clone()),
+            db.clone(),
+        )
+        .await?;
+        let result = server.delete_attachment_internal(args, &session_id).await?;
+        serde_json::to_value(result).map_err(|e| format!("Failed to serialize MCPResult: {}", e))
+    }
+
     /// Get service contexts for a session
     pub async fn get_service_contexts(
         session_id: String,

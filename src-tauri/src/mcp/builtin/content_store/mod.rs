@@ -59,13 +59,11 @@ impl BuiltinMCPServer for ContentStoreServer {
         let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
 
         match tool_name {
-            "addContent" => operations::add_content(self, args, &target_session_id).await,
             "listContent" => queries::list_content(self, args, &target_session_id).await,
             "readContent" => queries::read_content(self, args, &target_session_id).await,
             "searchContent" => {
                 queries::keyword_similarity_search(self, args, &target_session_id).await
             }
-            "deleteContent" => operations::delete_content(self, args, &target_session_id).await,
             _ => Err(format!("Unknown tool: {tool_name}")),
         }
     }

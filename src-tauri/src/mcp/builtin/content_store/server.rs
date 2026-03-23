@@ -101,25 +101,6 @@ impl ContentStoreServer {
     pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "addContent".to_string(),
-                title: Some("Add Content".to_string()),
-                description: "Add content entry (text or file) to the content store".to_string(),
-                input_schema: serde_json::from_value(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "title": { "type": "string", "description": "Title of the knowledge entry" },
-                        "content": { "type": "string", "description": "Content to save" },
-                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for the entry" },
-                        "fileUrl": { "type": "string", "description": "File URL (file://) to add" },
-                        "srcUrl": { "type": "string", "description": "Source URL" },
-                        "metadata": { "type": "object", "description": "Additional metadata" }
-                    },
-                    "required": ["content"]
-                })).unwrap(),
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
                 name: "listContent".to_string(),
                 title: Option::None,
                 description: "List content in a store with pagination".to_string(),
@@ -170,6 +151,22 @@ impl ContentStoreServer {
 
     pub fn tools(&self) -> Vec<MCPTool> {
         Self::tools_static()
+    }
+
+    pub async fn add_attachment_internal(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<crate::mcp::types::MCPResult, String> {
+        super::operations::add_content(self, args, session_id).await
+    }
+
+    pub async fn delete_attachment_internal(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<crate::mcp::types::MCPResult, String> {
+        super::operations::delete_content(self, args, session_id).await
     }
 
     pub(crate) async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {

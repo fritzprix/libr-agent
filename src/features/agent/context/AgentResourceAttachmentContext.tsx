@@ -18,6 +18,7 @@ import { AttachmentReference } from '@/models/chat';
 import {
   saveAgentFile,
   agentCallBuiltinTool,
+  deleteAgentFile,
 } from '@/features/agent/api/agent-backend';
 import { getMimeTypeFromFilename } from '@/lib/mime-utils';
 
@@ -576,9 +577,7 @@ export function AgentResourceAttachmentProvider({
         }
 
         try {
-          await agentCallBuiltinTool(sessionId, 'attachments__deleteContent', {
-            contentId: ref.contentId,
-          });
+          await deleteAgentFile(sessionId, ref.contentId);
           await mutateSessionFiles();
         } catch (error) {
           logger.error('Failed to remove file from server', {
