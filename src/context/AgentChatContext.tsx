@@ -5,6 +5,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -24,6 +25,14 @@ import type {
 } from '@/models/agent-ipc';
 
 const logger = getLogger('AgentChatContext');
+
+function toTimestamp(
+  value: Message['createdAt'] | Message['updatedAt'] | undefined,
+): number | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.getTime();
+  return typeof value === 'number' ? value : null;
+}
 
 /**
  * Service Context from Rust backend
@@ -122,7 +131,8 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   const { setError, resumeSession } = useAgentSessionActions();
 
-  const { streamingMessages, cancelCompletionRequest } = useLLMService();
+  const { streamingMessages, cancelCompletionRequest, clearStreamingMessage } =
+    useLLMService();
 
   // Service contexts state (still local to Chat view as it's UI context)
   const [serviceContexts, setServiceContexts] = useState<
@@ -131,6 +141,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
   // Pending messages queue for busy state
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
+  const pendingDrainRequestedRef = useRef(false);
 
   const enqueuePendingMessage = useCallback((message: Message) => {
     setPendingMessages((prev) => {
@@ -299,6 +310,83 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
     return streamingMessages.get(session.id);
   }, [session?.id, streamingMessages]);
 
+  useEffect(() => {
+    if (!session?.id || !isValidMessage(currentStreamingMessage)) {
+      return;
+    }
+
+    const lastPersistedAssistantMessage = [...sessionMessages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && !message.isStreaming);
+
+    if (!lastPersistedAssistantMessage) {
+      return;
+    }
+
+    const streamingTimestamp =
+      toTimestamp(currentStreamingMessage.updatedAt) ??
+      toTimestamp(currentStreamingMessage.createdAt);
+    const persistedTimestamp =
+      toTimestamp(lastPersistedAssistantMessage.updatedAt) ??
+      toTimestamp(lastPersistedAssistantMessage.createdAt);
+
+    if (
+      currentStreamingMessage.role === 'assistant' &&
+      streamingTimestamp !== null &&
+      persistedTimestamp !== null &&
+      persistedTimestamp >= streamingTimestamp
+    ) {
+      clearStreamingMessage(session.id);
+    }
+  }, [
+    clearStreamingMessage,
+    currentStreamingMessage,
+    session?.id,
+    sessionMessages,
+  ]);
+
+  useEffect(() => {
+    const shouldDrainPendingQueue =
+      !!session?.id &&
+      !isSessionLoading &&
+      workflowStatus === 'idle' &&
+      pendingMessages.length > 0;
+
+    if (!shouldDrainPendingQueue) {
+      pendingDrainRequestedRef.current = false;
+      return;
+    }
+
+    if (pendingDrainRequestedRef.current) {
+      return;
+    }
+
+    pendingDrainRequestedRef.current = true;
+    logger.info(
+      'Workflow idle with pending injected messages; resuming workflow',
+      {
+        sessionId: session.id,
+        pendingCount: pendingMessages.length,
+      },
+    );
+
+    resumeSession().catch((error) => {
+      pendingDrainRequestedRef.current = false;
+      logger.error(
+        'Failed to resume workflow for pending injected messages',
+        error,
+      );
+      setError(error instanceof Error ? error.message : String(error));
+    });
+  }, [
+    isSessionLoading,
+    pendingMessages.length,
+    resumeSession,
+    session?.id,
+    setError,
+    workflowStatus,
+  ]);
+
   /**
    * Merge persisted messages with streaming messages AND pending messages
    */
@@ -307,6 +395,9 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     const displayed = [...sessionMessages];
     const displayedIds = new Set(displayed.map((message) => message.id));
+    const lastPersistedAssistantMessage = [...sessionMessages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && !message.isStreaming);
 
     // Append pending messages (optimistic UI)
     if (pendingMessages.length > 0) {
@@ -322,7 +413,23 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
 
     // If there's a streaming message that's not yet in persisted messages
     if (isValidMessage(currentStreamingMessage)) {
-      if (!displayedIds.has(currentStreamingMessage.id)) {
+      const streamingTimestamp =
+        toTimestamp(currentStreamingMessage.updatedAt) ??
+        toTimestamp(currentStreamingMessage.createdAt);
+      const persistedTimestamp = lastPersistedAssistantMessage
+        ? (toTimestamp(lastPersistedAssistantMessage.updatedAt) ??
+          toTimestamp(lastPersistedAssistantMessage.createdAt))
+        : null;
+      const isSupersededByPersistedAssistant =
+        currentStreamingMessage.role === 'assistant' &&
+        streamingTimestamp !== null &&
+        persistedTimestamp !== null &&
+        persistedTimestamp >= streamingTimestamp;
+
+      if (
+        !displayedIds.has(currentStreamingMessage.id) &&
+        !isSupersededByPersistedAssistant
+      ) {
         // Show streaming message alongside persisted messages
         displayed.push(currentStreamingMessage);
       }

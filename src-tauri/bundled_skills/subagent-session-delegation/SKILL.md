@@ -36,7 +36,7 @@ Avoid delegation when the child must rely on live parent-only state, such as:
 - the parent's temporary workspace files
 - the parent's workspace `agents.md` / `CLAUDE.md` instructions
 - workspace-local `skills/` content from the parent's workspace
-- any behavior that assumes `contextFiles` is wired end-to-end
+- any behavior that assumes random parent context is implicitly copied into the child
 
 If the work depends on any of those, delegation is usually the wrong move unless you can explicitly recreate that context for the child.
 
@@ -53,10 +53,10 @@ Assume these rules:
 
 Important limitations:
 
-- Do **not** assume `agent.md` exists. The recognized workspace instruction filenames are `agents.md`, `AGENTS.md`, `soul.md`, `CLAUDE.md`, and `GEMINI.md`.
-- Only the first non-empty workspace instruction file is loaded.
-- Workspace instruction content is cached for the session lifetime until the stable prompt cache is invalidated.
-- `contextFiles` is present in the `startSession` tool schema but is not currently accepted by the server create-session request, so do not rely on it.
+- Do **not** assume `agent.md` exists. Workspace behavior instructions are loaded from the first non-empty file among `agents.md`, `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md`.
+- Persona / tone instructions are loaded separately from the first non-empty file among `.github/SOUL.md`, `SOUL.md`, `.github/soul.md`, and `soul.md`.
+- Both persona and workspace instruction content are cached for the session lifetime until the stable prompt cache is invalidated.
+- `startSession` can override the child workspace with `workspaceOverride`, but it does not magically copy parent files or prompt state.
 
 ## 3. Prepare the Handoff
 
@@ -83,8 +83,9 @@ Do **not** say "use the same workspace context as me" unless you have explicit p
 
 Use the builtin agent tools deliberately:
 
-- `list(type="configs")` to find the right assistant if you do not already know the exact ID or exact name
-- `startSession(agentId, task, waitForResult=false)` for asynchronous delegation
+- `list(type="configs")` to find the right assistant and prefer its returned ID
+- `startSession(agentId="...", task="...", waitForResult=false)` when you have the ID
+- `startSession(agentId="...", task="...", workspaceOverride="/absolute/path")` when the child must run in a specific workspace
 - `checkSession(sessionId)` to poll
 - `checkSession(sessionId, wait=true)` when you want to block until a terminal result
 - `messageToSession(sessionId, message)` to correct course or provide more input
@@ -112,7 +113,7 @@ Common causes:
 - the child is in a different workspace
 - the child used a different assistant than intended
 - the needed procedure lived only in the parent's workspace `skills/` directory
-- the parent relied on `contextFiles`, which is not currently honored by the backend create-session request
+- the parent assumed files or rules would be copied without using `workspaceOverride` or explicit task text
 - the parent changed `agents.md` mid-session and expected the existing session prompt cache to refresh automatically
 
 When in doubt, restate the missing context explicitly or stop delegating that particular subtask.

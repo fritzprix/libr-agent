@@ -257,8 +257,8 @@ pub async fn start_session(
         "request": task,
     });
 
-    if let Some(files) = args.get("contextFiles") {
-        body["contextFiles"] = files.clone();
+    if let Some(workspace_override) = args.get("workspaceOverride").and_then(|v| v.as_str()) {
+        body["workspacePath"] = Value::String(workspace_override.to_string());
     }
 
     let data: Value = match call_json(Method::POST, "/api/sessions", Some(body), None).await {

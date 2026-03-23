@@ -1,6 +1,6 @@
 ---
 name: skill-deployer
-description: Guide for deploying a newly created skill to the correct scope within LibrAgent. Use this skill after creating a skill with skill-creator, when you need to install it so it becomes available to an agent. Triggers: 'deploy skill', 'install skill', 'save skill to [scope]', 'make skill available', 'publish skill'.
+description: "Guide for deploying a newly created skill to the correct scope within LibrAgent. Use this skill after creating a skill with skill-creator, when you need to install it so it becomes available to an agent. Triggers: deploy skill, install skill, save skill to [scope], make skill available, publish skill."
 ---
 
 # Skill Deployer

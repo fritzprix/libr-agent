@@ -229,7 +229,7 @@ pub async fn create_assistant(server: &AssistantServer, args: Value) -> Result<M
                 ),
                 vec![
                     "List agent configurations to review the new configuration".to_string(),
-                    "Update the configuration if you want to refine its prompt, model, or capabilities"
+                    "Update the configuration if you want to refine its prompt, temperature, or capabilities"
                         .to_string(),
                 ],
             );

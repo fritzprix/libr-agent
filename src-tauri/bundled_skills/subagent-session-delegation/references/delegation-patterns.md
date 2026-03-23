@@ -11,8 +11,8 @@ Use this file when you need concrete task wording or when a delegated child sess
 | Child inherits parent workspace `agents.md` / `CLAUDE.md` | No | Copy critical rules into the handoff |
 | Child uses assistant-scoped skills from chosen assistant | Yes | Pick the right `agentId` |
 | Child uses parent workspace-local `skills/` | No | Use global or assistant skills instead, or inline the procedure |
-| Child receives `contextFiles` through current backend path | No | Treat as unsupported |
-| Child shares a workspace path through normal builtin agent tool flow | No | Only possible through an explicit create-session path override outside the normal tool path |
+| Child receives arbitrary parent files through a `contextFiles` parameter | No | Put critical context in the task text |
+| Child shares a specific workspace path through normal builtin agent tool flow | Yes | Use `workspaceOverride` with an absolute path |
 
 ## Delegation Recipe: Isolated Research Child
 
@@ -133,13 +133,13 @@ Response:
 - move the skill to global scope
 - inline the minimum viable procedure in the task
 
-### Symptom: `contextFiles` appears in tool docs but nothing happens
+### Symptom: Child cannot see the workspace you expected
 
 Likely cause:
 
-- backend create-session request does not currently accept that field
+- no explicit workspace override was provided
 
 Response:
 
-- treat `contextFiles` as unavailable in current runtime behavior
-- pass critical context in the task text or use a different workflow
+- use `workspaceOverride` with an absolute path when shared workspace access is required
+- still pass critical context in the task text; workspace sharing is not the same thing as copying instructions into the prompt
