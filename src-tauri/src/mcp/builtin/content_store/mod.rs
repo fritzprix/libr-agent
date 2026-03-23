@@ -59,6 +59,12 @@ impl BuiltinMCPServer for ContentStoreServer {
         let target_session_id = _session_id.unwrap_or_else(|| self.session_id.clone());
 
         match tool_name {
+            // Internal UI-only write paths.
+            // These are intentionally NOT included in `tools_static()`, so agents cannot
+            // discover or call them, but session-bound internal callers (via proxy) can
+            // still reuse the same server instance and keep in-memory state synchronized.
+            "addContent" => operations::add_content(self, args, &target_session_id).await,
+            "deleteContent" => operations::delete_content(self, args, &target_session_id).await,
             "listContent" => queries::list_content(self, args, &target_session_id).await,
             "readContent" => queries::read_content(self, args, &target_session_id).await,
             "searchContent" => {
