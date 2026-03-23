@@ -170,15 +170,15 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
       const safeAttachment = createAttachmentHintPayload(attachment);
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:
-- read(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)
-- For keyword search: search(sessionId: "${attachment.sessionId}", query: "your search query")
-- For file list: list(sessionId: "${attachment.sessionId}")`
+- read(contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)
+- For keyword search: search(query: "your search query")
+- For file list: list()`
         : attachment.workspacePath
           ? `This file is in your workspace (may not be indexed in content store yet):
 - To read it via workspace: workspace__readFile(path: "${attachment.workspacePath}")
-- To check if it has been indexed: list(sessionId: "${attachment.sessionId}")
-- If listed, use read(sessionId: "${attachment.sessionId}", contentId: <id from list>)`
-          : `File metadata only — use list(sessionId: "${attachment.sessionId}") to find available files`;
+- To check if it has been indexed: list()
+- If listed, use read(contentId: <id from list>, fromLine: 1, toLine: 200)`
+          : `File metadata only — use list() to find available files`;
 
       return `<attachment_${i}>
 ${JSON.stringify(safeAttachment, null, 2)}

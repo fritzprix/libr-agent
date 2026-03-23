@@ -16,6 +16,13 @@ def get_size(bytes, suffix="B"):
         if bytes < factor:
             return f"{bytes:.2f}{unit}{suffix}"
         bytes /= factor
+    return f"{bytes:.2f}E{suffix}"
+
+def format_frequency(cpufreq, key):
+    if cpufreq is None:
+        return "N/A"
+
+    return f"{getattr(cpufreq, key):.2f}Mhz"
 
 def get_system_info():
     uname = platform.uname()
@@ -33,9 +40,9 @@ def get_cpu_info():
     return {
         "Physical cores": psutil.cpu_count(logical=False),
         "Total cores": psutil.cpu_count(logical=True),
-        "Max Frequency": f"{cpufreq.max:.2f}Mhz",
-        "Min Frequency": f"{cpufreq.min:.2f}Mhz",
-        "Current Frequency": f"{cpufreq.current:.2f}Mhz",
+        "Max Frequency": format_frequency(cpufreq, "max"),
+        "Min Frequency": format_frequency(cpufreq, "min"),
+        "Current Frequency": format_frequency(cpufreq, "current"),
         "CPU Usage Per Core": [f"{x}%" for x in psutil.cpu_percent(percpu=True, interval=1)],
         "Total CPU Usage": f"{psutil.cpu_percent()}%"
     }

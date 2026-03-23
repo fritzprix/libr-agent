@@ -78,6 +78,26 @@ describe('session-utils', () => {
       expect(result.lastAttentionAt).toBe(attentionAt);
       expect(result.lastAttentionReason).toBe('recurringStop');
     });
+
+    it('clears attention when the existing lastViewedAt already caught up past attention', () => {
+      const session = makeSession({
+        id: 'session-already-viewed',
+        lastViewedAt: new Date('2026-03-18T00:03:00.000Z'),
+        lastAttentionAt: new Date('2026-03-18T00:02:00.000Z'),
+        lastAttentionReason: 'pendingApproval',
+      });
+
+      const result = applyViewedAtToSession(
+        session,
+        new Date('2026-03-18T00:01:00.000Z'),
+      );
+
+      expect(result.lastViewedAt?.toISOString()).toBe(
+        '2026-03-18T00:03:00.000Z',
+      );
+      expect(result.lastAttentionAt).toBeUndefined();
+      expect(result.lastAttentionReason).toBeUndefined();
+    });
   });
 
   describe('filterSessions', () => {
