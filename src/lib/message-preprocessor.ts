@@ -170,7 +170,7 @@ export async function prepareMessageForLLM(message: Message): Promise<Message> {
       const safeAttachment = createAttachmentHintPayload(attachment);
       const accessHints = attachment.contentId
         ? `To read the full content of this file, use:
-- read(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", lineRange: {fromLine: 1, toLine: 200})
+- read(sessionId: "${attachment.sessionId}", contentId: "${attachment.contentId}", fromLine: 1, toLine: 200)
 - For keyword search: search(sessionId: "${attachment.sessionId}", query: "your search query")
 - For file list: list(sessionId: "${attachment.sessionId}")`
         : attachment.workspacePath

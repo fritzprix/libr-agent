@@ -1,4 +1,4 @@
-﻿---
+---
 name: document-to-markdown
 description: "Extracts and converts various document formats (PDF, DOCX, PPTX, XLSX, HTML, Images, Audio, ZIP) into structured, machine-readable Markdown using Microsoft's MarkItDown. Use this skill when you need to extract the raw text content of a document without distortion, preserving its original structure (headings, tables, lists, slides) for analysis or RAG purposes."
 ---
@@ -16,9 +16,9 @@ This skill provides a unified, deterministic workflow for converting various doc
 ## Required Tools
 
 Ensure the markitdown library is installed in your Python environment:
-`ash
+```bash
 pip install "markitdown[all]"
-`
+```
 
 ## Conversion Workflow
 

@@ -27,7 +27,7 @@ We design tools for an entity that has **High Reasoning** capabilities but **Zer
 **Anti-Pattern:** Using aliases like `search` | `find` | `lookup` for the same function.
 
 - **Why:** Aliases dilute the semantic weight of the tool in the System Prompt and confuse the Agent's decision tree.
-- **Convention:** Use `camelCase` and `verbNoun` structure (e.g., `add`, `search`).
+- **Convention:** Use `camelCase`. For general tools, prefer `verbNoun` names (e.g., `readFile`, `createFile`); for session-scoped store tools, use single-verb canonical names (e.g., `add`, `search`).
 
 #### 2.1.1 No Alias Error Hints (Simplicity Rule)
 
