@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.16] - 2026-03-23
+
+### 🚀 Features
+
+- **Smarter Agent Skill Bootstrapping**: Expanded the bundled skill stack around persona awakening and session attachments, making it easier for agents to discover their identity files and work with uploaded content through the newer streamlined attachment tool flow.
+
+### 🐛 Fixes
+
+- **Attachment Tool Reliability**: Restored internal attachment write routing and corrected AI-facing attachment guidance so agents use the right session-scoped file tools instead of malformed calls.
+- **Session Attention Consistency**: Fixed an edge case in viewed-state handling where attention indicators could survive even after a session had effectively already been viewed past the attention timestamp.
+- **Computer Diagnosis Skill Stability**: Repaired the bundled `computer-diagnosis` skill documentation and hardened system info collection so environments without CPU frequency reporting no longer break the diagnostic workflow.
+
+### 🔧 Internal
+
+- **UI and Platform Polish**: Replaced lingering native title tooltips with proper accessible tooltip components, cached `Intl` formatter instances for smoother rendering, and refreshed supporting dependency / workflow plumbing for the release pipeline.
+- **Documentation Reorganization**: Split and reorganized architecture documentation so the growing docs set is easier to navigate and maintain.
+
 ## [0.6.15] - 2026-03-22
 
 ### 🚀 Features
