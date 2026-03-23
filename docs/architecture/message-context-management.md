@@ -110,20 +110,24 @@ The stable prefix is cached in `AgentSession.cached_stable_prompt`.
 Built by `build_stable_prefix()`:
 
 1. agent identity / base system prompt
-2. workspace instructions from the first matching file in:
+2. persona template from the first matching file in:
+   - `.github/SOUL.md`
+   - `SOUL.md`
+   - `.github/soul.md`
+   - `soul.md`
+3. workspace instructions from the first matching file in:
    - `agents.md`
    - `AGENTS.md`
-   - `soul.md`
    - `CLAUDE.md`
    - `GEMINI.md`
-3. session metadata label (`## Session Context`)
+4. session metadata label (`## Session Context`)
 
 ### Volatile suffix contents
 
 Built by `build_volatile_sections()`:
 
-4. `ContextRegistry` output
-5. builtin tool service contexts from `proxy.get_service_contexts()`
+5. `ContextRegistry` output
+6. builtin tool service contexts from `proxy.get_service_contexts()`
 
 Service contexts are sorted by `tool_id` before concatenation so the prompt byte sequence remains deterministic across requests.
 

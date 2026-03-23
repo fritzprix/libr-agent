@@ -6,44 +6,63 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// Filenames checked (in order) for workspace-level agent instructions.
+/// Filenames checked (in order) for workspace-level behavior instructions.
 /// Only the FIRST file found with content is injected.
-const WORKSPACE_INSTRUCTION_FILES: &[&str] = &[
-    "agents.md",
-    "AGENTS.md",
-    "soul.md",
-    "CLAUDE.md",
-    "GEMINI.md",
-];
+const WORKSPACE_INSTRUCTION_FILES: &[&str] = &["agents.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"];
 
-/// Reads any workspace agent instruction files that exist for the given session.
-/// Returns a list of `(filename, content)` pairs.
-async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, String)> {
-    let workspace = match get_session_manager() {
-        Ok(mgr) => mgr.get_session_workspace_dir_by_id(session_id),
-        Err(_) => return vec![],
-    };
+/// Filenames checked (in order) for persona / tone instructions.
+/// Only the FIRST file found with content is injected.
+const SOUL_INSTRUCTION_FILES: &[&str] =
+    &[".github/SOUL.md", "SOUL.md", ".github/soul.md", "soul.md"];
 
-    let mut results = Vec::new();
-    for &filename in WORKSPACE_INSTRUCTION_FILES {
+fn get_session_workspace_dir(session_id: &str) -> Option<std::path::PathBuf> {
+    match get_session_manager() {
+        Ok(mgr) => Some(mgr.get_session_workspace_dir_by_id(session_id)),
+        Err(_) => None,
+    }
+}
+
+async fn load_first_instruction_file(
+    workspace: &std::path::Path,
+    candidates: &[&str],
+) -> Option<(String, String)> {
+    for &filename in candidates {
         let path = workspace.join(filename);
         if let Ok(content) = tokio::fs::read_to_string(&path).await {
             let trimmed = content.trim().to_string();
             if !trimmed.is_empty() {
-                results.push((filename.to_string(), trimmed));
-                break; // Stop after finding the first valid file
+                return Some((filename.to_string(), trimmed));
             }
         }
     }
-    results
+
+    None
+}
+
+/// Reads the first workspace behavior instruction file that exists for the session.
+async fn load_workspace_agent_instructions(session_id: &str) -> Vec<(String, String)> {
+    let Some(workspace) = get_session_workspace_dir(session_id) else {
+        return vec![];
+    };
+
+    load_first_instruction_file(&workspace, WORKSPACE_INSTRUCTION_FILES)
+        .await
+        .into_iter()
+        .collect()
+}
+
+/// Reads the first persona / tone instruction file that exists for the session.
+async fn load_soul_instruction(session_id: &str) -> Option<(String, String)> {
+    let workspace = get_session_workspace_dir(session_id)?;
+    load_first_instruction_file(&workspace, SOUL_INSTRUCTION_FILES).await
 }
 
 /// Build the stable prefix and volatile sections separately for a session.
 ///
 /// Returns `(stable_prompt, session_context)` where:
-/// - `stable_prompt` — sections 1–3 (identity, workspace instructions, session name).
+/// - `stable_prompt` — sections 1–4 (identity, persona, workspace instructions, session name).
 ///   Computed once per session and cached; never changes mid-session.
-/// - `session_context` — sections 4–5 (context providers + service tool states).
+/// - `session_context` — sections 5–6 (context providers + service tool states).
 ///   Rebuilt fresh on every LLM call. May be empty if no providers or services are active.
 ///
 /// Callers decide how to combine the two parts. The frontend AI service layer uses
@@ -90,16 +109,21 @@ pub(crate) async fn build_session_system_prompt_split(
             if let Some(ref existing) = *write_guard {
                 existing.clone()
             } else {
-                // Build sections 1–3 once and cache them for the session lifetime.
+                // Build sections 1–4 once and cache them for the session lifetime.
                 // These sections are immutable within a session: agent identity, the
-                // session name, and workspace instruction files (agents.md / CLAUDE.md).
-                // NOTE: edits to workspace instruction files mid-session are NOT reflected
-                // until the next config update or session resume, both of which clear this
-                // cache via AgentSession::invalidate_stable_prompt_cache(). This is an
-                // intentional tradeoff for prefix-cache efficiency.
+                // session name, persona template (SOUL.md), and workspace instruction
+                // files (agents.md / CLAUDE.md). NOTE: edits to these files mid-session
+                // are NOT reflected until the next config update or session resume, both
+                // of which clear this cache via AgentSession::invalidate_stable_prompt_cache().
+                // This is an intentional tradeoff for prefix-cache efficiency.
+                let soul_instruction = load_soul_instruction(session_id).await;
                 let workspace_instructions = load_workspace_agent_instructions(session_id).await;
-                let stable =
-                    build_stable_prefix(&agent_config, session_name, workspace_instructions);
+                let stable = build_stable_prefix(
+                    &agent_config,
+                    session_name,
+                    soul_instruction,
+                    workspace_instructions,
+                );
                 *write_guard = Some(stable.clone());
                 stable
             }
@@ -122,9 +146,9 @@ pub(crate) async fn build_session_system_prompt_split(
 
 /// Build complete system prompt for session (wrapper)
 ///
-/// The stable prefix (sections 1–3: agent identity, workspace instructions, session
-/// context) is computed once and cached in the session. Only the volatile sections
-/// (4: context providers, 5: service contexts) are rebuilt on every LLM call.
+/// The stable prefix (sections 1–4: agent identity, persona, workspace instructions,
+/// session context) is computed once and cached in the session. Only the volatile
+/// sections (5: context providers, 6: service contexts) are rebuilt on every LLM call.
 pub async fn build_session_system_prompt(
     active_sessions: &Arc<RwLock<HashMap<String, AgentSession>>>,
     proxy_manager: &Arc<MCPServiceProxyManager>,
@@ -144,18 +168,25 @@ pub async fn build_session_system_prompt(
 ///
 /// Structure:
 /// 1. Agent Identity & Strategy (who am I, how do I work)
-/// 2. Workspace Instructions (agents.md / soul.md / CLAUDE.md found in workspace)
-/// 3. Session Context (Session Name)
-/// 4. Read-only Context Providers (time, skills, documentation)
-/// 5. Service Contexts (tools & current state - immediately actionable)
+/// 2. Persona / Voice Template (SOUL.md found in workspace)
+/// 3. Workspace Instructions (agents.md / CLAUDE.md found in workspace)
+/// 4. Session Context (Session Name)
+/// 5. Read-only Context Providers (time, skills, documentation)
+/// 6. Service Contexts (tools & current state - immediately actionable)
 pub async fn build_system_prompt(
     agent_config: &crate::agent::AgentConfig,
     session_name: Option<String>,
     proxy: Option<Arc<MCPServiceProxy>>,
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
+    soul_instruction: Option<(String, String)>,
     workspace_instructions: Vec<(String, String)>,
 ) -> Result<String, String> {
-    let stable = build_stable_prefix(agent_config, session_name, workspace_instructions);
+    let stable = build_stable_prefix(
+        agent_config,
+        session_name,
+        soul_instruction,
+        workspace_instructions,
+    );
     let volatile =
         build_volatile_sections(context_registry, proxy, agent_config.id.as_deref()).await;
 
@@ -166,12 +197,13 @@ pub async fn build_system_prompt(
     }
 }
 
-/// Build the stable, session-immutable prefix (sections 1–3).
+/// Build the stable, session-immutable prefix (sections 1–4).
 ///
 /// These sections never change within a session so callers may cache the result.
 fn build_stable_prefix(
     agent_config: &crate::agent::AgentConfig,
     session_name: Option<String>,
+    soul_instruction: Option<(String, String)>,
     workspace_instructions: Vec<(String, String)>,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
@@ -181,8 +213,17 @@ fn build_stable_prefix(
         parts.push(agent_config.system_prompt.clone());
     }
 
-    // 2. Workspace Instructions — injected from agents.md / soul.md / CLAUDE.md etc.
-    //    These are workspace-scoped and take precedence after base identity.
+    // 2. Persona / Voice Template — injected from SOUL.md and kept distinct from
+    //    workspace instructions because it defines character, not task guidance.
+    if let Some((filename, content)) = &soul_instruction {
+        parts.push(format!(
+            "\n\n## Persona Template ({})\n\n{}",
+            filename, content
+        ));
+    }
+
+    // 3. Workspace Instructions — injected from agents.md / CLAUDE.md etc.
+    //    These are workspace-scoped operating constraints, not persona.
     for (filename, content) in &workspace_instructions {
         parts.push(format!(
             "\n\n## Workspace Instructions ({})\n\n{}",
@@ -190,7 +231,7 @@ fn build_stable_prefix(
         ));
     }
 
-    // 3. Session Context (Session Name)
+    // 4. Session Context (Session Name)
     if let Some(name) = session_name {
         let trimmed = name.trim();
         if !trimmed.is_empty() {
@@ -213,7 +254,7 @@ fn build_stable_prefix(
     parts.join("\n")
 }
 
-/// Build the volatile sections (4–5) that must be refreshed on every LLM call.
+/// Build the volatile sections (5–6) that must be refreshed on every LLM call.
 async fn build_volatile_sections(
     context_registry: Option<Arc<crate::agent::context::registry::ContextRegistry>>,
     proxy: Option<Arc<MCPServiceProxy>>,
@@ -221,7 +262,7 @@ async fn build_volatile_sections(
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
-    // 4. Read-only Context Providers (time, skills, documentation, etc.)
+    // 5. Read-only Context Providers (time, skills, documentation, etc.)
     if let Some(registry) = context_registry {
         let context = registry.build_context(assistant_id).await;
         if !context.trim().is_empty() {
@@ -229,7 +270,7 @@ async fn build_volatile_sections(
         }
     }
 
-    // 5. Service Contexts - immediately actionable information
+    // 6. Service Contexts - immediately actionable information
     if let Some(p) = proxy {
         let contexts = p.get_service_contexts(assistant_id).await;
 
@@ -272,17 +313,20 @@ mod tests {
             ..Default::default()
         };
 
-        // 2. Workspace Instructions
+        // 2. Persona Template
+        let soul_instruction = Some((".github/SOUL.md".to_string(), "Soul rule".to_string()));
+
+        // 3. Workspace Instructions
         let workspace_instructions =
             vec![("agents.md".to_string(), "Custom agents.md rule".to_string())];
 
-        // 3. Session Context
+        // 4. Session Context
         let session_name = Some("Test Session 123".to_string());
 
-        // 4. Read-only Context Providers (Simulate empty for unit test simplicty, or mock)
+        // 5. Read-only Context Providers (Simulate empty for unit test simplicty, or mock)
         let context_registry = Some(Arc::new(ContextRegistry::new()));
 
-        // 5. Service Contexts (Simulate None representing no MCPs for now)
+        // 6. Service Contexts (Simulate None representing no MCPs for now)
         let proxy: Option<Arc<MCPServiceProxy>> = None;
 
         let prompt = build_system_prompt(
@@ -290,6 +334,7 @@ mod tests {
             session_name,
             proxy,
             context_registry,
+            soul_instruction,
             workspace_instructions,
         )
         .await
@@ -298,13 +343,21 @@ mod tests {
         // Assert 1: Agent Identity
         assert!(prompt.contains("You are a test assistant."));
 
-        // Assert 2: Workspace Instructions
+        // Assert 2: Persona Template
+        assert!(prompt.contains("## Persona Template (.github/SOUL.md)"));
+        assert!(prompt.contains("Soul rule"));
+
+        // Assert 3: Workspace Instructions
         assert!(prompt.contains("## Workspace Instructions (agents.md)"));
         assert!(prompt.contains("Custom agents.md rule"));
 
-        // Assert 3: Session Context
+        // Assert 4: Session Context
         assert!(prompt.contains("## Session Context"));
         assert!(prompt.contains("Test Session 123"));
+
+        let persona_pos = prompt.find("## Persona Template").unwrap();
+        let workspace_pos = prompt.find("## Workspace Instructions").unwrap();
+        assert!(persona_pos < workspace_pos);
     }
 
     #[tokio::test]
@@ -319,6 +372,7 @@ mod tests {
             None,   // No session name
             None,   // No proxy
             None,   // No context registry
+            None,   // No soul instruction
             vec![], // No workspace instructions
         )
         .await

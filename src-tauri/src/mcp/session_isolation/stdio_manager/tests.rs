@@ -3,7 +3,12 @@ use crate::mcp::session_isolation::error::SessionMCPError;
 use crate::mcp::session_isolation_config::SessionIsolationConfig;
 use crate::mcp::types::{MCPServerConfig, TransportConfig};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+fn canonicalize_existing_path(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
 
 /// Helper to create a test manager with a simple echo server config
 fn create_test_manager() -> SessionMCPManager {
@@ -76,15 +81,21 @@ fn test_config_env_vars_are_preserved() {
 }
 
 /// Helper to create a test manager that can run real processes
-fn create_integration_manager() -> SessionMCPManager {
+fn create_integration_manager_with_workspace(
+    workspace_dir: std::path::PathBuf,
+) -> SessionMCPManager {
     let mut configs = HashMap::new();
+    let mock_server_path = std::env::current_dir()
+        .unwrap()
+        .join("tests")
+        .join("mock_server.py");
     configs.insert(
         "test-server".to_string(),
         MCPServerConfig {
             name: Some("test-server".to_string()),
             transport: TransportConfig::Stdio {
                 command: "python3".to_string(),
-                args: vec!["tests/mock_server.py".to_string()],
+                args: vec![mock_server_path.to_string_lossy().to_string()],
                 env: HashMap::new(),
             },
             authentication: None,
@@ -100,12 +111,11 @@ fn create_integration_manager() -> SessionMCPManager {
         http_connection_pool_size: 10,
     };
 
-    SessionMCPManager::new(
-        "test-session".to_string(),
-        configs,
-        config,
-        std::env::current_dir().unwrap(),
-    )
+    SessionMCPManager::new("test-session".to_string(), configs, config, workspace_dir)
+}
+
+fn create_integration_manager() -> SessionMCPManager {
+    create_integration_manager_with_workspace(std::env::current_dir().unwrap())
 }
 
 #[tokio::test]
@@ -191,6 +201,83 @@ async fn test_multiple_spawn_attempts_are_serialized() {
     }
 }
 
+#[tokio::test]
+async fn test_spawn_uses_session_workspace_as_cwd() {
+    if std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping integration test: python3 not available");
+        return;
+    }
+
+    let workspace_dir = std::env::temp_dir().join(format!(
+        "libragent-session-workspace-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let cwd_capture_file = std::env::temp_dir().join(format!(
+        "libragent-session-workspace-cwd-{}.txt",
+        uuid::Uuid::new_v4()
+    ));
+
+    if workspace_dir.exists() {
+        std::fs::remove_dir_all(&workspace_dir).unwrap();
+    }
+    if cwd_capture_file.exists() {
+        std::fs::remove_file(&cwd_capture_file).unwrap();
+    }
+
+    let mut manager = create_integration_manager_with_workspace(workspace_dir.clone());
+    if let Some(config) = manager.server_configs.get_mut("test-server") {
+        match &mut config.transport {
+            TransportConfig::Stdio { env, .. } => {
+                env.insert(
+                    "MOCK_SERVER_CWD_FILE".to_string(),
+                    cwd_capture_file.to_string_lossy().to_string(),
+                );
+            }
+            _ => panic!("Expected Stdio transport"),
+        }
+    }
+
+    let result = manager.ensure_process_running("test-server").await;
+    assert!(
+        result.is_ok(),
+        "Session stdio startup failed: {:?}",
+        result.err()
+    );
+
+    assert!(
+        workspace_dir.exists(),
+        "Session workspace should be created before spawning stdio MCP servers"
+    );
+    assert!(
+        cwd_capture_file.exists(),
+        "Mock server should capture its working directory"
+    );
+
+    let captured_cwd = std::fs::read_to_string(&cwd_capture_file).unwrap();
+    let captured_cwd_path = PathBuf::from(captured_cwd.trim());
+    assert!(
+        canonicalize_existing_path(&captured_cwd_path)
+            == canonicalize_existing_path(workspace_dir.as_path()),
+        "Expected stdio MCP server cwd to be '{}', got '{}'",
+        workspace_dir.display(),
+        captured_cwd.trim()
+    );
+
+    {
+        let mut processes = manager.active_processes.write().await;
+        if let Some(process) = processes.remove("test-server") {
+            process.shutdown().await;
+        }
+    }
+
+    let _ = std::fs::remove_file(cwd_capture_file);
+    let _ = std::fs::remove_dir_all(workspace_dir);
+}
+
 #[test]
 fn test_idle_timeout_configuration() {
     let manager = create_test_manager();
@@ -246,6 +333,11 @@ fn test_env_clear_in_spawn_logic() {
     assert!(
         source.contains("\"PATH\""),
         "stdio_manager must whitelist PATH"
+    );
+
+    assert!(
+        source.contains("cmd.current_dir(&self.workspace_dir)"),
+        "stdio_manager must launch session MCP servers from the session workspace"
     );
 }
 

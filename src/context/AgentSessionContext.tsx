@@ -15,6 +15,7 @@ import type { Message, MessageError, RustMessage } from '@/models/chat';
 import { rustMessageToMessage } from '@/models/chat';
 import type { Page } from '@/lib/db/types';
 import { AgentSession } from '@/models/agent';
+import { applyViewedAtToSession } from '@/lib/session-utils';
 import type {
   AgentRuntimeError,
   AgentSessionMetadata,
@@ -217,16 +218,7 @@ export function AgentSessionProvider({
 
   const applyLocalViewedAt = useCallback((viewedAt: Date) => {
     setSession((prev) =>
-      prev
-        ? {
-            ...prev,
-            lastViewedAt:
-              !prev.lastViewedAt ||
-              viewedAt.getTime() > prev.lastViewedAt.getTime()
-                ? viewedAt
-                : prev.lastViewedAt,
-          }
-        : prev,
+      prev ? applyViewedAtToSession(prev, viewedAt) : prev,
     );
   }, []);
 

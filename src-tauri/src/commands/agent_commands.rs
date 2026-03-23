@@ -367,6 +367,24 @@ pub async fn agent_call_builtin_tool(
     AgentService::call_builtin_tool(session_id, tool_name, args).await
 }
 
+/// Save an attachment to the session-scoped attachment store via an internal UI-only API.
+#[command]
+pub async fn agent_add_attachment(
+    session_id: String,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    AgentService::add_attachment(session_id, args).await
+}
+
+/// Delete an attachment from the session-scoped attachment store via an internal UI-only API.
+#[command]
+pub async fn agent_delete_attachment(
+    session_id: String,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    AgentService::delete_attachment(session_id, args).await
+}
+
 /// Get service contexts for a session
 #[command]
 pub async fn agent_get_service_contexts(

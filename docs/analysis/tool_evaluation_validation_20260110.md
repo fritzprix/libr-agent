@@ -132,7 +132,7 @@ operation_failed_error(
     vec![
         "Verify the content ID is correct".to_string(),
         "Check line range is valid".to_string(),
-        "Use listContent to see available content".to_string(),
+        "Use list to see available content".to_string(),
     ],
     // ...
 )
@@ -374,7 +374,7 @@ format!(
 
 **Acceptance Criteria:**
 
-- ✅ Line count visible in `listContent` output
+- ✅ Line count visible in `list` output
 - ✅ Agent can estimate ranges without guessing
 - ✅ Reduces "invalid line range" errors
 
@@ -445,14 +445,14 @@ Implement timestamp-based heuristic (requires event log system).
 
 ```bash
 # Setup: Add 100-line file
-addContent(content="line1\nline2\n...line100")
+add(content="line1\nline2\n...line100")
 
 # Test: Read all lines
-readContent(contentId="xyz", fromLine=1, toLine=100)
+read(contentId="xyz", fromLine=1, toLine=100)
 # Expected: "End of file reached" (no truncation warning)
 
 # Test: Read partial
-readContent(contentId="xyz", fromLine=1, toLine=50)
+read(contentId="xyz", fromLine=1, toLine=50)
 # Expected: "... (truncated: 50 more lines remaining, total 100 lines)"
 ```
 
@@ -460,7 +460,7 @@ readContent(contentId="xyz", fromLine=1, toLine=50)
 
 ```bash
 # Test: List content
-listContent()
+list()
 # Expected output includes: "Size: 4441 bytes, 86 lines"
 ```
 
@@ -469,7 +469,7 @@ listContent()
 ```bash
 # Setup: File has 86 lines
 # Test: Request invalid range
-readContent(contentId="xyz", fromLine=5000, toLine=5300)
+read(contentId="xyz", fromLine=5000, toLine=5300)
 # Expected: "Error: Requested range [5000-5300] exceeds file length. File has 86 lines. Valid range: [1-86]"
 ```
 

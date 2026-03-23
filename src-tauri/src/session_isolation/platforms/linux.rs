@@ -52,11 +52,8 @@ pub async fn create_high_isolated_command(
     // Apply environment isolation
     crate::utils::env::apply_isolated_env_async(&mut cmd);
 
-    // Always ensure PATH is present so basic commands work in the isolated environment.
-    // Fall back to a safe, minimal default if the parent process has no PATH.
-    let path_value =
-        std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".to_string());
-    cmd.env("PATH", path_value);
+    // Always ensure PATH is present so GUI-launched sessions can still find user-installed tools.
+    cmd.env("PATH", crate::utils::env::get_effective_path_os());
 
     cmd.env("HOME", &config.workspace_path);
     cmd.env("PWD", &config.workspace_path);

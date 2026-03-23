@@ -101,26 +101,7 @@ impl ContentStoreServer {
     pub fn tools_static() -> Vec<MCPTool> {
         vec![
             MCPTool {
-                name: "addContent".to_string(),
-                title: Some("Add Content".to_string()),
-                description: "Add content entry (text or file) to the content store".to_string(),
-                input_schema: serde_json::from_value(serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "title": { "type": "string", "description": "Title of the knowledge entry" },
-                        "content": { "type": "string", "description": "Content to save" },
-                        "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags for the entry" },
-                        "fileUrl": { "type": "string", "description": "File URL (file://) to add" },
-                        "srcUrl": { "type": "string", "description": "Source URL" },
-                        "metadata": { "type": "object", "description": "Additional metadata" }
-                    },
-                    "required": ["content"]
-                })).unwrap(),
-                output_schema: None,
-                annotations: None,
-            },
-            MCPTool {
-                name: "listContent".to_string(),
+                name: "list".to_string(),
                 title: Option::None,
                 description: "List content in a store with pagination".to_string(),
                 input_schema: schemas::tool_list_content_schema(),
@@ -128,7 +109,7 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "readContent".to_string(),
+                name: "read".to_string(),
                 title: Option::None,
                 description: "Read content with line range filtering".to_string(),
                 input_schema: schemas::tool_read_content_schema(),
@@ -136,7 +117,7 @@ impl ContentStoreServer {
                 annotations: Option::None,
             },
             MCPTool {
-                name: "searchContent".to_string(),
+                name: "search".to_string(),
                 title: Some("Search Content".to_string()),
                 description: "Search session-scoped content using BM25 keyword ranking. Only finds content uploaded in the current session.".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
@@ -170,6 +151,22 @@ impl ContentStoreServer {
 
     pub fn tools(&self) -> Vec<MCPTool> {
         Self::tools_static()
+    }
+
+    pub async fn add_attachment_internal(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<crate::mcp::types::MCPResult, String> {
+        super::operations::add_content(self, args, session_id).await
+    }
+
+    pub async fn delete_attachment_internal(
+        &self,
+        args: Value,
+        session_id: &str,
+    ) -> Result<crate::mcp::types::MCPResult, String> {
+        super::operations::delete_content(self, args, session_id).await
     }
 
     pub(crate) async fn ensure_session_store(&self, session_id: &str) -> Result<(), String> {
@@ -267,7 +264,7 @@ impl ContentStoreServer {
                 ));
             }
 
-            prompt_parts.push("\n*Use `readContent(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
+            prompt_parts.push("\n*Use `read(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
         } else if total_count == 0 {
             prompt_parts.push("*No files uploaded yet.*\n".to_string());
         }

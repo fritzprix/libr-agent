@@ -24,6 +24,14 @@ import {
 import { getLogger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 
+let dateFormatter: Intl.DateTimeFormat | null = null;
+function getDateFormatter() {
+  if (!dateFormatter) {
+    dateFormatter = new Intl.DateTimeFormat();
+  }
+  return dateFormatter;
+}
+
 interface AssistantCardProps {
   assistant: Assistant;
   isExpanded: boolean;
@@ -184,14 +192,14 @@ export default function AssistantCard({
                 <Calendar size={12} />
                 <span>
                   {t('assistant.card.created')}:{' '}
-                  {new Date(assistant.createdAt).toLocaleDateString()}
+                  {getDateFormatter().format(new Date(assistant.createdAt))}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-widest font-sans">
                 <Edit size={12} />
                 <span>
                   {t('assistant.card.updated')}:{' '}
-                  {new Date(assistant.updatedAt).toLocaleDateString()}
+                  {getDateFormatter().format(new Date(assistant.updatedAt))}
                 </span>
               </div>
             </div>

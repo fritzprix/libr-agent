@@ -34,7 +34,7 @@ Call switch_context with a sessionId before invoking this tool.
 
 **문제점:**
 
-- 앱 시작 시 `ResourceAttachmentContext`가 즉시 `listContent`를 호출
+- 앱 시작 시 `ResourceAttachmentContext`가 즉시 `list`를 호출
 - 하지만 백엔드의 세션 컨텍스트는 아직 초기화되지 않은 상태
 - 초기 MCP 호출 실패로 UI가 제대로 렌더링되지 않음
 
@@ -80,7 +80,7 @@ const { data: sessionFiles = [], mutate } = useSWR(
     const sessionId = key.replace('session-files-', '');
     if (sessionId && server) {
       try {
-        // ... listContent 호출
+        // ... list 호출
         return files;
       } catch (error) {
         // 세션 컨텍스트가 준비되지 않은 경우 경고만 로그하고 빈 배열 반환

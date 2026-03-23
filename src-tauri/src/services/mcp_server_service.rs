@@ -5,7 +5,100 @@ use serde_json::Value;
 
 pub struct McpServerService;
 
+pub(crate) fn summarize_tool_names(tools: &[MCPTool]) -> String {
+    const MAX_NAMES: usize = 5;
+
+    if tools.is_empty() {
+        return "none".to_string();
+    }
+
+    let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+    let preview = names
+        .iter()
+        .take(MAX_NAMES)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    if names.len() > MAX_NAMES {
+        format!("{} (+{} more)", preview, names.len() - MAX_NAMES)
+    } else {
+        preview
+    }
+}
+
 impl McpServerService {
+    fn requires_reverification(existing_config: &Value, incoming_config: &Value) -> bool {
+        let existing_transport = existing_config.get("transport");
+        let incoming_transport = incoming_config.get("transport");
+        let existing_authentication = existing_config.get("authentication");
+        let incoming_authentication = incoming_config.get("authentication");
+
+        existing_transport != incoming_transport
+            || existing_authentication != incoming_authentication
+    }
+
+    fn spawn_verification_task(server_id: String) {
+        tauri::async_runtime::spawn(async move {
+            let repo = crate::state::get_mcp_server_repository();
+
+            let verification_result = Self::verify_server_by_id(repo, &server_id).await;
+            if let Err(error) = verification_result {
+                log::error!(
+                    "[verify-bg] Verification task failed for MCP server '{}': {}",
+                    server_id,
+                    error
+                );
+            }
+
+            crate::agent::events::emit_resource_updated("mcpServer", "verify", Some(server_id));
+        });
+    }
+
+    async fn verify_server_by_id(
+        repo: &dyn MCPServerRepository,
+        server_id: &str,
+    ) -> Result<(), String> {
+        let model = repo
+            .get(server_id)
+            .await
+            .map_err(|e| format!("DB error looking up server '{}': {}", server_id, e))?
+            .ok_or_else(|| format!("MCP server '{}' not found", server_id))?;
+
+        let mut config = serde_json::from_str::<crate::mcp::types::MCPServerConfig>(&model.config)
+            .map_err(|e| format!("Failed to parse config for '{}': {}", model.name, e))?;
+        config.name = Some(model.name.clone());
+
+        match Self::verify_config(config).await {
+            Ok(tools) => {
+                let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+                repo.update_cached_tools(server_id, tools.len() as i32, tools_json_str)
+                    .await
+                    .map_err(|e| format!("Failed to persist verification result: {}", e))?;
+                log::info!(
+                    "[verify-bg] '{}' ({}) verified successfully with {} tool(s): [{}]",
+                    model.name,
+                    server_id,
+                    tools.len(),
+                    summarize_tool_names(&tools)
+                );
+                Ok(())
+            }
+            Err(error) => {
+                repo.set_verification_error(server_id, error.clone())
+                    .await
+                    .map_err(|e| format!("Failed to persist verification error: {}", e))?;
+                log::warn!(
+                    "[verify-bg] '{}' ({}) verification failed: {}",
+                    model.name,
+                    server_id,
+                    error
+                );
+                Ok(())
+            }
+        }
+    }
+
     /// Connects to the server defined by `config`, lists its tools, and disconnects.
     /// Returns the list of tools if successful.
     pub async fn verify_config(
@@ -71,10 +164,11 @@ impl McpServerService {
         let tools = Self::verify_config(config).await?;
 
         log::info!(
-            "[probe] '{}' ({}) → {} tool(s)",
+            "[probe] '{}' ({}) → {} tool(s): [{}]",
             server_name,
             server_id,
-            tools.len()
+            tools.len(),
+            summarize_tool_names(&tools)
         );
 
         // 4. Persist tool list (names + descriptions) to DB (best-effort)
@@ -115,8 +209,7 @@ impl McpServerService {
         mcp_config.name = Some(name.clone());
 
         // 2. Verify the configuration connects and provides tools before saving
-        let tools = Self::verify_config(mcp_config).await?;
-        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+        let _ = mcp_config;
 
         // 3. Save to database
         let model = repo
@@ -124,17 +217,7 @@ impl McpServerService {
             .await
             .map_err(|e| format!("Failed to create MCP server config: {}", e))?;
 
-        // 4. Update the cached tools immediately since we just verified it
-        repo.update_cached_tools(&model.id, tools.len() as i32, tools_json_str)
-            .await
-            .map_err(|e| format!("Failed to update cached tools: {}", e))?;
-
-        // Reload the model to get the updated tool count
-        let model = repo
-            .get(&model.id)
-            .await
-            .map_err(|e| format!("Failed to reload MCP server config after creation: {}", e))?
-            .unwrap_or(model);
+        Self::spawn_verification_task(model.id.clone());
 
         Ok(model)
     }
@@ -162,10 +245,11 @@ impl McpServerService {
             .ok_or_else(|| format!("MCP server '{}' not found", id))?;
 
         let final_name = name.clone().unwrap_or_else(|| existing.name.clone());
+        let existing_config_val: Value = serde_json::from_str(&existing.config)
+            .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?;
         let final_config_val = match config.as_ref() {
             Some(c) => c.clone(),
-            None => serde_json::from_str(&existing.config)
-                .map_err(|e| format!("Failed to parse existing config from DB: {}", e))?,
+            None => existing_config_val.clone(),
         };
 
         // 2. Parse config into MCPServerConfig for verification
@@ -176,9 +260,9 @@ impl McpServerService {
         // Ensure name is set in the config
         mcp_config.name = Some(final_name.clone());
 
-        // 3. Verify the configuration connects and provides tools before saving
-        let tools = Self::verify_config(mcp_config).await?;
-        let tools_json_str = crate::mcp::utils::serialize_mcp_tools(&tools);
+        let requires_reverification =
+            Self::requires_reverification(&existing_config_val, &final_config_val);
+        let _ = mcp_config;
 
         // 4. Save to database
         let updated = repo
@@ -186,17 +270,17 @@ impl McpServerService {
             .await
             .map_err(|e| format!("Failed to update MCP server config: {}", e))?;
 
-        // 5. Update the cached tools immediately since we just verified it
-        repo.update_cached_tools(&updated.id, tools.len() as i32, tools_json_str)
-            .await
-            .map_err(|e| format!("Failed to update cached tools: {}", e))?;
-
-        // Reload the model to get the updated tool count
-        let updated = repo
-            .get(&updated.id)
-            .await
-            .map_err(|e| format!("Failed to reload MCP server config after update: {}", e))?
-            .unwrap_or(updated);
+        if requires_reverification {
+            repo.mark_verification_pending(&updated.id, true)
+                .await
+                .map_err(|e| format!("Failed to mark verification pending: {}", e))?;
+            Self::spawn_verification_task(updated.id.clone());
+            return repo
+                .get(&updated.id)
+                .await
+                .map_err(|e| format!("Failed to reload MCP server config after update: {}", e))?
+                .ok_or_else(|| format!("MCP server '{}' disappeared after update", updated.id));
+        }
 
         Ok(updated)
     }
@@ -214,8 +298,47 @@ impl McpServerService {
     pub async fn list_server_configs(
         repo: &dyn MCPServerRepository,
     ) -> Result<Vec<crate::entity::mcp_server::Model>, String> {
-        repo.list()
+        let models = repo
+            .list()
             .await
-            .map_err(|e| format!("Failed to list MCP server configs: {}", e))
+            .map_err(|e| format!("Failed to list MCP server configs: {}", e))?;
+
+        log::info!("Loaded {} MCP server configs from repository", models.len());
+
+        if log::log_enabled!(log::Level::Debug) {
+            for model in &models {
+                let cached_tool_names = model
+                    .cached_tools
+                    .as_deref()
+                    .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(json).ok())
+                    .map(|tools| {
+                        let names: Vec<&str> = tools
+                            .iter()
+                            .filter_map(|tool| tool.get("name").and_then(|name| name.as_str()))
+                            .collect();
+                        if names.is_empty() {
+                            return "none".to_string();
+                        }
+                        let preview = names.iter().take(5).copied().collect::<Vec<_>>().join(", ");
+
+                        if names.len() > 5 {
+                            format!("{} (+{} more)", preview, names.len() - 5)
+                        } else {
+                            preview
+                        }
+                    })
+                    .unwrap_or_else(|| "none".to_string());
+
+                log::debug!(
+                    "[server-list] '{}' ({}) cached tool_count={:?}, cached_tools=[{}]",
+                    model.name,
+                    model.id,
+                    model.tool_count,
+                    cached_tool_names
+                );
+            }
+        }
+
+        Ok(models)
     }
 }

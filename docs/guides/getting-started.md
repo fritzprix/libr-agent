@@ -9,6 +9,8 @@ This guide will walk you through setting up your development environment and con
 - **Rust**: Install from [rustup.rs](https://rustup.rs/).
 - **Node.js**: Version 18+.
 - **pnpm**: Install with `npm install -g pnpm`.
+- **System Dependencies (Linux Only)**:
+  - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`
 
 ### Installation
 

@@ -157,6 +157,35 @@
           "type": "password"
         }
       }
+    },
+    "grok": {
+      "description": "Grok API access for text generation and analysis.",
+      "logo": "https://grok.ai/favicon.ico",
+      "command": "npx",
+      "args": ["-y", "@fre4x/grok"],
+      "env": {
+        "XAI_API_KEY": ""
+      },
+      "variableDefinitions": {
+        "XAI_API_KEY": {
+          "required": true,
+          "label": "xAI API Key",
+          "description": "Get your API key from https://console.x.ai",
+          "type": "password"
+        }
+      }
+    },
+    "docx": {
+      "description": "Work with Word documents programmatically through MCP APIs.",
+      "logo": "https://www.docx.com/favicon.ico",
+      "command": "npx",
+      "args": ["-y", "@fre4x/docx"]
+    },
+    "jupyter": {
+      "description": "Execute and manage Jupyter notebooks via MCP.",
+      "logo": "https://jupyter.org/favicon.ico",
+      "command": "npx",
+      "args": ["-y", "@fre4x/jupyter"]
     }
   }
 }

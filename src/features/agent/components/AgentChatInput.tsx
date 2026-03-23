@@ -31,7 +31,7 @@ import {
   type DragAndDropEvent,
   type DragAndDropPayload,
 } from '@/context/DnDContext';
-import { useSkills } from '@/context/SkillsContext';
+import { useScopedSkills } from '../hooks/useScopedSkills';
 import { useAgentTools } from '@/hooks/use-agent-tools';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 
@@ -58,7 +58,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   const chatInputRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { subscribe } = useDnDContext();
-  const { skills } = useSkills();
+  const { skills } = useScopedSkills({
+    assistantId: session?.assistant?.id,
+    sessionId: session?.id,
+  });
   const { availableTools: tools } = useAgentTools(session?.id);
 
   const {

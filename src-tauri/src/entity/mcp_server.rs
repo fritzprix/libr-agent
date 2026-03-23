@@ -11,9 +11,11 @@ pub struct Model {
     pub id: String, // Immutable UUID (cuid2)
     #[sea_orm(unique)]
     pub name: String, // User-visible identifier (mutable, but unique)
-    pub config: String,               // JSON stored as TEXT
-    pub tool_count: Option<i32>,      // Cached tool count (from last verification/connection)
+    pub config: String,                      // JSON stored as TEXT
+    pub tool_count: Option<i32>, // Cached tool count (from last verification/connection)
     pub cached_tools: Option<String>, // JSON array of {name, description} (from last verify)
+    pub verification_status: Option<String>, // pending | success | error
+    pub last_verification_error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }

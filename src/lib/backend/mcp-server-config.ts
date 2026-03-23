@@ -10,8 +10,23 @@ interface MCPServerDto {
   name: string; // Human-readable name
   config: unknown; // JSON
   toolCount: number | null; // Cached tool count from last verification/connection
+  verificationStatus: string | null;
+  lastVerificationError: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+function parseVerificationStatus(
+  verificationStatus: string | null,
+): MCPServerEntity['verificationStatus'] | undefined {
+  switch (verificationStatus) {
+    case 'pending':
+    case 'success':
+    case 'error':
+      return verificationStatus;
+    default:
+      return undefined;
+  }
 }
 
 // Convert backend DTO to frontend MCPServerEntity
@@ -26,6 +41,11 @@ function deserializeMCPServer(dto: MCPServerDto): MCPServerEntity {
     authentication: (config as Record<string, unknown>).authentication,
     metadata: (config as Record<string, unknown>).metadata,
     toolCount: dto.toolCount !== null ? dto.toolCount : undefined, // Convert null to undefined
+    verificationStatus: parseVerificationStatus(dto.verificationStatus),
+    lastVerificationError:
+      dto.lastVerificationError !== null
+        ? dto.lastVerificationError
+        : undefined,
     isActive: config.isActive !== undefined ? config.isActive : true,
     // isActive is stored inside 'config' JSON in backend.
 
@@ -39,8 +59,22 @@ function serializeMCPServer(server: MCPServerEntity): {
   name: string;
   config: string;
 } {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, name, createdAt, updatedAt, ...configRest } = server;
+  const {
+    id,
+    name,
+    createdAt,
+    updatedAt,
+    toolCount,
+    verificationStatus,
+    lastVerificationError,
+    ...configRest
+  } = server;
+  void id;
+  void createdAt;
+  void updatedAt;
+  void toolCount;
+  void verificationStatus;
+  void lastVerificationError;
   // We store everything else in config
   return {
     name: name,

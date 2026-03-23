@@ -56,7 +56,7 @@ pub async fn create_basic_isolated_command(
     }
 
     // Construct PATH environment variable carefully
-    let current_path = std::env::var("PATH").unwrap_or_default();
+    let current_path = crate::utils::env::get_effective_path();
     let mut new_path = current_path.clone();
 
     if let Some(python_str) = &python_path_str {
@@ -85,7 +85,7 @@ pub async fn create_basic_isolated_command(
     cmd.env("PATH", &new_path);
 
     info!("Windows environment configured: workspace isolated, PATH preserved (with Anaconda if found)");
-    let path_len = std::env::var("PATH").map(|p| p.len()).unwrap_or(0);
+    let path_len = crate::utils::env::get_effective_path().len();
     let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| "<not-set>".to_string());
     let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "<not-set>".to_string());
     let psmodulepath = std::env::var("PSModulePath").unwrap_or_else(|_| "<not-set>".to_string());

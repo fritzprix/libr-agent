@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.15] - 2026-03-22
+
+### 🚀 Features
+
+- **Expanded Bundled Skill Library**: Added the new `playbook-creator`, `computer-diagnosis`, and `deep-research-report` bundled skills, along with updated supporting references and templates, so agents ship with stronger guided workflows for structured planning and investigation tasks.
+
+### 🐛 Fixes
+
+- **Playbook Launch Reliability**: Restored the playbook list to the working card/group flow from `0.6.14`, so starting a playbook once again routes through the expected `playbookId` launch path instead of breaking from the list view.
+- **Agent Session Attachment Stability**: Fixed the agent attachment provider wiring so active agent chats no longer crash with `useAgentSessionState must be used within AgentSessionProvider` while loading session-scoped attachments.
+- **Session Attention Acknowledgement Race**: Hardened session viewed-state persistence so acknowledging a session no longer clears newer attention events that arrive between the read and update steps.
+
+### 🔧 Internal
+
+- **Release Validation Cleanup**: Cleaned up Unix-gated session workspace cwd test imports so Windows release validation no longer emits avoidable Rust warnings during the patch pipeline.
+
+## [0.6.14] - 2026-03-22
+
+### 🐛 Fixes
+
+- **Cross-Platform Validation Stability**: Fixed session workspace cwd validation so equivalent macOS temp paths like `/var/...` and `/private/var/...` no longer fail `refactor:validate`, restoring green CI behavior for macOS and the dependent Windows matrix leg.
+
+### 🔧 Internal
+
+- **Release Validation Cleanup**: Updated stale workspace file-operation tests and Unix-only PATH helper coverage so the Rust validation pipeline passes cleanly during patch releases.
+
+## [0.6.13] - 2026-03-22
+
+### 🐛 Fixes
+
+- **Linux Dock Launch MCP Recovery**: Restored full executable PATH discovery for GUI-launched sessions on Linux and other Unix desktops, so `npx`/`uvx`-based MCP servers can start reliably even when LibrAgent is launched from a dock or app shortcut instead of a terminal.
+- **Session MCP Workspace Consistency**: Session-isolated stdio MCP servers now create and start inside their session workspace, keeping relative file access and startup behavior aligned with the active workspace instead of the app's inherited working directory.
+- **Grok Extension Setup Prompting**: The bundled Grok MCP preset now declares its required `XAI_API_KEY`, so extension setup no longer leaves the server underconfigured.
+
+### 🔧 Internal
+
+- **PATH and Session Spawn Regression Coverage**: Added targeted integration coverage for effective PATH recovery, persistent shell startup, and session MCP workspace cwd behavior to keep release builds honest.
+
+## [0.6.12] - 2026-03-22
+
+### 🚀 Features
+
+- **Faster MCP Server Saves**: MCP server saves now complete immediately and verify in the background, so the dialog no longer blocks on slow dry runs.
+
+### 🐛 Fixes
+
+- **Verified Server Card Feedback**: Server cards now show pending, success, and error states from persisted verification data, including the last dry-run error when a server fails validation.
+- **Fresh Tool Metadata After Verification**: Tool counts and cached tool lists now refresh after verification completes, keeping the server card and tool modal in sync with the latest server state.
+- **Gemini Session Startup Stability**: Fixed the session-isolated stdio launch path so `npx`-based Gemini servers start from the correct working directory instead of failing during initialization.
+
+### 🔧 Internal
+
+- **MCP Verification Plumbing**: Added persistence for verification state, background verification events, and supporting tests so server metadata updates stay consistent across reloads.
+
 ## [0.6.11] - 2026-03-21
 
 ### 🚀 Features
@@ -1325,7 +1379,7 @@ All notable changes to this project will be documented in this file.
 
 - **Content Store Context Enhancement**: Improved agent visibility of uploaded files through enhanced service context
   - **Recent Uploads Tracking**: System prompt now displays last 10 uploaded files with IDs and metadata
-  - **Direct File Access**: Agents can immediately use `contentId` without calling `listContent()`
+  - **Direct File Access**: Agents can immediately use `contentId` without calling `list()`
   - **Smart Truncation Logic**: Fixed misleading truncation messages - now distinguishes between preview truncation and file-end detection
   - **Enhanced Error Messages**: Out-of-bounds errors now include actual file size and valid range suggestions
   - **Content ID Normalization**: Auto-adds `content_` prefix to IDs for flexible usage

@@ -86,6 +86,14 @@ function DraftRouteWrapper({ children }: { children: React.ReactNode }) {
     );
 }
 
+function ActiveSessionWrapper({ children }: { children: React.ReactNode }) {
+    return (
+        <MemoryRouter initialEntries={['/agent/session-child']}>
+            <AgentSessionListProvider>{children}</AgentSessionListProvider>
+        </MemoryRouter>
+    );
+}
+
 describe('AgentSessionListContext', () => {
     const mockUnlisten = vi.fn();
 
@@ -578,6 +586,78 @@ describe('AgentSessionListContext – statusChanged event (crash recovery)', () 
         });
 
         expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(0);
+    });
+
+    it('tracks approval requests as unread notifications for inactive sessions until viewed', async () => {
+        const { result } = renderHook(
+            () => ({ state: useAgentSessionListState(), actions: useAgentSessionListActions() }),
+            { wrapper: TestWrapperWithEvent },
+        );
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(1);
+            expect(result.current.state.notificationSessions[0]?.id).toBe('session-child');
+            expect(result.current.state.notificationSessions[0]?.lastAttentionReason).toBe('pendingApproval');
+        });
+
+        await act(async () => {
+            await result.current.actions.markSessionViewed(
+                'session-child',
+                new Date(Date.now() + 1000),
+            );
+        });
+
+        await waitFor(() => {
+            expect(result.current.state.unreadNotificationCount).toBe(0);
+            expect(result.current.state.notificationSessions).toHaveLength(0);
+            expect(result.current.state.sessions[0]?.pendingApprovalCount).toBe(1);
+        });
+    });
+
+    it('marks active-session approval requests as viewed immediately', async () => {
+        const { result } = renderHook(() => useAgentSessionListState(), {
+            wrapper: ActiveSessionWrapper,
+        });
+
+        await waitFor(() => {
+            expect(agentEventHandler).toBeDefined();
+        });
+
+        act(() => {
+            agentEventHandler?.({
+                payload: {
+                    type: 'toolExecutionRequiresApproval',
+                    sessionId: 'session-child',
+                    toolCallId: 'call-1',
+                },
+            });
+        });
+
+        await waitFor(() => {
+            expect(result.current.sessions[0]?.pendingApprovalCount).toBe(1);
+            expect(result.current.sessions[0]?.lastAttentionReason).toBeUndefined();
+            expect(result.current.unreadNotificationCount).toBe(0);
+            expect(result.current.notificationSessions).toHaveLength(0);
+        });
+
+        expect(safeInvoke).toHaveBeenCalledWith('agent_mark_session_viewed', {
+            sessionId: 'session-child',
+            viewedAt: expect.any(Number),
+        });
     });
 
     it('unregisters the listener on unmount', async () => {

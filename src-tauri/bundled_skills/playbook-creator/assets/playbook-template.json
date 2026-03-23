@@ -1,0 +1,35 @@
+{
+  "goal": "Explain the goal here (e.g., 'Setup a new Python project')",
+  "initialCommand": "The original user command that triggered this playbook creation",
+  "successCriteria": {
+    "description": "What defines success for this playbook?",
+    "requiredArtifacts": [
+      "file1.txt",
+      "file2.py"
+    ]
+  },
+  "workflow": [
+    {
+      "stepId": "step_1",
+      "description": "Describe the first step",
+      "action": {
+        "toolName": "workspace__runPowerShell",
+        "purpose": "Why are we doing this?"
+      },
+      "requiredData": [],
+      "outputVariable": "result_1"
+    },
+    {
+      "stepId": "step_2",
+      "description": "Describe the second step",
+      "action": {
+        "toolName": "workspace__writeFile",
+        "purpose": "Why are we doing this?"
+      },
+      "requiredData": [
+        "result_1"
+      ],
+      "outputVariable": "result_2"
+    }
+  ]
+}

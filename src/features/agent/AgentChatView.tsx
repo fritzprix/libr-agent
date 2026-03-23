@@ -206,7 +206,7 @@ export default function AgentChatView() {
   }
 
   return (
-    <AgentResourceAttachmentProvider>
+    <AgentResourceAttachmentProvider sessionId={session.id}>
       <AgentChatProvider>
         <AgentPlanningProvider>
           <AgentWorkspaceProvider>

@@ -235,6 +235,13 @@ impl SessionRepository for InMemorySessionRepository {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(session_id) {
             session.last_viewed_at = Some(last_viewed_at);
+            if session
+                .last_attention_at
+                .is_some_and(|attention_at| last_viewed_at >= attention_at)
+            {
+                session.last_attention_at = None;
+                session.last_attention_reason = None;
+            }
         }
         Ok(())
     }

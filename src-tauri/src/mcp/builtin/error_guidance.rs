@@ -286,15 +286,15 @@ impl ErrorGuidance {
                 "Try a different file or format".to_string(),
             ],
             (ErrorCategory::ResourceNotFound, ToolGroup::ContentStore) => vec![
-                "Use listContent to see available content".to_string(),
+                "Use list to see available content".to_string(),
                 "Verify the content ID is correct".to_string(),
-                "Use searchContent to find content by keywords".to_string(),
+                "Use search to find content by keywords".to_string(),
             ],
 
             // Knowledge tool errors
             (ErrorCategory::ResourceNotFound, ToolGroup::Knowledge) => vec![
                 "Use listKnowledge to see available knowledge entries".to_string(),
-                "Use searchContent to find entries by keyword".to_string(),
+                "Use searchKnowledge to find entries by keyword".to_string(),
                 "Verify the knowledge ID is correct".to_string(),
             ],
 
@@ -532,7 +532,8 @@ impl SuccessHint {
                 "Use startSession to apply changes in a new session".to_string(),
             ],
             ("startSession", ToolGroup::Agent) => vec![
-                "Use messageToSession to send tasks to the agent".to_string(),
+                "Use messageToSession only for follow-up instructions after the session starts"
+                    .to_string(),
                 "Use checkSession to see if work is complete".to_string(),
             ],
             ("messageToSession" | "checkSession", ToolGroup::Agent) => vec![
@@ -646,11 +647,8 @@ pub fn missing_agent_config_error(agent_id: &str) -> MCPResult {
     )
     .with_guidance(vec![
         "Use list(type=\"configs\") to see available agent configurations".to_string(),
-        format!(
-            "Verify agentId '{}' exactly matches one of the listed IDs or names",
-            agent_id
-        ),
-        "Retry startSession with a valid agentId (UUID) or exact name".to_string(),
+        format!("Verify '{}' exactly matches a listed agent ID", agent_id),
+        "Retry startSession with a valid agentId copied from list(type=\"configs\")".to_string(),
     ])
     .to_mcp_result()
 }

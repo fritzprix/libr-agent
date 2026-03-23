@@ -50,12 +50,14 @@ impl FromStr for SessionStatus {
 #[serde(rename_all = "camelCase")]
 pub enum SessionAttentionReason {
     RecurringStop,
+    PendingApproval,
 }
 
 impl SessionAttentionReason {
     pub fn as_str(&self) -> &str {
         match self {
             SessionAttentionReason::RecurringStop => "recurringStop",
+            SessionAttentionReason::PendingApproval => "pendingApproval",
         }
     }
 }
@@ -66,6 +68,7 @@ impl FromStr for SessionAttentionReason {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "recurringStop" => Ok(SessionAttentionReason::RecurringStop),
+            "pendingApproval" => Ok(SessionAttentionReason::PendingApproval),
             _ => Err(DbError::InvalidInput(format!(
                 "Invalid session attention reason: {}",
                 s
@@ -416,13 +419,25 @@ impl SessionRepository for SqliteSessionRepository {
         session_id: &str,
         last_viewed_at: i64,
     ) -> Result<(), DbError> {
-        session::ActiveModel {
-            id: Set(session_id.to_string()),
-            last_viewed_at: Set(Some(last_viewed_at)),
-            ..Default::default()
-        }
-        .update(&self.db)
-        .await?;
+        session::Entity::update_many()
+            .col_expr(session::Column::LastViewedAt, Expr::value(Some(last_viewed_at)))
+            .col_expr(
+                session::Column::LastAttentionAt,
+                Expr::cust_with_values(
+                    "CASE WHEN last_attention_at IS NOT NULL AND last_attention_at <= ? THEN NULL ELSE last_attention_at END",
+                    [last_viewed_at],
+                ),
+            )
+            .col_expr(
+                session::Column::LastAttentionReason,
+                Expr::cust_with_values(
+                    "CASE WHEN last_attention_at IS NOT NULL AND last_attention_at <= ? THEN NULL ELSE last_attention_reason END",
+                    [last_viewed_at],
+                ),
+            )
+            .filter(session::Column::Id.eq(session_id.to_string()))
+            .exec(&self.db)
+            .await?;
 
         Ok(())
     }

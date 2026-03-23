@@ -11,7 +11,6 @@ import {
 } from '@/components/ui';
 import { Switch } from '@/components/ui/switch';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import type { VerificationStatus } from '../hooks/useMCPServerManagement';
 import { ServerToolsModal } from './ServerToolsModal';
 
 interface ServerCardProps {
@@ -19,7 +18,6 @@ interface ServerCardProps {
   onEdit: (server: MCPServerEntity) => void;
   onDelete: (server: MCPServerEntity) => void;
   onToggleActive: (server: MCPServerEntity, checked: boolean) => void;
-  verificationStatus?: VerificationStatus;
   isToggling?: boolean;
 }
 
@@ -29,12 +27,12 @@ export const ServerCard = React.memo(
     onEdit,
     onDelete,
     onToggleActive,
-    verificationStatus,
     isToggling,
   }: ServerCardProps) => {
     const { t } = useTranslation('common');
     const serverName = server.name || t('mcpServer.unnamed', 'Unnamed Server');
     const [isToolsOpen, setIsToolsOpen] = useState(false);
+    const verificationStatus = server.verificationStatus;
 
     return (
       <Card className="relative overflow-hidden">
@@ -135,10 +133,20 @@ export const ServerCard = React.memo(
                   </span>
                 )}
                 {verificationStatus === 'error' && (
-                  <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
-                    <XCircle className="w-3.5 h-3.5" />
-                    {t('mcpServer.verificationFailed', 'Connection failed')}
-                  </span>
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1 text-xs text-destructive font-medium">
+                      <XCircle className="w-3.5 h-3.5" />
+                      {t('mcpServer.verificationFailed', 'Connection failed')}
+                    </span>
+                    {server.lastVerificationError && (
+                      <p
+                        className="text-xs text-destructive/90 break-words"
+                        title={server.lastVerificationError}
+                      >
+                        {server.lastVerificationError}
+                      </p>
+                    )}
+                  </div>
                 )}
                 {/* Only show "not verified" when no active verification and no tool count */}
                 {!verificationStatus &&
@@ -243,8 +251,9 @@ export const ServerCard = React.memo(
       prev.server.name === next.server.name &&
       prev.server.isActive === next.server.isActive &&
       prev.server.toolCount === next.server.toolCount &&
+      prev.server.verificationStatus === next.server.verificationStatus &&
+      prev.server.lastVerificationError === next.server.lastVerificationError &&
       prev.server.updatedAt?.getTime() === next.server.updatedAt?.getTime() &&
-      prev.verificationStatus === next.verificationStatus &&
       prev.isToggling === next.isToggling &&
       prev.onEdit === next.onEdit &&
       prev.onDelete === next.onDelete &&

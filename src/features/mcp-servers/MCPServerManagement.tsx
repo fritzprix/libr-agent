@@ -39,7 +39,6 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
     setServerToDelete,
     isDeleting,
     togglingStatus,
-    verificationStatus,
     handleCreateNew,
     handleSetupPreset,
     handleSave,
@@ -100,7 +99,6 @@ function MCPServerManagementComponent({ service }: MCPServerManagementProps) {
                   onEdit={setEditingServer}
                   onDelete={handleDelete}
                   onToggleActive={handleToggleActive}
-                  verificationStatus={verificationStatus[server.id]}
                   isToggling={!!togglingStatus[server.id]}
                 />
               ))}
