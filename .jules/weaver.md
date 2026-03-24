@@ -115,3 +115,7 @@
 
 - **GeneralTab:** Extracted the directory verification logic (`scan_skills_directory` and fallback to default dir) into a new `useSkillsDirectory` hook.
 - **Benefits:** Decoupled business logic (verification of skills folder) from the presentation, removing the monolithic `useEffect` hook block inside `GeneralTabComponent`.
+
+## 2024-03-24 - Data Fetching Hooks (useAgentTools, useServerTools, useBuiltinTools, usePlaybookSearch)
+**Eradicated:** Imperative data fetching using `useState` and `useEffect` chains, including manual error and loading state management.
+**Woven:** Declarative Data Fetching with `useSWR`, extracting side-effects into `onSuccess` and `onError` configuration options, and preventing unnecessary re-renders.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import useSWR from 'swr';
 import { getAgentAvailableTools } from '@/lib/backend/agent-commands';
 import type { MCPTool } from '@/lib/mcp';
 import { getLogger } from '@/lib/logger';
@@ -30,78 +30,54 @@ function summarizeToolNames(tools: MCPTool[]): string {
  * @returns Object containing availableTools, isLoading, and error
  */
 export function useAgentTools(sessionId: string | undefined) {
-  const [availableTools, setAvailableTools] = useState<MCPTool[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | undefined>();
+  const {
+    data: availableTools = [],
+    isLoading,
+    error,
+  } = useSWR<MCPTool[], Error>(
+    sessionId ? ['agent-tools', sessionId] : null,
+    async ([, id]) => {
+      logger.debug('Loading agent tools', { sessionId: id });
 
-  useEffect(() => {
-    if (!sessionId) {
-      setAvailableTools([]);
-      setIsLoading(false);
-      setError(undefined);
-      return;
-    }
+      const response = await getAgentAvailableTools(id as string);
 
-    let isMounted = true;
-
-    const loadTools = async () => {
-      setIsLoading(true);
-      setError(undefined);
-
-      try {
-        logger.debug('Loading agent tools', { sessionId });
-
-        const response = await getAgentAvailableTools(sessionId);
-
-        // Validate response is an array
-        if (!Array.isArray(response)) {
-          throw new Error('Expected array of tools from backend');
-        }
-
-        // Filter and validate tools using Zod schema
-        const tools = validateMCPTools(response);
-
-        if (tools.length !== response.length) {
-          logger.warn('Some tools failed validation', {
-            sessionId,
-            received: response.length,
-            validated: tools.length,
-          });
-        }
-
-        if (isMounted) {
-          setAvailableTools(tools);
-          const externalTools = tools.filter(
-            (tool) => !isBuiltinTool(tool.name),
-          );
-          logger.info('Loaded agent tools', {
-            sessionId,
-            toolCount: tools.length,
-            builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
-            externalCount: externalTools.length,
-            externalNamesSample: summarizeToolNames(externalTools),
-          });
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        if (isMounted) {
-          setError(errorMessage);
-          setAvailableTools([]);
-          logger.error('Failed to load agent tools', { sessionId, error: err });
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
+      if (!Array.isArray(response)) {
+        throw new Error('Expected array of tools from backend');
       }
-    };
 
-    loadTools();
+      const tools = validateMCPTools(response);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [sessionId]);
+      if (tools.length !== response.length) {
+        logger.warn('Some tools failed validation', {
+          sessionId: id,
+          received: response.length,
+          validated: tools.length,
+        });
+      }
 
-  return { availableTools, isLoading, error };
+      return tools;
+    },
+    {
+      revalidateOnFocus: false,
+      onSuccess: (tools) => {
+        const externalTools = tools.filter((tool) => !isBuiltinTool(tool.name));
+        logger.info('Loaded agent tools', {
+          sessionId,
+          toolCount: tools.length,
+          builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
+          externalCount: externalTools.length,
+          externalNamesSample: summarizeToolNames(externalTools),
+        });
+      },
+      onError: (err) => {
+        logger.error('Failed to load agent tools', { sessionId, error: err });
+      },
+    }
+  );
+
+  return {
+    availableTools,
+    isLoading,
+    error: error instanceof Error ? error.message : error ? String(error) : undefined,
+  };
 }
