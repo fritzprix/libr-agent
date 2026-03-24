@@ -6,29 +6,29 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 
-/// Content store repository trait for abstraction and testability
+/// Attachments repository trait for abstraction and testability
 #[async_trait]
-pub trait ContentStoreRepository: Send + Sync {
-    /// Delete all content store data for a specific session
+pub trait AttachmentsRepository: Send + Sync {
+    /// Delete all attachments data for a specific session
     /// This includes chunks, contents, and stores tables
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError>;
 }
 
-/// SQLite implementation of ContentStoreRepository
+/// SQLite implementation of AttachmentsRepository
 #[derive(Debug)]
-pub struct SqliteContentStoreRepository {
+pub struct SqliteAttachmentsRepository {
     db: DatabaseConnection,
 }
 
-impl SqliteContentStoreRepository {
-    /// Create a new SQLite content store repository with the given database connection
+impl SqliteAttachmentsRepository {
+    /// Create a new SQLite attachments repository with the given database connection
     pub fn new(db: DatabaseConnection) -> Self {
         Self { db }
     }
 }
 
 #[async_trait]
-impl ContentStoreRepository for SqliteContentStoreRepository {
+impl AttachmentsRepository for SqliteAttachmentsRepository {
     async fn delete_by_session(&self, session_id: &str) -> Result<(), DbError> {
         // Delete chunks first (foreign key constraint)
         // DELETE FROM chunks WHERE content_id IN (SELECT id FROM contents WHERE session_id = ?)

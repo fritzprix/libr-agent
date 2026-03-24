@@ -57,7 +57,7 @@ export function hasUIResource(toolResult?: Message): boolean {
  *
  * Current convention:  <service>__<tool>
  *   e.g.  planning__addScratchpad
- *         mcp_manager__listServers
+ *         tool__listServers
  *
  * External MCP tools use the same format:  <server>__<tool>
  *   e.g.  github__search_code

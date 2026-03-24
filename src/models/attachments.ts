@@ -1,4 +1,4 @@
-export interface ContentStoreItem {
+export interface AttachmentItem {
   sessionId: string;
   contentId: string;
   filename: string;
@@ -11,40 +11,40 @@ export interface ContentStoreItem {
   lastAccessedAt?: string;
 }
 
-export interface ListContentResult {
+export interface ListAttachmentsResult {
   sessionId: string;
-  contents: ContentStoreItem[];
+  contents: AttachmentItem[];
   total: number;
   hasMore: boolean;
 }
 
 // Backend DTOs
-export interface AddContentMetadata {
+export interface AddAttachmentMetadata {
   filename?: string;
   mimeType?: string;
   size?: number;
   uploadedAt?: string;
 }
 
-export interface AddContentArgs {
+export interface AddAttachmentArgs {
   fileUrl?: string; // Local file path or blob URL
   srcUrl?: string; // Source URL if web content
   content?: string; // Direct text content
-  metadata?: AddContentMetadata;
+  metadata?: AddAttachmentMetadata;
   title?: string;
   tags?: string[];
 }
 
-export interface CreateStoreArgs {
+export interface CreateAttachmentStoreArgs {
   sessionId?: string;
   metadata?: Record<string, unknown>;
 }
 
-export interface CreateStoreResult {
+export interface CreateAttachmentStoreResult {
   sessionId: string;
 }
 
-export interface ListContentArgs {
+export interface ListAttachmentsArgs {
   sessionId?: string;
   pagination?: {
     limit?: number;
@@ -52,6 +52,6 @@ export interface ListContentArgs {
   };
 }
 
-export interface DeleteContentArgs {
+export interface DeleteAttachmentArgs {
   contentId: string;
 }

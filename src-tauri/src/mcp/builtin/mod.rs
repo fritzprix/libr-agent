@@ -8,10 +8,10 @@ use tracing::info;
 
 pub mod agent;
 pub mod assistant;
+pub mod attachments;
 pub mod bootstrap;
 pub mod browser;
 pub mod browser_content_store;
-pub mod content_store;
 pub mod error_guidance;
 pub mod knowledge;
 pub mod media;
@@ -372,7 +372,7 @@ impl BuiltinServerRegistry {
         )));
 
         registry.register_server(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(
+            crate::mcp::builtin::attachments::AttachmentsServer::new(
                 "default".to_string(),
                 session_manager.clone(),
             ),
@@ -411,16 +411,16 @@ impl BuiltinServerRegistry {
             session_manager.clone(),
         )));
 
-        let content_store_server =
-            crate::mcp::builtin::content_store::ContentStoreServer::new_with_sqlite(
+        let attachments_server =
+            crate::mcp::builtin::attachments::AttachmentsServer::new_with_sqlite(
                 "default".to_string(),
                 session_manager.clone(),
                 sqlite_db_url,
             )
             .await
-            .expect("Failed to initialize content store with SQLite");
+            .expect("Failed to initialize attachments store with SQLite");
 
-        registry.register_server(Box::new(content_store_server));
+        registry.register_server(Box::new(attachments_server));
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context
@@ -453,16 +453,15 @@ impl BuiltinServerRegistry {
             session_manager.clone(),
         )));
 
-        let content_store_server =
-            crate::mcp::builtin::content_store::ContentStoreServer::new_with_db(
-                "default".to_string(),
-                session_manager.clone(),
-                db,
-            )
-            .await
-            .expect("Failed to initialize content store with DatabaseConnection");
+        let attachments_server = crate::mcp::builtin::attachments::AttachmentsServer::new_with_db(
+            "default".to_string(),
+            session_manager.clone(),
+            db,
+        )
+        .await
+        .expect("Failed to initialize attachments store with DatabaseConnection");
 
-        registry.register_server(Box::new(content_store_server));
+        registry.register_server(Box::new(attachments_server));
 
         registry.register_server(Box::new(ui::UiServer::new()));
         // browser requires AppHandle - can't instantiate without Tauri app context

@@ -1,4 +1,3 @@
-pub mod alias_migration;
 pub mod app_setup;
 pub mod database;
 pub mod database_backup;

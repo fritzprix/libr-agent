@@ -44,8 +44,8 @@ use commands::assistant_crud_commands::{
     batch_upsert_assistants, create_assistant, delete_assistant, get_assistant, list_assistants,
     update_assistant,
 };
+use commands::attachments_commands::delete_attachments;
 use commands::browser_commands::*;
-use commands::content_store_commands::delete_content_store;
 use commands::download_commands::{download_workspace_file, export_and_download_zip};
 use commands::file_commands::{
     check_dropped_path_type, read_dropped_file, register_dropped_files, workspace_write_file,
@@ -99,11 +99,11 @@ use commands::workspace_commands::{
 
 // Re-export state management functions
 pub use state::{
-    get_assistant_repository, get_compact_context_repository, get_content_store_repository,
+    get_assistant_repository, get_attachments_repository, get_compact_context_repository,
     get_database_connection, get_knowledge_repository, get_mcp_server_repository,
     get_mcp_service_proxy_manager, get_message_repository, get_playbook_repository,
     get_session_repository, get_sqlite_db_url, set_assistant_repository,
-    set_compact_context_repository, set_content_store_repository, set_database_connection,
+    set_attachments_repository, set_compact_context_repository, set_database_connection,
     set_knowledge_repository, set_mcp_server_repository, set_mcp_service_proxy_manager,
     set_message_repository, set_playbook_repository, set_session_repository, set_sqlite_db_url,
 };
@@ -169,7 +169,7 @@ pub fn run() {
                 export_and_download_zip,
                 // Session management commands (still needed for workspace isolation)
                 remove_session,
-                delete_content_store,
+                delete_attachments,
                 get_app_data_dir,
                 get_app_logs_dir,
                 get_update_install_capability,

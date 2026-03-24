@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::mcp::builtin::content_store::storage::ContentStoreStorage;
+    use crate::mcp::builtin::attachments::storage::AttachmentsStorage;
     use tempfile::TempDir;
 
-    async fn setup_storage() -> (ContentStoreStorage, TempDir, String) {
+    async fn setup_storage() -> (AttachmentsStorage, TempDir, String) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test_functional.db");
 
@@ -25,7 +25,7 @@ mod tests {
             .await
             .expect("Failed to run migrations");
 
-        let mut storage = ContentStoreStorage::new_with_db(db)
+        let mut storage = AttachmentsStorage::new_with_db(db)
             .await
             .expect("Failed to init storage");
 

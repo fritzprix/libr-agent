@@ -2,139 +2,35 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   MessageParam as AnthropicMessageParam,
   Tool as AnthropicTool,
-  TextBlockParam,
-  ImageBlockParam,
 } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getLogger } from '../logger';
 import { Message } from '@/models/chat';
-import {
-  MCPTool,
-  MCPContent,
-  SamplingOptions,
-  SamplingResponse,
-} from '@/lib/mcp';
+import { MCPTool, SamplingOptions, SamplingResponse } from '@/lib/mcp';
 import { AIServiceProvider, AIServiceConfig, TokenUsage } from './types';
 import { BaseAIService } from './base-service';
 import { formatToolCall } from './utils';
 import { ModelInfo, llmConfigManager } from '../llm-config-manager';
 import { supportsThinking, getContextWindow } from './model-capabilities';
+import {
+  applyAnthropicMessageDeltaUsage,
+  applyAnthropicMessageStartUsage,
+  buildAnthropicSystemBlocks,
+} from './anthropic/cache';
+import { convertToAnthropicMessages } from './anthropic/message-converter';
+import {
+  ANTHROPIC_MODEL_CACHE_TTL,
+  cacheAnthropicModels,
+  getDefaultAnthropicModel,
+  isAnthropicModelCacheValid,
+  validateAnthropicFallbackModel,
+} from './anthropic/models';
+import {
+  createEmptyAnthropicUsage,
+  ToolCallAccumulator,
+} from './anthropic/types';
 const logger = getLogger('AnthropicService');
 
 const MAX_PARTIAL_TOOL_INPUT_LENGTH = 200_000;
-type AnthropicImageMediaType =
-  | 'image/jpeg'
-  | 'image/png'
-  | 'image/gif'
-  | 'image/webp';
-
-function normalizeAnthropicImageMediaType(
-  rawMimeType: string | undefined,
-): AnthropicImageMediaType | null {
-  if (!rawMimeType) {
-    return null;
-  }
-
-  const mimeType = rawMimeType.toLowerCase();
-  if (mimeType === 'image/jpg') {
-    return 'image/jpeg';
-  }
-
-  if (
-    mimeType === 'image/jpeg' ||
-    mimeType === 'image/png' ||
-    mimeType === 'image/gif' ||
-    mimeType === 'image/webp'
-  ) {
-    return mimeType;
-  }
-
-  return null;
-}
-
-/**
- * Marker injected by TimeLocationContextProvider (priority 1000, always last).
- * Everything before this marker is stable and safe to cache.
- */
-const VOLATILE_CONTEXT_MARKER = '# Current Context Information';
-
-/**
- * Splits a system prompt into stable (cacheable) and volatile blocks for
- * Anthropic prompt caching. The stable prefix receives `cache_control:
- * { type: 'ephemeral' }` so Anthropic caches it across requests.
- *
- * Structure of the assembled system prompt:
- *  [stable]  agent identity + workspace instructions + session name
- *            + semi-stable service contexts (bootstrap, skills, mcp_manager)
- *  [volatile] TimeLocation block (# Current Context Information)
- *             + planning / browser service contexts (change per request)
- *
- * If no volatile marker is found the entire prompt is treated as stable.
- */
-function buildSystemBlocks(
-  systemPrompt: string | undefined,
-): TextBlockParam[] | undefined {
-  if (!systemPrompt) return undefined;
-
-  const idx = systemPrompt.indexOf(VOLATILE_CONTEXT_MARKER);
-
-  if (idx < 0) {
-    // No volatile section — cache the whole prompt
-    return [
-      {
-        type: 'text',
-        text: systemPrompt,
-        cache_control: { type: 'ephemeral' },
-      },
-    ];
-  }
-
-  if (idx === 0) {
-    // Entire prompt starts with volatile content — return a single uncached block
-    return [{ type: 'text', text: systemPrompt }];
-  }
-
-  const stablePrefix = systemPrompt.slice(0, idx).trimEnd();
-  const volatileSuffix = systemPrompt.slice(idx);
-
-  return [
-    {
-      type: 'text',
-      text: stablePrefix,
-      cache_control: { type: 'ephemeral' }, // Anthropic caches up to this breakpoint
-    },
-    {
-      type: 'text',
-      text: volatileSuffix,
-      // No cache_control — volatile content, changes up to once per hour
-    },
-  ];
-}
-
-/**
- * Extended usage interface for Anthropic's response that includes prompt caching fields.
- * Anthropic SDK types may not include these yet, so we define them explicitly.
- * @internal
- */
-interface AnthropicUsageWithCache {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
-}
-
-/**
- * An internal helper interface to accumulate partial JSON data for a tool call
- * during a streaming response.
- * @internal
- */
-interface ToolCallAccumulator {
-  id: string;
-  name: string;
-  partialJson: string;
-  index: number;
-  yielded: boolean; // Track if already yielded to prevent duplicates
-  initialInput?: Record<string, unknown> | null;
-}
 
 /**
  * An AI service implementation for interacting with Anthropic's language models (e.g., Claude).
@@ -148,7 +44,7 @@ export class AnthropicService extends BaseAIService<
   private anthropic: Anthropic;
   private modelCache?: ModelInfo[];
   private cacheTimestamp?: number;
-  private readonly CACHE_TTL = 3600000; // 1 hour in milliseconds
+  private readonly CACHE_TTL = ANTHROPIC_MODEL_CACHE_TTL;
 
   /**
    * Initializes a new instance of the `AnthropicService`.
@@ -162,7 +58,7 @@ export class AnthropicService extends BaseAIService<
       dangerouslyAllowBrowser: true,
     });
     // Validate that fallback model exists in config
-    this.validateFallbackModel();
+    validateAnthropicFallbackModel(this.logger);
   }
 
   /**
@@ -259,9 +155,9 @@ export class AnthropicService extends BaseAIService<
         });
       }
 
-      // Cache the results
-      this.modelCache = models;
-      this.cacheTimestamp = Date.now();
+      const cacheState = cacheAnthropicModels(models);
+      this.modelCache = cacheState.modelCache;
+      this.cacheTimestamp = cacheState.cacheTimestamp;
 
       logger.info(`Loaded ${models.length} models from Anthropic API`);
       return models;
@@ -287,9 +183,7 @@ export class AnthropicService extends BaseAIService<
    * Check if model cache is still valid (1 hour TTL)
    */
   private isCacheValid(): boolean {
-    if (!this.cacheTimestamp) return false;
-    const age = Date.now() - this.cacheTimestamp;
-    return age < this.CACHE_TTL;
+    return isAnthropicModelCacheValid(this.cacheTimestamp, this.CACHE_TTL);
   }
 
   /**
@@ -299,41 +193,17 @@ export class AnthropicService extends BaseAIService<
    */
   private getDefaultModel(): string {
     const logger = getLogger('AnthropicService.getDefaultModel');
+    const model = getDefaultAnthropicModel(this.config);
 
-    // Priority 1: Check config default
     if (this.config?.defaultModel) {
-      logger.debug(`Using config default model: ${this.config.defaultModel}`);
-      return this.config.defaultModel;
-    }
-
-    // Priority 2: First model from config
-    const configModels = llmConfigManager.getModelsForProvider('anthropic');
-    if (configModels && Object.keys(configModels).length > 0) {
-      const firstModel = Object.keys(configModels)[0];
-      logger.debug(`Using first config model: ${firstModel}`);
-      return firstModel;
-    }
-
-    // Priority 3: Safe fallback (verified to exist in current config)
-    const fallback = 'claude-3-5-sonnet-20241022';
-    logger.warn(`No config models found, using fallback: ${fallback}`);
-    return fallback;
-  }
-
-  /**
-   * Validates that the fallback model exists in config
-   * @private
-   */
-  private validateFallbackModel(): void {
-    const fallback = 'claude-3-5-sonnet-20241022';
-    const model = llmConfigManager.getModel('anthropic', fallback);
-    if (!model) {
-      this.logger.error(
-        `Fallback model ${fallback} not found in config. Update getDefaultModel() to use a valid fallback.`,
-      );
+      logger.debug(`Using config default model: ${model}`);
+    } else if (llmConfigManager.getModelsForProvider('anthropic')) {
+      logger.debug(`Using configured Anthropic model: ${model}`);
     } else {
-      this.logger.debug(`Fallback model ${fallback} validated successfully`);
+      logger.warn(`No config models found, using fallback: ${model}`);
     }
+
+    return model;
   }
 
   /**
@@ -387,7 +257,7 @@ export class AnthropicService extends BaseAIService<
         }
       }
 
-      const systemBlocks = buildSystemBlocks(options.systemPrompt);
+      const systemBlocks = buildAnthropicSystemBlocks(options.systemPrompt);
 
       const stream = this.anthropic.messages.stream(
         {
@@ -407,11 +277,7 @@ export class AnthropicService extends BaseAIService<
       const toolCallAccumulators = new Map<number, ToolCallAccumulator>();
 
       // Track current usage metrics (updated from message_start and message_delta)
-      let currentUsage: TokenUsage = {
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-      };
+      let currentUsage: TokenUsage = createEmptyAnthropicUsage();
 
       if (this.getAbortSignal().aborted) {
         this.logger.debug('Stream aborted before iteration');
@@ -427,40 +293,20 @@ export class AnthropicService extends BaseAIService<
         // Handle message_start for input tokens and cache stats
         if (chunk.type === 'message_start') {
           if (chunk.message?.usage) {
-            const u = chunk.message.usage as AnthropicUsageWithCache;
-            currentUsage.promptTokens = u.input_tokens || 0;
-            currentUsage.totalTokens =
-              currentUsage.promptTokens + currentUsage.completionTokens;
-
-            // Extract prompt caching stats if available
-            if (
-              u.cache_creation_input_tokens !== undefined ||
-              u.cache_read_input_tokens !== undefined
-            ) {
-              currentUsage.cachedPromptTokens = u.cache_read_input_tokens;
-              currentUsage.details = {
-                ...currentUsage.details,
-                cacheCreationInputTokens: u.cache_creation_input_tokens,
-                cacheReadInputTokens: u.cache_read_input_tokens,
-              };
-            }
+            currentUsage = applyAnthropicMessageStartUsage(
+              currentUsage,
+              chunk.message.usage,
+            );
             yield JSON.stringify({ usage: currentUsage });
           }
         }
 
         if (chunk.type === 'message_delta') {
           if (chunk.usage) {
-            // Update completion tokens
-            currentUsage.completionTokens = chunk.usage.output_tokens || 0;
-
-            // Update input tokens if provided (usually in message_start, but just in case)
-            if (chunk.usage.input_tokens) {
-              currentUsage.promptTokens = chunk.usage.input_tokens;
-            }
-
-            currentUsage.totalTokens =
-              currentUsage.promptTokens + currentUsage.completionTokens;
-
+            currentUsage = applyAnthropicMessageDeltaUsage(
+              currentUsage,
+              chunk.usage,
+            );
             yield JSON.stringify({ usage: currentUsage });
           }
         }
@@ -728,257 +574,7 @@ export class AnthropicService extends BaseAIService<
     messages: Message[],
     systemPrompt?: string,
   ): AnthropicMessageParam[] {
-    // Note: Anthropic system prompt is passed separately in doStreamChat
-    void systemPrompt;
-    const anthropicMessages: AnthropicMessageParam[] = [];
-    const toolUseIds = new Set<string>();
-    const toolResultIds = new Set<string>();
-
-    // Track tool chains for debugging and integrity checks
-    for (const m of messages) {
-      if (m.role === 'assistant' && m.tool_use) {
-        toolUseIds.add(m.tool_use.id);
-      } else if (m.role === 'assistant' && m.tool_calls) {
-        m.tool_calls.forEach((tc) => toolUseIds.add(tc.id));
-      } else if (m.role === 'tool' && m.tool_call_id) {
-        toolResultIds.add(m.tool_call_id);
-      }
-    }
-
-    // Verify tool chain integrity
-    const unmatchedToolUses = Array.from(toolUseIds).filter(
-      (id) => !toolResultIds.has(id),
-    );
-    const unmatchedToolResults = Array.from(toolResultIds).filter(
-      (id) => !toolUseIds.has(id),
-    );
-
-    if (unmatchedToolUses.length > 0 || unmatchedToolResults.length > 0) {
-      logger.warn('Potential tool chain mismatch detected', {
-        unmatchedToolUses,
-        unmatchedToolResults,
-        totalMessages: messages.length,
-        toolUseIds: Array.from(toolUseIds),
-        toolResultIds: Array.from(toolResultIds),
-      });
-    }
-
-    logger.debug('Tool chain integrity verification passed', {
-      totalMessages: messages.length,
-      toolUseCount: toolUseIds.size,
-      toolResultCount: toolResultIds.size,
-    });
-
-    for (const m of messages) {
-      // Convert UI-originated messages to user role for provider calls
-      const effectiveRole = m.source === 'ui' ? 'user' : m.role;
-
-      if (effectiveRole === 'system') {
-        // System messages are handled separately in the API call
-        continue;
-      }
-
-      if (effectiveRole === 'user') {
-        anthropicMessages.push({
-          role: 'user',
-          content: this.formatAnthropicContent(m.content),
-        });
-      } else if (effectiveRole === 'assistant') {
-        // Filter out empty assistant messages that would cause API errors
-        const hasContent = m.content && m.content.length > 0;
-        const hasToolCalls = m.tool_calls && m.tool_calls.length > 0;
-        const hasToolUse = m.tool_use;
-
-        // Skip empty assistant messages to prevent 400 errors
-        if (!hasContent && !hasToolCalls && !hasToolUse) {
-          logger.debug('Skipping empty assistant message', { messageId: m.id });
-          continue;
-        }
-
-        // Build content array with thinking block first if present
-        const content = [];
-
-        // Add thinking block as first element if exists
-        if (m.thinking) {
-          content.push({
-            type: 'thinking' as const,
-            thinking: m.thinking,
-            signature: m.thinkingSignature || '',
-          });
-        }
-
-        // Add tool_use content
-        if (m.tool_calls) {
-          content.push(
-            ...m.tool_calls.map((tc) => ({
-              type: 'tool_use' as const,
-              id: tc.id,
-              name: tc.function.name,
-              input: this.parseToolInput(tc.function.arguments, {
-                messageId: m.id,
-                toolId: tc.id,
-                toolName: tc.function.name,
-              }),
-            })),
-          );
-        } else if (m.tool_use) {
-          content.push({
-            type: 'tool_use' as const,
-            id: m.tool_use.id,
-            name: m.tool_use.name,
-            input: this.ensureObjectInput(m.tool_use.input, {
-              messageId: m.id,
-              toolId: m.tool_use.id,
-              toolName: m.tool_use.name,
-            }),
-          });
-        }
-
-        // Always add text content if it exists, regardless of tool use
-        if (hasContent) {
-          const processedContent = this.processMessageContent(m.content);
-          if (processedContent && processedContent.length > 0) {
-            content.push({ type: 'text' as const, text: processedContent });
-          }
-        }
-
-        if (content.length > 0) {
-          anthropicMessages.push({
-            role: 'assistant',
-            content,
-          });
-        }
-      } else if (effectiveRole === 'tool') {
-        if (!m.tool_call_id) {
-          logger.warn('Tool message missing tool_call_id, skipping', {
-            messageId: m.id,
-          });
-          continue;
-        }
-        // Anthropic tool_result.content supports image blocks natively.
-        const textContent = this.processMessageContent(m.content);
-        const images = (m.content as MCPContent[]).filter(
-          (c) => c.type === 'image',
-        ) as Array<{
-          type: 'image';
-          data?: string;
-          mimeType?: string;
-          source?: { data?: string; mimeType?: string };
-        }>;
-        if (images.length > 0) {
-          const imageBlocks = images
-            .map((img): ImageBlockParam | null => {
-              const data = img.data ?? img.source?.data;
-              const mediaType = normalizeAnthropicImageMediaType(
-                img.mimeType ?? img.source?.mimeType,
-              );
-
-              if (!data || !mediaType) {
-                logger.warn(
-                  'Skipping Anthropic tool-result image with missing data or unsupported MIME type',
-                  {
-                    messageId: m.id,
-                    toolCallId: m.tool_call_id,
-                    hasData: Boolean(data),
-                    mimeType: img.mimeType ?? img.source?.mimeType,
-                  },
-                );
-                return null;
-              }
-
-              return {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mediaType,
-                  data,
-                },
-              };
-            })
-            .filter((block): block is ImageBlockParam => block !== null);
-
-          if (imageBlocks.length > 0) {
-            const blocks: (TextBlockParam | ImageBlockParam)[] = [];
-            if (textContent) {
-              blocks.push({ type: 'text', text: textContent });
-            }
-            blocks.push(...imageBlocks);
-
-            anthropicMessages.push({
-              role: 'user',
-              content: [
-                {
-                  type: 'tool_result' as const,
-                  tool_use_id: m.tool_call_id,
-                  content: blocks,
-                },
-              ],
-            });
-          } else {
-            const placeholderText = textContent
-              ? `${textContent}\n\n[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]`
-              : '[Tool returned image(s) that could not be displayed due to unsupported format or missing data.]';
-            anthropicMessages.push({
-              role: 'user',
-              content: [
-                {
-                  type: 'tool_result' as const,
-                  tool_use_id: m.tool_call_id,
-                  content: placeholderText,
-                },
-              ],
-            });
-          }
-        } else {
-          // Text-only fast path
-          anthropicMessages.push({
-            role: 'user',
-            content: [
-              {
-                type: 'tool_result' as const,
-                tool_use_id: m.tool_call_id,
-                content: textContent,
-              },
-            ],
-          });
-        }
-      } else {
-        logger.warn(`Unsupported message role for Anthropic: ${m.role}`);
-      }
-    }
-    return anthropicMessages;
-  }
-
-  /**
-   * Helper to format content for Anthropic API, supporting multimodal parts.
-   * @param content The content of the message.
-   */
-  private formatAnthropicContent(
-    content: MCPContent[],
-  ): AnthropicMessageParam['content'] {
-    const multimodal = this.processMultiModalContent(content);
-    if (multimodal.every((p) => p.type === 'text')) {
-      return this.processMessageContent(content);
-    }
-    return multimodal.map((part) => {
-      if (part.type === 'text') {
-        return { type: 'text', text: part.text || '' };
-      } else if (part.type === 'image') {
-        const mimeType = part.mimeType || 'image/jpeg';
-        return {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: mimeType,
-            data: part.image || '',
-          },
-        };
-      }
-      return {
-        type: 'text',
-        text: `[Unsupported content format for Anthropic: ${part.type}]`,
-      };
-    }) as unknown as AnthropicMessageParam['content'];
+    return convertToAnthropicMessages(messages, systemPrompt);
   }
 
   /**
@@ -1044,55 +640,5 @@ export class AnthropicService extends BaseAIService<
    */
   dispose(): void {
     // Anthropic SDK doesn't require explicit cleanup
-  }
-
-  private parseToolInput(
-    raw: unknown,
-    context: { messageId?: string; toolId?: string; toolName?: string },
-  ): Record<string, unknown> {
-    if (raw == null) {
-      logger.warn(
-        'Tool call input missing; defaulting to empty object',
-        context,
-      );
-      return {};
-    }
-
-    if (typeof raw === 'string') {
-      try {
-        return JSON.parse(raw) as Record<string, unknown>;
-      } catch (error) {
-        logger.error('Failed to parse tool call arguments as JSON', {
-          ...context,
-          error,
-        });
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-    }
-
-    if (typeof raw === 'object' && !Array.isArray(raw)) {
-      return raw as Record<string, unknown>;
-    }
-
-    logger.error('Unsupported tool call argument type', {
-      ...context,
-      valueType: typeof raw,
-    });
-    throw new Error('Unsupported tool call argument type');
-  }
-
-  private ensureObjectInput(
-    raw: unknown,
-    context: { messageId?: string; toolId?: string; toolName?: string },
-  ): Record<string, unknown> {
-    if (raw == null) {
-      return {};
-    }
-
-    if (typeof raw === 'object' && !Array.isArray(raw)) {
-      return raw as Record<string, unknown>;
-    }
-
-    return this.parseToolInput(raw, context);
   }
 }

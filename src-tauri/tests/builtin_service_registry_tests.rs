@@ -22,7 +22,6 @@ use tauri_mcp_agent_lib::mcp::builtin::service_id::{
 use tauri_mcp_agent_lib::mcp::builtin::tool::tools as tool_tools;
 use tauri_mcp_agent_lib::mcp::builtin::ui::tools as ui_tools;
 use tauri_mcp_agent_lib::mcp::schema::JSONSchemaType;
-use tauri_mcp_agent_lib::mcp::service_proxy::routing::{route_tool, ToolRouting};
 use tauri_mcp_agent_lib::mcp::types::MCPContent;
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
@@ -284,68 +283,6 @@ fn tool_is_enabled_even_with_empty_alias_list() {
 
 // ─── Legacy alias migration regression tests ─────────────────────────────────
 
-/// Regression: DB rows created before 0.6.0 store "content_store" in
-/// `allowedBuiltInServiceAliases`. canonicalize_builtin_service_alias() must
-/// map it to "attachments" so those agents don't silently lose the tool.
-#[test]
-fn legacy_content_store_alias_maps_to_attachments() {
-    assert_eq!(
-        canonicalize_builtin_service_alias("content_store"),
-        Some("attachments"),
-        "legacy 'content_store' must map to 'attachments' for DB backward compat"
-    );
-}
-
-/// End-to-end: an AgentConfig loaded from a pre-0.6.0 DB row (which has
-/// "content_store" in its alias list) must still get "attachments" enabled.
-#[test]
-fn agent_config_with_legacy_content_store_gets_attachments_enabled() {
-    let config = mock_agent_config(Some(vec!["content_store"]));
-    let tool_ids = extract_builtin_tool_ids(&config);
-    assert!(
-        tool_ids.contains(&"attachments".to_string()),
-        "legacy 'content_store' in allowedBuiltInServiceAliases must enable 'attachments'; \
-         got: {tool_ids:?}"
-    );
-}
-
-/// "contentstore" (no underscore) is a legacy alias written by early versions of
-/// `assistant_init.rs`. Must resolve to "attachments" for backward compatibility.
-#[test]
-fn contentstore_without_underscore_resolves_to_attachments() {
-    assert_eq!(
-        canonicalize_builtin_service_alias("contentstore"),
-        Some("attachments"),
-        "'contentstore' (no underscore) must resolve to 'attachments'"
-    );
-}
-
-/// Legacy assistant/swarm aliases must collapse to the canonical "agent"
-/// so older configs keep working without reintroducing deprecated public services.
-#[test]
-fn legacy_agent_aliases_map_to_agent() {
-    assert_eq!(
-        canonicalize_builtin_service_alias("assistant_manager"),
-        Some("agent"),
-        "'assistant_manager' must resolve to 'agent' canonical"
-    );
-    assert_eq!(
-        canonicalize_builtin_service_alias("assistant"),
-        Some("agent"),
-        "'assistant' must resolve to 'agent' canonical"
-    );
-    assert_eq!(
-        canonicalize_builtin_service_alias("swarm"),
-        Some("agent"),
-        "'swarm' must resolve to 'agent' canonical"
-    );
-    assert_eq!(
-        canonicalize_builtin_service_alias("session_api"),
-        Some("agent"),
-        "'session_api' must resolve to 'agent' canonical"
-    );
-}
-
 // ─── BuiltinServiceId serde stability tests ───────────────────────────────────
 // Stable DB key requirement: serde value must never drift from the canonical name.
 // If these fail, old DB records become unreadable.
@@ -380,22 +317,6 @@ fn builtin_service_id_serializes_to_canonical_name() {
     }
 }
 
-/// The legacy DB value "content_store" MUST deserialize as `BuiltinServiceId::Attachments`
-/// via the serde alias added in Phase 2.  This is the regression guard for
-/// the 0.6.0 rename: existing DB records written before the rename must still
-/// deserialize without a migration.
-#[test]
-fn legacy_content_store_deserializes_to_attachments_via_serde_alias() {
-    let id: BuiltinServiceId = serde_json::from_str(r#""content_store""#).expect(
-        "\"content_store\" must deserialize as BuiltinServiceId::Attachments via serde alias",
-    );
-    assert_eq!(
-        id,
-        BuiltinServiceId::Attachments,
-        "\"content_store\" must map to Attachments"
-    );
-}
-
 // ─── Server name / registry regression tests ─────────────────────────────────
 // Original bug: ContentStoreServer::name() returned "contentstore" while the
 // registry had "attachments". All four tests below would have caught it.
@@ -413,7 +334,7 @@ fn each_builtin_server_name_is_in_registry() {
         builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
-        builtin::content_store::NAME,
+        builtin::attachments::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
@@ -446,7 +367,7 @@ fn builtin_server_names_are_unique() {
         builtin::agent::NAME,
         builtin::skills::NAME,
         builtin::playbook::NAME,
-        builtin::content_store::NAME,
+        builtin::attachments::NAME,
         builtin::ui::NAME,
         builtin::browser::NAME,
         builtin::bootstrap::NAME,
@@ -491,7 +412,7 @@ fn registry_and_server_list_are_in_sync() {
             BuiltinServiceId::Knowledge => builtin::knowledge::NAME,
             BuiltinServiceId::Skills => builtin::skills::NAME,
             BuiltinServiceId::Playbook => builtin::playbook::NAME,
-            BuiltinServiceId::Attachments => builtin::content_store::NAME,
+            BuiltinServiceId::Attachments => builtin::attachments::NAME,
             BuiltinServiceId::Ui => builtin::ui::NAME,
             BuiltinServiceId::Browser => builtin::browser::NAME,
             BuiltinServiceId::Bootstrap => builtin::bootstrap::NAME,
@@ -593,31 +514,4 @@ fn tool_transport_schema_allows_env_and_header_maps() {
             other => panic!("{key} should be an object map, got {other:?}"),
         }
     }
-}
-
-#[test]
-fn legacy_builtin_aliases_route_to_canonical_servers() {
-    assert_eq!(
-        route_tool("assistant__createAssistant").expect("assistant alias should route"),
-        ToolRouting::Builtin {
-            server_id: "agent".to_string(),
-            tool_name: "createAssistant".to_string(),
-        }
-    );
-
-    assert_eq!(
-        route_tool("swarm__awaitAgent").expect("swarm alias should route"),
-        ToolRouting::Builtin {
-            server_id: "agent".to_string(),
-            tool_name: "awaitAgent".to_string(),
-        }
-    );
-
-    assert_eq!(
-        route_tool("mcp_manager__listTools").expect("mcp_manager alias should route"),
-        ToolRouting::Builtin {
-            server_id: "tool".to_string(),
-            tool_name: "listTools".to_string(),
-        }
-    );
 }

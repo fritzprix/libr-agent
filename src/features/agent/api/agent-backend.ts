@@ -1,6 +1,6 @@
 import { safeInvoke } from '@/lib/backend/core';
 
-import type { AddContentMetadata } from '@/models/content-store';
+import type { AddAttachmentMetadata } from '@/models/attachments';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 
 /**
@@ -20,8 +20,8 @@ export async function agentCallBuiltinTool<T = unknown>(
 }
 
 /**
- * Save a file to the agent's session-specific content store.
- * This bypasses the global content store and ensures the file is
+ * Save a file to the agent's session-specific attachments.
+ * This bypasses the global attachments and ensures the file is
  * accessible to the agent in the correct session context.
  */
 export async function saveAgentFile(
@@ -30,7 +30,7 @@ export async function saveAgentFile(
   args: {
     content?: string;
     fileUrl?: string;
-    metadata?: AddContentMetadata;
+    metadata?: AddAttachmentMetadata;
   },
 ): Promise<unknown> {
   const response = await safeInvoke<MCPResult>('agent_add_attachment', {

@@ -2,6 +2,7 @@ import { safeInvoke } from './core';
 import type { Session, Assistant } from '@/models/chat';
 import type { AgentResponse, AgentSessionMetadata } from '@/models/agent-ipc';
 import type { Page } from '@/lib/db/types';
+import { enforceRuntimeBuiltinAliases } from '@/lib/assistant/runtime-builtins';
 
 interface SessionDto {
   id: string;
@@ -86,6 +87,9 @@ export async function createSession(session: Session): Promise<Session> {
       name: session.name,
       agentConfig: {
         ...assistant,
+        allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+          assistant.allowedBuiltInServiceAliases,
+        ),
       },
       isEphemeral: false,
     },
@@ -187,6 +191,9 @@ export async function upsertSession(session: Session): Promise<void> {
         sessionId: session.id,
         agentConfig: {
           ...assistant,
+          allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+            assistant.allowedBuiltInServiceAliases,
+          ),
         },
       },
     });

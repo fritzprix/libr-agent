@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::mcp::builtin::content_store::storage::ContentStoreStorage;
+    use crate::mcp::builtin::attachments::storage::AttachmentsStorage;
     use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
     use std::fs;
 

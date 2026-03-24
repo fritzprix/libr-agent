@@ -1,5 +1,5 @@
 use super::search;
-use super::server::ContentStoreServer;
+use super::server::AttachmentsServer;
 use super::types::*;
 use crate::mcp::builtin::error_guidance::{
     guided_error, not_found_error, ErrorCategory, SuccessHint, ToolGroup,
@@ -9,7 +9,7 @@ use log::error;
 use serde_json::Value;
 
 pub async fn list_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -34,11 +34,11 @@ pub async fn list_content(
 
     if let Err(e) = server.ensure_session_store(session_id).await {
         error!(
-            "Failed to ensure content store for session {session_id} while listing content: {e}"
+            "Failed to ensure attachment storage for session {session_id} while listing files: {e}"
         );
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Prepare content store failed for session {session_id}: {e}"),
+            format!("Prepare attachment storage failed for session {session_id}: {e}"),
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
@@ -126,7 +126,7 @@ pub async fn list_content(
 
     let hint = SuccessHint::new(
         format!(
-            "Found {} of {} content items{}",
+            "Found {} of {} attachments{}",
             content_list.len(),
             total,
             items_text
@@ -137,9 +137,9 @@ pub async fn list_content(
                 offset + limit
             )]
         } else if total > 0 {
-            vec!["Use read with a contentId from above to view full contents".to_string()]
+            vec!["Use read with a contentId from above to view full content".to_string()]
         } else {
-            vec!["Use add to add files to the content store".to_string()]
+            vec!["Use list to see files in current session".to_string()]
         },
     );
 
@@ -152,7 +152,7 @@ pub async fn list_content(
 }
 
 pub async fn read_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -170,7 +170,7 @@ pub async fn read_content(
     };
 
     // Normalize content ID (add "content_" prefix if missing)
-    let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
+    let normalized_content_id = AttachmentsServer::normalize_content_id(&args.content_id);
 
     // Verify content belongs to current session
     let content_session_id = {
@@ -195,14 +195,14 @@ pub async fn read_content(
         return Ok(guided_error(
             ErrorCategory::PermissionDenied,
             format!(
-                "Content '{}' belongs to a different session",
+                "Attachment '{}' belongs to a different session",
                 args.content_id
             ),
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
-            "Use list to see content in current session".to_string(),
-            "Switch to the session that owns this content".to_string(),
+            "Use list to see attachments in current session".to_string(),
+            "Switch to the session that owns this attachment".to_string(),
             "Verify the content ID is correct".to_string(),
         ])
         .to_mcp_result());
@@ -293,9 +293,9 @@ pub async fn read_content(
     };
 
     let mut hints = vec![
-        "Use search to find specific content".to_string(),
+        "Use search to find specific attachments".to_string(),
         format!(
-            "Use delete with contentId='{}' to remove this content",
+            "Use delete with contentId='{}' to remove this attachment",
             args.content_id
         ),
     ];
@@ -306,7 +306,7 @@ pub async fn read_content(
 
     let hint = SuccessHint::new(
         format!(
-            "Content '{}' (lines {}-{}):\n\n{}",
+            "Attachment '{}' (lines {}-{}):\n\n{}",
             args.content_id, from_line, to_line, content_preview
         ),
         hints,
@@ -327,7 +327,7 @@ pub async fn read_content(
 }
 
 pub async fn keyword_similarity_search(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -345,12 +345,10 @@ pub async fn keyword_similarity_search(
     };
 
     if let Err(e) = server.ensure_session_store(session_id).await {
-        error!(
-            "Failed to ensure content store for session {session_id} during keyword search: {e}"
-        );
+        error!("Failed to ensure attachment storage for session {session_id} during search: {e}");
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Prepare content store failed for session {session_id}: {e}"),
+            format!("Prepare attachment storage failed for session {session_id}: {e}"),
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
@@ -395,13 +393,16 @@ pub async fn keyword_similarity_search(
             Err(e) => {
                 return Ok(guided_error(
                     ErrorCategory::OperationFailed,
-                    format!("Search content failed for query '{}': {}", args.query, e),
+                    format!(
+                        "Search attachments failed for query '{}': {}",
+                        args.query, e
+                    ),
                     ToolGroup::ContentStore,
                 )
                 .with_guidance(vec![
                     "Verify the search query is valid".to_string(),
-                    "Check if content has been indexed".to_string(),
-                    "Use list to see available content".to_string(),
+                    "Check if attachments have been indexed".to_string(),
+                    "Use list to see available attachments".to_string(),
                 ])
                 .to_mcp_result());
             }
@@ -482,7 +483,7 @@ pub async fn keyword_similarity_search(
         if search_results.is_empty() {
             vec![
                 "Try different search keywords".to_string(),
-                "Use list to see all available content".to_string(),
+                "Use list to see all available attachments".to_string(),
             ]
         } else {
             vec!["Use read with a contentId from above to view full content".to_string()]

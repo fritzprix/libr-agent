@@ -87,7 +87,7 @@ export {
 } from './agent-commands';
 
 // Session management
-export { removeSession, deleteContentStore } from './sessions';
+export { removeSession, deleteAttachments } from './sessions';
 
 // Utilities
 export {

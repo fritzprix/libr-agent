@@ -13,7 +13,7 @@ import {
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
 import { useSettings } from '@/hooks/use-settings';
-import type { ContentStoreItem } from '@/models/content-store';
+import type { AttachmentItem } from '@/models/attachments';
 import { AttachmentReference } from '@/models/chat';
 import {
   saveAgentFile,
@@ -98,7 +98,7 @@ export function AgentResourceAttachmentProvider({
       try {
         // Use Agent V2 session-specific proxy to call list
         const response = await agentCallBuiltinTool<{
-          contents: ContentStoreItem[];
+          contents: AttachmentItem[];
         }>(sessionId, 'attachments__list', {
           sessionId,
         });
@@ -113,14 +113,14 @@ export function AgentResourceAttachmentProvider({
         );
 
         // Extract contents from structuredContent or fallback
-        let contents: ContentStoreItem[] = [];
+        let contents: AttachmentItem[] = [];
         if (
           response.structuredContent &&
           typeof response.structuredContent === 'object' &&
           'contents' in response.structuredContent
         ) {
           contents =
-            (response.structuredContent as { contents: ContentStoreItem[] })
+            (response.structuredContent as { contents: AttachmentItem[] })
               .contents || [];
         }
 
@@ -153,7 +153,7 @@ export function AgentResourceAttachmentProvider({
         return files;
       } catch (error) {
         logger.warn(
-          'Agent V2 Content Store listing failed, will retry on next revalidation',
+          'Agent V2 Attachments listing failed, will retry on next revalidation',
           { sessionId, error },
         );
         return [];
@@ -170,7 +170,7 @@ export function AgentResourceAttachmentProvider({
   );
 
   // Track session ID for caching store IDs
-  // NOTE: Content stores are auto-created on first use (add/list)
+  // NOTE: Attachments are auto-created on first use (add/list)
   // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
 
@@ -347,7 +347,7 @@ export function AgentResourceAttachmentProvider({
 
       // --- Inline multimodal handling (image/audio) ---
       // Image and audio files are passed directly to the LLM as base64 instead of
-      // being indexed in the content store. No workspace sync is needed.
+      // being indexed in the attachments store. No workspace sync is needed.
       if (
         actualMimeType === 'application/octet-stream' ||
         actualMimeType === ''
@@ -422,7 +422,7 @@ export function AgentResourceAttachmentProvider({
 
       if (!isSupported) {
         logger.info(
-          'File type not supported by ContentStore, saving to workspace only',
+          'File type not supported by Attachments, saving to workspace only',
           { filename: actualFilename },
         );
 
@@ -452,7 +452,7 @@ export function AgentResourceAttachmentProvider({
             uploadedAt: new Date().toISOString(),
             filename: actualFilename,
           },
-        })) as ContentStoreItem;
+        })) as AttachmentItem;
 
         if (!workspacePath && file) {
           try {

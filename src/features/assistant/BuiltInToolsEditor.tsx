@@ -59,26 +59,18 @@ export default function BuiltInToolsEditor() {
         const currentAliases = draft.allowedBuiltInServiceAliases;
         const effectiveCurrentAliases = currentAliases ?? allServiceAliases;
 
+        // Extract currently enabled optional services
         const currentlyEnabledOptional = optionalServiceAliases.filter((a) =>
           effectiveCurrentAliases.includes(a),
-        );
-        const preservedNonConfigurable = effectiveCurrentAliases.filter(
-          (a) =>
-            !OPTIONAL_BUILTIN_SERVICE_ALIASES.includes(
-              a as (typeof OPTIONAL_BUILTIN_SERVICE_ALIASES)[number],
-            ) &&
-            !CORE_BUILTIN_SERVICE_ALIASES.includes(
-              a as (typeof CORE_BUILTIN_SERVICE_ALIASES)[number],
-            ),
         );
 
         const nextOptional = enabled
           ? Array.from(new Set([...currentlyEnabledOptional, alias]))
           : currentlyEnabledOptional.filter((a) => a !== alias);
 
+        // ALWAYS start with core services to ensure they are present and correctly named
         const nextAliases = sortAliases([
           ...CORE_BUILTIN_SERVICE_ALIASES,
-          ...preservedNonConfigurable,
           ...nextOptional,
         ]);
 

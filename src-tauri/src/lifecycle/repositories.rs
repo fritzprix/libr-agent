@@ -1,14 +1,14 @@
 use crate::lifecycle::settings::SystemSettings;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SettingsRepository, SqliteAssistantRepository, SqliteCompactContextRepository,
-    SqliteContentStoreRepository, SqliteKnowledgeRepository, SqliteMCPServerRepository,
+    SettingsRepository, SqliteAssistantRepository, SqliteAttachmentsRepository,
+    SqliteCompactContextRepository, SqliteKnowledgeRepository, SqliteMCPServerRepository,
     SqliteMessageRepository, SqlitePlanningRepository, SqlitePlaybookRepository,
     SqliteScheduledTaskRepository, SqliteSessionRepository, SqliteSettingsRepository,
 };
 use crate::services;
 use crate::state::{
-    set_assistant_repository, set_compact_context_repository, set_content_store_repository,
+    set_assistant_repository, set_attachments_repository, set_compact_context_repository,
     set_database_connection, set_knowledge_repository, set_mcp_server_repository,
     set_mcp_service_proxy_manager, set_message_repository, set_planning_repository,
     set_playbook_repository, set_scheduled_task_repository, set_session_repository,
@@ -22,8 +22,8 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     let message_repo = SqliteMessageRepository::new(db.clone());
     info!("✅ Message repository initialized");
 
-    let content_store_repo = SqliteContentStoreRepository::new(db.clone());
-    info!("✅ Content store repository initialized");
+    let attachments_repo = SqliteAttachmentsRepository::new(db.clone());
+    info!("✅ Attachments repository initialized");
 
     let session_repo = SqliteSessionRepository::new(db.clone());
     info!("✅ Session repository initialized");
@@ -51,7 +51,7 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
 
     // Set the global repository instances
     set_message_repository(message_repo);
-    set_content_store_repository(content_store_repo);
+    set_attachments_repository(attachments_repo);
     set_session_repository(session_repo);
     set_mcp_server_repository(mcp_server_repo);
 
@@ -71,10 +71,6 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
     } else {
         info!("✅ Default assistants verified");
     }
-
-    // One-time idempotent migration: normalise legacy builtin alias names in DB.
-    crate::lifecycle::alias_migration::run_alias_migrations(db).await;
-    info!("✅ Builtin alias migrations applied");
 
     // Initialize the MCP Service Proxy Manager for session-aware builtin tools
     // For shared ownership, MCPServiceProxyManager needs Arc-wrapped dependencies

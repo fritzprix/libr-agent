@@ -13,17 +13,14 @@ const RESERVED_BUILTIN_NAMES = new Set([
   'planning',
   'workspace',
   'knowledge',
-  'assistant',
-  'assistant_manager',
+  'agent',
   'skills',
   'playbook',
   'attachments',
-  'content_store',
-  'swarm',
   'ui',
   'browser',
   'bootstrap',
-  'mcp_manager',
+  'tool',
 ]);
 
 export interface KeyValuePair {

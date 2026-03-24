@@ -9,14 +9,8 @@ describe('extractBuiltInServiceAlias', () => {
   });
 
   it('should extract alias with underscores for known services', () => {
-    expect(extractBuiltInServiceAlias('mcp_manager__list_servers')).toBe(
-      'mcp_manager',
-    );
     expect(extractBuiltInServiceAlias('attachments__search')).toBe(
       'attachments',
-    );
-    expect(extractBuiltInServiceAlias('content_store__read')).toBe(
-      'content_store',
     );
   });
 
@@ -49,7 +43,7 @@ describe('extractBuiltInServiceAlias', () => {
 describe('isValidServiceAlias', () => {
   it('should accept valid service names', () => {
     expect(isValidServiceAlias('browser')).toBe(true);
-    expect(isValidServiceAlias('mcp_manager')).toBe(true);
+    expect(isValidServiceAlias('tool')).toBe(true);
     expect(isValidServiceAlias('attachments')).toBe(true);
     expect(isValidServiceAlias('a_b_c_d_e_f')).toBe(true);
     expect(isValidServiceAlias('my_service_123')).toBe(true);

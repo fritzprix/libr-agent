@@ -1,4 +1,4 @@
-use super::server::ContentStoreServer;
+use super::server::AttachmentsServer;
 use super::types::*;
 use super::{helpers, parsers, search};
 use crate::mcp::builtin::error_guidance::{
@@ -9,7 +9,7 @@ use log::error;
 use serde_json::Value;
 
 pub async fn add_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -234,7 +234,7 @@ pub async fn add_content(
 
     let hint = SuccessHint::new(
         format!(
-            "Content saved successfully\n  ID: {}\n  Title: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
+            "Attachment saved successfully\n  ID: {}\n  Filename: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
             content_item.id,
             content_item.filename,
             content_item.size,
@@ -248,7 +248,7 @@ pub async fn add_content(
         ),
         vec![
             format!("Use read with contentId='{}' to view the full content", content_item.id),
-            "Use search to find content by keywords".to_string(),
+            "Use search to find attachments by keywords".to_string(),
         ],
     );
 
@@ -266,7 +266,7 @@ pub async fn add_content(
 }
 
 pub async fn delete_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -284,7 +284,7 @@ pub async fn delete_content(
     };
 
     // Normalize content ID (add "content_" prefix if missing)
-    let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
+    let normalized_content_id = AttachmentsServer::normalize_content_id(&args.content_id);
 
     // Verify the content belongs to the current session
     let content_session_id = {
@@ -304,14 +304,14 @@ pub async fn delete_content(
         return Ok(guided_error(
             ErrorCategory::PermissionDenied,
             format!(
-                "Content '{}' belongs to a different session",
+                "Attachment '{}' belongs to a different session",
                 args.content_id
             ),
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
-            "Use list to see content in current session".to_string(),
-            "Switch to the session that owns this content".to_string(),
+            "Use list to see attachments in current session".to_string(),
+            "Switch to the session that owns this attachment".to_string(),
             "Verify the content ID is correct".to_string(),
         ])
         .to_mcp_result());
@@ -322,13 +322,13 @@ pub async fn delete_content(
     if let Err(e) = storage.delete_content(&normalized_content_id).await {
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Delete content failed: {e}"),
+            format!("Delete attachment failed: {e}"),
             ToolGroup::ContentStore,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
             "Verify the content ID is correct".to_string(),
-            "Use list to see available content".to_string(),
+            "Use list to see available attachments".to_string(),
         ])
         .to_mcp_result());
     }
@@ -339,7 +339,7 @@ pub async fn delete_content(
             let mut search_engine = engine_arc.lock().await;
             if let Err(e) = search_engine.remove_chunks(&normalized_content_id).await {
                 // Log error but don't fail the operation since content is already deleted
-                error!("Failed to remove content from search index: {e}");
+                error!("Failed to remove attachment from search index: {e}");
             }
         }
         Err(e) => {
@@ -348,8 +348,8 @@ pub async fn delete_content(
     }
 
     let hint = SuccessHint::new(
-        format!("Content '{}' deleted successfully", args.content_id),
-        vec!["Use list to see remaining content".to_string()],
+        format!("Attachment '{}' deleted successfully", args.content_id),
+        vec!["Use list to see remaining attachments".to_string()],
     );
 
     Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({

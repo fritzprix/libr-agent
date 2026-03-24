@@ -1,6 +1,6 @@
 pub mod assistant_repository;
+pub mod attachments_repository;
 pub mod compact_context_repository;
-pub mod content_store_repository;
 pub mod error;
 pub mod in_memory_session_repository;
 pub mod knowledge_repository;
@@ -15,10 +15,10 @@ pub mod settings_repository;
 // Re-export core types for easier imports
 pub use crate::utils::pagination::{Page, PaginationParams};
 pub use assistant_repository::{AssistantRepository, SqliteAssistantRepository};
+pub use attachments_repository::{AttachmentsRepository, SqliteAttachmentsRepository};
 pub use compact_context_repository::{
     CompactContextRecord, CompactContextRepository, SqliteCompactContextRepository,
 };
-pub use content_store_repository::{ContentStoreRepository, SqliteContentStoreRepository};
 pub use error::DbError;
 pub use in_memory_session_repository::InMemorySessionRepository;
 pub use knowledge_repository::{KnowledgeRepository, SqliteKnowledgeRepository};

@@ -7,17 +7,16 @@ The Rust MCP server in LibrAgent is modularized for extensibility. This guide ex
 ```text
 src-tauri/src/mcp/builtin/
 ├── mod.rs                # Server trait definitions and registry
-├── assistant/            # Assistant role management
+├── agent/                # Agent role and session management
+├── attachments/          # Session-scoped file attachment and search
 ├── bootstrap/            # Shared initialization and bootstrap helpers
 ├── browser/              # Headless browser automation
 ├── browser_content_store.rs # Browser-aware content store bridge
-├── content_store/        # Content storage and retrieval
 ├── error_guidance.rs     # Error analysis and guidance utilities
 ├── knowledge/            # Semantic search and memory
 ├── mcp_manager/          # MCP server management
 ├── planning/             # Task planning and tracking
 ├── playbook/             # Workflow automation
-├── session_api/          # Session API server
 ├── skills/               # Reusable capabilities
 ├── tests/                # Integration tests
 ├── ui/                   # UI interaction tools

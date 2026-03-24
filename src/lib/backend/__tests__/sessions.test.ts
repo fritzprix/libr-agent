@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { removeSession, deleteContentStore, clearAllSessions, factoryReset } from '../sessions';
+import { removeSession, deleteAttachments, clearAllSessions, factoryReset } from '../sessions';
 import { safeInvoke } from '../core';
 
 vi.mock('../core', () => ({
@@ -16,9 +16,9 @@ describe('sessions backend commands', () => {
     expect(safeInvoke).toHaveBeenCalledWith('remove_session', { sessionId: 'test-session-id' });
   });
 
-  it('deleteContentStore calls correct backend command', async () => {
-    await deleteContentStore('test-session-id');
-    expect(safeInvoke).toHaveBeenCalledWith('delete_content_store', { sessionId: 'test-session-id' });
+  it('deleteAttachments calls correct backend command', async () => {
+    await deleteAttachments('test-session-id');
+    expect(safeInvoke).toHaveBeenCalledWith('delete_attachments', { sessionId: 'test-session-id' });
   });
 
   it('clearAllSessions calls correct backend command', async () => {

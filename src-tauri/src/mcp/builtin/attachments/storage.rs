@@ -5,9 +5,9 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Data models for content store
+/// Data models for attachments
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentStore {
+pub struct AttachmentStore {
     pub session_id: String, // Primary key: session ID (1:1 relationship with session)
     pub name: Option<String>,
     pub description: Option<String>,
@@ -16,9 +16,9 @@ pub struct ContentStore {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentItem {
+pub struct AttachmentItem {
     pub id: String,
-    pub session_id: String, // References ContentStore.session_id
+    pub session_id: String, // References AttachmentStore.session_id
     pub filename: String,
     pub mime_type: String,
     pub size: usize,
@@ -33,7 +33,7 @@ pub struct ContentItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContentChunk {
+pub struct AttachmentChunk {
     pub id: String,
     pub content_id: String,
     pub chunk_index: usize,
@@ -42,7 +42,7 @@ pub struct ContentChunk {
 }
 
 // Convert SeaORM models to internal structs
-impl From<store::Model> for ContentStore {
+impl From<store::Model> for AttachmentStore {
     fn from(model: store::Model) -> Self {
         Self {
             session_id: model.session_id,
@@ -54,7 +54,7 @@ impl From<store::Model> for ContentStore {
     }
 }
 
-impl From<content::Model> for ContentItem {
+impl From<content::Model> for AttachmentItem {
     fn from(model: content::Model) -> Self {
         Self {
             id: model.id,
@@ -73,7 +73,7 @@ impl From<content::Model> for ContentItem {
     }
 }
 
-impl From<chunk::Model> for ContentChunk {
+impl From<chunk::Model> for AttachmentChunk {
     fn from(model: chunk::Model) -> Self {
         Self {
             id: model.id,
@@ -85,24 +85,24 @@ impl From<chunk::Model> for ContentChunk {
     }
 }
 
-/// Content store storage implementation
+/// Attachments storage implementation
 #[derive(Debug)]
-pub struct ContentStoreStorage {
+pub struct AttachmentsStorage {
     // In-memory storage
-    stores: HashMap<String, ContentStore>,
-    contents: HashMap<String, ContentItem>,
-    chunks: HashMap<String, Vec<ContentChunk>>,
+    stores: HashMap<String, AttachmentStore>,
+    contents: HashMap<String, AttachmentItem>,
+    chunks: HashMap<String, Vec<AttachmentChunk>>,
     // Database connection for persistence
     db: Option<DatabaseConnection>,
 }
 
-impl Default for ContentStoreStorage {
+impl Default for AttachmentsStorage {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ContentStoreStorage {
+impl AttachmentsStorage {
     /// Create in-memory storage (default)
     pub fn new() -> Self {
         Self {
@@ -177,7 +177,7 @@ impl ContentStoreStorage {
         &self,
         session_id: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<ContentItem>, String> {
+    ) -> Result<Vec<AttachmentItem>, String> {
         if let Some(db) = &self.db {
             // Database query with ORDER BY uploaded_at DESC
             let mut query = content::Entity::find()
@@ -196,7 +196,7 @@ impl ContentStoreStorage {
             Ok(models.into_iter().map(|m| m.into()).collect())
         } else {
             // In-memory fallback
-            let mut items: Vec<ContentItem> = self
+            let mut items: Vec<AttachmentItem> = self
                 .contents
                 .values()
                 .filter(|c| c.session_id == session_id)
@@ -214,23 +214,23 @@ impl ContentStoreStorage {
         }
     }
 
-    /// Create a new content store for a session (1:1 relationship)
+    /// Create a new attachment store for a session (1:1 relationship)
     pub async fn create_store(
         &mut self,
         session_id: String,
         name: Option<String>,
         description: Option<String>,
-    ) -> Result<ContentStore, String> {
+    ) -> Result<AttachmentStore, String> {
         // Check if store already exists for this session
         if self.stores.contains_key(&session_id) {
             return Err(format!(
-                "Content store already exists for session: {session_id}"
+                "Attachment store already exists for session: {session_id}"
             ));
         }
 
         let now = chrono::Utc::now().to_rfc3339();
 
-        let store = ContentStore {
+        let store = AttachmentStore {
             session_id: session_id.clone(),
             name: name.clone(),
             description: description.clone(),
@@ -310,13 +310,13 @@ impl ContentStoreStorage {
             .collect()
     }
 
-    /// Get or create a content store for the given session ID
+    /// Get or create an attachment store for the given session ID
     pub async fn get_or_create_store(
         &mut self,
         session_id: String,
         name: Option<String>,
         description: Option<String>,
-    ) -> Result<ContentStore, String> {
+    ) -> Result<AttachmentStore, String> {
         // Check if store already exists in memory cache
         if let Some(store) = self.stores.get(&session_id) {
             return Ok(store.clone());
@@ -331,7 +331,7 @@ impl ContentStoreStorage {
 
             if let Some(model) = result {
                 // Store exists in database, convert and add to memory cache
-                let store = ContentStore::from(model);
+                let store = AttachmentStore::from(model);
                 self.stores.insert(session_id.clone(), store.clone());
                 return Ok(store);
             }
@@ -352,24 +352,26 @@ impl ContentStoreStorage {
         content: &str,
         chunks: Vec<String>,
         src_url: Option<String>,
-    ) -> Result<ContentItem, String> {
+    ) -> Result<AttachmentItem, String> {
         // Verify store exists for this session
         if !self.stores.contains_key(session_id) {
-            return Err(format!("Content store not found for session: {session_id}"));
+            return Err(format!(
+                "Attachment store not found for session: {session_id}"
+            ));
         }
 
         let content_id = format!("content_{}", cuid2::create_id());
         let now = chrono::Utc::now().to_rfc3339();
 
         // Create content chunks
-        let content_chunks: Vec<ContentChunk> = chunks
+        let content_chunks: Vec<AttachmentChunk> = chunks
             .into_iter()
             .enumerate()
             .map(|(index, text)| {
                 let start_line = index * 10 + 1; // Rough estimate
                 let end_line = start_line + text.lines().count().saturating_sub(1);
 
-                ContentChunk {
+                AttachmentChunk {
                     id: format!("chunk_{content_id}_{index}"),
                     content_id: content_id.clone(),
                     chunk_index: index,
@@ -383,7 +385,7 @@ impl ContentStoreStorage {
         let line_count = content.lines().count();
         let preview = content.chars().take(200).collect::<String>();
 
-        let content_item = ContentItem {
+        let content_item = AttachmentItem {
             id: content_id.clone(),
             session_id: session_id.to_string(),
             filename: filename.to_string(),
@@ -456,13 +458,15 @@ impl ContentStoreStorage {
         session_id: &str,
         offset: usize,
         limit: usize,
-    ) -> Result<(Vec<ContentItem>, usize), String> {
+    ) -> Result<(Vec<AttachmentItem>, usize), String> {
         // Verify store exists for this session
         if !self.stores.contains_key(session_id) {
-            return Err(format!("Content store not found for session: {session_id}"));
+            return Err(format!(
+                "Attachment store not found for session: {session_id}"
+            ));
         }
 
-        let mut store_contents: Vec<&ContentItem> = self
+        let mut store_contents: Vec<&AttachmentItem> = self
             .contents
             .values()
             .filter(|c| c.session_id == session_id)
@@ -472,7 +476,7 @@ impl ContentStoreStorage {
         store_contents.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
 
         let total = store_contents.len();
-        let paginated: Vec<ContentItem> = store_contents
+        let paginated: Vec<AttachmentItem> = store_contents
             .into_iter()
             .skip(offset)
             .take(limit)
@@ -490,7 +494,7 @@ impl ContentStoreStorage {
     }
 
     /// Get content item by ID (for metadata access without full content retrieval)
-    pub fn get_content_item(&self, content_id: &str) -> Option<&ContentItem> {
+    pub fn get_content_item(&self, content_id: &str) -> Option<&AttachmentItem> {
         self.contents.get(content_id)
     }
 

@@ -19,7 +19,7 @@ mod types;
 pub mod utils;
 
 // Re-export public API
-pub use server::ContentStoreServer;
+pub use server::AttachmentsServer;
 
 use super::BuiltinMCPServer;
 use crate::mcp::types::ServiceContext;
@@ -29,25 +29,25 @@ pub const NAME: &str = "attachments";
 
 // BuiltinMCPServer trait implementation
 #[async_trait]
-impl BuiltinMCPServer for ContentStoreServer {
+impl BuiltinMCPServer for AttachmentsServer {
     fn name(&self) -> &str {
         NAME
     }
 
     fn description(&self) -> &str {
-        "Session-scoped file attachment store (ephemeral: cleared when session ends). Use for files uploaded in the current task. For persistent knowledge across sessions, use the knowledge server."
+        "Session-scoped file attachment store (ephemeral: cleared when session ends). Use for files uploaded in the current task."
     }
 
     fn display_name(&self) -> String {
-        "Content Store".to_string()
+        "Attachments".to_string()
     }
 
     fn tools(&self) -> Vec<MCPTool> {
-        self.tools()
+        Self::tools_static()
     }
 
     async fn get_service_context(&self, options: Option<&Value>) -> ServiceContext {
-        self.get_service_context(options).await
+        self.get_service_context_internal(options).await
     }
 
     async fn call_tool(
