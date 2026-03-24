@@ -236,9 +236,15 @@ pub async fn handle_llm_response(
     let tool_calls: Vec<ToolCall> = assistant_message.tool_calls.take().unwrap_or_default();
 
     if tool_calls.is_empty() {
-        // Check if content is also empty (abnormal empty response)
-        // Note: A message with tool calls but no content is VALID and normal
-        let has_content = !assistant_message.content.is_empty();
+        // Check if content is also empty (abnormal empty response).
+        // Note: A message with tool calls but no content is VALID and normal.
+        // We check that at least one content item has meaningful text (matching
+        // the frontend's hasContent logic), so that Gemini-style empty-text
+        // responses like [{type:"text", text:""}] are not treated as valid content.
+        let has_content = assistant_message.content.iter().any(|c| match c {
+            crate::mcp::types::MCPContent::Text { text, .. } => !text.trim().is_empty(),
+            _ => true, // Non-text content (Image, Audio, Resource, etc.) is always meaningful
+        });
         // ✅ FIX: Also check thinking field to allow thinking-only messages (Spec requirement)
         let has_thinking = assistant_message
             .thinking
