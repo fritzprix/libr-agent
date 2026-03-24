@@ -18,26 +18,6 @@ function isBuiltinServiceId(s: string): s is BuiltinServiceCanonicalName {
 
 function canonicalizeAlias(alias: string): BuiltinServiceCanonicalName | null {
   const normalized = alias.trim().toLowerCase();
-
-  // Explicitly map legacy names to canonicals during transition to prevent backend errors
-  if (
-    normalized === 'assistant' ||
-    normalized === 'assistant_manager' ||
-    normalized === 'swarm' ||
-    normalized === 'session_api'
-  ) {
-    return 'agent';
-  }
-  if (normalized === 'mcp_manager') {
-    return 'tool';
-  }
-  if (normalized === 'content_store' || normalized === 'contentstore') {
-    return 'attachments';
-  }
-  if (normalized === 'memory') {
-    return 'scratchpad';
-  }
-
   return isBuiltinServiceId(normalized) ? normalized : null;
 }
 
