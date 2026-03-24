@@ -10,6 +10,7 @@ import {
   processMessageContent,
   processMultiModalContent,
 } from '../utils';
+import { formatNumber } from '@/lib/utils';
 import { AIServiceProvider, TokenUsage } from '../types';
 import { MCPContent } from '@/lib/mcp';
 
@@ -118,9 +119,9 @@ describe('AI Service Utils', () => {
         totalTokens: 3000,
       };
       const result = formatUsageMetrics(usage);
-      expect(result.input).toBe(usage.promptTokens.toLocaleString());
-      expect(result.output).toBe(usage.completionTokens.toLocaleString());
-      expect(result.total).toBe(usage.totalTokens.toLocaleString());
+      expect(result.input).toBe(formatNumber(usage.promptTokens));
+      expect(result.output).toBe(formatNumber(usage.completionTokens));
+      expect(result.total).toBe(formatNumber(usage.totalTokens));
       expect(result.speed).toBeUndefined();
     });
 

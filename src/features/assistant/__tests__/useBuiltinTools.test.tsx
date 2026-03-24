@@ -1,3 +1,4 @@
+import { SWRConfig } from 'swr';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useBuiltinTools } from '../useBuiltinTools';
@@ -44,7 +45,7 @@ describe('useBuiltinTools', () => {
     vi.mocked(listAvailableBuiltinServerDefinitions).mockReturnValue(
       new Promise(() => {}),
     );
-    const { result } = renderHook(() => useBuiltinTools());
+    const { result } = renderHook(() => useBuiltinTools(), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
     expect(result.current.isLoading).toBe(true);
     expect(result.current.services).toEqual([]);
   });
@@ -53,7 +54,7 @@ describe('useBuiltinTools', () => {
     vi.mocked(listAvailableBuiltinServerDefinitions).mockResolvedValueOnce(
       [...mockDefs],
     );
-    const { result } = renderHook(() => useBuiltinTools());
+    const { result } = renderHook(() => useBuiltinTools(), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -68,7 +69,7 @@ describe('useBuiltinTools', () => {
     vi.mocked(listAvailableBuiltinServerDefinitions).mockRejectedValueOnce(
       new Error('backend unavailable'),
     );
-    const { result } = renderHook(() => useBuiltinTools());
+    const { result } = renderHook(() => useBuiltinTools(), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -83,7 +84,7 @@ describe('useBuiltinTools', () => {
       }),
     );
 
-    const { result, unmount } = renderHook(() => useBuiltinTools());
+    const { result, unmount } = renderHook(() => useBuiltinTools(), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
     expect(result.current.isLoading).toBe(true);
 
     unmount();

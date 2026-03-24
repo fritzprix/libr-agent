@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.17] - 2026-03-24
+
+### 🚀 Features
+
+- **SWR-based Data Fetching**: Refactored agent and server tool fetching hooks to use the `useSWR` pattern, improving caching, reactivity, and eliminating redundant imperative logic.
+- **Oversized Tool Result Handling**: Implemented a "spillover" mechanism that automatically redirects oversized tool outputs to the workspace when they exceed context limits, preventing message bloat while keeping results accessible.
+- **Intl.NumberFormat Caching**: Optimized rendering performance by caching `Intl.NumberFormat` instances, avoiding expensive constructor calls during high-frequency UI updates.
+
+### 🐛 Fixes
+
+- **Empty Response Handling**: Hardened the preflight and response parsing logic to gracefully handle empty LLM responses and compact preflight states.
+- **Playbook Date Formatting**: Fixed a formatting regression in playbook card date displays to ensure consistent locale-aware presentation.
+
+### 🔧 Internal
+
+- **Enhanced Test Coverage**: Added regression tests for tool result spillover, cached number formatters, and CI stability.
+- **Documentation Polish**: Cleaned up build instructions in `CONTRIBUTING.md` to reflect current project standards.
+
 ## [0.6.16] - 2026-03-23
 
 ### 🚀 Features

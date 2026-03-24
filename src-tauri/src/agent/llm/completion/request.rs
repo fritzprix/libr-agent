@@ -16,17 +16,18 @@ use crate::agent::llm::prompt::build_session_system_prompt_split;
 use crate::agent::llm::types::{AgentRuntimeError, AgentRuntimeErrorType, CompletionRequest};
 
 use super::compaction::{
-    should_trigger_background_compaction, trigger_background_compaction,
-    try_trigger_preflight_compaction,
+    find_preflight_compaction_split_index, should_trigger_background_compaction,
+    trigger_background_compaction, try_trigger_preflight_compaction,
 };
 use super::context::{load_context_management_settings, uses_compaction_strategy};
 
 #[derive(Debug)]
 pub(crate) struct OverflowPreflight {
-    pub(crate) latest_message_tokens: usize,
+    pub(crate) preserved_tail_tokens: usize,
     pub(crate) total_tokens: usize,
     pub(crate) reserved_tokens: usize,
     pub(crate) safety_margin: usize,
+    pub(crate) compactable_split_idx: usize,
 }
 
 pub(crate) fn build_overflow_preflight(
@@ -34,11 +35,12 @@ pub(crate) fn build_overflow_preflight(
     system_prompt_tokens: usize,
     tools_tokens: usize,
     safe_input_token_limit: usize,
+    compactable_split_idx: usize,
 ) -> OverflowPreflight {
-    let latest_message_tokens = messages
-        .last()
+    let preserved_tail_tokens = messages[compactable_split_idx.min(messages.len())..]
+        .iter()
         .map(crate::agent::llm::token_utils::estimate_tokens_bpe)
-        .unwrap_or(0);
+        .sum();
     let total_tokens = crate::agent::llm::token_utils::calculate_grounded_total_tokens(
         messages,
         system_prompt_tokens,
@@ -48,10 +50,11 @@ pub(crate) fn build_overflow_preflight(
         crate::agent::llm::token_utils::calculate_context_safety_margin(safe_input_token_limit);
 
     OverflowPreflight {
-        latest_message_tokens,
+        preserved_tail_tokens,
         total_tokens,
         reserved_tokens: system_prompt_tokens + tools_tokens,
         safety_margin,
+        compactable_split_idx,
     }
 }
 
@@ -228,7 +231,9 @@ pub async fn request_llm_completion(
     // place where consecutive user roles are legitimate; merging here keeps the
     // Gemini mapper simple and mapper-agnostic.
     // --- CONTEXT MANAGEMENT ---
-    let messages = merge_consecutive_user_messages(messages);
+    let messages = crate::agent::llm::context_selector::remove_incomplete_tool_chains(
+        merge_consecutive_user_messages(messages),
+    );
 
     let context_settings = load_context_management_settings().await;
     let context_strategy = context_settings.context_strategy.clone();
@@ -368,31 +373,37 @@ pub async fn request_llm_completion(
             .map(|s| crate::agent::llm::token_utils::estimate_text_tokens(s))
             .unwrap_or(0);
 
+        let compactable_split_idx = find_preflight_compaction_split_index(&messages);
         let preflight = build_overflow_preflight(
             &messages,
             system_prompt_tokens + session_context_tokens,
             tools_tokens,
             safe_input_token_limit,
+            compactable_split_idx,
         );
 
-        let latest_input_projected_tokens =
-            preflight.reserved_tokens + preflight.latest_message_tokens + preflight.safety_margin;
-        if latest_input_projected_tokens > safe_input_token_limit {
+        let preserved_tail_projected_tokens =
+            preflight.reserved_tokens + preflight.preserved_tail_tokens + preflight.safety_margin;
+        if preserved_tail_projected_tokens > safe_input_token_limit {
             let mut context = serde_json::Map::new();
             context.insert(
                 "projectedTokens".to_string(),
-                serde_json::json!(latest_input_projected_tokens),
+                serde_json::json!(preserved_tail_projected_tokens),
             );
             context.insert(
                 "effectiveLimit".to_string(),
                 serde_json::json!(safe_input_token_limit),
             );
+            context.insert(
+                "compactableSplitIndex".to_string(),
+                serde_json::json!(preflight.compactable_split_idx),
+            );
             return Err(
                 AgentRuntimeError::new(
                     AgentRuntimeErrorType::ContextLimitError,
                     format!(
-                        "Latest input is too large for the configured context window (projected {} > limit {}). Reduce the newest message or attachment payload and retry.",
-                        latest_input_projected_tokens, safe_input_token_limit
+                        "The newest non-compactable context is too large for the configured context window (projected {} > limit {}). Reduce the newest message or attachment payload and retry.",
+                        preserved_tail_projected_tokens, safe_input_token_limit
                     ),
                 )
                 .with_code("LATEST_INPUT_TOO_LARGE")

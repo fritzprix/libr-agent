@@ -655,12 +655,22 @@ export function useLLMExecution({
             { sessionId },
           );
         } else if (!hasContent && hasUsage) {
+          // Usage tokens were charged but no content was returned (e.g. Gemini context
+          // overflow returning [{type:"text",text:""}]).  This is still an invalid
+          // response — route through the normal error/retry path instead of forwarding
+          // an empty message to Rust (which would cause a WorkflowError directly).
           logger.warn(
-            '⚠️ Response has usage but no content - allowing to proceed',
+            '⚠️ Response has usage but no content - treating as empty response',
             {
               sessionId,
               usage: finalMessage.usage,
             },
+          );
+          throw createExecutionError(
+            'AI_SERVICE_ERROR',
+            'Received empty response from LLM provider',
+            'empty_response_from_provider',
+            { sessionId },
           );
         }
 

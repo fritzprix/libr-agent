@@ -2,12 +2,16 @@ use crate::agent::state::AgentSession;
 use crate::mcp::types::MCPContent;
 use crate::mcp::MCPServiceProxyManager;
 use crate::models::chat::Message;
+use crate::services::WorkspaceService;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::RwLock;
 
 use crate::mcp::builtin::service_id::{BUILTIN_SERVICE_REGISTRY, CORE_BUILTIN_SERVICE_ALIASES};
+
+pub const TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES: usize = 64 * 1024;
+const TOOL_RESULT_SPILLOVER_DIR: &str = ".libragent/tool-results";
 
 /// Resolve any alias string (including legacy pre-0.6.0 names) to the current
 /// canonical service name.
@@ -244,6 +248,97 @@ pub fn convert_mcp_response_content(
         Some(crate::mcp::types::MCPResponseResult::ToolCall(tool_result)) => tool_result.content,
         _ => None,
     }
+}
+
+fn sanitize_spillover_identifier(raw: &str) -> String {
+    let sanitized: String = raw
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let trimmed = sanitized.trim_matches('_');
+    if trimmed.is_empty() {
+        "tool-result".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn build_tool_result_spillover_notice(relative_path: &str, original_size_bytes: usize) -> String {
+    format!(
+        "Tool output was too large to inline ({} bytes).\n\nFull output saved to workspace file: `{}`\n\nUse `readFile(\"{}\")` to inspect the complete content.",
+        original_size_bytes, relative_path, relative_path
+    )
+}
+
+pub async fn spill_oversized_tool_result_messages(
+    session_id: &str,
+    messages: Vec<Message>,
+) -> Result<Vec<Message>, String> {
+    let mut processed_messages = Vec::with_capacity(messages.len());
+
+    for mut message in messages {
+        if message.role != "tool" {
+            processed_messages.push(message);
+            continue;
+        }
+
+        let tool_call_id =
+            sanitize_spillover_identifier(message.tool_call_id.as_deref().unwrap_or("tool-result"));
+        let message_id = sanitize_spillover_identifier(&message.id);
+        let mut next_content = Vec::with_capacity(message.content.len());
+        for (content_index, content) in message.content.into_iter().enumerate() {
+            match content {
+                MCPContent::Text { text, is_error }
+                    if text.len() > TOOL_RESULT_SPILLOVER_THRESHOLD_BYTES =>
+                {
+                    let relative_path = format!(
+                        "{}/{}-{}-{}.txt",
+                        TOOL_RESULT_SPILLOVER_DIR,
+                        tool_call_id,
+                        message_id,
+                        content_index + 1
+                    );
+                    WorkspaceService::workspace_write_file(
+                        &relative_path,
+                        text.as_bytes(),
+                        Some(session_id.to_string()),
+                    )
+                    .await
+                    .map_err(|error| {
+                        format!(
+                            "Failed to spill oversized tool output to '{}': {}",
+                            relative_path, error
+                        )
+                    })?;
+
+                    log::info!(
+                        "Spilled oversized tool output for session {} to workspace file '{}' ({} bytes)",
+                        session_id,
+                        relative_path,
+                        text.len()
+                    );
+
+                    next_content.push(MCPContent::Text {
+                        text: build_tool_result_spillover_notice(&relative_path, text.len()),
+                        is_error,
+                    });
+                }
+                other => next_content.push(other),
+            }
+        }
+
+        message.content = next_content;
+        processed_messages.push(message);
+    }
+
+    Ok(processed_messages)
 }
 
 /// Create a tool result message from strict MCP content

@@ -1,8 +1,8 @@
 use serde_json::json;
 use std::collections::HashMap;
 use tauri_mcp_agent_lib::agent::llm::completion::{
-    resolve_context_management_settings, should_trigger_background_compaction,
-    uses_compaction_strategy,
+    find_preflight_compaction_split_index, resolve_context_management_settings,
+    should_trigger_background_compaction, uses_compaction_strategy,
 };
 use tauri_mcp_agent_lib::agent::llm::context_selector::*;
 use tauri_mcp_agent_lib::agent::llm::token_utils::*;
@@ -95,6 +95,105 @@ fn test_find_compaction_split_index_stops_before_unresolved_tool_chain() {
 
     let idx = find_compaction_split_index(&[intro, assistant, tool_result]);
     assert_eq!(idx, 1);
+}
+
+#[test]
+fn test_find_preflight_compaction_split_index_preserves_latest_user_turn() {
+    let earlier = make_message("m0", "assistant", "Earlier context");
+    let latest_user = make_message("m1", "user", &"latest request ".repeat(200));
+
+    let idx = find_preflight_compaction_split_index(&[earlier, latest_user]);
+    assert_eq!(idx, 1);
+}
+
+#[test]
+fn test_find_preflight_compaction_split_index_allows_compacting_latest_tool_result() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tool");
+    assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "call_A".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut tool_result = make_message("m2", "tool", &"very large tool result ".repeat(200));
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
+    assert_eq!(idx, 3);
+}
+
+#[test]
+fn test_find_preflight_compaction_split_index_keeps_unresolved_tool_chain_tail() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut assistant = make_message("m1", "assistant", "Calling tools");
+    assistant.tool_calls = Some(vec![
+        AgentToolCall {
+            id: "call_A".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "toolA".to_string(),
+                arguments: "{}".to_string(),
+            },
+        },
+        AgentToolCall {
+            id: "call_B".to_string(),
+            r#type: "function".to_string(),
+            function: ToolCallFunction {
+                name: "toolB".to_string(),
+                arguments: "{}".to_string(),
+            },
+        },
+    ]);
+
+    let mut tool_result = make_message("m2", "tool", "result A");
+    tool_result.tool_call_id = Some("call_A".to_string());
+
+    let idx = find_preflight_compaction_split_index(&[intro, assistant, tool_result]);
+    assert_eq!(idx, 1);
+}
+
+#[test]
+fn test_preflight_compaction_split_after_removing_incomplete_tool_chains() {
+    let intro = make_message("m0", "user", "Need analysis");
+
+    let mut stale_assistant = make_message("m1", "assistant", "Old stale tool call");
+    stale_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "stale_call".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolA".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut current_assistant = make_message("m2", "assistant", "Current resolved tool call");
+    current_assistant.tool_calls = Some(vec![AgentToolCall {
+        id: "current_call".to_string(),
+        r#type: "function".to_string(),
+        function: ToolCallFunction {
+            name: "toolB".to_string(),
+            arguments: "{}".to_string(),
+        },
+    }]);
+
+    let mut current_tool = make_message("m3", "tool", &"very large tool result ".repeat(200));
+    current_tool.tool_call_id = Some("current_call".to_string());
+
+    let cleaned = remove_incomplete_tool_chains(vec![
+        intro,
+        stale_assistant,
+        current_assistant,
+        current_tool,
+    ]);
+
+    let idx = find_preflight_compaction_split_index(&cleaned);
+    assert_eq!(idx, cleaned.len());
 }
 
 #[test]

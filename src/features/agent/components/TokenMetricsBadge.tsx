@@ -3,6 +3,7 @@ import { calculateTokensPerSecond } from '@/lib/ai-service/utils';
 import { useSettings } from '@/context/SettingsContext';
 import { ArrowDown, ArrowUp, Zap, Gauge } from 'lucide-react';
 import { calculateCacheHitPercent } from './token-metrics';
+import { formatNumber } from '@/lib/utils';
 
 interface ContextUsage {
   totalTokens: number;
@@ -39,8 +40,8 @@ function ContextGauge({
 
   const tooltipTitle =
     modelMaxContext && modelMaxContext !== contextWindow
-      ? `Context: ${totalTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (Effective Limit)\nModel Max: ${modelMaxContext.toLocaleString()} tokens`
-      : `Context: ${totalTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens (${pctDisplay}%)`;
+      ? `Context: ${formatNumber(totalTokens)} / ${formatNumber(contextWindow)} tokens (Effective Limit)\nModel Max: ${formatNumber(modelMaxContext)} tokens`
+      : `Context: ${formatNumber(totalTokens)} / ${formatNumber(contextWindow)} tokens (${pctDisplay}%)`;
 
   return (
     <div className="flex items-center gap-1.5 mt-0.5" title={tooltipTitle}>
@@ -137,12 +138,12 @@ export function TokenMetricsBadge({
           className="flex items-center gap-0.5 text-primary"
           title={
             (hasCacheHit
-              ? `Prompt Tokens (Read from Cache: ${cachedTokens.toLocaleString()}, Created: ${usage.details?.cacheCreationInputTokens?.toLocaleString() || 0})`
+              ? `Prompt Tokens (Read from Cache: ${formatNumber(cachedTokens)}, Created: ${formatNumber(usage.details?.cacheCreationInputTokens || 0)})`
               : 'Prompt Tokens') + prefillInfo
           }
         >
           <ArrowUp size={10} className="stroke-[3]" />
-          {(usage.promptTokens ?? 0).toLocaleString()}
+          {formatNumber(usage.promptTokens ?? 0)}
         </span>
 
         {/* Output Tokens */}
@@ -151,14 +152,14 @@ export function TokenMetricsBadge({
           title="Completion Tokens"
         >
           <ArrowDown size={10} className="stroke-[3]" />
-          {(usage.completionTokens ?? 0).toLocaleString()}
+          {formatNumber(usage.completionTokens ?? 0)}
         </span>
 
         {/* ✅ Cache Hit Indicator (Independent Placement) */}
         {isCacheActive && (
           <span
             className="flex items-center gap-0.5 text-[10px] font-bold text-cyan-400 bg-cyan-400/10 px-1 rounded border border-cyan-400/20 shrink-0"
-            title={`Cache Hit: ${cachedTokens.toLocaleString()} tokens (${cacheHitPercent}%)`}
+            title={`Cache Hit: ${formatNumber(cachedTokens)} tokens (${cacheHitPercent}%)`}
           >
             <Zap size={10} className="fill-current" />
             {cacheHitPercent}%

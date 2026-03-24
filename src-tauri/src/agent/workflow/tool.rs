@@ -39,6 +39,20 @@ pub async fn continue_workflow_after_tool(
                 session_id
             );
 
+            let accumulated_messages = crate::agent::tools::spill_oversized_tool_result_messages(
+                &session_id,
+                accumulated_messages,
+            )
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "Failed to externalize oversized tool result messages for session {}: {}",
+                    session_id,
+                    e
+                );
+                e
+            })?;
+
             // Use MessageService to handle message caching, event emission, and DB persistence.
             // Propagate errors so the LLM loop does not continue with a stale context window
             // if injection fails (e.g. due to a DB initialization error).

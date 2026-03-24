@@ -67,3 +67,8 @@
 
 **Learning:** `SessionHistoryPanel` was calculating descendant counts using a recursive function that filtered the entire `sessions` array at each step, resulting in O(N^2) complexity. This caused potential lag as the session history grew.
 **Action:** When processing tree structures from flat lists, always build an O(N) adjacency map (parent -> children) first, then use that map for O(1) lookups during traversal, reducing overall complexity to O(N).
+
+## 2025-06-25 - Expensive Date/Number Formatting in Render Loops
+
+**Learning:** Calling `Number.toLocaleString()` (or similarly `Date.toLocaleDateString()`) repeatedly in React render loops or frequently called utility functions (like `formatUsageMetrics` called during streaming) causes significant performance bottlenecks because it instantiates a new `Intl.NumberFormat` instance internally on every call.
+**Action:** Cache and reuse module-level `Intl.NumberFormat` (or `Intl.DateTimeFormat`) instances using a singleton or factory function to avoid repeated object allocations and layout/rendering stutter.
