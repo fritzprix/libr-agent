@@ -214,3 +214,24 @@ export function isValidServiceAlias(serviceAlias: string): boolean {
   const validPattern = /^[a-z0-9]+(_[a-z0-9]+)*$/i;
   return validPattern.test(serviceAlias);
 }
+
+// Cache formatter instance to prevent expensive re-instantiations during render loops
+let numberFormatter: Intl.NumberFormat | null = null;
+
+function getNumberFormatter(): Intl.NumberFormat {
+  if (!numberFormatter) {
+    numberFormatter = new Intl.NumberFormat();
+  }
+  return numberFormatter;
+}
+
+/**
+ * Formats a number using Intl.NumberFormat.
+ * Reuses a cached formatter instance for better performance in render loops.
+ *
+ * @param value The number to format
+ * @returns The formatted string (e.g., "1,234,567")
+ */
+export function formatNumber(value: number): string {
+  return getNumberFormatter().format(value);
+}

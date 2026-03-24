@@ -6,6 +6,7 @@ import {
   rustMessageToMessage,
 } from '@/models/chat';
 import { MCPContent } from '@/lib/mcp';
+import { formatNumber } from '@/lib/utils';
 
 /**
  * Type guard for AIServiceProvider
@@ -120,9 +121,9 @@ export function formatUsageMetrics(usage: TokenUsage): {
       : undefined;
 
   return {
-    input: usage.promptTokens.toLocaleString(),
-    output: usage.completionTokens.toLocaleString(),
-    total: usage.totalTokens.toLocaleString(),
+    input: formatNumber(usage.promptTokens),
+    output: formatNumber(usage.completionTokens),
+    total: formatNumber(usage.totalTokens),
     cacheHit: cacheHitPercent ? `${cacheHitPercent}%` : undefined,
     speed: usage.details?.evalDuration
       ? `${((usage.completionTokens / usage.details.evalDuration) * 1000).toFixed(1)} t/s`
