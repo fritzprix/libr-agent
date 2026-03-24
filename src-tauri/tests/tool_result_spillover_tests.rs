@@ -60,19 +60,16 @@ fn build_session_metadata(session_id: &str, status: SessionStatus) -> SessionMet
     }
 }
 
-async fn wait_for_persisted_message(session_id: &str) -> Message {
+async fn load_persisted_message(session_id: &str) -> Message {
     let repo = SqliteMessageRepository::new(test_db().await);
-    for _ in 0..20 {
-        let page = repo
-            .get_page(session_id, 1, 10)
-            .await
-            .expect("message query should succeed");
-        if let Some(message) = page.items.into_iter().next() {
-            return message;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-    }
-    panic!("timed out waiting for persisted message");
+    let page = repo
+        .get_page(session_id, 1, 10)
+        .await
+        .expect("message query should succeed");
+    page.items
+        .into_iter()
+        .next()
+        .expect("expected at least one message for session")
 }
 
 fn make_tool_message(session_id: &str, tool_call_id: &str, text: &str) -> Message {
@@ -196,7 +193,7 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
     repo.insert(rewritten_message)
         .await
         .expect("rewritten tool message should persist");
-    let persisted_message = wait_for_persisted_message(&session_id).await;
+    let persisted_message = load_persisted_message(&session_id).await;
     let MCPContent::Text {
         text: persisted_text,
         ..
