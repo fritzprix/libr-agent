@@ -189,7 +189,7 @@ async fn spillover_pointer_is_what_gets_persisted_to_repository() {
     let workspace_dir = get_session_manager()
         .expect("session manager")
         .get_session_workspace_dir_by_id(&session_id);
-    let spilled_file = workspace_dir.join(relative_path.replace('/', "\\"));
+    let spilled_file = workspace_dir.join(relative_path);
     let spilled_text = fs::read_to_string(&spilled_file).expect("spilled file should exist");
     assert_eq!(spilled_text, original_text);
 
@@ -251,7 +251,7 @@ async fn tool_result_spillover_writes_large_tool_output_to_workspace_file() {
 
     let session_manager = get_session_manager().expect("session manager");
     let workspace_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
-    let spilled_file = workspace_dir.join(relative_path.replace('/', "\\"));
+    let spilled_file = workspace_dir.join(relative_path);
 
     let spilled_text = fs::read_to_string(&spilled_file).expect("spilled file should exist");
     assert_eq!(spilled_text, original_text);
