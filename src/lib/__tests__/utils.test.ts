@@ -4,6 +4,7 @@ import {
   cn,
   toValidJsName,
   throttlePromise,
+  formatNumber,
 } from '../utils';
 
 describe('utils', () => {
@@ -123,6 +124,48 @@ describe('utils', () => {
       // Verify pending promises resolve with the final result
       await expect(p2).resolves.toBe('third');
       await expect(p3).resolves.toBe('third');
+    });
+  });
+
+  describe('formatNumber', () => {
+    it('should format numbers using Intl.NumberFormat output', () => {
+      expect(formatNumber(1234567)).toBe(new Intl.NumberFormat().format(1234567));
+    });
+
+    it('should create the formatter once and reuse it', async () => {
+      vi.resetModules();
+
+      const originalNumberFormat = Intl.NumberFormat;
+      const formatSpy = vi.fn((value: number) => `formatted:${value}`);
+      const numberFormatSpy = vi.fn(
+        () =>
+          ({
+            format: formatSpy,
+          }) as unknown as Intl.NumberFormat,
+      );
+
+      Object.defineProperty(Intl, 'NumberFormat', {
+        value: numberFormatSpy,
+        configurable: true,
+        writable: true,
+      });
+
+      try {
+        const { formatNumber: freshFormatNumber } = await import('../utils');
+
+        expect(freshFormatNumber(123)).toBe('formatted:123');
+        expect(freshFormatNumber(456)).toBe('formatted:456');
+        expect(numberFormatSpy).toHaveBeenCalledTimes(1);
+        expect(formatSpy).toHaveBeenNthCalledWith(1, 123);
+        expect(formatSpy).toHaveBeenNthCalledWith(2, 456);
+      } finally {
+        Object.defineProperty(Intl, 'NumberFormat', {
+          value: originalNumberFormat,
+          configurable: true,
+          writable: true,
+        });
+        vi.resetModules();
+      }
     });
   });
 });
