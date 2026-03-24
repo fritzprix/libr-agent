@@ -27,6 +27,7 @@ export function useAgentFileAttachment() {
   const {
     pendingFiles,
     addPendingFiles,
+    updatePendingFile,
     commitPendingFiles,
     removeFile,
     clearPendingFiles,
@@ -69,6 +70,25 @@ export function useAgentFileAttachment() {
         paths: filePaths,
       });
 
+      // --- STEP 1: Optimistic UI - Add placeholders immediately ---
+      const placeholders = filePaths.map((filePath) => {
+        const filename =
+          filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown';
+        return {
+          url: `file://${filePath}`,
+          filename,
+          mimeType: getMimeType(filename),
+          originalPath: filePath,
+          status: 'processing' as const,
+        };
+      });
+
+      const addedItems = addPendingFiles(placeholders);
+      logger.info('Optimistic placeholders added', {
+        count: addedItems.length,
+      });
+
+      // --- STEP 2: Parallel Backend Registration ---
       try {
         await rustBackend.registerDroppedFiles(filePaths);
       } catch (error) {
@@ -76,144 +96,75 @@ export function useAgentFileAttachment() {
           error,
         });
         toast.error(t('agent.attachment.validationError'));
+        // Cleanup placeholders on fatal error
+        addedItems.forEach((item) => removeFile(item));
         return;
       }
 
-      const filesToUpload: Array<{
-        url: string;
-        mimeType: string;
-        filename: string;
-        file: File;
-        cleanup: () => void;
-      }> = [];
+      // --- STEP 3: Parallel File Processing ---
+      await Promise.all(
+        filePaths.map(async (filePath, index) => {
+          const pendingId = addedItems[index].pendingId!;
+          const filename = addedItems[index].filename;
 
-      for (const filePath of filePaths) {
-        try {
-          const filename =
-            filePath.split('/').pop() ||
-            filePath.split('\\').pop() ||
-            'unknown';
+          try {
+            logger.info(`Processing dropped file: ${filename}`, { filePath });
 
-          // ALLOW ALL FILES - Validation happens at commit stage for Content Store support
-          // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
-
-          logger.info('Processing dropped file', {
-            filePath,
-            filename,
-            // supportedExtensions: supportedExtensions.source,
-          });
-
-          // if (!supportedExtensions.test(filename)) {
-          //   logger.info('Unsupported file format', { filename });
-          //   alert(`File "${filename}" format is not supported.`);
-          //   continue;
-          // }
-
-          logger.info(`Preparing dropped file`, {
-            filePath,
-            filename,
-            sessionId: session?.id,
-          });
-
-          logger.info('Calling rustBackend.readDroppedFile...', { filePath });
-          const fileData = await rustBackend.readDroppedFile(filePath);
-          logger.info('File data received from rustBackend', {
-            dataLength: fileData.length,
-            filename,
-          });
-
-          const uint8Array = new Uint8Array(fileData);
-          const mimeType = getMimeType(filename);
-          const fileObj = new File([uint8Array], filename, { type: mimeType });
-
-          if (!validateFileSize(fileObj, maxBytes)) {
-            logger.warn('Dropped file exceeds size limit', {
-              filename,
-              fileSize: fileObj.size,
-              maxBytes,
+            const fileData = await rustBackend.readDroppedFile(filePath);
+            const uint8Array = new Uint8Array(fileData);
+            const mimeType = getMimeType(filename);
+            const fileObj = new File([uint8Array], filename, {
+              type: mimeType,
             });
+
+            if (!validateFileSize(fileObj, maxBytes)) {
+              logger.warn('Dropped file exceeds size limit', {
+                filename,
+                fileSize: fileObj.size,
+                maxBytes,
+              });
+              toast.error(
+                createFileSizeErrorMessage(filename, fileObj.size, maxBytes),
+              );
+              // Remove the specific placeholder if validation fails
+              removeFile(addedItems[index]);
+              return;
+            }
+
+            // Update the placeholder with actual file data and set to 'pending'
+            updatePendingFile(pendingId, {
+              file: fileObj,
+              size: fileObj.size,
+              status: 'pending',
+            });
+
+            logger.info(`File processing complete: ${filename}`);
+          } catch (error) {
+            logger.error(`Error processing dropped file ${filename}:`, error);
             toast.error(
-              createFileSizeErrorMessage(filename, fileObj.size, maxBytes),
+              t('agent.attachment.processingFileError', {
+                filePath: filename,
+                error: error instanceof Error ? error.message : String(error),
+              }),
             );
-            continue;
+            // Remove the specific placeholder if processing fails
+            removeFile(addedItems[index]);
           }
+        }),
+      );
 
-          filesToUpload.push({
-            url: `file://${filePath}`,
-            mimeType,
-            filename,
-            file: fileObj,
-            cleanup: () => {},
-          });
-
-          logger.info(`File prepared for batch upload`, {
-            filename,
-            filePath,
-            mimeType,
-            fileUrl: `file://${filePath}`,
-          });
-        } catch (error) {
-          logger.error(`Error preparing dropped file ${filePath}:`, {
-            filePath,
-            sessionId: session?.id,
-            error:
-              error instanceof Error
-                ? {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name,
-                  }
-                : error,
-            errorString: String(error),
-          });
-          toast.error(
-            t('agent.attachment.processingFileError', {
-              filePath,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        }
-      }
-
-      logger.info('Files prepared for upload:', {
-        count: filesToUpload.length,
-      });
-
-      if (filesToUpload.length > 0) {
-        try {
-          const batchFiles = filesToUpload.map((file) => ({
-            url: file.url,
-            mimeType: file.mimeType,
-            filename: file.filename,
-            file: file.file,
-            blobCleanup: file.cleanup,
-          }));
-
-          logger.info('Adding files to pending state', {
-            count: batchFiles.length,
-            files: batchFiles.map((f) => ({
-              filename: f.filename,
-              mimeType: f.mimeType,
-            })),
-          });
-
-          addPendingFiles(batchFiles);
-
-          logger.info('Files added to pending state successfully', {
-            total: batchFiles.length,
-          });
-        } catch (error) {
-          logger.error('Failed to add files to pending state:', error);
-          toast.error(
-            t('agent.attachment.processingBatchError', {
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-          filesToUpload.forEach((file) => file.cleanup());
-        }
-      }
+      logger.info('Batch file drop processing complete');
     },
-    [session, addPendingFiles, getMimeType, rustBackend],
+    [
+      session,
+      addPendingFiles,
+      updatePendingFile,
+      removeFile,
+      getMimeType,
+      rustBackend,
+      maxBytes,
+      t,
+    ],
   );
 
   const handleFileAttachment = useCallback(
@@ -224,85 +175,76 @@ export function useAgentFileAttachment() {
         return;
       }
 
-      for (const file of files) {
-        // ALLOW ALL FILES - Validation happens at commit stage for Content Store support
-        // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
-        // if (!supportedExtensions.test(file.name)) {
-        //   alert(`File "${file.name}" format is not supported.`);
-        //   continue;
-        // }
+      const fileList = Array.from(files);
 
-        if (!validateFileSize(file, maxBytes)) {
-          toast.error(
-            createFileSizeErrorMessage(file.name, file.size, maxBytes),
-          );
-          continue;
-        }
+      // --- STEP 1: Optimistic UI - Add placeholders immediately ---
+      const placeholders = fileList.map((file) => ({
+        url: '',
+        filename: file.name,
+        mimeType: file.type,
+        status: 'processing' as const,
+      }));
 
-        try {
-          logger.debug(`Starting file processing`, {
-            filename: file.name,
-            fileSize: file.size,
-            fileType: file.type,
-            sessionId: session?.id,
-          });
+      const addedItems = addPendingFiles(placeholders);
 
-          addPendingFiles([
-            {
-              url: '',
-              mimeType: file.type,
+      // --- STEP 2: Parallel Processing ---
+      await Promise.all(
+        fileList.map(async (file, index) => {
+          const pendingId = addedItems[index].pendingId!;
+
+          if (!validateFileSize(file, maxBytes)) {
+            toast.error(
+              createFileSizeErrorMessage(file.name, file.size, maxBytes),
+            );
+            removeFile(addedItems[index]);
+            return;
+          }
+
+          try {
+            logger.debug(`Starting file processing`, {
               filename: file.name,
-              file: file,
-              blobCleanup: () => {},
-            },
-          ]);
+              fileSize: file.size,
+              fileType: file.type,
+              sessionId: session?.id,
+            });
 
-          logger.info(`File processed successfully`, {
-            filename: file.name,
-            fileSize: file.size,
-          });
-        } catch (error) {
-          logger.error(`Error processing file ${file.name}:`, {
-            filename: file.name,
-            fileSize: file.size,
-            fileType: file.type,
-            sessionId: session?.id,
-            error:
-              error instanceof Error
-                ? {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name,
-                  }
-                : error,
-            errorString: String(error),
-          });
-          toast.error(
-            t('agent.attachment.processingFileError', {
-              filePath: file.name,
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        }
-      }
+            // Update the placeholder with actual file data and set to 'pending'
+            updatePendingFile(pendingId, {
+              file: file,
+              size: file.size,
+              status: 'pending',
+            });
+
+            logger.info(`File processed successfully`, {
+              filename: file.name,
+              fileSize: file.size,
+            });
+          } catch (error) {
+            logger.error(`Error processing file ${file.name}:`, error);
+            toast.error(
+              t('agent.attachment.processingFileError', {
+                filePath: file.name,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+            removeFile(addedItems[index]);
+          }
+        }),
+      );
 
       e.target.value = '';
     },
-    [session, addPendingFiles],
+    [session, addPendingFiles, updatePendingFile, removeFile, maxBytes, t],
   );
 
   const validateFiles = useCallback((paths: string[]): boolean => {
-    // ALLOW ALL FILES
-    // const supportedExtensions = /\.(txt|md|json|pdf|docx|xlsx)$/i;
     return paths.every((path: string) => {
       const filename = path.split('/').pop() || path.split('\\').pop() || '';
-      // const isValid = supportedExtensions.test(filename);
       const isValid = true;
       logger.info('Validating file extension', {
         path,
         filename,
         isValid,
-        // supportedExtensions: supportedExtensions.source,
       });
       return isValid;
     });
@@ -311,6 +253,7 @@ export function useAgentFileAttachment() {
   return {
     pendingFiles,
     addPendingFiles,
+    updatePendingFile,
     commitPendingFiles,
     removeFile,
     clearPendingFiles,
