@@ -3,15 +3,12 @@
 //! ## What this does
 //!
 //! It reads the JSON configs from `assistants` and `sessions` tables, and if
-//! `allowedBuiltInServiceAliases` or `localServices` contain legacy names 
+//! `allowedBuiltInServiceAliases` or `localServices` contain legacy names
 //! (like "assistant", "content_store", "mcp_manager"), it converts them to
 //! their canonical counterparts ("agent", "attachments", "tool"), then saves the row.
 
 use log::{info, warn};
-use sea_orm::{
-    ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
-    Set,
-};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set};
 use serde_json::Value;
 
 use crate::entity::{assistant, session};
@@ -20,11 +17,17 @@ pub async fn run_alias_migrations(db: &DatabaseConnection) {
     info!("🔄 Running builtin service alias migration...");
 
     if let Err(e) = migrate_assistants(db).await {
-        warn!("alias_migration: failed to migrate assistants (non-fatal): {}", e);
+        warn!(
+            "alias_migration: failed to migrate assistants (non-fatal): {}",
+            e
+        );
     }
 
     if let Err(e) = migrate_sessions(db).await {
-        warn!("alias_migration: failed to migrate sessions (non-fatal): {}", e);
+        warn!(
+            "alias_migration: failed to migrate sessions (non-fatal): {}",
+            e
+        );
     }
 
     info!("✅ Builtin service alias migration completed.");
@@ -95,7 +98,10 @@ async fn migrate_assistants(db: &DatabaseConnection) -> Result<(), String> {
     }
 
     if update_count > 0 {
-        info!("Migrated {} assistant(s) to new canonical service aliases.", update_count);
+        info!(
+            "Migrated {} assistant(s) to new canonical service aliases.",
+            update_count
+        );
     }
 
     Ok(())
@@ -125,7 +131,10 @@ async fn migrate_sessions(db: &DatabaseConnection) -> Result<(), String> {
     }
 
     if update_count > 0 {
-        info!("Migrated {} session(s) to new canonical service aliases.", update_count);
+        info!(
+            "Migrated {} session(s) to new canonical service aliases.",
+            update_count
+        );
     }
 
     Ok(())

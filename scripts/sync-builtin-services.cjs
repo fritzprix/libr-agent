@@ -62,8 +62,12 @@ function sync() {
     process.exit(1);
   }
 
-  const coreServices = services.filter(s => !s.optional).map(s => s.canonical);
-  const optionalServices = services.filter(s => s.optional).map(s => s.canonical);
+  const coreServices = services
+    .filter((s) => !s.optional)
+    .map((s) => s.canonical);
+  const optionalServices = services
+    .filter((s) => s.optional)
+    .map((s) => s.canonical);
 
   const tsContent = `/**
  * ⚠️ AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY
