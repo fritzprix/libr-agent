@@ -19,6 +19,32 @@ pub fn should_trigger_background_compaction(
             > crate::agent::llm::token_utils::calculate_compact_threshold(safe_input_token_limit)
 }
 
+/// Determines the compactable prefix for preflight compaction.
+///
+/// Unlike background compaction, preflight compaction must preserve the newest
+/// direct user turn so we don't summarize away the input that still needs an
+/// answer. However, workflow-generated tool output at the tail is compactable,
+/// and unresolved tool chains must remain intact. This helper aligns those
+/// constraints into a single split index:
+///
+/// - latest `user`/non-tool tail: preserve the last message
+/// - latest `tool` tail: compact as much as `find_compaction_split_index()` allows
+/// - unresolved tool chain: preserve the full unresolved tail
+pub fn find_preflight_compaction_split_index(messages: &[Message]) -> usize {
+    if messages.is_empty() {
+        return 0;
+    }
+
+    let unresolved_boundary =
+        crate::agent::llm::context_selector::find_compaction_split_index(messages);
+
+    match messages.last().map(|message| message.role.as_str()) {
+        Some("tool") => unresolved_boundary,
+        Some(_) => std::cmp::min(messages.len().saturating_sub(1), unresolved_boundary),
+        None => 0,
+    }
+}
+
 pub(crate) async fn trigger_background_compaction(
     app_handle: &AppHandle,
     session_id: &str,
@@ -175,7 +201,7 @@ pub(crate) async fn try_trigger_preflight_compaction(
         return Ok(false);
     }
 
-    let split_idx = messages.len() - 1;
+    let split_idx = find_preflight_compaction_split_index(messages);
     if split_idx == 0 {
         return Ok(false);
     }
