@@ -1,3 +1,4 @@
+import { SWRConfig } from 'swr';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useServerTools } from '../useServerTools';
@@ -27,7 +28,7 @@ describe('useServerTools', () => {
   });
 
   it('returns idle state when isOpen is false', () => {
-    const { result } = renderHook(() => useServerTools('server-1', false));
+    const { result } = renderHook(() => useServerTools('server-1', false), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
     expect(result.current.isLoading).toBe(false);
     expect(result.current.tools).toEqual([]);
     expect(result.current.error).toBeNull();
@@ -36,7 +37,7 @@ describe('useServerTools', () => {
 
   it('shows loading state immediately when isOpen becomes true', () => {
     vi.mocked(safeInvoke).mockReturnValue(new Promise(() => {})); // never resolves
-    const { result } = renderHook(() => useServerTools('server-1', true));
+    const { result } = renderHook(() => useServerTools('server-1', true), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
     expect(result.current.isLoading).toBe(true);
     expect(result.current.tools).toEqual([]);
     expect(result.current.error).toBeNull();
@@ -44,7 +45,7 @@ describe('useServerTools', () => {
 
   it('populates tools on successful probe', async () => {
     vi.mocked(safeInvoke).mockResolvedValueOnce(mockTools);
-    const { result } = renderHook(() => useServerTools('server-1', true));
+    const { result } = renderHook(() => useServerTools('server-1', true), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -57,7 +58,7 @@ describe('useServerTools', () => {
 
   it('sets error and clears loading on probe failure', async () => {
     vi.mocked(safeInvoke).mockRejectedValueOnce(new Error('Connection refused'));
-    const { result } = renderHook(() => useServerTools('server-1', true));
+    const { result } = renderHook(() => useServerTools('server-1', true), { wrapper: ({ children }: { children: React.ReactNode }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 

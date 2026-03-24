@@ -1,3 +1,4 @@
+import { SWRConfig } from 'swr';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAgentTools } from '../use-agent-tools';
@@ -34,7 +35,7 @@ describe('useAgentTools', () => {
   });
 
   it('should return initial state when sessionId is undefined', () => {
-    const { result } = renderHook(() => useAgentTools(undefined));
+    const { result } = renderHook(() => useAgentTools(undefined), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     expect(result.current.availableTools).toEqual([]);
     expect(result.current.isLoading).toBe(false);
@@ -56,7 +57,7 @@ describe('useAgentTools', () => {
     vi.mocked(validateMCPTools).mockReturnValue(mockValidatedTools);
     vi.mocked(isBuiltinTool).mockReturnValue(false);
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId));
+    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     // Initial state while fetching
     expect(result.current.isLoading).toBe(true);
@@ -79,7 +80,7 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockRejectedValue(new Error(errorMessage));
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId));
+    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -95,7 +96,7 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockRejectedValue(errorMessage);
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId));
+    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -111,7 +112,7 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockResolvedValue(invalidResponse as unknown as MCPTool[]);
 
-    const { result } = renderHook(() => useAgentTools(mockSessionId));
+    const { result } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false);
@@ -130,7 +131,7 @@ describe('useAgentTools', () => {
 
     vi.mocked(getAgentAvailableTools).mockReturnValue(promise);
 
-    const { result, unmount } = renderHook(() => useAgentTools(mockSessionId));
+    const { result, unmount } = renderHook(() => useAgentTools(mockSessionId), { wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig> });
 
     expect(result.current.isLoading).toBe(true);
     expect(result.current.availableTools).toEqual([]);
