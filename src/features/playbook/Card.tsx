@@ -100,7 +100,9 @@ export function PlaybookCard({
         </CardTitle>
         <CardDescription className="line-clamp-1 text-xs">
           {t('playbook.card.created', {
-            date: getPlaybookDateFormatter(i18n.language).format(playbook.createdAt),
+            date: getPlaybookDateFormatter(i18n.language).format(
+              playbook.createdAt,
+            ),
           })}
         </CardDescription>
       </CardHeader>

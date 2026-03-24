@@ -7,6 +7,7 @@ import { isBuiltinTool } from '@/lib/tool-call-utils';
 
 const logger = getLogger('useAgentTools');
 const TOOL_NAME_SAMPLE_SIZE = 5;
+type AgentToolsKey = readonly ['agent-tools', string];
 
 function summarizeToolNames(tools: MCPTool[]): string {
   const preview = tools
@@ -30,16 +31,20 @@ function summarizeToolNames(tools: MCPTool[]): string {
  * @returns Object containing availableTools, isLoading, and error
  */
 export function useAgentTools(sessionId: string | undefined) {
+  const swrKey: AgentToolsKey | null = sessionId
+    ? ['agent-tools', sessionId]
+    : null;
+
   const {
     data: availableTools = [],
     isLoading,
     error,
-  } = useSWR<MCPTool[], Error>(
-    sessionId ? ['agent-tools', sessionId] : null,
+  } = useSWR<MCPTool[], Error, AgentToolsKey | null>(
+    swrKey,
     async ([, id]) => {
       logger.debug('Loading agent tools', { sessionId: id });
 
-      const response = await getAgentAvailableTools(id as string);
+      const response = await getAgentAvailableTools(id);
 
       if (!Array.isArray(response)) {
         throw new Error('Expected array of tools from backend');
@@ -59,25 +64,33 @@ export function useAgentTools(sessionId: string | undefined) {
     },
     {
       revalidateOnFocus: false,
-      onSuccess: (tools) => {
+      onSuccess: (tools, key) => {
         const externalTools = tools.filter((tool) => !isBuiltinTool(tool.name));
         logger.info('Loaded agent tools', {
-          sessionId,
+          sessionId: key[1],
           toolCount: tools.length,
           builtinCount: tools.filter((t) => isBuiltinTool(t.name)).length,
           externalCount: externalTools.length,
           externalNamesSample: summarizeToolNames(externalTools),
         });
       },
-      onError: (err) => {
-        logger.error('Failed to load agent tools', { sessionId, error: err });
+      onError: (err, key) => {
+        logger.error('Failed to load agent tools', {
+          sessionId: key[1],
+          error: err,
+        });
       },
-    }
+    },
   );
 
   return {
     availableTools,
     isLoading,
-    error: error instanceof Error ? error.message : error ? String(error) : undefined,
+    error:
+      error instanceof Error
+        ? error.message
+        : error
+          ? String(error)
+          : undefined,
   };
 }

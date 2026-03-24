@@ -6,6 +6,7 @@ import { getLogger } from '@/lib/logger';
 const logger = getLogger('usePlaybookSearch');
 
 const MAX_RESULTS = 8;
+type PlaybookSearchKey = readonly ['playbooks-search', string, string];
 
 type PlaybookWithId = Playbook & {
   id: string;
@@ -23,13 +24,20 @@ export function usePlaybookSearch(
   agentId: string | undefined,
   query: string | null,
 ): PlaybookWithId[] {
-  const { data: playbooks = [] } = useSWR<PlaybookWithId[], Error>(
-    agentId && query !== null ? ['playbooks-search', agentId, query] : null,
+  const swrKey: PlaybookSearchKey | null =
+    agentId && query !== null ? ['playbooks-search', agentId, query] : null;
+
+  const { data: playbooks = [] } = useSWR<
+    PlaybookWithId[],
+    Error,
+    PlaybookSearchKey | null
+  >(
+    swrKey,
     async ([, id, q]) => {
-      const all = await listPlaybooks({ agentId: id as string });
-      const lower = (q as string).toLowerCase();
+      const all = await listPlaybooks({ agentId: id });
+      const lower = q.toLowerCase();
       return all
-        .filter((p) => (q as string) === '' || p.goal.toLowerCase().includes(lower))
+        .filter((p) => q === '' || p.goal.toLowerCase().includes(lower))
         .slice(0, MAX_RESULTS);
     },
     {
@@ -37,7 +45,7 @@ export function usePlaybookSearch(
       onError: (err) => {
         logger.error('Failed to fetch playbooks for autocomplete', err);
       },
-    }
+    },
   );
 
   // Dynamically return empty if query is null, avoiding any stale renders.

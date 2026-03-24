@@ -41,12 +41,13 @@ export function useServerTools(serverId: string, isOpen: boolean) {
       onError: (err) => {
         logger.error('Failed to probe server tools', { serverId, err });
       },
-    }
+    },
   );
 
   return {
     tools,
     isLoading,
-    error: error instanceof Error ? error.message : error ? String(error) : null,
+    error:
+      error instanceof Error ? error.message : error ? String(error) : null,
   };
 }

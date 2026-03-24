@@ -19,7 +19,7 @@ export function useBuiltinTools() {
       onError: (err) => {
         logger.error('Failed to fetch builtin server definitions', err);
       },
-    }
+    },
   );
 
   return { services, isLoading };
