@@ -152,13 +152,10 @@ const AgentMessageRendererImpl: React.FC<AgentMessageRendererProps> = ({
 
   const htmlProps = useMemo(
     () => ({
-      style: { height: 'auto', maxHeight: 'unset' },
+      autoResizeIframe: true, // Auto-resizes height to match content natively via SDK
+      style: { height: '384px', maxHeight: 'unset' }, // Default fallback height for backward compatibility
       iframeProps: {
-        // TODO(Review): The iframe intrinsically locks to its min-height (384px) and vertically scrolls
-        // if content is taller, because it cannot automatically grow to fit its content.
-        // Future Improvement: Implement a `ResizeObserver` + `postMessage` auto-resizer inside
-        // the injected HTML to dynamically adjust this iframe height instead of locking it.
-        className: 'h-auto min-h-96 max-h-none',
+        className: 'w-full',
       },
     }),
     [],

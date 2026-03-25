@@ -158,10 +158,10 @@
       .md code {
         background: #f3f4f6;
         border-radius: 3px;
-        padding: 1px 5px;
+        padding: 2px 5px;
         font-family: ui-monospace, monospace;
         font-size: 0.88em;
-        color: #d97706;
+        color: #4f46e5; /* Professional indigo for standard inline code */
       }
       .md pre {
         background: #1e293b;
@@ -331,6 +331,13 @@
     </div>
 
     <script>
+      // Auto-resize logic for MCP-UI client autoResizeIframe
+      const ro = new ResizeObserver(() => {
+        const height = document.documentElement.scrollHeight || document.body.scrollHeight;
+        window.parent.postMessage({ type: 'ui-size-change', payload: { height: height } }, '*');
+      });
+      ro.observe(document.body);
+
       // Interaction logic
       {{#if interaction}}
       const messageId = '{{messageId}}';

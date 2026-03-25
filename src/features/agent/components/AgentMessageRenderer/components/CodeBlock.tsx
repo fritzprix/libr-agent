@@ -23,7 +23,7 @@ export const CodeBlock = memo(
       // Inline code
       return (
         <code
-          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono border border-border break-all"
+          className="px-1.5 py-0.5 bg-muted rounded text-sm font-mono font-semibold text-indigo-600 dark:text-indigo-400 border border-border break-all"
           {...props}
         >
           {children}
