@@ -70,7 +70,7 @@ The platform is designed to be expanded via community standards.
 LibrAgent is a powerful platform, and we provide detailed documentation to help you get the most out of it.
 
 - **[Navigation Guide](docs/guides/navigation-guide.md)**: A map of the application's structure, explaining how to use routes like `/assistants` (Assistant Profiles) and `/playbooks` (Workflow Templates) to manage your agents.
-- **[Architecture Guide](docs/guides/architecture-documentation-guide.md)**: Detailed overview of how LibrAgent works under the hood.
+- **[Architecture Guide](docs/architecture/agent-workflow-architecture.md)**: Detailed overview of how LibrAgent works under the hood.
 
 ---
 
@@ -83,6 +83,17 @@ Download the latest binaries for Windows, macOS, or Linux from the [Release page
 ```bash
 git clone https://github.com/fritzprix/libr-agent
 cd libr-agent
+```
+
+For production builds, resolve dependencies and run required synchronization scripts:
+
+```bash
+pnpm install && pnpm build
+```
+
+For local development, simply run the Tauri dev server. **Never run `pnpm build` immediately beforehand** as it wastes time and is an incorrect Tauri workflow:
+
+```bash
 pnpm install
 pnpm tauri dev
 ```
