@@ -113,9 +113,14 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
   });
 
   const attachedFiles = pendingFiles;
+  const hasContent = input.trim().length > 0 || attachedFiles.length > 0;
 
-  // Determine if input should be disabled (busy state detection)
-  // Trust backend workflowStatus as single source of truth
+  const hasProcessingFiles = useMemo(
+    () => pendingFiles.some((f) => f.status === 'processing'),
+    [pendingFiles],
+  );
+
+  // Agent busy state (shown as Cancel button)
   const isBusy = useMemo(() => {
     return (
       isSessionLoading ||
@@ -131,6 +136,10 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     session?.id,
     isCompacting,
   ]);
+
+  const isSendDisabled = useMemo(() => {
+    return !hasContent || isAttachmentLoading || hasProcessingFiles;
+  }, [hasContent, isAttachmentLoading, hasProcessingFiles]);
 
   const inputPlaceholder = useMemo(() => {
     if (dragState !== 'none') {
@@ -232,7 +241,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       } else if (event === 'drop') {
         setDragState('none');
         if (payload.paths) {
-          processFileDrop(payload.paths);
+          // Defer heavy file processing to unblock the UI thread
+          // This ensures the visual drop state resets immediately
+          const paths = payload.paths;
+          setTimeout(() => {
+            processFileDrop(paths);
+          }, 0);
         }
       } else if (event === 'leave') {
         setDragState('none');
@@ -260,6 +274,7 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       attachedFiles.map((file: AttachmentReference) => ({
         name: file.filename,
         content: file.preview || '',
+        status: file.status,
       })),
     [attachedFiles],
   );
@@ -287,8 +302,6 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
     dragState === 'invalid' &&
       'bg-destructive/5 border-destructive/50 shadow-destructive/10',
   );
-
-  const hasContent = input.trim().length > 0 || attachedFiles.length > 0;
 
   return (
     <div className="relative">
@@ -391,13 +404,17 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
             <TooltipTrigger asChild>
               <Button
                 type="submit"
-                disabled={!hasContent || isAttachmentLoading}
+                disabled={isSendDisabled}
                 size="icon"
                 className="mb-1 shrink-0"
                 aria-label={t('agent.input.sendAriaLabel')}
                 title={t('agent.input.sendAriaLabel')}
               >
-                <Send className="h-4 w-4" />
+                {hasProcessingFiles ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{t('agent.input.sendTooltip')}</TooltipContent>

@@ -30,6 +30,7 @@ export interface PendingFileInput {
   filename?: string;
   mimeType: string;
   originalPath?: string;
+  status?: AttachmentReference['status'];
   blobCleanup?: () => void;
 }
 
@@ -37,7 +38,11 @@ interface AgentResourceAttachmentContextType {
   pendingFiles: AttachmentReference[];
   sessionFiles: AttachmentReference[];
   isLoading: boolean;
-  addPendingFiles: (files: PendingFileInput[]) => void;
+  addPendingFiles: (files: PendingFileInput[]) => AttachmentReference[];
+  updatePendingFile: (
+    pendingId: string,
+    updates: Partial<AttachmentReference>,
+  ) => void;
   removeFile: (file: AttachmentReference) => Promise<void>;
   commitPendingFiles: () => Promise<AttachmentReference[]>;
   clearPendingFiles: () => void;
@@ -237,11 +242,13 @@ export function AgentResourceAttachmentProvider({
   );
 
   const addPendingFiles = useCallback(
-    (files: PendingFileInput[]) => {
-      const newPending = files.map((file) => ({
+    (
+      files: (PendingFileInput & { status?: AttachmentReference['status'] })[],
+    ) => {
+      const newPending: AttachmentReference[] = files.map((file) => ({
         sessionId: sessionId || '',
         pendingId: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        status: 'pending' as const,
+        status: file.status || ('pending' as const),
         filename: file.filename || extractFilenameFromUrl(file.url),
         mimeType: file.mimeType,
         size: file.file?.size || 0,
@@ -257,8 +264,20 @@ export function AgentResourceAttachmentProvider({
       }));
 
       setPendingFiles((prev) => [...prev, ...newPending]);
+      return newPending;
     },
     [sessionId, extractFilenameFromUrl],
+  );
+
+  const updatePendingFile = useCallback(
+    (pendingId: string, updates: Partial<AttachmentReference>) => {
+      setPendingFiles((prev) =>
+        prev.map((file) =>
+          file.pendingId === pendingId ? { ...file, ...updates } : file,
+        ),
+      );
+    },
+    [],
   );
 
   const addFileInternal = useCallback(
@@ -640,6 +659,7 @@ export function AgentResourceAttachmentProvider({
         sessionFiles,
         isLoading,
         addPendingFiles,
+        updatePendingFile,
         removeFile,
         commitPendingFiles,
         clearPendingFiles,
