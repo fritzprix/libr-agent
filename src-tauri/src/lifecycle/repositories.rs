@@ -72,6 +72,9 @@ pub async fn init_repositories(db: &DatabaseConnection) -> SystemSettings {
         info!("✅ Default assistants verified");
     }
 
+    // Run alias migrations to clean up legacy data
+    crate::lifecycle::alias_migration::run_alias_migrations(db).await;
+
     // Initialize the MCP Service Proxy Manager for session-aware builtin tools
     // For shared ownership, MCPServiceProxyManager needs Arc-wrapped dependencies
     // We'll modify the state management to use Arc storage pattern
