@@ -203,6 +203,37 @@ function ChatInterfaceTabComponent({
 
       <div className="border-t pt-6 mt-6">
         <h3 className="text-lg font-medium text-foreground mb-4">
+          {t('settings.display.uiVisualsTitle', 'UI Visuals')}
+        </h3>
+        <div className="min-w-0">
+          <label className="block text-muted-foreground mb-2 font-medium">
+            {t('settings.display.fontFamily', 'Font Family')}
+          </label>
+          <select
+            className="bg-background border text-foreground rounded px-3 py-2 w-full max-w-xs"
+            value={localDisplay.fontFamily ?? 'Pretendard'}
+            onChange={(e) =>
+              onDisplaySettingsChange('fontFamily', e.target.value)
+            }
+          >
+            <option value="Pretendard">Pretendard (Standard Sans)</option>
+            <option value="Inter">Inter (Clean UI Sans)</option>
+            <option value="NanumSquare Neo">
+              NanumSquare Neo (Modern Geometric)
+            </option>
+            <option value="D2Coding">D2Coding (Developer Mono)</option>
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t(
+              'settings.display.fontFamilyDescription',
+              'Choose your preferred font for the application interface',
+            )}
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t pt-6 mt-6">
+        <h3 className="text-lg font-medium text-foreground mb-4">
           {t('settings.display.metricsTitle', 'Performance Metrics')}
         </h3>
         <div className="space-y-6">
@@ -380,6 +411,7 @@ export default React.memo(ChatInterfaceTabComponent, (prev, next) => {
     prev.localDisplay.showTokenSpeed === next.localDisplay.showTokenSpeed &&
     prev.localDisplay.compactMetrics === next.localDisplay.compactMetrics &&
     prev.localDisplay.toolDetailLevel === next.localDisplay.toolDetailLevel &&
+    prev.localDisplay.fontFamily === next.localDisplay.fontFamily &&
     prev.onWindowSizeChange === next.onWindowSizeChange &&
     prev.onContextStrategyChange === next.onContextStrategyChange &&
     prev.onMaxInputContextChange === next.onMaxInputContextChange &&

@@ -70,7 +70,7 @@ function AgentMessageBubbleImpl({
                   : 'You'
                 : msg.role.toUpperCase()}
           </div>
-          <div className="whitespace-pre-wrap min-w-0">
+          <div className="whitespace-pre-wrap min-w-0 font-sans">
             {/* File Attachments Display */}
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="mb-3 p-3 bg-background/10 rounded-lg border border-current/10">

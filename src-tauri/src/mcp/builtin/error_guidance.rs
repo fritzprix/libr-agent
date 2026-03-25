@@ -512,11 +512,11 @@ impl SuccessHint {
                 "Use readFile to view file contents".to_string(),
                 "Use writeFile to create new files".to_string(),
             ],
-            ("editFile" | "replaceLines", ToolGroup::Workspace) => vec![
+            ("editFile", ToolGroup::Workspace) => vec![
                 "Use readFile to verify your edits".to_string(),
                 "Use runShell to execute the updated code".to_string(),
             ],
-            ("searchLines" | "searchFiles", ToolGroup::Workspace) => vec![
+            ("search" | "searchFiles", ToolGroup::Workspace) => vec![
                 "Use readFile on interesting matches".to_string(),
                 "Use listDirectory to explore the surrounding module".to_string(),
             ],

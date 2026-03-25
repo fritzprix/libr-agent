@@ -164,7 +164,7 @@ impl WorkspaceServer {
                     let listing_str = item_lines.join("\n");
                     SuccessHint::new(
                         format!(
-                            "Directory listing for '{}':\n\n{}{}\n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use searchLines to search for content in files",
+                            "Directory listing for '{}':\n\n{}{}\n\n💡 Next Steps:\n- Use readFile('{}/filename') to read a file\n- Use listDirectory('{}/subdir') to explore subdirectories\n- Use search to search for content in files",
                             path_str, listing_str, truncation_note, path_str, path_str
                         ),
                         vec![],

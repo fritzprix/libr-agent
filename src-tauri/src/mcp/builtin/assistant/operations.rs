@@ -137,7 +137,7 @@ async fn validate_mcp_server_ids(
 
     if !invalid_ids.is_empty() {
         return Err(format!(
-            "Invalid MCP server IDs: {}. Use builtin_mcp_manager__listMcpServers to see available servers with their IDs.",
+            "Invalid MCP server IDs: {}. Use tool__list to see available servers with their IDs.",
             invalid_ids
                 .iter()
                 .map(|id| format!("'{}'", id))
@@ -347,10 +347,7 @@ pub async fn update_assistant(
             if let Err(err_msg) = validate_mcp_server_ids(server.get_db(), &server_ids).await {
                 return Ok(
                     guided_error(ErrorCategory::InvalidInput, err_msg, ToolGroup::Agent)
-                        .with_guidance(vec![
-                            "Use builtin_mcp_manager__listTools to see available servers"
-                                .to_string(),
-                        ])
+                        .with_guidance(vec!["Use tool__list to see available servers".to_string()])
                         .to_mcp_result(),
                 );
             }

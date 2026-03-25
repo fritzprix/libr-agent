@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from 'next-themes';
 import { logUtils } from '@/lib/logger';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
+import { SettingsProvider } from '@/context/SettingsContext';
 
 // Initialize Tauri logger
 attachConsole().catch(console.error);
@@ -20,9 +21,11 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <BrowserRouter>
       <ThemeProvider attribute="class" defaultTheme="dark">
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
+        <SettingsProvider>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </SettingsProvider>
       </ThemeProvider>
     </BrowserRouter>
   </React.StrictMode>,

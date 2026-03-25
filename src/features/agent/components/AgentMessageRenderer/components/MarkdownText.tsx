@@ -31,7 +31,7 @@ export const MarkdownText = memo(
     }, [content, copyToClipboard]);
 
     return (
-      <div className="group relative text-sm leading-relaxed break-words">
+      <div className="group relative text-sm leading-relaxed break-words font-sans">
         {/* Copy button for individual text */}
         {!hideCopyButton && (
           <button

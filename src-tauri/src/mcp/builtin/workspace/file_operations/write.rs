@@ -108,9 +108,9 @@ impl WorkspaceServer {
                         path_str
                     ),
                     "".to_string(),
-                    "⚠️ ALTERNATIVE: Use replaceLines for targeted edits (safer)".to_string(),
+                    "⚠️ ALTERNATIVE: Use editFile for targeted edits (safer)".to_string(),
                     format!(
-                        "   → replaceLines(\"{}\", [{{line, line_hash, new_value}}])",
+                        "   → editFile(\"{}\", [{{line, line_hash, new_value}}])",
                         path_str
                     ),
                 ])
@@ -189,7 +189,7 @@ impl WorkspaceServer {
                             format_as_hashlines(content)
                         ));
                     } else {
-                        // New file — show hashlines so agent can immediately use replaceLines
+                        // New file — show hashlines so agent can immediately use editFile
                         let max_display_lines = 100;
                         let max_display_bytes = 51200; // 50KB
                         let content_lines: Vec<&str> = content.lines().collect();
@@ -239,7 +239,7 @@ impl WorkspaceServer {
                     || path_str.ends_with(".ts")
                 {
                     next_steps.push(format!(
-                        "Use replaceLines for targeted edits to \"{}\"",
+                        "Use editFile for targeted edits to \"{}\"",
                         path_str
                     ));
                 }

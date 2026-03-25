@@ -34,7 +34,7 @@ pub fn create_read_file_tool() -> MCPTool {
     props.insert(
         "showLineHashes".to_string(),
         boolean_prop(Some(
-            "Optional: include a 2-char hash for each line (e.g. '42:a3|...'). Use this when you plan to edit specific lines with high precision using replaceLines.",
+            "Optional: include a 2-char hash for each line (e.g. '42:a3|...'). Use this when you plan to edit specific lines with high precision using editFile.",
         )),
     );
 
@@ -44,7 +44,7 @@ pub fn create_read_file_tool() -> MCPTool {
         description: "Read the contents of a file.
 
 - For general reading: just provide the 'path'.
-- For precise editing: set 'showLineHashes: true' to get staleness-safe identifiers for replaceLines.
+- For precise editing: set 'showLineHashes: true' to get staleness-safe identifiers for editFile.
 - For large files: use 'startLine' and 'endLine' to read specific segments."
             .to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
@@ -198,7 +198,7 @@ pub fn create_search_tool() -> MCPTool {
     props.insert(
         "showLineHashes".to_string(),
         boolean_prop(Some(
-            "Include line hashes in results for use with replaceLines (default: false)",
+            "Include line hashes in results for use with editFile (default: false)",
         )),
     );
 
@@ -211,7 +211,7 @@ pub fn create_search_tool() -> MCPTool {
 - To search text inside a specific file: search({path: 'src/main.rs', query: 'fn main'})
 - To search text inside files matching a pattern: search({path: '.', query: 'TODO', filePattern: '*.ts'})
 
-Use the returned line hashes directly in replaceLines.".to_string(),
+Use the returned line hashes directly in editFile.".to_string(),
         input_schema: object_schema(props, vec!["path".to_string()]),
         output_schema: None,
         annotations: None,
@@ -353,7 +353,7 @@ pub fn create_search_files_tool() -> MCPTool {
 - searchFiles({pattern: 'src/**/*.ts'}) — recursive TS files
 - Use `**` for recursive search
 
-For searching text inside files, use searchLines."
+For searching text inside files, use search."
             .to_string(),
         input_schema: object_schema(props, vec!["pattern".to_string()]),
         output_schema: None,
