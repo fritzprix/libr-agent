@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MCPServerEntity } from '@/models/chat';
 import type { TransportConfig } from '@/lib/mcp/config/transport';
+import { BUILTIN_SERVICE_CANONICAL_NAMES } from '@/lib/generated/builtin-services';
 import { createId } from '@paralleldrive/cuid2';
 
 /**
@@ -9,22 +10,9 @@ import { createId } from '@paralleldrive/cuid2';
  * External MCP servers must not use these names to avoid tool name collisions.
  * Keep in sync with BuiltinServiceId::from_alias() in src-tauri/src/mcp/builtin/service_id.rs
  */
-const RESERVED_BUILTIN_NAMES = new Set([
-  'planning',
-  'workspace',
-  'knowledge',
-  'assistant',
-  'assistant_manager',
-  'skills',
-  'playbook',
-  'attachments',
-  'content_store',
-  'swarm',
-  'ui',
-  'browser',
-  'bootstrap',
-  'mcp_manager',
-]);
+const RESERVED_BUILTIN_NAMES: ReadonlySet<string> = new Set(
+  BUILTIN_SERVICE_CANONICAL_NAMES,
+);
 
 export interface KeyValuePair {
   id: string;

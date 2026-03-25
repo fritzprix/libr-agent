@@ -180,9 +180,9 @@ impl WorkspaceServer {
 
                 // Format response for clean markdown rendering
                 let text_message = if show_line_hashes {
-                    // Hashline mode: {N}:{hash}|{content} — stable anchors for replaceLines
+                    // Hashline mode: {N}:{hash}|{content} — stable anchors for editFile
                     format!(
-                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nHashline: `{{N}}:{{hash}}|{{content}}` — pass hash as `line_hash` in replaceLines",
+                        "📄 **`{}`** — {} / {} lines\n\n```\n{}\n```\n\nHashline: `{{N}}:{{hash}}|{{content}}` — pass hash as `line_hash` in editFile",
                         path_str, size_str, line_count, content
                     )
                 } else {
@@ -196,7 +196,7 @@ impl WorkspaceServer {
                 let hint = SuccessHint::new(
                     text_message,
                     vec![
-                        "replaceLines: copy line_hash from prefix (e.g. 'a3' from '42:a3|...')"
+                        "editFile: copy line_hash from prefix (e.g. 'a3' from '42:a3|...')"
                             .to_string(),
                         "writeFile for full file replacement".to_string(),
                     ],
@@ -368,7 +368,7 @@ fn format_lines_with_numbers(lines: &[(usize, String)], show_hashes: bool) -> St
     if show_hashes {
         // Hashline format: "{N}:{hash}|{content}"
         // The hash is a stable 2-char FNV-1a fingerprint of the line content.
-        // Agents reference it in replaceLines via `line_hash` to detect staleness.
+        // Agents reference it in editFile via `line_hash` to detect staleness.
         return lines
             .iter()
             .map(|(line_num, content)| {

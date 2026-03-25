@@ -345,9 +345,9 @@ impl WorkspaceServer {
             }
 
             if show_hashes {
-                s.push_str("Use the format `N:hash|content` for `replaceLines`.\n");
+                s.push_str("Use the format `N:hash|content` for `editFile`.\n");
             } else {
-                s.push_str("Run with `showLineHashes: true` to get hashes for `replaceLines`.\n");
+                s.push_str("Run with `showLineHashes: true` to get hashes for `editFile`.\n");
             }
             s
         };
@@ -543,9 +543,8 @@ impl WorkspaceServer {
             "Use search with a specific file path to see all matches in that file".to_string(),
         ];
         if !show_hashes {
-            next_steps.push(
-                "Run with `showLineHashes: true` to get hashes for `replaceLines`.".to_string(),
-            );
+            next_steps
+                .push("Run with `showLineHashes: true` to get hashes for `editFile`.".to_string());
         }
 
         Ok(SuccessHint::new(text, next_steps).to_mcp_result_with_data(Some(structured)))

@@ -31,7 +31,7 @@ pub struct IndexStats {
 }
 
 /// BM25 Search Engine Implementation using bm25 crate
-pub struct ContentSearchEngine {
+pub struct AttachmentSearchEngine {
     // Store original chunks for metadata retrieval
     chunks: HashMap<String, TextChunk>,
     // BM25 embedder for query and document embedding
@@ -41,9 +41,9 @@ pub struct ContentSearchEngine {
 }
 
 // Manual Debug implementation since Scorer doesn't implement Debug
-impl std::fmt::Debug for ContentSearchEngine {
+impl std::fmt::Debug for AttachmentSearchEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ContentSearchEngine")
+        f.debug_struct("AttachmentSearchEngine")
             .field("chunks_count", &self.chunks.len())
             .field("embedder", &"<Embedder>")
             .field("scorer", &"<Scorer>")
@@ -51,7 +51,7 @@ impl std::fmt::Debug for ContentSearchEngine {
     }
 }
 
-impl ContentSearchEngine {
+impl AttachmentSearchEngine {
     /// Create a new BM25 search engine
     pub fn new(_index_dir: std::path::PathBuf) -> Result<Self, String> {
         // Initialize embedder with English language and standard BM25 parameters

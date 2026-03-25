@@ -1,6 +1,10 @@
 import { safeInvoke } from '@/lib/backend/core';
 
-import type { AddContentMetadata } from '@/models/content-store';
+import {
+  isAttachmentItem,
+  type AddAttachmentMetadata,
+  type AttachmentItem,
+} from '@/models/attachments';
 import type { MCPResult } from '@/lib/mcp/protocol/response';
 
 /**
@@ -20,8 +24,8 @@ export async function agentCallBuiltinTool<T = unknown>(
 }
 
 /**
- * Save a file to the agent's session-specific content store.
- * This bypasses the global content store and ensures the file is
+ * Save a file to the agent's session-specific attachments.
+ * This bypasses the global attachments and ensures the file is
  * accessible to the agent in the correct session context.
  */
 export async function saveAgentFile(
@@ -30,9 +34,9 @@ export async function saveAgentFile(
   args: {
     content?: string;
     fileUrl?: string;
-    metadata?: AddContentMetadata;
+    metadata?: AddAttachmentMetadata;
   },
-): Promise<unknown> {
+): Promise<AttachmentItem> {
   const response = await safeInvoke<MCPResult>('agent_add_attachment', {
     sessionId,
     args: {
@@ -44,16 +48,14 @@ export async function saveAgentFile(
     },
   });
 
-  // Unwrap structuredContent if present (std MCPResult format)
-  if (
-    response &&
-    typeof response === 'object' &&
-    'structuredContent' in response
-  ) {
-    return response.structuredContent;
+  const structuredContent = response.structuredContent;
+  if (isAttachmentItem(structuredContent)) {
+    return structuredContent;
   }
 
-  return response;
+  throw new Error(
+    'agent_add_attachment returned an invalid attachment payload',
+  );
 }
 
 export async function deleteAgentFile(

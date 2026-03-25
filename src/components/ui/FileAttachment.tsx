@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Paperclip, Trash2 } from 'lucide-react';
+import { Paperclip, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/tooltip';
 
 interface FileAttachmentProps {
-  files: { name: string; content: string }[];
+  files: { name: string; content: string; status?: string }[];
   onRemove: (index: number) => void;
   onAdd: (e: React.ChangeEvent<HTMLInputElement>) => void;
   maxFileSize?: number;
@@ -84,7 +84,14 @@ export default function FileAttachment({
 
         {/* File Count Indicator */}
         {files.length > 0 && (
-          <span className="text-xs text-muted-foreground">{files.length}</span>
+          <div className="flex items-center gap-1">
+            {files.some((f) => f.status === 'processing') && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            )}
+            <span className="text-xs text-muted-foreground">
+              {files.length}
+            </span>
+          </div>
         )}
       </div>
     );
@@ -144,7 +151,10 @@ export default function FileAttachment({
                   key={file.name}
                   className="flex items-center justify-between bg-muted px-2 py-1 rounded border border-border"
                 >
-                  <span className="text-xs text-success truncate flex-1">
+                  <span className="text-xs text-success truncate flex-1 flex items-center gap-2">
+                    {file.status === 'processing' && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
                     {file.name}
                   </span>
                   <Tooltip>

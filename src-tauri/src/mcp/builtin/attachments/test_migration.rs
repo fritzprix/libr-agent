@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::mcp::builtin::content_store::storage::ContentStoreStorage;
+    use crate::mcp::builtin::attachments::storage::AttachmentsStorage;
     use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
     use std::fs;
 
@@ -46,9 +46,9 @@ mod tests {
         let db = setup_old_db(db_path).await;
         db.close().await.expect("Failed to close DB");
 
-        // 2. Initialize ContentStoreStorage (should trigger migration)
+        // 2. Initialize AttachmentsStorage (should trigger migration)
         let url = crate::utils::sqlite::format_sqlite_url(db_path);
-        let storage_result = ContentStoreStorage::new_sqlite(url.clone()).await;
+        let storage_result = AttachmentsStorage::new_sqlite(url.clone()).await;
         assert!(
             storage_result.is_ok(),
             "Failed to init storage: {:?}",

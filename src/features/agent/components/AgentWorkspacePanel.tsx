@@ -1,21 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
-  ChevronRight,
-  ChevronDown,
-  File,
   Folder,
-  FolderOpen,
   RefreshCw,
   Upload,
   Terminal,
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import { useRustBackend, WorkspaceFileItem } from '@/hooks/use-rust-backend';
-import { useAgentMessageTrigger } from '@/hooks/use-agent-message-trigger';
+import { useRustBackend } from '@/hooks/use-rust-backend';
 import { toast } from 'sonner';
 import { getLogger } from '@/lib/logger';
 import { useTranslation } from 'react-i18next';
@@ -24,9 +18,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
   openWorkspaceInExplorer,
   openWorkspaceInTerminal,
-  getWorkspaceOverride,
-  setWorkspaceOverride,
-  cancelWorkspaceOverride,
 } from '@/lib/backend';
 import {
   useDnDContext,
@@ -34,465 +25,57 @@ import {
   type DragAndDropPayload,
 } from '@/context/DnDContext';
 import { useAgentSessionState } from '@/context/AgentSessionContext';
-import { useAgentChatActions } from '@/context/AgentChatContext';
-import { createId } from '@paralleldrive/cuid2';
 
-import { createToolMessagePair } from '@/lib/chat-utils';
-import { stringToMCPContentArray } from '@/lib/utils';
-import { join } from '@tauri-apps/api/path';
+import { FileTreeNode } from './workspace-panel/FileTreeNode';
+import { useWorkspaceFiles } from './workspace-panel/useWorkspaceFiles';
+import { useWorkspaceOverride } from './workspace-panel/useWorkspaceOverride';
+import { useWorkspaceFileDrop } from './workspace-panel/useWorkspaceFileDrop';
+import type { FileNode } from './workspace-panel/types';
 
 const logger = getLogger('AgentWorkspacePanel');
 
-interface FileNode {
-  id: string;
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  children?: FileNode[];
-  isExpanded?: boolean;
-  isLoading?: boolean;
-  parent?: string;
-}
-
-interface FileTreeNodeProps {
-  node: FileNode;
-  depth?: number;
-  onToggle: (node: FileNode) => void;
-  onOpen: (node: FileNode) => void;
-}
-
-const FileTreeNode = ({
-  node,
-  depth = 0,
-  onToggle,
-  onOpen,
-}: FileTreeNodeProps) => {
-  const Icon = node.isDirectory
-    ? node.isExpanded
-      ? FolderOpen
-      : Folder
-    : File;
-
-  return (
-    <div className="select-none">
-      <div
-        className="flex items-center gap-1 px-2 py-1 hover:bg-muted/50 group"
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-        onClick={() => {
-          // Keep mouse click behavior for padding area
-          if (node.isDirectory) {
-            onToggle(node);
-          } else {
-            onOpen(node);
-          }
-        }}
-      >
-        {node.isDirectory ? (
-          <button
-            type="button"
-            className="w-4 h-4 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle(node);
-            }}
-            aria-label={node.isExpanded ? 'Collapse' : 'Expand'}
-            aria-expanded={node.isExpanded}
-          >
-            {node.isLoading ? (
-              <RefreshCw className="w-3 h-3 animate-spin" />
-            ) : node.isExpanded ? (
-              <ChevronDown className="w-3 h-3" />
-            ) : (
-              <ChevronRight className="w-3 h-3" />
-            )}
-          </button>
-        ) : (
-          <div className="w-4 h-4" /> // Spacer
-        )}
-
-        <div
-          role="button"
-          tabIndex={0}
-          className="flex-1 flex items-center gap-1 min-w-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm px-1"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (node.isDirectory) {
-              onToggle(node);
-            } else {
-              onOpen(node);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              if (node.isDirectory) {
-                onToggle(node);
-              } else {
-                onOpen(node);
-              }
-            }
-          }}
-          aria-expanded={node.isDirectory ? node.isExpanded : undefined}
-        >
-          <Icon className="w-4 h-4 flex-shrink-0" />
-
-          <span className="text-xs truncate flex-1" title={node.name}>
-            {node.name}
-          </span>
-
-          {node.isDirectory && (
-            <Badge
-              variant="secondary"
-              className="text-xs px-1 opacity-0 group-hover:opacity-100"
-            >
-              {node.children?.length || 0}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {node.isExpanded && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <FileTreeNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              onToggle={onToggle}
-              onOpen={onOpen}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 export function AgentWorkspacePanel() {
   const { t } = useTranslation();
-  const {
-    listWorkspaceFiles,
-    openWorkspaceFileWithDefaultApp,
-    agentCallBuiltinTool,
-  } = useRustBackend();
+  const { openWorkspaceFileWithDefaultApp } = useRustBackend();
   const { session } = useAgentSessionState();
-  const { injectMessages } = useAgentChatActions();
+
   const [rootPath] = useState<string>('./');
-  const [workspaceOverride, setWorkspaceOverridePath] = useState<string>('');
-  const [isOverrideActive, setIsOverrideActive] = useState(false);
-  const [fileTree, setFileTree] = useState<FileNode[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const { subscribe } = useDnDContext();
   const [dragState, setDragState] = useState<{ isOver: boolean }>({
     isOver: false,
   });
 
-  const [isSettingOverride, setIsSettingOverride] = useState(false);
-  const [isCancelingOverride, setIsCancelingOverride] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isOpeningNative, setIsOpeningNative] = useState(false);
-  const [isBrowsing, setIsBrowsing] = useState(false);
   const openingNativeLock = useRef(false);
 
-  // Component lifecycle logging
-  useEffect(() => {
-    logger.info('AgentWorkspacePanel initialized', { rootPath });
+  // Extracted hooks
+  const { fileTree, loading, error, loadDirectory, toggleDirectory } =
+    useWorkspaceFiles(rootPath);
+
+  const handleOverrideChanged = useCallback(() => {
     loadDirectory(rootPath);
-  }, []);
+  }, [loadDirectory, rootPath]);
 
-  // Load current workspace override
-  useEffect(() => {
-    if (session?.id) {
-      getWorkspaceOverride(session.id)
-        .then((path) => {
-          if (path) {
-            setWorkspaceOverridePath(path);
-            setIsOverrideActive(true);
-          } else {
-            setWorkspaceOverridePath('');
-            setIsOverrideActive(false);
-          }
-        })
-        .catch((err) => logger.error('Failed to load workspace override', err));
-    }
-  }, [session?.id]);
+  const {
+    workspaceOverride,
+    isOverrideActive,
+    isSettingOverride,
+    isCancelingOverride,
+    isBrowsing,
+    handleSetOverride,
+    handleCancelOverride,
+    handleBrowseFolder,
+  } = useWorkspaceOverride(handleOverrideChanged);
 
-  // Message-based automatic file list updates
-  useAgentMessageTrigger(
-    () => {
-      if (rootPath) {
-        logger.info('Message-triggered file refresh', { rootPath });
-        loadDirectory(rootPath);
-      }
-    },
-    {
-      debounceMs: 500, // 500ms debouncing
-    },
-  );
+  const handleDropComplete = useCallback(() => {
+    loadDirectory(rootPath);
+  }, [loadDirectory, rootPath]);
 
-  // Load directory contents
-  const loadDirectory = useCallback(
-    async (path: string, parentNodeId?: string) => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        logger.debug('Loading directory', { path, parentNodeId });
-        const files = await listWorkspaceFiles(path, session?.id);
-        logger.info('BACKEND RESPONSE', {
-          path,
-          fileCount: files.length,
-          files: files.map((f) => ({
-            name: f.name,
-            isDirectory: f.isDirectory,
-            path: f.path,
-          })),
-        });
-
-        const nodes: FileNode[] = files.map((file: WorkspaceFileItem) => {
-          const nodePath = `${path}/${file.name}`.replace('//', '/');
-          const node = {
-            id: `${path}/${file.name}`,
-            name: file.name,
-            path: nodePath,
-            isDirectory: file.isDirectory,
-            isExpanded: false,
-            children: file.isDirectory ? [] : undefined,
-            parent: parentNodeId,
-          };
-
-          logger.info('CREATING FILENODE', {
-            name: file.name,
-            path: nodePath,
-            isDirectory: file.isDirectory,
-            backendIsDirectory: file.isDirectory,
-            hasChildren: node.children !== undefined,
-          });
-
-          return node;
-        });
-
-        if (parentNodeId) {
-          // Update specific node's children
-          setFileTree((prev) => updateNodeChildren(prev, parentNodeId, nodes));
-        } else {
-          // Update root
-          setFileTree(nodes);
-        }
-
-        logger.info('Directory loaded successfully', {
-          path,
-          fileCount: nodes.length,
-          parentNodeId,
-        });
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : 'Failed to load directory';
-        logger.error('Failed to load directory', { path, error: errorMessage });
-        setError(errorMessage);
-        toast.error(t('agent.workspace.loadError'));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [listWorkspaceFiles],
-  );
-
-  // Helper function to update node children
-  const updateNodeChildren = (
-    nodes: FileNode[],
-    nodeId: string,
-    children: FileNode[],
-  ): FileNode[] => {
-    return nodes.map((node) => {
-      if (node.id === nodeId) {
-        return { ...node, children, isLoading: false, isExpanded: true };
-      }
-      if (node.children) {
-        return {
-          ...node,
-          children: updateNodeChildren(node.children, nodeId, children),
-        };
-      }
-      return node;
-    });
-  };
-
-  // Toggle directory expansion
-  const toggleDirectory = useCallback(
-    async (node: FileNode) => {
-      if (!node.isDirectory) {
-        logger.warn('Attempted to toggle non-directory', {
-          path: node.path,
-          isDirectory: node.isDirectory,
-        });
-        return;
-      }
-
-      logger.debug('Toggling directory', {
-        path: node.path,
-        isExpanded: node.isExpanded,
-      });
-
-      if (node.isExpanded) {
-        // Collapse
-        setFileTree((prev) => toggleNodeExpansion(prev, node.id, false));
-      } else {
-        // Expand
-        setFileTree((prev) => toggleNodeExpansion(prev, node.id, true, true));
-        await loadDirectory(node.path, node.id);
-      }
-    },
-    [loadDirectory],
-  );
-
-  // Helper function to toggle node expansion
-  const toggleNodeExpansion = (
-    nodes: FileNode[],
-    nodeId: string,
-    expanded: boolean,
-    loading: boolean = false,
-  ): FileNode[] => {
-    return nodes.map((node) => {
-      if (node.id === nodeId) {
-        return { ...node, isExpanded: expanded, isLoading: loading };
-      }
-      if (node.children) {
-        return {
-          ...node,
-          children: toggleNodeExpansion(
-            node.children,
-            nodeId,
-            expanded,
-            loading,
-          ),
-        };
-      }
-      return node;
-    });
-  };
-
-  // Handle external file drops from DnDContext
-  const handleWorkspaceFileDrop = useCallback(
-    async (paths: string[]) => {
-      if (!session?.id || paths.length === 0) return;
-
-      logger.info('External files dropped on workspace', {
-        fileCount: paths.length,
-        targetPath: rootPath,
-      });
-
-      try {
-        const filesToImport = await Promise.all(
-          paths.map(async (srcPath) => {
-            const fileName = srcPath.split(/[/\\]/).pop() || 'unknown';
-            const destPath = await join(rootPath, fileName);
-            let destRelPath = destPath.replace(/\\/g, '/');
-            if (destRelPath.startsWith('./')) {
-              destRelPath = destRelPath.slice(2);
-            }
-            return {
-              srcAbsPath: srcPath,
-              destRelPath,
-            };
-          }),
-        );
-
-        // Call builtin workspace tool for batch import
-        const response = (await agentCallBuiltinTool(
-          session.id,
-          'workspace__importFiles',
-          {
-            files: filesToImport,
-          },
-        )) as {
-          content?: Array<{ type: string; text?: string }>;
-          structuredContent?: unknown;
-          isError?: boolean;
-        };
-
-        // Create tool messages for chat history
-        const toolCallId = createId();
-
-        // Build a safe textual result for UI.
-        let resultText = '';
-
-        try {
-          // Check if this is an error result
-          if (response.isError === true) {
-            // Extract error message from content
-            const errorContent = response.content?.[0];
-            if (
-              errorContent &&
-              typeof errorContent === 'object' &&
-              'text' in errorContent
-            ) {
-              resultText = `${errorContent.text}`;
-            } else {
-              resultText = 'Tool execution failed';
-            }
-          } else if (response.content && Array.isArray(response.content)) {
-            // Extract text from content array
-            const texts: string[] = [];
-            for (const item of response.content) {
-              if (item && typeof item === 'object') {
-                if (
-                  'text' in (item as Record<string, unknown>) &&
-                  typeof (item as Record<string, unknown>)['text'] === 'string'
-                ) {
-                  texts.push(
-                    (item as Record<string, unknown>)['text'] as string,
-                  );
-                } else {
-                  try {
-                    texts.push(JSON.stringify(item));
-                  } catch {
-                    // ignore
-                  }
-                }
-              }
-            }
-
-            if (texts.length > 0) resultText = texts.join('\n');
-            else resultText = JSON.stringify(response.content);
-          } else {
-            resultText = 'No result returned from importFiles';
-          }
-        } catch (e) {
-          resultText = `Failed to parse tool response: ${
-            e instanceof Error ? e.message : String(e)
-          }`;
-        }
-
-        const [toolCallMessage, toolResultMessage] = createToolMessagePair(
-          'workspace__importFiles',
-          { files: filesToImport },
-          stringToMCPContentArray(resultText),
-          toolCallId,
-          session.id,
-          undefined,
-          session.assistant?.id,
-          'ui',
-        );
-
-        // Submit messages atomically using injectMessages
-        await injectMessages([toolCallMessage, toolResultMessage], true);
-
-        // Refresh directory after import
-        await loadDirectory(rootPath);
-      } catch (error) {
-        logger.error('File import failed', error);
-        const message =
-          error instanceof Error ? error.message : 'Unknown error occurred';
-        toast.error(t('agent.workspace.importFileError'), {
-          description: message,
-        });
-      }
-    },
-    [agentCallBuiltinTool, injectMessages, session, rootPath, loadDirectory],
+  const { handleWorkspaceFileDrop } = useWorkspaceFileDrop(
+    rootPath,
+    handleDropComplete,
   );
 
   // Subscribe to DnD events
@@ -525,41 +108,6 @@ export function AgentWorkspacePanel() {
     };
   }, [subscribe, handleWorkspaceFileDrop]);
 
-  const handleSetOverride = async () => {
-    if (!workspaceOverride.trim() || !session?.id || isSettingOverride) return;
-
-    setIsSettingOverride(true);
-    try {
-      await setWorkspaceOverride(session.id, workspaceOverride);
-      setIsOverrideActive(true);
-      toast.success(t('agent.workspace.setOverrideSuccess'));
-      loadDirectory('./');
-    } catch (error) {
-      logger.error('Failed to set workspace override', error);
-      toast.error(t('agent.workspace.setOverrideError', { error }));
-    } finally {
-      setIsSettingOverride(false);
-    }
-  };
-
-  const handleCancelOverride = async () => {
-    if (!session?.id || isCancelingOverride) return;
-
-    setIsCancelingOverride(true);
-    try {
-      await cancelWorkspaceOverride(session.id);
-      setWorkspaceOverridePath('');
-      setIsOverrideActive(false);
-      toast.success(t('agent.workspace.cancelOverrideSuccess'));
-      loadDirectory('./');
-    } catch (error) {
-      logger.error('Failed to cancel workspace override', error);
-      toast.error(t('agent.workspace.cancelOverrideError', { error }));
-    } finally {
-      setIsCancelingOverride(false);
-    }
-  };
-
   const handleOpenInExplorer = async () => {
     if (!session?.id || isOpeningNative || openingNativeLock.current) return;
     openingNativeLock.current = true;
@@ -587,27 +135,6 @@ export function AgentWorkspacePanel() {
     } finally {
       setIsOpeningNative(false);
       openingNativeLock.current = false;
-    }
-  };
-
-  const handleBrowseFolder = async () => {
-    if (isBrowsing) return;
-    setIsBrowsing(true);
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t('agent.workspace.selectDirectoryTitle'),
-      });
-
-      if (selected && typeof selected === 'string') {
-        setWorkspaceOverridePath(selected);
-      }
-    } catch (error) {
-      logger.error('Failed to open folder dialog', error);
-      toast.error(t('agent.workspace.openFolderDialogError', { error }));
-    } finally {
-      setIsBrowsing(false);
     }
   };
 
@@ -662,7 +189,7 @@ export function AgentWorkspacePanel() {
         });
       }
     },
-    [openWorkspaceFileWithDefaultApp, session?.id],
+    [openWorkspaceFileWithDefaultApp, session?.id, t],
   );
 
   if (!session) return null;

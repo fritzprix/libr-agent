@@ -392,8 +392,16 @@ pub async fn check_session(
             .and_then(|v: &Value| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let (_, assistant_text) = latest_assistant_message_text(&messages, None)
+        let (_, mut assistant_text) = latest_assistant_message_text(&messages, None)
             .unwrap_or(("none".to_string(), "No final answer yet.".to_string()));
+
+        if assistant_text == "[assistant message has no text content]" {
+            if let Some(tool_text) =
+                crate::mcp::builtin::session_api::formatting::latest_tool_message_text(&messages)
+            {
+                assistant_text = format!("[Tool Response Fallback]\n{}", tool_text);
+            }
+        }
 
         let hint = SuccessHint::new(
             format!(

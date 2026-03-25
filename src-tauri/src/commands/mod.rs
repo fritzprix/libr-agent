@@ -1,7 +1,7 @@
 pub mod agent_commands;
 pub mod assistant_crud_commands;
+pub mod attachments_commands;
 pub mod browser_commands;
-pub mod content_store_commands;
 pub mod download_commands;
 pub mod file_commands;
 pub mod log_commands;

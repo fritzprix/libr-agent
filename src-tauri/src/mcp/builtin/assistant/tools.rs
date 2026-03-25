@@ -8,7 +8,7 @@ pub fn create_assistant_tool() -> MCPTool {
         title: Some("Create Assistant".to_string()),
         description: "Create a new global assistant configuration. \
 Cannot modify your own running assistant. \
-For mcpServerIds, use server IDs (from listMcpServers), NOT server names.".to_string(),
+For mcpServerIds, use server IDs (from tool__list), NOT server names.".to_string(),
         input_schema: object_prop(
             vec![
                 (
@@ -34,7 +34,7 @@ For mcpServerIds, use server IDs (from listMcpServers), NOT server names.".to_st
                     "mcpServerIds".to_string(),
                     array_schema(
                         string_prop(None, None, None),
-                        Some("External MCP server IDs (cuid2) to enable. Call listMcpServers first to get IDs."),
+                        Some("External MCP server IDs (cuid2) to enable. Call tool__list first to get IDs."),
                     ),
                 ),
             ],

@@ -8,7 +8,7 @@ pub const LARGE_FILE_THRESHOLD: u64 = 1_048_576; // 1 MB in bytes
 ///
 /// Uses FNV-1a 32-bit with output folding to produce a stable 2-char identifier
 /// per line. This hash is embedded into `readFile` output when `showLineHashes`
-/// is enabled, and validated by `replaceLines` via the `line_hash` field to
+/// is enabled, and validated by `editFile` via the `line_hash` field to
 /// detect file staleness before applying edits.
 ///
 /// Format produced: `{line_number}:{hash}|{content}`
@@ -28,7 +28,7 @@ pub fn compute_line_hash(content: &str) -> String {
 }
 
 /// Format content as hashlines: `{N}:{hash}|{line}` for each line.
-/// Agents can use the hash directly as `line_hash` in replaceLines.
+/// Agents can use the hash directly as `line_hash` in editFile.
 pub fn format_as_hashlines(content: &str) -> String {
     content
         .lines()

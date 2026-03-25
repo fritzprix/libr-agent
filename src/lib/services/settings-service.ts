@@ -41,6 +41,7 @@ export interface DisplaySettings {
   compactMetrics: boolean;
   /** Controls tool call display verbosity. 'simple' hides params/results/errors for regular users. */
   toolDetailLevel: 'simple' | 'developer';
+  fontFamily: string;
 }
 
 export type IsolationLevel = 'basic' | 'medium' | 'high';
@@ -120,6 +121,7 @@ export const DEFAULT_SETTING: Settings = {
     showTokenSpeed: true,
     compactMetrics: false,
     toolDetailLevel: 'simple',
+    fontFamily: 'Pretendard',
   },
   system: {
     maxFileUploadSizeMB: 50,

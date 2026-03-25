@@ -37,17 +37,27 @@ function AgentMessageBubbleImpl({
     return computeDisplayContent(msg, groupedMessages, groupedToolCalls);
   }, [groupedMessages, groupedToolCalls, msg]);
 
+  const hasUIResource = useMemo(() => {
+    const contents = displayContent || msg.content || [];
+    return contents.some(
+      (item) =>
+        'type' in item && (item as { type: string }).type === 'resource',
+    );
+  }, [displayContent, msg.content]);
+
   return (
     <div className="px-4 py-2">
       <div
         className={cn(
           'flex',
           msg.role === 'user' ? 'justify-end' : 'justify-start',
+          hasUIResource && 'w-full',
         )}
       >
         <div
           className={cn(
-            'relative max-w-[85%] md:max-w-2xl p-3 rounded-lg flex flex-col',
+            'relative p-3 rounded-lg flex flex-col',
+            hasUIResource ? 'w-full max-w-full' : 'max-w-[85%] md:max-w-2xl',
             msg.role === 'user'
               ? isPending
                 ? 'bg-primary/50 text-primary-foreground opacity-70 border-2 border-dashed border-primary/40'
@@ -70,7 +80,7 @@ function AgentMessageBubbleImpl({
                   : 'You'
                 : msg.role.toUpperCase()}
           </div>
-          <div className="whitespace-pre-wrap min-w-0">
+          <div className="whitespace-pre-wrap min-w-0 font-sans">
             {/* File Attachments Display */}
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="mb-3 p-3 bg-background/10 rounded-lg border border-current/10">

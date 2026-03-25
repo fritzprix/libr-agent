@@ -119,5 +119,13 @@
         }
       });
     </script>
+    <script>
+      // Auto-resize logic for MCP-UI client autoResizeIframe
+      const ro = new ResizeObserver(() => {
+        const height = document.documentElement.scrollHeight || document.body.scrollHeight;
+        window.parent.postMessage({ type: 'ui-size-change', payload: { height: height } }, '*');
+      });
+      ro.observe(document.body);
+    </script>
   </body>
 </html>

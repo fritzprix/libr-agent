@@ -57,7 +57,7 @@ export function hasUIResource(toolResult?: Message): boolean {
  *
  * Current convention:  <service>__<tool>
  *   e.g.  planning__addScratchpad
- *         mcp_manager__listServers
+ *         tool__listServers
  *
  * External MCP tools use the same format:  <server>__<tool>
  *   e.g.  github__search_code
@@ -66,7 +66,7 @@ export function hasUIResource(toolResult?: Message): boolean {
  * This set must mirror BuiltinServiceId::from_alias() in Rust (service_id.rs).
  */
 
-/** All recognized builtin service aliases (including legacy names) — synced from Rust SSOT. */
+/** All recognized builtin service aliases — synced from Rust SSOT. */
 export const BUILTIN_SERVICE_NAMES = new Set<string>(
   ALL_BUILTIN_SERVICE_ALIASES,
 );

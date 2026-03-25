@@ -49,7 +49,7 @@ CREATE TABLE mcp_servers (
 ```
 AI: I want to create an assistant with filesystem and github tools
 
-Step 1: Call builtin_mcp_manager__listExternalServers
+Step 1: Call tool__list
 Response: "Found 2 servers:
 • filesystem [configured] (Type: stdio | Command: npx)
 • github-api [configured] (Type: http | URL: https://...)"
@@ -76,7 +76,7 @@ Problems:
 
 - No tool to show assistant ↔ MCP server associations
 - No tool to list tools grouped by server
-- listExternalServers returns TEXT only (not AI-friendly)
+- tool\_\_list returns TEXT only (not AI-friendly)
 
 ---
 
@@ -313,7 +313,7 @@ impl SqliteMCPServerRepository {
 
 ### Phase 2: Update Tool Responses (AI-Friendly)
 
-#### 2.1 Enhanced listExternalServers Tool
+#### 2.1 Enhanced tool\_\_list Tool
 
 **Goal: Make IDs immediately copy-pasteable with minimal parsing**
 
@@ -532,7 +532,7 @@ EXAMPLES:
   Incorrect: '' (empty)
   Incorrect: Duplicate of existing server name
 
-💡 Use listExternalServers to see existing names"),
+💡 Use tool__list to see existing names"),
         ),
     );
 
@@ -550,7 +550,7 @@ pub fn create_update_server_tool() -> MCPTool {
             Some("Server ID (immutable system identifier).
 
 ⚠️ WORKFLOW:
-1. Call listExternalServers FIRST
+1. Call tool__list FIRST
 2. Copy the exact 'ID' field (NOT the name)
 3. Use that ID here
 
@@ -590,7 +590,7 @@ pub fn create_assistant_tool() -> MCPTool {
             "Array of MCP server IDs (NOT names) to enable for this assistant.
 
 ⚠️ CRITICAL WORKFLOW:
-1. Call builtin_mcp_manager__listExternalServers FIRST
+1. Call tool__list FIRST
 2. Extract the 'ID' field from each server (NOT the name)
 3. Use those IDs in this parameter
 
@@ -629,7 +629,7 @@ pub async fn update_server(args: Value) -> Result<MCPResult, String> {
         .ok_or_else(|| {
             format!(
                 "Server ID '{}' not found.\n\n\
-                💡 Use listExternalServers to see valid IDs.",
+                💡 Use tool__list to see valid IDs.",
                 id
             )
         })?;
@@ -646,7 +646,7 @@ pub async fn update_server(args: Value) -> Result<MCPResult, String> {
                     format!("Server name '{}' already in use by another server", name),
                     vec![
                         "Server names must be unique across all servers".to_string(),
-                        "Use listExternalServers to see existing names".to_string(),
+                        "Use tool__list to see existing names".to_string(),
                     ],
                     ToolGroup::MCPManager,
                 ).to_mcp_result());
@@ -683,7 +683,7 @@ async fn validate_mcp_server_ids(
     if !invalid_ids.is_empty() {
         return Err(format!(
             "Invalid MCP server IDs: {}\n\n\
-            ⚠️ Use builtin_mcp_manager__listExternalServers to get valid IDs.\n\
+            ⚠️ Use tool__list to get valid IDs.\n\
             Remember: Use the 'ID' field, not the 'name' field.",
             invalid_ids.iter().map(|id| format!("'{}'", id)).collect::<Vec<_>>().join(", ")
         ));

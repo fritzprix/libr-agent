@@ -1,17 +1,17 @@
 #[cfg(test)]
 mod tests {
-    use crate::mcp::builtin::content_store::server::ContentStoreServer;
-    use crate::mcp::builtin::content_store::{operations, queries};
+    use crate::mcp::builtin::attachments::server::AttachmentsServer;
+    use crate::mcp::builtin::attachments::{operations, queries};
     use crate::mcp::types::ServiceContextOptions;
     use crate::session::SessionManager;
     use serde_json::json;
     use std::sync::Arc;
     use tempfile::TempDir;
 
-    async fn setup_server(session_id: &str) -> (ContentStoreServer, TempDir) {
+    async fn setup_server(session_id: &str) -> (AttachmentsServer, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let base_dir = temp_dir.path().join(format!("session_{}", session_id));
-        let db_path = base_dir.join("content_store.db");
+        let db_path = base_dir.join("attachments.db");
 
         // Ensure database directory exists and create empty database file
         std::fs::create_dir_all(&base_dir).unwrap();
@@ -33,7 +33,7 @@ mod tests {
             SessionManager::new_with_base_dir(base_dir).expect("Failed to create SessionManager"),
         );
         let server =
-            ContentStoreServer::new_with_db("test-session".to_string(), session_manager, db)
+            AttachmentsServer::new_with_db("test-session".to_string(), session_manager, db)
                 .await
                 .expect("Failed to create server");
 

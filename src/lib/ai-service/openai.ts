@@ -161,8 +161,7 @@ export class OpenAIService extends BaseAIService<
         function: {
           name: mcpTool.name,
           description: mcpTool.description,
-          parameters:
-            parameters as OpenAI.Chat.ChatCompletionTool['function']['parameters'],
+          parameters: parameters as Record<string, unknown>,
         },
       };
     });

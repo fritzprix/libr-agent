@@ -6,25 +6,16 @@ use std::fmt;
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinServiceId {
     Planning,
-    #[serde(alias = "memory")]
     Scratchpad,
     Workspace,
     Knowledge,
-    #[serde(
-        alias = "assistant",
-        alias = "assistant_manager",
-        alias = "swarm",
-        alias = "session_api"
-    )]
-    Agent, // Unified Agent Domain
+    Agent,
     Skills,
     Playbook,
-    #[serde(alias = "content_store", alias = "contentstore")]
     Attachments,
     Ui,
     Browser,
     Bootstrap,
-    #[serde(alias = "mcp_manager")]
     Tool, // Unified Tool Domain
     Media,
 }
@@ -38,23 +29,21 @@ pub struct BuiltinServiceEntry {
 }
 
 impl BuiltinServiceId {
-    /// Resolve any alias string (including legacy names) to a [`BuiltinServiceId`].
+    /// Resolve a supported builtin service alias to a [`BuiltinServiceId`].
     pub fn from_alias(alias: &str) -> Option<Self> {
         match alias.trim().to_lowercase().as_str() {
             "planning" => Some(Self::Planning),
-            "scratchpad" | "memory" => Some(Self::Scratchpad),
+            "scratchpad" => Some(Self::Scratchpad),
             "workspace" => Some(Self::Workspace),
             "knowledge" => Some(Self::Knowledge),
-            "agent" | "assistant" | "assistant_manager" | "swarm" | "session_api" => {
-                Some(Self::Agent)
-            }
+            "agent" => Some(Self::Agent),
             "skills" => Some(Self::Skills),
             "playbook" => Some(Self::Playbook),
-            "attachments" | "content_store" | "contentstore" => Some(Self::Attachments),
+            "attachments" => Some(Self::Attachments),
             "ui" => Some(Self::Ui),
             "browser" => Some(Self::Browser),
             "bootstrap" => Some(Self::Bootstrap),
-            "tool" | "mcp_manager" => Some(Self::Tool),
+            "tool" => Some(Self::Tool),
             "media" => Some(Self::Media),
             _ => None,
         }
@@ -170,50 +159,6 @@ impl fmt::Display for BuiltinServiceId {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn from_alias_canonical_names_resolve() {
-        for entry in BUILTIN_SERVICE_REGISTRY {
-            assert_eq!(
-                BuiltinServiceId::from_alias(entry.canonical),
-                Some(entry.variant),
-                "from_alias({:?}) should resolve",
-                entry.canonical
-            );
-        }
-    }
-
-    #[test]
-    fn scratchpad_legacy_alias_resolves() {
-        assert_eq!(
-            BuiltinServiceId::from_alias("memory"),
-            Some(BuiltinServiceId::Scratchpad)
-        );
-    }
-
-    #[test]
-    fn assistant_legacy_alias_resolves_to_agent() {
-        assert_eq!(
-            BuiltinServiceId::from_alias("assistant"),
-            Some(BuiltinServiceId::Agent)
-        );
-        assert_eq!(
-            BuiltinServiceId::from_alias("assistant_manager"),
-            Some(BuiltinServiceId::Agent)
-        );
-    }
-
-    #[test]
-    fn swarm_legacy_alias_resolves_to_agent() {
-        assert_eq!(
-            BuiltinServiceId::from_alias("swarm"),
-            Some(BuiltinServiceId::Agent)
-        );
-        assert_eq!(
-            BuiltinServiceId::from_alias("session_api"),
-            Some(BuiltinServiceId::Agent)
-        );
-    }
 
     #[test]
     fn name_round_trips() {

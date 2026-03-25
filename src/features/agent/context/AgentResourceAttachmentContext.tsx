@@ -13,7 +13,7 @@ import {
   createFileSizeErrorMessage,
 } from '@/lib/workspace-sync-service';
 import { useSettings } from '@/hooks/use-settings';
-import type { ContentStoreItem } from '@/models/content-store';
+import type { AttachmentItem } from '@/models/attachments';
 import { AttachmentReference } from '@/models/chat';
 import {
   saveAgentFile,
@@ -30,6 +30,7 @@ export interface PendingFileInput {
   filename?: string;
   mimeType: string;
   originalPath?: string;
+  status?: AttachmentReference['status'];
   blobCleanup?: () => void;
 }
 
@@ -37,7 +38,11 @@ interface AgentResourceAttachmentContextType {
   pendingFiles: AttachmentReference[];
   sessionFiles: AttachmentReference[];
   isLoading: boolean;
-  addPendingFiles: (files: PendingFileInput[]) => void;
+  addPendingFiles: (files: PendingFileInput[]) => AttachmentReference[];
+  updatePendingFile: (
+    pendingId: string,
+    updates: Partial<AttachmentReference>,
+  ) => void;
   removeFile: (file: AttachmentReference) => Promise<void>;
   commitPendingFiles: () => Promise<AttachmentReference[]>;
   clearPendingFiles: () => void;
@@ -98,7 +103,7 @@ export function AgentResourceAttachmentProvider({
       try {
         // Use Agent V2 session-specific proxy to call list
         const response = await agentCallBuiltinTool<{
-          contents: ContentStoreItem[];
+          contents: AttachmentItem[];
         }>(sessionId, 'attachments__list', {
           sessionId,
         });
@@ -113,14 +118,14 @@ export function AgentResourceAttachmentProvider({
         );
 
         // Extract contents from structuredContent or fallback
-        let contents: ContentStoreItem[] = [];
+        let contents: AttachmentItem[] = [];
         if (
           response.structuredContent &&
           typeof response.structuredContent === 'object' &&
           'contents' in response.structuredContent
         ) {
           contents =
-            (response.structuredContent as { contents: ContentStoreItem[] })
+            (response.structuredContent as { contents: AttachmentItem[] })
               .contents || [];
         }
 
@@ -153,7 +158,7 @@ export function AgentResourceAttachmentProvider({
         return files;
       } catch (error) {
         logger.warn(
-          'Agent V2 Content Store listing failed, will retry on next revalidation',
+          'Agent V2 Attachments listing failed, will retry on next revalidation',
           { sessionId, error },
         );
         return [];
@@ -170,7 +175,7 @@ export function AgentResourceAttachmentProvider({
   );
 
   // Track session ID for caching store IDs
-  // NOTE: Content stores are auto-created on first use (add/list)
+  // NOTE: Attachments are auto-created on first use (add/list)
   // No explicit createStore tool is needed
   const sessionStoreIdRef = useRef<string | undefined>();
 
@@ -237,11 +242,13 @@ export function AgentResourceAttachmentProvider({
   );
 
   const addPendingFiles = useCallback(
-    (files: PendingFileInput[]) => {
-      const newPending = files.map((file) => ({
+    (
+      files: (PendingFileInput & { status?: AttachmentReference['status'] })[],
+    ) => {
+      const newPending: AttachmentReference[] = files.map((file) => ({
         sessionId: sessionId || '',
         pendingId: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        status: 'pending' as const,
+        status: file.status || ('pending' as const),
         filename: file.filename || extractFilenameFromUrl(file.url),
         mimeType: file.mimeType,
         size: file.file?.size || 0,
@@ -257,8 +264,20 @@ export function AgentResourceAttachmentProvider({
       }));
 
       setPendingFiles((prev) => [...prev, ...newPending]);
+      return newPending;
     },
     [sessionId, extractFilenameFromUrl],
+  );
+
+  const updatePendingFile = useCallback(
+    (pendingId: string, updates: Partial<AttachmentReference>) => {
+      setPendingFiles((prev) =>
+        prev.map((file) =>
+          file.pendingId === pendingId ? { ...file, ...updates } : file,
+        ),
+      );
+    },
+    [],
   );
 
   const addFileInternal = useCallback(
@@ -347,7 +366,7 @@ export function AgentResourceAttachmentProvider({
 
       // --- Inline multimodal handling (image/audio) ---
       // Image and audio files are passed directly to the LLM as base64 instead of
-      // being indexed in the content store. No workspace sync is needed.
+      // being indexed in the attachments store. No workspace sync is needed.
       if (
         actualMimeType === 'application/octet-stream' ||
         actualMimeType === ''
@@ -422,7 +441,7 @@ export function AgentResourceAttachmentProvider({
 
       if (!isSupported) {
         logger.info(
-          'File type not supported by ContentStore, saving to workspace only',
+          'File type not supported by Attachments, saving to workspace only',
           { filename: actualFilename },
         );
 
@@ -443,7 +462,7 @@ export function AgentResourceAttachmentProvider({
       try {
         // Use session-specific saveAgentFile instead of global server.add
         // This ensures the file is associated with the correct agent session
-        const result = (await saveAgentFile(storeId, actualFilename, {
+        const result = await saveAgentFile(storeId, actualFilename, {
           content: undefined, // Content is handled via fileUrl or direct upload
           fileUrl: fileUrl,
           metadata: {
@@ -452,7 +471,7 @@ export function AgentResourceAttachmentProvider({
             uploadedAt: new Date().toISOString(),
             filename: actualFilename,
           },
-        })) as ContentStoreItem;
+        });
 
         if (!workspacePath && file) {
           try {
@@ -640,6 +659,7 @@ export function AgentResourceAttachmentProvider({
         sessionFiles,
         isLoading,
         addPendingFiles,
+        updatePendingFile,
         removeFile,
         commitPendingFiles,
         clearPendingFiles,

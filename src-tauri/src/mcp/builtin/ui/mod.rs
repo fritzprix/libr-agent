@@ -22,22 +22,6 @@ pub struct UiServer {
     handlebars: Arc<Mutex<Handlebars<'static>>>,
 }
 
-fn summarize_interactive_content(content: &str, max_chars: usize) -> Option<String> {
-    let normalized = content.split_whitespace().collect::<Vec<_>>().join(" ");
-
-    if normalized.is_empty() {
-        return None;
-    }
-
-    let excerpt: String = normalized.chars().take(max_chars).collect();
-
-    if normalized.chars().count() > max_chars {
-        Some(format!("{}...", excerpt))
-    } else {
-        Some(excerpt)
-    }
-}
-
 impl Default for UiServer {
     fn default() -> Self {
         Self::new()
@@ -586,9 +570,7 @@ impl UiServer {
             title.unwrap_or("Report & Prompt")
         )];
 
-        if let Some(excerpt) = summarize_interactive_content(content, 180) {
-            summary_lines.push(format!("Summary: {}", excerpt));
-        }
+        summary_lines.push(format!("Content:\n{}", content));
 
         if let Some(inter) = interaction {
             if let Some(prompt) = inter.get("prompt").and_then(|v| v.as_str()) {
