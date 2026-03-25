@@ -347,8 +347,15 @@ export function AgentChatStatusBar() {
                 logger.info(`Updating session config to ${provider}/${model}`);
 
                 try {
+                  const { enforceRuntimeBuiltinAliases } = await import(
+                    '@/lib/assistant/runtime-builtins'
+                  );
+
                   const updatedConfig = {
                     ...session.assistant,
+                    allowedBuiltInServiceAliases: enforceRuntimeBuiltinAliases(
+                      session.assistant.allowedBuiltInServiceAliases,
+                    ),
                     // Note: We keep these for completeness but the backend will prioritize top-level model/provider
                     name: session.assistant.name || 'Assistant',
                     systemPrompt:

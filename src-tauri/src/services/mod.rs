@@ -1,8 +1,8 @@
 pub mod agent_service;
 pub mod assistant_init;
 pub mod assistant_service;
+pub mod attachments_service;
 pub mod browser_error;
-pub mod content_store_service;
 pub mod dropped_file_service;
 pub mod file_export_service;
 pub mod interactive_browser_server;
@@ -19,7 +19,7 @@ pub mod workspace_service;
 
 pub use agent_service::AgentService;
 pub use assistant_service::AssistantService;
-pub use content_store_service::ContentStoreService;
+pub use attachments_service::AttachmentsService;
 pub use dropped_file_service::DroppedFileService;
 pub use file_export_service::FileExportService;
 pub use interactive_browser_server::{BrowserSession, InteractiveBrowserServer};

@@ -104,8 +104,8 @@ describe('tool-call-utils', () => {
     });
 
     it('should return group/tool display for builtin tool with underscore group', () => {
-      expect(parseToolName('mcp_manager__listServers')).toBe(
-        'mcp_manager / listServers',
+      expect(parseToolName('tool__listServers')).toBe(
+        'tool / listServers',
       );
     });
 
@@ -202,7 +202,7 @@ describe('tool-call-utils', () => {
 
     it('returns true for known builtin prefixes', () => {
       expect(isBuiltinTool('planning__addScratchpad')).toBe(true);
-      expect(isBuiltinTool('mcp_manager__listServers')).toBe(true);
+      expect(isBuiltinTool('tool__listServers')).toBe(true);
     });
 
     it('returns false for unknown prefixes', () => {

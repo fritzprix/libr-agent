@@ -8,7 +8,7 @@ use crate::agent::session_bus::SessionBus;
 use crate::agent::state::AgentSession;
 use crate::mcp::MCPServiceProxyManager;
 use crate::repositories::{
-    SqliteAssistantRepository, SqliteCompactContextRepository, SqliteContentStoreRepository,
+    SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteCompactContextRepository,
     SqliteKnowledgeRepository, SqliteMCPServerRepository, SqliteMessageRepository,
     SqlitePlanningRepository, SqlitePlaybookRepository, SqliteScheduledTaskRepository,
     SqliteSessionRepository, SqliteSettingsRepository,
@@ -32,8 +32,8 @@ static DATABASE_CONNECTION: OnceLock<DatabaseConnection> = OnceLock::new();
 /// A global, thread-safe, once-initialized message repository.
 static MESSAGE_REPOSITORY: OnceLock<SqliteMessageRepository> = OnceLock::new();
 
-/// A global, thread-safe, once-initialized content store repository.
-static CONTENT_STORE_REPOSITORY: OnceLock<SqliteContentStoreRepository> = OnceLock::new();
+/// A global, thread-safe, once-initialized attachments repository.
+static ATTACHMENTS_REPOSITORY: OnceLock<SqliteAttachmentsRepository> = OnceLock::new();
 
 /// A global, thread-safe, once-initialized session repository.
 static SESSION_REPOSITORY: OnceLock<SqliteSessionRepository> = OnceLock::new();
@@ -152,27 +152,27 @@ pub fn get_message_repository() -> &'static SqliteMessageRepository {
         .expect("Message repository not initialized. Call set_message_repository() first.")
 }
 
-/// Sets the global content store repository instance.
+/// Sets the global attachments repository instance.
 ///
 /// # Panics
 /// This function will panic if the repository is already set.
-pub fn set_content_store_repository(repo: SqliteContentStoreRepository) {
-    CONTENT_STORE_REPOSITORY
+pub fn set_attachments_repository(repo: SqliteAttachmentsRepository) {
+    ATTACHMENTS_REPOSITORY
         .set(repo)
-        .expect("Content store repository already initialized");
+        .expect("Attachments repository already initialized");
 }
 
-/// Gets a reference to the global content store repository.
+/// Gets a reference to the global attachments repository.
 ///
 /// # Returns
-/// A reference to the content store repository.
+/// A reference to the attachments repository.
 ///
 /// # Panics
 /// Panics if the repository has not been initialized.
-pub fn get_content_store_repository() -> &'static SqliteContentStoreRepository {
-    CONTENT_STORE_REPOSITORY.get().expect(
-        "Content store repository not initialized. Call set_content_store_repository() first.",
-    )
+pub fn get_attachments_repository() -> &'static SqliteAttachmentsRepository {
+    ATTACHMENTS_REPOSITORY
+        .get()
+        .expect("Attachments repository not initialized. Call set_attachments_repository() first.")
 }
 
 /// Sets the global session repository instance.

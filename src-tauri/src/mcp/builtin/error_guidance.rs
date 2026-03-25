@@ -55,7 +55,7 @@ pub enum ToolGroup {
     Scratchpad,
     Workspace,
     Agent, // Unified Agent Domain (Assistant/Swarm)
-    ContentStore,
+    Attachments,
     Knowledge,
     Playbook,
     UI,
@@ -279,16 +279,16 @@ impl ErrorGuidance {
                 "Check Agent status with getAgentStatus for specific errors".to_string(),
             ],
 
-            // Content Store tool errors
-            (ErrorCategory::InvalidFormat, ToolGroup::ContentStore) => vec![
+            // Attachments tool errors
+            (ErrorCategory::InvalidFormat, ToolGroup::Attachments) => vec![
                 "Ensure the file format is supported (PDF, HTML, markdown, code)".to_string(),
                 "Check the file is not corrupted".to_string(),
                 "Try a different file or format".to_string(),
             ],
-            (ErrorCategory::ResourceNotFound, ToolGroup::ContentStore) => vec![
-                "Use list to see available content".to_string(),
+            (ErrorCategory::ResourceNotFound, ToolGroup::Attachments) => vec![
+                "Use list to see available attachments".to_string(),
                 "Verify the content ID is correct".to_string(),
-                "Use search to find content by keywords".to_string(),
+                "Use search to find attachments by keywords".to_string(),
             ],
 
             // Knowledge tool errors

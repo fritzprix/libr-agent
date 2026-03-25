@@ -592,9 +592,9 @@ impl MCPServiceProxyManager {
     /// Lazily initialise a builtin-only proxy for a session that has no active proxy.
     ///
     /// Called by [`crate::mcp::service_proxy_manager::MCPServiceProxyManager::call_tool`] when a builtin tool is requested for a session whose proxy
-    /// was never initialised (e.g., a session that exists in the DB but has not yet run
+    /// (e.g., a session that exists in the DB but has not yet run
     /// a workflow in this app session). This prevents spurious "Session context not found"
-    /// errors when UI components poll builtin tools (e.g., content store listing) for
+    /// errors when UI components poll builtin tools (e.g., attachments listing) for
     /// idle sessions.
     ///
     /// Only builtins are wired up — no external stdio/HTTP servers are started.

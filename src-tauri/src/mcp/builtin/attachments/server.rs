@@ -1,4 +1,4 @@
-// server.rs - ContentStoreServer implementation
+// server.rs - AttachmentsServer implementation
 use crate::mcp::types::ServiceContext;
 use crate::mcp::MCPTool;
 use crate::session::SessionManager;
@@ -20,22 +20,22 @@ pub struct RecentUploadInfo {
     pub uploaded_at: String,
 }
 
-/// Content-Store built-in MCP server (native backend)
+/// Attachments built-in MCP server (native backend)
 #[derive(Debug)]
-pub struct ContentStoreServer {
+pub struct AttachmentsServer {
     pub(crate) session_id: String,
     pub(crate) session_manager: Arc<SessionManager>,
-    pub(crate) storage: Mutex<storage::ContentStoreStorage>,
-    pub(crate) search_engines: Mutex<HashMap<String, Arc<Mutex<search::ContentSearchEngine>>>>,
+    pub(crate) storage: Mutex<storage::AttachmentsStorage>,
+    pub(crate) search_engines: Mutex<HashMap<String, Arc<Mutex<search::AttachmentSearchEngine>>>>,
     /// Track recent uploads for service context (FIFO, max 10 items)
     pub(crate) recent_uploads: Arc<Mutex<VecDeque<RecentUploadInfo>>>,
 }
 
-impl ContentStoreServer {
+impl AttachmentsServer {
     pub fn new(session_id: String, session_manager: Arc<SessionManager>) -> Self {
         let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
-        let search_index_dir = session_dir.join("content_store_search");
-        let search_engine = search::ContentSearchEngine::new(search_index_dir)
+        let search_index_dir = session_dir.join("attachments_search");
+        let search_engine = search::AttachmentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
         let mut search_engines = HashMap::new();
@@ -44,7 +44,7 @@ impl ContentStoreServer {
         Self {
             session_id,
             session_manager,
-            storage: Mutex::new(storage::ContentStoreStorage::new()),
+            storage: Mutex::new(storage::AttachmentsStorage::new()),
             search_engines: Mutex::new(search_engines),
             recent_uploads: Arc::new(Mutex::new(VecDeque::with_capacity(10))),
         }
@@ -56,11 +56,11 @@ impl ContentStoreServer {
         database_url: String,
     ) -> Result<Self, String> {
         let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
-        let search_index_dir = session_dir.join("content_store_search");
-        let search_engine = search::ContentSearchEngine::new(search_index_dir)
+        let search_index_dir = session_dir.join("attachments_search");
+        let search_engine = search::AttachmentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
-        let storage = storage::ContentStoreStorage::new_sqlite(database_url).await?;
+        let storage = storage::AttachmentsStorage::new_sqlite(database_url).await?;
 
         let mut search_engines = HashMap::new();
         search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
@@ -80,11 +80,11 @@ impl ContentStoreServer {
         db: sea_orm::DatabaseConnection,
     ) -> Result<Self, String> {
         let session_dir = session_manager.get_session_workspace_dir_by_id(&session_id);
-        let search_index_dir = session_dir.join("content_store_search");
-        let search_engine = search::ContentSearchEngine::new(search_index_dir)
+        let search_index_dir = session_dir.join("attachments_search");
+        let search_engine = search::AttachmentSearchEngine::new(search_index_dir)
             .expect("Failed to initialize search engine");
 
-        let storage = storage::ContentStoreStorage::new_with_db(db).await?;
+        let storage = storage::AttachmentsStorage::new_with_db(db).await?;
 
         let mut search_engines = HashMap::new();
         search_engines.insert(session_id.clone(), Arc::new(Mutex::new(search_engine)));
@@ -103,7 +103,7 @@ impl ContentStoreServer {
             MCPTool {
                 name: "list".to_string(),
                 title: Option::None,
-                description: "List content in a store with pagination".to_string(),
+                description: "List files attached to the current session with pagination".to_string(),
                 input_schema: schemas::tool_list_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
@@ -111,15 +111,15 @@ impl ContentStoreServer {
             MCPTool {
                 name: "read".to_string(),
                 title: Option::None,
-                description: "Read content with line range filtering".to_string(),
+                description: "Read attachment content with line range filtering".to_string(),
                 input_schema: schemas::tool_read_content_schema(),
                 output_schema: Option::None,
                 annotations: Option::None,
             },
             MCPTool {
                 name: "search".to_string(),
-                title: Some("Search Content".to_string()),
-                description: "Search session-scoped content using BM25 keyword ranking. Only finds content uploaded in the current session.".to_string(),
+                title: Some("Search Attachments".to_string()),
+                description: "Search session attachments using BM25 keyword ranking. Only finds files uploaded in the current session.".to_string(),
                 input_schema: serde_json::from_value(serde_json::json!({
                     "type": "object",
                     "properties": {
@@ -143,9 +143,9 @@ impl ContentStoreServer {
 
     pub fn metadata_static() -> crate::mcp::types::BuiltinServerMetadata {
         crate::mcp::types::BuiltinServerMetadata {
-            display_name: "Content Store".to_string(),
-            description: "File attachment and semantic search system with native performance and BM25 indexing".to_string(),
-            icon: Some("database".to_string()),
+            display_name: "Attachments".to_string(),
+            description: "Session-scoped file attachment and search system".to_string(),
+            icon: Some("paperclip".to_string()),
         }
     }
 
@@ -180,7 +180,7 @@ impl ContentStoreServer {
             .get_or_create_store(
                 session_id.to_string(),
                 Some(format!("Session Store: {session_id}")),
-                Some(format!("Content store for session {session_id}")),
+                Some(format!("Attachment store for session {session_id}")),
             )
             .await
             .map(|_| ())
@@ -189,7 +189,7 @@ impl ContentStoreServer {
     pub(crate) async fn get_search_engine(
         &self,
         session_id: &str,
-    ) -> Result<Arc<Mutex<search::ContentSearchEngine>>, String> {
+    ) -> Result<Arc<Mutex<search::AttachmentSearchEngine>>, String> {
         let mut engines = self.search_engines.lock().await;
 
         if let Some(engine) = engines.get(session_id) {
@@ -200,9 +200,9 @@ impl ContentStoreServer {
         let session_dir = self
             .session_manager
             .get_session_workspace_dir_by_id(session_id);
-        let search_index_dir = session_dir.join("content_store_search");
+        let search_index_dir = session_dir.join("attachments_search");
 
-        let search_engine = search::ContentSearchEngine::new(search_index_dir).map_err(|e| {
+        let search_engine = search::AttachmentSearchEngine::new(search_index_dir).map_err(|e| {
             format!(
                 "Failed to initialize search engine for session {}: {}",
                 session_id, e
@@ -215,7 +215,7 @@ impl ContentStoreServer {
         Ok(engine_arc)
     }
 
-    pub async fn get_service_context(&self, _options: Option<&Value>) -> ServiceContext {
+    pub async fn get_service_context_internal(&self, _options: Option<&Value>) -> ServiceContext {
         // Use session_id from constructor (already bound to this session)
         let session_id = &self.session_id;
 
@@ -224,12 +224,12 @@ impl ContentStoreServer {
             Ok(storage) => storage.get_content_count(session_id),
             Err(e) => {
                 log::warn!(
-                    "Failed to lock content storage for session '{}': {}",
+                    "Failed to lock attachment storage for session '{}': {}",
                     session_id,
                     e
                 );
                 return ServiceContext {
-                    context_prompt: "## Content Store\n\nError loading state".to_string(),
+                    context_prompt: "## Attachments\n\nError loading state".to_string(),
                     structured_state: None,
                 };
             }
@@ -243,7 +243,7 @@ impl ContentStoreServer {
 
         // Build context prompt with file details
         let mut prompt_parts = vec![
-            "## Content Store\n".to_string(),
+            "## Attachments\n".to_string(),
             format!(
                 "{} available, 5 tools\n",
                 Self::format_file_count(total_count)
@@ -251,7 +251,7 @@ impl ContentStoreServer {
         ];
 
         if !recent_files.is_empty() {
-            prompt_parts.push("\n**Recent Uploads:**\n".to_string());
+            prompt_parts.push("\n**Recently Attached:**\n".to_string());
 
             for (i, file) in recent_files.iter().take(10).enumerate() {
                 prompt_parts.push(format!(
@@ -264,9 +264,9 @@ impl ContentStoreServer {
                 ));
             }
 
-            prompt_parts.push("\n*Use `read(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access files.*\n".to_string());
+            prompt_parts.push("\n*Use `read(contentId=\"content_xxx\", fromLine=1, toLine=100)` to access attachments.*\n".to_string());
         } else if total_count == 0 {
-            prompt_parts.push("*No files uploaded yet.*\n".to_string());
+            prompt_parts.push("*No attachments available yet.*\n".to_string());
         }
 
         let context_prompt = prompt_parts.join("");

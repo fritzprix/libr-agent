@@ -42,7 +42,7 @@ export interface AttachmentReference {
   lastAccessedAt?: string; // Last access time
   workspacePath?: string; // File path where it's saved in the workspace
   // Explicit state tracking (replaces brittle contentId prefix checking)
-  status: 'pending' | 'committed' | 'workspace-only' | 'inline'; // File upload/storage status
+  status: 'pending' | 'committed' | 'workspace-only' | 'inline' | 'processing'; // File upload/storage status
   pendingId?: string; // Temporary ID for pending files (before commit)
   // For pending files only - used during upload process
   originalUrl?: string; // Original URL or blob URL

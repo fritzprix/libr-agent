@@ -27,7 +27,7 @@ pub(crate) async fn create_builtin_server(
     _session_manager: Arc<SessionManager>,
     app_handle: Option<AppHandle>,
 ) -> Result<Option<Box<dyn BuiltinMCPServer>>, String> {
-    // Resolve string → stable enum (handles legacy aliases like "content_store").
+    // Resolve string → stable enum.
     // Unknown strings return Ok(None) — not an error, just not a builtin service.
     let Some(service_id) = BuiltinServiceId::from_alias(tool_id) else {
         return Ok(None);
@@ -59,10 +59,7 @@ pub(crate) async fn create_builtin_server(
             crate::mcp::builtin::workspace::WorkspaceServer::new(_session_id, _session_manager),
         ))),
         BuiltinServiceId::Attachments => Ok(Some(Box::new(
-            crate::mcp::builtin::content_store::ContentStoreServer::new(
-                _session_id,
-                _session_manager,
-            ),
+            crate::mcp::builtin::attachments::AttachmentsServer::new(_session_id, _session_manager),
         ))),
         BuiltinServiceId::Ui => Ok(Some(Box::new(crate::mcp::builtin::ui::UiServer::new()))),
         BuiltinServiceId::Browser => {

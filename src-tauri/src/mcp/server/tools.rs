@@ -432,9 +432,7 @@ pub fn list_available_builtin_server_definitions() -> Vec<BuiltinServerInfo> {
                 BuiltinServiceId::Knowledge => knowledge::KnowledgeServer::metadata_static(),
                 BuiltinServiceId::Browser => browser::BrowserServer::metadata_static(),
                 BuiltinServiceId::Workspace => workspace::WorkspaceServer::metadata_static(),
-                BuiltinServiceId::Attachments => {
-                    content_store::ContentStoreServer::metadata_static()
-                }
+                BuiltinServiceId::Attachments => attachments::AttachmentsServer::metadata_static(),
                 BuiltinServiceId::Agent => agent::AgentServer::metadata_static(),
                 BuiltinServiceId::Playbook => playbook::PlaybookServer::metadata_static(),
                 BuiltinServiceId::Bootstrap => bootstrap::BootstrapServer::new().metadata(),
@@ -548,7 +546,7 @@ pub async fn get_service_context(
 /// - Knowledge (5 tools): Assistant-scoped knowledge base
 /// - Browser (13 tools): Web browser automation
 /// - Workspace (30+ tools): File operations and shell execution
-/// - ContentStore (5 tools): File attachment and semantic search
+/// - Attachments (5 tools): Session-scoped file attachment and search
 /// - Agent (7 tools): Agent configuration and sub-session orchestration
 /// - Playbook (4 tools): Playbook execution
 /// - Bootstrap (2 tools): Platform and environment info
@@ -594,7 +592,7 @@ pub fn get_static_tools_for_server(server_name: &str) -> Vec<MCPTool> {
             crate::mcp::builtin::workspace::WorkspaceServer::tools_static()
         }
         BuiltinServiceId::Attachments => {
-            crate::mcp::builtin::content_store::ContentStoreServer::tools_static()
+            crate::mcp::builtin::attachments::AttachmentsServer::tools_static()
         }
         BuiltinServiceId::Agent => crate::mcp::builtin::agent::AgentServer::tools_static(),
         BuiltinServiceId::Playbook => crate::mcp::builtin::playbook::PlaybookServer::tools_static(),

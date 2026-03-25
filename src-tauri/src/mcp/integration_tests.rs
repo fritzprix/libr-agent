@@ -13,7 +13,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::repositories::{
-        SqliteAssistantRepository, SqliteContentStoreRepository, SqliteKnowledgeRepository,
+        SqliteAssistantRepository, SqliteAttachmentsRepository, SqliteKnowledgeRepository,
         SqliteMCPServerRepository, SqliteMessageRepository, SqlitePlanningRepository,
         SqlitePlaybookRepository, SqliteSessionRepository, SqliteSettingsRepository,
     };
@@ -100,9 +100,7 @@ mod tests {
             state::set_playbook_repository(SqlitePlaybookRepository::new(db_clone.clone()));
             state::set_session_repository(SqliteSessionRepository::new(db_clone.clone()));
             state::set_message_repository(SqliteMessageRepository::new(db_clone.clone()));
-            state::set_content_store_repository(SqliteContentStoreRepository::new(
-                db_clone.clone(),
-            ));
+            state::set_attachments_repository(SqliteAttachmentsRepository::new(db_clone.clone()));
             state::set_settings_repository(SqliteSettingsRepository::new(db_clone.clone()));
             state::set_knowledge_repository(SqliteKnowledgeRepository::new(db_clone.clone()));
             state::set_planning_repository(SqlitePlanningRepository::new(db_clone.clone()));

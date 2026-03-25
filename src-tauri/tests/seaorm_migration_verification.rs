@@ -382,7 +382,7 @@ async fn test_assistant_crud_operations() {
 }
 
 #[tokio::test]
-async fn test_content_store_schema() {
+async fn test_attachments_schema() {
     let options = SqliteConnectOptions::from_str("sqlite::memory:")
         .expect("Invalid database URL")
         .create_if_missing(true);

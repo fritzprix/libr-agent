@@ -195,21 +195,6 @@ mod tests {
         assert_eq!(parsed_snake.id.as_deref(), Some("assistant-snake"));
     }
 
-    /// Regression: legacy "content_store" in DB JSON must deserialise to Attachments.
-    #[test]
-    fn test_allowed_aliases_legacy_content_store_deserializes() {
-        let json = r#"{
-            "name": "Legacy Assistant",
-            "systemPrompt": "You are helpful",
-            "allowedBuiltInServiceAliases": ["content_store", "browser"]
-        }"#;
-        let config = AgentConfig::from_json(json).unwrap();
-        let aliases = config.allowed_built_in_service_aliases.unwrap();
-        assert_eq!(aliases.len(), 2);
-        assert_eq!(aliases[0], BuiltinServiceId::Attachments);
-        assert_eq!(aliases[1], BuiltinServiceId::Browser);
-    }
-
     /// Canonical "attachments" name must also deserialise correctly.
     #[test]
     fn test_allowed_aliases_canonical_names_deserialize() {

@@ -27,14 +27,13 @@ import {
 } from '@/context/DnDContext';
 import { useRustBackend } from '@/hooks/use-rust-backend';
 import { saveAgentFile } from '@/features/agent/api/agent-backend';
-import type { ContentStoreItem } from '@/models/content-store';
 import { useInputToken } from './useInputToken';
 import { useScopedSkills } from './useScopedSkills';
 import type { AgentEventPayload } from '@/context/AgentSessionContext';
 
 const logger = getLogger('useAgentDraftChat');
 
-// File extensions treated as plain text for Content Store indexing
+// File extensions treated as plain text for Attachments indexing
 const TEXT_EXTENSIONS_DRAFT =
   /\.(txt|md|markdown|json|jsonc|json5|yaml|yml|toml|js|jsx|ts|tsx|mjs|cjs|py|rb|rs|go|java|c|cpp|h|hpp|css|scss|less|html|htm|svg|sh|bash|zsh|fish|ps1|sql|graphql|csv|log|xml|proto)$/i;
 
@@ -497,7 +496,7 @@ export function useAgentDraftChat() {
           if (isTextFile) {
             try {
               const content = await file.text();
-              const result = (await saveAgentFile(newSessionId, file.name, {
+              const result = await saveAgentFile(newSessionId, file.name, {
                 content,
                 metadata: {
                   mimeType: file.type || 'text/plain',
@@ -505,7 +504,7 @@ export function useAgentDraftChat() {
                   uploadedAt: now.toISOString(),
                   filename: file.name,
                 },
-              })) as ContentStoreItem;
+              });
 
               // Runtime validation for contentId existence
               if (
@@ -522,7 +521,7 @@ export function useAgentDraftChat() {
               }
             } catch (commitErr) {
               logger.warn(
-                'Failed to commit file to Content Store, keeping workspace-only',
+                'Failed to commit file to Attachments store, keeping workspace-only',
                 { filename: file.name, error: commitErr },
               );
             }
@@ -540,7 +539,7 @@ export function useAgentDraftChat() {
               const normalizedDir = workspaceDir.replace(/\\/g, '/');
               const normalizedRelative = workspacePath.replace(/\\/g, '/');
               const fileUrl = `file:///${normalizedDir.replace(/^\//, '')}/${normalizedRelative}`;
-              const result = (await saveAgentFile(newSessionId, file.name, {
+              const result = await saveAgentFile(newSessionId, file.name, {
                 fileUrl,
                 metadata: {
                   mimeType: file.type || 'application/octet-stream',
@@ -548,7 +547,7 @@ export function useAgentDraftChat() {
                   uploadedAt: now.toISOString(),
                   filename: file.name,
                 },
-              })) as ContentStoreItem;
+              });
 
               // Runtime validation for contentId existence
               if (
@@ -565,7 +564,7 @@ export function useAgentDraftChat() {
               }
             } catch (commitErr) {
               logger.warn(
-                'Failed to commit binary file to Content Store, keeping workspace-only',
+                'Failed to commit binary file to Attachments store, keeping workspace-only',
                 { filename: file.name, error: commitErr },
               );
             }

@@ -1,4 +1,4 @@
-use super::server::ContentStoreServer;
+use super::server::AttachmentsServer;
 use super::types::*;
 use super::{helpers, parsers, search};
 use crate::mcp::builtin::error_guidance::{
@@ -9,7 +9,7 @@ use log::error;
 use serde_json::Value;
 
 pub async fn add_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -19,7 +19,7 @@ pub async fn add_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid add parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -47,7 +47,7 @@ pub async fn add_content(
                     return Ok(guided_error(
                         ErrorCategory::InvalidInput,
                         format!("Invalid file URL: {e}"),
-                        ToolGroup::ContentStore,
+                        ToolGroup::Attachments,
                     )
                     .with_guidance(vec!["Ensure fileUrl is a valid file:// path".to_string()])
                     .to_mcp_result());
@@ -68,7 +68,7 @@ pub async fn add_content(
                     return Ok(guided_error(
                         ErrorCategory::OperationFailed,
                         format!("Parse file failed for {file_path_str}: {e}"),
-                        ToolGroup::ContentStore,
+                        ToolGroup::Attachments,
                     )
                     .with_guidance(vec![
                         "Ensure the file format is supported (PDF, HTML, markdown, code)"
@@ -84,7 +84,7 @@ pub async fn add_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 "Cannot provide both content and fileUrl. Choose one.",
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Provide either content OR fileUrl, not both".to_string()
@@ -94,18 +94,18 @@ pub async fn add_content(
         (Option::None, Option::None) => {
             return Ok(missing_param_error(
                 "content or fileUrl",
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ));
         }
     };
 
     // Use passed session_id
     if let Err(e) = server.ensure_session_store(session_id).await {
-        error!("Failed to ensure content store for session {session_id}: {e}");
+        error!("Failed to ensure attachment store for session {session_id}: {e}");
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Prepare content store failed for session {session_id}: {e}"),
-            ToolGroup::ContentStore,
+            format!("Prepare attachment store failed for session {session_id}: {e}"),
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
@@ -169,8 +169,8 @@ pub async fn add_content(
         Err(e) => {
             return Ok(guided_error(
                 ErrorCategory::DatabaseError,
-                format!("Store content failed: {e}"),
-                ToolGroup::ContentStore,
+                format!("Store attachment failed: {e}"),
+                ToolGroup::Attachments,
             )
             .with_guidance(vec![
                 "Check database connectivity".to_string(),
@@ -234,7 +234,7 @@ pub async fn add_content(
 
     let hint = SuccessHint::new(
         format!(
-            "Content saved successfully\n  ID: {}\n  Title: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
+            "Attachment saved successfully\n  ID: {}\n  Filename: {}\n  Size: {} bytes, {} lines\n  Preview: {}",
             content_item.id,
             content_item.filename,
             content_item.size,
@@ -248,7 +248,7 @@ pub async fn add_content(
         ),
         vec![
             format!("Use read with contentId='{}' to view the full content", content_item.id),
-            "Use search to find content by keywords".to_string(),
+            "Use search to find attachments by keywords".to_string(),
         ],
     );
 
@@ -266,7 +266,7 @@ pub async fn add_content(
 }
 
 pub async fn delete_content(
-    server: &ContentStoreServer,
+    server: &AttachmentsServer,
     params: Value,
     session_id: &str,
 ) -> Result<MCPResult, String> {
@@ -276,7 +276,7 @@ pub async fn delete_content(
             return Ok(guided_error(
                 ErrorCategory::InvalidInput,
                 format!("Invalid delete parameters: {e}"),
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             )
             .with_guidance(vec!["Check the parameter schema".to_string()])
             .to_mcp_result());
@@ -284,7 +284,7 @@ pub async fn delete_content(
     };
 
     // Normalize content ID (add "content_" prefix if missing)
-    let normalized_content_id = ContentStoreServer::normalize_content_id(&args.content_id);
+    let normalized_content_id = AttachmentsServer::normalize_content_id(&args.content_id);
 
     // Verify the content belongs to the current session
     let content_session_id = {
@@ -293,9 +293,9 @@ pub async fn delete_content(
             sid
         } else {
             return Ok(not_found_error(
-                "Content",
+                "Attachment",
                 &args.content_id,
-                ToolGroup::ContentStore,
+                ToolGroup::Attachments,
             ));
         }
     };
@@ -304,14 +304,14 @@ pub async fn delete_content(
         return Ok(guided_error(
             ErrorCategory::PermissionDenied,
             format!(
-                "Content '{}' belongs to a different session",
+                "Attachment '{}' belongs to a different session",
                 args.content_id
             ),
-            ToolGroup::ContentStore,
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
-            "Use list to see content in current session".to_string(),
-            "Switch to the session that owns this content".to_string(),
+            "Use list to see attachments in current session".to_string(),
+            "Switch to the session that owns this attachment".to_string(),
             "Verify the content ID is correct".to_string(),
         ])
         .to_mcp_result());
@@ -322,13 +322,13 @@ pub async fn delete_content(
     if let Err(e) = storage.delete_content(&normalized_content_id).await {
         return Ok(guided_error(
             ErrorCategory::DatabaseError,
-            format!("Delete content failed: {e}"),
-            ToolGroup::ContentStore,
+            format!("Delete attachment failed: {e}"),
+            ToolGroup::Attachments,
         )
         .with_guidance(vec![
             "Check database connectivity".to_string(),
             "Verify the content ID is correct".to_string(),
-            "Use list to see available content".to_string(),
+            "Use list to see available attachments".to_string(),
         ])
         .to_mcp_result());
     }
@@ -339,7 +339,7 @@ pub async fn delete_content(
             let mut search_engine = engine_arc.lock().await;
             if let Err(e) = search_engine.remove_chunks(&normalized_content_id).await {
                 // Log error but don't fail the operation since content is already deleted
-                error!("Failed to remove content from search index: {e}");
+                error!("Failed to remove attachment from search index: {e}");
             }
         }
         Err(e) => {
@@ -348,8 +348,8 @@ pub async fn delete_content(
     }
 
     let hint = SuccessHint::new(
-        format!("Content '{}' deleted successfully", args.content_id),
-        vec!["Use list to see remaining content".to_string()],
+        format!("Attachment '{}' deleted successfully", args.content_id),
+        vec!["Use list to see remaining attachments".to_string()],
     );
 
     Ok(hint.to_mcp_result_with_data(Some(serde_json::json!({

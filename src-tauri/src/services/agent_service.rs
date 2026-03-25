@@ -155,7 +155,7 @@ impl AgentService {
     /// Save an attachment to the session-scoped attachment store through an internal UI-only API.
     ///
     /// Routes through the session-bound `MCPServiceProxy` so that the same
-    /// `ContentStoreServer` instance used by the agent is updated — keeping
+    /// `AttachmentsServer` instance used by the agent is updated — keeping
     /// `recent_uploads` tracking and the BM25 search index in sync.
     pub async fn add_attachment(
         session_id: String,
@@ -175,20 +175,20 @@ impl AgentService {
         }
 
         // Fallback: session proxy not yet created (e.g. file attached before first
-        // message sends). Create a temporary ContentStoreServer backed by the
+        // message sends). Create a temporary AttachmentsServer backed by the
         // global DB connection so the data is persisted correctly.
         log::debug!(
-            "No proxy for session '{}'; falling back to direct ContentStoreServer for add_attachment",
+            "No proxy for session '{}'; falling back to direct AttachmentsServer for add_attachment",
             session_id
         );
-        use crate::mcp::builtin::content_store::ContentStoreServer;
+        use crate::mcp::builtin::attachments::AttachmentsServer;
         use crate::state::get_database_connection;
         use std::sync::Arc;
 
         let session_manager =
             get_session_manager().map_err(|e| format!("SessionManager not initialized: {}", e))?;
         let db = get_database_connection();
-        let server = ContentStoreServer::new_with_db(
+        let server = AttachmentsServer::new_with_db(
             session_id.clone(),
             Arc::new(session_manager.clone()),
             db.clone(),
@@ -201,7 +201,7 @@ impl AgentService {
     /// Delete an attachment from the session-scoped attachment store through an internal UI-only API.
     ///
     /// Routes through the session-bound `MCPServiceProxy` so that the same
-    /// `ContentStoreServer` instance used by the agent is updated — keeping all
+    /// `AttachmentsServer` instance used by the agent is updated — keeping all
     /// in-memory state consistent.
     pub async fn delete_attachment(
         session_id: String,
@@ -220,17 +220,17 @@ impl AgentService {
         }
 
         log::debug!(
-            "No proxy for session '{}'; falling back to direct ContentStoreServer for delete_attachment",
+            "No proxy for session '{}'; falling back to direct AttachmentsServer for delete_attachment",
             session_id
         );
-        use crate::mcp::builtin::content_store::ContentStoreServer;
+        use crate::mcp::builtin::attachments::AttachmentsServer;
         use crate::state::get_database_connection;
         use std::sync::Arc;
 
         let session_manager =
             get_session_manager().map_err(|e| format!("SessionManager not initialized: {}", e))?;
         let db = get_database_connection();
-        let server = ContentStoreServer::new_with_db(
+        let server = AttachmentsServer::new_with_db(
             session_id.clone(),
             Arc::new(session_manager.clone()),
             db.clone(),
