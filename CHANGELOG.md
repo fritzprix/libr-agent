@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.20] - 2026-03-26
+
+### 🔧 Internal
+
+- **CI Recovery**: Fixed release pipeline failure by ensuring proper changelog section alignment.
+
 ## [0.6.19] - 2026-03-26
 
 ### 🐛 Fixes
