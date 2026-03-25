@@ -241,7 +241,12 @@ export function AgentChatInput({ children }: AgentChatInputProps) {
       } else if (event === 'drop') {
         setDragState('none');
         if (payload.paths) {
-          processFileDrop(payload.paths);
+          // Defer heavy file processing to unblock the UI thread
+          // This ensures the visual drop state resets immediately
+          const paths = payload.paths;
+          setTimeout(() => {
+            processFileDrop(paths);
+          }, 0);
         }
       } else if (event === 'leave') {
         setDragState('none');
