@@ -5,8 +5,8 @@ import '@testing-library/jest-dom';
 import { open } from '@tauri-apps/plugin-dialog';
 
 // Mock dependencies
-vi.mock('@/hooks/use-rust-backend', () => ({
-  useRustBackend: () => ({
+vi.mock('@/hooks/use-rust-backend', () => {
+  const mockRustBackend = {
     listWorkspaceFiles: vi.fn().mockResolvedValue([]),
     openWorkspaceFileWithDefaultApp: vi.fn(),
     agentCallBuiltinTool: vi.fn(),
@@ -15,8 +15,11 @@ vi.mock('@/hooks/use-rust-backend', () => ({
     cancelWorkspaceOverride: vi.fn(),
     openWorkspaceInExplorer: vi.fn(),
     openWorkspaceInTerminal: vi.fn(),
-  }),
-}));
+  };
+  return {
+    useRustBackend: () => mockRustBackend,
+  };
+});
 
 vi.mock('@/lib/backend', () => ({
   openWorkspaceInExplorer: vi.fn(),
@@ -26,27 +29,37 @@ vi.mock('@/lib/backend', () => ({
   cancelWorkspaceOverride: vi.fn(),
 }));
 
-vi.mock('@/context/AgentSessionContext', () => ({
-  useAgentSessionState: () => ({
+vi.mock('@/context/AgentSessionContext', () => {
+  const mockState = {
     session: { id: 'session-123' },
-  }),
-}));
+  };
+  return {
+    useAgentSessionState: () => mockState,
+  };
+});
 
-vi.mock('@/context/AgentChatContext', () => ({
-  useAgentChatActions: () => ({
+vi.mock('@/context/AgentChatContext', () => {
+  const mockActions = {
     submit: vi.fn(),
     injectMessages: vi.fn(),
-  }),
-  useAgentChatState: () => ({
+  };
+  const mockState = {
     messages: [],
-  }),
-}));
+  };
+  return {
+    useAgentChatActions: () => mockActions,
+    useAgentChatState: () => mockState,
+  };
+});
 
-vi.mock('@/context/DnDContext', () => ({
-  useDnDContext: () => ({
+vi.mock('@/context/DnDContext', () => {
+  const mockDnD = {
     subscribe: vi.fn(() => vi.fn()),
-  }),
-}));
+  };
+  return {
+    useDnDContext: () => mockDnD,
+  };
+});
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn(),
